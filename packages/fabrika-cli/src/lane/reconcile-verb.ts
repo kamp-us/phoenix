@@ -3,14 +3,14 @@
  * append the line that corrects it.
  *
  * The third verb in the group that reads across lanes rather than into one, and for the same reason
- * the other two do: the question is a sweep. ADR 0343's `partial` payload only ever rode lines
+ * the other two do: the question is a sweep. The `partial` payload only ever rode lines
  * written after it existed, so the population is every lane shipped before it — nobody has counted
- * them and no read into one lane could (#7433).
+ * them and no read into one lane could.
  *
  * It is not `lane migrate`'s business even though the shapes rhyme. That sweep answers whether a
  * lane's machine is the committed template and writes `workflow.json` **only where the swap is
- * provably inert**, which is the guarantee ADR 0313 rests on; appending an event is the opposite of
- * inert. Two questions, two writes, two verbs.
+ * provably inert**, which is the guarantee that sweep rests on; appending an event is the opposite
+ * of inert. Two questions, two writes, two verbs.
  *
  * Every lane is judged on its own — an unreadable one is a row, never the end of the sweep — and the
  * board is asked only about a lane whose log already nominates a correctable line: one PR read each,
@@ -19,7 +19,7 @@
  * **A lane is read once, not once per sweep.** Whichever way the board answers, the answer is
  * appended as a correction — `partial: true` on a merge that left its issue open, `partial: false` on
  * one that closed it — so the line carries its own answer afterwards and `findMisroute` stops
- * nominating it (ADR 0351). The confirming line moves no task; the ship stage now writes `false`
+ * nominating it. The confirming line moves no task; the ship stage now writes `false`
  * too, so only lanes shipped before that stop nominating one at a time. Budget a sweep as one read
  * per never-confirmed lane: the first pass over a backlog is still hundreds, every pass after it is
  * the lanes that shipped since. `--check` withholds the append, so it buys nothing for the next
@@ -129,7 +129,7 @@ const foldedValue = (
  *
  * `false` on a lane no committed template grafts onto: an emitted epic machine is nobody's template
  * to be brought up to (`lane migrate`'s `generated` verdict), and an epic tail declares no partial
- * arm by design (ADR 0343), so neither is stale for want of one.
+ * arm by design, so neither is stale for want of one.
  */
 const templateWouldDeclareGuard = (
 	templateTexts: ReadonlyArray<string>,
@@ -177,7 +177,7 @@ const reconcileLane = <R>(
 			if (declaresClosureGuard(loaded.lane)) return {key, root, verdict: "current"};
 			// The `Settled` answer is ambiguous here and only the template resolves it: this lane may
 			// have nothing to correct, or its machine may predate the guard entirely, which is every
-			// lane booted before ADR 0343 shipped — 6980 and 7382 among them (#7433).
+			// lane booted before the partial-merge guard shipped.
 			const workflowPath = path.join(loaded.dir, "workflow.json");
 			const onDisk = yield* Effect.result(readFile(workflowPath));
 			if (Result.isFailure(onDisk)) {

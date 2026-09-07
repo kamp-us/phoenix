@@ -66,6 +66,29 @@ const counterProgram = (probe: Probe, stores: CheckpointStores, version = "1.0.0
 		placement: {host: "local"},
 	}) satisfies Program<State, Msg, Notify, never, unknown, TestIo, never>;
 
+type StreamState = {readonly text: string; readonly partial: boolean};
+type StreamMsg = {readonly type: "delta"; readonly chunk: string} | {readonly type: "done"};
+
+const streamer = ProgramId.make("streamer");
+
+/** A program that streams a reply: every mid-turn state is one it refuses to checkpoint. */
+const streamerProgram: AnyProgram = {
+	id: streamer,
+	core: defineMachine<StreamState, StreamMsg, never, never, unknown>({
+		init: (loaded) => [loaded ?? {text: "", partial: false}, []],
+		update: {
+			delta: (state, msg) => [{text: state.text + msg.chunk, partial: true}, []],
+			done: (state) => [{...state, partial: false}, []],
+		},
+	}),
+	ports: {},
+	handlers: {},
+	checkpointWorthy: (state: StreamState) => !state.partial,
+	capabilities: [],
+	identity: {package: "@kampus/tuval", program: "streamer", version: "1.0.0", digest: "sha256:s"},
+	placement: {host: "local"},
+} satisfies Program<StreamState, StreamMsg, never, never, unknown, never, never>;
+
 const kernel = (rows: ReadonlyArray<AnyProgram>, stores: CheckpointStores) =>
 	Processes.layer.pipe(
 		Layer.provideMerge(Checkpoints.layer(stores)),
@@ -263,4 +286,66 @@ describe("durability", () => {
 			yield* io(() => rm(dir, {recursive: true, force: true}));
 		}),
 	);
+
+	it.effect(
+		"a turn cut short leaves the last finished state in the checkpoint, never the partial",
+		() => {
+			const stores = memoryStores();
+			const rows = [streamerProgram];
+			return Effect.gen(function* () {
+				const id = yield* Effect.gen(function* () {
+					const processes = yield* Processes;
+					const handle = yield* processes.spawn(streamer, {services: Context.empty()});
+					for (const chunk of ["a", "b", "c"]) yield* handle.dispatch({type: "delta", chunk});
+					yield* handle.dispatch({type: "done"});
+					yield* handle.dispatch({type: "delta", chunk: "d"});
+					assert.deepStrictEqual(handle.getState(), {text: "abcd", partial: true});
+					return handle.id;
+				}).pipe(Effect.provide(kernel(rows, stores)));
+
+				assert.deepStrictEqual(parseSnapshot(yield* io(() => stores.snapshot(id).load())), {
+					programId: "streamer",
+					version: "1.0.0",
+					state: {text: "abc", partial: false},
+				});
+
+				yield* Effect.gen(function* () {
+					const restored = yield* restore(Context.empty());
+					assert.deepStrictEqual(restored[0]!.getState(), {text: "abc", partial: false});
+				}).pipe(Effect.provide(kernel(rows, stores)));
+			});
+		},
+	);
+
+	it.effect("a snapshot written before the save gate still loads through it", () => {
+		const id = ProcessId.make("pre-gate");
+		return Effect.gen(function* () {
+			const dir = yield* io(() => mkdtemp(join(tmpdir(), "tuval-durability-")));
+			yield* io(() => mkdir(join(dir, "processes")));
+			yield* io(() =>
+				writeFile(
+					join(dir, "manifest.json"),
+					JSON.stringify({processes: [{id, programId: "streamer", parentId: null}]}),
+				),
+			);
+			yield* io(() =>
+				writeFile(
+					join(dir, "processes", `${id}.json`),
+					JSON.stringify({
+						programId: "streamer",
+						version: "1.0.0",
+						state: {text: "written before", partial: false},
+					}),
+				),
+			);
+
+			yield* Effect.gen(function* () {
+				const restored = yield* restore(Context.empty());
+				assert.strictEqual(restored[0]!.id, id);
+				assert.deepStrictEqual(restored[0]!.getState(), {text: "written before", partial: false});
+			}).pipe(Effect.provide(kernel([streamerProgram], fileStores(dir))));
+
+			yield* io(() => rm(dir, {recursive: true, force: true}));
+		});
+	});
 });

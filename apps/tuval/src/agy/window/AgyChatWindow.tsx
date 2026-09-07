@@ -9,10 +9,11 @@
  *
  * Two things are deliberate and not obvious.
  *
- * **The line reads state, it does not accumulate.** `usage` is the core's own running total
- * (`../../ai-agent/core/state.ts`), checkpointed with the rest of the session, so two windows over
- * one process show one figure and a restart shows the figure it left on. There is no counter here,
- * and this file never sees an agy wire event: what fills `UsageTotals` is the mapper's business.
+ * **The line reads state, it does not accumulate.** `usage` is the core's own per-turn ledger
+ * (`../../ai-agent/core/state.ts`) summed by its own `usageTotals`, checkpointed with the rest of
+ * the session, so two windows over one process show one figure and a restart shows the figure it
+ * left on. There is no counter here, and this file never sees an agy wire event: what fills the
+ * ledger is the mapper's business.
  *
  * **It is not a live region.** Cost and token counts move on every usage event of a running turn,
  * and a `role="status"` here would narrate the whole turn to a screen-reader user. It is a named
@@ -21,7 +22,7 @@
 
 import {MetaRow} from "@kampus/design";
 import type {ReactElement} from "react";
-import type {UsageTotals} from "../../ai-agent/core/index.ts";
+import {type UsageTotals, usageTotals} from "../../ai-agent/core/index.ts";
 import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {chatWindow} from "../../shell/chat/index.ts";
 import "./agy-window.css";
@@ -69,7 +70,7 @@ export function UsageLine({usage}: {readonly usage: UsageTotals}): ReactElement 
  * the shared window under agy's name.
  */
 export const agyChatWindow = (options: ChatWindowOptions = {}): ChatWindowRenderer =>
-	chatWindow({...options, extras: (state) => <UsageLine usage={state.usage} />});
+	chatWindow({...options, extras: (state) => <UsageLine usage={usageTotals(state.usage)} />});
 
 /** The renderer `AGY_CHAT_WINDOW_REF` names, at its defaults: what a page's renderer table binds. */
 export const AgyChatWindow: ChatWindowRenderer = agyChatWindow();

@@ -1,0 +1,83 @@
+/*
+ * Layout for the two desk-level regions — where they sit, not what they look like.
+ *
+ * Everything painted here comes from a `@kampus/design` primitive (`Card` for the inspector panel,
+ * `Kbd` for the prefix chip) or from a role token already declared in `./tokens.css`. There is no
+ * new token in this file and no literal colour, radius or shadow: a rule that wanted one is a rule
+ * that should have reached for a primitive instead.
+ */
+
+/* The tiling area and the inspector share one row; the status line stays below both. */
+.tuval-desk-body {
+	display: flex;
+	flex: 1 1 auto;
+	min-block-size: 0;
+	min-inline-size: 0;
+}
+
+.tuval-inspector {
+	flex: 0 0 auto;
+	inline-size: 320px;
+	max-inline-size: 40%;
+	margin-inline-start: var(--s-2);
+	display: flex;
+	flex-direction: column;
+	/* Its own scroll container, which is what the `tabindex` on it is for: a program's inspector is
+	   as tall as it likes and the desk does not grow to fit it. */
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.tuval-inspector-empty {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+
+.tuval-inspector-title {
+	margin: 0 0 var(--s-2);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+/* The boundary panel where an inspector threw: the region's box, so the throw costs this column. */
+.tuval-inspector-panel {
+	min-block-size: 0;
+}
+
+/*
+ * The bar's three groups. `left` and `right` hug their ends and the program's middle takes the room
+ * between them, so a program that returns nothing leaves a gap rather than shifting the shell's own
+ * segments around.
+ */
+.tuval-status-group {
+	display: flex;
+	gap: var(--s-4);
+	align-items: center;
+	min-inline-size: 0;
+}
+
+.tuval-status-middle {
+	flex: 1 1 auto;
+	justify-content: center;
+	/* A long segment truncates rather than pushing the kernel facts off the end of the bar. */
+	overflow: hidden;
+}
+
+.tuval-status-segment {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* `attention` is the segment's own word for "read this one"; it is spelled twice, weight and rung,
+   because Pillar 4 forbids carrying meaning on colour alone. */
+.tuval-status-segment[data-tone="attention"] {
+	color: var(--text-primary);
+	font-weight: 600;
+}

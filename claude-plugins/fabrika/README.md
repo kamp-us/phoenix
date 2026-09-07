@@ -1,13 +1,11 @@
 # fabrika
 
-**fabrika** is the kamp.us agent pipeline, shipped as a Claude Code plugin. You file an issue; a
+**fabrika** is an agent pipeline, shipped as a Claude Code plugin. You file an issue; a
 chain of agents triages it, plans it, builds it, reviews it, and merges it. Every stage leaves its
 record on the issue or the pull request, not in a chat log. It works in any GitHub repo, and it is
 for anyone who wants agents doing real work on a repo with that work reviewable afterwards.
 
-Turkish for "factory", styled lowercase like the sibling brand nouns `sozluk` and `pano`. fabrika
-replaced the v1 `kampus-pipeline` plugin, which is deleted
-(ADR [0303](../../.decisions/0303-retire-kampus-pipeline-plugin.md)).
+Turkish for "factory", and styled lowercase wherever it is written.
 
 **Read [guide/README.md](guide/README.md) next.** It maps every page to the question it answers,
 and points at the other fabrika surfaces.
@@ -16,7 +14,7 @@ and points at the other fabrika surfaces.
 
 ```
 claude-plugins/fabrika/
-├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
+├── .claude-plugin/plugin.json   the plugin manifest (no version — it ships continuously, addressed by commit)
 ├── README.md                    this file
 ├── agents/                      the eight agent shells, one per stage role (see docs/agent-shells.md)
 ├── docs/                        the agent-facing convention + contract docs (see docs/README.md)
@@ -47,8 +45,9 @@ Update first. The install reads a cached catalog, and a stale cache refuses with
 marketplace was never registered at all.
 
 Inside the repo that authors the plugin, register the checkout as the source instead, so a local
-change is live on the next `/reload-plugins`
-(ADR [0273](../../.decisions/0273-fabrika-ships-as-an-installed-plugin.md)). Once per machine:
+change is live on the next `/reload-plugins` — the authoring repo installs fabrika down the same
+channel every other repo does, which is what keeps a skill from quietly needing something only the
+authoring checkout has. Once per machine:
 
 ```bash
 claude plugin marketplace add ./
@@ -58,10 +57,3 @@ claude plugin install fabrika@kampus
 Both lines are needed — registering a marketplace installs nothing. Already on the GitHub `kampus`
 marketplace? The same `add ./` overwrites that entry's source in place, and the installed plugin
 survives. Do not `claude plugin marketplace remove kampus` first: that uninstalls its plugins.
-
-## opencode
-
-fabrika is not Claude Code-only: it also runs in [opencode](https://opencode.ai) through the
-[`@kampus/fabrika-opencode`](../../packages/fabrika-opencode/) plugin, which registers the same
-eight agent shells as subagents and loads the bundled skills with one config line. See
-[packages/fabrika-opencode/README.md](../../packages/fabrika-opencode/README.md).

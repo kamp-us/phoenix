@@ -4,7 +4,7 @@
  * These lived as a private `const` inside each writing verb, and `status bootstrap label-taxonomy`
  * held a fourth copy of two of them and none of the other three — so a bootstrapped repo got five of
  * the sixteen labels the verbs require and could not triage, park, flip a plan or mark a dark ship
- * (#5772). One name in one place is what makes the bootstrap's set derivable rather than restated.
+ * One name in one place is what makes the bootstrap's set derivable rather than restated.
  *
  * The closed *facet* vocabularies — `TYPES`, `PRIORITIES`, `AUDIENCES`, `STANDING_LANES` — stay in
  * `triage/facets.ts`, because those are decode targets for a flag as well as label stems; this file
@@ -20,7 +20,7 @@ export const NEEDS_INFO = "status:needs-info";
 /** The status every ledger child is born carrying; `plan flip` is what clears it. */
 export const PLANNED = "status:planned";
 
-/** Agents deploy, humans release (ADR 0083) — `ship release` marks a dark ship with this. */
+/** Agents deploy, humans release — `ship release` marks a dark ship with this. */
 export const AWAITING_RELEASE = "status:awaiting-release";
 
 /**

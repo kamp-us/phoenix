@@ -15,10 +15,12 @@
 
 import type {
 	EffortLevel,
+	ListSessionsOptions,
 	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
+	SDKSessionInfo,
 	SDKUserMessage,
 	SessionMessage,
 	SlashCommand,
@@ -43,6 +45,7 @@ export interface QueryRecord {
 	readonly models: Array<string | undefined>;
 	/** Every effort level the layer applied, in order, for the same reason (#8062). */
 	readonly efforts: Array<EffortLevel | null>;
+	readonly contextReads: Array<{detail: "summary"}>;
 	closes: number;
 	interrupts: number;
 	readonly child: SpawnedProcess | null;
@@ -63,6 +66,8 @@ export interface ScriptedBehaviour {
 	readonly endsAtOnce?: boolean;
 	/** What `supportedModels()` answers. Absent is a CLI that offers none, which is the old shape. */
 	readonly models?: ReadonlyArray<ModelInfo>;
+	readonly runningModel?: string;
+	readonly contextFails?: Error;
 	/** A `setModel` the CLI refuses. The call is still recorded, so a test sees it was attempted. */
 	readonly modelSwitchFails?: Error;
 	/** An `applyFlagSettings` the CLI refuses, recorded the same way. */
@@ -100,6 +105,7 @@ export const scriptedQuery = (
 		modes: [],
 		models: [],
 		efforts: [],
+		contextReads: [],
 		closes: 0,
 		interrupts: 0,
 		child,
@@ -176,6 +182,11 @@ export const scriptedQuery = (
 			record.efforts.push(settings.effortLevel);
 			if (behaviour.effortSwitchFails !== undefined) throw behaviour.effortSwitchFails;
 		},
+		getContextUsage: async (options: {detail: "summary"}) => {
+			record.contextReads.push(options);
+			if (behaviour.contextFails !== undefined) throw behaviour.contextFails;
+			return {model: behaviour.runningModel ?? params.options.model ?? ""};
+		},
 		supportedModels: async () => {
 			if (behaviour.catalogFails !== undefined) throw behaviour.catalogFails;
 			return behaviour.models ?? [];
@@ -210,6 +221,11 @@ export interface ScriptedSdk {
 	readonly opened: Array<ScriptedQuery>;
 	/** The `getSessionMessages` calls, in order. */
 	readonly reads: Array<{sessionId: string; dir: string | undefined}>;
+	/**
+	 * The `listSessions` calls, in order, each holding the options it was given. An `undefined`
+	 * entry is the layer passing none, which is what leaves `includeProgrammatic` at its default.
+	 */
+	readonly lists: Array<ListSessionsOptions | undefined>;
 }
 
 export interface ScriptedSdkOptions extends ScriptedBehaviour {
@@ -219,15 +235,21 @@ export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	/** A read that throws instead of answering. */
 	readonly readFails?: Error;
+	/** What `listSessions` answers. Absent is a store holding none, which is a truthful empty list. */
+	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
+	/** A listing that throws — a store that would not open, not a store with nothing in it. */
+	readonly listFails?: Error;
 	readonly version?: string;
 }
 
 export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 	const opened: Array<ScriptedQuery> = [];
 	const reads: Array<{sessionId: string; dir: string | undefined}> = [];
+	const lists: Array<ListSessionsOptions | undefined> = [];
 	return {
 		opened,
 		reads,
+		lists,
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
@@ -239,6 +261,11 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 				reads.push({sessionId, dir: read.dir});
 				if (options.readFails !== undefined) throw options.readFails;
 				return options.rows ?? [];
+			},
+			listSessions: async (list) => {
+				lists.push(list);
+				if (options.listFails !== undefined) throw options.listFails;
+				return options.sessions ?? [];
 			},
 		},
 	};

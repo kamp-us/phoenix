@@ -29,7 +29,7 @@ const SWITCH_NEW = /^git switch -c /;
 
 const MINE = comments({id: 1, body: marker("s-9f2e", LANE_UUID)});
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const options = {
@@ -211,7 +211,7 @@ describe("runBranch — resume mode", () => {
 
 /**
  * Child-repair mode: the route a `build claim --resume` on an epic child hands its lane. It has to
- * exist, or the prior-build refusal strands the child it stops (#6386).
+ * exist, or the prior-build refusal strands the child it stops.
  */
 describe("runBranch — --resume-lane", () => {
 	const FOR_EACH_REF = /^git for-each-ref /;
@@ -307,7 +307,7 @@ describe("runBranch — --resume-lane", () => {
 	 * Measured against git 2.40.1, not reasoned about: `git branch -m` on a branch a second worktree
 	 * holds exits 0 and retargets that worktree's HEAD; only the `git switch` after it fails, 128. So
 	 * the refusal has to come BEFORE the rename, or it reports "nothing was changed" over a rename
-	 * that landed under another lane (#6386, review round 1).
+	 * that landed under another lane.
 	 */
 	it("refuses on 11 BEFORE renaming when another worktree holds the branch, naming that worktree", async () => {
 		const shell = fakeSeams([

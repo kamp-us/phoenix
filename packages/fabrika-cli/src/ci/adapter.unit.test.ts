@@ -22,11 +22,11 @@ const build = (summary: RunSummary, junit: string | null) =>
 		timestamp: "2026-06-14T10:03:21.000Z",
 	});
 
-describe("buildManifest (crabbox → ADR 0054 §2 manifest)", () => {
+describe("buildManifest (crabbox → run-evidence manifest)", () => {
 	it("happy path: emits every required field plus schemaVersion", () => {
 		const m = build(passingRunSummary(), passingJUnit);
 
-		// Every ADR 0054 §2 required field is present, plus schemaVersion.
+		// Every required manifest field is present, plus schemaVersion.
 		assert.strictEqual(m.schemaVersion, SCHEMA_VERSION);
 		assert.strictEqual(m.commit, COMMIT);
 		assert.strictEqual(m.run.producer, "crabbox");

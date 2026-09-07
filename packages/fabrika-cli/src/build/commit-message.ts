@@ -1,7 +1,7 @@
 /**
  * The pure reads `build commit` makes over a commit message and over the path one may arrive on.
  *
- * The incident this module answers is #5484: a lane ran `git commit -F <path>` against a path that
+ * The failure this module answers: a lane ran `git commit -F <path>` against a path that
  * held a **two-day-old message from another lane**. Nothing failed — the file existed, was
  * non-empty, and was a well-formed conventional-commit message — so the commit landed carrying a
  * subject about an issue the lane had never touched. That is the class property worth stating once:
@@ -37,8 +37,8 @@ export const leafOf = (path: string): string =>
  * (§SP rule 2). Uniqueness lives in `build scratch`'s claim-nonce-keyed directory, so the leaf name
  * confers no safety and is never asked to: a run-keyed leaf in some other directory is refused
  * exactly like a plain one, and a plain `commit-message` leaf inside this lane's directory is
- * admitted. Keying the leaf instead is the anti-pattern the allocator was built to retire (#4692,
- * #5484) — a shared directory with clever names is still a shared directory.
+ * admitted. Keying the leaf instead is the anti-pattern the allocator was built to retire — a shared
+ * directory with clever names is still a shared directory.
  *
  * Relative paths fail by construction: the allocator prints absolute paths, so anything that is not
  * one cannot have come from it.

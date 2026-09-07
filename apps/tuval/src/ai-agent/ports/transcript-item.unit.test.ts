@@ -14,6 +14,13 @@ const id = (value: string) => ItemId.make(value);
 const user: TranscriptItem = {kind: "user", id: id("u1"), timestamp: at, text: "hi"};
 const assistant: TranscriptItem = {kind: "assistant", id: id("a1"), timestamp: at, text: "hello"};
 const system: TranscriptItem = {kind: "system", id: id("s1"), timestamp: at, text: "resumed"};
+const thinking: TranscriptItem = {kind: "thinking", id: id("k1"), timestamp: at, text: "weighing"};
+const compaction: TranscriptItem = {
+	kind: "compaction",
+	id: id("c1"),
+	timestamp: at,
+	text: "context compacted",
+};
 const tool: TranscriptItem = {
 	kind: "tool",
 	id: id("t1"),
@@ -24,17 +31,50 @@ const tool: TranscriptItem = {
 	status: "running",
 };
 
+const kinds: ReadonlyArray<TranscriptItem> = [user, assistant, system, tool, thinking, compaction];
+
 describe("transcript item union", () => {
-	it("admits all four kinds", () => {
-		expect([user, assistant, system, tool].map(isTranscriptItem)).toEqual([true, true, true, true]);
+	it("admits all six kinds", () => {
+		expect(kinds.map(isTranscriptItem)).toEqual(kinds.map(() => true));
 	});
 
 	it("admits an assistant turn the operator cut short", () => {
 		expect(isTranscriptItem({...assistant, interrupted: true})).toBe(true);
 	});
 
+	it("admits an assistant turn still being written, and one that has finished", () => {
+		expect(isTranscriptItem({...assistant, partial: true})).toBe(true);
+		expect(isTranscriptItem({...assistant, partial: false})).toBe(true);
+		expect(isTranscriptItem({...assistant, partial: undefined})).toBe(true);
+	});
+
+	it("refuses a partial marker that is not a flag", () => {
+		expect(isTranscriptItem({...assistant, partial: "true"})).toBe(false);
+		expect(isTranscriptItem({...assistant, partial: 1})).toBe(false);
+		expect(isTranscriptItem({...assistant, partial: null})).toBe(false);
+	});
+
 	it("refuses an item of an unknown kind", () => {
-		expect(isTranscriptItem({...user, kind: "thinking"})).toBe(false);
+		expect(isTranscriptItem({...user, kind: "rate-limit"})).toBe(false);
+	});
+
+	it("refuses a thinking or compaction item whose text is missing or not a string", () => {
+		expect(isTranscriptItem({kind: "thinking", id: id("k2"), timestamp: at})).toBe(false);
+		expect(isTranscriptItem({...thinking, text: 7})).toBe(false);
+		expect(isTranscriptItem({kind: "compaction", id: id("c2"), timestamp: at})).toBe(false);
+		expect(isTranscriptItem({...compaction, text: null})).toBe(false);
+	});
+
+	it("refuses a thinking or compaction item with no stable id or no timestamp", () => {
+		expect(isTranscriptItem({...thinking, id: ""})).toBe(false);
+		expect(isTranscriptItem({kind: "compaction", id: id("c1"), text: "gone"})).toBe(false);
+	});
+
+	it("takes a system notice with or without folded detail, and refuses a non-string one", () => {
+		expect(isTranscriptItem({...system, detail: "exit 1\nno such file"})).toBe(true);
+		expect(isTranscriptItem({...system, detail: undefined})).toBe(true);
+		expect(isTranscriptItem({...system, detail: 7})).toBe(false);
+		expect(isTranscriptItem({...system, detail: null})).toBe(false);
 	});
 
 	it("refuses an item with no stable id or no timestamp", () => {
@@ -49,12 +89,22 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...tool, status: "pending"})).toBe(false);
 	});
 
-	it("takes a tool item with or without a parent, and refuses an empty parent id", () => {
-		expect(isTranscriptItem({...tool, parentId: "toolu_agent"})).toBe(true);
-		expect(isTranscriptItem({...tool, parentId: undefined})).toBe(true);
-		expect(isTranscriptItem({...tool, parentId: ""})).toBe(false);
-		expect(isTranscriptItem({...tool, parentId: 7})).toBe(false);
-		expect(isTranscriptItem({...tool, parentId: null})).toBe(false);
+	it("takes an item of any kind with or without a parent", () => {
+		expect(kinds.map((item) => isTranscriptItem({...item, parentId: "toolu_agent"}))).toEqual(
+			kinds.map(() => true),
+		);
+		expect(kinds.map((item) => isTranscriptItem({...item, parentId: undefined}))).toEqual(
+			kinds.map(() => true),
+		);
+	});
+
+	it("refuses a parent tag that is not an id, in every kind's arm", () => {
+		for (const parentId of ["", 7, null]) {
+			expect(
+				kinds.map((item) => isTranscriptItem({...item, parentId})),
+				String(parentId),
+			).toEqual(kinds.map(() => false));
+		}
 	});
 
 	it("refuses a tool result past the per-item byte bound, however it was built", () => {

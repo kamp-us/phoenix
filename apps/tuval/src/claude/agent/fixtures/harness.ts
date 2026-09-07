@@ -3,7 +3,7 @@
  * the whole thing inside one Scope so a run's end is the teardown the layer owes.
  */
 
-import type {SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import type {SDKMessage, SDKSessionInfo, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {Effect, Layer, Schema} from "effect";
 import {Mode} from "../../../ai-agent/ports/index.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "../../../ai-agent/service/index.ts";
@@ -58,6 +58,8 @@ export interface HarnessOptions extends ScriptedBehaviour {
 	readonly opening?: ReadonlyArray<SDKMessage>;
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	readonly readFails?: Error;
+	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
+	readonly listFails?: Error;
 	readonly spawn?: SpawnClaudeCodeProcess;
 	readonly allowedTools?: ReadonlyArray<string>;
 	readonly model?: string;
@@ -106,10 +108,14 @@ export const on = <A, E>(
 			opening: harness.opening ?? [],
 			...(harness.rows === undefined ? {} : {rows: harness.rows}),
 			...(harness.readFails === undefined ? {} : {readFails: harness.readFails}),
+			...(harness.sessions === undefined ? {} : {sessions: harness.sessions}),
+			...(harness.listFails === undefined ? {} : {listFails: harness.listFails}),
 			...(harness.version === undefined ? {} : {version: harness.version}),
 			...(harness.deferOpening === undefined ? {} : {deferOpening: harness.deferOpening}),
 			...(harness.endsAtOnce === undefined ? {} : {endsAtOnce: harness.endsAtOnce}),
 			...(harness.models === undefined ? {} : {models: harness.models}),
+			...(harness.runningModel === undefined ? {} : {runningModel: harness.runningModel}),
+			...(harness.contextFails === undefined ? {} : {contextFails: harness.contextFails}),
 			...(harness.modelSwitchFails === undefined
 				? {}
 				: {modelSwitchFails: harness.modelSwitchFails}),

@@ -72,7 +72,7 @@ export const menuField = (roster: RosterRead, asOf: AsOf): Field =>
 
 /**
  * What this repo runs on, off the one config surface — the field that replaced the per-skill
- * declaration probe when the `## Required repo files` tables retired (#6301).
+ * declaration probe when the `## Required repo files` tables retired.
  *
  * A key that did not resolve makes the whole field `unknown`, carrying those keys' names. A partial
  * green here would be the collapse the config surface exists to prevent: a reader cannot act on
@@ -103,9 +103,8 @@ export const settingsField = (
  * Whether this repo's sessions load fabrika's skills at all — the field the CLI half cannot imply.
  *
  * Every other field answers about something the CLI reads, and all of them answered green in the
- * repo where no skill could load (#6443). A proven-off plugin is `unwired` rather than `unknown`:
- * the repo proved it, and collapsing it into `unknown` would hide the one gap this field exists to
- * name.
+ * repo where no skill could load. A proven-off plugin is `unwired` rather than `unknown`: the repo
+ * proved it, and collapsing it into `unknown` would hide the one gap this field exists to name.
  */
 export const wiringField = (read: WiringRead, asOf: AsOf): Field => ({
 	name: "wiring",
@@ -214,10 +213,10 @@ const parseSweep = (stdout: string): StaleSweep | null => {
 
 /**
  * The stale-lane sweep as a field, composed from `lane stale`'s in-process outcome — the one field
- * sourced outside this group, because lanes are machine-local and no scheduled job can see them
- * (#5908). The sweep's refusal (an unreadable root) and a lane whose record does not read are both
- * `unknown` with the reason, never flattened to clean; zero stale lanes — including zero lanes on
- * disk at all — is the proven negative `empty`.
+ * sourced outside this group, because lanes are machine-local and no scheduled job can see them.
+ * The sweep's refusal (an unreadable root) and a lane whose record does not read are both `unknown`
+ * with the reason, never flattened to clean; zero stale lanes — including zero lanes on disk at all
+ * — is the proven negative `empty`.
  */
 export const lanesField = (
 	outcome: VerbOutcome,

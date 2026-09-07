@@ -38,6 +38,17 @@ login before any request. A credential that resolves nowhere is a refusal naming
 never an anonymous call. There is no `gh` prerequisite: the package reaches api.github.com over HTTP
 ([`src/io/gh-api.ts`](./src/io/gh-api.ts)), and `guard no-gh check` keeps it that way on every push.
 
+This package installs into repositories that are not the one it is developed in, so neither its
+source nor the plugin's skills may carry a reference that only resolves here. `guard
+portability-guard check` holds that on every push: it walks `claude-plugins/fabrika/` and
+`packages/fabrika-cli/src/` and reds a ticket number, a decision-record number in either spelling, a
+`.decisions/` path, a hosted issue or pull-request URL, and any name the repo declares under the
+`portability` key of `.fabrika.jsonc`. A markdown heading, a hex colour and a ticket number that is
+test data are not references. The bounded allow-list in `portability-guard.config.json` has two
+buckets, each entry carrying a mandatory `why`: `exempt` is a permanent per-file cap for text that
+is not a portability defect, and `unmigrated` is the sweep floor — one row per sweep unit, and it
+only shrinks, so a ceiling left above the count reds exactly as loudly as a new reference does.
+
 Ordered recipes — installing, credentialing, finding a group and a verb, reading a refusal, running
 from a consumer repo — are in
 [`docs/running-fabrika-in-a-repo.md`](./docs/running-fabrika-in-a-repo.md).

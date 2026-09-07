@@ -4,7 +4,7 @@
  * under the cwd's `.tuval`, project over global.
  *
  * Configuration is code the user owns (the Neovim model, #7484 R1.1): a TypeScript module whose
- * default export is a `{version: 1, programs, graph?, keys?}` config. Loading refuses on any defect the
+ * default export is a `{version: 1, programs, features?, graph?, keys?}` config. Loading refuses on any defect the
  * loader can see — the module throwing, no default export, an export the schema rejects — and
  * every refusal names the module and the reason, so boot never runs on a half-read config. A
  * module that is not there is an empty layer, never a refusal: the layer is optional and the bin
@@ -24,8 +24,16 @@ import {
 	describeFile,
 	KeyBindings,
 } from "./commands/bindings/index.ts";
+// Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
+// flag record, and this module reaches `node:*` (#8439).
+import {featuresOff, type TuvalFeatures} from "./features.ts";
 import {type Graph, NodeId} from "./ports/graph.ts";
-import {ProgramId} from "./registry/program.ts";
+import {type AnyProgram, ProgramId} from "./registry/program.ts";
+import {
+	type DeclaredProgram,
+	type ModuleRendererRef,
+	moduleRendererRefs,
+} from "./shell/window/renderer.ts";
 
 const hasStringId = (row: unknown): row is {readonly id: string} =>
 	Predicate.isObject(row) && Predicate.isString((row as {readonly id?: unknown}).id);
@@ -45,10 +53,26 @@ const GraphNode = Schema.Struct({
 
 const GraphSchema = Schema.Struct({nodes: Schema.Array(GraphNode)});
 
+/**
+ * The feature flags a layer *states*. Every key is optional, and that is the whole point: absent
+ * means "this layer says nothing", not "off", so a project layer naming one flag cannot put back to
+ * its default a flag the global layer turned on. `featuresOff` is where a flag nobody stated lands.
+ */
+const DeclaredFeatures = Schema.Struct({
+	/**
+	 * The running-subagent list at the top of the agent window, and — the same flag, because they are
+	 * one change — a subagent's rows leaving the agent window's transcript (#8405).
+	 */
+	subagentList: Schema.optionalKey(Schema.Boolean),
+});
+
+export {featuresOff, type TuvalFeatures} from "./features.ts";
+
 /** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
 export const TuvalConfig = Schema.Struct({
 	version: Schema.Literal(1),
 	programs: Schema.Array(ProgramRow),
+	features: DeclaredFeatures.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
 	graph: GraphSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed({nodes: []}))),
 	/** Key to command string, read by the parser and compiled against the registry at boot. */
 	keys: KeyBindings.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
@@ -137,6 +161,14 @@ export interface ConfigLayers {
 
 export interface LoadedConfig {
 	readonly programs: ReadonlyArray<unknown>;
+	/** The merged flags, project over global — one flag at a time, not one block replacing another. */
+	readonly features: TuvalFeatures;
+	/**
+	 * The `kind: "module"` window specifiers the merged rows declared, each beside the layer module
+	 * that declared it. Carried from here rather than recomputed from `programs`, because the origin
+	 * is only knowable while the layers are still apart — a flat merged row has lost its layer (#8262).
+	 */
+	readonly moduleRenderers: ReadonlyArray<ModuleRendererRef>;
 	readonly graph: Graph;
 	/**
 	 * One binding source per layer that existed, global first. They stay apart rather than merging
@@ -161,6 +193,13 @@ const bindingSource = (layer: ConfigLayer, path: string, keys: KeyBindings): Bin
 
 const rowId = (row: unknown): string => (row as {readonly id: string}).id;
 
+/**
+ * A layer's rows, each stamped with the module they were written in. Config rows are trusted local
+ * code and opaque past their id (#7484 R1.1), so the cast here is the same one `boot` makes.
+ */
+const declaredIn = (config: TuvalConfig, module: string): ReadonlyArray<DeclaredProgram> =>
+	config.programs.map((row) => ({row: row as AnyProgram, origin: module}));
+
 /** `over` replaces a `base` entry with the same key in place; the rest append in `over`'s order. */
 const mergeById = <T>(base: ReadonlyArray<T>, over: ReadonlyArray<T>, key: (item: T) => string) => {
 	const overrides = new Map(over.map((item) => [key(item), item] as const));
@@ -184,11 +223,29 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 	const load = nextLoad();
 	const global = yield* loadOptional(layers.global, load);
 	const project = yield* loadOptional(layers.project, load);
-	const empty: TuvalConfig = {version: 1, programs: [], graph: {nodes: []}, keys: {}};
+	const empty: TuvalConfig = {
+		version: 1,
+		programs: [],
+		features: {},
+		graph: {nodes: []},
+		keys: {},
+	};
 	const base = Option.getOrElse(global, () => empty);
 	const over = Option.getOrElse(project, () => empty);
+	// Merged as declared rows rather than as bare rows: the merge is the last place a row and its
+	// layer module are still together, and a project row that replaces a global one by id has to come
+	// out carrying the project module as its origin.
+	const declared = mergeById(
+		declaredIn(base, layers.global),
+		declaredIn(over, layers.project),
+		(program) => rowId(program.row),
+	);
 	return {
-		programs: mergeById(base.programs, over.programs, rowId),
+		// Widened back: the loader checked each row's id and nothing else, and that is all a caller
+		// may assume of one.
+		programs: declared.map((program): unknown => program.row),
+		features: {...featuresOff, ...base.features, ...over.features},
+		moduleRenderers: moduleRendererRefs(declared),
 		graph: {nodes: mergeById(base.graph.nodes, over.graph.nodes, (node) => node.id)},
 		keys: [
 			...(Option.isSome(global) ? [bindingSource("global", layers.global, base.keys)] : []),

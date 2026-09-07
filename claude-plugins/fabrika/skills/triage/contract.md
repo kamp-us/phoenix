@@ -1,27 +1,26 @@
 # `/triage` — derived CLI contract
 
-**Skill:** [`triage`](SKILL.md) · **Authoring brief:** [#4706](https://github.com/kamp-us/phoenix/issues/4706) · **Date:** 2026-08-02
+**Skill:** [`triage`](SKILL.md) · **Date:** 2026-08-02
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `triage` subcommand,
 beside the `adr` and `report` groups already implemented there. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs them; where this spec and
 that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every verb below
-is implemented from scratch here. v1's tools and its 18 `scripts/` were read for their semantics and
-their scars — each Grounding section names what the v1 counterpart gets wrong and what this spec does
-instead — but no clause defers to one, and none is invoked. Two edges are sanctioned and are not
-calls: a CI gate stays the authority on its own question, so this spec expects `pitch-guard`'s answer
-rather than recomputing it; and where both programs must agree on the same bytes, fabrika owns the
-wire format and the other side conforms by pinning fabrika's golden fixture in a test (ADR
-[0251](../../../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md)).
+**`fabrika` calls the retired v1 pipeline CLI nowhere, and neither does the skill.** Every verb
+below is implemented from scratch here. v1's tools and its 18 `scripts/` were read for their
+semantics and their scars — each Grounding section names what the v1 counterpart gets wrong and what
+this spec does instead — but no clause defers to one, and none is invoked. Two edges are sanctioned
+and are not calls: a CI gate stays the authority on its own question, so this spec expects
+`pitch-guard`'s answer rather than recomputing it; and where both programs must agree on the same
+bytes, fabrika owns the wire format and the other side conforms by pinning fabrika's golden fixture
+in a test — a shared format is pinned once and never reimplemented on both sides.
 
 **Substrate.** These verbs are Effect CLI verbs on the `@effect/platform-node` seam already used by
 the sibling groups; GitHub access per
-[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+[skill conventions §11, "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md).
 Named here because `cli-interface-convention.md` states no substrate and a spec that leaves it open
-makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
+makes the implementer guess.
 
 ## Verb inventory
 
@@ -36,7 +35,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
-| `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts, #6070) are mechanical; the verdict is judgment |
+| `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts) are mechanical; the verdict is judgment |
 
 One existing verb gains one flag:
 
@@ -66,13 +65,13 @@ exists every fabrika skill's rejections live inline like these.
   `pass: false` → exit 1, so the happy path always looks like a failure. The skill drafts the pitch —
   into the body `triage enrich` writes — and lets the seam gate answer.
 - **A `triage classify-cp` verb.** `cp-classify` routes the control-plane question and CODEOWNERS
-  enforces it at merge. #4227 is precisely the cost of a triage-side second opinion: a routing note
+  enforces it at merge. A triage-side second opinion has a measured cost: a routing note once
   asserted the opposite of a settled ruling and a lane was planned around an approval that never
   fires. The skill states the expectation and asserts nothing.
 - **A `triage release-claim` verb.** v1 needed one because its claim was an assignee and
-  `write-code`'s picker skipped assigned issues. Audience now rides on `ready-for:` (#4780), so
-  nothing about a claim blocks pickup, and the marker expires on a TTL (see `triage claim`). A verb
-  whose whole body is one `DELETE` is the wrapper ADR 0238 bans.
+  `write-code`'s picker skipped assigned issues. Audience now rides on `ready-for:`, so nothing
+  about a claim blocks pickup, and the marker expires on a TTL (see `triage claim`). A verb whose
+  whole body is one `DELETE` is the thin wrapper this group never mints.
 - **A `triage milestone-hygiene` verb** (v1's 100%-open flag). Its answer is a board-hygiene signal
   for a human, not an input to triaging an issue; it belongs to a roadmap surface, not this skill.
 - **A `resolve-repo` verb.** v1's exists only to feed hand-rolled `gh api` calls in the skill body.
@@ -81,28 +80,28 @@ exists every fabrika skill's rejections live inline like these.
 ### The name collision with v1's `triage` — live while v1 stood, retired with it
 
 **A skill named `triage` existed** at `claude-plugins/kampus-pipeline/skills/triage/` until the v1
-plugin's retirement (ADR 0303, #5937); it was model-invoked, and its six triggers were
+plugin was retired; it was model-invoked, and its six triggers were
 near-identical to this one's. The `/report` contract recorded the analogous collision as "dormant
 only by configuration — `.claude/settings.json` has `"kampus-pipeline@kampus": false`". **That
 reasoning did not hold.** `.claude/skills` was a symlink to `claude-plugins/kampus-pipeline/skills`,
 so v1's skills loaded as *project-level* skills and the plugin toggle did not stop them: a live
 session's roster carried both `adr` and `fabrika:adr`, and both `report` and `fabrika:report`.
-Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
-(filed as #4829); the adjacent routing-pin half is #4761.
+Settled by holding the two skill sets in separate namespaces, so no loader ever resolves one bare
+name to both.
 
-What the ADR measured sharpens this: the two never shared a name — the loader namespaces plugin
-skills, so the bare `triage` was always v1's. What overlapped was the **description**, and this
-pair's overlap was the corpus's worst (same plugin-relative role, nearly identical triggers). So
-the stated mitigation was the right one, and it stays load-bearing as description discipline even
-with the collision gone. Two things follow, and neither is optional:
+What the measurement behind that ruling sharpens: the two never shared a name — the loader
+namespaces plugin skills, so the bare `triage` was always v1's. What overlapped was the
+**description**, and this pair's overlap was the corpus's worst (same plugin-relative role, nearly
+identical triggers). So the stated mitigation was the right one, and it stays load-bearing as
+description discipline even with the collision gone. Two things follow, and neither is optional:
 
 - **This skill is model-invoked deliberately** (conventions §3): triage must fire when someone says
   "triage the queue" without naming a plugin, and other skills must be able to reach it. It therefore
   pays the context load, and the description is the discriminator — it names the audience label, the
   read-back, and the guardrail framing that v1's cannot.
-- **Retiring v1's description is cutover work, not this brief's** (v1 is the frozen baseline, #4631 /
-  ADR 0238). Until it happens the bare name resolves to v1 and this skill is reached as
-  `/fabrika:triage`. Stated here so a reader meets it as a known state rather than a surprise.
+- **Retiring v1's description is cutover work, not this brief's** — v1 is the frozen baseline. Until
+  it happens the bare name resolves to v1 and this skill is reached as `/fabrika:triage`. Stated
+  here so a reader meets it as a known state rather than a surprise.
 
 ### Nothing here recomputes an enforced answer
 
@@ -141,8 +140,7 @@ Where this group's codes overlap **`report`'s writing verbs** (`3`, `5`, `6`, `7
 `10`, `11`) they match them **deliberately**, code for code, so a caller driving `report` and `triage`
 in one sweep reads one meaning. This spec calls `report dedup` (the `--exclude` extension below), and
 that verb reads from the same `report` table: `7` when `--label` is absent, `27`/`28` when the queue
-or the search index could not be read
-([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
+or the search index could not be read.
 
 | Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill | scratch |
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
@@ -159,14 +157,14 @@ or the search index could not be read
 | `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
-| `13` | refused: close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
-| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — | — |
+| `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — |
+| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
-| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for (ADR 0301) | — | — | — | — | — | ✓ | — | — | — | — |
-| `21` | refused: a `--blocked-by` target is a **pull request** — ADR 0301 names a blocking PR by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
+| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — |
+| `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -182,7 +180,7 @@ close.** `packages/fabrika-cli/src/triage/codes.ts` seats `UNREPAIRABLE = 14` fo
 repair-criteria`, a tenth verb this document does not yet specify at all — it has no column above
 and no section below. Writing its row here would be guessing at a spec nobody has written, so `15`
 takes the next free seat instead of compacting into `14`, and the gap is disclosed rather than
-silently filled ([#5855](https://github.com/kamp-us/phoenix/issues/5855)).
+silently filled.
 
 **`4` is a deliberate gap, not a free slot.** It held *"the target issue does not exist, or is not
 readable"* — one code for a proven fact and an unknown at once, which is the exact fusion `7` and
@@ -310,7 +308,7 @@ so a PR could appear as a triageable row.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
-| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope (ADR 0092).` | 7 | refusal |
+| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope.` | 7 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `--label`, read with pagination. **`empty` and a
@@ -329,8 +327,8 @@ flag, and this verb has a bad flag (`--limit`) sitting on `1` already.
 ```
 $ fabrika triage queue
 queued
-4312	3	Sozluk definition editor loses focus after an entry is saved
-4290	11	Retry helper swallows the abort reason
+7	3	Definition editor loses focus after an entry is saved
+8	11	Retry helper swallows the abort reason
 ```
 
 ```
@@ -342,20 +340,20 @@ $ echo $?
 
 ```
 $ fabrika triage queue --label status:needs-triage-typo
-triage queue: label status:needs-triage-typo does not exist in kamp-us/phoenix — refusing to report an empty queue over zero scope (ADR 0092).
+triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope.
 $ echo $?
 7
 ```
 
 ```
 $ fabrika triage queue --json
-{"outcome":"queued","issues":[{"number":4312,"ageDays":3,"title":"Sozluk definition editor loses focus after an entry is saved"}],"scanned":1,"truncated":false}
+{"outcome":"queued","issues":[{"number":7,"ageDays":3,"title":"Definition editor loses focus after an entry is saved"}],"scanned":1,"truncated":false}
 ```
 
 **Grounding**
 
-- ADR 0092 — a read whose scope is zero reds rather than answering. v1's `list-queue.sh` had no such
-  check and its empty output *was* the sweep's termination test.
+- A read whose scope is zero reds rather than answering. v1's `list-queue.sh` had no such check and
+  its empty output *was* the sweep's termination test.
 - v1 `list-queue.sh` prints `(.user.login)` on every row — the filer. A bare login on a queue row is
   not a provenance verdict: it takes the footer *and* the configured operator set to reach one, which
   is `triage provenance`'s job. This verb omits the column and defers to that verb.
@@ -369,7 +367,7 @@ $ fabrika triage queue --json
 **Invocation**
 
 ```
-fabrika triage claim 4312 [--token <claim-token>] [--repo <owner/name>] [--json]
+fabrika triage claim 7 [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -390,17 +388,16 @@ indistinguishable from "the verb is broken".
 
 With `--json`, an object with keys `outcome` (`won` / `lost`), `session` (this session's id), `token`
 (this lane's claim token), `holder` (the winning session id, `null` on `won`), `holderLane` (the
-winning lane's nonce, `null` on `won` or when the winner is a pre-#6132 marker), `markers` (count of
-live markers considered), and `expired` (count discarded as older than the TTL).
+winning lane's nonce, `null` on `won` or when the winner is a marker predating the lane field),
+`markers` (count of live markers considered), and `expired` (count discarded as older than the TTL).
 
-**A claim names a lane, not a session.** One fan-out runs several triagers under one
-session id, so a marker stamped with the session alone cannot tell two of them apart:
-on 2026-08-18 two siblings each read the other's marker back as their own, both answered `won`, and
-both wrote the issue ([#6132](https://github.com/kamp-us/phoenix/issues/6132)). The lane is a token,
-`triage:<session-id>:<uuid>` — the same shape and the same nonce rule the `build` namespace resolves
-ownership by ([#6037](https://github.com/kamp-us/phoenix/issues/6037)), in its own namespace so the
-two never collide. A run with no `--token` mints one and races under its nonce; a run that passes the
-token it was handed re-enters the lane it already holds.
+**A claim names a lane, not a session.** One fan-out runs several triagers under one session id, so
+a marker stamped with the session alone cannot tell two of them apart: two siblings once each read
+the other's marker back as their own, both answered `won`, and both wrote the issue. The lane is a
+token, `triage:<session-id>:<uuid>` — the same shape and the same nonce rule the `build` namespace
+resolves ownership by, in its own namespace so the two never collide. A run with no `--token` mints
+one and races under its nonce; a run that passes the token it was handed re-enters the lane it
+already holds.
 
 **The marker literal.** A claim is one issue comment whose body is exactly:
 
@@ -410,11 +407,10 @@ token it was handed re-enters the lane it already holds.
 
 One line, no surrounding prose, so a marker is matched by an exact prefix rather than by parsing
 human text. `<session-id>` is this run's session id — `FABRIKA_SESSION_ID`, else
-`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`
-([#6960](https://github.com/kamp-us/phoenix/issues/6960)); `<nonce>` is the first
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`; `<nonce>` is the first
 8 hex of the claim token's UUID. Any comment not matching that prefix is not a marker and is ignored.
-A marker carrying no `lane=` field is a pre-#6132 claim: it is counted, it ages out on the same TTL,
-and every lane reads it as **another** claimant's — never as its own.
+A marker carrying no `lane=` field predates the lane field: it is counted, it ages out on the same
+TTL, and every lane reads it as **another** claimant's — never as its own.
 
 **The ordering key is the comment's `created_at` as returned by GitHub**, never a timestamp embedded
 in the marker text: the body is caller-supplied and a caller could backdate itself into winning every
@@ -429,7 +425,7 @@ reader alike; widening the window means changing that constant.
 
 **The claim is a session-stamped comment, never the assignee.** Every agent authenticates as the same
 login, so the assignee field cannot discriminate two concurrent sweeps — it is a shared availability
-slot (#4780, and v1's own `claim-assign.ts` says as much: *"every agent authenticates as the same
+slot (v1's own `claim-assign.ts` says as much: *"every agent authenticates as the same
 login, so the assignee is one shared slot"*). The session id comes from `FABRIKA_SESSION_ID`, else
 `CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`; with all three unset the verb exits `1`
 rather than posting an unattributable marker.
@@ -441,23 +437,20 @@ winner is this session; every unresolvable state answers `lost`, never `won`.
 **The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
 `park` and `kill` each re-read the markers on their target immediately before their first write, and
 refuse on `17` when a live one names another claimant — the check reuses this verb's own reader and
-resolver, so there is one marker grammar. Those five decide foreignness on the **session+lane pair**,
-the same identity `claim` resolves on: each takes the optional `--token` this verb handed the lane,
-and a same-session marker under a different nonce is somebody else's
-([#6303](https://github.com/kamp-us/phoenix/issues/6303)). A call that passes no `--token` cannot say
-which lane it is, so it is priced fail-closed on exactly that: it passes while its session's live
-markers all name one lane, and refuses on `17` once two lanes of its session hold live markers.
-Holding **no** marker still passes: an unclaimed issue is
-the ordinary first-triage case, and demanding one would refuse every existing caller. The same
-re-read refuses a closed target on `7`, and a comment read that fails is `11`. A `--token` that will
-not parse as `triage:<session-id>:<uuid>`, or that carries a session other than the one running, is a
-usage error on `1` on all five — the same two lines `claim` itself prints, verbatim, since it is the
-same reader; a lane names itself, never another. Before, the protocol
-was advisory at exactly the point it needed to bite: on 2026-08-15 a session that had read `lost`
-ran `enrich` anyway and replaced the winner's authored body
-([#5644](https://github.com/kamp-us/phoenix/issues/5644), on
-[#5642](https://github.com/kamp-us/phoenix/issues/5642)). There is no override flag — nothing in that
-incident needed one, and a flag added before a real need is a flag agents learn to pass reflexively.
+resolver, so there is one marker grammar. Those five decide foreignness on the **session+lane
+pair**, the same identity `claim` resolves on: each takes the optional `--token` this verb handed
+the lane, and a same-session marker under a different nonce is somebody else's. A call that passes
+no `--token` cannot say which lane it is, so it is priced fail-closed on exactly that: it passes
+while its session's live markers all name one lane, and refuses on `17` once two lanes of its
+session hold live markers. Holding **no** marker still passes: an unclaimed issue is the ordinary
+first-triage case, and demanding one would refuse every existing caller. The same re-read refuses a
+closed target on `7`, and a comment read that fails is `11`. A `--token` that will not parse as
+`triage:<session-id>:<uuid>`, or that carries a session other than the one running, is a usage error
+on `1` on all five — the same two lines `claim` itself prints, verbatim, since it is the same
+reader; a lane names itself, never another. Before, the protocol was advisory at exactly the point
+it needed to bite: a session that had read `lost` once ran `enrich` anyway and replaced the winner's
+authored body. There is no override flag — nothing in that incident needed one, and a flag added
+before a real need is a flag agents learn to pass reflexively.
 
 **The marker has a lifecycle, and both ends of it are specified.** This is the one verb here that
 *is* a race protocol, so leaving either end to an implementer's judgment would let the protocol
@@ -514,13 +507,13 @@ by a caller.
 **Examples**
 
 ```
-$ fabrika triage claim 4312
+$ fabrika triage claim 7
 won	triage:b2e1-4c07-4a99-9f30-55da1e6b7c02:5f1c9a20-4b11-4e05-8d77-c2a4f9be1234
 ```
 
 ```
-$ fabrika triage claim 4312
-triage claim: #4312 is held by session 7f3c-9a20-4b11-8e05-1d77c2a4f9be on lane 9a204b11 since 2026-08-02T09:14:02Z — backing off.
+$ fabrika triage claim 7
+triage claim: #7 is held by session 7f3c-9a20-4b11-8e05-1d77c2a4f9be on lane 9a204b11 since 2026-08-02T09:14:02Z — backing off.
 lost	7f3c-9a20-4b11-8e05-1d77c2a4f9be
 $ echo $?
 0
@@ -530,13 +523,13 @@ A sibling lane of your OWN session wins the same way, and the notice names the l
 does not read as this lane losing to itself:
 
 ```
-$ fabrika triage claim 4312
-triage claim: #4312 is held by session b2e1-4c07-4a99-9f30-55da1e6b7c02 on lane 7c3d0e91 since 2026-08-18T21:02:11Z — backing off.
+$ fabrika triage claim 7
+triage claim: #7 is held by session b2e1-4c07-4a99-9f30-55da1e6b7c02 on lane 7c3d0e91 since 2026-08-18T21:02:11Z — backing off.
 lost	b2e1-4c07-4a99-9f30-55da1e6b7c02
 ```
 
 ```
-$ fabrika triage claim 4312 --json
+$ fabrika triage claim 7 --json
 {"outcome":"won","session":"b2e1-4c07-4a99-9f30-55da1e6b7c02","token":"triage:b2e1-4c07-4a99-9f30-55da1e6b7c02:5f1c9a20-4b11-4e05-8d77-c2a4f9be1234","holder":null,"holderLane":null,"markers":1,"expired":0}
 ```
 
@@ -550,9 +543,9 @@ $ fabrika triage claim 4312 --json
 - v1 `claim-issue.sh:51` `DELETE`s other accounts' assignments, so a human self-assigning inside the
   race window loses it to a string comparison. This verb writes only its own marker and deletes only
   its own marker — never another session's, and never on a win.
-- #4780 — audience moved to `ready-for:`, so a claim no longer has to be released to keep an issue
-  pickable. The TTL replaces v1's mandatory release, whose script swallowed every error
-  (`2>/dev/null || true`) and could silently leave an issue unpickable forever.
+- Audience moved to `ready-for:`, so a claim no longer has to be released to keep an issue pickable.
+  The TTL replaces v1's mandatory release, whose script swallowed every error (`2>/dev/null ||
+  true`) and could silently leave an issue unpickable forever.
 
 ---
 
@@ -561,7 +554,7 @@ $ fabrika triage claim 4312 --json
 **Invocation**
 
 ```
-fabrika triage scratch 4312 --slug authored --token <claim-token> [--repo <owner/name>]
+fabrika triage scratch 7 --slug authored --token <claim-token> [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -581,13 +574,11 @@ absent, so the path is writable the moment it is printed; the leaf itself is not
 **The claim nonce is in the key, and that is the whole verb.** A fan-out of triagers runs under one
 session id, so a namespace keyed on the session alone hands every lane the same
 directory — and a working file under a fixed name like `authored.md` then overwrites a sibling's
-silently. That happened on 2026-08-20 across #6597/#6189/#6146 and was caught only because the
-clobbered content happened to be a different issue's body
-([#6630](https://github.com/kamp-us/phoenix/issues/6630)); the failure it points at is one issue's
-authored body posted onto another. Keying on the lane makes the collision unconstructible rather than
-detectable, exactly as `build scratch` already does for build lanes
-([#6037](https://github.com/kamp-us/phoenix/issues/6037)). The nonce is read off the token the
-**caller** holds, never off the winning marker — that string is the same for two lanes of one
+silently. That happened across three lanes of one drain and was caught only because the clobbered
+content happened to be a different issue's body; the failure it points at is one issue's authored
+body posted onto another. Keying on the lane makes the collision unconstructible rather than
+detectable, exactly as `build scratch` already does for build lanes. The nonce is read off the token
+the **caller** holds, never off the winning marker — that string is the same for two lanes of one
 session, which is how keying on it re-opens the hole it closed.
 
 **Holding the claim is a precondition here, unlike everywhere else in this group.** The five mutating
@@ -634,22 +625,22 @@ stderr like every other read in this group.
 **Examples**
 
 ```
-$ fabrika triage scratch 4312 --slug authored --token triage:b2e1-…:5f1c9a20-…
-triage scratch: scanned 3 comments in kamp-us/phoenix.
-/var/folders/xy/T/fabrika-triage/b2e1-…/4312-5f1c9a20/authored
+$ fabrika triage scratch 7 --slug authored --token triage:b2e1-…:5f1c9a20-…
+triage scratch: scanned 3 comments in <owner>/<repo>.
+/var/folders/xy/T/fabrika-triage/b2e1-…/7-5f1c9a20/authored
 ```
 
 A sibling lane of the same session, on the same issue and the same slug, is handed a different
 directory — which is the property the verb exists for:
 
 ```
-$ fabrika triage scratch 4312 --slug authored --token triage:b2e1-…:7c3d0e91-…
-/var/folders/xy/T/fabrika-triage/b2e1-…/4312-7c3d0e91/authored
+$ fabrika triage scratch 7 --slug authored --token triage:b2e1-…:7c3d0e91-…
+/var/folders/xy/T/fabrika-triage/b2e1-…/7-7c3d0e91/authored
 ```
 
 ```
-$ fabrika triage scratch 4312 --slug authored --token triage:b2e1-…:5f1c9a20-…
-triage scratch: this lane holds no live claim on #4312 — run `fabrika triage claim 4312` and act only on `won`.
+$ fabrika triage scratch 7 --slug authored --token triage:b2e1-…:5f1c9a20-…
+triage scratch: this lane holds no live claim on #7 — run `fabrika triage claim 7` and act only on `won`.
 $ echo $?
 19
 ```
@@ -657,7 +648,7 @@ $ echo $?
 **Grounding**
 
 - `packages/fabrika-cli/src/build/scratch-verb.ts` — the same allocator for build lanes, whose
-  docblock records the five clobbers session-only keying cost (#4516, #4544, #4875, #4692, #6037).
+  docblock records the five clobbers session-only keying cost.
 - The `build` skill makes its path the only sanctioned one ("Scratch files go only where this
   prints"); this verb is what lets the triage skill say the same thing.
 
@@ -668,7 +659,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika triage provenance 4312 [--repo <owner/name>] [--json]
+fabrika triage provenance 7 [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -685,20 +676,20 @@ configured operator account), and `reason`. `marker` and `operator` stay separat
 they are separate facts: an `agent` answer with `marker: false` is the ruling below firing, and a
 caller chasing the emitter gap needs to see which one decided.
 
-**Two agent signals, and the second one is config-bound.** ADR 0159 made the footer the signal
-because every filing showed the same account, so authorship carried no information. The founder's
-2026-08-09 ruling on #4619 narrows that: a filing authored by an account in the **operator set** is
-agent-reported whether or not the footer is present, because footer-absence there reflects the
-emitter gap #4619 tracks, not a human author. Footer-absence from **any other author** is unchanged
-— still human-owned, and never auto-closed except by a `triage kill --duplicate-of` fold, which
-#6070 licensed whatever the provenance.
+**Two agent signals, and the second one is config-bound.** The footer became the signal because
+every filing showed the same account, so authorship carried no information. A later founder ruling
+narrows that: a filing authored by an account in the **operator set** is agent-reported whether or
+not the footer is present, because footer-absence there reflects a gap in the emitter, not a human
+author. Footer-absence from **any other author** is unchanged — still human-owned, and never
+auto-closed except by a `triage kill --duplicate-of` fold, which is licensed whatever the
+provenance.
 
 **The operator set is an input, resolved from `$FABRIKA_OPERATOR_ACCOUNTS`** (comma- or
 whitespace-separated logins, a leading `@` tolerated, compared case-insensitively). It is a *set*
 rather than one account because the operator runs more than one, and it is configuration rather than
 a literal in source because a GitHub handle baked into a released package is an operator identity
-leaking into a shared artifact (#2393) — and a set nobody can widen without a release. **Unset or
-blank yields the empty set**, which reduces the verb to ADR 0159's footer-only rule: a missing config
+leaking into a shared artifact — and a set nobody can widen without a release. **Unset or
+blank yields the empty set**, which reduces the verb to the footer-only rule: a missing config
 can never make a filing newly close-eligible.
 
 **The footer's shape, from the emitter.** `report file` composes it with `renderFooter`
@@ -709,15 +700,14 @@ and a UTC timestamp last, un-backticked. Three are droppable — `` session `x` 
 still a footer and this verb must not require any of the three.
 
 **This verb matches a line beginning `<sub>Filed by an agent`, and that deliberately diverges from
-`report`'s own check.** The shipped detection in
-`packages/fabrika-cli/src/report/file-verb.ts` is the bare substring
-`issue.body.includes("Filed by an agent")` — not line-anchored. That is correct *there*: it is a
-read-back over a body the same process just composed, so nothing else can be in it. Here the body is
-foreign, and a bare substring fails **open toward `agent`** — an issue that merely *quotes* the
-phrase (a bug report about the footer, a pasted body, a discussion of ADR 0159) would answer `agent`,
-and `agent` is the close-eligible direction. Anchoring to the emitted line shape makes the failure
-land on `human`, which is the protected one. The divergence is stated so a later reader does not
-"fix" it back into agreement.
+`report`'s own check.** The shipped detection in `packages/fabrika-cli/src/report/file-verb.ts` is
+the bare substring `issue.body.includes("Filed by an agent")` — not line-anchored. That is correct
+*there*: it is a read-back over a body the same process just composed, so nothing else can be in it.
+Here the body is foreign, and a bare substring fails **open toward `agent`** — an issue that merely
+*quotes* the phrase (a bug report about the footer, a pasted body, a discussion of the rule itself)
+would answer `agent`, and `agent` is the close-eligible direction. Anchoring to the emitted line
+shape makes the failure land on `human`, which is the protected one. The divergence is stated so a
+later reader does not "fix" it back into agreement.
 
 **Exit status**
 
@@ -733,7 +723,7 @@ land on `human`, which is the protected one. The divergence is stated so a later
 | `triage provenance: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage provenance: cannot read #<n> in <repo>: <reason> — the provenance is UNKNOWN; refusing to default it.` | 11 | refusal |
 | `triage provenance: #<n> has an empty body — answering human (fail-closed).` | 0 | notice |
-| `triage provenance: #<n> in <repo> — the author is a configured operator account, so the filing is agent-reported whether or not the footer is present (#4619 ruling).` | 0 | notice |
+| `triage provenance: #<n> in <repo> — the author is a configured operator account, so the filing is agent-reported whether or not the footer is present.` | 0 | notice |
 
 **Scope** — one issue's body and its author login, read as typed JSON rather than through
 `jq -r .body`, which errors on the unescaped control characters GitHub issue bodies carry and yields
@@ -754,34 +744,34 @@ answering `human` over it would be a verdict manufactured from a failed read —
 **Examples**
 
 ```
-$ fabrika triage provenance 4312
+$ fabrika triage provenance 7
 agent
 ```
 
 ```
-$ fabrika triage provenance 4290
+$ fabrika triage provenance 8
 human
 ```
 
 ```
-$ fabrika triage provenance 4312 --json
+$ fabrika triage provenance 7 --json
 {"outcome":"agent","marker":true,"operator":false,"reason":"the 'Filed by an agent' marker is present in the body"}
 ```
 
 ```
-$ FABRIKA_OPERATOR_ACCOUNTS=<operator-login> fabrika triage provenance 5111
+$ FABRIKA_OPERATOR_ACCOUNTS=<operator-login> fabrika triage provenance 1
 agent
 ```
 
 **Grounding**
 
-- ADR 0159 — filing provenance, not authorship, is the signal. Its premise, that authorship is
-  unusable because every filing shows one shared account, is what the #4619 ruling narrows: the
+- Filing provenance, not authorship, is the signal. Its premise, that authorship is unusable
+  because every filing shows one shared account, is what the operator-set ruling narrows: the
   operator's own account is now a *positive* agent signal, and only that account.
-- Founder ruling on #4619, 2026-08-09 — an issue filed under the operator's own account is
-  agent-reported and close-eligible, footer or no footer; unchanged for a genuine third-party human
-  filing. It settles a live cost: filings were parked at `status:needs-info` on footer-absence alone
-  and then closed by hand anyway (#5098, #5111).
+- That founder ruling — an issue filed under the operator's own account is agent-reported and
+  close-eligible, footer or no footer; unchanged for a genuine third-party human filing. It settles
+  a live cost: filings were parked at `status:needs-info` on footer-absence alone and then closed by
+  hand anyway.
 - v1 has **no tool for this at all**: "never close a human-filed issue" is 48 lines of prose across
   `SKILL.md` and `close-not-planned.md`, with nothing computing it, while `list-queue.sh` puts the
   meaningless filer login in front of the agent on every row. The highest-stakes, least-reversible
@@ -833,7 +823,7 @@ With `--json`, an object with keys `outcome`, `milestones` (array of `{number, t
 `lanes` (array of `{label, meaning}`), and `scanned`.
 
 **Every `active` campaign's milestone is marked `running`.** That campaign is closed to new intake
-unless the work is `p0` or `p1`, or blocks one of that milestone's own in-flight lanes (ADR 0354), so
+unless the work is `p0` or `p1`, or blocks one of that milestone's own in-flight lanes, so
 its row carries a fourth tab-separated column, verbatim `running: p0/p1 or blocker`, and its `--json`
 object carries `"running": "running: p0/p1 or blocker"` as a fourth key — one constant behind both
 channels, so the marker reads the same either way. Every other row is unchanged on both channels — no
@@ -843,8 +833,8 @@ carry them. This verb states the subtraction and stops; where excluded work goes
 caller's by-fit judgement, and no output here names a destination.
 
 **Which milestone is running is data, never a literal in this spec or in the verb.** It is the
-`State` column of `ROADMAP.md`'s `## Campaigns` table — the same permission `build pick` fences on
-(ADR 0304), read through the same parser, off the roadmap text this verb has already read for the arc
+`State` column of `ROADMAP.md`'s `## Campaigns` table — the same permission `build pick` fences on,
+read through the same parser, off the roadmap text this verb has already read for the arc
 join. Moving to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap`
 moves both reads together. The table's three states are the ones the fence already reads:
 
@@ -863,12 +853,12 @@ pinning a milestone that is closed or absent from the open set marks no row and 
 row to hide.
 
 **A lane row is offered only where this repo BOTH declares the lane and carries its label.** The
-declared set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, whose shipped default is
-phoenix's pair; the verb then reads the repo's own label set and drops every declared lane the board
-does not carry. Both halves are load-bearing. The declaration alone is a claim about a board — in
-`kamp-us/demlik`, where neither label exists, the pair printed as assignable homes and a triager took
-one, classified the whole issue, and only then hit a failed label write naming a label rather than
-the real cause (#6440). So the presence read is the same evidence the later `triage apply --lane`
+declared set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, whose shipped default is a
+two-lane pair; the verb then reads the repo's own label set and drops every declared lane the board
+does not carry. Both halves are load-bearing. The declaration alone is a claim about a board — on a
+board where neither label exists, the pair printed as assignable homes and a triager took one,
+classified the whole issue, and only then hit a failed label write naming a label rather than the
+real cause. So the presence read is the same evidence the later `triage apply --lane`
 write depends on, taken before the menu is printed rather than after the work is done.
 
 **A repo declares no lanes by writing `"standingLanes": []`**, and then reads no labels at all —
@@ -895,11 +885,11 @@ which names it meant.
 the menu, which is the failure this whole surface is built against — a caller cannot tell a repo with
 no lanes from a repo it could not look at.
 
-This follows ADR 0286's ruling that lanes come from the repo, with one departure it names: 0286 puts
+This follows the standing ruling that lanes come from the repo, with one departure: that ruling puts
 them under a `lanes` key with **no** shipped default, and the key that exists today is
-`boardVocabulary.standingLanes`, which defaults to phoenix's pair on an absent key. Evicting that
-default is [#6469](https://github.com/kamp-us/phoenix/issues/6469), which owns the whole move —
-0286's `lanes` key, the compiled-in label/meaning enumeration, and the readers that go with the set.
+`boardVocabulary.standingLanes`, which falls back to a built-in pair on an absent key. Evicting that
+default is tracked work of its own — the `lanes` key, the compiled-in label/meaning enumeration, and
+the readers that go with the set.
 Until it lands, two things contain the default: the presence filter, so it asserts nothing about a
 board that never created the labels, and the empty declaration, so a repo can say outright that it
 runs none.
@@ -913,8 +903,8 @@ row-to-milestone-by-number binding `roadmap-guard` already enforces. So: **the j
 exists, and whether an arc is active is a question for the caller, not a filter here. A milestone no
 row pins yields `null`; a row pinning a milestone that is closed or absent contributes nothing.
 
-Matching on the title would be the obvious shortcut and it is wrong — an arc named `Geçit` pins a
-milestone titled `Sözlük — search and discovery`, and the two share no substring.
+Matching on the title would be the obvious shortcut and it is wrong — an arc named `Gateway` pins a
+milestone titled `Search and discovery`, and the two share no substring.
 
 **Exit status**
 
@@ -936,7 +926,7 @@ withhold the home list a triager needs.
 | `triage homes: .fabrika.jsonc is refused — <reason>, so which standing lanes this repo runs is unread; the homes list is UNKNOWN, never short.` | 11 | refusal |
 | `triage homes: cannot probe the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: cannot read the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
-| `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).` | 7 | refusal |
+| `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill.` | 7 | refusal |
 | `triage homes: the roadmap at <path> parsed to 0 arc rows — the table grammar changed or the file is truncated; refusing to answer over an unjoinable roadmap.` | 7 | refusal |
 
 **Both "cannot read" cases are `11`, not `1`.** They were `1` in an earlier revision, which fused an
@@ -949,7 +939,7 @@ The grammar is a table this verb does not own, so a grammar change silently empt
 that as "no homes exist" would route work to a kill. Zero *campaign* rows is a legitimate state and
 passes.
 
-**An ABSENT roadmap is an answer, not either refusal (#5773).** A file that is proven not to exist is
+**An ABSENT roadmap is an answer, not either refusal.** A file that is proven not to exist is
 a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
 any standing lane the board carries lists beside them, and stderr carries
 `triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
@@ -980,7 +970,7 @@ hands a byte-reading caller two rows and no token.
 ```
 $ fabrika triage homes
 homes
-milestone	47	Sözlük — search and discovery
+milestone	47	Search and discovery
 milestone	52	Merge-Gate Reliability	running: p0/p1 or blocker
 lane	wayfinder:backlog	fog — uncharted work upstream of any arc
 lane	axis:pipeline-hardening	the standing pipeline and reliability lane
@@ -988,7 +978,7 @@ lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 
 ```
 $ fabrika triage homes --json
-{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"running: p0/p1 or blocker"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
+{"outcome":"homes","milestones":[{"number":47,"title":"Search and discovery","roadmapRow":"Gateway"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"running: p0/p1 or blocker"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
 ```
 
 **Grounding**
@@ -1001,9 +991,9 @@ $ fabrika triage homes --json
 - v1's `homing-guard` treats "homed" as `milestone !== null` and never checks the milestone is open or
   on-roadmap, so a closed milestone reports as a valid home. Offering only open, roadmap-joined
   milestones designs that mismatch out at the point of assignment rather than detecting it later.
-- ADR 0072 §3 — curating the milestone set is a human roadmap act, so no verb here creates one.
-- #6080 — a closing campaign kept taking every lane's follow-ups because nothing in this verb's
-  output said which milestone was running, so triagers homed by title match. The marker is only a
+- Curating the milestone set is a human roadmap act, so no verb here creates one.
+- A closing campaign kept taking every lane's follow-ups because nothing in this verb's output said
+  which milestone was running, so triagers homed by title match. The marker is only a
   subtraction; enforcement is deliberately absent, since both exceptions are judgements a verb cannot
   check and a guard blind to them would refuse exactly the work the rule allows.
 
@@ -1014,7 +1004,7 @@ $ fabrika triage homes --json
 **Invocation**
 
 ```
-fabrika triage split 4312 --title "Editor loses focus after save" [--token <claim-token>] [--repo <owner/name>] [--json]
+fabrika triage split 7 --title "Editor loses focus after save" [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The child body arrives on **stdin only**. There is no `--body` and no `--body-file`: a flag that
@@ -1120,7 +1110,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
-| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing (ADR 0092).` | 7 | refusal |
+| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing.` | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage split: cannot read <what> in <repo>: <reason> — UNKNOWN whether a child already exists; refusing to create a possible twin.` | 11 | refusal |
@@ -1134,8 +1124,8 @@ a silent lost split, in the one direction v1's own module says it refuses.
 set. Read 1's label is a hardcoded literal while `--repo` is generic, so a renamed label or a
 scope-limited token returns HTTP 200 with `[]` — **not** a read failure, and therefore not `11`. The
 verb would fall straight through to `created` and mint a twin. Without this check the one verb built
-to be fail-closed is the ADR 0092 fail-open. Absent label ⇒ `7`, with the same shape of message
-`triage queue` uses.
+to be fail-closed answers over zero scope — the fail-open it exists to prevent. Absent label ⇒ `7`,
+with the same shape of message `triage queue` uses.
 
 **Read 1 — the intake queue. This is the primary, and the create-once guarantee rests on it.**
 `GET /repos/{repo}/issues?state=open&labels=status:needs-triage&per_page=100`, paginated. Two
@@ -1169,11 +1159,11 @@ read 1 cannot see, and that is the only reason it is here. Three constraints, al
 own findings about this endpoint:
 
 - **It lags.** `packages/pipeline-cli/src/tools/merge-queue-classify/` records ~30–60 minutes of
-  observed staleness on this endpoint (#4057) and states that "an ejection that has not yet surfaced
-  in the timeline reads identically" to one that never happened. A read that can be that far behind
+  observed staleness on this endpoint and states that "an ejection that has not yet surfaced in the
+  timeline reads identically" to one that never happened. A read that can be that far behind
   cannot carry a create-once guarantee for a child made seconds ago.
 - **It pages at 30 by default**, so `--paginate` is mandatory and the `--jq` streams rather than
-  buffering the whole timeline (#4193).
+  buffering the whole timeline.
 - **A failed read is `11`**, never a silent `created`.
 
 So: **the create-once guarantee rests on read 1.** Read 2 widens the net for older children and
@@ -1181,44 +1171,42 @@ narrows nothing. An earlier revision described both halves as "read-after-write 
 was wrong about this one and would have let an implementer trust the lagging source.
 
 **Neither half may be the search index.** The index is eventually consistent, so a child created
-seconds ago is invisible to it — which is precisely the five-second twin window (#3462/#3463) this
-verb exists to close. `report dedup` may use the index because it is advisory; a create-once guard
-may not.
+seconds ago is invisible to it — which is precisely the five-second twin window this verb exists to
+close. `report dedup` may use the index because it is advisory; a create-once guard may not.
 
 **Examples**
 
 ```
-$ fabrika triage split 4312 --title "Editor loses focus after save" < child.md
-created	4321	https://github.com/kamp-us/phoenix/issues/4321
+$ fabrika triage split 7 --title "Editor loses focus after save" < child.md
+created	9	https://github.com/<owner>/<repo>/issues/9
 ```
 
 ```
-$ fabrika triage split 4312 --title "Editor loses focus after save" < child.md
-reused	4321	https://github.com/kamp-us/phoenix/issues/4321
+$ fabrika triage split 7 --title "Editor loses focus after save" < child.md
+reused	9	https://github.com/<owner>/<repo>/issues/9
 $ echo $?
 0
 ```
 
 ```
-$ fabrika triage split 4312 --title "Editor loses focus after save" --json < child.md
-{"outcome":"created","number":4321,"url":"https://github.com/kamp-us/phoenix/issues/4321","matchedOn":null,"crossLinked":true}
+$ fabrika triage split 7 --title "Editor loses focus after save" --json < child.md
+{"outcome":"created","number":9,"url":"https://github.com/<owner>/<repo>/issues/9","matchedOn":null,"crossLinked":true}
 ```
 
 **Grounding**
 
-- #3462 / #3463 — two byte-identical children five seconds apart; the create-once guard is that
-  incident.
+- Two byte-identical children five seconds apart; the create-once guard is that incident.
 - v1 `split-child.sh:22-26` captures `split-guard`'s stdout and **never inspects its exit status**.
   The guard prints nothing on its negative, so an auth failure, a rate limit or a decode error
   produces the identical empty string as a proven "safe to create" — and the script falls through to
   the POST. That is why every outcome here is a token.
 - v1 `split-match.ts:40-45` normalizes titles with `title.toLowerCase().split(/[^a-z0-9]+/)` —
-  ASCII-only, against a corpus whose product titles are Turkish by repo law. This is the same defect
-  `intake-dedup` fixed in #3255 and `split-guard` never received.
+  ASCII-only, against a corpus whose product titles carry non-ASCII letters. This is the same defect
+  `intake-dedup` was fixed for and `split-guard` never received.
 - v1 never cross-linked the parent; the `split into #A, #B` comment was left to the model. This verb
   posts it as part of the same operation, so the provenance trace is not optional.
-- #4057 / #4193 — the timeline endpoint's observed staleness and its 30-per-page default. Both are
-  the reason it is the supplementary half here rather than the guarantee.
+- The timeline endpoint's observed staleness and its 30-per-page default are the reason it is the
+  supplementary half here rather than the guarantee.
 
 ---
 
@@ -1227,7 +1215,7 @@ $ fabrika triage split 4312 --title "Editor loses focus after save" --json < chi
 **Invocation**
 
 ```
-fabrika triage enrich 4312 [--epic] [--token <claim-token>] [--repo <owner/name>] [--json]
+fabrika triage enrich 7 [--epic] [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for the reason given under
@@ -1305,14 +1293,13 @@ the very label `triage apply` writes.
 the exact headings `## Dependencies` and `## Plan (plan-epic)` and preserves every other byte
 verbatim, so neither heading above is an anchor it can cut on, and the wrapped original is untouched
 bytes either way. That is an agreement rather than a coincidence — the envelope is a wire format
-fabrika owns, and a splicer conforms to it by pinning fabrika's golden fixture in a test of its own
-(ADR [0251](../../../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md)), so a
-reworded anchor set reds a test on the side that reworded. What
-`plan-epic` *does* change is where the wrap sits: `## Plan (plan-epic)` and `## Dependencies` both
-land **below** it, so this mode's envelope stops being terminal the moment the epic is planned. The
-re-enrich detector below tests position nowhere, in either mode, for exactly that reason; a re-enrich
-replaces the pitch and the header from fresh stdin and preserves the wrap — and everything under it —
-unchanged, exactly as the default mode replaces a rewrite.
+fabrika owns, and a splicer conforms to it by pinning fabrika's golden fixture in a test of its own,
+so a reworded anchor set reds a test on the side that reworded. What `plan-epic` *does* change is
+where the wrap sits: `## Plan (plan-epic)` and `## Dependencies` both land **below** it, so this
+mode's envelope stops being terminal the moment the epic is planned. The re-enrich detector below
+tests position nowhere, in either mode, for exactly that reason; a re-enrich replaces the pitch and
+the header from fresh stdin and preserves the wrap — and everything under it — unchanged, exactly as
+the default mode replaces a rewrite.
 
 **Stdin carries the five field lines, not the section heading.** The verb writes `## Pitch` itself,
 so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
@@ -1359,9 +1346,9 @@ machine-local path (`5`), a bare `@` reference (`6`), and an acceptance-criteria
 reader rejects (`15`, below) — and `--epic` **adds no exit code of its own**: reaching those same
 refusals is the removal of a restriction, not a new outcome.
 
-**The re-enrich detector is the marker this verb writes — one rule, mode-independent** (founder
-ruling on [#4866](https://github.com/kamp-us/phoenix/issues/4866), 2026-08-08, option (b)). A body
-counts as already-enriched **when, and only when, it carries a marker line bound to this issue**:
+**The re-enrich detector is the marker this verb writes — one rule, mode-independent**, settled by a
+founder ruling. A body counts as already-enriched **when, and only when, it carries a marker line
+bound to this issue**:
 
 ```
 <!-- fabrika:enriched issue=<N> mode=<rewrite|wrap> -->
@@ -1372,20 +1359,19 @@ prose is an ordinary filing here, and reading its prose as a marker would overwr
 own text above the mention.
 
 **This supersedes the two shape-based detectors this section specified before the ruling** — default
-mode's terminality-plus-`Original report (verbatim)` test, and `--epic`'s three envelope anchors. The
-reasoning that produced them is not withdrawn: each was correct about its own mode, and the
-`--epic` rule's position-independence was itself the ruled fix to a real compounding bug
-([#4850](https://github.com/kamp-us/phoenix/issues/4850)) — once `plan-epic` runs,
-`## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap (`plan-epic` Step 2 writes the plan
-"below the untouched brief", and a first-time plan with no topology yet appends at end of body), so a
-terminality test stops matching on every planned epic. What the ruling settles is that **both** were
-mode-scoped and keyed on disjoint literals, so neither could recognise the other mode's envelope. A
-re-run in the other mode therefore fell through to "first enrichment ⇒ wrap" and nested the whole
-existing envelope — pitch, header, plan, topology and the previous provenance boundary — inside a
-fresh block, compounding per run and labelling authored content as the reporter's own text. That path
-is ordinary rather than exotic: `triage apply`'s owned-facet table owns `^type:`, so re-classifying an
-enriched issue to `type:epic` and re-enriching with `--epic` is a supported sequence with no guard
-between its steps.
+mode's terminality-plus-`Original report (verbatim)` test, and `--epic`'s three envelope anchors.
+The reasoning that produced them is not withdrawn: each was correct about its own mode, and the
+`--epic` rule's position-independence was itself the ruled fix to a real compounding bug — once
+`plan-epic` runs, `## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap (`plan-epic` Step
+2 writes the plan "below the untouched brief", and a first-time plan with no topology yet appends at
+end of body), so a terminality test stops matching on every planned epic. What the ruling settles is
+that **both** were mode-scoped and keyed on disjoint literals, so neither could recognise the other
+mode's envelope. A re-run in the other mode therefore fell through to "first enrichment ⇒ wrap" and
+nested the whole existing envelope — pitch, header, plan, topology and the previous provenance
+boundary — inside a fresh block, compounding per run and labelling authored content as the
+reporter's own text. That path is ordinary rather than exotic: `triage apply`'s owned-facet table
+owns `^type:`, so re-classifying an enriched issue to `type:epic` and re-enriching with `--epic` is
+a supported sequence with no guard between its steps.
 
 A marker is written by this verb and by nothing else, so presence *is* the answer, whichever mode
 wrote it and whichever mode is re-running. The class dies for every marker-bearing body rather than
@@ -1409,7 +1395,7 @@ that was wrapped — is always the later one and can never be mistaken for the b
 wrapped body the verb recognises the two v1 envelope shapes below — default mode's terminality test,
 and `--epic`'s three anchors — **does not double-wrap**, and **stamps the marker in passing**. Every
 body that branch can match therefore converts on its next enrichment and never returns to it. It is
-one-time code that retires with v1-backlog absorption (founder mandate, map #4891); an implementation
+one-time code that retires with v1-backlog absorption, by founder mandate; an implementation
 keeps it separable so retiring it is a delete rather than an excavation. The shapes are used **only**
 for a body carrying no marker at all — a body whose marker binds *another* issue short-circuits ahead
 of them, so the legacy door cannot re-admit the impersonation the binding exists to refuse.
@@ -1431,7 +1417,7 @@ carries a line that is exactly `<summary>Original report (verbatim)</summary>`; 
 line** is `</details>`, so the block closes at end of body. The preserved region is that opener line
 onward, to end of body.
 
-**v1 `--epic` mode — three anchors, position-independent** (#4850's ruled option (a)). All three
+**v1 `--epic` mode — three anchors, position-independent** (the ruled option). All three
 conditions hold: the body's **first** line is exactly `## Pitch`; the body carries the exact line
 `## Epic — awaiting plan`; and the first `<summary>Original brief (verbatim)</summary>` line sits
 **below** that header. The preserved region is that summary's `<details>` opener line onward, to end
@@ -1463,13 +1449,13 @@ The `--epic` anchors, which the legacy branch still uses as recognisers, survive
 splicer cuts only on `## Dependencies` and `## Plan (plan-epic)`: `## Pitch` and
 `## Epic — awaiting plan` are bytes it never touches, and so is the marker, which is neither of those
 two headings. That is the splicer's obligation to this format rather than a fact fabrika inherits —
-which side owes which is settled in ADR
-[0251](../../../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md).
+which side owes which is settled by the rule that fabrika owns a shared format and the other side
+pins its fixture.
 
 **That survival is pinned executably, not only argued.** A splicer's unit tests run a real envelope
 through a first-time plan and a re-plan and assert that the `<details>` block stops being terminal,
 that the anchors still hold, that the wrapped original survives byte-for-byte, and that the summary
-line never doubles. Under ADR 0251 the envelope those tests run is fabrika's committed golden
+line never doubles. Under that rule the envelope those tests run is fabrika's committed golden
 fixture, so a rewording here reds them; the block presently lives in
 `packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts` with a hand-copied envelope
 and is scheduled to split — fixture and detector to fabrika, preservation assertions to the splicer.
@@ -1481,16 +1467,17 @@ legacy body is asserted to be recognised, preserved and stamped. Change the rule
 red, which is what keeps this section from drifting back into an assumption.
 
 **Idempotency, stated as the other write verbs state theirs — and now unconditional.** Re-running
-`enrich` on an already-enriched issue **converges**: it replaces the authored region from fresh stdin
-and leaves the marker's line onward — the preserved original and every byte below it — unchanged, so
-a second pass produces the same body as the first, nesting never accumulates, and "the innermost
-original" is not a case that arises. This holds over a **planned** epic body (the position axis,
-#4850) and it holds when the re-run's mode **differs** from the mode that wrote the envelope (the
-mode axis, #4866) — the two qualifications the sentence previously needed. The one case it does not
-claim is a body carrying no marker and matching neither v1 shape, which is a *first* enrichment by
+`enrich` on an already-enriched issue **converges**: it replaces the authored region from fresh
+stdin and leaves the marker's line onward — the preserved original and every byte below it —
+unchanged, so a second pass produces the same body as the first, nesting never accumulates, and "the
+innermost original" is not a case that arises. This holds over a **planned** epic body (the position
+axis) and it holds when the re-run's mode **differs** from the mode that wrote the envelope (the
+mode axis) — the two qualifications the sentence previously needed. The one case it does not claim
+is a body carrying no marker and matching neither v1 shape, which is a *first* enrichment by
 definition rather than a re-run. The detector itself refuses nothing — it is a body-composition
 rule, not a refusal branch, so it adds no row to the exit-status or error tables below. This is the
-rule's only statement in this spec; the Scope section below states the scope and does not restate it.
+rule's only statement in this spec; the Scope section below states the scope and does not restate
+it.
 
 **Redaction is asymmetric and deliberate.** The **preserved original** is foreign content: any
 machine-local path in it is masked to its class root, counted, and reported on stderr with its line
@@ -1499,17 +1486,17 @@ can fix what you just wrote. Refusing the original instead would strand the enri
 else's leak, and preserving it unredacted re-commits that leak into a public issue.
 
 **The acceptance-criteria block is read back before the write, and the split follows redaction's.**
-Per ADR [0288](../../../../.decisions/0288-producers-run-consumer-readers.md) this verb runs the
-criteria format's own registered reader
+A producer runs its consumer's reader, so this verb runs the criteria format's own registered reader
 ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts))
 over the body it has composed and refuses on `15` when the answer is `Malformed`, so a block every
 downstream grader would reject never reaches the board. **The grammar is not restated here or in
-`SKILL.md`** — the module owns it and the refusal quotes the reader's own reason (ADR 0241).
-Two boundaries carry the weight:
+`SKILL.md`** — the module owns it and the refusal quotes the reader's own reason. Two boundaries
+carry the weight:
 
 - **The read runs over the composed body, not over stdin.** The authored region includes what the
   envelope adds, so a heading the template itself demoted is caught. Reading stdin alone would miss
-  exactly the case 0288 §1 names.
+  exactly the case the producer-runs-its-consumer's-reader rule names: the defect the consumer would
+  reject is one the producer's own composition introduced, so only the composed bytes carry it.
 - **It stops above the marker**, on the same asymmetry redaction uses: the preserved original is
   foreign content, and a legacy `##` heading buried in it would otherwise refuse every
   re-enrichment of that issue forever.
@@ -1519,13 +1506,11 @@ criteria block; a verb that demanded one would be a different verb.
 
 ### A stated ordering must be an edge, and `20` is the refusal
 
-ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native
-`blocked_by` graph the one carrier of "do not start this yet", so an ordering that lives only in
-prose produces an issue `build pick` admits and no lane can build: #6663 said verbatim
-"**Blocked. Do not start until #6662 has merged**" over a graph with zero edges, and a build lane
-spent a claim, a read pass and a back-off on it. The founder ruling on
-[#6728](https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763) makes this verb
-fail-closed over it, on the same idiom as `fanout-guard` and `catalog-guard`.
+The native `blocked_by` graph is the one carrier of "do not start this yet", so an ordering that
+lives only in prose produces an issue `build pick` admits and no lane can build: one issue said
+verbatim "**Blocked. Do not start until #N has merged**" over a graph with zero edges, and a build
+lane spent a claim, a read pass and a back-off on it. A founder ruling makes this verb fail-closed
+over it, on the same idiom as `fanout-guard` and `catalog-guard`.
 
 **What counts as a stated ordering.** The scan runs over the **authored region only** — the same
 contract region the criteria reader scans, so the preserved original inside `<details>` and any
@@ -1539,12 +1524,12 @@ only the reword escape on a body that is already correct.
 
 **The phrase must be in the issue's own voice.** A body states its own prerequisite as "Blocked on
 #N"; a bare third-person subject — "it is already blocked on #N", "they depend on #N" — is a report
-about something the body just mentioned, and no edge on *this* issue could clear it. #7238 says
-verbatim "Not folded into #7223: its criteria are scoped to … and it is already blocked on #7035"
-and owns no prerequisite at all. `This work is blocked until #N` is not covered: a named subject
-reads as self-reference.
+about something the body just mentioned, and no edge on *this* issue could clear it. One body said
+verbatim "Not folded into #A: its criteria are scoped to … and it is already blocked on #B" and owns
+no prerequisite at all. `This work is blocked until #N` is not covered: a named subject reads as
+self-reference.
 
-**A `#N` that is a pull request is not a prerequisite here.** ADR 0301 names a blocking PR by the
+**A `#N` that is a pull request is not a prerequisite here.** The graph names a blocking PR by the
 issue its merge closes, and `--blocked-by` refuses a PR on `21`, so reding on one would leave the
 reword escape alone on a body that is often already right — over the 150 most recently created
 issues, 5 of the 6 bodies this gate refused named a PR. The verb reads each number the ordering names
@@ -1604,41 +1589,41 @@ report while printing `enriched`. Re-enrichment is covered above, under the dete
 **Examples**
 
 ```
-$ fabrika triage enrich 4312 < enriched.md
-enriched	4312	0
+$ fabrika triage enrich 7 < enriched.md
+enriched	7	0
 ```
 
 ```
-$ fabrika triage enrich 4290 < enriched.md
+$ fabrika triage enrich 8 < enriched.md
 triage enrich: redacted 1 machine-local path(s) from the preserved original (lines 12).
-enriched	4290	1
+enriched	8	1
 ```
 
 ```
-$ fabrika triage enrich 4318 --epic < pitch.md
-enriched	4318	0
+$ fabrika triage enrich 6 --epic < pitch.md
+enriched	6	0
 ```
 
 ```
-$ fabrika triage enrich 4312 --json < enriched.md
-{"outcome":"enriched","number":4312,"redactions":0,"mode":"rewrite"}
+$ fabrika triage enrich 7 --json < enriched.md
+{"outcome":"enriched","number":7,"redactions":0,"mode":"rewrite"}
 ```
 
 ```
-$ fabrika triage enrich 6663 < enriched.md
-triage enrich: the rewrite states an ordering on #6662 that #6663's live blocked_by graph carries no
-edge for (line 7: "**Blocked. Do not start until #6662 has merged** — it adds the invalidate arm.").
-ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence.
-There is no override: either wire the edge — `fabrika triage apply 6663 --blocked-by 6662` — and
-re-send, or reword the body so it states no ordering it does not own. Nothing was written.
+$ fabrika triage enrich 5 < enriched.md
+triage enrich: the rewrite states an ordering on #4 that #5's live blocked_by graph carries no
+edge for (line 7: "**Blocked. Do not start until #4 has merged** — it adds the invalidate arm.").
+The graph is the one carrier, so a builder reads the edges and never this sentence. There is no
+override: either wire the edge — `fabrika triage apply 5 --blocked-by 4` — and re-send, or reword
+the body so it states no ordering it does not own. Nothing was written.
 $ echo $?
 20
 ```
 
 **Grounding**
 
-- #3019 / #2393 — a verbatim re-emit re-committed a machine-local path into a public issue. Fidelity
-  loses to the leak invariant, and the redaction preserves evidential shape rather than stripping.
+- A verbatim re-emit once re-committed a machine-local path into a public issue. Fidelity loses to
+  the leak invariant, and the redaction preserves evidential shape rather than stripping.
 - v1 split this across `fetch-original.sh` and `patch-body.sh` and left **both** `original.md` and
   `original.redacted.md` on disk, with a code comment as the only thing steering the caller to the
   safe one. A leak invariant enforced by a filename preference is not enforced. Here one operation
@@ -1648,14 +1633,13 @@ $ echo $?
   hit `ARG_MAX` on a large enrichment. Stdin and an in-process envelope remove both.
 - v1's `PATCH` had no read-back, while the skill's own Step 0 names last-write-wins body clobbering
   as the reason its claim exists.
-- Founder ruling #4866 (2026-08-08), option (b) — the re-enrich detector is a verb-written marker
-  rather than envelope-shape inspection, with the issue number bound into it and a self-healing
-  legacy migration. It supersedes the two shape-based detectors this section carried, on evidence
-  from investigation #4896 (map #4891). The wrap-last unification (option (c)) stays on the table as
-  within-brief design for fabrika's `plan-epic` (#4712); if it is adopted later the marker becomes
-  redundant insurance, and nothing here has to be undone.
-- Founder ruling #3909 / §PITCH — lane-entering work becomes pickable only carrying a pitch, and
-  `pitch-guard` scopes **every** triaged `type:epic`. This verb is the group's only body-writing
+- The founder ruling behind the detector — it is a verb-written marker rather than envelope-shape
+  inspection, with the issue number bound into it and a self-healing legacy migration. It supersedes
+  the two shape-based detectors this section carried, on evidence from a prior investigation. A
+  wrap-last unification stays on the table as within-brief design for fabrika's `plan-epic`; if it
+  is adopted later the marker becomes redundant insurance, and nothing here has to be undone.
+- The §PITCH ruling — lane-entering work becomes pickable only carrying a pitch, and `pitch-guard`
+  scopes **every** triaged `type:epic`. This verb is the group's only body-writing
   verb, so `--epic` reading the pitch on stdin is the epic's one path to that section; an earlier
   revision read no stdin here, which required a section it left no way to write.
 
@@ -1666,10 +1650,10 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
-fabrika triage apply 4312 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
-fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
-fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 6662
+fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47
+fabrika triage apply 7 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
+fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
+fabrika triage apply 5 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 4
 ```
 
 **Inputs**
@@ -1689,12 +1673,11 @@ fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 -
 
 ### `--blocked-by` — the one triage route to the dependency graph
 
-ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native
-`blocked_by` graph the one carrier of "do not start this yet", and until this flag no triage verb
-could write one: `map ticket` was `addBlockedBy`'s only caller, and only for a wayfinding map's own
-tickets. So a triager filing an ordered slice set had the graph API one import away and no sanctioned
-way to reach it, and wrote the ordering as prose — [#6728](https://github.com/kamp-us/phoenix/issues/6728),
-ruled at [this comment](https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763).
+The native `blocked_by` graph is the one carrier of "do not start this yet", and until this flag no
+triage verb could write one: `map ticket` was `addBlockedBy`'s only caller, and only for a wayfinding
+map's own tickets. So a triager filing an ordered slice set had the graph API one import away and no
+sanctioned way to reach it, and wrote the ordering as prose — which is the failure a founder ruling
+closed by adding this flag.
 
 Three properties, each a refusal rather than a hope:
 
@@ -1715,7 +1698,7 @@ Three properties, each a refusal rather than a hope:
 
 **A target that is a pull request is refused on `21`, and the message says where the edge belongs.**
 `GET /repos/{o}/{r}/issues/<n>` serves pull requests — a PR number answers 200 with an `id` — so one
-resolves `Present` and the proven-absent `7` arm above can never fire for it. ADR 0301 already rules
+resolves `Present` and the proven-absent `7` arm above can never fire for it. The graph already rules
 the case: *a blocking pull request is named in the graph by the issue its merge closes*, so pass that
 issue's number. Its own seat rather than `7`'s, because "no such issue" is false about a number the
 caller is looking at.
@@ -1736,11 +1719,11 @@ is refused: `ready-for:agent` promises a builder can pick the issue up cold, and
 the promise is made of. The refusal names the reader's own reason and routes by arm — a `Malformed`
 block goes to `triage repair-criteria`, an `Absent` one has nothing to repair mechanically and goes
 back through `enrich`. Stamping over it instead defers the discovery to `review criteria`, after a
-branch, a build, a push, a PR and a CI run are spent (kamp-us/demlik#4 and its burned PR #12;
-[#6025](https://github.com/kamp-us/phoenix/issues/6025)).
+branch, a build, a push, a PR and a CI run are spent — one adopting repo burned exactly that
+sequence on a stamped issue whose block was absent.
 
 **`--type epic` is exempt, and the exemption is load-bearing.** A triaged epic carries a `## Pitch`
-and gets its criteria later, per child, from the plan ledger — #5979 and #5817 are both
+and gets its criteria later, per child, from the plan ledger — live epics sit at
 `type:epic status:triaged ready-for:agent` over a body with no block — so a blanket refusal would
 make an epic unstampable. `--ready-for human` is unaffected on every type: the promise the block
 backs is the one made to an agent.
@@ -1770,9 +1753,9 @@ reports the requested classification as the landed one.
 
 ### The owned facets — what `apply` may remove
 
-Closed input enums fix the *write*. They do not fix the *delete*, and #4285's actual mechanism was a
-delete: `p2` was removed because the priority facet owned `/^p\d+$/` and `p2` was not in the keep
-set. So the ownership rule is stated here rather than left for an implementer to invent:
+Closed input enums fix the *write*. They do not fix the *delete*, and that incident's actual
+mechanism was a delete: `p2` was removed because the priority facet owned `/^p\d+$/` and `p2` was not
+in the keep set. So the ownership rule is stated here rather than left for an implementer to invent:
 
 | Facet | Owned | Kept |
 |---|---|---|
@@ -1789,9 +1772,9 @@ business, and a reconcile that removes what it does not own is a silent data los
 
 **The milestone is a facet, and it was missing.** The lane row cleared a lane label when `--home` was
 given, but nothing cleared a milestone when `--lane` was given, and the read-back asserted only that
-the home was present. That combination lands a state **ADR 0208 explicitly bans**: a milestone on a
-`wayfinder:backlog` or `axis:pipeline-hardening` item. The verb could produce a banned state and read
-it back as correct. With the facet and the `milestone is null` assertion, `--lane` clears the
+the home was present. That combination lands the state the home rule explicitly bans: a milestone on
+a lane-exempt item. The verb could produce a banned state and read it back as correct. With the
+facet and the `milestone is null` assertion, `--lane` clears the
 milestone and proves it cleared.
 
 **Because `--priority` is a closed enum, the priority facet's owned pattern can never be wider than
@@ -1816,27 +1799,28 @@ This matters because the add-labels endpoint **creates an unknown label rather t
 `POST /repos/{owner}/{repo}/issues/{n}/labels` was measured against the live API on 2026-07-26: it
 returns HTTP 200, and the label materialises **repo-wide** at grey `ededed` with a null description.
 The measurement is recorded in `claude-plugins/kampus-pipeline/skills/doctor/doctor.sh`. That is the
-mechanism behind **#4285** — v1's `apply-triage` not validating `--p`, so a bare `1` is applied as a
-literal label and reported as success — as observed on #4282. A closed enum stops a malformed
-*input*; only a vocabulary check stops a well-formed input from minting a label in a repo that was
-never bootstrapped.
+mechanism behind the incident this precondition exists for — v1's `apply-triage` not validating
+`--p`, so a bare `1` is applied as a literal label and reported as success. A closed enum stops a
+malformed *input*; only a vocabulary check stops a well-formed input from minting a label in a repo
+that was never bootstrapped.
 
 **The endpoint is named because the alternative fails differently.** `gh issue edit --add-label`
 rejects an unknown label client-side, so an implementer who reached for it would find this
 precondition redundant and drop it — and the verb would start minting labels the moment it moved to
-the REST call. (ADR 0059 states the opposite, that the endpoint 422s on an unknown label. The
-measurement above is the ground truth used here; the contradiction is filed as #4834.)
+the REST call. (An older decision record states the opposite, that the endpoint 422s on an unknown
+label. The measurement above is the ground truth used here, and the contradiction is filed as its
+own ticket.)
 
 (At authoring time `ready-for:human`, `ready-for:agent` and `closed-by-triage` were verified present
-in `kamp-us/phoenix` with audience-only descriptions. The check exists for the repo-agnostic case and
-for drift, not because they are currently absent.)
+in the home repository with audience-only descriptions. The check exists for the repo-agnostic case
+and for drift, not because they are currently absent.)
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | a label this invocation would write does not exist in the repository, the issue is closed, a `--blocked-by` target is **proven absent (404)**, or `--blocked-by` names this issue itself — nothing written |
-| `21` | a `--blocked-by` target is a **pull request** — pass the issue its merge closes (ADR 0301); nothing written |
+| `21` | a `--blocked-by` target is a **pull request** — pass the issue its merge closes; nothing written |
 | `8` | a label, milestone or `blocked_by` edge write failed — UNKNOWN which changes landed |
 | `9` | the writes landed but the read-back does not show the required end state, or a requested `blocked_by` edge is absent from the edge read-back |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
@@ -1858,7 +1842,7 @@ stamp.
 | `triage apply: --lane must be wayfinder:backlog or axis:pipeline-hardening — got "<v>".` | 10 | refusal |
 | `triage apply: milestone <n> is not an open milestone in <repo>.` | 10 | refusal |
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
-| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
+| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
 | `triage apply: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage apply: issue #<n> is already closed.` | 7 | refusal |
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -1894,68 +1878,68 @@ failure is `11` and never a silent pass.
 **Examples**
 
 ```
-$ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
-triaged	4312	bug	p2	agent	47	
+$ fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47
+triaged	7	bug	p2	agent	47	
 ```
 
 ```
-$ fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 6662
-triage apply: scanned 34 labels in kamp-us/phoenix.
-triage apply: scanned 6 open milestones in kamp-us/phoenix.
-triage apply: read back #6663 blocked_by #6662.
-triaged	6663	bug	p1	agent	47	#6662
+$ fabrika triage apply 5 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 4
+triage apply: scanned 34 labels in <owner>/<repo>.
+triage apply: scanned 6 open milestones in <owner>/<repo>.
+triage apply: read back #5 blocked_by #4.
+triaged	5	bug	p1	agent	47	#4
 ```
 
 ```
-$ fabrika triage apply 7283 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 7271
-triage apply: --blocked-by 7271 names a pull request, not an issue — ADR 0301: a blocking pull
-request is named in the graph by the issue its merge closes, so pass that issue's number instead.
+$ fabrika triage apply 3 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 2
+triage apply: --blocked-by 2 names a pull request, not an issue — a blocking pull request is
+named in the graph by the issue its merge closes, so pass that issue's number instead.
 No edge was written.
 $ echo $?
 21
 ```
 
 ```
-$ fabrika triage apply 4312 --type bug --priority 1 --ready-for agent --home 47
+$ fabrika triage apply 7 --type bug --priority 1 --ready-for agent --home 47
 triage apply: --priority must be one of p0, p1, p2 — got "1". Refusing to apply it as a label.
 $ echo $?
 10
 ```
 
 ```
-$ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent
+$ fabrika triage apply 7 --type bug --priority p2 --ready-for agent
 triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.
 $ echo $?
 1
 ```
 
 ```
-$ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --json
-{"outcome":"triaged","number":4312,"type":"bug","priority":"p2","readyFor":"agent","home":47,"removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:bug","p2","status:triaged","ready-for:agent"],"milestone":47}}
+$ fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47 --json
+{"outcome":"triaged","number":7,"type":"bug","priority":"p2","readyFor":"agent","home":47,"removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:bug","p2","status:triaged","ready-for:agent"],"milestone":47}}
 ```
 
 ```
-$ fabrika triage apply 4290 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening --json
-{"outcome":"triaged","number":4290,"type":"chore","priority":"p2","readyFor":"agent","home":"axis:pipeline-hardening","removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:chore","p2","status:triaged","ready-for:agent","axis:pipeline-hardening"],"milestone":null}}
+$ fabrika triage apply 8 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening --json
+{"outcome":"triaged","number":8,"type":"chore","priority":"p2","readyFor":"agent","home":"axis:pipeline-hardening","removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:chore","p2","status:triaged","ready-for:agent","axis:pipeline-hardening"],"milestone":null}}
 ```
 
 **Grounding**
 
-- **#4285** — v1's `apply-triage.sh` passes `--p` through as a free string, and the priority facet
-  *owns* only `/^p\d+$/`. Running `--p 1` mints a literal label `1`, supersedes the real `p2` because
-  `p2` is owned and not in the keep set, and leaves the issue reading fully triaged **with no
-  priority at all** — while the verb prints a success line indistinguishable from a correct run
-  (observed on #4282). The closed enums and the positive read-back are that incident, from both ends.
+- v1's `apply-triage.sh` passes `--p` through as a free string, and the priority facet *owns* only
+  `/^p\d+$/`. Running `--p 1` mints a literal label `1`, supersedes the real `p2` because `p2` is
+  owned and not in the keep set, and leaves the issue reading fully triaged **with no priority at
+  all** — while the verb prints a success line indistinguishable from a correct run. The closed
+  enums and the positive read-back are that incident, from both ends.
 - v1's tracker read-back does `const landed = landedStatus ?? status` — when the read finds no status
   label it **reports the requested one as landed**, and the type and priority labels are never
   verified at all. A read-back that falls back to the request is not a read-back.
-- **#4780** — `status:triaged` states readiness, `ready-for:` states audience; a run that emits the
-  first without the second is incomplete. Making it a required enum is what makes that structural.
-- #4693 — an authoring brief left in the builder's candidate pool is the failure `ready-for:human`
-  exists to prevent.
-- ADR 0202 / 0208 — home or standing lane, never both, never neither, and **never a milestone on a
-  lane item**. The first half is enforced as a required, mutually exclusive input; the second is the
-  milestone facet and the `milestone is null` assertion above.
+- `status:triaged` states readiness, `ready-for:` states audience; a run that emits the first
+  without the second is incomplete. Making it a required enum is what makes that structural.
+- An authoring brief left in the builder's candidate pool is the failure `ready-for:human` exists to
+  prevent.
+- Home or standing lane, never both, never neither, and **never a milestone on a lane item**. The
+  first half is enforced as a required, mutually exclusive input; the second is the milestone facet
+  and the `milestone is null` assertion above.
 - v1's `--status <stage>` flag is documented in its SKILL.md and **does not exist** in its script,
   which drops every argument past `$3` — so `needs-info`, one of three mandated outcomes, was
   unreachable. That outcome is `triage park` here, a first-class verb.
@@ -1967,7 +1951,7 @@ $ fabrika triage apply 4290 --type chore --priority p2 --ready-for agent --lane 
 **Invocation**
 
 ```
-fabrika triage park 4312 [--token <claim-token>] [--repo <owner/name>] [--json]
+fabrika triage park 7 [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The questions arrive on **stdin**.
@@ -2046,7 +2030,7 @@ it.
 | `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
+| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
 | `triage park: the questions landed but the label swap failed: <reason> — #<n> carries the questions and may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
@@ -2065,13 +2049,13 @@ whoever answers swaps the labels back.
 **Examples**
 
 ```
-$ fabrika triage park 4290 < questions.md
-parked	4290	https://github.com/kamp-us/phoenix/issues/4290#issuecomment-5154891644
+$ fabrika triage park 8 < questions.md
+parked	8	https://github.com/<owner>/<repo>/issues/8#issuecomment-5154891644
 ```
 
 ```
-$ fabrika triage park 4290 --json < questions.md
-{"outcome":"parked","number":4290,"commentUrl":"https://github.com/kamp-us/phoenix/issues/4290#issuecomment-5154891644","removed":["status:needs-triage"]}
+$ fabrika triage park 8 --json < questions.md
+{"outcome":"parked","number":8,"commentUrl":"https://github.com/<owner>/<repo>/issues/8#issuecomment-5154891644","removed":["status:needs-triage"]}
 ```
 
 **Grounding**
@@ -2088,7 +2072,7 @@ $ fabrika triage park 4290 --json < questions.md
 **Invocation**
 
 ```
-fabrika triage kill 4312 --confirm [--duplicate-of <n>] [--token <claim-token>] [--repo <owner/name>] [--json]
+fabrika triage kill 7 --confirm [--duplicate-of <n>] [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The reason arrives on **stdin**.
@@ -2098,7 +2082,7 @@ The reason arrives on **stdin**.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the issue to close not-planned |
-| `--confirm` | boolean | no | `false` | assert that the confirmation step ADR 0159 requires has been performed — salvage was attempted and this filing is genuinely unsalvageable or moves nothing forward. Its absence is a **refusal on `13`**, not a usage error |
+| `--confirm` | boolean | no | `false` | assert that the confirmation step has been performed — salvage was attempted and this filing is genuinely unsalvageable or moves nothing forward. Its absence is a **refusal on `13`**, not a usage error |
 | `--duplicate-of` | integer | no | absent | the surviving issue; this issue's content is folded into it before closing |
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
@@ -2107,7 +2091,7 @@ The reason arrives on **stdin**.
 
 **`--confirm` is optional at the parser and refused at the verb, and that is not a contradiction —
 it is the point.** A parser-required flag's absence is a usage error, exit `1`, indistinguishable
-from a typo. ADR 0159's confirmation is a *decision*, so its absence must be a proven refusal the
+from a typo. The confirmation is a *decision*, so its absence must be a proven refusal the
 caller can read as one: exit `13`, with a message naming what to do. An earlier revision marked it
 `Required: yes` with `Default: false`, which is incoherent and contradicted its own exit table.
 
@@ -2116,7 +2100,7 @@ caller can read as one: exit `13`, with a message naming what to do. An earlier 
 `number`, `foldedInto` (number or `null`), `redactions` (count masked from the folded body), and
 `provenance` (the value this verb read for itself).
 
-**Two guards, and they are different guards.** ADR 0159 splits the population in two and puts a
+**Two guards, and they are different guards.** The rule splits the population in two and puts a
 distinct protection on each half; a spec that implements one and drops the other has narrowed an
 accepted decision.
 
@@ -2129,15 +2113,14 @@ accepted decision.
    identical refusal. An **unreadable** body is exit `11`, not a `human` verdict: the kill is refused
    either way, but a caller must never be told the issue was measured as human-filed when nothing was
    measured. **`--duplicate-of` is the one exception, and it is conditional rather than merely
-   later** ([#6070's ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454),
-   recorded as ADR 0181's 2026-08-21 amendment): a fold moves the content into an open survivor
-   instead of discarding it, so the protection it exists to give — the report survives somewhere a
-   human will read it — is already discharged. Gating on the flag rather than reordering the test is
+   later**: a fold moves the content into an open survivor instead of discarding it, so the
+   protection it exists to give — the report survives somewhere a human will read it — is already
+   discharged. Gating on the flag rather than reordering the test is
    what keeps `12` ahead of `13` on the non-fold path; a human filing with neither flag still refuses
    on `12`, and one with `--duplicate-of` and no `--confirm` still refuses on `13`.
 2. **An agent signal ⇒ eligible *after confirmation*, and "the confirmation step IS the guard."**
    A human-invoked `/report` also emits the footer, so footer presence alone is **not** licence to
-   close — ADR 0159 reserves a confirmation-free close-sweep as an explicitly re-opened question.
+   close — a confirmation-free close-sweep stays an explicitly re-opened question.
    `--confirm` is that step made structural: without it the verb refuses on exit `13`, so an
    autonomous sweep cannot close on footer presence alone, and the flag is a greppable, auditable act
    rather than a thing the model was supposed to remember.
@@ -2160,7 +2143,7 @@ location, with the leak matcher literally named for comments.
 | `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `12` | refused: the issue is human-filed — no agent footer and no operator author — and no `--duplicate-of` was named (the fold exception, above) |
-| `13` | refused: close-eligible, but `--confirm` was absent (ADR 0159) |
+| `13` | refused: close-eligible, but `--confirm` was absent |
 
 **Errors**
 
@@ -2180,8 +2163,8 @@ location, with the leak matcher literally named for comments.
 | `triage kill: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage kill: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |
-| `triage kill: #<n> is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
-| `triage kill: #<n> is human-filed and would be folded into #<m>, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
+| `triage kill: #<n> is agent-filed and close-eligible, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
+| `triage kill: #<n> is human-filed and would be folded into #<m>, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |
 | `triage kill: the reason comment on #<n> failed: <reason> — #<n> is NOT closed and carries no label, but the fold on #<m> DID land; delete that comment before re-running, or the fold posts twice.` | 8 | refusal |
 | `triage kill: the label step on #<n> failed after <k> of <m> change(s): <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply closed-by-triage by hand and strip any triage status label, or delete the landed comments and re-run.` | 8 | refusal |
@@ -2207,8 +2190,7 @@ read-back asserts `state` is `closed` **and** `state_reason` is `not_planned`, b
 **The label step strips every triage status, through the same reconcile `apply` and `park` write
 through.** A killed issue carrying `status:needs-triage` makes any count over that label that is not
 filtered to open issues over-report the queue, and a kill after an earlier `apply` leaves
-`status:triaged` saying the same false thing
-([#6710](https://github.com/kamp-us/phoenix/issues/6710)). The removals are planned by
+`status:triaged` saying the same false thing. The removals are planned by
 `planReconcile` off a `killedFacets` table naming the **status facet alone**, so the strip and the
 two reconciling exits cannot disagree about which statuses a triage transition owns, and every other
 label — the type, priority, audience and lane the issue was read under — is preserved as the history
@@ -2218,8 +2200,7 @@ asserts the status facet's end state alongside `state`/`state_reason`, because t
 `closed-by-triage` add lands whether or not the removals did — a read-back blind to the labels would
 pass the exact defect this fixes.
 
-**`closed-by-triage` is provenance, and the refusal on its absence stands for a different reason
-(ADR [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)).**
+**`closed-by-triage` is provenance, and the refusal on its absence stands for a different reason.**
 The kill audit's key is the not-planned close itself, so the label no longer carries coverage — it
 records that **triage** was the actor. The exit-`7` refusal on the label's absence is therefore
 **unchanged in behaviour and changed in rationale**: the kill would not be *invisible* (the close is
@@ -2229,8 +2210,7 @@ Two consequences bind this verb. It gains **no** actor flag and **no** courtesy 
 actor's kill does not run this verb and must not carry the label, and it stays auditable through the
 close plus its reason comment. And the two shipped strings above that still read *"invisible to the
 audit"* (the exit-`7` refusal and the exit-`8` label-write failure) are reworded when the v1 audit
-query is re-keyed and paginated ([#4928](https://github.com/kamp-us/phoenix/issues/4928)) — the codes
-and the write order do not move.
+query is re-keyed and paginated — the codes and the write order do not move.
 
 **Scope** — one issue with its body and author login, the repository's label set, plus the surviving
 issue when `--duplicate-of` is given.
@@ -2238,27 +2218,27 @@ issue when `--duplicate-of` is given.
 **Examples**
 
 ```
-$ fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md
-killed	4312	4290
+$ fabrika triage kill 7 --confirm --duplicate-of 8 < reason.md
+killed	7	8
 ```
 
 ```
-$ fabrika triage kill 4290 --confirm < reason.md
-triage kill: #4290 is human-filed — refusing to close it. Park it with questions instead.
+$ fabrika triage kill 8 --confirm < reason.md
+triage kill: #8 is human-filed — refusing to close it. Park it with questions instead.
 $ echo $?
 12
 ```
 
 ```
-$ fabrika triage kill 4312 < reason.md
-triage kill: #4312 is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.
+$ fabrika triage kill 7 < reason.md
+triage kill: #7 is agent-filed and close-eligible, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.
 $ echo $?
 13
 ```
 
 ```
-$ fabrika triage kill 4312 --confirm --json < reason.md
-{"outcome":"killed","number":4312,"foldedInto":null,"redactions":0,"provenance":"agent"}
+$ fabrika triage kill 7 --confirm --json < reason.md
+{"outcome":"killed","number":7,"foldedInto":null,"redactions":0,"provenance":"agent"}
 ```
 
 **Grounding**
@@ -2268,18 +2248,16 @@ $ fabrika triage kill 4312 --confirm --json < reason.md
 - v1 `fetch-duplicate-body.sh:25` → `post-duplicate-comment.sh:23` copies a body verbatim into a
   public comment with no leak pass, while `fetch-original.sh:30` redacts on the other path. One
   emitter, always redacting, removes the asymmetry.
-- ADR 0159 / v1 Step 5 — human-filed issues are never auto-closed. v1 stated it in 48 lines of prose
-  and computed it nowhere. The #4619 ruling narrows *who counts as human-filed*, not the protection:
-  a footerless filing from a non-operator is as protected as it ever was. The #6070 ruling narrows
-  the protection itself, on one path only — a `--duplicate-of` fold, which preserves the content in
-  an open survivor rather than discarding it.
+- v1 Step 5 — human-filed issues are never auto-closed. v1 stated it in 48 lines of prose
+  and computed it nowhere. The operator-set ruling narrows *who counts as human-filed*, not the
+  protection: a footerless filing from a non-operator is as protected as it ever was. The fold
+  ruling narrows the protection itself, on one path only — a `--duplicate-of` fold, which preserves
+  the content in an open survivor rather than discarding it.
 - v1 `audit-kills.sh` — the compensating control for the whole kill path — reads one unpaginated
   page, so it goes blind past 30 kills with no truncation signal, and it keys on the label, so it
-  cannot see a kill any other actor executed (ADR
-  [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)
-  re-keys it onto the close). This spec does not re-mint that verb; the audit belongs to a board
-  surface, and the fail-closed write order above is what makes a kill auditable at the moment it
-  happens.
+  cannot see a kill any other actor executed (the audit is re-keyed onto the close itself). This
+  spec does not re-mint that verb; the audit belongs to a board surface, and the fail-closed write
+  order above is what makes a kill auditable at the moment it happens.
 
 ---
 
@@ -2288,7 +2266,7 @@ $ fabrika triage kill 4312 --confirm --json < reason.md
 **Invocation**
 
 ```
-fabrika report dedup --query "sozluk definition editor loses focus" --exclude 4312
+fabrika report dedup --query "definition editor loses focus" --exclude 7
 ```
 
 **Input**
@@ -2319,14 +2297,14 @@ that carried too few distinctive tokens to compare at all.
 **Examples**
 
 ```
-$ fabrika report dedup --query "definition editor loses focus after an entry is saved" --exclude 4312
+$ fabrika report dedup --query "definition editor loses focus after an entry is saved" --exclude 7
 none
 ```
 
 ```
 $ fabrika report dedup --query "definition editor loses focus after an entry is saved"
 candidates
-4312	queue	3	Sozluk definition editor loses focus after an entry is saved
+7	queue	3	Definition editor loses focus after an entry is saved
 ```
 
 The pair is the point: the same query returns the issue itself without `--exclude`, and a proven

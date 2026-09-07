@@ -24,6 +24,9 @@ import type {TableRow} from "../table/row.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {pageRenderers} from "./renderers.tsx";
 
+/** The table over a socket that answers no call: this file judges mounting, never a spell. */
+const renderers = pageRenderers(() => Effect.never);
+
 installDomShims();
 
 const counterProcess = ProcessId.make("counter");
@@ -94,11 +97,11 @@ const counterRow: TableRow = {
 	stateSummary: {lifecycle: "running", revision: 1},
 };
 
-const live = <S,>(state: S): ProcessView<S> => ({
+const live = <S,>(state: S, revision = 1): ProcessView<S> => ({
 	_tag: "Live",
 	processId: counterProcess,
 	lifecycle: "running",
-	revision: 1,
+	revision,
 	state,
 });
 
@@ -117,9 +120,14 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly keys?: PrefixTable | null;
 	/** When this socket ends. The default never does, which is what every claim but the drop wants. */
 	readonly closed?: Effect.Effect<Socket.SocketError>;
+	/**
+	 * The revision the shell's first snapshot carries. `0` is a kernel whose shell has not committed
+	 * anything yet, which is every freshly spawned one (`../process/Processes.ts`).
+	 */
+	readonly revision?: number;
 }) {
 	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(
-		live(options?.state ?? twoWindowDesk()),
+		live(options?.state ?? twoWindowDesk(), options?.revision),
 	);
 	const counter = yield* SubscriptionRef.make<ProcessView<unknown>>(live({count: 7}));
 	const attaches: Array<ProcessId> = [];
@@ -134,6 +142,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	const page: PageAttachment = {
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
 		programs: Stream.succeed(options?.programs ?? catalog),
+		call: () => Effect.never,
 		keys:
 			options?.keys === null ? Stream.never : Stream.succeed(options?.keys ?? defaultPrefixTable),
 		attachProcess: ((processId: ProcessId) =>
@@ -145,13 +154,20 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 		closed: options?.closed ?? Effect.never,
 		readShell: (() => SubscriptionRef.changes(desk)) as PageAttachment["readShell"],
 	};
+	// The kernel behind the socket, as far as a key press is concerned: it folds the Msg and its
+	// acknowledgement carries the state that followed, which is where the page reads the answer to
+	// its own key (#8274, `../shell/transport/wire.ts`).
+	let held = options?.state ?? twoWindowDesk();
+	let revision = 0;
 	const shell: AttachedProcess<unknown, ShellMsg> = {
 		processId: ProcessId.make("shell"),
 		readProcess: SubscriptionRef.changes(desk),
 		dispatch: (msg) =>
 			Effect.sync(() => {
 				sent.push(msg);
-				return {_tag: "Delivered" as const};
+				held = applyMsg(defaultPrefixTable, held, msg)[0];
+				revision += 1;
+				return {_tag: "Delivered" as const, view: {revision, state: held}};
 			}),
 	};
 	return {page, shell, attaches, sent} satisfies Scripted;
@@ -183,7 +199,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -205,6 +221,35 @@ describe("the attached desk", () => {
 	);
 
 	it.effect(
+		"renders a kernel whose shell has committed nothing yet, whose first snapshot is revision 0",
+		() =>
+			Effect.gen(function* () {
+				// The high-water mark is "nothing seen yet", not `0`: a freshly spawned shell sits at
+				// revision 0 until a row exists to commit against, so a zero sentinel drops the only
+				// snapshot the page is ever sent and leaves the desk on its placeholder (#8274).
+				const app = yield* scripted({revision: 0});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={renderers}
+						reducedMotion={true}
+						refusal={null}
+					/>,
+				);
+				yield* settle;
+
+				assert.isNull(screen.queryByText("Attaching to the Tuval kernel…"));
+				assert.deepStrictEqual(
+					screen
+						.getAllByRole("region", {name: /^Window /})
+						.map((node) => node.getAttribute("data-window-id")),
+					["window-1", "window-2"],
+				);
+			}),
+	);
+
+	it.effect(
 		"offers every program the kernel sent, by id and label, instead of the empty-section message",
 		() =>
 			Effect.gen(function* () {
@@ -213,7 +258,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -247,7 +292,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -272,7 +317,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -306,7 +351,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -332,7 +377,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -342,6 +387,9 @@ describe("the attached desk", () => {
 				act(() => {
 					document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
 				});
+				// The key reaches the picker on the kernel's answer, so the press is one hop from the
+				// choice it makes (#8274).
+				yield* settle;
 				const chosen = app.sent.find((msg) => msg.type === "window.open");
 				assert.deepStrictEqual(chosen, {
 					type: "window.open",
@@ -374,7 +422,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -402,7 +450,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -433,7 +481,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={app.page}
 					shell={app.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal={null}
 				/>,
@@ -456,7 +504,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={app.page}
 					shell={app.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal="the kernel refused or did not answer 30 attempt(s)."
 				/>,
@@ -479,7 +527,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={first.page}
 					shell={first.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal={null}
 				/>,
@@ -492,7 +540,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={second.page}
 					shell={second.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal={null}
 				/>,

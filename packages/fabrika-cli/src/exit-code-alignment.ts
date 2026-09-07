@@ -16,13 +16,13 @@
  *     the base's occupied seats from the registry's exports. That is the direction that bit:
  *     `triage`'s `HUMAN_FILED` had to be re-seated `12` because `11` was already
  *     `PRECONDITION_UNKNOWN` upstream, and it was a human reading both files side by side who caught
- *     it (#4924).
+ *     it.
  *
  * Not every group aligns. `wire` allocates `3`-`6` for entirely different facts and is right to —
  * see {@link UNALIGNED_GROUPS}, which lists it rather than omitting it, because an omission is
  * indistinguishable from a group nobody registered.
  *
- * **What the guard scans is the shipped verb registry, not the tables on disk (#5213).** Scoping
+ * **What the guard scans is the shipped verb registry, not the tables on disk.** Scoping
  * the coverage check to directories that hold a `codes.ts` made the group with the loosest exit
  * discipline the one it could not see: `eval` shipped no table, so it was absent from the scan and
  * absent from both registries, and the check stayed green over it. A group is now checked because
@@ -80,7 +80,7 @@ export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SEC
  *
  * The name differs because the meaning is the base's read widened, not renamed: `report file`'s `4`
  * is a body section that is missing or out of order, and `review-ui` seats the same fact about a
- * whole derived document — a capture set's `manifest.json`, or `design-harness.json` at the
+ * whole derived document — a capture set's `manifest.json`, or the declared `uiCapture` at the
  * tier-choice read. Naming the pair is the claim a bare number cannot make.
  */
 export const REVIEW_UI_SEATS: SharedSeats = {...SHARED_SEATS, MALFORMED_DOCUMENT: "BAD_SECTIONS"};
@@ -124,8 +124,8 @@ export const GRILL_SEATS: SharedSeats = {
  * `BAD_SECTIONS` like `build` does, but names `7` `NO_TARGET` (a source issue or a label proven
  * absent — the base's own reading, widened only from *write target* to *named target*) and `10`
  * `CLASSIFIED` rather than the `ZERO_SCOPE` / `OFF_VOCABULARY` aliases the eight-seat maps key on.
- * `10` is reached rather than held empty: ADR 0246 forbids this group writing board state, and `10`
- * is that prohibition made mechanical against a classifying `--title`. The private band is `12`-`18`.
+ * `10` is reached rather than held empty: this group may not write board state, and `10` is that
+ * prohibition made mechanical against a classifying `--title`. The private band is `12`-`18`.
  */
 export const GRADUATE_SEATS: SharedSeats = {
 	EMPTY_STDIN: "EMPTY_STDIN",
@@ -260,7 +260,7 @@ export const GOVERNANCE_SEATS: SharedSeats = SHARED_SEATS;
  * proven — a failed write, a mismatched read-back, an off-vocabulary value, a precondition that could
  * not be read. `7` is deliberately **not** claimed and not held as a gap: no verb here judges over a
  * corpus, so it has no vacuous pass to prevent, and an empty or absent doc directory is a fact it
- * reports at exit `0` (#5254). The seats are imported from `build`, which re-exports the base's
+ * reports at exit `0`. The seats are imported from `build`, which re-exports the base's
  * values unchanged and already carries `OFF_VOCABULARY` under that name.
  */
 export const PATTERN_SEATS: SharedSeats = {
@@ -278,9 +278,9 @@ export const PATTERN_SEATS: SharedSeats = {
  * (`MALFORMED_RECORD`, the `review-ui` whole-record widening of the section seat), the append that
  * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
  * (`LANE_UNREADABLE`). `lane claim` adds the fifth: it posts a marker and reads it back, so alone in
- * this group it can establish *the write landed and the read-back contradicts it* (`MARKER_READBACK`,
- * #5761). The private band runs `12`-`39`, skipping `27` and `28` because the base already speaks for
- * both.
+ * this group it can establish *the write landed and the read-back contradicts it*
+ * (`MARKER_READBACK`). The private band runs `12`-`39`, skipping `27` and `28` because the base
+ * already speaks for both.
  */
 export const LANE_SEATS: SharedSeats = {
 	MALFORMED_RECORD: "BAD_SECTIONS",
@@ -326,7 +326,8 @@ export const CI_SEATS: SharedSeats = {
  *
  * A guard establishes almost nothing the base's table speaks about — it writes nothing, composes no
  * body, reads no stdin. What it does establish is the base's two read-shaped facts: the scope it was
- * pointed at is proven empty (`ZERO_SCOPE`, ADR 0092's floor), and a read the verdict rests on failed
+ * pointed at is proven empty (`ZERO_SCOPE`, the fail-closed floor every guard sits on), and a read
+ * the verdict rests on failed
  * so nothing is proven (`PRECONDITION_UNKNOWN`). Its one private seat, `12` `VIOLATION`, is the
  * verdict the whole group exists for and the base has no word for at all.
  */
@@ -343,7 +344,7 @@ export const GUARD_SEATS: SharedSeats = {
  * own reading, an issue proven absent or proven not to be a `type:decision` — rather than the
  * `ZERO_SCOPE` widening, because both verbs address exactly one named issue and never a scope. It
  * seats `4` under its own name, `review-ui`'s idiom: the fact is the base's — a body whose sections
- * do not hold up — and the name says which section `decision rule` reads (#6734). Its table says in
+ * do not hold up — and the name says which section `decision rule` reads. Its table says in
  * full why the other four base seats are unreachable here.
  */
 export const DECISION_SEATS: SharedSeats = {
@@ -437,7 +438,7 @@ export const UNALIGNED_GROUPS: Readonly<Record<string, string>> = {
  * still unchecked.
  *
  * **Empty is the goal state, and it is where this stands: `adr` and `spend` were its only two
- * entries and both now ship a table (#5294).** The registry stays because it is what lets
+ * entries and both now ship a table.** The registry stays because it is what lets
  * {@link coverageGaps} treat an untabled group as the failure it is instead of the silence that hid
  * `eval` — a future group that ships before its table is recorded here with the issue tracking it,
  * never left out. An entry is an admission, never an exemption: nothing here is a decision that a
@@ -468,7 +469,7 @@ export interface CoverageGaps {
 	readonly tableMissing: readonly string[];
 }
 
-/** A scan that had nothing to scan, so its all-clear would mean nothing (ADR 0092). */
+/** A scan that had nothing to scan, so its all-clear would mean nothing. */
 export class ZeroCoverageScope extends Error {}
 
 /**
@@ -478,19 +479,19 @@ export class ZeroCoverageScope extends Error {}
  * Takes the registered names rather than importing the registry so this module stays loadable
  * without constructing the whole CLI; the caller passes `registeredGroups.map((g) => g.name)`.
  *
- * Throws on an empty scan on either side. An all-clear derived from nothing is the vacuous pass ADR
- * 0092 forbids, and it is the shape that would return here first: a registry that failed to load
- * would report zero groups and therefore zero gaps.
+ * Throws on an empty scan on either side. An all-clear derived from nothing is a vacuous pass — a
+ * scan over nothing must red, never pass — and it is the shape that would return here first: a
+ * registry that failed to load would report zero groups and therefore zero gaps.
  */
 export const coverageGaps = (input: {
 	readonly registered: readonly string[];
 	readonly onDisk: readonly string[];
 }): CoverageGaps => {
 	if (input.registered.length === 0) {
-		throw new ZeroCoverageScope("no verb groups were registered — nothing to check (ADR 0092)");
+		throw new ZeroCoverageScope("no verb groups were registered — nothing to check");
 	}
 	if (input.onDisk.length === 0) {
-		throw new ZeroCoverageScope("no `<group>/codes.ts` was found on disk (ADR 0092)");
+		throw new ZeroCoverageScope("no `<group>/codes.ts` was found on disk");
 	}
 
 	const registered = new Set(input.registered);
@@ -594,7 +595,7 @@ export const checkAlignment = (
 /**
  * The `<group>/codes.ts` tables that actually exist on disk — one of {@link coverageGaps}'s two
  * inputs, and on its own never the scan's scope: a group with no table is exactly what this read
- * cannot see (#5213). Paths resolve physically — reached through any symlinked or relative caller, a
+ * cannot see. Paths resolve physically — reached through any symlinked or relative caller, a
  * logically folded `..` resolves somewhere else entirely.
  */
 export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
@@ -612,7 +613,7 @@ export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
  * A group with a table owes an empty answer here. Reading the module namespaces cannot establish
  * that — an import and a declaration are the same export once the module is loaded — so this reads
  * the source, which is the only place the difference survives. That difference is the whole defect:
- * `adr` shipped a `NO_SUBJECT` in two verb files on two numbers (#5294).
+ * `adr` shipped a `NO_SUBJECT` in two verb files on two numbers.
  *
  * The read is `*-verb.ts` only and shape-based, so a code seated in a non-verb module of the same
  * group is outside what it can see. The whole result is sorted, not each file's share of it —
@@ -650,7 +651,7 @@ const LOCAL_NUMBER = /^(?:export )?const ([A-Za-z_$][\w$]*)\s*=\s*-?\d/gm;
  * Every exit code a verb file seats **itself** rather than naming from its group's table, over the
  * groups that ship a table. That is `report dedup`'s defect: two codes declared in `dedup-verb.ts`,
  * invisible to {@link checkAlignment} because it reads the table's module namespace, and colliding
- * with the base's own `3` and `4` for two years of nobody reading both files at once (#5296).
+ * with the base's own `3` and `4` for two years of nobody reading both files at once.
  *
  * A code is seated here when `refuse(...)` is handed a numeric literal, or a name the same file
  * declares as a number. That is deliberately narrower than {@link verbLocalCodesIn}'s shape-only
@@ -659,12 +660,12 @@ const LOCAL_NUMBER = /^(?:export )?const ([A-Za-z_$][\w$]*)\s*=\s*-?\d/gm;
  * Reading the source is still the only way — an import and a declaration are the same export once
  * the module is loaded.
  *
- * Throws on a scan that read no verb file. An all-clear over nothing is the vacuous pass ADR 0092
- * forbids, and it is the shape a mistyped source root would produce first.
+ * Throws on a scan that read no verb file. An all-clear over nothing is a vacuous pass — a scan over
+ * nothing must red, never pass — and it is the shape a mistyped source root would produce first.
  */
 export const verbSeatedExitCodes = (srcDir: string, groups: readonly string[]): VerbSeatScan => {
 	if (groups.length === 0) {
-		throw new ZeroCoverageScope("no verb group was named — nothing to scan (ADR 0092)");
+		throw new ZeroCoverageScope("no verb group was named — nothing to scan");
 	}
 
 	const root = realpathSync(srcDir);
@@ -685,9 +686,7 @@ export const verbSeatedExitCodes = (srcDir: string, groups: readonly string[]): 
 	}
 
 	if (scanned === 0) {
-		throw new ZeroCoverageScope(
-			`no *-verb.ts was found under ${srcDir} — nothing to scan (ADR 0092)`,
-		);
+		throw new ZeroCoverageScope(`no *-verb.ts was found under ${srcDir} — nothing to scan`);
 	}
 	return {scanned, seated: [...seated].sort()};
 };

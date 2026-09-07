@@ -4,7 +4,7 @@
  *
  * The map is a **fixed path partition** so two runs cannot disagree, and it is **total**: a file the
  * map cannot place is `code`, never dropped. An unclassified file silently excluded from every
- * rubric is a review that never saw it (#4060).
+ * rubric is a review that never saw it.
  */
 
 import {SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
@@ -41,7 +41,7 @@ export const classOf = (path: string): ClassName => {
 	return path.endsWith(".md") ? "doc" : "code";
 };
 
-/** The `self` flag: this diff edits the `review` skill's own text (ADR 0052's BASE-revision fence). */
+/** The `self` flag: this diff edits the `review` skill's own text (the BASE-revision fence). */
 const SELF_ROOT = "claude-plugins/fabrika/skills/review/";
 
 /**
@@ -95,21 +95,29 @@ export const namespacesOf = (result: Partition): ReadonlyArray<string> =>
  *
  * It lives here rather than in a second copy under `ship/` so the two groups partition one map: v1
  * printed the class set from one derivation and hand-copied it into another, and the copy dropped a
- * class on a live PR (#4730). Both `review scope` and `ship scope` print these rows, in this order.
+ * class on a live PR. Both `review scope` and `ship scope` print these rows, in this order.
  *
  * `review scope` printing `ui` is not `review` growing a rendered rubric. It still emits no
  * `review-ui` verdict — {@link namespacesOf} over {@link CLASS_NAMES} is the narrower image
  * `review post` fences on, and that fence is untouched. What the two verbs must agree on is what a
  * file is *and* what the merge gate will require: while only the ship side derived `ui`, a reviewer
  * read its own short set as the whole bar, PASSed, and the gate then refused on a namespace nobody
- * had been told to route (#6664).
+ * had been told to route.
  */
 export const SHIP_CLASS_NAMES = [...CLASS_NAMES, "ui"] as const;
 export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
 
-/** A rendered frontend surface. Its own tests are code, not UI — they render nothing. */
-export const isUiSurface = (path: string): boolean =>
-	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
+/**
+ * A rendered frontend surface. Its own tests are code, not UI — they render nothing.
+ *
+ * `prefixes` is a parameter with no default, exactly as {@link touchesGovernanceRoot}'s `roots` is:
+ * the set is `uiSurfaces` in `.fabrika.jsonc` (`../config/keys/ui-surfaces.ts`), and a compiled-in
+ * source root was one consumer's layout standing in for every repo's — so a second
+ * runnable app raised no `ui` class and its pixels passed every gate unrendered. An empty
+ * list is a repo declaring no rendered surface, and its readers say so out loud.
+ */
+export const isUiSurface = (path: string, prefixes: ReadonlyArray<string>): boolean =>
+	prefixes.some((prefix) => path.startsWith(prefix)) && !/\.(?:test|spec)\.tsx?$/.test(path);
 
 /**
  * The decision corpus's root as this package ships it, trailing slash included so it matches as a
@@ -126,8 +134,8 @@ export const DECISIONS_ROOT = `${SHIPPED_DECISIONS_DIR}/`;
  *
  * `roots` is a parameter with no default, and that is the point. The set is `governedRoots` in
  * `.fabrika.jsonc` (`../config/keys/governed-roots.ts`); a default here would let a caller derive
- * the namespace over phoenix's roots inside a repo that declared its own — one question with two
- * answers, which is what #4730 closed. A caller with no config load in reach passes
+ * the namespace over one repo's roots inside a repo that declared its own — one question with two
+ * answers, which is the defect this closed. A caller with no config load in reach passes
  * {@link SHIPPED_GOVERNED_ROOTS} and is visibly doing so.
  */
 export const touchesGovernanceRoot = (
@@ -146,9 +154,10 @@ export interface ShipPartition {
 export const partitionWithUi = (
 	files: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 ): ShipPartition => {
 	const base = partition(files);
-	const ui = files.filter(isUiSurface).length;
+	const ui = files.filter((file) => isUiSurface(file, uiPrefixes)).length;
 	return {
 		classes: ui === 0 ? base.classes : [...base.classes, {name: "ui" as const, files: ui}],
 		governance: touchesGovernanceRoot(files, roots),
@@ -163,7 +172,7 @@ export const partitionWithUi = (
  * it — a governance-bearing path is already partitioned as `skill` or `doc` or `code`, and the
  * namespace is a second, orthogonal question about the same file. Appending is the only direction
  * this function may move a PR's bar: the `review-*` rows are untouched, so a diff under no
- * governance root requires exactly what it required before (#5199).
+ * governance root requires exactly what it required before.
  */
 export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> => {
 	const classes = result.classes.map((entry) => `review-${entry.name}`);
@@ -176,12 +185,12 @@ export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> =
  *
  * `review-ui` is the whole list, and `governance` is deliberately not on it: a `governance:
  * required` round fires inside the review run and no terminal ends that run with the namespace
- * un-fired (ADR 0293). Routing is the *other* shape — a subject `review` cannot judge at all, whose
+ * un-fired. Routing is the *other* shape — a subject `review` cannot judge at all, whose
  * verdict only the `review-ui` group's own verbs may post.
  *
  * It reads a namespace list rather than a partition so both sides of one lane ask it the same
  * question: `review scope` prints the row a reviewer routes on, and `lane prove` subtracts it from
- * what a `PASS` out of the plain `review` cell has to stand on (#6664).
+ * what a `PASS` out of the plain `review` cell has to stand on.
  */
 export const ROUTED_NAMESPACES: ReadonlyArray<string> = ["review-ui"];
 
@@ -193,7 +202,7 @@ export const routedNamespacesOf = (namespaces: ReadonlyArray<string>): ReadonlyA
  *
  * Wider than the review classes, and additively so: `governance` is a namespace no file class
  * derives, but a namespace `ship gate` cannot require is one that only fires when a session
- * remembers to fire it (#5199).
+ * remembers to fire it.
  */
 export const SHIP_NAMESPACES: ReadonlyArray<string> = [
 	...SHIP_CLASS_NAMES.map((n) => `review-${n}`),
@@ -204,7 +213,7 @@ export const SHIP_NAMESPACES: ReadonlyArray<string> = [
  * The linked issue, from the PR body's first closing keyword.
  *
  * Every inflection of the three keywords is admitted — GitHub auto-closes on all of them, and a body
- * that says `Fixed #4287` links exactly as hard as one that says `Fixes #4287`. What an issueless PR
+ * that says `Fixed #N` links exactly as hard as one that says `Fixes #N`. What an issueless PR
  * *means* is the skill's decision; this only reports it.
  */
 const CLOSING_KEYWORD = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b[ \t]*:?[ \t]*#(\d+)/i;
@@ -222,7 +231,7 @@ export const linkedIssueOf = (body: string): number | null => {
  * An epic tail body carries one closing reference per landed child plus one on the epic itself, at
  * an arbitrary position among them, so a scalar reader there reports whichever child happens to be
  * first and answers "unlinked" of the epic — which is false of the board, since GitHub links all of
- * them (#6797). Callers asking "does this body link #N" ask this one and test membership.
+ * them. Callers asking "does this body link #N" ask this one and test membership.
  */
 export const linkedIssuesOf = (body: string): ReadonlyArray<number> => {
 	const all = new RegExp(CLOSING_KEYWORD.source, "gi");
@@ -239,7 +248,7 @@ export const linkedIssuesOf = (body: string): ReadonlyArray<number> => {
  * It sits here, beside the primitive it wraps, because `ship scope` and `review scope` ask one
  * question of one body. While the `Part of` half lived only under `ship/`, a partial-split PR — the
  * shape `build --partial` emits by contract — was linked to the shipper and issueless to the gate,
- * so the gate's acceptance-criteria step had no issue to grade against (#5446).
+ * so the gate's acceptance-criteria step had no issue to grade against.
  *
  * {@link linkedIssueOf} stays closing-keyword-only. The two kinds are told apart here rather than
  * collapsed into it, because only the closing kind auto-closes on merge.

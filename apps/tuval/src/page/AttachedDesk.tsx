@@ -22,20 +22,42 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
 import type {ProgramId} from "../registry/program.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
+import type {
+	AnyInspectorRenderer,
+	AnyStatusRenderer,
+	DeclaredRenderers,
+	SnapshotProcess,
+} from "../shell/desk/index.ts";
 import {windows} from "../shell/layout/index.ts";
 import type {PickerEntries} from "../shell/picker/browser.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
-import type {AttachEvent, AttachStatus, DeskSource, MountResolver} from "../shell/ui/index.ts";
-import {boundMount, Desk, noRenderer, useDeskAttachment} from "../shell/ui/index.ts";
-import type {AnyWindowRenderer} from "../shell/window/index.ts";
+import type {
+	AttachEvent,
+	AttachStatus,
+	DeskSource,
+	DeskTables,
+	KeyPress,
+	MountResolver,
+} from "../shell/ui/index.ts";
+import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell/ui/index.ts";
+import type {RendererTable} from "../shell/window/index.ts";
 import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
 
 export interface AttachedDeskProps {
 	readonly page: PageAttachment;
 	readonly shell: AttachedProcess<unknown, ShellMsg>;
-	/** One renderer per `RendererRef.ref` — `./renderers.tsx` says why the key is the reference. */
-	readonly renderers: Readonly<Record<string, AnyWindowRenderer>>;
+	/**
+	 * One renderer per `RendererRef.ref` — `./renderers.tsx` says why the key is the reference — or,
+	 * for a module reference the page could not load, the failure in its seat (`./module-renderers.ts`).
+	 */
+	readonly renderers: RendererTable;
+	/**
+	 * The two desk-level renderer tables, keyed the same way. Both default to empty: a page that
+	 * mounts no program's inspector still gets the region, showing why it is empty.
+	 */
+	readonly inspectors?: Readonly<Record<string, AnyInspectorRenderer>>;
+	readonly statuses?: Readonly<Record<string, AnyStatusRenderer>>;
 	readonly reducedMotion: boolean;
 	/**
 	 * Why the page stopped re-attaching, if it has. Set means the desk below is frozen for good and
@@ -111,31 +133,60 @@ const entriesFrom = (
 	})),
 });
 
+const EMPTY_RENDERERS: Readonly<Record<string, never>> = {};
+
 export function AttachedDesk({
 	page,
 	shell,
 	renderers,
+	inspectors = EMPTY_RENDERERS,
+	statuses = EMPTY_RENDERERS,
 	reducedMotion,
 	refusal,
 }: AttachedDeskProps): ReactElement {
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
+	/** The shell process's own revision — the bar's `rev`, read off the same view the snapshot is. */
+	const [revision, setRevision] = useState(0);
 	/** Ids an attach has already been started for; a second window must not open a second socket read. */
 	const asked = useRef(new Set<string>());
+	/**
+	 * The newest shell revision this page has shown, whichever carrier brought it. `null` is "nothing
+	 * seen yet" and is not a revision: a fresh kernel's shell sits at revision 0 until something
+	 * commits a row (`../process/Processes.ts`), so a zero sentinel would drop that first snapshot
+	 * and leave the desk on its placeholder.
+	 */
+	const seen = useRef<number | null>(null);
+	/** How a snapshot reaches the desk. Set while the attachment's source is subscribed. */
+	const deliver = useRef<((revision: number, state: unknown) => void) | null>(null);
+	/**
+	 * This page's stamp on a key press. One prefix per mounted desk plus a counter, because the id
+	 * has to distinguish *this* page's press from a second page's on the same shell (#8274) — the
+	 * kernel echoes it back on `lastPress` and the page reads an answer only under its own.
+	 */
+	const pressMark = useRef(`${Math.random().toString(36).slice(2)}`);
+	const pressCount = useRef(0);
 
 	const source = useCallback<DeskSource>(
 		(emit) => {
 			emit({_tag: "Attached"} satisfies AttachEvent);
+			deliver.current = (revision, state) => {
+				// Newest wins, by the kernel's own revision. The two carriers of a snapshot — the state
+				// pump and the acknowledgement for this page's own dispatch — run on different fibers
+				// and nothing orders them, so the desk takes whichever is newer and ignores the other
+				// (#8274). Monotone and self-correcting: nothing here is a copy that can drift.
+				if (seen.current !== null && revision <= seen.current) return;
+				seen.current = revision;
+				setRevision(revision);
+				emit({_tag: "Snapshot", state} satisfies AttachEvent);
+			};
 			const snapshots = Effect.runFork(
 				Stream.runForEach(shell.readProcess, (view) =>
-					Effect.sync(() =>
-						emit(
-							view._tag === "Live"
-								? {_tag: "Snapshot", state: view.state}
-								: {_tag: "Dropped", reason: "the shell process is gone"},
-						),
-					),
+					Effect.sync(() => {
+						if (view._tag === "Live") deliver.current?.(view.revision, view.state);
+						else emit({_tag: "Dropped", reason: "the shell process is gone"} satisfies AttachEvent);
+					}),
 				),
 			);
 			// The grammar rides the same machine as the snapshot, so a drop keeps both (ADR 0353).
@@ -153,6 +204,7 @@ export function AttachedDesk({
 				),
 			);
 			return () => {
+				deliver.current = null;
 				Effect.runFork(Fiber.interrupt(snapshots));
 				Effect.runFork(Fiber.interrupt(keys));
 				Effect.runFork(Fiber.interrupt(lost));
@@ -169,6 +221,9 @@ export function AttachedDesk({
 	useEffect(() => {
 		asked.current = new Set();
 		setAttached(new Map());
+		// A fresh socket may be a fresh kernel, whose revisions start again from the bottom. Holding
+		// the old high-water mark would make the desk ignore every snapshot the new one sends.
+		seen.current = null;
 	}, [page]);
 
 	useEffect(() => {
@@ -212,6 +267,28 @@ export function AttachedDesk({
 		[shell],
 	);
 
+	// The one key path: send the key, take the kernel's answer off the acknowledgement, and hand the
+	// desk both — the answer to act on and the state it left behind (#8274). A dispatch the socket
+	// dropped answers `ProcessGone`, which reads as `Refused`: nothing is forwarded, and there is no
+	// second copy of the prefix on this page to be left out of step.
+	const press = useCallback<KeyPress>(
+		(key) => {
+			pressCount.current += 1;
+			const pressId = `${pressMark.current}-${pressCount.current}`;
+			return Effect.runPromise(
+				shell.dispatch({type: "keys.press", key, pressId}).pipe(
+					Effect.map((result) => {
+						if (result._tag === "Delivered" && result.view !== undefined) {
+							deliver.current?.(result.view.revision, result.view.state);
+						}
+						return replyOf(pressId, result);
+					}),
+				),
+			);
+		},
+		[shell],
+	);
+
 	const views = desk?.views ?? {};
 	const resolveRenderer = useMemo(() => resolverFromTable(renderers), [renderers]);
 	const resolveMount = useCallback<MountResolver>(
@@ -229,6 +306,9 @@ export function AttachedDesk({
 				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`);
 			}
 			const resolved = resolveRenderer(program.renderer);
+			if (resolved._tag === "RendererUnresolved" && resolved.reason === "module-load-failed") {
+				return noRenderer(id, `this page could not load a renderer module: ${resolved.detail}`);
+			}
 			if (resolved._tag !== "Resolved") {
 				return noRenderer(id, `this page answers to no renderer named ${program.renderer.ref}`);
 			}
@@ -249,6 +329,21 @@ export function AttachedDesk({
 	);
 
 	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
+
+	// The half of a `DeskSnapshot` the shell state does not carry. Everything here is already on the
+	// page for the windows' sake; this is the same two frames read for the desk's own regions.
+	const deskTables = useMemo<DeskTables>(() => {
+		const processes: Record<string, SnapshotProcess> = {};
+		for (const row of rows.values()) processes[row.id] = {programId: row.programId};
+		const programs: Record<string, DeclaredRenderers> = {};
+		for (const program of catalog.values()) {
+			programs[program.programId] = {
+				...(program.inspector === undefined ? {} : {inspector: program.inspector}),
+				...(program.status === undefined ? {} : {status: program.status}),
+			};
+		}
+		return {kernel: {processes: rows.size, revision}, processes, programs, inspectors, statuses};
+	}, [rows, catalog, revision, inspectors, statuses]);
 
 	// The grammar gates the desk beside the snapshot: a surface routing keys over a table nobody sent
 	// it is the thing ADR 0353 took away, so it waits for one exactly as it waits for a desk.
@@ -271,10 +366,13 @@ export function AttachedDesk({
 			<Desk
 				state={desk}
 				dispatch={dispatch}
+				press={press}
 				resolveMount={resolveMount}
 				entries={entries}
 				table={attachment.table}
+				deskTables={deskTables}
 				reducedMotion={reducedMotion}
+				call={page.call}
 			/>
 		</>
 	);

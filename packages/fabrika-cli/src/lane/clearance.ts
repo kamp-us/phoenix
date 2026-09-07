@@ -8,9 +8,9 @@
  *
  * **The grant is an event, never a field.** It used to be written into the task's `clearedRounds`
  * context and read back at replay time, which let a clearance recorded today change how yesterday's
- * `FAIL` routed — it stranded lane 6462's legally-recorded `UNBLOCKED` in a state with no cell for
- * it and bricked every verb on the lane (#6578). Appended, the budget is a fold over the events
- * before each position, so a recorded event keeps the routing it took (ADR 0312).
+ * `FAIL` routed — it stranded a legally-recorded `UNBLOCKED` in a state with no cell for
+ * it and bricked every verb on the lane. Appended, the budget is a fold over the events
+ * before each position, so a recorded event keeps the routing it took.
  *
  * **Set semantics, so a re-run buys nothing.** The append happens only when the log holds no
  * `CLEARED` for that round on that task, which makes reconciling an interrupted grant safe: the

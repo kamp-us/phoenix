@@ -7,15 +7,15 @@ const accepted = (entry: string): boolean => capClearAuthorsKey.decode([entry]).
 
 describe("the entry pattern an editor reds on says what the decoder says", () => {
 	const entries = [
-		"@usirin",
-		"@notusirin",
+		"@ada",
+		"@notada",
 		"@a",
-		"@kamp-us/founders",
-		"@kamp-us",
-		"usirin",
+		"@acme/founders",
+		"@acme",
+		"ada",
 		"@",
-		"@-usirin",
-		"@usirin-",
+		"@-ada",
+		"@ada-",
 		"@two words",
 		"@a/b/c",
 	];

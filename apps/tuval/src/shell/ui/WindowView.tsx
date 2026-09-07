@@ -17,10 +17,11 @@
 
 import type {ReactElement} from "react";
 import type {ShellMsg} from "../core/index.ts";
-import type {PickerEntries} from "../picker/browser.ts";
+import {asPickerView, type PickerEntries} from "../picker/browser.ts";
 import type {ViewState, WindowId} from "../window/index.ts";
+import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import type {WindowMount} from "./mount.ts";
-import {asPickerView, PickerView} from "./PickerView.tsx";
+import {PickerView} from "./PickerView.tsx";
 
 export interface WindowViewProps {
 	readonly windowId: WindowId;
@@ -44,6 +45,20 @@ const titleOf = (mount: WindowMount): string => {
 			return "empty window";
 	}
 };
+
+/**
+ * The renderer's call, made inside the boundary below rather than in `WindowView`'s own render.
+ * `mount.render(mount.host)` is a call, not an element, so making it where the boundary's child is
+ * built would put the throw in the parent's render — above the boundary, where only the desk-level
+ * one catches it, which is the blast radius #8157 is about.
+ */
+function RenderedWindow({
+	mount,
+}: {
+	readonly mount: Extract<WindowMount, {readonly _tag: "Bound"}>;
+}): ReactElement {
+	return <>{mount.render(mount.host)}</>;
+}
 
 export function WindowView({
 	windowId,
@@ -72,7 +87,18 @@ export function WindowView({
 			</header>
 			<div className="tuval-window-body">
 				{mount._tag === "Bound" ? (
-					mount.render(mount.host)
+					// One boundary per window, so a renderer that throws costs the founder this window and
+					// not the desk (#8157). The key is the process's identity and nothing per-render: the
+					// boundary compares keys with `Object.is`, and one that moved on every snapshot would
+					// tear the panel down under the reader (`./Desk.tsx`). A window still bound to the
+					// process that threw recovers on the panel's own button.
+					<ErrorBoundary
+						label={`Process ${mount.host.processId}`}
+						className="tuval-window-boundary"
+						resetKeys={[mount.host.processId]}
+					>
+						<RenderedWindow mount={mount} />
+					</ErrorBoundary>
 				) : mount._tag === "Empty" ? (
 					<PickerView
 						windowId={windowId}

@@ -2,31 +2,31 @@
  * `ship gate` — the verdict conjunction over every required namespace, at one head.
  *
  * Two collapses are designed out at two layers. `--require` **accumulates**: a single-valued parse
- * that keeps the first and drops the rest is #4520, where the gate said enqueueable past a live
- * FAIL. And the affirmative answer carries its own proof — the namespace lines are asserted to cover
- * exactly the distinct required set *before* `satisfied` is printed, because a plausible answer with
- * silently narrowed coverage is that defect's signature.
+ * that keeps the first and drops the rest says enqueueable past a live FAIL. And the affirmative
+ * answer carries its own proof — the namespace lines are asserted to cover exactly the distinct
+ * required set *before* `satisfied` is printed, because a plausible answer with silently narrowed
+ * coverage is that defect's signature.
  *
  * In-force resolution is one derivation, not three tests to keep in sync: head-bound first (a
- * live-head verdict strictly outranks recency, #4189), then by the body's **write stamp** rather
- * than `created_at` (#4200 — a FAIL upserted after a PASS must win), with authorization applied as
- * the ADR 0055 write+ ACL. `absent` and `stale` stay distinct tokens because their remedies differ,
- * and both block: absence-is-refusal is the #3944 law.
+ * live-head verdict strictly outranks recency), then by the body's **write stamp** rather than
+ * `created_at` — a FAIL upserted after a PASS must win — with authorization applied as the write+
+ * ACL. `absent` and `stale` stay distinct tokens because their remedies differ, and both block: an
+ * absent verdict is a refusal, never a pass.
  *
- * **Staleness is the content question, not the head question (ADR 0276).** A verdict whose head has
- * moved survives only while the content it bound is still this head's. `inForce`'s ordering is
+ * **Staleness is the content question, not the head question.** A verdict whose head has moved
+ * survives only while the content it bound is still this head's. `inForce`'s ordering is
  * deliberately *not* widened to match: a content-current verdict at a moved head still loses the
  * head-bound tiebreak, so the widening can only ever let a FAIL win an ordering a PASS used to win —
  * never the reverse.
  *
  * The one caller-asserted input is `--cp`, and it reaches **every** resolution in one run — v1
- * passed it to the gate and not the native fold, and a discharged FAIL stayed in force forever
- * (#4049). The fold living inside this verb is what makes that seam unrepresentable.
+ * passed it to the gate and not the native fold, and a discharged FAIL stayed in force forever.
+ * The fold living inside this verb is what makes that seam unrepresentable.
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  *
- * `routed` is the fifth state and the newest (ADR 0316). It is not a verdict and not a weaker pass:
- * it is a gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
+ * `routed` is the fifth state and the newest. It is not a verdict and not a weaker pass: it is a
+ * gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
  * {@link ROUTABLE} for why exactly one namespace may resolve that way.
  */
@@ -56,7 +56,7 @@ import {
 
 const VERB = "ship gate";
 
-/** The permission levels ADR 0055 counts as an authorized verdict author. */
+/** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "routed";
@@ -67,9 +67,9 @@ export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere"
  *
  * The record exists because `review-ui`'s emit path is *structurally* unable to answer a PR that
  * renders nothing — `render` refuses zero surfaces, `post` requires a capture set — so the class
- * `ship scope` raises off a path test can name a namespace nothing legal could fill (#6376, ADR
- * 0316). No other gate has that shape: `review-code` can PASS a one-line diff, `governance` can
- * PASS a diff that contradicts no ADR. Admitting the record anywhere else would turn a
+ * `ship scope` raises off a path test can name a namespace nothing legal could fill. No other gate
+ * has that shape: `review-code` can PASS a one-line diff, `governance` can PASS a diff that
+ * contradicts no decision record. Admitting the record anywhere else would turn a
  * one-namespace repair into a general "I decline this gate", which is the merge authority a session
  * does not have.
  */
@@ -105,7 +105,7 @@ interface Candidate {
 	readonly namespace: string;
 	readonly polarity: "PASS" | "FAIL" | "ROUTED";
 	readonly sha: string;
-	/** The content the claim binds, or `null` for a carrier that emits none (ADR 0276). */
+	/** The content the claim binds, or `null` for a carrier that emits none. */
 	readonly content: string | null;
 	readonly carrier: Carrier;
 	readonly stamp: string;
@@ -147,13 +147,13 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 		? null
 		: {
 				namespace: advisory.namespace,
-				// ADR 0226 makes the advisory carrier PASS-only. A `[FAIL]` row inside one is an invalid
+				// The advisory carrier is PASS-only. A `[FAIL]` row inside one is an invalid
 				// emission, caught below and reported — never read as a pass.
 				polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
 				sha: advisory.sha,
 				// The §CP advisory withholds a content binding by design: the human-approval half of the
-				// binding question is #3769's, and ADR 0276 carries its answer from there rather than
-				// deciding it here. So an advisory stays head-bound, exactly as before.
+				// binding question is answered where head-binding is ruled, not here. So an advisory
+				// stays head-bound, exactly as before.
 				content: null,
 				carrier: "advisory",
 				stamp: comment.updatedAt,
@@ -166,9 +166,9 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
  *
  * `--require` was caller-asserted end to end — `ship scope` printed `governance` on a
  * governance-root diff and the gate then believed whatever the session typed, so leaving the flag
- * off turned the requirement off and a fabrika-tree PR shipped with no governance verdict at all
- * (#5036). A namespace the diff derives is not the caller's to drop, so it is added here whether or
- * not it was passed: the omission stops being discouraged and becomes unrepresentable.
+ * off turned the requirement off and a governance-root PR shipped with no governance verdict at
+ * all. A namespace the diff derives is not the caller's to drop, so it is added here whether or not
+ * it was passed: the omission stops being discouraged and becomes unrepresentable.
  *
  * The floor is `governance` only. Deriving the `review-*` set here too would be a second answer to
  * what `ship scope` already prints, and widening it is its own decision — the caller's assertion
@@ -217,7 +217,7 @@ const foldedReview = (reviews: ReadonlyArray<ReviewRecord>, sha: string): Candid
 				namespace: "review-code",
 				polarity: latest.state === "APPROVED" ? "PASS" : "FAIL",
 				sha: latest.commitId,
-				// GitHub re-binds its own review objects; that layer is untouched (ADR 0276).
+				// GitHub re-binds its own review objects; that layer is untouched.
 				content: null,
 				carrier: "review-fold",
 				stamp: latest.submittedAt,
@@ -250,7 +250,7 @@ export const runGate = (
 		if (requested.length === 0) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --require is mandatory — a merge gated on zero namespaces is vacuously green (#2765).`,
+				`${VERB}: --require is mandatory — a merge gated on zero namespaces is vacuously green.`,
 			);
 		}
 		const offVocabulary = requested.find((name) => !SHIP_NAMESPACES.includes(name));
@@ -292,14 +292,14 @@ export const runGate = (
 		if (listed.value.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: PR #${pr} has zero changed files — a conjunction over an empty diff proves nothing (ADR 0092).`,
+				`${VERB}: PR #${pr} has zero changed files — a conjunction over an empty diff proves nothing.`,
 				diagnostics,
 			);
 		}
 		const {required, floored} = requiredWithFloor(requested, listed.value, governed.roots);
 		if (floored.length > 0) {
 			diagnostics.push(
-				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).`,
+				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.`,
 			);
 		}
 
@@ -343,7 +343,7 @@ export const runGate = (
 		}
 
 		// The ACL is resolved once per distinct author, and a lookup FAILURE is fail-closed: the
-		// namespace is UNKNOWN, never `absent` (ADR 0055).
+		// namespace is UNKNOWN, never `absent`.
 		const authorized = new Map<string, boolean>();
 		const candidates: Candidate[] = [];
 		for (const comment of commented.value) {
@@ -366,7 +366,7 @@ export const runGate = (
 			if (authorized.get(comment.author) !== true) continue;
 			if (claim.carrier === "advisory" && claim.polarity === "FAIL") {
 				diagnostics.push(
-					`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission (ADR 0226); treated as fail, report it.`,
+					`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.`,
 				);
 			}
 			candidates.push(claim);
@@ -383,7 +383,7 @@ export const runGate = (
 		// which is the whole cost story: the common path — every claim at this head — never touches
 		// git. It also makes the read non-regressive. A checkout that cannot answer leaves
 		// `headDigest` null, `bindToContent` says `Unbindable`, and the namespace resolves `stale` —
-		// the same block this verb gave before ADR 0276, so a git failure can only ever refuse.
+		// the same block a verdict with no content binding gets, so a git failure can only refuse.
 		const contested = winners.some(
 			({winner}) => winner !== null && !prefixMatch(winner.sha, bound) && winner.content !== null,
 		);
@@ -395,7 +395,7 @@ export const runGate = (
 			if (digest !== null && digest._tag === "Ok") headDigest = digest.value;
 			else {
 				diagnostics.push(
-					`${VERB}: a verdict at another head binds content, but this head's digest could not be read — every such namespace resolves stale (ADR 0276).`,
+					`${VERB}: a verdict at another head binds content, but this head's digest could not be read — every such namespace resolves stale.`,
 				);
 			}
 		}
@@ -412,12 +412,12 @@ export const runGate = (
 			}
 			if (binding.via === "content") {
 				diagnostics.push(
-					`${VERB}: ${name}: the verdict at ${winner.sha} binds content ${winner.content}, which is this head's — the head moved, the reviewed content did not (ADR 0276).`,
+					`${VERB}: ${name}: the verdict at ${winner.sha} binds content ${winner.content}, which is this head's — the head moved, the reviewed content did not.`,
 				);
 			}
 			if (winner.polarity === "ROUTED") {
 				diagnostics.push(
-					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent (ADR 0316).`,
+					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent.`,
 				);
 			}
 			return {
@@ -434,14 +434,14 @@ export const runGate = (
 		if (covered.size !== required.length) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: resolved ${covered.size} of ${required.length} required namespaces — refusing to answer over narrowed coverage (#4520).`,
+				`${VERB}: resolved ${covered.size} of ${required.length} required namespaces — refusing to answer over narrowed coverage.`,
 				diagnostics,
 			);
 		}
 
 		// `routed` satisfies beside `pass` because the conjunction asks whether every required gate has
 		// answered, and "this PR is not mine to judge" is an answer — the one the `review-ui` namespace
-		// had no way to give (ADR 0316). It is not a weaker pass: the record is head-bound, ACL-checked
+		// had no way to give. It is not a weaker pass: the record is head-bound, ACL-checked
 		// as any verdict, and admitted for ROUTABLE alone, so no gate whose subject *is* in the diff
 		// can be routed past.
 		const outcome = verdicts.every(

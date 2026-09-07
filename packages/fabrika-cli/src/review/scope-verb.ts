@@ -7,7 +7,7 @@
  * `partitionWithUi` + `shipNamespacesOf`, the same objects the merge gate enforces. The two verbs
  * cannot answer differently about one file list, because there is one answer. While this side
  * partitioned without `ui`, a reviewer on a rendered diff derived `review-code` alone, PASSed, and
- * `ship gate` refused the `review-ui` namespace nobody had routed (#6664).
+ * `ship gate` refused the `review-ui` namespace nobody had routed.
  *
  * The wider set does **not** widen what this gate emits. `review post`'s fence is `namespacesOf` over
  * the three text classes and is untouched, and every derived namespace this skill cannot emit is
@@ -17,24 +17,24 @@
  * The `governance` line reads {@link touchesGovernanceRoot} over this repo's own `governedRoots` —
  * the same derivation `governance scope` prints, over the same declared list, imported rather than
  * recomputed. `harness` is three compiled-in roots and answers a different question, so a reviewer
- * who read it as the governance requirement missed one on every `.decisions/`-only diff (#5607).
+ * who read it as the governance requirement missed one on every decision-corpus-only diff.
  *
  * The refusals are the point: the partition is total over **what was read**, so the verb exists to
  * make sure it is never run over less than everything. A PR GitHub reports as having zero changed
- * files reds on `7` (v1's `class-probe` read 0 files and classified `has-code` exit 0 — #4060), and
- * a git read that comes back empty reds on `13` — either way there is nothing to partition (#3999).
+ * files reds on `7` (v1's `class-probe` read 0 files and classified `has-code` exit 0), and
+ * a git read that comes back empty reds on `13` — either way there is nothing to partition.
  *
  * Empty is the whole of it. This path list IS the scope, so no second count of the same range exists
  * to call it short against, and GitHub's `changed_files` is not one: a disagreement with it is
- * reported and never refused on (#5154 — the reason is at the check below).
+ * reported and never refused on — the reason is at the check below.
  *
  * The file list is read at the **bound commit** (`head.ts`), and the head this verb prints is that
  * same commit. The namespace set is documented as both floor and ceiling, so a list drawn from a
- * different commit than the printed head derives a namespace nobody judged — or drops one (#5117).
+ * different commit than the printed head derives a namespace nobody judged — or drops one.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -87,6 +87,13 @@ export const runScope = (
 		);
 		if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			"which paths raise the ui class is UNKNOWN and this partition would carry an answer nobody derived.",
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -108,29 +115,32 @@ export const runScope = (
 		}
 		// This list IS the scope, so there is no second local count to prove it against — and
 		// GitHub's `changed_files` is not one: a rename git pairs into a single `--name-only` path
-		// while GitHub counts two files, so it is reported below and never refused on (#5154). The
+		// while GitHub counts two files, so it is reported below and never refused on. The
 		// short read git alone establishes — an empty list — still refuses.
 		const files = listed.value;
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared by GitHub`),
 			`${VERB}: governance derived over ${roots.roots.length} root(s) — ${roots.note}.`,
+			surfaces.prefixes.length === 0
+				? noUiSurfaces(VERB)
+				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
 		];
 		if (files.length !== pull.changedFiles) {
 			diagnostics.push(
-				`${VERB}: git and GitHub disagree on #${pr}'s file count (${files.length} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on (#5154).`,
+				`${VERB}: git and GitHub disagree on #${pr}'s file count (${files.length} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on.`,
 			);
 		}
 		if (files.length === 0) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: git reports no changed files for the range ${head.mergeBase}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read (#3999).`,
+				`${VERB}: git reports no changed files for the range ${head.mergeBase}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read.`,
 				diagnostics,
 			);
 		}
 
 		const flags = partition(files);
-		const result = partitionWithUi(files, roots.roots);
+		const result = partitionWithUi(files, roots.roots, surfaces.prefixes);
 		const namespaces = shipNamespacesOf(result);
 		const routed = routedNamespacesOf(namespaces);
 		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";

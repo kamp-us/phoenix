@@ -3,15 +3,15 @@
  *
  * The lane-identity rule lives in `lane.ts`; this verb is where a name that obeys it first comes into
  * existence. Create mode cuts `build/<number>-<slug>-<nonce>` off `FETCH_HEAD` — never a local
- * `origin/main`, which can predate the base the lane needs (#1920 / #3621). Resume mode checks the
+ * `origin/main`, which can predate the base the lane needs. Resume mode checks the
  * PR's head branch out under the **local** name `build/pr-<pr>-<nonce>` with its upstream pointed at
  * the remote head, so `build push` updates the PR while the local name carries *this* repair claim's
- * nonce — which is what stops a dead earlier lane from pinning this one (#4868's class).
+ * nonce — which is what stops a dead earlier lane from pinning this one.
  *
- * `--resume-lane` is resume mode for the one artifact with no PR to resume — an epic child
- * (ADR 0285). It re-keys the branch a prior lane built the child on to this claim's nonce rather than
+ * `--resume-lane` is resume mode for the one artifact with no PR to resume — an epic child. It
+ * re-keys the branch a prior lane built the child on to this claim's nonce rather than
  * cutting a second one off it, because two branches carrying one child's commits is the underivable
- * range `lane prove` refuses on, and that refusal cannot be cleared from inside a worktree (#6386).
+ * range `lane prove` refuses on, and that refusal cannot be cleared from inside a worktree.
  *
  * A re-run is idempotent: the nonce is a function of the claim, so the second run resolves the same
  * name and switches to it instead of failing on a branch that is already there.
@@ -56,12 +56,12 @@ export interface BranchOptions {
 	/**
 	 * Child-repair mode: take over the branch a prior lane already built `number` on.
 	 *
-	 * The counterpart of `--resume` for the one artifact that has no PR to resume — an epic child
-	 * (ADR 0285). It takes `<number>` rather than a PR, needs no `--slug` because the branch already
+	 * The counterpart of `--resume` for the one artifact that has no PR to resume — an epic child. It
+	 * takes `<number>` rather than a PR, needs no `--slug` because the branch already
 	 * carries one, and re-keys that branch to this claim's nonce instead of cutting a second one.
 	 */
 	readonly resumeLane: boolean;
-	/** The token `build claim` handed this lane — the identity it cuts the branch under (#6037). */
+	/** The token `build claim` handed this lane — the identity it cuts the branch under. */
 	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -126,8 +126,8 @@ export const runBranch = (
 		if (held._tag === "Refused") return held.outcome;
 		// Proven by the claim read above to name the lane that holds the number — the winning marker's
 		// nonce on the ordinary path, the adopt's on a succession, where the dead lane's nonce is never
-		// inherited (ADR 0295). Either way the branch cannot be named after a token that holds
-		// nothing (#6037), and a successor's branch is its own, not the dead lane's.
+		// inherited. Either way the branch cannot be named after a token that holds
+		// nothing, and a successor's branch is its own, not the dead lane's.
 		const nonce = caller.nonce;
 
 		if (resume !== null) {
@@ -188,14 +188,14 @@ export const runBranch = (
 			if (only === undefined) {
 				return refuse(
 					ZERO_SCOPE,
-					`${VERB}: no branch anywhere in this clone's refs was cut for #${issue} — the build to resume is gone. Refs are shared across every worktree of a clone, so no other tree here holds one either; a child's branch is never pushed (ADR 0285), so it survives only in the clone that built it. Resume from that clone, or claim #${issue} without --resume once its FAIL is retracted.`,
+					`${VERB}: no branch anywhere in this clone's refs was cut for #${issue} — the build to resume is gone. Refs are shared across every worktree of a clone, so no other tree here holds one either; a child's branch is never pushed, so it survives only in the clone that built it. Resume from that clone, or claim #${issue} without --resume once its FAIL is retracted.`,
 					held.notes,
 				);
 			}
 			if (rest.length > 0) {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: ${candidates.join(", ")} were all cut for #${issue} — which one this lane resumes is not derivable here; retire the superseded branches with "fabrika build retire-branch ${issue}", which renames them out of build/ without deleting anything (ADR 0324), then re-run.`,
+					`${VERB}: ${candidates.join(", ")} were all cut for #${issue} — which one this lane resumes is not derivable here; retire the superseded branches with "fabrika build retire-branch ${issue}", which renames them out of build/ without deleting anything, then re-run.`,
 					held.notes,
 				);
 			}
@@ -215,7 +215,7 @@ export const runBranch = (
 			if (rekeying) {
 				// The rename is proven safe BEFORE it runs, because `git branch -m` does not refuse a
 				// branch another worktree holds — it renames it and retargets that worktree's HEAD, and
-				// only the switch below then fails (#6386, review round 1). Asking git afterwards would
+				// only the switch below then fails. Asking git afterwards would
 				// mean reporting a mutation that already landed under someone else's lane.
 				const checkouts = yield* worktreeCheckouts;
 				if (checkouts._tag === "Failure") {

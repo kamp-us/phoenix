@@ -13,7 +13,7 @@ describe("decodePng", () => {
 		expect([...decoded.image.pixels]).toEqual([...pixels]);
 	});
 
-	/** Every one of these is what "a capture nobody can open" looks like on disk (#3925's class). */
+	/** Every one of these is what "a capture nobody can open" looks like on disk. */
 	it.each([
 		["zero bytes", new Uint8Array(0), "zero bytes"],
 		[

@@ -8,7 +8,7 @@
  *
  * The scanned-count line is here for the same reason: this group's convention is that every list
  * read reports what it saw on stderr, and a verdict driven by a silently truncated read is a verdict
- * over unknown scope (#3999).
+ * over unknown scope.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -50,7 +50,7 @@ export interface TargetOptions {
 	readonly requireOpen: boolean;
 	/** The tail of the closed-PR refusal, which each verb phrases in its own terms. */
 	readonly closedReason?: string;
-	/** Refuse a PR with zero changed files on `7` — a review over nothing (ADR 0092, #4060). */
+	/** Refuse a PR with zero changed files on `7` — a review over nothing. */
 	readonly requireFiles: boolean;
 	/** The tail of the zero-changed-files refusal, which each verb phrases in its own terms. */
 	readonly emptyReason?: string;
@@ -107,7 +107,7 @@ export const openPull = (
 				outcome: refuse(
 					ZERO_SCOPE,
 					`${verb}: PR #${pr} has zero changed files — ${
-						options.emptyReason ?? "refusing to derive an empty review (ADR 0092, #4060)."
+						options.emptyReason ?? "refusing to derive an empty review."
 					}`,
 				),
 			};

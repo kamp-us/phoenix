@@ -1,5 +1,5 @@
 /**
- * Two real processes racing one lane ledger — the probabilistic half of #5994's evidence.
+ * Two real processes racing one lane ledger — the probabilistic half of the lock's evidence.
  *
  * The deterministic half (a scripted held lock refuses CONCURRENT_WRITE with the log untouched)
  * lives in [`append-lock.unit.test.ts`](append-lock.unit.test.ts). What that tier cannot prove is
@@ -54,7 +54,7 @@ const spawnTransition = async (root: string): Promise<Run> => {
 	}
 };
 
-describe("two concurrent lane writers stay coherent (#5994)", {
+describe("two concurrent lane writers stay coherent", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
 	const root = join(mkdtempSync(join(tmpdir(), "lane-race-")), "checkout");
@@ -62,7 +62,7 @@ describe("two concurrent lane writers stay coherent (#5994)", {
 	const logPath = join(lanesRoot, "42", "events.jsonl");
 
 	beforeAll(() => {
-		// The ground guard needs a repo marker; `.fabrika` itself is one (#6212).
+		// The ground guard needs a repo marker; `.fabrika` itself is one.
 		mkdirSync(join(root, ".fabrika"), {recursive: true});
 		mkdirSync(join(lanesRoot, "42"), {recursive: true});
 		writeFileSync(join(lanesRoot, "42", "workflow.json"), coderTemplateText());

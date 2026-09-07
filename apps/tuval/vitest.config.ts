@@ -1,4 +1,5 @@
 import {defineConfig} from "vitest/config";
+import {featuresPlugin} from "./src/page/dev-server.ts";
 
 // A `unit` project so `vitest --project unit` (the pre-push `unit-changed` leg over `apps/**`)
 // resolves here, and an `integration` project beside it now that the app has one. Tuval's
@@ -24,24 +25,43 @@ import {defineConfig} from "vitest/config";
 // the one that judges this.
 const execArgv = ["--max-old-space-size=512", "--no-experimental-webstorage"];
 
+// Local runs share one developer machine with each other and with the pre-push hook; CI gives a run
+// the whole runner, so only the local side is capped (#8119). Vitest's own default is
+// `availableParallelism() - 1`, which on a 12-core box is 11 forks *per run* — three build lanes
+// reached 74-87 workers and load average 218. `undefined` on CI falls through to that default.
+const maxWorkers = process.env.CI ? undefined : 2;
+
+// `src/page/renderers.tsx` imports `virtual:tuval/features` — the module the page server generates
+// from the booted config (#8439) — so any test that reaches the renderer table has to be able to
+// resolve it. Served here at `featuresOff`, its default: a unit test renders the desk an operator
+// who turned nothing on gets. A test wanting a flag on passes `ChatWindowOptions` to `chatWindow()`
+// directly, which is what `src/shell/chat/subagent-list.unit.test.tsx` does.
+// Declared per project rather than at the root: Vitest 4 builds each project's own Vite server and
+// a root `plugins` entry does not reach one.
+const plugins = [featuresPlugin()];
+
 export default defineConfig({
 	test: {
 		projects: [
 			{
+				plugins,
 				test: {
 					name: "unit",
 					include: ["src/**/*.unit.test.ts", "src/**/*.unit.test.tsx"],
 					pool: "forks",
 					execArgv,
+					maxWorkers,
 					sequence: {groupOrder: 0},
 				},
 			},
 			{
+				plugins,
 				test: {
 					name: "integration",
 					include: ["src/**/*.integration.test.ts"],
 					pool: "forks",
 					execArgv,
+					maxWorkers,
 					sequence: {groupOrder: 1},
 					testTimeout: 60_000,
 				},

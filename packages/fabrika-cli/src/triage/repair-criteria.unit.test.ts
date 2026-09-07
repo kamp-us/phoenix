@@ -85,10 +85,10 @@ describe("planRepair — the mechanical repair", () => {
 		expect(result.reason).toContain("undecidable");
 	});
 
-	it("refuses a conforming block followed by a level-drifted one — the wedge ADR 0326 leaves standing", () => {
+	it("refuses a conforming block followed by a level-drifted one — the wedge the reader leaves standing", () => {
 		// Rule 4 makes the reader `Malformed` here, and this module's own multi-heading refusal still
 		// fires, so the body has no automated repair route. Pinned as the stated outcome: widening
-		// repair to reach it would be a second selection rule (ADR 0326's binding constraints).
+		// repair to reach it would be a second selection rule, and one rule picks the block.
 		const result = plan(
 			enveloped(`### Acceptance criteria\n\n${ITEMS}\n\n## Acceptance criteria\n\n- [ ] again`),
 		);
@@ -224,7 +224,7 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 
 	it("refuses an ordered item sitting directly under a bullet, with no blank line to close it", () => {
 		// The refusal used to be gated on the open bullet, so this exact list converted and shipped
-		// "1. ordered" inside a block no grader reads (#6001, review round 1).
+		// "1. ordered" inside a block no grader reads.
 		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n1. ordered\n- a third"));
 		expect(result._tag).toBe("Refused");
 		if (result._tag !== "Refused") return;
@@ -249,7 +249,7 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 
 	it("refuses a mixed-marker block: the `+` item converts and the reader counts no criterion there", () => {
 		// The read-back answered `Found` off the surviving `-` item, so the PATCH landed a contract one
-		// criterion shorter than the author wrote (#6001, review round 1).
+		// criterion shorter than the author wrote.
 		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n+ two item"));
 		expect(result._tag).toBe("Refused");
 		if (result._tag !== "Refused") return;
@@ -290,8 +290,8 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 });
 
 describe("planRepair — the ordered-item conversion (#5981)", () => {
-	// #5717's and #5777's live shape: a level-3 heading over a numbered list, wrapped, which the
-	// reader answers `Malformed` on because an ordered marker can carry no checkbox at all.
+	// The live shape on the board: a level-3 heading over a numbered list, wrapped, which the reader
+	// answers `Malformed` on because an ordered marker can carry no checkbox at all.
 	const ordered =
 		"### Acceptance criteria\n\n1. `review-ui post` keys the upsert on the head,\n   compared prefix-tolerantly.\n2. Both carriers are keyed on the head.\n3. A re-post at the same head still upserts.";
 

@@ -8,13 +8,16 @@
 
 import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option, Queue, Redacted, Scope, Stream} from "effect";
+import {Context, Effect, Exit, Fiber, Layer, Option, Queue, Redacted, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
+import type {SpellPath} from "../../commands/spell.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
 import {Processes} from "../../process/Processes.ts";
 import type {ProcessTable} from "../../process/ProcessTable.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {CallId} from "../../protocol/ids.ts";
+import {PROTOCOL_VERSION, SpellCall} from "../../protocol/messages.ts";
 import {type DuplicateProgramId, ProgramNotFound} from "../../registry/errors.ts";
 import {
 	type AnyProgram,
@@ -24,8 +27,9 @@ import {
 } from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
+import {scriptedSpellChannel} from "../host/fixtures.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
-import type {ProcessView} from "../window/host.ts";
+import type {DispatchResult, ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
 import {PlacementUnsupported} from "./errors.ts";
 import {mintLaunchToken, TOKEN_PARAM} from "./handshake.ts";
@@ -40,8 +44,32 @@ const shellProgramId = ProgramId.make("tuval/shell");
 const painterProgramId = ProgramId.make("tuval/painter");
 const notesProgramId = ProgramId.make("tuval/notes");
 const daemonProgramId = ProgramId.make("tuval/daemon");
+const stamperProgramId = ProgramId.make("tuval/stamper");
 const shellProcess = ProcessId.make("shell");
 const painterProcess = ProcessId.make("painter");
+const stamperProcess = ProcessId.make("stamper");
+
+type StampState = {readonly last: string};
+type StampMsg = {readonly type: "stamp"; readonly stamp: string};
+type StampCmd = {readonly type: "settle"};
+
+/**
+ * One slot, written by every Msg, plus a Cmd that takes a tick to settle. That is the shape of the
+ * shell's `lastPress` and of the window a second press lands in while the first is still folding —
+ * the case where an ack read *after* its fold answers about somebody else's Msg (#8274).
+ */
+const stamperCore = defineMachine<StampState, StampMsg, StampCmd, never, unknown>({
+	init: (loaded) => [loaded ?? {last: ""}, []],
+	update: {
+		stamp: (_state: StampState, msg: StampMsg): readonly [StampState, ReadonlyArray<StampCmd>] => [
+			{last: msg.stamp},
+			[{type: "settle"}],
+		],
+	},
+	// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never
+	// reads it (#7576).
+	interpret: {settle: () => Promise.resolve()},
+});
 
 const deskCore = defineMachine<DeskState, DeskMsg, Cmd<never>, never, unknown>({
 	init: (loaded) => [loaded ?? {windows: ["root"]}, []],
@@ -66,6 +94,31 @@ const deskRow = (id: ProgramId, host: "local" | "browser", renderer?: RendererRe
 	}) satisfies Program<DeskState, DeskMsg, Cmd<never>, never, unknown, never, never>;
 
 const ref = (name: string): RendererRef => ({kind: "host-native", ref: name});
+
+const spellCall = (path: SpellPath, args: unknown): SpellCall =>
+	new SpellCall({
+		type: "spell.call",
+		version: PROTOCOL_VERSION,
+		id: CallId.make(crypto.randomUUID()),
+		path,
+		args,
+	});
+
+const stamperRow: AnyProgram = {
+	id: stamperProgramId,
+	core: stamperCore,
+	ports: {},
+	handlers: {settle: () => Effect.as(Effect.sleep("5 millis"), [])},
+	capabilities: [],
+	renderer: ref("tuval/stamper"),
+	identity: {
+		package: "@kampus/tuval",
+		program: stamperProgramId,
+		version: "1.0.0",
+		digest: `sha256:${stamperProgramId}`,
+	},
+	placement: {host: "local"},
+} satisfies Program<StampState, StampMsg, StampCmd, never, unknown, never, never>;
 
 /** Three rows a window can show and one that cannot: what the catalog must and must not carry. */
 const programs: ReadonlyArray<AnyProgram> = [
@@ -137,6 +190,7 @@ const served = Effect.fn("test.served")(function* (
 		port: 0,
 		table: defaultPrefixTable,
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
+		spells: yield* scriptedSpellChannel(),
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
 });
@@ -159,6 +213,14 @@ const watch = <S>(stream: Stream.Stream<ProcessView<S>, never>) =>
 const stateOf = <S>(view: ProcessView<S>): S => {
 	assert.strictEqual(view._tag, "Live");
 	return (view as {readonly state: S}).state;
+};
+
+/** The state an acknowledgement says its own Msg left behind. Asserts the ack even carries one. */
+const answered = (result: DispatchResult): unknown => {
+	assert.strictEqual(result._tag, "Delivered");
+	const view = (result as {readonly view?: {readonly state: unknown}}).view;
+	assert.ok(view !== undefined);
+	return view.state;
 };
 
 /** A raw client, for the two questions the Effect socket abstracts away: the upgrade, and a bad frame. */
@@ -188,8 +250,46 @@ describe("the page-to-kernel transport", () => {
 
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root"]});
 				const result = yield* shell.dispatch({type: "split", window: "w2"});
-				assert.deepStrictEqual(result, {_tag: "Delivered"});
+				// The acknowledgement carries the state the Msg left behind, so a caller learns what its
+				// own dispatch did without racing the state pump (#8274).
+				assert.deepStrictEqual(result, {
+					_tag: "Delivered",
+					view: {revision: 1, state: {windows: ["root", "w2"]}},
+				});
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"answers two dispatches in flight each with its own Msg's state, never with the later one's",
+		() =>
+			// The ack used to be a *second* read taken after the fold, so with two presses in flight it
+			// carried whichever Msg folded last. `replyIn` reads a stamp that is not its own as
+			// `Refused`, and `Refused` forwards nothing — the key was gone with no trace (#8274).
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores(), Registry.layer([...programs, stamperRow]));
+				const processes = Context.get(app.context, Processes);
+				app.handles.set(
+					stamperProcess,
+					yield* Effect.orDie(
+						processes.spawn(stamperProgramId, {id: stamperProcess, services: Context.empty()}),
+					),
+				);
+				const attached = yield* page(app.server.launchUrl);
+				const stamper = yield* attached.attachProcess<StampState, StampMsg>(stamperProcess);
+				const [first, second] = yield* Effect.all(
+					[
+						stamper.dispatch({type: "stamp", stamp: "press-1"}),
+						stamper.dispatch({type: "stamp", stamp: "press-2"}),
+					],
+					{concurrency: "unbounded"},
+				);
+
+				// Which of the two the kernel folds first is the socket's business, so the claim is per
+				// acknowledgement: each one answers about the Msg it acknowledges.
+				assert.deepStrictEqual(answered(first), {last: "press-1"});
+				assert.deepStrictEqual(answered(second), {last: "press-2"});
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);
@@ -205,7 +305,11 @@ describe("the page-to-kernel transport", () => {
 				assert.ok(real !== undefined);
 				const discarding: ProcessHandle = {
 					...real,
-					dispatch: (msg) => Effect.fail(new DispatchDiscardedError(msg.type)),
+					dispatchFolded: (msg) =>
+						Effect.succeed({
+							settled: Exit.fail(new DispatchDiscardedError(msg.type)),
+							summary: {lifecycle: "running", revision: 0, state: {windows: ["root"]}},
+						}),
 				};
 				const server = yield* serve({
 					token: mintLaunchToken(),
@@ -217,6 +321,7 @@ describe("the page-to-kernel transport", () => {
 								? Option.some(discarding)
 								: Option.fromNullishOr(built.handles.get(id)),
 						),
+					spells: yield* scriptedSpellChannel(),
 				}).pipe(Effect.provideContext(built.context), Effect.orDie);
 
 				const attached = yield* page(server.launchUrl);
@@ -441,6 +546,58 @@ describe("the page-to-kernel transport", () => {
 				const good = yield* rawSocket(app.server.launchUrl);
 				assert.isTrue(good.opened);
 				assert.strictEqual(Redacted.value(app.token).length, 64);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a spell call from the page is answered by the kernel's executor, and an unknown path comes back as its refusal",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+
+				const answered = yield* attached.call(spellCall(["desk", "echo"], {word: "hello"}));
+				assert.isTrue(answered.ok);
+				assert.deepStrictEqual(answered.ok ? answered.result : null, {word: "hello"});
+
+				const call = spellCall(["desk", "nope"], {});
+				const refused = yield* attached.call(call);
+				assert.isFalse(refused.ok);
+				// The executor's own reply, unchanged: the page never builds a refusal of its own.
+				assert.deepStrictEqual(
+					refused.ok ? null : refused.error.tag,
+					"tuval/commands/UnknownSpell",
+				);
+				assert.strictEqual(refused.id, call.id);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"two calls in flight each read their own reply, and a socket that goes away fails the ones still waiting",
+		() =>
+			Effect.gen(function* () {
+				const scope = yield* Scope.make();
+				const app = yield* Effect.provideService(served(memoryStores()), Scope.Scope, scope);
+				const attached = yield* page(app.server.launchUrl);
+
+				const both = yield* Effect.all(
+					[
+						attached.call(spellCall(["desk", "echo"], {word: "first"})),
+						attached.call(spellCall(["desk", "echo"], {word: "second"})),
+					],
+					{concurrency: "unbounded"},
+				);
+				assert.deepStrictEqual(
+					both.map((reply) => (reply.ok ? reply.result : null)),
+					[{word: "first"}, {word: "second"}],
+				);
+
+				const waiting = yield* Effect.forkChild(attached.call(spellCall(["desk", "forever"], {})));
+				yield* Effect.sleep("200 millis");
+				yield* Scope.close(scope, Exit.void);
+				assert.isTrue(Exit.isFailure(yield* Fiber.await(waiting)));
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

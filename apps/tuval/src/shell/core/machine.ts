@@ -23,7 +23,7 @@ import {defineMachine} from "@demlik/tea";
 import {Duration} from "effect";
 import {msgForCommandName} from "../commands/table.ts";
 import {type DeskMsg, initialDesk, toggleInspector} from "../desk/state.ts";
-import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
+import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import {
 	createStack,
@@ -42,14 +42,19 @@ import {
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
+import type {OpenSession} from "../picker/intent.ts";
+import {mountPicker} from "../picker/view.ts";
 import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
 	disarmed,
 	hasWindow,
+	type KeyOutcome,
 	keyTargetOf,
+	type LastPress,
 	mint,
 	type PrefixSnapshot,
+	processOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -62,7 +67,10 @@ import {
  * The arms the kernel's own `HostHandlers` answer (`../host/effects.ts`). `openProgram` and
  * `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning needs the registry and
  * the process table, which a pure reducer cannot reach, so the core names the window and the thing
- * to show in it and stops there. `forwardKey` is here too — a key belongs to the focused window's
+ * to show in it and stops there. Each carries the window's view slot as well, because a refusal
+ * leaves that handler as a `window.setView` written back over it, and the slot is state only the
+ * core can read — a refusal handed no slot is the one that throws away the picker's `previous`
+ * (#8265). `forwardKey` is here too — a key belongs to the focused window's
  * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
  * have no runner yet and are still the kernel's: resolving a name the command table does not hold
  * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
@@ -75,17 +83,28 @@ export type KernelCmd =
 			readonly key: string;
 	  }
 	| {readonly type: "runCommand"; readonly name: CommandName}
-	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
-	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
+	| {
+			readonly type: "openProgram";
+			readonly windowId: WindowId;
+			readonly programId: string;
+			readonly session?: OpenSession;
+			readonly view?: ViewState;
+	  }
+	| {
+			readonly type: "attachProcess";
+			readonly windowId: WindowId;
+			readonly processId: string;
+			readonly view?: ViewState;
+	  }
 	| {readonly type: "reloadConfig"};
 
 /**
  * The arms no kernel handler can answer, which the browser surface answers instead: the command
  * line is a page element, and a handler returns its follow-up Msgs rather than holding a dispatcher
- * it could fire a timer through. Cmds do not cross the transport, so the page derives these for
- * itself by running the key router a second time over the table the kernel sent it — deliberate
- * duplication, held by a test rather than by an argument
- * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
+ * it could fire a timer through. Cmds do not cross the transport, so the page learns about these
+ * from state instead: the countdown off the prefix the snapshot carries, and the command line off
+ * the answer this fold records on `lastPress` (#8274, `../ui/press.ts`). It does not route a key of
+ * its own to derive them ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  */
 export type PageCmd =
 	| {readonly type: "startRepeatTimer"; readonly timeoutMs: number}
@@ -125,6 +144,15 @@ export type ShellMsg =
 			readonly takesKeys?: boolean;
 	  }
 	| {readonly type: "window.unbind"; readonly windowId?: WindowId}
+	| {
+			/**
+			 * Hand this key to the focused window as if it had been pressed there. The Msg knows
+			 * nothing about what any window does with it: a window that draws no list for
+			 * `FOCUS_LIST_KEY` ignores it, exactly as a process with no `key` cell does (#8407).
+			 */
+			readonly type: "window.forwardKey";
+			readonly key: string;
+	  }
 	| {readonly type: "window.setView"; readonly view: ViewState; readonly windowId?: WindowId}
 	| {
 			readonly type: "layout.resize";
@@ -136,11 +164,26 @@ export type ShellMsg =
 	| {readonly type: "workspace.remove"; readonly workspaceId?: WorkspaceId}
 	| {readonly type: "workspace.activate"; readonly workspaceId: WorkspaceId}
 	| {readonly type: "workspace.step"; readonly direction: "previous" | "next"}
-	| {readonly type: "window.open"; readonly programId: string; readonly windowId?: WindowId}
+	| {
+			readonly type: "window.open";
+			readonly programId: string;
+			readonly windowId?: WindowId;
+			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
+			readonly session?: OpenSession;
+	  }
 	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
-	| {readonly type: "keys.press"; readonly key: Key}
+	| {
+			readonly type: "keys.press";
+			readonly key: Key;
+			/**
+			 * The presser's own stamp, echoed back on `lastPress` so the answer to this key is
+			 * readable as this presser's and nobody else's (#8274). Optional: a key pressed by
+			 * something that will not read the answer — a test, a kernel-side caller — sends none.
+			 */
+			readonly pressId?: string;
+	  }
 	| {readonly type: "prefix.repeatLapsed"}
 	| DeskMsg;
 
@@ -196,6 +239,21 @@ const fromRouter = (state: PrefixState): PrefixSnapshot =>
 			}
 		: disarmed;
 
+const outcomeOf = (answer: RouteAnswer): KeyOutcome => {
+	if (answer._tag === "ToWindow") return {_tag: "ToWindow", key: answer.key};
+	if (answer._tag === "Command") return {_tag: "Command", name: String(answer.name)};
+	return {_tag: "Consumed"};
+};
+
+/**
+ * The answer, stamped with the presser's id. An unstamped press records the empty string, which no
+ * presser mints, so nothing can read the answer to somebody else's key as its own.
+ */
+const recorded = (
+	msg: Extract<ShellMsg, {type: "keys.press"}>,
+	answer: RouteAnswer,
+): LastPress => ({pressId: msg.pressId ?? "", outcome: outcomeOf(answer)});
+
 /** How long the prefix's repeat window has left to run, or `null` when it is not in one. */
 const repeatWindowOf = (snapshot: PrefixSnapshot): number | null =>
 	snapshot.armed ? snapshot.repeatWindowMs : null;
@@ -213,6 +271,10 @@ const timerCmds = (before: PrefixSnapshot, after: PrefixSnapshot): readonly Shel
 /**
  * Attach or detach the process a window shows. Detaching is `null` and stops nothing: the process
  * runs on with no view, which is what makes a window a view rather than a container.
+ *
+ * The view slot goes with the binding either way. A slot belongs to whatever the window is showing,
+ * and the newly bound program did not write the one that is there — which is also what keeps a
+ * `previous` from outliving the picker that recorded it (#8265).
  */
 const bindWindow = (
 	state: ShellState,
@@ -225,12 +287,36 @@ const bindWindow = (
 	const target = windowId ?? workspace.focused;
 	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
 	return [
-		withActive(state, {
-			...workspace,
-			layout: setProcess(workspace.layout, target, processId, takesKeys),
-		}),
+		{
+			...withActive(state, {
+				...workspace,
+				layout: setProcess(workspace.layout, target, processId, takesKeys),
+			}),
+			views: withoutViews(state.views, [target]),
+		},
 		NO_CMDS,
 	];
+};
+
+/**
+ * Put a window back on the picker: detach its process, which stops nothing, and mount a fresh
+ * picker view naming the process it was showing, so Escape has somewhere to return to and the
+ * highlight starts on that row (`../picker/view.ts`). The mount is fresh rather than the cursor and
+ * refusal the last one left behind (`../ui/PickerView.tsx` rebuilds the picker's view from it).
+ *
+ * A window holding no process is left untouched rather than cleared. It is already showing the
+ * picker, and dropping the slot there would move the user's highlight back to the first row under
+ * their hands — a key that should have done nothing at all.
+ */
+const unbindWindow = (state: ShellState, windowId: WindowId | undefined): Step => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return [state, NO_CMDS];
+	const target = windowId ?? workspace.focused;
+	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
+	const showing = processOf(workspace, target);
+	if (showing === null) return [state, NO_CMDS];
+	const [detached] = bindWindow(state, target, null);
+	return [{...detached, views: {...detached.views, [target]: mountPicker(showing)}}, NO_CMDS];
 };
 
 /**
@@ -411,37 +497,62 @@ const targetWindow = (state: ShellState, windowId: WindowId | undefined): Window
 };
 
 /**
+ * One window's view slot as a Cmd field, spread rather than assigned so a window holding no slot
+ * sends no `view` key at all — the field is optional and `exactOptionalPropertyTypes` reads an
+ * explicit `undefined` as a different thing from an absent one.
+ */
+const viewOf = (state: ShellState, windowId: WindowId): {readonly view?: ViewState} => {
+	const view = state.views[windowId];
+	return view === undefined ? {} : {view};
+};
+
+/**
  * The cells, closed over the table the key router reads. A table is configuration, not state: it
  * holds `Duration.Duration` values, and the shell's state is checkpointed JSON.
  */
 export const cellsFor = (table: PrefixTable): ShellCells => {
 	const apply = (state: ShellState, msg: ShellMsg): Step => runCell(cells, state, msg);
 
+	/**
+	 * Hand one key to the focused window, both halves of what that means: the Cmd that delivers it
+	 * into the window's *process*, and the `ToWindow` answer the page reads to deliver it into the
+	 * window's *renderer* (`../ui/press.ts`). They reach two different places, and the renderer is
+	 * the one where a list's focus lives — which is why an empty window, whose program has no
+	 * process to forward to, still forwards to whatever is drawn in it (the picker).
+	 *
+	 * `window.forwardKey` runs this too, and that is what lets a bound chord reach a renderer no
+	 * command name can address: the binding names a command, the command mints a key, and this
+	 * writes the same answer an unbound press of that key would have written (#8407).
+	 */
+	const toFocusedWindow = (state: ShellState, key: string): Step => {
+		const workspace = activeWorkspace(state);
+		const next: ShellState =
+			state.lastPress === undefined
+				? state
+				: {...state, lastPress: {...state.lastPress, outcome: {_tag: "ToWindow", key}}};
+		// An empty window has no process to forward to, and a window whose program never declared
+		// `takesKeys` has no cell for one, so the key is dropped rather than queued (#7973).
+		const processId = workspace === undefined ? null : keyTargetOf(workspace, workspace.focused);
+		return [
+			next,
+			processId === null || workspace === undefined
+				? NO_CMDS
+				: [{type: "forwardKey", processId, windowId: workspace.focused, key}],
+		];
+	};
+
 	const pressKey = (state: ShellState, msg: Extract<ShellMsg, {type: "keys.press"}>): Step => {
 		const answer = route(table, toRouter(state.prefix), msg.key);
 		const prefix = fromRouter(answer.next);
 		const timer = timerCmds(state.prefix, prefix);
-		const routed: ShellState = {...state, prefix};
+		// The answer is written into state rather than only spent as Cmds, because Cmds are the
+		// kernel's and no Cmd crosses the transport: this field is how the page learns what the one
+		// router decided about the key it sent (#8274, `../ui/Desk.tsx`).
+		const routed: ShellState = {...state, prefix, lastPress: recorded(msg, answer)};
 
 		if (answer._tag === "ToWindow") {
-			const workspace = activeWorkspace(routed);
-			const processId = workspace === undefined ? null : keyTargetOf(workspace, workspace.focused);
-			// An empty window has no process to forward to, and a window whose program never declared
-			// `takesKeys` has no cell for one, so the key is dropped rather than queued (#7973).
-			return [
-				routed,
-				processId === null || workspace === undefined
-					? timer
-					: [
-							...timer,
-							{
-								type: "forwardKey",
-								processId,
-								windowId: workspace.focused,
-								key: answer.key,
-							},
-						],
-			];
+			const [next, cmds] = toFocusedWindow(routed, answer.key);
+			return [next, [...timer, ...cmds]];
 		}
 
 		if (answer._tag !== "Command") return [routed, timer];
@@ -461,7 +572,8 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
 		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
-		"window.unbind": (state, msg) => bindWindow(state, msg.windowId, null),
+		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
+		"window.forwardKey": (state, msg) => toFocusedWindow(state, msg.key),
 		"window.setView": setView,
 		"layout.resize": resizeStack,
 		"layout.zoom": zoomWindow,
@@ -476,13 +588,34 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "openProgram", windowId: target, programId: msg.programId}]];
+				: [
+						state,
+						[
+							{
+								type: "openProgram",
+								windowId: target,
+								programId: msg.programId,
+								...(msg.session === undefined ? {} : {session: msg.session}),
+								...viewOf(state, target),
+							},
+						],
+					];
 		},
 		"window.attach": (state, msg) => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "attachProcess", windowId: target, processId: msg.processId}]];
+				: [
+						state,
+						[
+							{
+								type: "attachProcess",
+								windowId: target,
+								processId: msg.processId,
+								...viewOf(state, target),
+							},
+						],
+					];
 		},
 		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
 		// resolves the name through the command table, so routing a row's own Msg back through it

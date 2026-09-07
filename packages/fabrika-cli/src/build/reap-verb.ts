@@ -1,10 +1,10 @@
 /**
  * `build reap` — reclaim the finished agent worktrees this clone never removed.
  *
- * The leak is #6833: the harness registers a worktree per spawned agent under
- * `.claude/worktrees/agent-*` and nothing removes one when its agent finishes, so registrations pile
- * up until a live lane has to reason about whether a dead checkout is a sibling holding its branch —
- * a false signal sitting directly upstream of a force-push decision (PR #6823).
+ * The leak: the harness registers a worktree per spawned agent under `.claude/worktrees/agent-*`
+ * and nothing removes one when its agent finishes, so registrations pile up until a live lane has
+ * to reason about whether a dead checkout is a sibling holding its branch — a false signal sitting
+ * directly upstream of a force-push decision.
  *
  * `build retire` does not cover this: that verb targets the trees holding ONE number's lane branch
  * and needs a board statement about that number to release them. A finished agent tree usually holds
@@ -21,7 +21,7 @@
  *      **Every read that fails is a KEEP**, per-tree: a sweep of seventy trees must not lose its
  *      whole answer to one unreadable directory.
  *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
- *   6. Each removal runs plain `git worktree remove` — never `--force`, which ADR 0321 bans on every
+ *   6. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
  *      path — and every one is read back off a second `worktree list`.
  *
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
@@ -189,7 +189,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				.map((row) => `${VERB}: removed ${row.path} (${row.license}).`),
 			...failed.map(
 				(row) =>
-					`${VERB}: FAILED to remove ${row.path}: ${row.reason} — the tree stays registered, and ADR 0321 bans --force on every path.`,
+					`${VERB}: FAILED to remove ${row.path}: ${row.reason} — the tree stays registered, and --force is banned on every path.`,
 			),
 			...unproven.map(
 				(path) =>

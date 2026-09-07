@@ -24,12 +24,16 @@ const TEMPLATE = "/pkg/src/lane/templates/coder.workflow.json";
 const reads = (read: ExpectationRead) => () => Effect.succeed(read);
 const childless = reads({_tag: "Read", expectation: {_tag: "Single"}});
 
+/** No cap declared — the cap's own arms live in [`concurrency.unit.test.ts`](concurrency.unit.test.ts). */
+const UNCAPPED = {_tag: "Value", value: null, note: "test"} as const;
+
 const OPTIONS = {
 	root: ROOT,
 	lane: "42",
 	templatePath: TEMPLATE,
 	issue: 42,
 	expectation: childless,
+	cap: UNCAPPED,
 };
 
 const run = (
@@ -66,6 +70,7 @@ describe("lane open", () => {
 			templatePath: "/pkg/src/lane/templates/chore.workflow.json",
 			issue: null,
 			expectation: null,
+			cap: UNCAPPED,
 		};
 		const fs = fakeFs({files: {[chore.templatePath]: choreTemplateText()}});
 		const opened = await run(fs, runOpen(chore));
@@ -133,7 +138,7 @@ describe("lane open", () => {
 		expect(out.stderr.join("\n")).toContain("plan the epic first");
 	});
 
-	it("refuses a `type:epic` issue that has no children yet — #7024's pre-plan window", async () => {
+	it("refuses a `type:epic` issue that has no children yet — the pre-plan window", async () => {
 		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
 		const out = await run(
 			fs,

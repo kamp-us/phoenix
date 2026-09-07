@@ -40,7 +40,7 @@ your checklist is one you did not judge and must not emit.
 
 <!-- anchor: A-ROUTED-ROW-IS-THE-HANDOFF-TRIGGER --> **A `routed` row is a namespace this PR requires
 that this gate cannot reach, and it is the handoff's trigger.** Today the one row is
-`routed\treview-ui`, raised whenever the diff changes a rendered `apps/web/src/**` surface: pixels
+`routed\treview-ui`, raised whenever the diff changes a file under a `uiSurfaces` prefix: pixels
 are `review-ui`'s modality, its verbs are the only ones that may post that namespace, and it keeps
 its own refusals (a zero-`--surface` `render`, an evidence-required `post`). So do not judge it and
 do not emit it — and equally, do not read its absence from your verdicts as a gap in yours.
@@ -50,8 +50,7 @@ your terminal — `lane report … --class ui` — and the lane's machine takes 
 `review` into `review:ui`, which dispatches the rendered gate with nobody hand-spawning it. Relay
 the class the row printed; never derive one from your own reading of the diff. While no row existed,
 a reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a
-`review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR
-(#6664).
+`review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR.
 
 `scope` also prints the head SHA, the issue reference (`fixes:<n>` / `part-of:<n>` / `-`), `self`,
 `harness`, and `governance\t<required|not-required>` — §6's trigger, and a different question from
@@ -76,7 +75,7 @@ The acceptance-criteria block arrives through the registered wire format, never 
 terminal either, so carry them into the verdict you reach at the end rather than reporting one here
 (§ Terminal vocabulary). Read the binding column as printed — the three-outcome type, not a boolean.
 The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
-`superseded` one is a round already answered, printed so the record shows it (#7247).
+`superseded` one is a round already answered, printed so the record shows it.
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
@@ -116,12 +115,26 @@ to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
 doc rubric's prose-craft line is the fallback until it lands.
 
+**A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
+class alike.** When any changed file sits under `claude-plugins/fabrika/` or
+`packages/fabrika-cli/src/`, run it and read the verdict into those classes:
+
+```bash
+fabrika guard portability-guard check
+```
+
+A red is a FAIL finding, never a note. The text fabrika ships installs into repositories that are
+not this one, so a ticket number, a decision-record number, a decision-corpus path, a hosted issue
+or pull-request URL, or a name this repo declared as its own is a pointer the reader there cannot
+follow. The guard's allow-list is a floor that only shrinks: a diff that raises a ceiling to make
+room for a new reference **is** the finding, whatever the sentence around it says.
+
 <!-- anchor: STAGE-ONLY-UNDER-THE-ALLOCATED-PATH --> **A diff too large for one read is staged under
 the path this verb allocates, and never under a name you chose.** The session scratchpad is shared
 by every lane in the session, so a generic `diff.txt` there is a name a concurrent lane writes too:
-on PR #7232 a reviewer's file was replaced with an unrelated PR's diff between two offset reads, and
+one reviewer's file was replaced with an unrelated PR's diff between two offset reads, and
 the verdict it was heading for would have carried the right head over the wrong bytes — which
-nothing downstream can detect (#7246).
+nothing downstream can detect.
 
 ```bash
 fabrika review scratch $pr_number --slug diff --lane <lane> --sha 03135b91
@@ -137,8 +150,8 @@ Then read that path off the verb and redirect the diff into it, typing the path 
 `fabrika review diff $pr_number --sha 03135b91 > <the path it printed>`. **Never capture the
 allocation into a shell variable and never redirect through one.** Command substitution and a
 variable the verifier cannot resolve are each on their own enough for a worktree-isolated shell to
-refuse the line, so a fence built that way does not run for the reviewer it is written for (ADR
-[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
+refuse the line, so a fence built that way does not run for the reviewer it is written for — a
+fence in this text carries zero expansions for exactly that reason. A redirect whose target is the
 literal path carries no expansion and runs.
 
 The path is machine-local, so it never appears in what you post — `review post` and
@@ -146,8 +159,9 @@ The path is machine-local, so it never appears in what you post — `review post
 
 **A contract you need while grading arrives one section at a time** — including a `contract.md` the
 diff itself edits. Take each heading the judgment touches with
-`fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
-[0296](../../../../.decisions/0296-contracts-are-read-by-section.md)).
+`fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file: a
+contract is a reference read one heading at a time, and loading it whole spends context on sections
+the judgment never touches.
 
 <!-- anchor: GOVERNANCE-BEFORE-THE-WAIT --> **Read §1's `governance` token before you run the next
 fence: on `required`, fire §6's governance skill first, then come back here.** The reason is stated
@@ -166,7 +180,7 @@ fabrika review ci $pr_number --sha 03135b91 --wait
 **Its `green` now carries gate coverage, and the absence of coverage is its own answer.** A head
 where the checks all passed but no workflow this repo authors ever ran is refused on `16`, never
 reported as `green` or `pending` — the enumeration was complete and not one gate inspected the
-bytes, which reads as safety while carrying none (#6522). The ordinary way in is a branch gone
+bytes, which reads as safety while carrying none. The ordinary way in is a branch gone
 conflicted: GitHub stops making `pull_request` runs while a platform-provided check keeps
 reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
@@ -183,12 +197,11 @@ never grade a red as the gate misreading its own SHA.
 **A queued aggregator is waited out by the verb, never by you on a timer.** You are normally spawned
 minutes after the push, so a `pending` is the ordinary read, not a pathology — and the wait it opens
 is exactly the gap
-[§14 of the skill conventions](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer)
+[§14 of the skill conventions, "A skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md)
 governs: no `sleep`, foreground or background, and no re-read on a cadence. That rule is
 load-bearing here because this skill's own text is where it was missing: a reviewer waiting on a
 queued aggregator left background timers that fired after its run had ended and re-notified the
-driver twice with nothing to route
-([#7260](https://github.com/kamp-us/phoenix/issues/7260)). The `--wait` above is why one call is
+driver twice with nothing to route. The `--wait` above is why one call is
 enough: the verb owns the loop, bounds it by a wall-clock budget, and prints a `settle` line ahead of
 the rollup. Each token routes on its own:
 
@@ -201,14 +214,14 @@ the rollup. Each token routes on its own:
 - `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
   what was inspected.
 - `governance-owed` — the only unfinished check is `governance floor at head`, and its workflow run
-  has already completed, so what the floor is waiting for is **your** governance verdict (ADR
-  [0318](../../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md)). This is
+  has already completed, so what the floor is waiting for is **your** governance verdict — the floor
+  reports through a check run, which stays unconcluded until a verdict binds at that head. This is
   not a park: fire §6's governance skill, then call `review ci --wait` again and judge on the
   `settled` it returns. Reaching it means §6 was run late, not that anything is wrong with the PR.
 - `governance-stale` — the same floor on its other rollup, and **the red beside it is not a FAIL you
   may act on**. On a repair round the governance verdict is bound to the previous head, so the floor
   concludes `failure` rather than staying pending: the rollup is `red`, and the only failing check is
-  a floor whose verdict is **yours** to re-post (#7441). Route it exactly like `governance-owed` —
+  a floor whose verdict is **yours** to re-post. Route it exactly like `governance-owed` —
   fire §6's governance skill, re-read, and judge on what comes back. The verb reaches this token only
   when nothing else at the head is failing, so a `settled` red is still the execution evidence it
   always was.
@@ -220,10 +233,8 @@ so a `16` head, a repo with no producer, or a floor waiting on you never burns t
 check-run at the head cannot go green until a governance verdict binds there, and you are the shell
 that owes it — so a `--wait` run first is a wait on yourself. The verb names that rather than
 misrouting it (`governance-owed` on a first round, `governance-stale` on a repair one), but either
-answer costs you a second call where the right order costs none
-([#7392](https://github.com/kamp-us/phoenix/issues/7392),
-[#7441](https://github.com/kamp-us/phoenix/issues/7441); §1's `governance` token is what tells you
-which order you are in).
+answer costs you a second call where the right order costs none (§1's `governance` token is what
+tells you which order you are in).
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
@@ -266,40 +277,41 @@ undisclosed that this gate could see"* — never "no deviations exist".
 - `governance: required` ⇒ the governance namespace is **derived-required on every round, whatever
   polarity you reach**: fire the `governance` skill and wait — a verdict of yours with no
   governance verdict on such a diff is not a complete gate result, and that holds for a FAIL
-  exactly as for a PASS (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)).
+  exactly as for a PASS.
   The token is §1's `governance` line, and `fabrika governance scope <pr>` prints the same one over
-  the same declared roots — the sanctioned derivation (ADR
-  [0280](../../../../.decisions/0280-review-shell-carries-the-spawn-tool.md)). **Never read it off
-  `harness`**: that flag counts three roots and `.decisions/` is not one, so a decision-record PR
-  reads `harness: false` and still owes the verdict — PR #5604 got a clean PASS that way and the
-  ship gate then blocked on `ns governance absent` (#5607).
+  the same declared roots — the sanctioned derivation. **Never read it off
+  `harness`**: that flag counts a different, narrower set of roots, and the decision corpus is not
+  one of them, so a decision-record PR reads `harness: false` and still owes the verdict. A PR that
+  took a clean PASS on that misreading was then blocked at the merge gate on `ns governance
+  absent`.
   **Fire it before the code class's `review ci --wait`, not after.** The floor check-run at the head
   does not go green until your verdict binds there, so waiting first is waiting on yourself; the verb
   answers `governance-owed` or `governance-stale` rather than misrouting the read, and this order
-  avoids the round entirely (#7392, #7441).
+  avoids the round entirely.
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
-  arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
-  which owns that rule, this is only a pointer to it — records no FAIL until every derived
-  namespace holds a binding verdict, so a declined governance round strands the lane with the
+  arrival" is the deadlock the every-round rule exists to rule out: the third refusal guarding
+  `operate`'s `FAIL` row — which owns that rule, this is only a pointer to it — records no FAIL
+  until every derived namespace holds a binding verdict, so a declined governance round strands the
+  lane with the
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's
   namespace yourself. **And there is no route out of it**: the Terminal vocabulary's `routed
   elsewhere` covers `review-ui` and `check-epic-plan` only, so this skill has no terminal that ends
   a `governance: required` run with the governance namespace un-fired.
 - **On an epic child the governance verdict is range-scoped and lands on the child issue** —
-  nothing governance-shaped waits for the epic tail. An epic run opens one tail PR (ADR
-  [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run a child has no PR
+  nothing governance-shaped waits for the epic tail. An epic run opens one tail PR and no child PR,
+  so mid-run a child has no PR
   a head could bind to, and `lane prove`'s child arm derives that child's namespaces from the
   **range's own changed paths** through the same `touchesGovernanceRoot` floor it uses on a PR
   ([`prove-verb.ts`](../../../../packages/fabrika-cli/src/lane/prove-verb.ts)) — a range touching a
   governance root derives `governance` exactly as a PR diff does. So post every namespace the range
   derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
   through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
-  through the `governance` skill's own range form (its §5). What binds is content, not a head (ADR
-  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). **A re-post over the
+  through the `governance` skill's own range form (its §5). What binds is content, not a head alone.
+  **A re-post over the
   same range appends exactly as the PR path does** — the prior verdict is retired below the fence,
   the answer's sixth field reads `superseded`, and a polarity flip over that range is exit `17`
-  until `--supersede` says so (#7411). It matters more here than on a PR: a child's comment is the
+  until `--supersede` says so. It matters more here than on a PR: a child's comment is the
   whole record of that child's review, with no PR surface holding a second copy. Deferring the
   namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
   exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
@@ -330,7 +342,7 @@ back.
 
 **A re-post appends; it never replaces.** The fresh verdict takes the comment's first line and the
 one it retires survives verbatim below, under a dated `## Superseded verdict` heading — GitHub keeps
-no comment-body history, so a replaced verdict is a verdict gone (#7247). When your new polarity is
+no comment-body history, so a replaced verdict is a verdict gone. When your new polarity is
 the opposite of the one standing at this head — the ordinary FAIL-then-PASS of a body-only repair
 round — the post is exit `17` until you pass `--supersede`. That is not a fence against the flip,
 which is legitimate and routine; it is the flip that decides the merge, so it is said out loud. On a control-plane PR pass `--carrier advisory` (head bound in the body as `Reviewed-head:`,
@@ -354,10 +366,10 @@ input to the verdict you reach at the end, not an exit from the run. Keep workin
 namespace this PR derives, judge what you can see, and pick your token once, from everything the
 whole run reached. **One `lane report` call per run**, and the first one you make is the one the
 ledger keeps — the log is append-only, and a lane folded into a park holds no cell for a verdict
-that arrives after it. Lane 5661 reported `UNKNOWN` on a malformed criteria heading four seconds
-before its own first FAIL, landed three FAILs at head, and could record none of them: exit `12`,
+that arrives after it. One lane reported `UNKNOWN` on a malformed criteria heading seconds before
+its own first FAIL, landed three FAILs at head, and could record none of them: exit `12`,
 `no update cell for msg.type "FAIL" in state "blocked"`, leaving a ledger that read a wait on a
-human over a PR that needed a repair round (#6112).
+human over a PR that needed a repair round.
 
 **`routed elsewhere` has a mechanical trigger, and it is §1's `routed` rows against your emission
 checklist.** You end `ROUTED` when the routed rows are the *whole* required set — every namespace
@@ -379,16 +391,16 @@ the two modality handoffs and nothing else — `review-ui` for a rendered visual
 a plan ledger — each a subject this skill cannot judge at all. Governance it can and must reach: §6
 makes the namespace derived-required at every round on a `governance: required` diff, so firing it and
 waiting happens **inside** this run, and no terminal above ends a run with that namespace un-fired.
-Routing it away instead is what stranded PR [#5738](https://github.com/kamp-us/phoenix/pull/5738) at
-head `7847ecf3` (#5769): `operate`'s `FAIL`-row floor correctly refused to record the FAIL while
+Routing it away instead has stranded a PR at its head:
+`operate`'s `FAIL`-row floor correctly refused to record the FAIL while
 governance held no binding verdict, the machine had no state that could fire it, and the namespace
 filled only because an unrelated second driver happened to run governance on the same lane.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
 per terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane
-event in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that same section's
-`fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
+event in its code, with the PR as the event's evidence. `<fabrika>` is that same section's
+`fabrika:` entrypoint, the one path this repo's verbs actually run from:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url>
@@ -396,8 +408,8 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr 
 
 `--task` names which task of the lane your verdict addresses, and it is not optional wherever a lane
 has more than one — every epic run. The verb resolves a missing one only on a single-task lane and
-otherwise refuses at exit `13` before it appends anything, so a report that omits it records nothing
-(#6084).
+otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing.
 
 **Add `--class ui` to that line only when §1 printed a `routed\treview-ui` row**, and never
 otherwise:
@@ -417,8 +429,8 @@ an incomplete read the lane must not act on yet, so print the terminal without r
 the record to the operator's re-read. And record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
 when no derived namespace holds a still-binding `FAIL`**: those three park the lane on a human, a
 `FAIL` routes it into a repair round under the retry budget, and a park recorded over a FAIL
-converts the second into the first with nothing downstream able to tell (ADR
-[0329](../../../../.decisions/0329-a-reviewers-park-is-proof-gated-by-the-fails-at-head.md)).
+converts the second into the first with nothing downstream able to tell — which is why a park out
+of this gate is proof-gated by the FAILs standing at the head.
 `lane report` proves that half itself — a park out of `review` is refused at exit `24` naming the
 FAILs it read, and `FAIL` is the token that refusal points at. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it, and it **proves a `PASS` before it records it** — read off the PR itself, exit `23`
@@ -426,7 +438,8 @@ where a namespace holds no verdict still binding at the head. What it proves is 
 owes, and your class flag is what decides that: a routed namespace is left to the `review:ui` cell
 only when the flag routes this very `PASS` into it, and out of `review:ui` the whole derived set must
 stand. Omit the flag on a rendered PR and the routed namespace is owed **here** — exit `23` naming
-it, with the flag as the remedy (ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
+it, with the flag as the remedy. The review bar splits across those two cells and the machine
+decides which one owes what; you relay the row, never the split.
 The merge gate re-derives all of it either way. A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
 change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
 and records nothing.

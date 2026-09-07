@@ -20,6 +20,7 @@ import {
 	initialState,
 	isAiAgentSessionState,
 } from "../../ai-agent/core/index.ts";
+import {Mode} from "../../ai-agent/ports/index.ts";
 import {checkpointFields, resumeMessages} from "../../ai-agent/restore/index.ts";
 import {
 	type AgentScript,
@@ -138,11 +139,15 @@ const apply = (
 ): readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>] =>
 	applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(machine, state, msg);
 
+/** The mode the operator switched to before the app stopped, which the checkpoint carries. */
+const SWITCHED_TO = Mode.make("plan");
+
 /** A checkpoint as the store would hand one back: a session that was live when the app stopped. */
 const saved: AiAgentSessionState = {
 	...initialState(CWD),
 	phase: "prompting",
 	sessionId: SESSION,
+	modes: {current: SWITCHED_TO, available: [SWITCHED_TO]},
 };
 
 describe("what a claude-session checkpoint is made of", () => {
@@ -172,13 +177,15 @@ describe("a restored claude session before anything reconnects it", () => {
 		assert.deepStrictEqual(resumeMessages(state), [{type: "reconnect"}]);
 	});
 
-	it("enters reconnecting and asks for a republish and a resume by id", () => {
+	it("enters reconnecting and asks for a republish and a resume by id, on the saved mode", () => {
 		const [restored] = machine.init(saved, {});
 		const [state, cmds] = apply(restored, {type: "reconnect"});
 		assert.strictEqual(state.phase, "reconnecting");
 		assert.deepStrictEqual(cmds, [
 			{type: "aiAgent.republish"},
-			{type: "aiAgent.reconnect", cwd: CWD, sessionId: SESSION},
+			// The mode rides the Cmd rather than a later `setMode`: the rebuilt layer holds none, so
+			// it has to open on the operator's switch to announce it (#7953).
+			{type: "aiAgent.reconnect", cwd: CWD, sessionId: SESSION, mode: SWITCHED_TO},
 		]);
 	});
 });
@@ -194,7 +201,13 @@ describe("the reconnect handler", () => {
 
 				yield* handle.dispatch({type: "reconnect"});
 				yield* eventually(() => probe.starts.length === 2);
-				assert.deepStrictEqual(probe.starts[1], {cwd: CWD, resume: SESSION});
+				// `holdsTranscript` rides every reconnect since #8369: the process came back with its
+				// committed tail, so a layer that can replay history is told not to. The tail itself
+				// rides with it, and this session was checkpointed with none.
+				assert.deepStrictEqual(probe.starts[1], {
+					cwd: CWD,
+					resume: {sessionId: SESSION, holdsTranscript: true, held: []},
+				});
 				assert.strictEqual(probe.builds, 2, "the reconnect reused the handle the stop killed");
 			}),
 		);

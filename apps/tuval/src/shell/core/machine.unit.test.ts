@@ -4,8 +4,15 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {CommandName, defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import {
+	CommandName,
+	defaultPrefixTable,
+	FOCUS_LIST_KEY,
+	type Key,
+	type PrefixTable,
+} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
+import {mountPicker} from "../picker/view.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";
 import {activeWorkspace, type ShellState, windowIds} from "./state.ts";
 
@@ -51,6 +58,7 @@ describe("shell core: the reducer's cells", () => {
 			"window.close",
 			"window.focus",
 			"window.focusDirection",
+			"window.forwardKey",
 			"window.open",
 			"window.setView",
 			"window.split",
@@ -203,6 +211,34 @@ describe("shell core: windows", () => {
 		expect(cmds).toEqual([]);
 	});
 
+	it("window.bind drops the view slot the last thing in the window left (#8083, #8265)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(
+			state,
+			{type: "window.setView", view: {cursor: 3, refusal: null, previous: null}},
+			{type: "window.bind", processId: "process-pi"},
+		);
+		expect(filled.views[window]).toBeUndefined();
+	});
+
+	it("window.unbind mounts a fresh picker naming the process it detached (#8083, #8265)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(state, {type: "window.bind", processId: "process-pi"});
+
+		const [unbound] = apply(filled, {type: "window.unbind"});
+		expect(focusedProcess(unbound)).toBeNull();
+		expect(unbound.views[window]).toEqual(mountPicker("process-pi"));
+		expect(windowIds(active(unbound))).toEqual(windowIds(active(filled)));
+	});
+
+	it("window.unbind on a window holding no process changes nothing at all (#8083)", () => {
+		const empty = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		expect(apply(empty, {type: "window.unbind"})[0]).toBe(empty);
+		expect(apply(empty, {type: "window.unbind", windowId: "window-nope"})[0]).toBe(empty);
+	});
+
 	it("window.setView writes the focused window's slot and refuses an unknown window", () => {
 		const state = initialState();
 		const [viewed] = apply(state, {type: "window.setView", view: {scroll: 3, wrap: true}});
@@ -290,6 +326,61 @@ describe("shell core: keys", () => {
 			},
 		]);
 		expect(after.prefix).toEqual({armed: false});
+	});
+
+	/**
+	 * The whole route the chord takes (#8407): the router resolves `<c-b> a` to a command name, the
+	 * command table turns that name into `window.forwardKey`, and its cell hands the focused window a
+	 * key no keyboard can produce. Read here rather than at the window, because the claim is that the
+	 * three tables agree — a component test could pass with the binding missing entirely.
+	 */
+	it("<c-b> a mints the focus-list key and hands it to the focused window", () => {
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-agent",
+			takesKeys: true,
+		});
+		const [after, cmds] = apply(fold(bound, prefix), press("a"));
+
+		expect(cmds).toEqual([
+			{
+				type: "forwardKey",
+				processId: "process-agent",
+				windowId: active(bound).focused,
+				key: FOCUS_LIST_KEY,
+			},
+		]);
+		// The answer the page reads, and the half that reaches the *renderer* — where a list's focus
+		// lives. Without it the chord would end at the process and never move anything on screen.
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: FOCUS_LIST_KEY});
+		expect(after.prefix).toEqual({armed: false});
+	});
+
+	it("answers the page the same key even where there is no process to forward it to", () => {
+		const bound = fold(initialState(), {type: "window.bind", processId: "process-agent"});
+		const [after, cmds] = apply(fold(bound, prefix), press("a"));
+
+		expect(cmds).toEqual([]);
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: FOCUS_LIST_KEY});
+	});
+
+	it("a bare `a` is the window's own key and mints nothing", () => {
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-agent",
+			takesKeys: true,
+		});
+		const [after, cmds] = apply(bound, press("a"));
+
+		expect(cmds).toEqual([
+			{
+				type: "forwardKey",
+				processId: "process-agent",
+				windowId: active(bound).focused,
+				key: "a",
+			},
+		]);
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: "a"});
 	});
 
 	it("a window whose program never declared keys is forwarded none (#7973)", () => {

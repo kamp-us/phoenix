@@ -5,7 +5,7 @@
  * That is the only arrangement in which the two values are distinguishable, and for a long time
  * nothing here arranged it: the binding resolved `origin/<baseRef>` and every caller downstream read
  * that one value as "the base", so a verb printing the branch tip and a verb printing the branch
- * point were indistinguishable from any test (#5770).
+ * point were indistinguishable from any test.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -21,7 +21,7 @@ const PULL: PullRecord = {
 	state: "open",
 	headSha: HEAD,
 	body: "",
-	htmlUrl: "https://github.com/o/r/pull/4321",
+	htmlUrl: "https://example.test/o/r/pull/4321",
 	changedFiles: 2,
 	comments: 0,
 	draft: false,
@@ -74,7 +74,7 @@ describe("bindHead under a moved base branch", () => {
 	});
 
 	/**
-	 * The divergence criterion of #5770, stated as the report stated it: on the observed instance the
+	 * The divergence criterion, stated as the report stated it: on the observed instance the
 	 * printed base was a *later* main commit than the real branch point, so the failure this pins is a
 	 * tip leaking into the line, not a stale local ref.
 	 */

@@ -51,7 +51,7 @@ export const OFF_VOCABULARY = SHARED_CLASSIFIED;
  */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
-/** Proven: no design manifest at the convention path — the repo is un-bootstrapped (#4952). */
+/** Proven: no design manifest at the convention path — the repo is un-bootstrapped. */
 export const NO_MANIFEST = 12;
 /** Proven: the manifest exists but no typed prohibition registry does — the law is untyped. */
 export const UNTYPED_LAW = 13;
@@ -72,5 +72,5 @@ export const UPLOAD_FAILED = 17;
  * group's seat allocation to the other's.
  */
 export const LANE_NOT_MINE = 18;
-/** Proven: no render harness is declared — the repo cannot be rendered headlessly. */
-export const NO_HARNESS = 19;
+/** Proven: `.fabrika.jsonc` declares no `uiSurfaces` row — the repo cannot be rendered headlessly. */
+export const NO_UI_SURFACE = 19;

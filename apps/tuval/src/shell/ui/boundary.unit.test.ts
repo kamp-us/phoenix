@@ -38,6 +38,15 @@ const specifiersOf = (source: string): ReadonlyArray<string> =>
 /** The two slices under `src/shell/` that render. A third one is a decision, not a drift. */
 const rendering: ReadonlySet<string> = new Set(["ui", "chat"]);
 
+/**
+ * The one module of `ui/` the other rendering slice may reach for (#8407). `useForwardedKey` is the
+ * renderer's half of the desk's key channel, and the desk is where the channel has to live — the
+ * page owns exactly one keyboard listener (#7559) and `WindowHost` stays free of the DOM. So a
+ * window renderer outside `ui/` that must hear a key has this door and no other; the desk's own
+ * chrome stays as unreachable from `chat/` as it is from every logic slice.
+ */
+const allowed: ReadonlySet<string> = new Set(["../ui/forwarded-key.tsx"]);
+
 describe("ui boundary", () => {
 	it("stores nothing in a window's slot that the slot cannot hold", () => {
 		expect(pickerViewFits).toBe(true);
@@ -62,7 +71,7 @@ describe("ui boundary", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("is depended on by nothing outside itself", () => {
+	it("is depended on by nothing outside itself, bar the one key channel a renderer needs", () => {
 		const shell = dirname(import.meta.dirname);
 		const offenders = readdirSync(shell, {withFileTypes: true})
 			.filter((entry) => entry.isDirectory() && entry.name !== "ui")
@@ -70,10 +79,16 @@ describe("ui boundary", () => {
 				sourcesIn(join(shell, entry.name)).flatMap(([name, source]) =>
 					specifiersOf(source)
 						.filter((specifier) => specifier.includes("/ui/") || specifier.startsWith("../ui/"))
+						.filter((specifier) => !allowed.has(specifier))
 						.map((specifier) => `${entry.name}/${name}: ${specifier}`),
 				),
 			);
 		expect(offenders).toEqual([]);
+		// The teeth: the edge below is one named module, not the slice. Anything else in `ui/` is
+		// still refused, including from `chat/`.
+		expect([...allowed].filter((specifier) => !specifier.endsWith("/forwarded-key.tsx"))).toEqual(
+			[],
+		);
 	});
 
 	it("registers the application-level keyboard listener in exactly one file", () => {

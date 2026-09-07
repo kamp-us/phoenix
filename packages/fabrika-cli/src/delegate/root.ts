@@ -3,8 +3,8 @@
  *
  * This exists so the delegation can tell *"I am not in a repo"* apart from *"I am in a repo that
  * pins `@kampus/fabrika-cli` but has not installed it"*. Collapsing those two into one branch is what makes a
- * delegation quietly wrong: the second case silently runs the global, which is the outcome #4784
- * exists to prevent. Only one of them is allowed to be silent, and it is the first.
+ * delegation quietly wrong: the second case silently runs the global, which is the outcome this
+ * split exists to prevent. Only one of them is allowed to be silent, and it is the first.
  *
  * The rule is turbo's (`crates/turborepo-shim/`, `main` @ `c6fbc97`): collect **every** ancestor
  * holding a `package.json` — never stop at the first — then prefer the **highest** one whose
@@ -168,7 +168,7 @@ export const discoverRepoRoot = (
  * Where the *running* copy lives — the second root the delegation has to know about.
  *
  * A tagged union rather than `string | undefined` on purpose: `undefined` would be readable as "not
- * looked up", and never looking it up is exactly the defect (#4956). This type has no state that
+ * looked up", and never looking it up is exactly the defect. This type has no state that
  * means "undecided", so a caller either has an answer or is holding an `Effect` that failed.
  */
 export type SelfOrigin =

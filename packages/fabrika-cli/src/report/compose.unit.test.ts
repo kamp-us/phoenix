@@ -87,7 +87,7 @@ describe("renderFooter", () => {
 		);
 	});
 
-	it("never drops the `Filed by an agent` marker — it is ADR 0159's never-auto-close signal", () => {
+	it("never drops the `Filed by an agent` marker — it is the never-auto-close signal", () => {
 		expect(
 			renderFooter({session: null, model: null, branch: null, timestamp: "2026-08-01T14:22:07Z"}),
 		).toBe("---\n<sub>Filed by an agent · 2026-08-01T14:22:07Z</sub>");

@@ -276,7 +276,7 @@ export const execStatus = (
  * It exists so a message can reach a command **without a file on disk at all** (§SP rule 1). The
  * scar is `git commit -F <path>`: the path is a second place the bytes live, and a lane that read
  * back a two-day-old file at that path committed another lane's message with nothing failing
- * anywhere (#5484). Bytes handed straight to the child cannot be stale.
+ * anywhere. Bytes handed straight to the child cannot be stale.
  */
 export const execCaptureInput = (file: string, args: ReadonlyArray<string>, input: string): Exec =>
 	captured(file, args, input);

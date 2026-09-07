@@ -169,18 +169,20 @@ rewritten is one the operator believes is configured and is not.
 
 ## A path key, and the one path a repo may decline
 
-The path surface — `governedRoots`, `decisionsDir`, `roadmapFile`, `cycleDoc`, `designHarness` — is
-where a repo says which files fabrika reads by name (#6296). Three things hold across all of them.
+The path surface — `governedRoots`, `decisionsDir`, `roadmapFile`, `cycleDoc` — is where a repo says
+which files fabrika reads by name (#6296). Three things hold across all of them. (A fifth key,
+`designHarness`, sat here until #7369 folded the file it named into the `uiSurfaces` list key, which
+declares the surfaces themselves rather than a path to them.)
 
 **The shipped default is the string's one home, and the old literal re-exports it.**
-`review/classes.ts`'s `DECISIONS_ROOT`, `plan/github.ts`'s `CYCLE_DOC_PATH`, `triage/roadmap.ts`'s
-`ROADMAP_FILE` and `ui/conventions.ts`'s `HARNESS_PATH` are now `export {…} from` the key module, so
-a caller that scaffolds the file and a caller that reads a repo's declared one cannot drift apart.
+`review/classes.ts`'s `DECISIONS_ROOT`, `plan/github.ts`'s `CYCLE_DOC_PATH` and
+`triage/roadmap.ts`'s `ROADMAP_FILE` are now `export {…} from` the key module, so a caller that
+scaffolds the file and a caller that reads a repo's declared one cannot drift apart.
 
 **A reader that could not read is not a reader that read nothing.** `config/paths.ts` gives every
-path key a reader — `governedRootsOr`, `cycleDocOr`, `designHarnessOr`, `decisionsDirOr` and
-`readRoadmapFile` — each answering the value plus a note naming where it came from, or the one
-refusal sentence its callers print. `roadmapFile` is the exception to the shared sentence: it has no
+path key a reader — `governedRootsOr`, `cycleDocOr`, `decisionsDirOr` and `readRoadmapFile` — each
+answering the value plus a note naming where it came from, or the one refusal sentence its callers
+print. `roadmapFile` is the exception to the shared sentence: it has no
 `…Or` form, exposing the raw `Read` as `readRoadmapFile`, and its four callers word their own
 refusal. The exit code stays each verb's; only the sentence is shared, so seven verbs cannot word the
 same fault seven ways. `Malformed` and `Unknown` both refuse there: falling back to the shipped

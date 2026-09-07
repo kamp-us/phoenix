@@ -15,8 +15,9 @@ import {checkpointUnreadable} from "./failures.ts";
 import {promptItemId} from "./fold.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
+import {queueLimit} from "./queue.ts";
 import {isAiAgentSessionState, loadCheckpoint} from "./snapshot.ts";
-import {type AiAgentSessionState, checkpointFields, initialState} from "./state.ts";
+import {type AiAgentSessionState, checkpointFields, initialState, usageTotals} from "./state.ts";
 
 const machine = aiAgentSessionMachine({cwd: "/repo"});
 
@@ -166,7 +167,7 @@ describe("start", () => {
 		});
 		expect(state.phase).toBe("starting");
 		expect(state.cwd).toBe("/other");
-		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/other", resume: null}]);
+		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/other", resume: null, mode: null}]);
 	});
 
 	it("carries the resume id for a session the backend already holds", () => {
@@ -175,7 +176,7 @@ describe("start", () => {
 			cwd: "/repo",
 			resume: "session-1",
 		});
-		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/repo", resume: "session-1"}]);
+		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/repo", resume: "session-1", mode: null}]);
 	});
 
 	it("refuses as data while a session is already live", () => {
@@ -234,7 +235,7 @@ describe("prompt", () => {
 	});
 
 	it("is refused as data outside ready, and emits nothing", () => {
-		for (const phase of ["idle", "starting", "prompting", "reconnecting", "gone"] as const) {
+		for (const phase of ["idle", "starting", "reconnecting", "gone"] as const) {
 			const [state, cmds] = apply(started({phase}), prompt("hi", "k"));
 			expect(state.failure?.tag).toBe("tuval/ai-agent/PromptError");
 			expect(state.phase).toBe(phase);
@@ -246,6 +247,146 @@ describe("prompt", () => {
 	it("clears the interrupted marker, because a resend is a new send", () => {
 		const [state] = apply(started({interrupted: assistantItem("a1").id}), prompt("again", "k2"));
 		expect(state.interrupted).toBeNull();
+	});
+});
+
+/**
+ * #8159: a prompt written during a turn is the one prompt outside `ready` that is not a refusal.
+ * The composer offers a "queue" button, so the core keeps a queue — and the turn's own end is the
+ * only thing that admits from it.
+ */
+describe("a prompt written while the turn runs", () => {
+	const prompt = (text: string, key: string): AiAgentSessionMsg => ({
+		type: "prompt",
+		text,
+		key,
+		timestamp: SENT_AT,
+	});
+
+	const turnBegan: AiAgentSessionMsg = {
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "phase", phase: "prompting"},
+	};
+
+	const turnEnded: AiAgentSessionMsg = {
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "phase", phase: "ready"},
+	};
+
+	// The layer narrates the turn beginning, because that is what makes `turnEnded` below the end of
+	// a turn the backend really ran rather than a stale `ready` (#8107).
+	const running = (over: Partial<AiAgentSessionState> = {}): AiAgentSessionState =>
+		apply(apply(started(over), prompt("make the README", "k1"))[0], turnBegan)[0];
+
+	it("waits in the queue rather than being refused, and reaches no layer yet", () => {
+		const [state, cmds] = apply(running(), prompt("then the CHANGELOG", "k2"));
+		expect(state.queued).toEqual([{key: "k2", text: "then the CHANGELOG", timestamp: SENT_AT}]);
+		expect(state.failure).toBeNull();
+		expect(cmds).toEqual([]);
+	});
+
+	// Nothing has been sent, so nothing claims a turn: the item lands with the admission.
+	it("is not on the tail while it waits, and is on it once it is sent", () => {
+		const [queued] = apply(running(), prompt("then the CHANGELOG", "k2"));
+		expect(queued.transcript.items.map((item) => item.id)).toEqual([promptItemId("k1")]);
+		const [sent, cmds] = apply(queued, turnEnded);
+		expect(sent.transcript.items.map((item) => item.id)).toEqual([
+			promptItemId("k1"),
+			promptItemId("k2"),
+		]);
+		expect(sent).toMatchObject({phase: "prompting", lastPrompt: "then the CHANGELOG", queued: []});
+		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "then the CHANGELOG", key: "k2"}]);
+	});
+
+	it("leaves its send unsettled while it waits, and pending once it is sent", () => {
+		const [queued] = apply(running(), prompt("then the CHANGELOG", "k2"));
+		expect(queued.sends).toEqual([{key: "k1", state: "pending", turn: "running"}]);
+		const [sent] = apply(queued, turnEnded);
+		expect(sent.sends).toEqual([
+			{key: "k1", state: "accepted"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+	});
+
+	it("goes one at a time, in the order it was written", () => {
+		const [first] = apply(running(), prompt("second", "k2"));
+		const [both] = apply(first, prompt("third", "k3"));
+		const [sent, cmds] = apply(both, turnEnded);
+		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "second", key: "k2"}]);
+		expect(sent.queued).toEqual([{key: "k3", text: "third", timestamp: SENT_AT}]);
+		const [after, more] = apply(sent, turnEnded);
+		expect(more).toEqual([{type: "aiAgent.prompt", text: "third", key: "k3"}]);
+		expect(after.queued).toEqual([]);
+	});
+
+	// The newest is refused rather than the oldest evicted: silently dropping what an operator
+	// already wrote is the bug the queue exists to fix, and a refusal is recoverable.
+	it("refuses the one past the bound, against its own key", () => {
+		let state = running();
+		for (let index = 0; index < queueLimit; index += 1) {
+			[state] = apply(state, prompt(`queued ${index}`, `q${index}`));
+		}
+		const [full, cmds] = apply(state, prompt("one too many", "k-over"));
+		expect(full.queued).toHaveLength(queueLimit);
+		expect(cmds).toEqual([]);
+		expect(full.failure?.tag).toBe("tuval/ai-agent/PromptError");
+		expect(full.sends).toContainEqual({
+			key: "k-over",
+			state: "refused",
+			failure: full.failure,
+		});
+	});
+
+	it("is released to its window when the operator interrupts, not started behind the stop", () => {
+		const [queued] = apply(running(), prompt("then the CHANGELOG", "k2"));
+		const [cut] = apply(queued, {type: "interrupt", at: SENT_AT});
+		expect(cut.queued).toEqual([]);
+		expect(cut.sends).toContainEqual({
+			key: "k2",
+			state: "refused",
+			failure: {
+				tag: "tuval/ai-agent/PromptError",
+				reason: "refused",
+				detail: "the queued message was not sent: the turn it was waiting for was interrupted",
+			},
+		});
+		const [ended, cmds] = apply(cut, turnEnded);
+		expect(cmds).toEqual([]);
+		expect(ended.queued).toEqual([]);
+	});
+
+	// A prompt written *after* the stop request is the operator's "never mind, do this": it queues
+	// like any other and runs once the turn they stopped actually ends.
+	it("still queues while an interruption is outstanding", () => {
+		const [cut] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [queued, cmds] = apply(cut, prompt("never mind, do this", "k2"));
+		expect(queued.queued).toEqual([{key: "k2", text: "never mind, do this", timestamp: SENT_AT}]);
+		expect(cmds).toEqual([]);
+		const [sent, sentCmds] = apply(queued, turnEnded);
+		expect(sentCmds).toEqual([{type: "aiAgent.prompt", text: "never mind, do this", key: "k2"}]);
+		expect(sent.queued).toEqual([]);
+	});
+
+	it("is released when the session goes away under it", () => {
+		const [queued] = apply(running(), prompt("then the CHANGELOG", "k2"));
+		const [gone] = apply(queued, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.queued).toEqual([]);
+		expect(gone.sends).toContainEqual({
+			key: "k2",
+			state: "refused",
+			failure: {
+				tag: "tuval/ai-agent/PromptError",
+				reason: "refused",
+				detail:
+					"the queued message was not sent: the session ended before the turn it was waiting for did",
+			},
+		});
 	});
 });
 
@@ -345,22 +486,51 @@ describe("event", () => {
 		expect(state.modes).toEqual({current: "plan", available: ["plan"]});
 	});
 
-	it("accumulates cost and tokens across usage events", () => {
-		const usage = (cost: number): AgentEvent => ({
+	it("accumulates cost and tokens across turns", () => {
+		const usage = (turn: string, cost: number): AgentEvent => ({
 			kind: "usage",
+			turn,
 			model: "claude-opus-5",
 			inputTokens: 10,
 			outputTokens: 5,
 			cost,
 		});
-		const [once] = apply(started(), {type: "event", sessionId: "session-1", event: usage(0.01)});
-		const [twice] = apply(once, {type: "event", sessionId: "session-1", event: usage(0.02)});
-		expect(twice.usage).toEqual({
+		const [once] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: usage("turn-1", 0.01),
+		});
+		const [twice] = apply(once, {
+			type: "event",
+			sessionId: "session-1",
+			event: usage("turn-2", 0.02),
+		});
+		expect(usageTotals(twice.usage)).toEqual({
 			model: "claude-opus-5",
 			inputTokens: 20,
 			outputTokens: 10,
 			cost: 0.03,
 		});
+	});
+
+	/**
+	 * A layer reports a turn's cost as a fact about that turn, and reports it again whenever a
+	 * resume walks a transcript this process has already folded (#8369). The second report is the
+	 * same turn, not a second one.
+	 */
+	it("counts one turn's cost once however often the backend reports it", () => {
+		const usage: AgentEvent = {
+			kind: "usage",
+			turn: "turn-1",
+			model: "claude-opus-5",
+			inputTokens: 10,
+			outputTokens: 5,
+			cost: 0.01,
+		};
+		const [once] = apply(started(), {type: "event", sessionId: "session-1", event: usage});
+		const [twice] = apply(once, {type: "event", sessionId: "session-1", event: usage});
+		expect(usageTotals(twice.usage)).toEqual(usageTotals(once.usage));
+		expect(usageTotals(twice.usage).cost).toBe(0.01);
 	});
 
 	it("adds a permission card and drops it when the backend settles it itself", () => {
@@ -673,7 +843,9 @@ describe("interrupt", () => {
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
 	});
 
-	it("keeps refusing a prompt while the interruption is outstanding", () => {
+	// The prompt waits rather than being refused (#8159), and the stop request stands over it: an
+	// outstanding interruption is still the session's answer about the turn that is running.
+	it("sends nothing new while the interruption is outstanding", () => {
 		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
 		const [next, cmds] = apply(asked, {
 			type: "prompt",
@@ -681,7 +853,8 @@ describe("interrupt", () => {
 			key: "k9",
 			timestamp: SENT_AT + 1,
 		});
-		expect(next.failure?.reason).toBe("no-session");
+		expect(next.queued).toHaveLength(1);
+		expect(next.interruption).toEqual({requestedAt: SENT_AT});
 		expect(cmds).toEqual([]);
 	});
 
@@ -778,12 +951,17 @@ describe("interrupt", () => {
 });
 
 describe("reconnect", () => {
-	it("republishes what it holds, then asks the layer to re-attach the session", () => {
-		const [state, cmds] = apply(started({phase: "gone"}), {type: "reconnect"});
+	it("republishes what it holds, then asks the layer to re-attach the session on its mode", () => {
+		const [state, cmds] = apply(
+			started({phase: "gone", modes: {current: Mode.make("plan"), available: [Mode.make("plan")]}}),
+			{type: "reconnect"},
+		);
 		expect(state.phase).toBe("reconnecting");
 		expect(cmds).toEqual([
 			{type: "aiAgent.republish"},
-			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1"},
+			// The rebuilt layer holds no mode, so the one the session is on has to go out with the
+			// re-attach rather than as a `setMode` after it (#7953).
+			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1", mode: Mode.make("plan")},
 		]);
 	});
 
@@ -842,6 +1020,13 @@ describe("a send's outcome, under its own key", () => {
 		event: {kind: "phase", phase: "ready"},
 	};
 
+	/** The layer saying the backend has begun the turn — the half a bare `ready` cannot supply. */
+	const turnBegan: AiAgentSessionMsg = {
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "phase", phase: "prompting"},
+	};
+
 	const prompt = (key: string): AiAgentSessionMsg => ({
 		type: "prompt",
 		text: "ship it",
@@ -850,7 +1035,7 @@ describe("a send's outcome, under its own key", () => {
 	});
 
 	it("records an admission refusal against the key that earned it", () => {
-		const [refused, cmds] = apply(started({phase: "prompting"}), prompt("k1"));
+		const [refused, cmds] = apply(started({phase: "idle"}), prompt("k1"));
 		expect(cmds).toEqual([]);
 		expect(refused.sends).toEqual([{key: "k1", state: "refused", failure: refused.failure}]);
 		expect(refused.failure?.tag).toBe("tuval/ai-agent/PromptError");
@@ -858,29 +1043,58 @@ describe("a send's outcome, under its own key", () => {
 
 	it("leaves an admitted send pending through a handoff nobody refused", () => {
 		const [admitted] = apply(started(), prompt("k1"));
-		expect(admitted.sends).toEqual([{key: "k1", state: "pending"}]);
+		expect(admitted.sends).toEqual([{key: "k1", state: "pending", turn: "unstarted"}]);
 
 		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
-		expect(handed.sends).toEqual([{key: "k1", state: "pending"}]);
+		expect(handed.sends).toEqual([{key: "k1", state: "pending", turn: "unstarted"}]);
 		expect(handed.phase).toBe("prompting");
 	});
 
 	it("accepts the send once the turn the backend ran comes to an end", () => {
 		const [admitted] = apply(started(), prompt("k1"));
 		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
-		const [done] = apply(handed, turnEnded);
+		const [running] = apply(handed, turnBegan);
+		const [done] = apply(running, turnEnded);
 		expect(done.sends).toEqual([{key: "k1", state: "accepted"}]);
 		expect(done.phase).toBe("ready");
 	});
 
 	it("holds the send through the turn the layer is still narrating", () => {
 		const [admitted] = apply(started(), prompt("k1"));
-		const [narrating] = apply(admitted, {
+		const [narrating] = apply(admitted, turnBegan);
+		expect(narrating.sends).toEqual([{key: "k1", state: "pending", turn: "running"}]);
+	});
+
+	/**
+	 * #8107. The `prompt` cell walks the session to `prompting` before `aiAgent.prompt` is even
+	 * called, so a `ready` belonging to no turn of this send's — Pi's first snapshot off an `idle`
+	 * session, the Claude layer's opening `ready` read out of its queue — arrives looking exactly
+	 * like a turn's end. Accepting on it releases the window's copy of text the backend has never
+	 * seen, and the refusal a round trip later then has nothing left to offer back.
+	 */
+	it("holds the send through a ready the backend never ran a turn for", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [stale] = apply(handed, turnEnded);
+		expect(stale.sends).toEqual([{key: "k1", state: "pending", turn: "unstarted"}]);
+		expect(stale.phase).toBe("ready");
+	});
+
+	it("still has the send to settle when a refusal follows a stale ready", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [stale] = apply(handed, turnEnded);
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the pin refused the turn",
+		};
+		const [answered] = apply(stale, {
 			type: "event",
 			sessionId: "session-1",
-			event: {kind: "phase", phase: "prompting"},
+			event: {kind: "failure", failure},
 		});
-		expect(narrating.sends).toEqual([{key: "k1", state: "pending"}]);
+		expect(answered.sends).toEqual([{key: "k1", state: "refused", failure}]);
 	});
 
 	/**
@@ -922,7 +1136,8 @@ describe("a send's outcome, under its own key", () => {
 	/** A turn that ended is a turn the text crossed for, so nothing later reopens the send. */
 	it("leaves an accepted send alone when the session goes away afterwards", () => {
 		const [admitted] = apply(started(), prompt("k1"));
-		const [done] = apply(admitted, turnEnded);
+		const [running] = apply(admitted, turnBegan);
+		const [done] = apply(running, turnEnded);
 		const [gone] = apply(done, {
 			type: "event",
 			sessionId: "session-1",
@@ -973,7 +1188,7 @@ describe("a send's outcome, under its own key", () => {
 	it("leaves a send in flight alone when the operator interrupts, so a later refusal still settles it", () => {
 		const [admitted] = apply(started(), prompt("k1"));
 		const [cut] = apply(admitted, {type: "interrupt", at: SENT_AT});
-		expect(cut.sends).toEqual([{key: "k1", state: "pending"}]);
+		expect(cut.sends).toEqual([{key: "k1", state: "pending", turn: "unstarted"}]);
 
 		const failure = {
 			tag: "tuval/ai-agent/PromptError",
@@ -988,29 +1203,155 @@ describe("a send's outcome, under its own key", () => {
 	it("accepts an interrupted send once the layer narrates the turn's end", () => {
 		const [admitted] = apply(started(), prompt("k1"));
 		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
-		const [cut] = apply(handed, {type: "interrupt", at: SENT_AT});
+		const [running] = apply(handed, turnBegan);
+		const [cut] = apply(running, {type: "interrupt", at: SENT_AT});
 		const [done] = apply(cut, turnEnded);
 		expect(done.sends).toEqual([{key: "k1", state: "accepted"}]);
 	});
 
 	/**
-	 * The two-window race, at the core. One window's prompt is admitted and the other's is refused
-	 * because the session is no longer `ready`; both outcomes stand, each under its own key, so
-	 * neither window can read the other's answer as its own.
+	 * #8107's second half. A stale `ready` leaves the session `ready` under a send whose turn never
+	 * began, and the composer is gated on the phase — so the operator can send again into that gap
+	 * and two sends are in flight at once. From there each turn has to reach the send it belongs
+	 * to: the ledger keeps them in the order they were handed over, a turn begins for the oldest
+	 * send still waiting for one, and only that running turn's end accepts. Get either wrong and a
+	 * later turn accepts the older, never-started send — the window drops the copy of text the
+	 * backend never took, which is the harm this issue is about.
+	 */
+	it("accepts each of two sends in flight on its own turn, oldest first", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [stale] = apply(handed, turnEnded);
+		expect(stale.phase).toBe("ready");
+
+		const [second] = apply(stale, prompt("k2"));
+		const [handedSecond] = apply(second, {type: "sent", key: "k2", failure: null});
+		expect(handedSecond.sends).toEqual([
+			{key: "k1", state: "pending", turn: "unstarted"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+
+		const [firstRunning] = apply(handedSecond, turnBegan);
+		expect(firstRunning.sends).toEqual([
+			{key: "k1", state: "pending", turn: "running"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+
+		const [firstDone] = apply(firstRunning, turnEnded);
+		expect(firstDone.sends).toEqual([
+			{key: "k1", state: "accepted"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+
+		const [secondRunning] = apply(firstDone, turnBegan);
+		const [secondDone] = apply(secondRunning, turnEnded);
+		expect(secondDone.sends).toEqual([
+			{key: "k1", state: "accepted"},
+			{key: "k2", state: "accepted"},
+		]);
+	});
+
+	/**
+	 * The other end of the same state: the session goes away with two sends in flight. The turn
+	 * that was running takes the failure's own arm and the send behind it is `uncertain` — nobody
+	 * can say whether the backend held it — and neither is left `pending`, which would strand it
+	 * for ever on a session that narrates no more turns (#8107).
+	 */
+	it("settles both sends in flight when the session ends under them", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [stale] = apply(handed, turnEnded);
+		const [second] = apply(stale, prompt("k2"));
+		const [running] = apply(second, turnBegan);
+
+		const [gone] = apply(running, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([
+			{key: "k1", state: "uncertain", failure: null},
+			{key: "k2", state: "uncertain", failure: null},
+		]);
+	});
+
+	/**
+	 * Where #8107's ledger and #8160's streaming cross. A running turn is streaming its reply, so
+	 * the tail holds a frame still marked `partial`, and then the session dies under it. One phase
+	 * event has to do both jobs: settle the send in flight and settle the stranded frame. Missing
+	 * either half has its own harm — a `pending` send strands the window's copy for ever, and a
+	 * live `partial` marker freezes the checkpoint at the last save before the stream (#8170).
+	 */
+	it("settles both the send in flight and the partial the stream stranded when the session goes", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [running] = apply(handed, turnBegan);
+		const [streaming] = apply(running, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "item", item: {...assistantItem("a1", "half a "), partial: true}},
+		});
+		expect(streaming.sends).toEqual([{key: "k1", state: "pending", turn: "running"}]);
+		expect(streaming.transcript.items.some((item) => "partial" in item && item.partial)).toBe(true);
+
+		const [gone] = apply(streaming, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([{key: "k1", state: "uncertain", failure: null}]);
+		expect(gone.transcript.items.some((item) => "partial" in item && item.partial)).toBe(false);
+	});
+
+	/**
+	 * The same crossing on the failure arm, where the session survives: the refusal reaches the
+	 * send that was running by its own arm, and the half-written frame it left behind still stops
+	 * being partial.
+	 */
+	it("settles both the send in flight and the stranded partial when the turn is refused", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [running] = apply(handed, turnBegan);
+		const [streaming] = apply(running, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "item", item: {...assistantItem("a1", "half a "), partial: true}},
+		});
+
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the pin refused the turn",
+		};
+		const [refused] = apply(streaming, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "failure", failure},
+		});
+		expect(refused.sends).toEqual([{key: "k1", state: "refused", failure}]);
+		expect(refused.transcript.items.some((item) => "partial" in item && item.partial)).toBe(false);
+		expect(refused.phase).toBe("ready");
+	});
+
+	/**
+	 * The two-window race, at the core. One window's prompt is admitted and the other's queues
+	 * behind it; each outcome stands under its own key, so neither window can read the other's
+	 * answer as its own.
 	 */
 	it("keeps two racing windows' outcomes apart", () => {
 		const [first] = apply(started(), prompt("k-left"));
 		const [both] = apply(first, prompt("k-right"));
-		expect(both.sends).toEqual([
-			{key: "k-left", state: "pending"},
-			{key: "k-right", state: "refused", failure: both.failure},
-		]);
+		expect(both.sends).toEqual([{key: "k-left", state: "pending", turn: "unstarted"}]);
+		expect(both.queued.map((waiting) => waiting.key)).toEqual(["k-right"]);
 
 		const [handed] = apply(both, {type: "sent", key: "k-left", failure: null});
-		const [answered] = apply(handed, turnEnded);
+		const [running] = apply(handed, turnBegan);
+		const [answered] = apply(running, turnEnded);
+		// Send order, not settle order: the ledger rewrites a key where it stands, because that
+		// position is what tells a later turn which send it belongs to (#8107).
 		expect(answered.sends).toEqual([
-			{key: "k-right", state: "refused", failure: both.failure},
 			{key: "k-left", state: "accepted"},
+			{key: "k-right", state: "pending", turn: "unstarted"},
 		]);
 	});
 });
@@ -1079,6 +1420,11 @@ describe("the Cmd each Msg answers for", () => {
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],
+		[
+			started(),
+			{type: "pageRefused", failure: {tag: "tuval/ai-agent/PageError", reason: null, detail: "x"}},
+			[],
+		],
 		[started({phase: "prompting"}), {type: "interrupt", at: SENT_AT}, ["aiAgent.interrupt"]],
 		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
 		[
@@ -1148,5 +1494,43 @@ describe("the identity filter", () => {
 			}),
 		).toBe("other");
 		expect(machine.identity?.ofMsg({type: "started", sessionId: "session-1"})).toBeUndefined();
+	});
+});
+
+describe("page completion observations", () => {
+	it("tags equal pages and repeated refusals independently of retained state", () => {
+		const page = {items: [userItem("older")], hasMore: true};
+		const failure = {
+			tag: "tuval/ai-agent/PageError",
+			reason: "unknown-cursor",
+			detail: "Unknown cursor",
+		};
+		let state = started();
+		for (const outcome of ["success", "refused", "refused", "success"] as const) {
+			state = apply(state, {type: "page", before: "oldest", limit: 10})[0];
+			expect(state.pageOutcome).toBeNull();
+			state = apply(
+				state,
+				outcome === "success" ? {type: "paged", page} : {type: "pageRefused", failure},
+			)[0];
+			expect(state.pageOutcome).toEqual(
+				outcome === "success" ? {status: "success", page} : {status: "refused", failure},
+			);
+			expect(state.lastPage).toEqual(page);
+		}
+		expect(state.failure).toEqual(failure);
+		expect(loadCheckpoint(JSON.parse(JSON.stringify(state)), "/repo").pageOutcome).toBeNull();
+		const {pageOutcome: _outcome, ...legacy} = state;
+		expect(loadCheckpoint(legacy, "/repo").phase).toBe("idle");
+		expect(loadCheckpoint(legacy, "/repo").pageOutcome).toBeNull();
+	});
+
+	it.each([
+		{status: "success", page: null},
+		{status: "refused", failure: null},
+		{status: "refused", failure: {detail: "missing tag"}},
+		{status: "other"},
+	])("rejects a malformed page outcome %j", (pageOutcome) => {
+		expect(isAiAgentSessionState({...started(), pageOutcome})).toBe(false);
 	});
 });

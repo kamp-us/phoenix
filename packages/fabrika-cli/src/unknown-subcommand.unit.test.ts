@@ -98,12 +98,12 @@ describe("against the real fabrika command tree", () => {
 		}
 	});
 
-	it("finds groups at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds groups at all — fail closed on zero scope", () => {
 		expect(registeredGroups.length).toBeGreaterThan(0);
 	});
 
-	// The token used to be `triage`, which #4822 was reported against; registering that group turned
-	// this fixture green for the wrong reason, so it moved to a name no slice will ever claim.
+	// The token used to be `triage`, the name the defect was reported against; registering that group
+	// turned this fixture green for the wrong reason, so it moved to a name no slice will ever claim.
 	it("refuses an unregistered group", () => {
 		expect(findUnknownSubcommand(fabrikaCommand, ["nosuchgroup", "--help"])).toEqual({
 			token: "nosuchgroup",
@@ -140,7 +140,7 @@ describe("the parser refuses an unknown token at every node that carries subcomm
 
 	const paths = routerPaths(fabrikaCommand);
 
-	it("finds router nodes at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds router nodes at all — fail closed on zero scope", () => {
 		expect(paths.length).toBeGreaterThan(0);
 	});
 

@@ -1,14 +1,14 @@
 /**
- * `review append-criterion` — append one reviewer-authored acceptance criterion under ADR 0079's
+ * `review append-criterion` — append one reviewer-authored acceptance criterion under
  * four fences.
  *
  * The fences run in this order and each is a refusal, never a warning:
  *
- * 1. **ACL-gated, fail-closed** (ADR 0055) — below `write`, or *any* ACL lookup failure, refuses on
+ * 1. **ACL-gated, fail-closed** — below `write`, or *any* ACL lookup failure, refuses on
  *    `14`. Authority comes from the ACL check, never from the text being plausible.
  * 2. **Append-only** — the new body is the old plus exactly one row, proven by a diff guard before
  *    the PATCH is sent (`./append.ts`).
- * 3. **Frozen at ADR 0079's round K**, read from `../retry-budget.ts`'s `CAP_ROUND` — at or past
+ * 3. **Frozen at round K**, read from `../retry-budget.ts`'s `CAP_ROUND` — at or past
  *    the freeze the verb posts the escalation comment and appends nothing. Append-rate stays
  *    bounded by fix-rate; a finding raised at the freeze routes to a human.
  * 4. **In-scope-only is the caller's** — the trace-to-stated-goal test is judgment. What this verb
@@ -66,7 +66,7 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
 const aclRefusal = (repo: string): VerbOutcome =>
 	refuse(
 		ACL_DENIED,
-		`${VERB}: token resolves below write on ${repo}, or the ACL could not be read — refusing the append (ADR 0055, fail-closed).`,
+		`${VERB}: token resolves below write on ${repo}, or the ACL could not be read — refusing the append (fail-closed).`,
 	);
 
 export const runAppendCriterion = (
@@ -132,7 +132,7 @@ export const runAppendCriterion = (
 			const escalated = yield* createComment(
 				repo,
 				issue,
-				`review append-criterion: a finding from PR #${pr}'s round ${round} was NOT appended — the acceptance-criteria fence is frozen at round ${CAP_ROUND} (ADR 0079). Routing it to a human instead.\n\n${authored.text}`,
+				`review append-criterion: a finding from PR #${pr}'s round ${round} was NOT appended — the acceptance-criteria fence is frozen at round ${CAP_ROUND}. Routing it to a human instead.\n\n${authored.text}`,
 			);
 			if (escalated._tag === "Failure") {
 				return refuse(
@@ -158,7 +158,7 @@ export const runAppendCriterion = (
 		// Fence 2 — append-only, proven twice before anything is sent: against the old bytes, and
 		// against what the registered format reads back out of the composed body. The three ways it
 		// can fail refuse on the same code and say different things: one refusal covering all three
-		// left a caller unable to tell a fence hit from an anchor the verb never found (#5716).
+		// left a caller unable to tell a fence hit from an anchor the verb never found.
 		const row = criterionRow(authored.text, pr, round);
 		const composition = insertAfterLastCriterion(target.value.body, row);
 		if (composition._tag === "NoAnchor") {

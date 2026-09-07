@@ -39,6 +39,12 @@ export {
 	transcriptPage,
 } from "./ports.ts";
 export {
+	isSubagentSlot,
+	isSubagentSlots,
+	type SubagentSlot,
+	type SubagentStatus,
+} from "./subagent.ts";
+export {
 	isThinkingLevel,
 	type ThinkingLevel,
 	thinkingLevels,
@@ -47,13 +53,16 @@ export {
 	type AssistantItem,
 	boundToolResult,
 	byteLength,
+	type CompactionItem,
 	ItemId,
 	isJsonValue,
 	isTranscriptItem,
 	isTranscriptItems,
 	type JsonValue,
+	newestBackendItemId,
 	type ResultOmission,
 	type SystemItem,
+	type ThinkingItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,
 	type ToolResult,

@@ -47,10 +47,12 @@ import type {
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
+	type StartOptions,
 	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
@@ -67,8 +69,14 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
-import {pageItems} from "./entries.ts";
-import {emptyProjection, eventsOf} from "./items.ts";
+import {pageCursorAliases, pageItems} from "./entries.ts";
+import {
+	emptyProjection,
+	eventsOf,
+	paintOf,
+	projectionOf,
+	type SnapshotProjection,
+} from "./items.ts";
 import {
 	promptDropOf,
 	promptErrorOf,
@@ -77,6 +85,7 @@ import {
 	storeUnreadable,
 	transportErrorOf,
 } from "./refusals.ts";
+import {readPiSessions} from "./sessions.ts";
 
 /** A model this process may run, named the way Pi's catalog names one. */
 export interface ModelSelection {
@@ -104,6 +113,11 @@ export interface PiAiAgentOptions {
 	 * Pi's own (`$PI_AGENT_DIR`, else `~/.pi/agent`).
 	 */
 	readonly agentDir?: string;
+	/**
+	 * Project the reply still being written, so the window shows text as the model writes it rather
+	 * than when the turn ends. Absent is off, which is the shape every caller had before this key.
+	 */
+	readonly streamPartialText?: boolean;
 }
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -186,6 +200,7 @@ const make = (
 		const pi = yield* PiClientService;
 		const scope = yield* Effect.scope;
 		const sessionDir = options.sessionDir ?? defaultSessionDir;
+		const agentDir = options.agentDir ?? getAgentDir();
 
 		const session = yield* Ref.make<PiSessionRef | null>(null);
 		// The pick an operator made before a session existed. It survives to the next `start`,
@@ -219,9 +234,10 @@ const make = (
 			sessionId: string,
 			open: EventQueue,
 			feed: Queue.Queue<FoldInput>,
+			seed: SnapshotProjection,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
-				const projection = yield* Ref.make(emptyProjection);
+				const projection = yield* Ref.make(seed);
 				const pushes = pi
 					.snapshots(sessionId)
 					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
@@ -318,10 +334,7 @@ const make = (
 			yield* Ref.set(dialled, true);
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: {
-			readonly cwd: string;
-			readonly resume?: string;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: StartOptions) {
 			const previous = yield* Ref.get(pump);
 			if (previous !== null) yield* Fiber.interrupt(previous);
 			yield* Effect.flatMap(Ref.get(queue), Queue.shutdown);
@@ -337,16 +350,38 @@ const make = (
 				// A held pick outranks the layer's static option: it is the later choice, and this
 				// open is the one it was made for.
 				const opening = (yield* Ref.get(pendingModel)) ?? options.model;
-				return options_.resume === undefined
-					? yield* pi.createSession(options_.cwd, opening === undefined ? {} : {model: opening})
-					: yield* pi.attachSession(options_.resume);
+				const resume = options_.resume;
+				if (resume === undefined) {
+					const opened = yield* pi.createSession(
+						options_.cwd,
+						opening === undefined ? {} : {model: opening},
+					);
+					return {ref: opened, seed: emptyProjection, paint: []};
+				}
+				// Either way the lease's own snapshot is the seed, and neither reading of it costs a
+				// round trip: Pi re-sends the whole transcript on every revision, so a fold that
+				// opened on `emptyProjection` replays the session as live items on the first push
+				// after the attach (#8369). What differs is what the caller can already see.
+				const resumed = yield* pi.attachSession(resume.sessionId);
+				const lease = yield* pi.heldSnapshot(resumed.id);
+				// A restored process is looking at its own committed tail, so the seed suppresses
+				// everything through the boundary that tail reaches and emits whatever the session
+				// finished past it — or changed under it — while the socket was down (#8374).
+				if (resume.holdsTranscript) {
+					return {ref: resumed, seed: projectionOf(lease, resume.held), paint: []};
+				}
+				// A window opened out of the picker holds nothing, so the history is painted here,
+				// at the attach, while its tail is still empty.
+				const painted = paintOf(lease);
+				return {ref: resumed, seed: painted.projection, paint: painted.events};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const ref = yield* acquire.pipe(
+			const {ref, seed, paint} = yield* acquire.pipe(
 				Effect.tapError(() => emit(open, [{kind: "phase", phase: "gone"}])),
 			);
+			yield* emit(open, paint);
 
 			// A `start({resume})` reattaches to a session already on its own stored model, and a
 			// create can answer on another, so a held pick is applied here rather than assumed to
@@ -375,9 +410,12 @@ const make = (
 			yield* Ref.set(inbox, feed);
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
-			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed), scope));
+			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed, seed), scope));
 			const offered = catalog.map(refOf);
 			yield* emit(open, [
+				// `StartOptions.mode` is ignored here, and this is the one layer where that is right:
+				// Pi offers no modes at this pin, so there is no operator switch for a rebuilt layer to
+				// lose and the checkpoint carries the same `null` back (#7953).
 				{kind: "mode", current: null, available: []},
 				{kind: "model", current: currentOf(offered, running), available: offered},
 				{kind: "thinking", current: thinking, available: levels},
@@ -523,7 +561,12 @@ const make = (
 				});
 			}
 			const entries = yield* readBranch(sessionDir(current.cwd), current.id, current.cwd);
-			const planned = planTranscriptPage(pageItems(entries), {before, limit});
+			const planned = planTranscriptPage(pageItems(entries), {
+				before,
+				cursorAliases: pageCursorAliases(entries),
+				limit,
+				cursorBoundary: "containing-group",
+			});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
 					// The port declares `limit > 0`; a caller that broke it has a bug this
@@ -536,6 +579,42 @@ const make = (
 			}
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
+
+		/**
+		 * Both of Pi's stores, unioned (#8099). A read of disk rather than of the transport, so it
+		 * answers before `start` and after a drop.
+		 *
+		 * Tuval's own store is located under the project root the layer was built on, or under the
+		 * running session's cwd when the layer was given none — the same one root `start({resume})`
+		 * looks in. With neither, only the `pi` CLI's store is reachable and the answer says so by
+		 * holding its rows alone.
+		 *
+		 * A failed store is a log line and not the answer: it fails only when no store answered at
+		 * all, because returning `[]` there would claim this machine holds no Pi sessions.
+		 */
+		const listSessions = Effect.gen(function* () {
+			const current = yield* Ref.get(session);
+			const root = options.projectRoot ?? current?.cwd;
+			const read = yield* readPiSessions({
+				agentDir,
+				...(root === undefined ? {} : {tuvalDir: sessionDir(root)}),
+			});
+			yield* Effect.forEach(
+				read.failures,
+				(failure) =>
+					Effect.logWarning(
+						`the ${failure.store} Pi session store could not be read: ${failure.detail}`,
+					),
+				{concurrency: 1, discard: true},
+			);
+			if (read.answered.length === 0) {
+				return yield* new ListError({
+					reason: "store-unreadable",
+					detail: read.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
+				});
+			}
+			return read.sessions;
+		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
 
 		return {
 			start,
@@ -562,6 +641,7 @@ const make = (
 			commands: Effect.succeed([]),
 			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};
 	});
@@ -620,6 +700,9 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 				agentDir,
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
+				...(options.streamPartialText === undefined
+					? {}
+					: {streamPartialText: options.streamPartialText}),
 			});
 		}),
 	);

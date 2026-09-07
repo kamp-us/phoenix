@@ -6,7 +6,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {asChatView, initialChatView} from "./view.ts";
+import {asChatView, type ChatView, initialChatView, viewMain, viewSubagent} from "./view.ts";
 
 describe("asChatView", () => {
 	it("reads a slot this window wrote", () => {
@@ -30,6 +30,7 @@ describe("asChatView", () => {
 			atOldest: true,
 			expanded: ["t1", "t2"],
 			unfolded: ["t3"],
+			viewing: null,
 		});
 	});
 
@@ -64,6 +65,7 @@ describe("asChatView", () => {
 			atOldest: false,
 			expanded: [],
 			unfolded: [],
+			viewing: null,
 		});
 	});
 
@@ -84,5 +86,75 @@ describe("asChatView", () => {
 	it("refuses a non-finite scroll offset, which would take the virtualizer with it", () => {
 		expect(asChatView({scroll: Number.NaN}).scroll).toBe(0);
 		expect(asChatView({scroll: Number.POSITIVE_INFINITY}).scroll).toBe(0);
+	});
+
+	// The criterion #8406 states as "a slot written by an older build reads back as main rather than
+	// throwing": every one of these is a slot no build of this window ever wrote.
+	it("reads a slot with no view field, and every unreadable one, as a window on main", () => {
+		expect(asChatView({scroll: 12}).viewing).toBeNull();
+		expect(asChatView({viewing: "call-1"}).viewing).toBeNull();
+		expect(asChatView({viewing: {}}).viewing).toBeNull();
+		expect(asChatView({viewing: {id: ""}}).viewing).toBeNull();
+		expect(asChatView({viewing: {id: 7}}).viewing).toBeNull();
+		expect(asChatView({viewing: [{id: "call-1"}]}).viewing).toBeNull();
+	});
+
+	it("defaults the parked position of a view slot whose park is missing or unreadable", () => {
+		expect(asChatView({viewing: {id: "call-1"}}).viewing).toEqual({
+			id: "call-1",
+			from: {pinned: true, scroll: 0},
+		});
+		expect(asChatView({viewing: {id: "call-1", from: {scroll: "far", pinned: 3}}}).viewing).toEqual(
+			{
+				id: "call-1",
+				from: {pinned: true, scroll: 0},
+			},
+		);
+		expect(
+			asChatView({viewing: {id: "call-1", from: {pinned: false, scroll: 420}}}).viewing,
+		).toEqual({id: "call-1", from: {pinned: false, scroll: 420}});
+	});
+});
+
+describe("swapping the one view slot", () => {
+	const main: ChatView = {...initialChatView, pinned: false, scroll: 420};
+
+	it("parks where main was left and starts the subagent on its own newest row", () => {
+		const swapped = viewSubagent(main, "call-1");
+		expect(swapped.viewing).toEqual({id: "call-1", from: {pinned: false, scroll: 420}});
+		expect([swapped.pinned, swapped.scroll]).toEqual([true, 0]);
+	});
+
+	it("puts main back exactly where it was left", () => {
+		const back = viewMain(viewSubagent(main, "call-1"));
+		expect(back.viewing).toBeNull();
+		expect([back.pinned, back.scroll]).toEqual([false, 420]);
+	});
+
+	// Main was left once. A hop from one worker to another must not re-park the *subagent's* offset
+	// as main's, or the back action would land on a position that was never main's.
+	it("keeps the original park when the slot hops straight to another subagent", () => {
+		const first = viewSubagent(main, "call-1");
+		const scrolled = {...first, pinned: false, scroll: 90};
+		const second = viewSubagent(scrolled, "call-2");
+		expect(second.viewing).toEqual({id: "call-2", from: {pinned: false, scroll: 420}});
+		expect(viewMain(second).scroll).toBe(420);
+	});
+
+	it("is identity when the slot is already where it is being sent", () => {
+		const swapped = viewSubagent(main, "call-1");
+		expect(viewSubagent(swapped, "call-1")).toBe(swapped);
+		expect(viewMain(main)).toBe(main);
+	});
+
+	it("leaves every other field of the slot alone", () => {
+		const held: ChatView = {...main, draft: "half a prompt", expanded: ["t1"], cursor: "i7"};
+		const swapped = viewSubagent(held, "call-1");
+		expect([swapped.draft, swapped.expanded, swapped.cursor]).toEqual([
+			"half a prompt",
+			["t1"],
+			"i7",
+		]);
+		expect(viewMain(swapped).cursor).toBe("i7");
 	});
 });

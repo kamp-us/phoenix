@@ -8,7 +8,7 @@ import {
 	splitTeam,
 } from "./codeowners.ts";
 
-const TEAM = "@kamp-us/control-plane";
+const TEAM = "@acme/control-plane";
 
 const ROWS = parseCodeowners(`# comment
 /.github/                     ${TEAM}
@@ -49,7 +49,7 @@ describe("matcherFor", () => {
 
 	it("matches `**/` at any depth", () => {
 		expect(matcherFor("**/lefthook*").test("lefthook.yml")).toBe(true);
-		expect(matcherFor("**/lefthook*").test("apps/web/lefthook.yml")).toBe(true);
+		expect(matcherFor("**/lefthook*").test("apps/site/lefthook.yml")).toBe(true);
 	});
 });
 
@@ -63,7 +63,7 @@ describe("ownersOf", () => {
 	});
 
 	it("returns null for a path no row matches — distinct from a row that owns nobody", () => {
-		expect(ownersOf(ROWS, "apps/web/src/App.tsx")).toBeNull();
+		expect(ownersOf(ROWS, "apps/site/src/App.tsx")).toBeNull();
 	});
 });
 
@@ -94,28 +94,28 @@ describe("classify", () => {
 	});
 
 	it("is not-control-plane when every changed path resolves elsewhere", () => {
-		expect(classify(ROWS, ["apps/web/src/App.tsx"])).toBe("not-control-plane");
+		expect(classify(ROWS, ["apps/site/src/App.tsx"])).toBe("not-control-plane");
 	});
 
-	it("is not-control-plane for a .decisions/-only set — ADRs are not §CP (#5531)", () => {
-		expect(classify(ROWS, [".decisions/0240-a.md", ".decisions/0241-b.md"])).toBe(
+	it("is not-control-plane for a decision-record-only set — those are not §CP", () => {
+		expect(classify(ROWS, ["docs/decisions/0240-a.md", "docs/decisions/0241-b.md"])).toBe(
 			"not-control-plane",
 		);
 	});
 
-	it("stays control-plane when a .decisions/ file rides alongside an owned path (#5531)", () => {
-		expect(classify(ROWS, [".decisions/0240-a.md", ".github/workflows/ci.yml"])).toBe(
+	it("stays control-plane when a decision record rides alongside an owned path", () => {
+		expect(classify(ROWS, ["docs/decisions/0240-a.md", ".github/workflows/ci.yml"])).toBe(
 			"control-plane",
 		);
 	});
 
-	it("is not-control-plane for a .decisions/-only set an individual-owner boundary bounds", () => {
-		expect(classify(parseCodeowners("/a/ @someone\n"), [".decisions/0240-a.md"])).toBe(
+	it("is not-control-plane for a decision-record-only set an individual-owner boundary bounds", () => {
+		expect(classify(parseCodeowners("/a/ @someone\n"), ["docs/decisions/0240-a.md"])).toBe(
 			"not-control-plane",
 		);
 	});
 
-	it("is control-plane when a changed path resolves to an individual @login owner (#6299)", () => {
+	it("is control-plane when a changed path resolves to an individual @login owner", () => {
 		expect(classify(parseCodeowners("/a/ @someone\n"), ["a/b.ts"])).toBe("control-plane");
 	});
 
@@ -127,18 +127,18 @@ describe("classify", () => {
 		expect(classify(parseCodeowners("* @someone\n"), ["a/b.ts"])).toBe("unknown");
 	});
 
-	it("holds on unknown for a match-everything row — the #4336 adopter sentinel", () => {
-		expect(classify(parseCodeowners(`* ${TEAM}\n`), ["apps/web/src/App.tsx"])).toBe("unknown");
+	it("holds on unknown for a match-everything row — the adopter sentinel", () => {
+		expect(classify(parseCodeowners(`* ${TEAM}\n`), ["apps/site/src/App.tsx"])).toBe("unknown");
 	});
 
 	it("holds on unknown for a boundary with zero rows — a PRESENT but empty file, not an absent one", () => {
-		expect(classify([], ["apps/web/src/App.tsx"])).toBe("unknown");
+		expect(classify([], ["apps/site/src/App.tsx"])).toBe("unknown");
 	});
 });
 
 describe("splitTeam", () => {
 	it("splits an @org/team owner into the two segments the REST roster read needs", () => {
-		expect(splitTeam(TEAM)).toEqual({org: "kamp-us", team: "control-plane"});
+		expect(splitTeam(TEAM)).toEqual({org: "acme", team: "control-plane"});
 	});
 
 	it("answers null for an individual owner — the discriminator cp-approval routes the roster on", () => {

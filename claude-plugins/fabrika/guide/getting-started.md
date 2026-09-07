@@ -59,13 +59,13 @@ fabrika status open
 ```
 
 ```
-status open: roster claude-plugins/fabrika/skills (repo); repo kamp-us/phoenix; 6 field(s) rendered, 0 unknown.
+status open: roster claude-plugins/fabrika/skills (repo); repo acme/storefront; 6 field(s) rendered, 0 unknown.
 open	6
 field	menu	ready	25 skills	claude-plugins/fabrika/skills	2026-08-19T03:23:01Z
 field	settings	resolved	15 keys, 4 declared	.fabrika.jsonc	2026-08-19T03:23:01Z
 field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-08-19T03:23:01Z
-field	board	counted	3 needs-triage, 367 triaged	kamp-us/phoenix	2026-08-19T03:23:02Z
-field	readout	absent	no digest block in kamp-us/phoenix#5616	kamp-us/phoenix#5616	unknown
+field	board	counted	3 needs-triage, 367 triaged	acme/storefront	2026-08-19T03:23:02Z
+field	readout	absent	no digest block in acme/storefront#9412	acme/storefront#9412	unknown
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-19T03:23:01Z
 ```
 
@@ -153,23 +153,23 @@ fabrika triage homes
 ```
 
 ```
-triage homes: scanned 5 open milestones in kamp-us/phoenix.
-triage homes: standing lanes: 2 of 2 declared carry a label in kamp-us/phoenix.
-triage homes: campaigns: 2 active — fabrika fast follows (#46), fabrika everywhere (#47).
+triage homes: scanned 5 open milestones in acme/storefront.
+triage homes: standing lanes: 2 of 2 declared carry a label in acme/storefront.
+triage homes: campaigns: 2 active — checkout rebuild (#9512), search everywhere (#9513).
 homes
-milestone	24	Geçit
-milestone	25	Mecmua v2 — PARKED (reading-experience arc, unstarted)
-milestone	42	Taste-Skill Library
-milestone	46	fabrika fast follows	running: p0/p1 or blocker
-milestone	47	fabrika everywhere	running: p0/p1 or blocker
+milestone	9501	Storefront v2
+milestone	9502	Reader — PARKED (reading-experience arc, unstarted)
+milestone	9505	Design tokens
+milestone	9512	checkout rebuild	running: p0/p1 or blocker
+milestone	9513	search everywhere	running: p0/p1 or blocker
 lane	wayfinder:backlog	fog — uncharted work upstream of any arc
 lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
 
 That output is from a repo already set up, so yours will differ: one `milestone` row, the one you
 just created, and a line reading `campaigns: none active — scope fence inert.` because your roadmap
-has no campaigns table. You get no `lane` rows either — those are phoenix's own standing lanes, and a
-lane is offered only where your board carries its label
+has no campaigns table. You get no `lane` rows either — those are the standing lanes that repo
+declared, and a lane is offered only where your board carries its label
 ([the how-to](adopt-fabrika-in-a-new-repo.md) covers them).
 
 Your milestone should be in that list. Commit `ROADMAP.md`.

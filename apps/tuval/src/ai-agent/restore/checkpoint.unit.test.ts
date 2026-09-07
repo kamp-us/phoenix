@@ -14,7 +14,9 @@ import {
 	initialState,
 	parseSessionState,
 	promptItemId,
+	readCheckpoint,
 	restore,
+	usageTotals,
 } from "../core/index.ts";
 import {Mode, type PermissionRequest} from "../ports/index.ts";
 import {checkpointFields, resumeMessages} from "./checkpoint.ts";
@@ -45,7 +47,10 @@ const saved: AiAgentSessionState = {
 		items: [userItem("i0"), assistantItem("i1"), toolItem("i2")],
 		omitted: {items: 3, bytes: 120, reason: "item-limit"},
 	},
-	usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
+	usage: {
+		model: "claude-opus-5",
+		turns: {i1: {inputTokens: 1_200, outputTokens: 340, cost: 0.031}},
+	},
 	permissions: {"req-1": pendingPermission({request: card, seq: 2})},
 	permissionsRaised: 2,
 	modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},
@@ -61,7 +66,7 @@ const saved: AiAgentSessionState = {
 	lastPrompt: "make the README",
 	sends: [
 		{key: "send-0", state: "accepted"},
-		{key: "send-1", state: "pending"},
+		{key: "send-1", state: "pending", turn: "unstarted"},
 	],
 	lastPage: {items: [userItem("older-0")], hasMore: true},
 	failure: {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "socket closed"},
@@ -101,6 +106,25 @@ describe("what a checkpoint carries", () => {
 	it("carries nothing a JSON round trip would lose", () => {
 		expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
 	});
+
+	/**
+	 * A desk that saved before usage was keyed by turn holds one flat sum, and refusing it would
+	 * open that session `gone` over a shape change (#8369). The sum it renders is unchanged.
+	 */
+	it("reads a checkpoint written before usage was keyed by turn", () => {
+		const before = {
+			...JSON.parse(JSON.stringify(saved)),
+			usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
+		};
+		const read = readCheckpoint(before, "/repo");
+		expect(read).not.toBeNull();
+		expect(read === null ? null : usageTotals(read.usage)).toEqual({
+			model: "claude-opus-5",
+			inputTokens: 1_200,
+			outputTokens: 340,
+			cost: 0.031,
+		});
+	});
 });
 
 describe("restoring a saved session", () => {
@@ -124,6 +148,27 @@ describe("restoring a saved session", () => {
 			{key: "send-0", state: "accepted"},
 			{key: "send-1", state: "uncertain", failure: null},
 		]);
+	});
+
+	// The turn the queue was waiting for ended with the process, so nothing is left to flush it: the
+	// text goes back to the window that wrote it rather than running unasked on the next open.
+	it("releases a queued prompt to its window rather than bringing the queue back", () => {
+		const waiting: AiAgentSessionState = {
+			...saved,
+			queued: [{key: "send-2", text: "then the CHANGELOG", timestamp: 1_700_000_000_000}],
+		};
+		const restored = restore(waiting);
+		expect(restored.queued).toEqual([]);
+		expect(restored.sends).toContainEqual({
+			key: "send-2",
+			state: "refused",
+			failure: {
+				tag: "tuval/ai-agent/PromptError",
+				reason: "refused",
+				detail:
+					"the queued message was not sent: the process went away before the turn it was waiting for ended",
+			},
+		});
 	});
 
 	// The call carrying that answer went with the process, so whether it landed is unknown: the

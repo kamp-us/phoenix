@@ -1,6 +1,6 @@
 /**
  * `review-ui route` — the escape from the unfillable namespace, and the fences that keep it from
- * becoming a second verdict path (ADR 0316, #6376).
+ * becoming a second verdict path.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -49,12 +49,16 @@ const pull = (shape: {state?: string; head?: string; changed?: number} = {}): Ht
 const files = (...names: ReadonlyArray<string>): HttpReply =>
 	served(names.map((filename) => ({filename})));
 
-const PROSE_UI = files("apps/web/src/flags/shell-keys.ts", "apps/web/src/styles/lint.config.json");
+const PROSE_UI = files(
+	"apps/site/src/flags/shell-keys.ts",
+	"apps/site/src/styles/lint.config.json",
+);
 
 const options = {
 	pr: 6326,
 	sha: HEAD,
 	clause: CLAUSE,
+	uiPrefixes: ["apps/site/src/", "apps/desk/src/"],
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
 		string,

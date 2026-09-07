@@ -16,6 +16,8 @@ export type {
 	UsageEvent,
 } from "../events.ts";
 export {
+	ListError,
+	type ListReason,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -42,6 +44,13 @@ export type {
 	ScriptedTurn,
 } from "./script.ts";
 export {
+	newestFirst,
+	type SessionDraft,
+	type SessionSummary,
+	sessionSummary,
+} from "./sessions.ts";
+export {
+	type ResumeTarget,
 	type StartedSession,
 	type StartOptions,
 	type TranscriptPage,

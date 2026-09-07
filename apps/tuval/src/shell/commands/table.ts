@@ -18,6 +18,7 @@
 
 import {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
+import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import type {CommandName} from "../keys/table.ts";
 import type {Direction} from "../layout/index.ts";
 import {type PickerCommand, pickerCommands} from "../picker/intent.ts";
@@ -52,8 +53,20 @@ const pickerRow = (command: PickerCommand): AnyShellCommand => {
 		return defineCommand({
 			path,
 			describe: command.summary,
-			params: Schema.Struct({program: Schema.NonEmptyString}),
-			toMsg: ({program}) => ({type: "window.open", programId: program}),
+			// `session` and `cwd` are one argument in two halves, and both or neither: an open naming
+			// a session is the first send on a row picked out of the session list, and a session id
+			// with no folder is not something a backend can find (epic #8070, ruling 2). A typed
+			// command line never fills them — the caller is the session window.
+			params: Schema.Struct({
+				program: Schema.NonEmptyString,
+				session: Schema.optionalKey(Schema.NonEmptyString),
+				cwd: Schema.optionalKey(Schema.NonEmptyString),
+			}),
+			toMsg: ({program, session, cwd}) => ({
+				type: "window.open",
+				programId: program,
+				...(session === undefined || cwd === undefined ? {} : {session: {cwd, resume: session}}),
+			}),
 		});
 	}
 	if (command.argument === "process-id") {
@@ -108,6 +121,22 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 		describe: "Move focus to the window with this id.",
 		params: Schema.Struct({window: Schema.NonEmptyString}),
 		toMsg: ({window}) => ({type: "window.focus", windowId: WindowId.make(window)}),
+	}),
+	defineCommand({
+		path: ["window", "pick"],
+		describe:
+			"Return the focused window to the picker. The process it was showing keeps running, and the picker offers it back.",
+		params: noParams,
+		toMsg: () => ({type: "window.unbind"}),
+	}),
+	// The one row whose Msg carries a key rather than a decision. A binding names a command and a
+	// command names a Msg, so nothing bound can address a window's *renderer* — where a list's focus
+	// lives — and this row closes that gap by forwarding a key no keyboard can produce (#8407).
+	defineCommand({
+		path: ["window", "focus-list"],
+		describe: "Move focus into the focused window's own list, when it draws one.",
+		params: noParams,
+		toMsg: () => ({type: "window.forwardKey", key: FOCUS_LIST_KEY}),
 	}),
 	...pickerCommands.map(pickerRow),
 	defineCommand({

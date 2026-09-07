@@ -75,12 +75,12 @@ const GOVERNING = happy(
 	["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
 );
 
-describe("runScope over a foreign repo's declared roots (#6296)", () => {
+describe("runScope over a foreign repo's declared roots", () => {
 	const declaring = (config: unknown) =>
 		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
 
 	// `review scope` derives the same requirement over the same key. Both verbs read one list.
-	it("tallies the roots the config declares, not phoenix's", async () => {
+	it("tallies the roots the config declares, not the shipped defaults", async () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runScope({...options}),
@@ -142,12 +142,12 @@ describe("runScope", () => {
 	});
 
 	// The binding runs against a main that has moved on (`BASE_TIP` is ahead of `BASE`), so `base`
-	// naming the branch point rather than that tip is the whole assertion here (#5770).
+	// naming the branch point rather than that tip is the whole assertion here.
 	it("emits the record with --json, carrying the merge base the range was read across", async () => {
 		const out = await run(GOVERNING, {json: true});
 		const record = JSON.parse(out.stdout);
-		// `roots` is a histogram object, not an array of `{name, files}` — the evidence collapse of
-		// ADR 0308. `records` beside it stays whole: every `id` feeds `governance sweep --record`.
+		// `roots` is a histogram object, not an array of `{name, files}` — the evidence collapse.
+		// `records` beside it stays whole: every `id` feeds `governance sweep --record`.
 		expect(record.roots).toEqual({".decisions/": 1, "claude-plugins/": 1});
 		expect(record).toMatchObject({
 			outcome: "required",
@@ -230,7 +230,7 @@ describe("runScope", () => {
 		expect(out.code).not.toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-2)).toBe(
-			`governance scope: ${HEAD} carries 1 of the 9 files #4321 declares — refusing to derive from a short read (#3999).`,
+			`governance scope: ${HEAD} carries 1 of the 9 files #4321 declares — refusing to derive from a short read.`,
 		);
 	});
 
@@ -308,7 +308,7 @@ describe("runScope over a range", () => {
 	});
 
 	// The self fence's own precondition: a child range editing this skill has to READ as self-editing
-	// before `governance base` can be asked for the base revision's bytes (#6064).
+	// before `governance base` can be asked for the base revision's bytes.
 	it("sets `self` on a range that edits this skill, and names merge-base(base, tip) as the base", async () => {
 		const out = await run(overRange(["M", `${SKILL_ROOT}SKILL.md`]), {...ranged, json: true});
 		const record = JSON.parse(out.stdout);
@@ -329,7 +329,7 @@ describe("runScope over a range", () => {
 		expect(out.stderr).toContain(NOT_CP_NOTICE);
 	});
 
-	it("refuses an empty range on 7, never `not-required` (ADR 0092)", async () => {
+	it("refuses an empty range on 7, never `not-required`", async () => {
 		const out = await run(
 			[
 				[MERGE_BASE_OF(), okOut(`${RANGE_MERGE_BASE}\n`)],
@@ -355,7 +355,7 @@ describe("runScope over a range", () => {
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-2)).toBe(
-			`governance scope: ${RANGE_BASE}..${RANGE_TIP} carries 1 of the 2 files its ends change — refusing to derive from a short read (#3999).`,
+			`governance scope: ${RANGE_BASE}..${RANGE_TIP} carries 1 of the 2 files its ends change — refusing to derive from a short read.`,
 		);
 	});
 

@@ -3,8 +3,8 @@
  *
  * **`--base` is fetched before it is read.** Reading a stale local ref is the defect class this
  * whole contract exists to close — a checkout sitting at `0150` while origin is at `0151` mints a
- * duplicate id (#3779), and a stale tree once made a review gate declare a merged ADR nonexistent
- * (#4163). Every read below takes the resolved base SHA, never a ref name, so nothing can silently
+ * duplicate id, and a stale tree once made a review gate declare a merged record nonexistent.
+ * Every read below takes the resolved base SHA, never a ref name, so nothing can silently
  * re-resolve to a different commit mid-run.
  *
  * The outcome type is {@link Attempt} rather than the `E` channel on purpose: a fetch that fails and
@@ -163,7 +163,7 @@ export interface CommitRange<Rev extends string = string> {
  *
  * An empty `paths` reads the whole range; a non-empty one limits it to that pathspec. A caller that
  * means "these paths and no others" must therefore refuse an empty set before it reaches here — a
- * pathspec that silently widens to everything digests a scope nobody chose (ADR 0092).
+ * pathspec that silently widens to everything digests a scope nobody chose.
  */
 export const rawDiffArgs = (
 	range: CommitRange,
@@ -292,7 +292,7 @@ export const readFileAt = (sha: string, path: string): Shell<Attempt<string>> =>
 
 // ---------------------------------------------------------------------------------------------
 // The `governance` group's reads, appended as one block so a later verb slice extends the file here
-// rather than colliding with the range reads above (#5199).
+// rather than colliding with the range reads above.
 // ---------------------------------------------------------------------------------------------
 
 /** One changed path and the single letter git gives its change. */
@@ -578,7 +578,7 @@ export const patchIdsOf = (diffs: string): Shell<Attempt<ReadonlyArray<PatchIden
  * trunk is tens of megabytes.
  *
  * An empty `paths` is refused rather than widened. A pathspec that silently becomes "everything" is
- * the same defect ADR 0092 names on the guard side: a scope nobody chose, read as an answer.
+ * the same defect a guard reds on: a scope nobody chose, read as an answer.
  */
 export const patchIdsIn = (
 	base: string,
@@ -623,8 +623,8 @@ export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
  * A shallow clone's graft boundary is the one cause of this an operator can repair without touching
  * a ref, a blocker or an issue: every traversal treats the boundary commit as a root, so a common
  * ancestor beyond it is unreachable and {@link mergeBase} names nothing rather than erroring (the
- * same split {@link traversedParents} documents, #6343). Reported as a generic reason it cost a
- * supervisor round-trip diagnosing git history depth from outside the verb (#7292).
+ * same split {@link traversedParents} documents). Reported as a generic reason, it costs a
+ * supervisor round-trip diagnosing history depth from outside the verb.
  *
  * **Git's own reason is never dropped, and the shallow clause is a hypothesis beside it.** The probe
  * answers "is this clone shallow", which is a strictly weaker fact than "the shallowness is why
@@ -636,7 +636,7 @@ export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
  *
  * It lives here, beside the two reads it composes, so a third merge-base seam cannot be written
  * without the diagnosis — the generic reason survived in `build reap` for exactly as long as the
- * helper was private to one caller (#7407).
+ * helper was private to one caller.
  */
 export const noMergeBaseReason = (baseRef: string, reason: string): Shell<string> =>
 	Effect.map(isShallowClone, (shallow) =>
@@ -650,8 +650,8 @@ export const noMergeBaseReason = (baseRef: string, reason: string): Shell<string
  *
  * Not the parents in the commit object: on a shallow clone's graft boundary the two disagree.
  * `git cat-file -p` still prints the recorded parents while every traversal treats the commit as a
- * root, so `merge-base`, `rev-list` and `--is-ancestor` answer wrongly and none of them errors
- * (#6343). This read is on the traversal side of that split, so an empty answer on a commit the
+ * root, so `merge-base`, `rev-list` and `--is-ancestor` answer wrongly and none of them errors.
+ * This read is on the traversal side of that split, so an empty answer on a commit the
  * object database knows the parents of is exactly the boundary.
  */
 export const traversedParents = (sha: string): Shell<Attempt<ReadonlyArray<string>>> =>

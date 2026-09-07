@@ -5,7 +5,13 @@
  * six in `ai-agent/service/errors.ts` and no Claude-shaped failure crosses the seam.
  */
 
-import {PageError, PromptError, StartError, TransportError} from "../../ai-agent/service/index.ts";
+import {
+	ListError,
+	PageError,
+	PromptError,
+	StartError,
+	TransportError,
+} from "../../ai-agent/service/index.ts";
 
 /** What a thrown value says, without a stack and without assuming it is an `Error`. */
 export const detailOf = (cause: unknown): string =>
@@ -58,6 +64,34 @@ export const noSessionToPage = (): PageError =>
 
 export const unknownCursor = (reason: string): PageError =>
 	new PageError({reason: "unknown-cursor", detail: reason});
+
+/**
+ * The three ways a subagent's own transcript does not come back (#8404). None of them is an empty
+ * transcript: a sidechain file nobody wrote, a store that would not open and a line that will not
+ * parse are three different things to have to tell an operator, and "this subagent said nothing"
+ * is none of them.
+ *
+ * `subagentNotFound` appends the id itself and is the only place that names it — a caller that
+ * spells it in its own `detail` says it twice.
+ */
+export const subagentNotFound = (agentId: string, detail: string): PageError =>
+	new PageError({reason: "subagent-not-found", detail: `${detail} (${agentId})`});
+
+export const subagentStoreUnreadable = (cause: unknown): PageError =>
+	new PageError({reason: "store-unreadable", detail: detailOf(cause)});
+
+export const subagentMalformed = (agentId: string, line: number, detail: string): PageError =>
+	new PageError({
+		reason: "subagent-malformed",
+		detail: `subagent "${agentId}" line ${line}: ${detail}`,
+	});
+
+/**
+ * The session store could not be enumerated. Never `unsupported`: this backend does list, so a
+ * throw here is a store that would not open, not a backend that cannot look.
+ */
+export const storeUnlistable = (cause: unknown): ListError =>
+	new ListError({reason: "store-unreadable", detail: detailOf(cause)});
 
 /** The subprocess went away. `no automatic respawn` is the whole retry policy (#7371). */
 export const subprocessGone = (detail: string): TransportError =>

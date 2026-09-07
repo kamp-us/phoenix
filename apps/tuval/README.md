@@ -37,8 +37,39 @@ tokens — cannot be made there, and a report of a browser run whose harness was
 be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
 `src/shell/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
-kernel, opens no socket and imports no agent code, so what it proves is paint and keyboard and
-nothing else. Pass `--port <n>` when the default is taken.
+kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
+when the default is taken.
+
+The same harness has four paging routes: `/paging-local`, `/paging-partial`, `/paging-completed`
+and `/paging-prepended`. Each scrolls the real `ChatWindow` with shipped styles. The last route
+checks that a prepend retains the **same DOM row** for the oldest local echo, aligns it to the
+transcript's top border, and leaves the other window's history cursor untouched. It does not assert
+an unchanged pixel offset: the initial “Load earlier messages” row disappears. Twenty labelled,
+layout-only local echoes supply scroll height without supplying an eligible history cursor.
+
+These routes call the Node-side [paging replay](src/claude/proof/paging-replay.ts): real
+`ClaudeAiAgent` over the existing captured `streaming-turn` events, a scripted SDK/store and
+`KernelBridge.scripted`. It pauses after the first text delta, checks that both local and partial
+cursors cause zero store reads, then adds completed assistant frames and pages through the live
+message id's stored alias. The captured assistant frames are re-enveloped as stored rows, as in
+the existing turn regression; this is not a live JSONL read. The browser receives that completed
+replay as JSON and supplies its page through a scripted `WindowHost` with `Delivered.view`.
+There is no kernel, transport, Claude CLI, login or provider spend in this proof. Shared-handler
+and real Pi integration coverage remain separate.
+
+`window.pagingProof` exposes the run time, read counts, dispatched cursor and DOM-anchor result for
+builder inspection. A bounded open request keeps the declared capture's network-idle wait behind
+the DOM assertions; a failed assertion raises a page error, never a success-shaped screenshot.
+The four routes are first-render proof scenarios, not new product routes.
+
+The same server's `/effort.html` is the fresh-Claude effort proof: its Node endpoint runs the
+real `ClaudeAiAgent` and core fold against the scripted SDK catalog/context response, then hands
+the emitted initial-open state to the actual `ChatWindow` through an in-memory window host.
+No model is configured, the active row is not first, and no prompt or selection precedes the
+render. `/effort-offered.html` also opens the actual effort menu without selecting an item.
+`/initial-effort.json` exposes the run timestamp, duration, events and recorded control calls.
+This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
+or model execution; the in-memory host records UI dispatches without executing them.
 
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
 Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
@@ -77,7 +108,8 @@ the page's origin as it starts, so the browser's attach goes through (#7560).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
-zooms, and `<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
+zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
+`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
 program. With the prefix unarmed every key belongs to the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
@@ -550,9 +582,17 @@ exactly one effect per new key; and a dropped socket whose re-attach shows the s
 a key that reaches its process. The shape and its two rules are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
 
-Two things the page cannot do yet, both because the wire carries rows and no registry listing: its
-picker offers running processes only (open by name through `prefix : window:open <program>`), and its
-renderer table is keyed by program id rather than by the `renderer` reference a row declares.
+The renderer table is keyed by the `renderer` reference a row declares, and a row may point that
+reference outside the tree: `renderer: {kind: "module", ref: "@csirin/tuval-calc/window"}` names a
+module the page loads at boot, whose `default` export is a `windowRenderer("module", …)` and whose
+`admits` export is the predicate over the state it reads. A program installed with `pnpm add` and
+registered as one row is then whole — its kernel half runs from the row and its window is found by
+the same string. The specifier resolves from the config module that declared the row, the same base
+Node used for the row itself, so the package lives beside your own `tuval.config.ts` and is never a
+dependency of Tuval; a specifier that resolves from neither that config nor the page root refuses the
+page at boot naming that config, and a module that loads into something else is the placeholder's
+sentence. The why and the failure shapes are
+[ADR 0359](../../.decisions/0359-tuval-window-renderer-is-a-module-specifier.md).
 
 ## The two entry points
 
@@ -575,6 +615,38 @@ page may reach, and `index.ts` re-exports it — `src/shell/transport/browser.ts
 handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and the kernel behind
 it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+## The static root
+
+`public/` is Vite's default `publicDir`, resolved against the `root` that `servePage` in
+`src/page/dev-server.ts` already hands `createServer`. It is served at `/` with no config change:
+the dev server runs `configFile: false` and `publicDir` needs none, so nothing on
+`PageServerOptions` mentions it and nothing should. It holds the tab icon and only the tab icon —
+`favicon-16.png`, `favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png`, each rendered at
+its own size and linked from `index.html` with a `sizes` attribute so the browser selects a cut
+rather than squashing one. That is why no SVG icon is declared: the mark is line art, and a browser
+scaling one weight down to a 16px tab closes the gaps between the branches into a blob. Each cut
+carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
+light tab strip and on the dark desk alike.
+
+None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
+tree mark as the founder supplied it, adopted in
+[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. The
+supplied file was a raster; it is traced to vector here so a size is *re-rendered* rather than
+resampled, which is what stops a further size being a downscale of a downscale. A new size is one
+`rsvg-convert` at that size; a shape change is an edit to the SVG and a re-cut of all four.
+
+The drawing is unchanged — the trace is of the supplied artwork, branch work and root flare intact,
+not a redrawn substitute. An earlier pass on this branch did substitute a simplified mark, and that
+was reverted: establishing a source of truth is not licence to redesign the thing it is a source of.
+
+One cut carries a render-time override, and only one. The mark is dense line art, and at 16px every
+stroke lands under a device pixel — rendered flat, the whole canopy comes out anti-aliased mid-tone
+with no pixel reaching full colour, which reads as a faint smudge rather than a tree. The 16px cut
+is therefore rendered with a `stroke-width` on the path group, which widens each stroke enough to
+carry solid colour: 0 pixels at full red become 62, while the interior plate gaps that make it read
+as a canopy survive. Nothing about the geometry changes. The larger cuts need no override, because
+at 32px and up the strokes already cover whole pixels.
 
 ## The AI agent slice
 

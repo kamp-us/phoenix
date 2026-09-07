@@ -21,7 +21,7 @@ describe("findDefects", () => {
 		).toEqual([]);
 	});
 
-	// The #1471 class: two branches each mint the same number, each green alone.
+	// The collision class: two branches each mint the same number, each green alone.
 	it("names both files of a duplicate id", () => {
 		expect(
 			findDefects([record("0284-a.md", complete("0284")), record("0284-b.md", complete("0284"))]),

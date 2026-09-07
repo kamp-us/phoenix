@@ -79,11 +79,13 @@ export const wiredShellEffects = ({
 			[],
 		),
 	openProgram: (cmd) =>
-		runPickerIntent(openProgram(WindowId.make(cmd.windowId), ProgramId.make(cmd.programId)), {
-			shellProcessId,
-		}),
+		runPickerIntent(
+			openProgram(WindowId.make(cmd.windowId), ProgramId.make(cmd.programId), cmd.session),
+			{shellProcessId, ...(cmd.view === undefined ? {} : {view: cmd.view})},
+		),
 	attachProcess: (cmd) =>
 		runPickerIntent(attachProcess(WindowId.make(cmd.windowId), ProcessId.make(cmd.processId)), {
 			shellProcessId,
+			...(cmd.view === undefined ? {} : {view: cmd.view}),
 		}),
 });

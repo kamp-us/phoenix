@@ -15,13 +15,13 @@
  * lane it is about to drive is stale, and what a release runs before merging a machine change.
  *
  * Staleness is not the only way a lane can be wrong, and it was the only one this sweep could see:
- * a coder-template lane booted on an epic grafts cleanly and reads `current`, which is #7024. So each
+ * a coder-template lane booted on an epic grafts cleanly and reads `current`. So each
  * issue-keyed lane is also judged against the board's answer for its issue ([`shape.ts`](shape.ts)),
  * and a proven mismatch is its own verdict ahead of every migration one. The reader is passed in, so
  * a caller that hands none still gets the wholly offline sweep.
  *
  * The judgement never widens what this verb writes: a mismatched lane is skipped, and the read can
- * only turn a write into a skip. That is what keeps ADR 0313's guarantee for this verb intact — it
+ * only turn a write into a skip. That is what keeps this verb's guarantee intact — it
  * writes only where the swap is provably inert.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
@@ -84,7 +84,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
  *
  * `unknown` is a seat rather than an absent field, for the reason every read in this protocol keeps
  * it: a sub-issue list that did not load says nothing about whether the machine fits, and reading it
- * as `matches` is the silence #7024 is about.
+ * as `matches` is the silence this verb exists to break.
  */
 type LaneShape =
 	| {readonly state: "matches"}
@@ -105,7 +105,7 @@ interface LaneRow {
 /** How a caller addresses this lane: a chore root's entries are keyed `chore:<name>` (`key.ts`). */
 const keyOf = (root: string, name: string): string =>
 	// Suffix, never equality: the default root arrives absolute once it is derived off the owning
-	// repository (#5815), so a relocated or derived root still keys its chores correctly.
+	// repository, so a relocated or derived root still keys its chores correctly.
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
 /**
@@ -173,7 +173,7 @@ const migrateLane = <R>(
 		// leave a degraded sweep reading exactly like a clean one.
 		const withShape = (row: LaneRow): LaneRow => (shape === undefined ? row : {...row, shape});
 		// Ahead of every migration verdict: a lane running the wrong machine for its issue is not a
-		// lane to bring up to a template, whatever the graft says (#7024).
+		// lane to bring up to a template, whatever the graft says.
 		if (shape?.state === "mismatched") {
 			return withShape({key, root, verdict: "mismatched", reason: shape.reason});
 		}
@@ -189,7 +189,7 @@ const migrateLane = <R>(
 				key,
 				root,
 				verdict: "generated",
-				reason: `machine "${id}" was generated, not booted — it drains on the machine it was emitted with and is never migrated (ADR 0313, amendment 2026-08-20)`,
+				reason: `machine "${id}" was generated, not booted — it drains on the machine it was emitted with and is never migrated`,
 			});
 		}
 		if (sameMachine(onDisk.success, graft.text)) return withShape({key, root, verdict: "current"});
@@ -307,7 +307,7 @@ export const runMigrate = <R = never>(
 		if (unsafe.length === 0) {
 			return refuse(
 				SHAPE_MISMATCH,
-				`${VERB}: ${mismatched.length} lane(s) run a machine their issue's board state does not call for, and none of those was written: ${mismatched.map((row) => row.key).join(", ")}. An epic's lane is rebuilt in two steps — retire its directory, then \`fabrika lane emit <n>\` (a lane on disk is never re-emitted over: ADR 0313, amendment 2026-08-20). A lane whose issue is not an epic is opened with \`fabrika lane open <n>\`.`,
+				`${VERB}: ${mismatched.length} lane(s) run a machine their issue's board state does not call for, and none of those was written: ${mismatched.map((row) => row.key).join(", ")}. An epic's lane is rebuilt in two steps — retire its directory, then \`fabrika lane emit <n>\` (a lane on disk is never re-emitted over). A lane whose issue is not an epic is opened with \`fabrika lane open <n>\`.`,
 				stderr,
 			);
 		}
@@ -319,7 +319,7 @@ export const runMigrate = <R = never>(
 				options.check
 					? `${acted.length} other lane(s) are stale and safe to migrate.`
 					: `${acted.length} other lane(s) were migrated: ${acted.map((row) => row.key).join(", ") || "none"}.`
-			} A lane whose issue is closed and whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log (ADR 0352); any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
+			} A lane whose issue is closed and whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log; any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
 			stderr,
 		);
 	});

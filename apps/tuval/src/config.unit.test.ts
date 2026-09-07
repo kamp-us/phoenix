@@ -29,6 +29,7 @@ describe("loadConfigModule", () => {
 				const config = yield* loadConfigModule(fixture("two-rows"));
 				assert.deepStrictEqual(config, {
 					version: 1,
+					features: {},
 					programs: [{id: "a"}, {id: "b"}],
 					graph: {nodes: []},
 					keys: {},
@@ -41,6 +42,7 @@ describe("loadConfigModule", () => {
 			const config = yield* loadConfigModule(fixture("with-graph"));
 			assert.deepStrictEqual(config, {
 				version: 1,
+				features: {},
 				programs: [{id: "a"}],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: {},
@@ -94,6 +96,31 @@ describe("loadConfigModule", () => {
 	);
 });
 
+describe("the feature flags", () => {
+	it.effect("are stated by nobody in a module that declares none", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("two-rows"));
+			assert.deepStrictEqual(config.features, {});
+		}),
+	);
+
+	it.effect("read back as the module wrote them", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("features-on"));
+			assert.deepStrictEqual(config.features, {subagentList: true});
+		}),
+	);
+
+	// A flag at a time, not a block at a time: a project layer that names one flag must not put every
+	// flag the global layer turned on back to its default.
+	it.effect("merge project over global one flag at a time", () =>
+		Effect.gen(function* () {
+			const merged = yield* layered(fixture("features-on"), fixture("two-rows"));
+			assert.deepStrictEqual(merged.features, {subagentList: true});
+		}),
+	);
+});
+
 describe("loadLayeredConfig", () => {
 	it.effect(
 		"merges the project layer over the global one by program id and node id, global order first",
@@ -102,6 +129,8 @@ describe("loadLayeredConfig", () => {
 				const config = yield* layered(fixture("global-layer"), fixture("project-layer"));
 				assert.deepStrictEqual(config, {
 					programs: [{id: "a"}, {id: "b", core: "project"}],
+					features: {subagentList: false},
+					moduleRenderers: [],
 					graph: {
 						nodes: [
 							{id: NodeId.make("n"), program: ProgramId.make("b"), on: []},
@@ -122,18 +151,24 @@ describe("loadLayeredConfig", () => {
 			const missing = fixture("does-not-exist");
 			assert.deepStrictEqual(yield* layered(missing, fixture("with-graph")), {
 				programs: [{id: "a"}],
+				features: {subagentList: false},
+				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
+				features: {subagentList: false},
+				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
+				features: {subagentList: false},
+				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
@@ -151,6 +186,23 @@ describe("loadLayeredConfig", () => {
 				},
 			]);
 		}),
+	);
+
+	it.effect(
+		"names each module renderer beside the layer module that declared it, project origin winning",
+		() =>
+			Effect.gen(function* () {
+				const global = fixture("module-renderer-global");
+				const project = fixture("module-renderer-project");
+				const config = yield* layered(global, project);
+				assert.deepStrictEqual(config.moduleRenderers, [
+					{ref: "@global/win/window", origin: global},
+					// Row `b` is declared in both layers; the project row replaced the global one in
+					// place, so the specifier resolves from the project config, not the global one.
+					{ref: "@shared/win/window", origin: project},
+					{ref: "@project/win/window", origin: project},
+				]);
+			}),
 	);
 
 	it.effect("still refuses a layer that exists and is broken", () =>

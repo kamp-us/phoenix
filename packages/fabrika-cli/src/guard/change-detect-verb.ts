@@ -1,13 +1,12 @@
 /**
- * `guard change-detect-guard check` — ported off v1's `change-detect-guard check`
- * (epic #5720).
+ * `guard change-detect-guard check` — ported off v1's `change-detect-guard check`.
  *
  * The verb is the IO boundary and nothing else: read ci.yml, hand its text to the pure rule in
  * `./change-detect.ts`, seat the answer on the group's exit taxonomy.
  *
  * **v1's one non-zero exit splits into three seats here.** It collapsed "the step is in API mode",
  * "I could not find the step" and "I could not read ci.yml" onto `1`, which is all CI needs and
- * all a human cannot use: the regression is `12`, an unlocatable step is `7` (ADR 0092) and an
+ * all a human cannot use: the regression is `12`, an unlocatable step is `7` (fail-closed) and an
  * unreadable file is `11`. All three stay red, so the gate's strictness is unchanged.
  */
 
@@ -44,7 +43,7 @@ const judgeTree = (
 		const target = path.join(root, CI_CHANGES_SOURCE.file);
 		if (!(yield* exists(target))) {
 			return zeroScope(
-				`${VERB}: ${CI_CHANGES_SOURCE.file} does not exist under ${root} — the guard scanned no workflow at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${CI_CHANGES_SOURCE.file} does not exist under ${root} — the guard scanned no workflow at all, fail-closed, like every guard here. Is the repo root correct?`,
 			);
 		}
 		const verdict = judge(yield* readFile(target));
@@ -57,7 +56,7 @@ const judgeTree = (
 				atFile(
 					"error",
 					CI_CHANGES_SOURCE.file,
-					`the ${CI_CHANGES_SOURCE.job}-job dorny/paths-filter step reads changed files through the GitHub API, whose transient HTML blips red ci-required on defect-free PRs (#3244/#3245). Fix: set \`token: ''\` on that step.`,
+					`the ${CI_CHANGES_SOURCE.job}-job dorny/paths-filter step reads changed files through the GitHub API, whose transient HTML blips red ci-required on defect-free PRs. Fix: set \`token: ''\` on that step.`,
 				),
 			]),
 		);

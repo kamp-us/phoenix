@@ -68,7 +68,7 @@ describe("the manifest round-trip", () => {
 	});
 
 	// Two shots of one surface differ only by the label, so an entry that lost it could not say what
-	// width its pixels are of — and the two would read as one capture recorded twice (#7706).
+	// width its pixels are of — and the two would read as one capture recorded twice.
 	it("refuses an entry carrying no viewport label", () => {
 		const {viewport: _dropped, ...unlabelled} = manifest.captures[0] as CaptureEntry;
 		assert.strictEqual(
@@ -87,14 +87,14 @@ describe("the manifest round-trip", () => {
 		);
 	});
 
-	it("refuses a set with zero captures — a set with no member is not a set (ADR 0092)", () => {
+	it("refuses a set with zero captures — a set with no member is not a set", () => {
 		assert.strictEqual(
 			parseManifest(JSON.stringify({...manifest, captures: []}))._tag,
 			"Malformed",
 		);
 	});
 
-	it("carries a capture's page errors capped, with the dropped rows counted (ADR 0308)", () => {
+	it("carries a capture's page errors capped, with the dropped rows counted", () => {
 		const capped: CaptureManifest = {
 			...manifest,
 			captures: [

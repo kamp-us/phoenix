@@ -1,5 +1,5 @@
 /**
- * `plan approve` — record a control-plane human's approval of one epic's plan (ADR 0289).
+ * `plan approve` — record a control-plane human's approval of one epic's plan.
  *
  * **The digest is derived here and taken from nowhere.** There is no `--digest` flag, and adding one
  * would be the defect: an approval whose scope its caller supplies attests whatever the caller
@@ -8,8 +8,7 @@
  *
  * The roster is resolved at write time through `./approval.ts`, and a roster that could not be read
  * is `11` — never "not approved" and never "approved". That is the collapse `ship cp-approval`
- * already refuses to make (#4223), and it is worth more here: this verb's whole output is an
- * authority claim.
+ * already refuses to make, and it is worth more here: this verb's whole output is an authority claim.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -44,7 +43,7 @@ export const MESSAGES: PlanMessages = {
 	verb: VERB,
 	grammar: (reason) => `${VERB}: the ledger grammar refused: ${reason}`,
 	zeroChildren: (epic) =>
-		`${VERB}: #${epic} has zero children — there is no plan scope to approve (ADR 0092).`,
+		`${VERB}: #${epic} has zero children — there is no plan scope to approve.`,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to approve a plan on it.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — nothing was posted.`,
 };
@@ -119,7 +118,7 @@ export const runApprove = (
 		if (roster._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${roster.reason} — whether ${viewer.value} may approve is UNKNOWN, neither approved nor unapproved (#4223). Nothing was posted.`,
+				`${VERB}: cannot read ${roster.reason} — whether ${viewer.value} may approve is UNKNOWN, neither approved nor unapproved. Nothing was posted.`,
 				notes,
 			);
 		}

@@ -4,8 +4,7 @@
  *
  * <!-- anchor: DRIFT-IS-NEVER-OPTIONAL --> **There is no way to read a pack without its drift.** The
  * two were one verb from the start, because a caller who could skip the second call would sometimes
- * skip it, and a pack read as current while stale is the failure this whole group is built against
- * (#3330).
+ * skip it, and a pack read as current while stale is the failure this whole group is built against.
  *
  * <!-- anchor: WHY-NO-PACK-IS-0-ON-READ-AND-13-ON-CLAIM --> Zero packs on an issue is a **fact** —
  * most issues have none — so it is the `none` token at exit `0`, and a successor branches on the

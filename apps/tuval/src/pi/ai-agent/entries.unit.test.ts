@@ -1,12 +1,28 @@
 /**
- * Pi's JSONL entries → the port items `page` walks. Hand-built entries, because the shapes that
- * matter here — a compaction standing in for turns that are gone, an extension's own message the
- * wire does not carry — are ones a faux session will not produce on demand.
+ * Pi's JSONL entries → the port items `page` walks. Built entries, because the shapes that matter
+ * here — a compaction standing in for turns that are gone, an extension's own message the wire does
+ * not carry, a label — are ones a faux session will not produce on demand. Each is typed as the
+ * entry interface `@earendil-works/pi-coding-agent` declares for it, so a field this pin renamed
+ * reds here rather than passing as an envelope nobody checks. The two entries a real session does
+ * write unprompted — the opening model and thinking-level changes — are read off one in
+ * `pi-ai-agent.integration.test.ts`.
  */
 
-import type {SessionEntry} from "@earendil-works/pi-coding-agent";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	CustomEntry,
+	CustomMessageEntry,
+	ModelChangeEntry,
+	SessionEntry,
+	SessionInfoEntry,
+	ThinkingLevelChangeEntry,
+} from "@earendil-works/pi-coding-agent";
 import {describe, expect, it} from "vitest";
-import {pageItems} from "./entries.ts";
+import {pageCursorAliases, pageItems} from "./entries.ts";
+
+/** The package's root does not re-export the label entry's interface; the union still names it. */
+type LabelEntry = Extract<SessionEntry, {type: "label"}>;
 
 const at = (seconds: number): string => new Date(1_760_000_000_000 + seconds * 1_000).toISOString();
 
@@ -46,6 +62,55 @@ describe("a session branch as pageable history", () => {
 		]);
 	});
 
+	it("aliases live positions using Pi's compacted context, not the full stored branch", () => {
+		const compaction: CompactionEntry = {
+			type: "compaction",
+			id: "compact",
+			parentId: "a2",
+			timestamp: at(5),
+			summary: "older exchange summarized",
+			firstKeptEntryId: "u2",
+			tokensBefore: 4_000,
+		};
+		const custom: CustomMessageEntry = {
+			type: "custom_message",
+			id: "custom",
+			parentId: "compact",
+			timestamp: at(6),
+			customType: "extension",
+			content: "hidden context",
+			display: false,
+		};
+		const entries = [
+			message("u1", null, 1, said("old")),
+			message("a1", "u1", 2, replied("old answer")),
+			message("u2", "a1", 3, said("kept")),
+			message("a2", "u2", 4, replied("kept answer")),
+			compaction,
+			custom,
+			message("u3", "custom", 7, said("latest")),
+			message("a3", "u3", 8, replied("latest answer")),
+		];
+		const aliases = pageCursorAliases(entries);
+		expect(aliases.get("item-0")).toBeUndefined();
+		expect(aliases.get("item-1")).toBe("u2");
+		expect(aliases.get("item-2")).toBe("a2");
+		expect(aliases.get("item-3")).toBeUndefined();
+		expect(aliases.get("item-4")).toBe("u3");
+		expect(aliases.get("item-5")).toBe("a3");
+		expect(aliases.get("item-5:thinking")).toBe("a3:thinking");
+		expect(aliases.get("item-6")).toBeUndefined();
+		expect(pageItems(entries).map((item) => item.id)).toEqual([
+			"u1",
+			"a1",
+			"u2",
+			"a2",
+			"compact",
+			"u3",
+			"a3",
+		]);
+	});
+
 	it("carries a tool call's arguments onto the result that names it", () => {
 		const items = pageItems([
 			message("e1", null, 1, said("read it")),
@@ -78,22 +143,55 @@ describe("a session branch as pageable history", () => {
 		});
 	});
 
-	it("renders a compaction as the system item that stands for the turns it replaced", () => {
-		const items = pageItems([
-			{
-				type: "compaction",
-				id: "e1",
-				parentId: null,
-				timestamp: at(1),
-				summary: "we agreed on the plan",
-				firstKeptEntryId: "e0",
-				tokensBefore: 4_000,
-			} as SessionEntry,
-			message("e2", "e1", 2, said("carry on")),
-		]);
+	it("renders a compaction as the boundary the turns it replaced went behind", () => {
+		const compaction: CompactionEntry = {
+			type: "compaction",
+			id: "e1",
+			parentId: null,
+			timestamp: at(1),
+			summary: "we agreed on the plan",
+			firstKeptEntryId: "e0",
+			tokensBefore: 4_000,
+		};
+		const items = pageItems([compaction, message("e2", "e1", 2, said("carry on"))]);
 		expect(items).toEqual([
-			{kind: "system", id: "e1", timestamp: Date.parse(at(1)), text: "we agreed on the plan"},
+			{kind: "compaction", id: "e1", timestamp: Date.parse(at(1)), text: "we agreed on the plan"},
 			{kind: "user", id: "e2", timestamp: Date.parse(at(2)), text: "carry on"},
+		]);
+	});
+
+	it("keeps a branch summary a system note — it is about the session, not a context boundary", () => {
+		const summary: BranchSummaryEntry = {
+			type: "branch_summary",
+			id: "e1",
+			parentId: null,
+			timestamp: at(1),
+			fromId: "e0",
+			summary: "the branch went nowhere",
+		};
+		expect(pageItems([summary])).toEqual([
+			{kind: "system", id: "e1", timestamp: Date.parse(at(1)), text: "the branch went nowhere"},
+		]);
+	});
+
+	it("carries an assistant turn's reasoning as its own row beside the reply", () => {
+		const items = pageItems([
+			message("e1", null, 1, said("think first")),
+			message("e2", "e1", 2, {
+				role: "assistant",
+				content: [
+					{type: "thinking", thinking: "weighing it up"},
+					{type: "text", text: "here is the answer"},
+				],
+				provider: "faux",
+				model: "faux-1",
+				stopReason: "stop",
+				timestamp: 0,
+			}),
+		]);
+		expect(items.slice(1)).toEqual([
+			{kind: "thinking", id: "e2:thinking", timestamp: Date.parse(at(2)), text: "weighing it up"},
+			{kind: "assistant", id: "e2", timestamp: Date.parse(at(2)), text: "here is the answer"},
 		]);
 	});
 
@@ -104,6 +202,92 @@ describe("a session branch as pageable history", () => {
 		]);
 		expect(items).toEqual([
 			{kind: "user", id: "e2", timestamp: Date.parse(at(2)), text: "still mine"},
+		]);
+	});
+});
+
+describe("the session's own entries as collapsed notices", () => {
+	const base = {id: "e1", parentId: null, timestamp: at(1)} as const;
+
+	const modelChange: ModelChangeEntry = {
+		...base,
+		type: "model_change",
+		provider: "faux",
+		modelId: "faux-1",
+	};
+	const thinkingChange: ThinkingLevelChangeEntry = {
+		...base,
+		type: "thinking_level_change",
+		thinkingLevel: "high",
+	};
+	const custom: CustomEntry = {...base, type: "custom", customType: "notes", data: {kept: true}};
+	const named: SessionInfoEntry = {...base, type: "session_info", name: "the Pi lane"};
+	const unnamed: SessionInfoEntry = {...base, type: "session_info"};
+	const labelled: LabelEntry = {...base, type: "label", targetId: "e0", label: "read this again"};
+	const unlabelled: LabelEntry = {...base, type: "label", targetId: "e0", label: undefined};
+
+	const lineOf = (entry: SessionEntry): string | null => {
+		const item = pageItems([entry]).at(0);
+		return item !== undefined && item.kind === "system" ? item.text : null;
+	};
+
+	it("gives every kind it used to skip a line of its own", () => {
+		expect(
+			[modelChange, thinkingChange, custom, named, unnamed, labelled, unlabelled].map(lineOf),
+		).toEqual([
+			"Model set to faux/faux-1",
+			"Thinking set to high",
+			"Extension entry: notes",
+			'Session named "the Pi lane"',
+			"Session name cleared",
+			'Labelled "read this again"',
+			"Label removed",
+		]);
+	});
+
+	it("folds an extension's injected message body into the notice's detail", () => {
+		const injected: CustomMessageEntry = {
+			...base,
+			type: "custom_message",
+			customType: "recap",
+			content: [{type: "text", text: "what happened last week"}],
+			display: true,
+		};
+		expect(pageItems([injected])).toEqual([
+			{
+				kind: "system",
+				id: "e1",
+				timestamp: Date.parse(at(1)),
+				text: "Extension message: recap",
+				detail: "what happened last week",
+			},
+		]);
+	});
+
+	it("keeps an extension's hidden message out of the transcript it asked to stay out of", () => {
+		const hidden: CustomMessageEntry = {
+			...base,
+			type: "custom_message",
+			customType: "recap",
+			content: "state nobody reads",
+			display: false,
+		};
+		expect(pageItems([hidden])).toEqual([]);
+	});
+
+	/**
+	 * The one case no typed value can state: an entry kind newer than this pin, read the way it would
+	 * really arrive — a line parsed out of the session file. A file a later Pi wrote has to open, so
+	 * the fold skips what it cannot read instead of throwing the page away.
+	 */
+	it("skips an entry kind this pin does not ship without taking the page down", () => {
+		const laterPi = JSON.parse(
+			`{"type":"kind_from_a_later_pi","id":"e1","parentId":null,"timestamp":"${at(1)}"}`,
+		) as SessionEntry;
+		const page = [laterPi, message("e2", "e1", 2, said("still here"))];
+		expect(() => pageItems(page)).not.toThrow();
+		expect(pageItems(page)).toEqual([
+			{kind: "user", id: "e2", timestamp: Date.parse(at(2)), text: "still here"},
 		]);
 	});
 });

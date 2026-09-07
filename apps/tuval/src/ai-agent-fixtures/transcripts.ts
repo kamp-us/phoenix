@@ -11,8 +11,11 @@
 import {
 	type AssistantItem,
 	boundToolResult,
+	type CompactionItem,
 	ItemId,
+	type SubagentSlot,
 	type SystemItem,
+	type ThinkingItem,
 	type ToolItem,
 	type TranscriptItem,
 	type UserItem,
@@ -50,11 +53,50 @@ export const toolItem = (id: string, output = "ok", timestamp = AT): ToolItem =>
 	status: "ok",
 });
 
-export const systemItem = (id: string, text = "resumed", timestamp = AT): SystemItem => ({
+export const systemItem = (
+	id: string,
+	text = "resumed",
+	timestamp = AT,
+	detail?: string,
+): SystemItem => ({
 	kind: "system",
 	id: ItemId.make(id),
 	timestamp,
 	text,
+	...(detail === undefined ? {} : {detail}),
+});
+
+export const thinkingItem = (id: string, text = "weighing it", timestamp = AT): ThinkingItem => ({
+	kind: "thinking",
+	id: ItemId.make(id),
+	timestamp,
+	text,
+});
+
+export const compactionItem = (
+	id: string,
+	text = "context compacted",
+	timestamp = AT,
+): CompactionItem => ({
+	kind: "compaction",
+	id: ItemId.make(id),
+	timestamp,
+	text,
+});
+
+/** One subagent slot, running by default: the shape a mapper hands the core (#8401). */
+export const subagentSlot = (
+	id: string,
+	overrides: Partial<Omit<SubagentSlot, "id">> = {},
+): SubagentSlot => ({
+	id: ItemId.make(id),
+	type: "general-purpose",
+	lastLine: "reading the file",
+	startedAt: AT,
+	tokens: 1_200,
+	items: [],
+	status: "running",
+	...overrides,
 });
 
 /**

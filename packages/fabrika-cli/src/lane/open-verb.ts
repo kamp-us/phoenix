@@ -1,31 +1,36 @@
 /**
  * `lane open` — boot one single-issue lane from the committed coder template, byte-identically.
  *
- * The boot the operator did by hand as `mkdir -p && cp` (#5680, gate-1 friction item 1), as a verb
+ * The boot an operator used to do by hand as `mkdir -p && cp`, as a verb
  * that refuses instead of overwriting: an existing lane dir is a loud {@link LANE_EXISTS}, because
  * resuming needs no boot and a silent overwrite would corrupt a live fold.
  *
  * The coder template has one task, so an epic has no machine here at all — booting one anyway is
- * #7024's wrong-template lane, which reads healthy to every later diagnostic. So an issue-keyed boot
+ * the wrong-template lane, which reads healthy to every later diagnostic. So an issue-keyed boot
  * asks the board what the issue is *before* it writes, and refuses an epic with
  * {@link SHAPE_MISMATCH}. A chore lane drives no issue and is never asked.
  *
  * **Both halves of "epic" are asked for, and the unplanned half is the one the incident needed.** An
  * epic that has not been planned carries no sub-issue links, so a refusal keyed on children alone
- * could not fire in the pre-plan window #7024 was filed from; the `type:epic` label is what covers
+ * could not fire in the pre-plan window the incident came from; the `type:epic` label is what covers
  * it. The refusal says which case it is, because their remedies differ: plan the epic, or emit its
  * machine.
  *
  * **The parent edge is asked for too, and it is the mirror those two facts cannot see.** An epic's
  * child carries neither of them, so it booted a coder-template ledger of its own while the parent's
  * lane already held the same number as a task — two ledgers over one piece of work, reconciled by
- * nothing (#7381). That refusal is {@link LANE_IS_CHILD} and names the parent's lane as the one to
+ * nothing. That refusal is {@link LANE_IS_CHILD} and names the parent's lane as the one to
  * drive. Epic wins the precedence, so a sub-epic still routes to `lane emit`.
+ *
+ * The repo's declared `laneConcurrencyCap` is the last gate before the write, and an issue lane's
+ * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
+import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_IS_CHILD, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
+import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import {placementRefusal} from "./refusals.ts";
 import {type LaneRef, placeMachine} from "./store.ts";
@@ -39,13 +44,20 @@ export interface OpenOptions<R = never> extends LaneRef {
 	readonly issue: number | null;
 	/** The board reader, or `null` for the offline boot a caller gets by passing none. */
 	readonly expectation: ExpectationReader<R> | null;
+	/**
+	 * The repo's declared `laneConcurrencyCap`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * Read for every boot and applied to an issue lane only: the cap counts the issue lanes under
+	 * this root, and a chore lane lives under a root of its own that nothing here counts.
+	 */
+	readonly cap: Read<number | null>;
 }
 
 export const runOpen = <R = never>(
 	options: OpenOptions<R>,
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		// The template read comes first because it is the cheap local one, and because #6011's guard on
+		// The template read comes first because it is the cheap local one, and because the guard on
 		// the packed tarball's assets is the answer it produces — a boot that never reaches it cannot
 		// tell a missing asset from an unreachable board.
 		const template = yield* Effect.result(readFile(options.templatePath));
@@ -82,6 +94,12 @@ export const runOpen = <R = never>(
 						: `${VERB}: #${issue} hangs under #${parent}, whose lane already carries it as a task — drive that lane (\`fabrika lane status ${parent}\`), never a second ledger for the child. Nothing was written.`,
 				);
 			}
+		}
+		// Last, so a permanent defect — the wrong template for this issue, a child that gets no lane —
+		// is named ahead of a cap that will clear on its own the moment a seat frees.
+		if (issue !== null) {
+			const capped = yield* capRefusal(VERB, options.cap, options.root);
+			if (capped !== null) return capped;
 		}
 		const placed = yield* placeMachine(options, template.success);
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);

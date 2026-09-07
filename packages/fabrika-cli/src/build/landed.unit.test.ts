@@ -52,7 +52,7 @@ describe("readAssembly", () => {
 
 	/**
 	 * The common ancestor lies beyond the graft boundary, so `git merge-base` names none. The read
-	 * stays Unreadable — the point is that its reason carries the remedy (#7292).
+	 * stays Unreadable — the point is that its reason carries the remedy.
 	 */
 	const beyondBoundary = (shallow: ExecResult): ReadonlyArray<Scripted> => [
 		script[0] as Scripted,

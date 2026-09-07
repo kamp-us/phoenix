@@ -2,13 +2,13 @@
  * The pure capture-plan core: parse the review-design skill's `--surface`
  * tokens, and turn a preview-deploy base URL + the changed surfaces into the
  * flat list of screenshots to shoot. No browser, no network — this is the
- * unit-tested selection logic the review-design gate (ADR 0165) reasons about;
+ * unit-tested selection logic the review-design gate reasons about;
  * `capture.ts` drives Playwright over the plan this produces.
  *
  * One record per surface per viewport: a surface is a route + an optional state
  * variant, and a plan shoots that set at one viewport. A caller wanting several
  * viewports builds a plan per viewport and concatenates them — the file name
- * carries the viewport label, so the shots never collide (#7706).
+ * carries the viewport label, so the shots never collide.
  *
  * The grammar here parses ANY state token; which ones a capture can actually put
  * on screen is `states.ts`'s closed list (`auth` today), and `review-ui render`
@@ -51,7 +51,7 @@ export interface Viewport {
 }
 
 /**
- * The viewports review-design can judge the four-pillars law at (ADR 0162).
+ * The viewports review-design can judge the four-pillars design law at.
  * Desktop is the default single capture viewport; mobile is available for the
  * size-relative prohibitions (a sub-36px tap target, cramped off-grid spacing)
  * when the caller opts into it. Fixed (not device-emulated) so a shot is
@@ -66,7 +66,7 @@ export const DEFAULT_VIEWPORT: Viewport = DESKTOP_VIEWPORT;
  * a manifest entry carry. Closed for the reason `states.ts` is closed: a name
  * nothing resolves would have to fall back to some width, and a shot at the
  * fallback width recorded under the asked-for name is coverage claimed and not
- * held. `review-ui render` refuses a name outside it on `10` (#7706).
+ * held. `review-ui render` refuses a name outside it on `10`.
  *
  * Both realized widths fall inside the repo's one narrow breakpoint
  * (`@media (max-width: 640px)`), so a third row buys no new CSS branch today.
@@ -105,14 +105,14 @@ export interface Shot {
 	/**
 	 * Optional crop to the changed region (CSS px). When set, capture narrows to
 	 * this rectangle instead of the full page — the cost-control lever the local
-	 * render harness computes (#2963). Absent ⇒ the default full-page shot.
+	 * render harness computes. Absent ⇒ the default full-page shot.
 	 */
 	readonly clip?: CaptureClip;
 	/**
 	 * Optional render device-pixel-ratio (`deviceScaleFactor`, per Playwright's
 	 * context option). A value < 1 renders fewer device pixels per CSS pixel — a
 	 * genuine raster downscale (device pixels = CSS pixels × dpr) — the budget
-	 * lever the local render harness computes (#2963). Absent ⇒ the default 1x.
+	 * lever the local render harness computes. Absent ⇒ the default 1x.
 	 */
 	readonly deviceScaleFactor?: number;
 }
@@ -143,7 +143,7 @@ export const joinPreviewUrl = (previewUrl: string, route: string): string => {
  * The surface route is caller-supplied (uncontrolled), so the sanitization must
  * run in linear time on any input: an unbounded run of non-alnum characters
  * would let an anchored trailing-dash trim (`/^-+|-+$/g`) backtrack
- * polynomially — the ReDoS CodeQL flagged (alert #24). So the route is clamped
+ * polynomially — the ReDoS a static analyzer flagged. So the route is clamped
  * to a bounded length before sanitizing (a filename never needs to be longer),
  * and the leading/trailing-dash trim is a single-pass index walk, not a
  * backtracking regex.

@@ -264,7 +264,7 @@ const openFromThePicker = Effect.fn("claudeVertical.openFromThePicker")(function
 	for (let step = 0; step < at; step += 1) {
 		const moved = pickerPress(windowId, entries, view, "j");
 		assert.isNotNull(moved, "the picker moved its highlight");
-		view = {cursor: view.cursor + 1, refusal: null};
+		view = {...view, cursor: step + 1, refusal: null};
 		yield* desk.send(moved as ShellMsg);
 	}
 	const chosen = pickerPress(windowId, entries, view, "<enter>");
@@ -968,6 +968,22 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							const child = table.find(
 								(entry: TableRow) => entry.id === spawned.process,
 							) as TableRow;
+
+							// An unstamped prompt is refused at the send (#7991). Asserted here because the
+							// alternative is the failure this case used to have: a delivered nobody could
+							// act on, and a poll below that runs to the test's own timeout.
+							const unstamped = yield* callTool("send", () =>
+								tools.handlers.send({
+									process: spawned.process,
+									port: "prompt",
+									payload: {text: CHILD_PROMPT, key: "child-unstamped"},
+								}),
+							);
+							assert.strictEqual(
+								unstamped.isError,
+								true,
+								"the child's prompt port took a payload carrying no timestamp",
+							);
 
 							const sent = answered(
 								yield* callTool("send", () =>

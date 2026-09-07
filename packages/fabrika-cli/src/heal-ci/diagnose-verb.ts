@@ -14,7 +14,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
 import type {CiSurface} from "../config/keys/ci.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
@@ -56,7 +56,7 @@ import {compare, readDeclared} from "./surface.ts";
 
 const VERB = "heal-ci diagnose";
 
-/** The permission levels ADR 0055 counts as an authorized verdict author. */
+/** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 /**
@@ -64,7 +64,7 @@ const AUTHORIZED = new Set(["admin", "maintain", "write"]);
  *
  * Two carriers fill a namespace and this verb must read both, because it resolves the same question
  * `ship gate` does: a PR the gate calls satisfied must not classify here as `ungated` and get
- * re-dispatched to a review that cannot fill the namespace (#6376). `ROUTABLE` is imported from the
+ * re-dispatched to a review that cannot fill the namespace. `ROUTABLE` is imported from the
  * gate rather than restated, so the one-namespace fence has one home.
  */
 const claimOf = (
@@ -88,7 +88,7 @@ const claimOf = (
 	}
 	const route = readRoute(comment.body);
 	if (route._tag !== "Found" || route.value.namespace !== ROUTABLE) return null;
-	// Head-bound with no content binding, exactly as the gate binds it (ADR 0316): a push voids the
+	// Head-bound with no content binding, exactly as the gate binds it: a push voids the
 	// route, so the namespace re-opens rather than staying resolved across a rewrite.
 	return {
 		namespace: route.value.namespace,
@@ -185,6 +185,8 @@ export const diagnoseOne = (
 	params: DiagnoseParams,
 	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
 	governedRoots: ReadonlyArray<string>,
+	/** This repo's `uiSurfaces` prefixes, resolved once by the caller for the same reason. */
+	uiPrefixes: ReadonlyArray<string>,
 	/** This repo's `ci`, resolved once by the caller for the same reason. */
 	ci: Resolution<CiSurface>,
 ): Effect.Effect<
@@ -285,7 +287,7 @@ export const diagnoseOne = (
 		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
 		if (stranded.length > 0) {
 			notices.push(
-				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
+				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's.`,
 			);
 		}
 
@@ -344,7 +346,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots));
+		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots, uiPrefixes));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
@@ -546,12 +548,20 @@ export const runDiagnose = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			'the required namespace set is UNKNOWN, never "attended".',
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const result = yield* diagnoseOne(
 			resolved.repo,
 			options.pr,
 			options.sha,
 			options,
 			governed.roots,
+			surfaces.prefixes,
 			yield* resolveCi(options.cwd),
 		);
 		if (result._tag === "Refused") return result.outcome;

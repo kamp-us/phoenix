@@ -78,7 +78,7 @@ export const runRerun = (
 		const diagnostics = [scannedLine(VERB, listed.value.length, "comment", `head ${head}`)];
 
 		// Latest wins by write stamp, not by creation: a FAIL upserted into an older comment after a
-		// PASS is the current verdict, and `created_at` would order it behind (#4200).
+		// PASS is the current verdict, and `created_at` would order it behind.
 		let latest: {readonly polarity: string; readonly sha: string; readonly at: string} | null =
 			null;
 		for (const comment of listed.value) {

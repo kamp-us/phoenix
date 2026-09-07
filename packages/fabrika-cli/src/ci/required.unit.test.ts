@@ -37,7 +37,7 @@ describe("judgeJob — per-job verdict (required ⇒ must succeed; not-required 
 		assert.strictEqual(r.verdict, "required-pass");
 	});
 
-	it("required + skipped → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+	it("required + skipped → FAIL (the should-have-run silent no-op)", () => {
 		const r = judgeJob({name: "integration", required: true, result: "skipped"});
 		assert.strictEqual(r.verdict, "FAIL");
 	});
@@ -112,7 +112,7 @@ describe("judge — packages-tests (#760): packages/** change required, others l
 		assert.isTrue(judge(inputFromEnv(e)).pass);
 	});
 
-	it("packages-changed PR but suites SKIPPED → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+	it("packages-changed PR but suites SKIPPED → FAIL (the should-have-run silent no-op)", () => {
 		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "skipped"});
 		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
 		assert.isFalse(judge(inputFromEnv(e)).pass);
@@ -151,7 +151,7 @@ describe("judge — actionlint (#568): workflow change required, non-workflow PR
 		assert.isTrue(judge(inputFromEnv(e)).pass);
 	});
 
-	it("workflow-changed PR but actionlint SKIPPED → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+	it("workflow-changed PR but actionlint SKIPPED → FAIL (the should-have-run silent no-op)", () => {
 		const e = env({ACTIONLINT_REQUIRED: "true", ACTIONLINT_RESULT: "skipped"});
 		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "FAIL");
 		assert.isFalse(judge(inputFromEnv(e)).pass);
@@ -286,7 +286,7 @@ describe("judge — packages-tests gate (#760): packages_required required/legit
 		assert.isFalse(judge(inputFromEnv(e)).pass);
 	});
 
-	it("packages required but skipped → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+	it("packages required but skipped → FAIL (the should-have-run silent no-op)", () => {
 		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "skipped"});
 		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
 		assert.isFalse(judge(inputFromEnv(e)).pass);
@@ -355,7 +355,7 @@ describe("inputFromEnv — the job set is derived from CI_REQUIRED_JOBS, one row
 });
 
 describe("inputFromEnv — an unreadable job scope fails closed, never passes over what it found", () => {
-	it("no CI_REQUIRED_JOBS at all ⇒ zero rows and a scope reason (ADR 0092)", () => {
+	it("no CI_REQUIRED_JOBS at all ⇒ zero rows and a scope reason", () => {
 		const input = inputFromEnv({CHANGES_RESULT: "success"});
 		assert.deepStrictEqual(input.jobs, []);
 		assert.strictEqual(input.scopeReasons.length, 1);

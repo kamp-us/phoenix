@@ -60,7 +60,7 @@ export const jsonFlag = Flag.boolean("json").pipe(
 );
 
 /**
- * The identity every mutating verb re-proves its claim against (#6303).
+ * The identity every mutating verb re-proves its claim against — the session and the lane both.
  *
  * Optional, because the guard has a fail-closed reading for a call that names no lane: it passes an
  * uncontested session and refuses one whose markers name two lanes. Making it required would refuse
@@ -93,11 +93,11 @@ const kill = leafCommand(
 			Argument.withDescription("the issue to close not-planned"),
 		),
 		// Optional at the parser and refused at the verb, deliberately: a parser-required flag's
-		// absence is a usage error indistinguishable from a typo, and ADR 0159's confirmation is a
+		// absence is a usage error indistinguishable from a typo, and the salvage confirmation is a
 		// decision whose absence must be a proven refusal (exit 13).
 		confirm: Flag.boolean("confirm").pipe(
 			Flag.withDescription(
-				"assert that salvage was attempted and this filing is genuinely unsalvageable (ADR 0159); its absence is a refusal on 13, not a usage error",
+				"assert that salvage was attempted and this filing is genuinely unsalvageable; its absence is a refusal on 13, not a usage error",
 			),
 		),
 		duplicateOf: Flag.integer("duplicate-of").pipe(
@@ -252,7 +252,7 @@ const apply = leafCommand(
 		"Stamp the triaged transition and its blocked_by edges as one reconcile.",
 	),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges (ADR 0301), resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>`, where the last column is the edge set THIS RUN read back, as `#a,#b` — always empty without --blocked-by, whatever the graph holds, because the dependency endpoint is read only when the flag is there. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable), 21 (a --blocked-by target is a pull request — ADR 0301 names a blocking PR by the issue its merge closes, so pass that issue's number; no edge written). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges, resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>`, where the last column is the edge set THIS RUN read back, as `#a,#b` — always empty without --blocked-by, whatever the graph holds, because the dependency endpoint is read only when the flag is there. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable), 21 (a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes, so pass that issue's number; no edge written). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311",
 	),
 );
 
@@ -360,7 +360,7 @@ const provenance = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether an issue was reported by an agent or a human."),
 	Command.withDescription(
-		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer (ADR 0159), or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not. Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
+		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer, or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not. Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
 	),
 );
 
@@ -448,7 +448,7 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N, in the issue's own voice rather than a third-person report about another issue — and refused when the live blocked_by graph carries no edge for a number it names (ADR 0301); there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. A #N that is a pull request is not read as a prerequisite: ADR 0301 names a blocking PR by the issue its merge closes. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, its blocked_by edges, or a number a stated ordering names could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N, in the issue's own voice rather than a third-person report about another issue — and refused when the live blocked_by graph carries no edge for a number it names; there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. A #N that is a pull request is not read as a prerequisite: a blocking PR is named in the graph by the issue its merge closes. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, its blocked_by edges, or a number a stated ordering names could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
 	),
 );
 

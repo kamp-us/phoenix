@@ -1,7 +1,18 @@
 /**
- * The guard ADR 0353 puts under the deliberate duplicate routing: the core answers a key with Cmds
- * and the surface derives the page-run ones again through `surfaceKey`, and this walks **every**
- * entry of the prefix table asserting the two name the same act.
+ * The guard ADR 0353 puts under the page's reading of the kernel's grammar, walked over **every**
+ * entry of the prefix table.
+ *
+ * What it compares changed with #8274. The page runs no router any more: the desk sends the key and
+ * does what the kernel's answer says (`./press.ts`), so the walk drives the path the desk actually
+ * takes, and there are exactly two things left for the two ends to disagree about.
+ *
+ * 1. **What the kernel did**, stated twice inside one fold — as the Cmds it asks its host for, and
+ *    as the answer it records for the page on `lastPress`. The desk acts on the second; the process
+ *    receives the first. A fold whose two statements part company is a key the window's renderer and
+ *    the window's process see differently.
+ * 2. **Whose key it is**, which the desk decides at the press because a default action cannot wait
+ *    for a round trip (`shellOwnsKey`). That is the one reading of the grammar left on the page, and
+ *    it must agree with the kernel about every key of every gesture.
  *
  * The walk takes the core's table and the page's table separately, because the failure it exists to
  * catch is the two being handed different grammars — pass one table twice and it proves agreement,
@@ -11,17 +22,20 @@
 
 import {Result} from "effect";
 import {describe, expect, it} from "vitest";
-import {applyMsg, type ShellState} from "../core/index.ts";
+import {applyMsg, type ShellCmd, type ShellState} from "../core/index.ts";
 import type {Binding, Key, PrefixTable} from "../keys/index.ts";
-import {applyKeysConfig, defaultPrefixTable, normalizeSequence, parse} from "../keys/index.ts";
+import {
+	applyKeysConfig,
+	defaultPrefixTable,
+	normalizeSequence,
+	parse,
+	stringify,
+} from "../keys/index.ts";
 import {threeWindowDesk} from "./fixtures.ts";
-import {routerPrefix, surfaceKey} from "./frame.ts";
+import {COMMAND_LINE_COMMAND, routerPrefix, shellOwnsKey} from "./frame.ts";
+import {replyIn} from "./press.ts";
 
-/**
- * One routing decision about a key. The core states it as a Cmd and the surface derives it again
- * through `surfaceKey`; the two deliver it differently — the kernel dispatches `forwardKey` into the
- * process, the page hands the key to that window's renderer — but they must decide it alike.
- */
+/** One decision about a key, as far as a surface is concerned. */
 type Routed =
 	| {readonly _tag: "OpenCommandLine"}
 	| {readonly _tag: "ToWindow"; readonly key: string};
@@ -29,13 +43,8 @@ type Routed =
 const keysOf = (sequence: string): ReadonlyArray<Key> =>
 	Result.getOrThrow(normalizeSequence(sequence)).map((one) => Result.getOrThrow(parse(one)));
 
-/** How the core routed the key, and the repeat window it asked the host to time. */
-const coreRouted = (
-	state: ShellState,
-	table: PrefixTable,
-	key: Key,
-): readonly [ShellState, ReadonlyArray<Routed>, number | null] => {
-	const [next, cmds] = applyMsg(table, state, {type: "keys.press", key});
+/** What the kernel asked its host to do, and the repeat window it asked it to time. */
+const asCmds = (cmds: ReadonlyArray<ShellCmd>): readonly [ReadonlyArray<Routed>, number | null] => {
 	const routed: Array<Routed> = [];
 	let repeatTimer: number | null = null;
 	for (const cmd of cmds) {
@@ -43,34 +52,59 @@ const coreRouted = (
 		if (cmd.type === "openCommandLine") routed.push({_tag: "OpenCommandLine"});
 		if (cmd.type === "startRepeatTimer") repeatTimer = cmd.timeoutMs;
 	}
-	return [next, routed, repeatTimer];
+	return [routed, repeatTimer];
 };
 
-/** The same decision, derived on the page from the snapshot and the table it was sent. */
-const surfaceRouted = (state: ShellState, table: PrefixTable, key: Key): ReadonlyArray<Routed> => {
-	const answer = surfaceKey(table, routerPrefix(state), key);
-	if (answer._tag === "Shell") return [];
-	return [
-		answer._tag === "OpenCommandLine"
-			? {_tag: "OpenCommandLine"}
-			: {_tag: "ToWindow", key: answer.key},
-	];
+/**
+ * The same decision as the desk reads it: off `lastPress`, out of the state the acknowledgement
+ * carried back, under the page's own stamp. `Consumed` and a command the page does not implement
+ * are both "nothing for the surface to do", which is the empty list.
+ */
+const asAnswer = (state: ShellState, pressId: string): ReadonlyArray<Routed> => {
+	const reply = replyIn(pressId, state);
+	if (reply._tag === "ToWindow") return [{_tag: "ToWindow", key: reply.key}];
+	if (reply._tag === "Command" && reply.name === COMMAND_LINE_COMMAND) {
+		return [{_tag: "OpenCommandLine"}];
+	}
+	return [];
 };
 
-/** One line per press the two sides answered differently, naming the binding it was typing. */
+/** One line per press the two ends answered differently, naming the binding it was typing. */
 const disagreements = (core: PrefixTable, page: PrefixTable): ReadonlyArray<string> => {
 	const found: Array<string> = [];
 	for (const binding of core.bindings) {
 		// The prefix first, then the sequence — the whole gesture a user types for this entry.
 		const gesture = [...keysOf(core.prefix), ...keysOf(binding.sequence)];
-		// The focused window holds a process, so `forwardKey` is emitted where the surface forwards.
-		let state = threeWindowDesk();
+		// The focused window holds a process *and declares it takes keys*, which is what the first
+		// claim above rests on: a window whose program declared none is answered on `lastPress` and
+		// sent no Cmd (#7973), so the two statements part company for a reason that is not drift.
+		let state = applyMsg(core, threeWindowDesk(), {
+			type: "window.bind",
+			processId: "process-1",
+			takesKeys: true,
+		})[0];
+		let press = 0;
 		for (const key of gesture) {
-			const derived = surfaceRouted(state, page, key);
-			const [next, asked, repeatTimer] = coreRouted(state, core, key);
+			press += 1;
+			const pressId = `page-${press}`;
+			// Whose key it is, decided on the page at the press, over the table this page was sent.
+			const pageOwns = shellOwnsKey(page, routerPrefix(state), key);
+			const [next, cmds] = applyMsg(core, state, {type: "keys.press", key, pressId});
+			const [asked, repeatTimer] = asCmds(cmds);
+			const derived = asAnswer(next, pressId);
+			// The kernel took the key whenever it did not hand *this* key to the window. Not "forwarded
+			// nothing": a bound row may mint a key of its own and forward that (`window:focus-list`,
+			// #8407), and the press it ran on is still the shell's — which is the question the page
+			// answers at the press when it decides whether to swallow the default action.
+			const coreOwns = !asked.some((one) => one._tag === "ToWindow" && one.key === stringify(key));
+			if (pageOwns !== coreOwns) {
+				found.push(
+					`${binding.sequence}: core owns ${String(coreOwns)} vs page owns ${String(pageOwns)}`,
+				);
+			}
 			if (JSON.stringify(asked) !== JSON.stringify(derived)) {
 				found.push(
-					`${binding.sequence}: core ${JSON.stringify(asked)} vs page ${JSON.stringify(derived)}`,
+					`${binding.sequence}: cmds ${JSON.stringify(asked)} vs answer ${JSON.stringify(derived)}`,
 				);
 			}
 			// The desk runs its countdown off `repeatWindowMs` rather than off the Cmd, so the two
@@ -110,10 +144,12 @@ describe("the core and the page answer one prefix table alike", () => {
 		expect(disagreements(table, table)).toEqual([]);
 	});
 
-	it("reports the entries a page routing over another table parts on", () => {
+	it("reports the entries a page reading another table parts on", () => {
 		const core = Result.getOrThrow(applyKeysConfig(defaultPrefixTable, {prefix: "<c-a>"}));
 		const parted = disagreements(core, defaultPrefixTable);
-		expect(parted.length).toBe(core.bindings.length);
-		expect(parted[0]).toContain("core []");
+		// The gesture's first key is the prefix, and the page holding another table does not know it
+		// is one — so every entry of the table parts on its first press.
+		expect(parted.length).toBeGreaterThanOrEqual(core.bindings.length);
+		expect(parted[0]).toContain("core owns true vs page owns false");
 	});
 });

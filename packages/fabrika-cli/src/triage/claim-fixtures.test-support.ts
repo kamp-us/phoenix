@@ -2,7 +2,7 @@
  * The claim-marker read every mutating `triage` verb runs, as scripted comment pages.
  *
  * Shared rather than repeated per verb because the guard is one module, so a test that disagrees
- * with another about the marker's shape would be testing the fixture (#5644).
+ * with another about the marker's shape would be testing the fixture.
  *
  * The TTL is measured against the real clock, so the two ages are written as timestamps far either
  * side of any run rather than as an injected `now` no verb accepts: {@link LIVE} cannot age out and
@@ -27,7 +27,7 @@ export const EXPIRED = "2020-01-01T00:00:00Z";
  * One comments page carrying a claim marker per row.
  *
  * `lane` defaults to a per-row nonce rather than to the caller's: a fixture that silently handed
- * every marker one lane would make a sibling-lane race look like a re-entry (#6132). A row naming a
+ * every marker one lane would make a sibling-lane race look like a re-entry. A row naming a
  * lane explicitly is how a test writes "this marker is that lane's".
  */
 export const claimPage = (

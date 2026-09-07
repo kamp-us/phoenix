@@ -23,8 +23,8 @@ describe("sanitizeReleaseBody", () => {
 		expect(sanitizeReleaseBody(body)).toEqual({body, stripped: []});
 	});
 
-	// The #5946 body verbatim in shape: commit d8d23de1's subject carried a literal `<details>`,
-	// which gave the parser a second `<details>` element with no `<summary>` inside it.
+	// The shape of the body that broke the release run: a commit subject carried a literal
+	// `<details>`, which gave the parser a second `<details>` element with no `<summary>` inside it.
 	it("strips the brackets off a stray tag a commit subject carried in", () => {
 		const repair = sanitizeReleaseBody(
 			bodyWith("* **wire:** read criteria outside a `<details>` appendix ([d8d23de](https://x))"),

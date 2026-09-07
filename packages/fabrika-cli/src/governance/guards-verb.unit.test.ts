@@ -108,7 +108,7 @@ describe("runGuards", () => {
 		expect(out.stdout).toContain(`guard-file\t${path}\t0`);
 	});
 
-	it("caps the guard-file evidence at five and counts the rest, on both channels (ADR 0308)", async () => {
+	it("caps the guard-file evidence at five and counts the rest, on both channels", async () => {
 		const paths = Array.from({length: 7}, (_, i) => `.github/workflows/g${i}.yml`);
 		const script: ReadonlyArray<Scripted> = [
 			[PULL, served(pull({changedFiles: paths.length}))],
@@ -157,7 +157,7 @@ describe("runGuards", () => {
 	});
 
 	/**
-	 * The point read #6077 found, pinned (#5770).
+	 * The point read at the merge base, pinned.
 	 *
 	 * The block comparison is a read at ONE commit, so unlike the three-dot diff around it nothing
 	 * recomputes a branch point for it. Main here has edited the anchor since this branch left: at the
@@ -198,8 +198,8 @@ describe("runGuards", () => {
 		});
 	});
 
-	// The PR #5501 shape: not one `+`/`-` line in that 98-file diff carried an anchor tag, yet two
-	// anchored paragraphs had been reworded on their continuation lines (#5514).
+	// The shape the block comparison exists for: not one `+`/`-` line in the diff carries an anchor
+	// tag, yet an anchored paragraph has been reworded on its continuation lines.
 	it("reports a hit when the anchored PROSE changed and no anchor line is in the diff at all", async () => {
 		const claim = (checkout: string): string =>
 			[
@@ -318,7 +318,7 @@ describe("runGuards", () => {
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`governance guards: the diff at ${HEAD} carries 1 of #4321's 4 declared files — refusing a partial anchor scan (#3925's class).`,
+			`governance guards: the diff at ${HEAD} carries 1 of #4321's 4 declared files — refusing a partial anchor scan.`,
 		);
 	});
 

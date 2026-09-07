@@ -4,8 +4,8 @@
  * A lane is a directory: `<root>/<key>/workflow.json` (the machine document, placed there by the
  * operator from a committed template) plus `events.jsonl` (the append-only log, born on the first
  * recorded event) — `.fabrika/lanes/<n>/` for an issue lane, `.fabrika/chores/<name>/` for a chore
- * lane. Lane state is local and gitignored — the repo `.gitignore`'s `/.fabrika/` entry covers it
- * (#5673). Which root a key resolves to is [`key.ts`](key.ts)'s call, not this module's.
+ * lane. Lane state is local and gitignored — the repo `.gitignore`'s `/.fabrika/` entry covers it.
+ * Which root a key resolves to is [`key.ts`](key.ts)'s call, not this module's.
  *
  * The load keeps four outcomes apart because they take opposite remedies: the lane is provably not
  * there, it could not be read (UNKNOWN, never "fresh"), it was read in full and is not the shape,
@@ -19,12 +19,12 @@ import {type CompiledLane, compileText} from "./machine.ts";
 
 /**
  * The lanes root leaf — `.fabrika/lanes` — and its chore sibling. Relative leaves, joined onto the
- * repository root a verb derives from the cwd (#5815); an explicit `--root` replaces the whole
+ * repository root a verb derives from the cwd; an explicit `--root` replaces the whole
  * resolved path.
  */
 export const DEFAULT_LANES_ROOT = ".fabrika/lanes";
 
-/** Where a chore lane lives: keyed by name, because a chore has no issue number (#5840). */
+/** Where a chore lane lives: keyed by name, because a chore has no issue number. */
 export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
 
 /**
@@ -32,7 +32,7 @@ export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
  *
  * That placement is the whole mechanism: `lane reconcile` and `lane migrate` sweep the roots they
  * are handed and nothing above them, so a lane moved to a sibling is out of both sweeps without
- * either verb learning a skip rule it could get wrong (ADR 0352).
+ * either verb learning a skip rule it could get wrong.
  */
 export const DEFAULT_ARCHIVED_LANES_ROOT = ".fabrika/lanes-archived";
 
@@ -108,7 +108,7 @@ export type Placement =
  * Place one machine document as a NEW lane — the boot both `lane open` and `lane emit` share.
  *
  * An existing lane directory refuses before anything is written: resuming an existing lane needs no
- * boot, and silently overwriting a machine mid-drive would corrupt a live fold (#5688). A probe that
+ * boot, and silently overwriting a machine mid-drive would corrupt a live fold. A probe that
  * cannot answer is UNKNOWN, never an absence to build on.
  */
 export const placeMachine = (

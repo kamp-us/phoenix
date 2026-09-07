@@ -4,11 +4,12 @@
  * Two rules here are incident-shaped and neither is negotiable:
  *
  * - **An ejection is a removal NOT paired with a merge.** The queue consuming an entry emits the
- *   same `removed_from_merge_queue` event ≤1s before the merge, so reading the bare removal is the
- *   #4155 false ejection.
- * - **The base-branch subject match is anchored at the END.** `… (#3924) (#4010)` is #4010's
- *   landing, not #3924's, and a contains-match credits the wrong PR (#4057, whose timeline lags the
- *   truth by up to ~65 minutes — which is why the base branch is cross-checked at all).
+ *   same `removed_from_merge_queue` event ≤1s before the merge, so reading the bare removal reports
+ *   a false ejection over a PR that landed.
+ * - **The base-branch subject match is anchored at the END.** A squashed subject can carry two
+ *   parenthesised numbers, and the last one is the PR that landed; a contains-match credits the
+ *   other. The timeline itself lags the truth by up to ~65 minutes, which is why the base branch is
+ *   cross-checked at all.
  */
 import type {TimelineEvent} from "./github.ts";
 

@@ -103,7 +103,7 @@ export interface ChildBodyInput {
  *
  * The readers are the gate's, imported: a body that composes here cannot fail the gate on grammar.
  * `**Stories:**` carries bare integers or `none` and nothing else — v1 harvested every digit run in
- * the value, so `1, 3 (see #4021)` silently claimed a story 4021 no epic declared.
+ * the value, so `1, 3 (see issue 9412)` silently claimed a story 9412 no epic declared.
  */
 export const composeChildBody = (input: ChildBodyInput): ChildBodyCheck => {
 	const body = normalizeChildBody(input.text, input.cycleDoc);

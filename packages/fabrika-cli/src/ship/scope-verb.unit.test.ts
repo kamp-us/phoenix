@@ -1,6 +1,12 @@
-import {Effect, Layer} from "effect";
+import {Effect, type FileSystem, Layer, type Path} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	uiConfigured,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -36,11 +42,12 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	extra: ReadonlyArray<Scripted> = [],
+	config: Layer.Layer<FileSystem.FileSystem | Path.Path> = unconfigured,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...extra]).layer, unconfigured),
+			Layer.merge(fakeSeams([...script, ...extra]).layer, config),
 		),
 	);
 
@@ -48,7 +55,7 @@ describe("runScope", () => {
 	it("renders a partial split as `part-of:<n>` — the marker resolves at this seam as it does at review's", async () => {
 		const out = await run([
 			[PULL, served(pull({body: "does things\n\nPart of #4000\n"}))],
-			[FILES, served(files("apps/web/worker/cart.ts", "README.md"))],
+			[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
 			[OWNERS, raw(CODEOWNERS)],
 		]);
 		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tpart-of:4000`);
@@ -58,12 +65,13 @@ describe("runScope", () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
-				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 				[OWNERS, raw(CODEOWNERS)],
 				[RULES, served(branchRules("pull_request"))],
 			],
 			{},
 			[[REPO, repositoryServed()]],
+			uiConfigured,
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -110,12 +118,44 @@ describe("runScope", () => {
 	});
 
 	it("derives review-ui from a rendered surface but not from its own test file", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[FILES, served(files("apps/site/src/App.tsx", "apps/site/src/App.test.tsx"))],
+				[OWNERS, raw(CODEOWNERS)],
+			],
+			{},
+			[],
+			uiConfigured,
+		);
+		expect(out.stdout).toContain("class\tui\t1");
+	});
+
+	// The prefix list is the repo's own, so a second runnable app's diff derives the class the first
+	// app's does — which a compiled-in source-root literal could not.
+	it("derives review-ui from a diff whose rendered files are all under the second app", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[FILES, served(files("apps/desk/src/ui/Chat.tsx", "apps/desk/src/ui/Chat.test.tsx"))],
+				[OWNERS, raw(CODEOWNERS)],
+			],
+			{},
+			[],
+			uiConfigured,
+		);
+		expect(out.stdout).toContain("class\tui\t1");
+		expect(out.stdout).toContain("namespace\treview-ui");
+	});
+
+	it("derives no ui class and says why when the repo declares no uiSurfaces row", async () => {
 		const out = await run([
 			[PULL, served(pull())],
-			[FILES, served(files("apps/web/src/App.tsx", "apps/web/src/App.test.tsx"))],
+			[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			[OWNERS, raw(CODEOWNERS)],
 		]);
-		expect(out.stdout).toContain("class\tui\t1");
+		expect(out.stdout).not.toContain("class\tui");
+		expect(out.stderr.join("\n")).toContain("declares no `uiSurfaces` rows");
 	});
 
 	it("prints governance beside the class namespaces when the diff touches a governance root", async () => {
@@ -132,7 +172,7 @@ describe("runScope", () => {
 	it("prints no governance line for a diff under no governance root", async () => {
 		const out = await run([
 			[PULL, served(pull())],
-			[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+			[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			[OWNERS, raw(CODEOWNERS)],
 		]);
 		expect(out.stdout).not.toContain("governance");
@@ -215,7 +255,7 @@ describe("runScope", () => {
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"ship scope: PR #4321 has zero changed files — nothing to ship (ADR 0092).",
+			"ship scope: PR #4321 has zero changed files — nothing to ship.",
 		);
 	});
 

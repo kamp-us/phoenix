@@ -5,7 +5,8 @@
  */
 
 import {type Cmd, defineMachine} from "@demlik/tea";
-import {type Context, Effect, Layer, Option, PubSub, type Scope, Stream} from "effect";
+import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "effect";
+import {SessionOpening} from "../../ai-agent/opening.ts";
 import {ProcessNotFound} from "../../process/errors.ts";
 import {Processes, type SpawnOptions} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
@@ -32,7 +33,11 @@ const core = defineMachine<CountState, CountMsg, Cmd<never>, never, unknown>({
 
 export const programRow = (
 	id: string,
-	options?: {readonly label?: string; readonly renderer?: boolean},
+	options?: {
+		readonly label?: string;
+		readonly renderer?: boolean;
+		readonly takesKeys?: boolean;
+	},
 ): AnyProgram =>
 	({
 		id: ProgramId.make(id),
@@ -41,6 +46,7 @@ export const programRow = (
 		handlers: {},
 		capabilities: [],
 		...(options?.label === undefined ? {} : {label: options.label}),
+		...(options?.takesKeys === true ? {takesKeys: true} : {}),
 		...(options?.renderer === false
 			? {}
 			: {renderer: {kind: "host-native" as const, ref: `tuval/${id}`}}),
@@ -57,6 +63,12 @@ export interface SpawnCall {
 	readonly programId: ProgramId;
 	readonly parent: ProcessId | undefined;
 	readonly spawned: ProcessId;
+	/**
+	 * The session this spawn was for, read back out of the context it was handed. Recorded because
+	 * a `{cwd, resume}` that never reaches the child is the failure that looks exactly like a
+	 * success from the outside (epic #8070, ruling 2).
+	 */
+	readonly session: {readonly cwd: string; readonly resume: string} | undefined;
 }
 
 export interface PickerHarness {
@@ -116,13 +128,27 @@ export const pickerHarness = (
 				minted += 1;
 				const id = ProcessId.make(`process-${minted}`);
 				const row = put(id, programId, spawnOptions?.parent);
-				calls.push({programId, parent: spawnOptions?.parent, spawned: id});
+				const opening =
+					spawnOptions === undefined
+						? Option.none()
+						: Context.getOption(spawnOptions.services, SessionOpening);
+				calls.push({
+					programId,
+					parent: spawnOptions?.parent,
+					spawned: id,
+					session: Option.getOrUndefined(opening),
+				});
 				const handle: ProcessHandle = {
 					id,
 					programId,
 					parentId: row.parentId,
 					scope,
 					dispatch: () => Effect.void,
+					dispatchFolded: () =>
+						Effect.succeed({
+							settled: Exit.void,
+							summary: {lifecycle: "running" as const, revision: 0, state: {count: 0}},
+						}),
 					getState: () => ({count: 0}),
 					stop: Effect.void,
 				};

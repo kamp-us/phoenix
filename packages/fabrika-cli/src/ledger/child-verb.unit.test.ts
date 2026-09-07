@@ -41,7 +41,7 @@ const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 
 const MINTED_LABELS = ["type:feature", "p1", "status:planned", "ready-for:agent"];
 
-/** Every child is born homed (#5969), so the shared options carry a milestone the fixture knows. */
+/** Every child is born homed, so the shared options carry a milestone the fixture knows. */
 const HOME = "fabrika campaign";
 const LANE = "axis:pipeline-hardening";
 
@@ -106,7 +106,7 @@ const run = (
 	}));
 };
 
-/** The JSON a matching request carried — where every write's fields travel now (ADR 0315). */
+/** The JSON a matching request carried — where every write's fields travel now. */
 const sent = (
 	run: {requests: ReadonlyArray<string>; bodies: ReadonlyArray<string>},
 	pattern: RegExp,
@@ -171,34 +171,34 @@ describe("runChild", () => {
 		expect(sent(await run(), LINK).sub_issue_id).toBe(90210);
 	});
 
-	/** #4780: a child must never inherit its audience by omission. */
+	/** A child must never inherit its audience by omission. */
 	it("refuses an absent --ready-for before it reads anything", async () => {
 		const {outcome, calls} = await run({readyFor: null});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger child: --ready-for is required — a child must never inherit its audience by omission (#4780).",
+			"ledger child: --ready-for is required — a child must never inherit its audience by omission.",
 		);
 		expect(calls).toEqual([]);
 	});
 
-	/** #4693: the label is the routing signal, born-assignment is the enforced hold. */
+	/** The label is the routing signal, born-assignment is the enforced hold. */
 	it("refuses --ready-for human without --assignee", async () => {
 		const {outcome} = await run({readyFor: "human"});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).",
+			"ledger child: --ready-for human requires --assignee — a held child is born assigned.",
 		);
 	});
 
 	/**
-	 * #5969: a child with neither an open milestone nor a standing lane is refused by the claim fence
+	 * A child with neither an open milestone nor a standing lane is refused by the claim fence
 	 * at exit 20, so it can never be built. The three cases are the whole homing axis.
 	 */
 	it("refuses a homeless child before it reads anything, naming both remedies", async () => {
 		const {outcome, calls} = await run({milestone: null});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).",
+			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.",
 		);
 		expect(calls).toEqual([]);
 	});
@@ -209,7 +209,7 @@ describe("runChild", () => {
 		expect(sent(minted, CREATE).milestone).toBe(44);
 	});
 
-	/** ADR 0208's lane exemption holds here too — homing is never collapsed into "milestone required". */
+	/** The lane exemption holds here too — homing is never collapsed into "milestone required". */
 	it("mints a lane-homed child carrying no milestone", async () => {
 		const minted = await run({milestone: null, labels: [LANE]}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
@@ -229,21 +229,21 @@ describe("runChild", () => {
 		expect(outcome.stderr.at(-1)).toContain("off the closed set (p0, p1, p2)");
 	});
 
-	/** #4285: `POST .../labels` CREATES an unknown label rather than rejecting it. */
+	/** `POST .../labels` CREATES an unknown label rather than rejecting it. */
 	it("refuses a label absent from the repo taxonomy rather than minting it", async () => {
 		const {outcome, requests} = await run({labels: ["not-a-label"]});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it (#4285).',
+			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it.',
 		);
 		expect(requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 
 	it("refuses a milestone that is not open in the repo", async () => {
-		const {outcome} = await run({milestone: "Geçit"});
+		const {outcome} = await run({milestone: "first release"});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			'ledger child: milestone "Geçit" is not an open milestone of o/r.',
+			'ledger child: milestone "first release" is not an open milestone of o/r.',
 		);
 	});
 
@@ -264,8 +264,8 @@ describe("runChild", () => {
 	});
 
 	/**
-	 * Story 5 of #5631: phoenix's pair is the shipped default, and a repo that declares another gets
-	 * that one. The arm above is the bare-repo half — it writes no config at all.
+	 * The shipped default pair applies until a repo declares its own, and a repo that declares
+	 * another gets that one. The arm above is the bare-repo half — it writes no config at all.
 	 */
 	it("names the repo's own values in the refusal, off the resolved vocabulary", async () => {
 		const {outcome} = await run(
@@ -282,7 +282,7 @@ describe("runChild", () => {
 		expect(outcome.stderr.at(-1)).toContain("needs **Containment:** unpublished or exempt");
 	});
 
-	it("admits a marker the repo's vocabulary carries and phoenix's does not", async () => {
+	it("admits a marker the repo's vocabulary carries and the shipped default does not", async () => {
 		const {outcome} = await run(
 			{},
 			HAPPY,

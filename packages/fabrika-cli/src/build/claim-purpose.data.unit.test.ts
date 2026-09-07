@@ -1,5 +1,5 @@
 /**
- * The #5175 ruling, enforced against the skills instead of only written down (#5217).
+ * The exempt-lane ruling, enforced against the skills instead of only written down.
  *
  * The planning and gating lanes are exempt from the `ready-for:agent` audience fence, and the
  * sanctioned route is `--purpose`, never `--override`. Nothing types that: each lane's claim is a
@@ -13,7 +13,7 @@ import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {audienceAxisBinds, type ClaimPurpose} from "./scope-admission.ts";
 
-/** The skill directory of each exempt lane, and the purpose its claim must carry (#5175). */
+/** The skill directory of each exempt lane, and the purpose its claim must carry. */
 const EXEMPT_LANES: Readonly<Record<string, ClaimPurpose>> = {
 	"plan-epic": "plan",
 	"check-epic-plan": "gate",
@@ -31,9 +31,9 @@ const skillSource = (skill: string): string =>
 const claimInvocations = (source: string): ReadonlyArray<string> =>
 	source.split("\n").filter((line) => line.trimStart().startsWith("fabrika build claim"));
 
-describe("exempt lanes claim with a purpose, never an override (#5175)", () => {
+describe("exempt lanes claim with a purpose, never an override", () => {
 	for (const [skill, purpose] of Object.entries(EXEMPT_LANES)) {
-		// A lane whose claim vanished proves nothing, so zero scope is a failure (ADR 0092).
+		// A lane whose claim vanished proves nothing, so zero scope is a failure.
 		it(`${skill} invokes build claim at least once`, () => {
 			assert.isAtLeast(
 				claimInvocations(skillSource(skill)).length,
@@ -51,7 +51,7 @@ describe("exempt lanes claim with a purpose, never an override (#5175)", () => {
 				assert.include(
 					line,
 					`--purpose ${purpose}`,
-					`${skill}/SKILL.md claims without --purpose ${purpose}, so the audience fence binds it (#5175)`,
+					`${skill}/SKILL.md claims without --purpose ${purpose}, so the audience fence binds it`,
 				);
 			}
 		});

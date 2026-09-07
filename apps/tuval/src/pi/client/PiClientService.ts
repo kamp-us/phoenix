@@ -32,6 +32,7 @@ import type {
 	ThinkingLevel,
 } from "@earendil-works/pi-protocol";
 import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
+import {boundedTeardown} from "../teardown.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,
@@ -73,6 +74,13 @@ export interface PiClientApi {
 		options?: OpenSessionOptions,
 	) => Effect.Effect<PiSessionRef, ConnectionRefusal>;
 	readonly attachSession: (sessionId: string) => Effect.Effect<PiSessionRef, SessionRefusal>;
+	/**
+	 * The snapshot the lease on this session landed with — the transcript Pi had already sent by
+	 * the time `createSession` or `attachSession` answered. `PiSessionRef` keeps only the three
+	 * fields a caller needs to run the session; a resume needs the transcript itself, to seed its
+	 * snapshot diff so the first push after reattaching folds to zero events (#8369).
+	 */
+	readonly heldSnapshot: (sessionId: string) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/** Needs a lease this client took through `createSession` or `attachSession`. */
 	readonly prompt: (
 		sessionId: string,
@@ -172,13 +180,16 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 						},
 					}),
 			),
-			// A release has no error channel to model into, and the pin's `dispose` resolves an
-			// already-settled promise, so the fold exists to keep the ban's shape rather than to
-			// carry a failure that can happen.
+			// A release has no error channel to model into, so the settle is one arm either way: a
+			// rejection is nothing this scope can act on. The wait is the one thing that matters
+			// here and it runs under `../teardown.ts`'s ceiling, because a `dispose` that never
+			// resolves would hang the close for good. `dispose()` is not `async` at the 0.84.3 pin,
+			// so it can throw before returning its promise; the ceiling folds that throw rather
+			// than letting it escape this uninterruptible finalizer.
 			(open) =>
-				Effect.tryPromise({try: () => open.dispose(), catch: connectionRefusalOf}).pipe(
-					Effect.ignore,
-				),
+				boundedTeardown("the Pi client's dispose", (settled) => {
+					open.dispose().then(settled, settled);
+				}),
 		);
 
 		yield* Effect.forkScoped(
@@ -259,6 +270,16 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 				: Effect.succeed(lease);
 		};
 
+		const heldSnapshot = Effect.fn("PiClientService.heldSnapshot")(function* (sessionId: string) {
+			const lease = yield* leased(sessionId);
+			return lease.snapshot === undefined
+				? yield* new ProtocolRefused({
+						code: "internal_error",
+						detail: `no snapshot arrived for session ${lease.id}`,
+					})
+				: lease.snapshot;
+		});
+
 		const prompt = Effect.fn("PiClientService.prompt")(function* (sessionId: string, text: string) {
 			const lease = yield* leased(sessionId);
 			return yield* Effect.tryPromise({
@@ -332,6 +353,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			connected: Effect.sync(() => client.connected),
 			createSession,
 			attachSession,
+			heldSnapshot,
 			prompt,
 			abort,
 			setModel,

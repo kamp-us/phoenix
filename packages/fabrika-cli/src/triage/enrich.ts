@@ -1,8 +1,8 @@
 /**
  * The `triage enrich` envelope: how a body is composed, and how a prior enrichment is recognised.
  *
- * **Detection is a marker the verb writes, not a shape it infers** (founder ruling on #4866,
- * 2026-08-08, option (b)). The two shape-based detectors that preceded it were mode-scoped and keyed
+ * **Detection is a marker the verb writes, not a shape it infers**, ruled on 2026-08-08. The two
+ * shape-based detectors that preceded it were mode-scoped and keyed
  * on disjoint literals, so a re-run in the *other* mode matched neither, fell through to "first
  * enrichment ⇒ wrap", and nested the whole existing envelope — provenance boundary included — inside
  * a fresh block, compounding per run. A marker is one rule and is mode-independent, so that class
@@ -112,7 +112,7 @@ const EPIC_HEADER = "## Epic — awaiting plan";
 /**
  * The authored region — everything above the marker — for one mode and one caller's stdin.
  *
- * Exported because it is the slice a producer's own read-back runs over (ADR 0288 §1): it is the
+ * Exported because it is the slice a producer's own read-back runs over: it is the
  * composed body's leading bytes, template headings and separators included, so a section the
  * envelope demoted is visible; and it stops above the marker, so the preserved original — foreign
  * bytes this verb redacts rather than judges — stays out of reach. `composeBody` below is the law

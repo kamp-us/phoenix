@@ -13,6 +13,7 @@
 
 import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import type {ItemId, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {isRecord} from "./blocks.ts";
 import {
 	assistantEvents,
 	emptyMapping,
@@ -36,6 +37,8 @@ const rowEvents = (row: SessionMessage, mapping: Mapping, options: MappingOption
 
 export interface HistoryItems {
 	readonly items: ReadonlyArray<TranscriptItem>;
+	/** Streaming message ids alias stored frame uuids without re-keying either transcript. */
+	readonly cursorAliases: ReadonlyMap<string, ItemId>;
 	/** How many rows this mapping had nothing to say about. */
 	readonly skipped: number;
 }
@@ -45,13 +48,26 @@ export const toHistoryItems = (
 	options: MappingOptions,
 ): HistoryItems => {
 	const settled = new Map<ItemId, TranscriptItem>();
+	const cursorAliases = new Map<string, ItemId>();
 	let mapping = emptyMapping;
 	for (const row of rows) {
 		const step = rowEvents(row, mapping, options);
 		mapping = step.mapping;
 		for (const event of step.events) {
-			if (event.kind === "item") settled.set(event.item.id, event.item);
+			if (event.kind !== "item") continue;
+			settled.set(event.item.id, event.item);
+			if (
+				row.type === "assistant" &&
+				isRecord(row.message) &&
+				typeof row.message.id === "string" &&
+				(event.item.kind === "assistant" || event.item.kind === "thinking")
+			) {
+				const liveId =
+					event.item.kind === "thinking" ? `${row.message.id}:thinking` : row.message.id;
+				// A streamed message can persist one frame per block. Its first row owns the boundary.
+				if (!cursorAliases.has(liveId)) cursorAliases.set(liveId, event.item.id);
+			}
 		}
 	}
-	return {items: [...settled.values()], skipped: mapping.skipped};
+	return {items: [...settled.values()], cursorAliases, skipped: mapping.skipped};
 };

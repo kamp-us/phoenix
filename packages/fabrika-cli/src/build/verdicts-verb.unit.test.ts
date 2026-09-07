@@ -58,7 +58,7 @@ describe("runVerdicts", () => {
 		expect(parsed.rows.find((r: {gate: string}) => r.gate === "review-code").current).toBe(true);
 	});
 
-	/** "The FAIL is old" and "there is no FAIL" are different facts (#4105). */
+	/** "The FAIL is old" and "there is no FAIL" are different facts. */
 	it("keeps a stale marker in the fold, flagged stale — never drops it", async () => {
 		const out = await run([
 			[PULL, PR],
@@ -114,8 +114,8 @@ describe("runVerdicts", () => {
 	});
 
 	/**
-	 * PR #6122: two heads, two gates each, minutes between the gates at one head. The wall-clock rule
-	 * read this as four rounds and spent the cap on gate latency (#6137).
+	 * Two heads, two gates each, minutes between the gates at one head: a wall-clock rule reads that
+	 * as four rounds and spends the cap on gate latency.
 	 */
 	it("counts two gates grading one head as ONE round, however far apart they post", async () => {
 		const out = await run([
@@ -236,7 +236,7 @@ describe("runVerdicts", () => {
 		const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
 		const WRITES = served({permission: "admin"});
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
-		// Three graded heads, so three rounds — a round is a head, not a span of clock (#6137).
+		// Three graded heads, so three rounds — a round is a head, not a span of clock.
 		const CAPPED = [
 			{
 				id: 1,
@@ -315,7 +315,7 @@ describe("runVerdicts", () => {
 		/**
 		 * The bare second stamp: without the adjacency clause the read takes the last prior comment
 		 * by that author — grant #1's own marker, which carries an ISO date — and every grant after
-		 * the first is authorized by nothing (#4938).
+		 * the first is authorized by nothing.
 		 */
 		it("refuses a second marker whose only precedent is the first grant's marker", async () => {
 			const out = await run([
@@ -346,7 +346,7 @@ describe("runVerdicts", () => {
 			expect(parsed.capReached).toBe(true);
 		});
 
-		/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
+		/** A committed set narrows the ACL; it never stands in for one. */
 		it("refuses a configured author who resolves below write at the ACL", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
@@ -413,7 +413,7 @@ describe("runVerdicts", () => {
 
 /**
  * The child arm — where a lane sent to repair by `build claim --resume` reads its findings. A child
- * opens no PR (ADR 0285), so the whole fold is the range-bound comments on the issue.
+ * opens no PR, so the whole fold is the range-bound comments on the issue.
  */
 describe("runChildVerdicts", () => {
 	const BASE = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4";

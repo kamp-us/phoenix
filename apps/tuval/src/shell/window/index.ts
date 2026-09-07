@@ -18,12 +18,19 @@ export {
 	WindowId,
 	type WindowSlot,
 } from "./host.ts";
+export {PREFIX_ARMED_ATTRIBUTE, prefixArmedAround} from "./prefix-signal.ts";
 export {
 	type AnyWindowRenderer,
+	type DeclaredProgram,
+	type ModuleRendererRef,
+	moduleRendererRefs,
+	type RendererLoadFailure,
 	type RendererRefusal,
 	type RendererResolution,
 	type RendererResolver,
+	type RendererTable,
 	rendererFor,
+	rendererLoadFailure,
 	resolverFromTable,
 	type WindowRenderer,
 	windowRenderer,

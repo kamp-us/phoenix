@@ -4,14 +4,14 @@
  *
  * Four outcomes, and the first two must never collapse: an **unread** pipe is UNKNOWN and seats on
  * `1`, a **read-but-empty** one is a proven `3`. Swallowing the first to the second makes an unread
- * pipe byte-identical to an empty one, and the caller then decides over evidence it never saw
- * (#3924). A body that IS a path is `6` rather than `5` because the fixes are opposite — the loop on
+ * pipe byte-identical to an empty one, and the caller then decides over evidence it never saw.
+ * A body that IS a path is `6` rather than `5` because the fixes are opposite — the loop on
  * a leak is *rewrite and resend*, and on a body that is a path that loop never terminates.
  *
  * **The predicates are the shipped `report/leaks.ts` ones, imported.** Only the message text is this
  * group's, because each refusal names one correctable thing in this verb's own words — a verdict body
  * that must *cite* a leak found in the diff cites it by class root or repo-relative form, while an
- * appended criterion is simply rewritten (#3785). A second leak predicate that drifts from the first
+ * appended criterion is simply rewritten. A second leak predicate that drifts from the first
  * is worse than either alone.
  */
 

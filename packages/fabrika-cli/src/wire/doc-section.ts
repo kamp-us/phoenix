@@ -6,7 +6,7 @@
  * code block is not a heading — the hot contracts quote their own grammar in fences, and a match
  * there would hand a caller an example instead of the contract. The two refusals are proven facts,
  * kept apart because they demand different fixes: `Absent` (nothing to print) and `Duplicated`
- * (two sections with one name have no single meaning, so printing either would be a guess) (#5966).
+ * (two sections with one name have no single meaning, so printing either would be a guess).
  *
  * Fences follow CommonMark: an opener of three-or-more backticks or tildes closes only on a marker
  * of the same character at least as long, so a ```` ``` ```` nested inside a ```` ```` ```` example

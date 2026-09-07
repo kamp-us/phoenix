@@ -1,8 +1,8 @@
 // This project's Tuval config. This file is yours: boot loads it over your global
 // ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (src/registry/program.ts); the six in the box today are the shell (#7558), the
-// demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625) and
-// the agy chat session (#8184).
+// is a `Program` (src/registry/program.ts); the seven in the box today are the shell (#7558), the
+// demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
+// agy chat session (#8184) and the AI-agent session list (#8102).
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -23,6 +23,7 @@
 // rather than a child of the Claude one until #7894.
 import {Console} from "effect";
 import {agySessionProgram} from "../src/agy/program.ts";
+import {sessionListProgram} from "../src/ai-agent/session-list.ts";
 import {claudeSession} from "../src/claude/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
@@ -63,6 +64,9 @@ export default {
 		// one line is where you change it. The row refuses to open a session until
 		// `{"toolPermission": "proceed-in-sandbox"}` is in `~/.gemini/antigravity-cli/settings.json`.
 		agySessionProgram({cwd: projectRoot, agy: {model: "gemini-3.1-pro-high"}}),
+		// Windowed and, like the three sessions above, unplanned — nothing needs it running until you
+		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
+		sessionListProgram(),
 	],
 	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
 } satisfies TuvalConfigInput;

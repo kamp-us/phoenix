@@ -20,7 +20,7 @@
  * `prompt` cell when they send it (#7978).
  */
 
-import {Effect, type Layer, Result, Stream} from "effect";
+import {Effect, type Layer, Option, Result, Stream} from "effect";
 import type {PayloadRejected, ProcessPorts} from "../../ports/index.ts";
 import type {ProcessSelf} from "../../process/self.ts";
 import type {HostHandlers, HostSubs} from "../../registry/program.ts";
@@ -35,9 +35,12 @@ import {
 	START_ERROR,
 	type WindowLimits,
 } from "../core/index.ts";
-import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
-import type {TranscriptPagePayload} from "../ports/index.ts";
+import {isRefusal, pageCursor, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
+import {SessionOpening} from "../opening.ts";
+import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
+	type ResumeTarget,
+	type StartOptions,
 	type TranscriptPage,
 	TransportError,
 	type TuvalAiAgent,
@@ -141,13 +144,17 @@ export const aiAgentHandlers = <RIn = never>(
 	 */
 	const open = (
 		cwd: string,
-		resume: string | null,
+		resume: ResumeTarget | null,
+		mode: Mode | null,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
-			const started = yield* Effect.result(
-				underPolicy(agent.start(resume === null ? {cwd} : {cwd, resume}), policy),
-			);
+			const options: StartOptions = {
+				cwd,
+				...(resume === null ? {} : {resume}),
+				...(mode === null ? {} : {mode}),
+			};
+			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
 			if (Result.isSuccess(started)) {
 				return [{type: "started", sessionId: started.success.sessionId}];
 			}
@@ -176,11 +183,48 @@ export const aiAgentHandlers = <RIn = never>(
 		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init
 		// Cmd's handler before `make` returns), which would hold the spawning process's own tail
 		// for as long as the backend takes to answer.
-		"aiAgent.boot": (cmd) => Effect.succeed([{type: "start", cwd: cmd.cwd, resume: null}]),
+		//
+		// The one thing it decides is which session this process comes up on. A spawner that added
+		// `SessionOpening` to the child's context is spawning for a session the operator picked out
+		// of the session list, so the boot resumes that id in that folder instead of minting a new
+		// one beside it (epic #8070, ruling 2); every other spawner adds nothing and the boot is the
+		// fresh one it has always been. Read here rather than at the spawn seam because this is the
+		// only place that knows the process is new (`../core/machine.ts`'s `init`).
+		"aiAgent.boot": (cmd) =>
+			Effect.map(Effect.serviceOption(SessionOpening), (opening) =>
+				Option.isNone(opening)
+					? [{type: "start", cwd: cmd.cwd, resume: null} as const]
+					: [{type: "start", cwd: opening.value.cwd, resume: opening.value.resume} as const],
+			),
 
-		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume),
+		"aiAgent.start": (cmd) =>
+			open(
+				cmd.cwd,
+				cmd.resume === null ? null : {sessionId: cmd.resume, holdsTranscript: false},
+				cmd.mode,
+			),
 
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),
+		// The one resume whose window already holds the transcript: a reconnect stands a new
+		// transport under the state this process came back with, so the layer owes it no replay
+		// (#8369). A `start` carrying a resume is the picker opening a session on a fresh process,
+		// which holds nothing and needs one.
+		//
+		// What it does owe is everything the session finished while the socket was down, so the
+		// restored tail itself rides with the flag. The layer reads both facts off it: where
+		// "already on screen" stops, and what each of those rows looked like when this process last
+		// saw it — a row that moved while the transport was gone is not one the operator has read.
+		"aiAgent.reconnect": (cmd) =>
+			Effect.flatMap(readSession, (state) =>
+				open(
+					cmd.cwd,
+					{
+						sessionId: cmd.sessionId,
+						holdsTranscript: true,
+						held: state?.transcript.items ?? [],
+					},
+					cmd.mode,
+				),
+			),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending
@@ -265,21 +309,24 @@ export const aiAgentHandlers = <RIn = never>(
 				() => nothing,
 			),
 
-		// The page goes back two ways: the `paged` Msg tells the core what the last page was, and
-		// the payload rides `pageReply` so the window that asked gets the items themselves.
+		// The port publishes successful pages; the Msg records either outcome for dispatchFolded.
 		"aiAgent.page": (cmd) =>
 			Effect.gen(function* () {
 				const agent = yield* slot.current;
-				if (agent === null) return refusal(noSession);
-				const answered = yield* Effect.result(agent.page(cmd.before, cmd.limit));
-				if (Result.isFailure(answered)) return refusal(failureOf(answered.failure));
+				if (agent === null) return [{type: "pageRefused", failure: noSession}] satisfies Follow;
+				const held = yield* readSession;
+				const cursor = pageCursor(held?.transcript.items ?? [], cmd.before);
+				if (cursor.kind === "unavailable") return nothing;
+				const answered = yield* Effect.result(agent.page(cursor.before, cmd.limit));
+				if (Result.isFailure(answered))
+					return [{type: "pageRefused", failure: failureOf(answered.failure)}] satisfies Follow;
 				// A backend that stores the conversation keeps its own copy of the turn the core
 				// recorded at the send, under its own id, and no id joins the two (#7979). Dropped
 				// here rather than at the window, so both routes one page takes — the `pageReply`
 				// port and the `paged` Msg — carry a single copy of it.
-				const held = yield* readSession;
+				const current = yield* readSession;
 				const page = {
-					items: withoutLocalEchoes(answered.success.items, held?.transcript.items ?? []),
+					items: withoutLocalEchoes(answered.success.items, current?.transcript.items ?? []),
 					hasMore: answered.success.hasMore,
 				};
 				const payload = pagePayload(page, cmd.limit);

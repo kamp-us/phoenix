@@ -2,12 +2,13 @@
  * `spike capture` — post the decision plus the log's own run table, read it back, and close the spike.
  *
  * **Zero recorded runs reds** (`14`): "I ran nothing and it worked" is a pass this verb must never
- * emit (ADR 0092), and it is the precondition the verb most exists for — a decision with no recorded
- * run is a self-report, not evidence (#4111).
+ * emit — a guard that cannot fail is not a guard, and this is the precondition the verb most exists
+ * for. A decision with no recorded run is a self-report, not evidence.
  *
- * **The ACL gate precedes every write on every path, the idempotent one included** (ADR 0055),
- * because a close is a write and authority is checked before writes rather than around them. A
- * permission read that fails is `11` — UNKNOWN, never a grant and never a demotion.
+ * **The ACL gate precedes every write on every path, the idempotent one included**, because a close
+ * is a write and only an author who holds write authority may record a decision; authority is
+ * checked before writes rather than around them. A permission read that fails is `11` — UNKNOWN,
+ * never a grant and never a demotion.
  *
  * **The re-entry story is the marker branch.** A marker whose digest equals the current one means the
  * decision already covers the log, so nothing is posted and the stdin just read is **discarded** —
@@ -103,7 +104,7 @@ export const runCapture = (options: CaptureOptions): SpikeEffect<VerbOutcome> =>
 		if (evidence.value.records.length === 0 || evidence.value.digest === null) {
 			return refuse(
 				NO_EVIDENCE,
-				`${VERB}: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence (#4111). Run something through spike run, or dispose with --forfeit.`,
+				`${VERB}: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence. Run something through spike run, or dispose with --forfeit.`,
 			);
 		}
 		const evidenceDigest = evidence.value.digest;
@@ -147,7 +148,7 @@ export const runCapture = (options: CaptureOptions): SpikeEffect<VerbOutcome> =>
 		if (permission._tag === "Absent" || !AUTHORIZED.has(permission.value)) {
 			return refuse(
 				AUTHOR_UNAUTHORIZED,
-				`${VERB}: ${login.value} holds ${held} on ${repo}, below write — a decision recorded here would carry no authority (ADR 0055).`,
+				`${VERB}: ${login.value} holds ${held} on ${repo}, below write — a decision recorded here would carry no authority.`,
 			);
 		}
 
@@ -193,7 +194,7 @@ export const runCapture = (options: CaptureOptions): SpikeEffect<VerbOutcome> =>
 			workspace,
 		});
 		// The run table is masked at composition, so the only unmasked text left here is the decision
-		// — the one part a caller can actually rewrite and re-run (#5553).
+		// — the one part a caller can actually rewrite and re-run.
 		const composed = leakFree(VERB, "decision, as it composes into the capture comment", body);
 		if (composed !== null) return {...composed, stderr: [scope, ...composed.stderr]};
 

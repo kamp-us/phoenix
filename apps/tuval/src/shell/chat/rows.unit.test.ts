@@ -7,9 +7,29 @@
 import {describe, expect, it} from "vitest";
 import {promptItem} from "../../ai-agent/core/fold.ts";
 import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
-import {assistantItem, call, toolItem, transcriptOf, userItem} from "./chat.testing.ts";
+import {ItemId} from "../../ai-agent/ports/index.ts";
+import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
+import {
+	assistantItem,
+	call,
+	systemItem,
+	thinkingItem,
+	toolItem,
+	transcriptOf,
+	userItem,
+} from "./chat.testing.ts";
 import type {ChatRow} from "./rows.ts";
-import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
+import {
+	chatRows,
+	mergeOlder,
+	NO_SUBAGENTS,
+	olderPageRequest,
+	oldestLoadedId,
+	rowIndexOfItem,
+	rowKey,
+	subagentHeads,
+	subagentRows,
+} from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
 
@@ -30,6 +50,31 @@ describe("chatRows", () => {
 
 	it("replaces the omitted line with the loading row rather than showing both", () => {
 		const rows = chatRows({...base, tail: transcriptOf(2), omitted: 4, loading: true});
+		expect(rows.map((row) => row.kind)).toEqual(["loading", "item", "item"]);
+	});
+
+	it("replaces the omitted line with the refusal detail and keeps the history cursor", () => {
+		const rows = chatRows({
+			...base,
+			tail: transcriptOf(2),
+			omitted: 4,
+			pageError: "The history cursor is unknown.",
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["page-error", "item", "item"]);
+		expect(rows[0]).toEqual({kind: "page-error", detail: "The history cursor is unknown."});
+		expect(oldestLoadedId(rows)).toBe("i0");
+		expect(rowKey({kind: "page-error", detail: "The history cursor is unknown."})).toBe(
+			"page-error",
+		);
+	});
+
+	it("shows loading instead of a prior refusal while retrying", () => {
+		const rows = chatRows({
+			...base,
+			tail: transcriptOf(2),
+			pageError: "The history cursor is unknown.",
+			loading: true,
+		});
 		expect(rows.map((row) => row.kind)).toEqual(["loading", "item", "item"]);
 	});
 
@@ -138,6 +183,41 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 		]);
 	});
 
+	it("folds a subagent's own reply and reasoning under its head, not just its calls", () => {
+		const inside = ItemId.make("agent");
+		const prose = [
+			call("agent", {name: "Agent"}),
+			{...assistantItem("reply"), parentId: inside},
+			{...thinkingItem("weighing"), parentId: inside},
+			call("child", {parentId: "agent"}),
+		];
+		const collapsed = chatRows({...base, tail: prose, atOldest: true});
+		expect(itemIds(collapsed)).toEqual(["agent"]);
+		expect(collapsed[0]?.kind === "item" && collapsed[0].nestedIds).toEqual([
+			"reply",
+			"weighing",
+			"child",
+		]);
+
+		const open = chatRows({...base, tail: prose, atOldest: true, unfolded: new Set(["agent"])});
+		expect(open.flatMap((row) => (row.kind === "item" ? [[row.item.id, row.depth]] : []))).toEqual([
+			["agent", 0],
+			["reply", 1],
+			["weighing", 1],
+			["child", 1],
+		]);
+	});
+
+	it("leaves a row whose parent is a session notice in place rather than behind it", () => {
+		const notice = systemItem("note");
+		const child = call("child", {parentId: "note"});
+		const rows = chatRows({...base, tail: [notice, child], atOldest: true});
+		expect(rows).toEqual([
+			{kind: "session", items: [notice]},
+			{kind: "item", item: child, nestedIds: [], nested: true, depth: 1},
+		]);
+	});
+
 	it("leaves a transcript with no parent marked on it exactly as it was", () => {
 		const flat = [call("a"), call("b")];
 		const rows = chatRows({...base, tail: flat, atOldest: true});
@@ -235,6 +315,37 @@ describe("mergeOlder", () => {
 });
 
 describe("the page cursor and the prepend anchor", () => {
+	it("skips local echoes for the cursor but keeps one as the visual prepend anchor", () => {
+		const local = {...userItem("local:send"), local: true};
+		const tail = [local, assistantItem("stored-reply")];
+		const rows = chatRows({...base, tail});
+		expect(olderPageRequest(rows)).toEqual({before: "stored-reply", anchor: local.id});
+		expect(oldestLoadedId(rows)).toBe(local.id);
+		const prepended = chatRows({...base, tail, older: [userItem("older", "earlier prompt")]});
+		expect(rowIndexOfItem(prepended, local.id)).toBe(2);
+	});
+
+	it("waits through the first partial reply without losing the local prepend anchor", () => {
+		const local = {...userItem("local:send"), local: true};
+		const reply = assistantItem("live-reply");
+		const streaming = chatRows({...base, tail: [local, {...reply, partial: true}], omitted: 40});
+		expect(olderPageRequest(streaming)).toBeNull();
+		expect(oldestLoadedId(streaming)).toBe(local.id);
+		const completed = chatRows({...base, tail: [local, reply], omitted: 40});
+		expect(olderPageRequest(completed)).toEqual({before: reply.id, anchor: local.id});
+	});
+
+	it("makes no older request from only local rows, even with an omitted-history head", () => {
+		const tail = [
+			{...userItem("local:first"), local: true},
+			{...userItem("local:second"), local: true},
+		];
+		const rows = chatRows({...base, tail, omitted: 40});
+		expect(rows[0]?.kind).toBe("older");
+		expect(olderPageRequest(rows)).toBeNull();
+		expect(olderPageRequest([])).toBeNull();
+	});
+
 	it("names the oldest item the window holds, never the head row", () => {
 		const rows = chatRows({...base, tail: transcriptOf(3), omitted: 1});
 		expect(rows[0]?.kind).toBe("older");
@@ -269,6 +380,64 @@ describe("rowKey", () => {
 		expect(rowKey({kind: "loading"})).toBe("loading");
 		expect(rowKey({kind: "older", items: 3})).toBe("older");
 	});
+
+	it("keys a session run on its first notice, so the key holds as the run grows", () => {
+		expect(rowKey({kind: "session", items: [systemItem("s1"), systemItem("s2")]})).toBe(
+			"session:s1",
+		);
+	});
+});
+
+/**
+ * The rabbit-hole this window is built to avoid: the SDK's fifteen-odd `system` subtypes arriving
+ * as fifteen-odd row shapes, and a burst of hook frames pushing the transcript around per frame.
+ * Both are answered here, before any component sees a row.
+ */
+describe("consecutive session notices", () => {
+	const kinds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
+		rows.map((row) => row.kind);
+
+	it("become one row rather than one row each", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go"),
+				systemItem("s1", "hook started"),
+				systemItem("s2", "hook running"),
+				systemItem("s3", "hook finished"),
+				assistantItem("a", "done"),
+			],
+		});
+		expect(kinds(rows)).toEqual(["item", "session", "item"]);
+		const run = rows[1];
+		expect(run?.kind === "session" ? run.items.map((item) => item.id) : []).toEqual([
+			"s1",
+			"s2",
+			"s3",
+		]);
+	});
+
+	it("stay two runs when a turn lands between them", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [systemItem("s1"), assistantItem("a", "done"), systemItem("s2")],
+		});
+		expect(kinds(rows)).toEqual(["session", "item", "session"]);
+	});
+
+	it("carry the page cursor and the prepend anchor like any other row", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [systemItem("s1"), systemItem("s2"), assistantItem("a", "done")],
+		});
+		expect(oldestLoadedId(rows)).toBe("s1");
+		// Membership, not the run's key: an anchor may name a notice buried mid-run.
+		expect(rowIndexOfItem(rows, "s2")).toBe(0);
+		expect(rowIndexOfItem(rows, "a")).toBe(1);
+	});
 });
 
 describe("a live tail carrying an exchange the bounds cannot hold", () => {
@@ -298,5 +467,187 @@ describe("a live tail carrying an exchange the bounds cannot hold", () => {
 		const ids = rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
 		expect(ids).toEqual(history.map((item) => item.id));
 		expect(new Set(ids).size).toBe(ids.length);
+	});
+});
+
+/**
+ * The removal (#8405). A subagent's work is read in the running list and in the view Q7 switches
+ * to, never as rows in the agent's own transcript — so an item whose parent chain reaches a
+ * spawning call the session holds a slot for is not emitted at all.
+ *
+ * `subagents` is the whole of what turns this on, which is what keeps the distinction above from
+ * being an assertion: every case in the fold describe passes none, and every one of them still
+ * folds exactly as it did.
+ */
+describe("chatRows leaves a subagent's rows out of the agent window", () => {
+	const spawned = [
+		call("agent", {name: "Agent"}),
+		call("child-1", {parentId: "agent"}),
+		{...assistantItem("reply"), parentId: ItemId.make("agent")},
+		{...thinkingItem("weighing"), parentId: ItemId.make("agent")},
+		call("own", {name: "Bash"}),
+	];
+
+	it("emits the spawning call as a plain row heading nothing, and none of its rows", () => {
+		const rows = chatRows({
+			...base,
+			tail: spawned,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+		expect(rows[0]?.kind === "item" && rows[0].nestedIds).toEqual([]);
+	});
+
+	it("keeps them out even with the head's fold open, since there is nothing left to disclose", () => {
+		const rows = chatRows({
+			...base,
+			tail: spawned,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+			unfolded: new Set(["agent"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+	});
+
+	it("reaches every depth, on a transcript where a subagent spawns a subagent (Q5)", () => {
+		const deep = [
+			call("agent", {name: "Agent"}),
+			call("inner", {name: "Agent", parentId: "agent"}),
+			call("leaf", {parentId: "inner"}),
+			{...assistantItem("inner-reply"), parentId: ItemId.make("inner")},
+			call("own", {name: "Bash"}),
+		];
+		const rows = chatRows({
+			...base,
+			tail: deep,
+			atOldest: true,
+			// Only the outer call is a slot the session holds: the inner one is a row of the outer
+			// worker, so the walk has to reach it through its parent rather than through the set.
+			subagents: new Set(["agent"]),
+			unfolded: new Set(["agent", "inner"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+	});
+
+	it("leaves an ordinary tool call's own fold exactly as it is, subagents or not", () => {
+		const mixed = [
+			call("agent", {name: "Agent"}),
+			call("child-1", {parentId: "agent"}),
+			call("plain", {name: "Bash"}),
+			call("plain-child", {parentId: "plain"}),
+		];
+		const rows = chatRows({
+			...base,
+			tail: mixed,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+			unfolded: new Set(["plain"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "plain", "plain-child"]);
+		expect(rows[1]?.kind === "item" && rows[1].nestedIds).toEqual(["plain-child"]);
+	});
+
+	it("keeps a finished worker's rows out too, so a stopped slot does not flood the window back", () => {
+		const rows = chatRows({...base, tail: spawned, atOldest: true, subagents: new Set(["agent"])});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+	});
+
+	it("emits every row when the session holds no slots at all, which is the flag-off window", () => {
+		const rows = chatRows({...base, tail: spawned, atOldest: true, subagents: new Set()});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+		expect(rows[0]?.kind === "item" && rows[0].nestedIds).toEqual(["child-1", "reply", "weighing"]);
+	});
+
+	it("drops a row of a subagent whose own spawning call is older than the loaded pages", () => {
+		const orphan = call("child", {parentId: "agent"});
+		const rows = chatRows({...base, tail: [orphan], atOldest: true, subagents: new Set(["agent"])});
+		expect(rows).toEqual([]);
+	});
+});
+
+/**
+ * What the window's `subagents` memo answers, and the identity that makes flag-off cost nothing.
+ * A fresh empty `Set` per worker frame would be a changed memo value on the one path the flag is
+ * supposed to leave alone (review round 2 on #8405).
+ */
+describe("subagentHeads", () => {
+	const slot = (id: string, lastLine: string) => subagentSlot(id, {lastLine});
+
+	it("answers the very same set every time the flag is off, whatever the slots say", () => {
+		const first = subagentHeads({a: slot("a", "reading")}, false);
+		const second = subagentHeads({a: slot("a", "writing")}, false);
+		expect(first).toBe(NO_SUBAGENTS);
+		expect(second).toBe(first);
+		expect([...first]).toEqual([]);
+	});
+
+	it("answers the same set for an absent slot record, so a window with no state costs nothing", () => {
+		expect(subagentHeads(null, true)).toBe(NO_SUBAGENTS);
+		expect(subagentHeads(undefined, true)).toBe(NO_SUBAGENTS);
+	});
+
+	it("names every spawning call the session holds a slot for when the flag is on", () => {
+		const heads = subagentHeads({a: slot("a", "reading"), b: slot("b", "writing")}, true);
+		expect([...heads].sort()).toEqual(["a", "b"]);
+	});
+
+	// The shared set is handed to `chatRows` and to nothing else, so a caller that mutated it would
+	// silently hide rows in every window of the process.
+	it("hands out a set nothing can add to", () => {
+		expect(Object.isFrozen(NO_SUBAGENTS)).toBe(true);
+	});
+});
+
+/**
+ * The swapped-in view's own list (#8406, founder ruling Q7). The slot carries everything the worker
+ * produced, so this is a build over one array with no page walk and no live-tail stitch. What it has
+ * to get right is the depth: every row in the slot names the spawning call as its parent, and that
+ * call is the agent's row rather than one of these.
+ */
+describe("subagentRows", () => {
+	const under = (head: string) => ({parentId: ItemId.make(head)});
+
+	it("reads the worker's own rows at depth zero, not as rows nested under a head it lacks", () => {
+		const rows = subagentRows(
+			subagentSlot("agent", {
+				items: [
+					{...userItem("u1", "go and look"), ...under("agent")},
+					{...assistantItem("a1", "looking"), ...under("agent")},
+					call("t1", {parentId: "agent"}),
+				],
+			}),
+		);
+		expect(itemIds(rows)).toEqual(["u1", "a1", "t1"]);
+		expect(rows.every((row) => row.kind === "item" && !row.nested && row.depth === 0)).toBe(true);
+	});
+
+	it("has no head row: a subagent's rows arrive with its slot, and nothing older can be asked for", () => {
+		const rows = subagentRows(
+			subagentSlot("agent", {items: [{...userItem("u1", "go"), ...under("agent")}]}),
+		);
+		expect(rows.map((row) => row.kind)).toEqual(["item"]);
+	});
+
+	it("is empty for a worker that has written nothing yet", () => {
+		expect(subagentRows(subagentSlot("agent"))).toEqual([]);
+	});
+
+	// A call the worker made itself heads a fold inside this view exactly as it does in the agent's,
+	// so #8027's disclosure still holds one level in.
+	it("still folds the calls the worker nested under its own", () => {
+		const slot = subagentSlot("agent", {
+			items: [
+				call("t1", {parentId: "agent"}),
+				{...assistantItem("nested", "reading"), ...under("t1")},
+			],
+		});
+		const folded = subagentRows(slot);
+		expect(itemIds(folded)).toEqual(["t1"]);
+		expect(folded[0]?.kind === "item" && folded[0].nestedIds).toEqual(["nested"]);
+
+		const open = subagentRows(slot, new Set(["t1"]));
+		expect(itemIds(open)).toEqual(["t1", "nested"]);
+		expect(open[1]?.kind === "item" && open[1].depth).toBe(1);
 	});
 });

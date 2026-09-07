@@ -18,19 +18,31 @@
 
 import type {PrimitiveSpec} from "@kampus/design/a11y";
 import {runEnforcedInvariants} from "@kampus/design/a11y";
-import {render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import type {JsonValue, PermissionRequest, ToolStatus} from "../../ai-agent/ports/index.ts";
+import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
-import {call, models, modes, pendingPermission, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	assistantItem,
+	call,
+	compactionItem,
+	models,
+	modes,
+	pendingPermission,
+	systemItem,
+	thinkingItem,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -89,6 +101,9 @@ const presentational: PrimitiveSpec = {kind: "presentational", arb: unusedArb};
 
 const CONTROLS = "button, [role='combobox'], input, textarea";
 
+/** Two lines, so the disclosure's name is provably the first of them and not the whole of it. */
+const THINKING = "Weighing the two lanes.\nThe second one is stalled on a review.";
+
 /**
  * The regions this child builds. The composer is deliberately outside the scan: `AgentChatInput` is
  * a `@kampus/design` primitive #7604 mounted whole, and it fails `aria-allowed-role` today with a
@@ -96,7 +111,12 @@ const CONTROLS = "button, [role='combobox'], input, textarea";
  * window can neither cause nor fix. Scanning it here would red this gate on somebody else's bug and
  * teach the next builder to widen the scope instead of fixing the primitive.
  */
-const REGIONS = [".tuval-chat-transcript", ".tuval-chat-permissions", ".tuval-chat-mode"] as const;
+const REGIONS = [
+	".tuval-chat-transcript",
+	".tuval-chat-subagents",
+	".tuval-chat-permissions",
+	".tuval-chat-mode",
+] as const;
 
 /**
  * The focus probe takes a root and a selector, and `querySelector` searches descendants — so a
@@ -126,17 +146,7 @@ const mountWindow = async (state: AiAgentSessionState, view: ChatView = initialC
 	return rendered;
 };
 
-const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<string>> => {
-	// The rows are opened through the slot rather than by clicking, so the property spends no Zag
-	// microtask flush per row per run — and an open panel is what puts the diff table in the tree.
-	const rendered = await mountWindow(state, {
-		...initialChatView,
-		expanded: state.transcript.items
-			.filter((item) => item.kind === "tool")
-			.map((item) => String(item.id)),
-	});
-	const root = rendered.container.firstElementChild as HTMLElement;
-
+const scanRegions = async (root: HTMLElement): Promise<ReadonlyArray<string>> => {
 	const found: Array<{readonly id: string; readonly detail: string}> = [];
 	for (const selector of REGIONS) {
 		const region = root.querySelector<HTMLElement>(selector);
@@ -152,8 +162,21 @@ const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<
 	// harness's focus probe is what proves it; dropping the scroller's tabIndex reds this.
 	const transcript = root.querySelector<HTMLElement>(".tuval-chat-transcript");
 	if (transcript !== null) found.push(...(await probeFocus(root, transcript)));
-	rendered.unmount();
 	return found.map((violation) => `${violation.id}: ${violation.detail}`);
+};
+
+const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<string>> => {
+	// The rows are opened through the slot rather than by clicking, so the property spends no Zag
+	// microtask flush per row per run — and an open panel is what puts the diff table in the tree.
+	const rendered = await mountWindow(state, {
+		...initialChatView,
+		expanded: state.transcript.items
+			.filter((item) => item.kind === "tool")
+			.map((item) => String(item.id)),
+	});
+	const found = await scanRegions(rendered.container.firstElementChild as HTMLElement);
+	rendered.unmount();
+	return found;
 };
 
 // axe is the cost in both tests below — one pass per region per state, plus one per control for the
@@ -219,6 +242,34 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 	);
 
 	it(
+		"holds them over a group head with its fold open, where an idref list would dangle (#8057)",
+		async () => {
+			const state = withTranscript([
+				userItem("u1", "go"),
+				call("agent", {name: "Agent"}),
+				call("child-1", {name: "bash", parentId: "agent"}),
+				call("child-2", {name: "grep", parentId: "agent"}),
+			]);
+			const rendered = await mountWindow(state, {...initialChatView, unfolded: ["agent"]});
+			const root = rendered.container.firstElementChild as HTMLElement;
+
+			const fold = await screen.findByRole("button", {name: /nested calls?$/});
+			expect(fold.getAttribute("aria-expanded")).toBe("true");
+			expect(await scanRegions(root)).toEqual([]);
+
+			// The clean pass above is only worth something if the rule can fire on this markup at all,
+			// and whether it can turns on jsdom mounting the rows — which is why the control is here
+			// rather than assumed: the dropped attribute, pointed at an id the document does not hold.
+			fold.setAttribute("aria-controls", "tuval-row-w1-not-mounted");
+			const dangling = await scanRegions(root);
+			expect(dangling.some((v) => v.startsWith("valid-aria: aria-valid-attr-value"))).toBe(true);
+
+			rendered.unmount();
+		},
+		SLOW,
+	);
+
+	it(
 		"holds them over the composer's agent settings with a model list present",
 		async () => {
 			const state = withTranscript([userItem("u1", "go")], {
@@ -226,6 +277,276 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 				models: models(["claude-opus-5", "claude-sonnet-5"]),
 			});
 			expect(await settingsViolationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+
+	it(
+		"holds them over a transcript carrying the thinking row and the compaction marker",
+		async () => {
+			const state = withTranscript([
+				userItem("u1", "go"),
+				thinkingItem("t1", THINKING),
+				compactionItem("c1", "context compacted"),
+			]);
+			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+
+	// All three shapes the session row takes, in one transcript: a lone notice with nothing to
+	// disclose, a lone notice with a detail, and a run of them collapsed into one row.
+	it(
+		"holds them over a transcript carrying every shape of the session row",
+		async () => {
+			const state = withTranscript([
+				systemItem("s0", "session resumed"),
+				userItem("u1", "go"),
+				systemItem("s1", "hook refused the call", 1, "PreToolUse hook exited 1"),
+				assistantItem("a1", "done"),
+				systemItem("s2", "hook started"),
+				systemItem("s3", "hook finished"),
+			]);
+			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+});
+
+/**
+ * The session row's disclosure, at the semantics the harness above cannot decide. It is the same
+ * assertion the thinking row gets, on the row that carries every `system` subtype the SDK raises —
+ * so a subtype landing here can never arrive as an unannounced burst of rows.
+ */
+describe("the session row's disclosure", () => {
+	const DETAIL = "PreToolUse hook exited 1\n  at guard.sh:12";
+
+	const mountSession = () =>
+		mountWindow(
+			withTranscript([userItem("u1", "go"), systemItem("s1", "hook refused the call", 1, DETAIL)]),
+		);
+
+	const trigger = (): HTMLElement => screen.getByRole("button", {name: "hook refused the call"});
+
+	it("is a real button naming the region it reveals", async () => {
+		const rendered = await mountSession();
+
+		const control = trigger();
+		expect(control.tagName).toBe("BUTTON");
+		expect(control.getAttribute("aria-expanded")).toBe("false");
+
+		const region = document.getElementById(control.getAttribute("aria-controls") ?? "");
+		expect(region).not.toBeNull();
+		expect(region?.textContent).toBe(DETAIL);
+		expect(region?.hidden).toBe(true);
+
+		rendered.unmount();
+	});
+
+	it("takes focus, and activating it opens the region", async () => {
+		const rendered = await mountSession();
+
+		const control = trigger();
+		control.focus();
+		expect(document.activeElement).toBe(control);
+
+		await act(async () => {
+			fireEvent.click(control);
+		});
+
+		const opened = trigger();
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		expect(document.getElementById(opened.getAttribute("aria-controls") ?? "")?.hidden).toBe(false);
+
+		rendered.unmount();
+	});
+});
+
+/**
+ * The thinking row's disclosure, at the semantics the harness above cannot decide: `Collapsible`
+ * wires `aria-expanded` and `aria-controls`, and what is asserted here is that they point at the
+ * region the reasoning actually lands in, on both the pointer and the keyboard path.
+ */
+describe("the thinking row's disclosure", () => {
+	const mountThinking = () =>
+		mountWindow(withTranscript([userItem("u1", "go"), thinkingItem("t1", THINKING)]));
+
+	const trigger = (): HTMLElement => screen.getByRole("button", {name: "Weighing the two lanes."});
+
+	it("is a real button naming the region it reveals", async () => {
+		const rendered = await mountThinking();
+
+		const control = trigger();
+		expect(control.tagName).toBe("BUTTON");
+		expect(control.getAttribute("aria-expanded")).toBe("false");
+
+		const region = document.getElementById(control.getAttribute("aria-controls") ?? "");
+		expect(region).not.toBeNull();
+		expect(region?.textContent).toBe(THINKING);
+		expect(region?.hidden).toBe(true);
+
+		rendered.unmount();
+	});
+
+	// Reachability itself is the property above, which probes every control in the transcript; what
+	// is left here is that the control the keyboard reaches is the one that opens the region — a
+	// native `button`, so Enter and Space activate it with no key handler of this window's own.
+	it("takes focus, and activating it opens the region", async () => {
+		const rendered = await mountThinking();
+
+		const control = trigger();
+		control.focus();
+		expect(document.activeElement).toBe(control);
+
+		await act(async () => {
+			fireEvent.click(control);
+		});
+
+		const opened = trigger();
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		expect(document.getElementById(opened.getAttribute("aria-controls") ?? "")?.hidden).toBe(false);
+
+		rendered.unmount();
+	});
+});
+
+/**
+ * The running list (#8405), at the semantics the property above cannot decide. Its whole job is to
+ * be read at a glance, and a screen reader gets that from list structure: a named list, one item
+ * per worker, each item's own name carrying the four fields — never a stack of divs.
+ */
+describe("the running-subagent list", () => {
+	const mountList = async () => {
+		const state = withTranscript([userItem("u1", "go"), call("agent", {name: "Agent"})], {
+			subagents: {
+				agent: subagentSlot("agent", {type: "reviewer", lastLine: "reading rows.ts"}),
+				other: subagentSlot("other", {type: "builder", lastLine: "writing the test"}),
+			},
+		});
+		const process = await Effect.runPromise(
+			testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
+		);
+		const host = await Effect.runPromise(process.window(WindowId.make("w1"), initialChatView));
+		const rendered = render(
+			chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined, subagentList: true}).render(
+				host,
+			) as ReactElement,
+		);
+		await screen.findByRole("log", {name: "Transcript"});
+		return rendered;
+	};
+
+	it("is a named list whose rows are list items naming their worker", async () => {
+		const rendered = await mountList();
+
+		const region = screen.getByRole("list", {name: "Running subagents"});
+		const rows = screen.getAllByRole("listitem");
+		expect(rows).toHaveLength(2);
+		expect(region.contains(rows[0] as HTMLElement)).toBe(true);
+		expect(rows[0]?.textContent).toContain("reviewer");
+		expect(rows[0]?.textContent).toContain("reading rows.ts");
+		// The units ride the row rather than the layout, so the numbers mean something read aloud.
+		expect(rows[0]?.textContent).toContain("elapsed");
+		expect(rows[0]?.textContent).toContain("tokens");
+
+		rendered.unmount();
+	});
+
+	/**
+	 * The focus model the chord lands in (#8407). One tab stop and arrows to walk, so the list is a
+	 * composite the operator enters once — and every row still reachable and still visibly focused
+	 * wherever the walk leaves it, which is what `probeFocus` reads.
+	 */
+	it("carries one tab stop, moves it with the arrows, and shows focus wherever it lands", async () => {
+		const rendered = await mountList();
+		const root = rendered.container.firstElementChild as HTMLElement;
+		const picks = Array.from(root.querySelectorAll<HTMLButtonElement>(".tuval-chat-subagent-pick"));
+
+		expect(picks.map((pick) => pick.tabIndex)).toEqual([0, -1]);
+		for (const pick of picks) {
+			expect(await probeFocus(root, pick)).toEqual([]);
+		}
+
+		await act(async () => {
+			(picks[0] as HTMLButtonElement).focus();
+			fireEvent.keyDown(picks[0] as HTMLButtonElement, {key: "ArrowDown", bubbles: true});
+		});
+
+		// Focus moved onto a control with a name of its own, which is the whole announcement a moved
+		// focus owes: the row is read out where it lands.
+		expect(document.activeElement).toBe(picks[1]);
+		expect(picks[1]?.textContent).toContain("builder");
+		expect(picks.map((pick) => pick.tabIndex)).toEqual([-1, 0]);
+
+		rendered.unmount();
+	});
+
+	it(
+		"holds the enforced pillar-4 invariants with workers running",
+		async () => {
+			const rendered = await mountList();
+			const root = rendered.container.firstElementChild as HTMLElement;
+			expect(await scanRegions(root)).toEqual([]);
+			rendered.unmount();
+		},
+		SLOW,
+	);
+
+	/**
+	 * The swap (#8406). A `log` announces what is *appended* to it, so replacing the whole transcript
+	 * under a reader announces nothing at all — the window owes a live region of its own, and it owes
+	 * the picking control to the keyboard as much as to the mouse.
+	 */
+	it("reaches every navigator row from the keyboard and announces the swap", async () => {
+		const rendered = await mountList();
+		const root = rendered.container.firstElementChild as HTMLElement;
+		const status = () =>
+			Array.from(root.querySelectorAll<HTMLElement>('[role="status"]'))
+				.map((region) => region.textContent ?? "")
+				.join(" ");
+
+		const picks = Array.from(root.querySelectorAll<HTMLButtonElement>(".tuval-chat-subagent-pick"));
+		expect(picks).toHaveLength(2);
+		expect(status()).toContain("Showing the agent's own transcript.");
+		for (const control of picks) {
+			expect(await probeFocus(root, control)).toEqual([]);
+			expect(control.getAttribute("aria-current")).toBeNull();
+		}
+
+		// A button is activated by Enter and Space, so pressing it *is* the keyboard path — what a
+		// keyboard user needs beyond that is to reach it, which the focus probe above just proved.
+		const reviewer = picks[0] as HTMLButtonElement;
+		await act(async () => {
+			reviewer.focus();
+			reviewer.click();
+		});
+
+		expect(document.activeElement).toBe(reviewer);
+		expect(reviewer.getAttribute("aria-current")).toBe("true");
+		expect(status()).toContain("Showing the reviewer subagent's transcript.");
+		expect(screen.getByRole("log", {name: "Transcript: reviewer subagent"})).toBeTruthy();
+
+		const back = root.querySelector<HTMLButtonElement>(".tuval-chat-subagent-pick");
+		expect(back?.textContent).toBe("Back to the agent transcript");
+		expect(await probeFocus(root, back as HTMLElement)).toEqual([]);
+		await act(async () => {
+			(back as HTMLButtonElement).click();
+		});
+		expect(status()).toContain("Showing the agent's own transcript.");
+
+		rendered.unmount();
+	});
+
+	it(
+		"holds the enforced pillar-4 invariants inside a subagent's own view",
+		async () => {
+			const rendered = await mountList();
+			const root = rendered.container.firstElementChild as HTMLElement;
+			await act(async () => {
+				root.querySelector<HTMLButtonElement>(".tuval-chat-subagent-pick")?.click();
+			});
+			expect(await scanRegions(root)).toEqual([]);
+			rendered.unmount();
 		},
 		SLOW,
 	);

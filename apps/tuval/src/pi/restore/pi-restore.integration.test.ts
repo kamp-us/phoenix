@@ -159,11 +159,12 @@ interface ThirdRun {
  * Boot, run two turns — a plain one and one through the tool loop — and stop. Closing the scope is
  * the stop: the host drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
  *
- * Between turns, not during one. A stop taken while a Pi turn is in flight never returns (#7896),
- * and mid-turn state is unobservable from here anyway, because a Cmd handler runs inside the
- * actor's serial step (`host/actor.ts`'s `runInterpret`) so nothing folds until `prompt` resolves
- * (#7852). The interrupted marker is therefore proven on a checkpoint, in `interrupted.unit.test.ts`
- * beside this file, rather than by cutting a live Pi turn.
+ * Between turns, not during one. Mid-turn state is unobservable from here: a Cmd handler runs
+ * inside the actor's serial step (`host/actor.ts`'s `runInterpret`), so nothing folds until
+ * `prompt` resolves (#7852). The interrupted marker is therefore proven on a checkpoint, in
+ * `interrupted.unit.test.ts` beside this file, rather than by cutting a live Pi turn. The stop
+ * itself is no longer the obstacle it was — a mid-turn close returns, and
+ * `../ai-agent/teardown.unit.test.ts` pins that (#7896).
  */
 const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {

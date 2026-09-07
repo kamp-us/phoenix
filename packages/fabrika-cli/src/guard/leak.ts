@@ -1,6 +1,6 @@
 /**
  * The authoritative leak gate's pure half — does a committed file put a machine-local filesystem
- * path into a shared artifact (#173, #312)? Ported off v1's `leak-guard scan` (epic #5720).
+ * path into a shared artifact? Ported off v1's `leak-guard scan`.
  *
  * CI is the unbypassable surface here: it is the only place that sees every PR's diff whatever
  * wrote it (an agent tool, an editor, a `cat >`, a human commit), which is why the rule lives as a
@@ -9,18 +9,18 @@
  * **Two surfaces, `doc` and `shell`.** Shell was added because the doc-only premise expired: the
  * rule was written when all pipeline shell lived inside markdown fences, and extracting that shell
  * into standalone `.sh` files walked the exact bytes off the guard's surface while the required
- * check kept exiting 0 (#4496). A `.sh` is scanned whole, comments included — unlike an
+ * check kept exiting 0. A `.sh` is scanned whole, comments included — unlike an
  * *invocation* guard, a machine-local path is a leak wherever it sits in a committed file, and a
  * shell comment is the likeliest place for one to land.
  *
  * **The path shapes live here rather than in a module of their own.** In v1 they sat in a separate
- * `path-matcher.ts` because two detectors consumed them and a carve-out had landed on one copy only
- * (#3506). Here the gate is the single consumer, so a second file would be indirection with no
- * second reader. What still keeps the shapes honest is ADR 0251's golden fixture: `build check
+ * `path-matcher.ts` because two detectors consumed them and a carve-out had landed on one copy only.
+ * Here the gate is the single consumer, so a second file would be indirection with no
+ * second reader. What still keeps the shapes honest is the golden fixture: `build check
  * --surface prose` predicts this gate in-tree from its own copy in `../build/doc-leaks.ts`, and
  * `./leak.golden.test.ts` pins this list against the same committed bytes that one pins against.
  *
- * Every arm is a generic structural shape. None names an operator, a machine or a repo (#2393).
+ * Every arm is a generic structural shape. None names an operator, a machine or a repo.
  */
 
 /** A machine-local path shape, and the report line it produces. */
@@ -34,7 +34,7 @@ export const MACHINE_LOCAL_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 	{
 		// The drive-letter lookbehind keeps this generic while dropping the Windows-file-URL false
 		// positive: a bare POSIX `/Users/<name>/` is a real macOS home leak, but a drive-prefixed
-		// `file:///C:/Users/ci/…` is not, and flagging it fail-closed-blocked legitimate PRs (#3070).
+		// `file:///C:/Users/ci/…` is not, and flagging it fail-closed-blocked legitimate PRs.
 		pattern: /(?<![A-Za-z]:)\/Users\/[A-Za-z0-9._-]+/g,
 		reason: "absolute macOS home path (/Users/<name>/...)",
 	},
@@ -43,7 +43,7 @@ export const MACHINE_LOCAL_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 		reason: "agent/tool home dir (~/.usirin, ~/.agent)",
 	},
 	{
-		// Narrowed by SHAPE, never by a membership list (#2393, #3475): the two negative lookaheads
+		// Narrowed by SHAPE, never by a membership list: the two negative lookaheads
 		// carve out the claude CLI's public, machine-agnostic config *files* — byte-identical on
 		// every machine and named by every MCP-registration doc — while any deeper descent into the
 		// private home tree still flags. The `(?![\w.])` tail pins each carve-out to the exact leaf,
@@ -57,7 +57,7 @@ export const MACHINE_LOCAL_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 		reason: "home-dir sibling-repo clone (~/code/...)",
 	},
 	{
-		// The generic clone shape under ANY root (#3401): a forge-host segment — a `<name>.<tld>`
+		// The generic clone shape under ANY root: a forge-host segment — a `<name>.<tld>`
 		// component — between one home clone-root segment and a `<user>/<repo>` tail is a checked-out
 		// clone wherever the author roots their clones. The tail is a LOOKAHEAD, so the matched span
 		// is the home prefix only, mirroring the `~/code/` arm; consuming the whole path instead made
@@ -94,7 +94,7 @@ const SHELL_SUFFIXES = [".sh"] as const;
  *
  * The MARKDOWN members of this list are declared a second time, in `.fabrika.jsonc`'s
  * `docLeakExempt`, for the in-tree predictor that scans markdown only. `./leak.golden.test.ts`
- * holds the two equal, so a doc added to one side and not the other reds (ADR 0251).
+ * holds the two equal, so a doc added to one side and not the other reds.
  */
 export const DOC_SELF_EXEMPT = [
 	"/packages/fabrika-cli/src/guard/leak.ts",
@@ -106,11 +106,11 @@ export const DOC_SELF_EXEMPT = [
 	"/skills/triage/SKILL.md",
 	"/skills/report/SKILL.md",
 	// The triager's output-privacy rule names the machine-local shapes it forbids in a return
-	// summary (#1956) — rule text, not real paths, so routine edits must not trip the guard.
+	// summary — rule text, not real paths, so routine edits must not trip the guard.
 	"/agents/triager.md",
 	"/skills/report/footer.sh",
 	// A harness whose whole job is proving a corpus carries none of the forbidden shapes, so it must
-	// enumerate them as pattern arms — exempt for the same reason this file is (#4449).
+	// enumerate them as pattern arms — exempt for the same reason this file is.
 	"/skills/write-code/scripts/verify-fail-closed.sh",
 	// Its Lineage section names the sibling-repo clones this repo was rebuilt from.
 	"/CLAUDE.md",
@@ -128,7 +128,7 @@ export type Surface = "doc" | "shell";
  * The surface `path` belongs to.
  *
  * Every scoping decision resolves here, so a surface cannot be scanned by one caller and skipped by
- * another — the drift shape that let two copies of one pattern set disagree (#3506).
+ * another — the drift shape that let two copies of one pattern set disagree.
  */
 export const surfaceOf = (path: string): Surface | null => {
 	const p = normalize(path);
@@ -172,7 +172,7 @@ export interface ScannedFile {
  * How many handed files landed in each outcome.
  *
  * Per surface and not as one total: the defect this closes was a silently narrowing surface — `.sh`
- * left the scan when shell moved out of markdown fences (#4496) — and a single "N files scanned"
+ * left the scan when shell moved out of markdown fences — and a single "N files scanned"
  * cannot tell a healthy markdown surface from one carrying the whole count while the shell surface
  * contributes nothing.
  */

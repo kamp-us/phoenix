@@ -9,8 +9,8 @@
  *
  * Two windows over one `testProcess` — the same double the unit tier renders against — because the
  * per-window facts (an expanded row, a page cursor) are only visible with a second window beside
- * the first. There is no runtime agent import here, so nothing about the backend is exercised or
- * claimed: what this page proves is paint and keyboard, and nothing else.
+ * the first. The default page proves paint and keyboard only. `/paging-*` adds a labelled
+ * ClaudeAiAgent replay behind scripted SDK/store and WindowHost seams; see the app README.
  */
 
 import {Effect} from "effect";
@@ -20,7 +20,7 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/cor
 import {ProcessId} from "../../../process/process.ts";
 import {testProcess} from "../../window/fixtures.ts";
 import {WindowId} from "../../window/index.ts";
-import {chatWindow} from "../ChatWindow.tsx";
+import {type ChatWindowHost, chatWindow} from "../ChatWindow.tsx";
 import {
 	assistantItem,
 	call,
@@ -30,6 +30,7 @@ import {
 	withTranscript,
 } from "../chat.testing.ts";
 import {type ChatView, initialChatView} from "../view.ts";
+import {mountPagingProof} from "./paging.tsx";
 import "../../ui/tokens.css";
 import "./proof.css";
 
@@ -66,21 +67,56 @@ const view: ChatView = initialChatView;
 const mount = Effect.gen(function* () {
 	const host = document.getElementById("proof");
 	if (host === null) return yield* Effect.die(new Error("the proof page has no #proof element"));
+	if (location.pathname.startsWith("/paging-")) {
+		return yield* mountPagingProof(host);
+	}
 	const process = yield* testProcess<AiAgentSessionState, AiAgentSessionMsg>(
 		ProcessId.make("proof"),
 		state,
 	);
 	const left = yield* process.window<ChatView>(WindowId.make("left"), view);
 	const right = yield* process.window<ChatView>(WindowId.make("right"), view);
+	const paging = (host: ChatWindowHost): ChatWindowHost => {
+		let attempts = 0;
+		return {
+			...host,
+			dispatch: (msg) =>
+				Effect.gen(function* () {
+					if (msg.type !== "page") return yield* host.dispatch(msg);
+					attempts += 1;
+					yield* Effect.sleep("250 millis");
+					const failure = {
+						tag: "tuval/ai-agent/PageError",
+						reason: "unknown-cursor",
+						detail: "The history cursor is unknown.",
+					};
+					const page = {
+						items: [userItem("older", "Earlier history is available again.")],
+						hasMore: false,
+					};
+					const completed: AiAgentSessionState = {
+						...state,
+						failure,
+						pageOutcome: attempts === 1 ? {status: "refused", failure} : {status: "success", page},
+					};
+					yield* process.commit(completed);
+					return {_tag: "Delivered", view: {revision: attempts, state: completed}} as const;
+				}),
+		};
+	};
 	const renderer = chatWindow();
 	createRoot(host).render(
 		<StrictMode>
 			<div className="tuval-surface proof-desk" data-scheme="dark">
-				<div className="proof-pane">{renderer.render(left)}</div>
-				<div className="proof-pane">{renderer.render(right)}</div>
+				<div className="proof-pane">{renderer.render(paging(left))}</div>
+				<div className="proof-pane">{renderer.render(paging(right))}</div>
 			</div>
 		</StrictMode>,
 	);
 });
 
-Effect.runFork(mount);
+void Effect.runPromise(mount).catch((cause: unknown) => {
+	setTimeout(() => {
+		throw new Error(String(cause));
+	});
+});

@@ -23,7 +23,7 @@ import {
 	tooManyArguments,
 	unknownCommand,
 } from "./errors.ts";
-import {type AnyShellCommand, commandName, parameterNames} from "./row.ts";
+import {type AnyShellCommand, commandName, isOptionalParameter, parameterNames} from "./row.ts";
 import {resolveVerb, verbSpellings} from "./table.ts";
 
 export type CommandLineResult =
@@ -56,8 +56,13 @@ export const readCommandLine = (input: string): CommandLineResult => {
 	const values: Record<string, string> = {};
 	for (const [index, parameter] of parameters.entries()) {
 		const token = args[index];
-		// The caret is past the last token the line holds, so a missing argument points at its end.
-		if (token === undefined) return refused(missingArgument(name, parameter, input.length));
+		if (token === undefined) {
+			// An optional parameter the line did not reach stays absent, which is what its schema
+			// admits; a required one is a refusal, and the caret is past the last token the line
+			// holds, so it points at the end.
+			if (isOptionalParameter(command, parameter)) continue;
+			return refused(missingArgument(name, parameter, input.length));
+		}
 		values[parameter] = token.text;
 	}
 

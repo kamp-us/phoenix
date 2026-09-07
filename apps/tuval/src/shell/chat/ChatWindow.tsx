@@ -3,8 +3,8 @@
  * amended on #7572 / #7584). It is a `WindowRenderer` (#7553) over the `ai-agent-session` state and
  * the five ports' vocabulary, and it knows nothing about Pi or Claude: everything it reads is the
  * model-blind item union of `../../ai-agent/ports/`, and everything it sends is a Msg of
- * `../../ai-agent/core/`. Both of those are `import type` only, so this module pulls no agent code
- * into the browser bundle at all.
+ * `../../ai-agent/core/`. Only the pure snapshot predicate is imported at runtime; no backend
+ * or agent service reaches the browser.
  *
  * Four things here are not obvious from the code:
  *
@@ -22,8 +22,10 @@
  * **Four writes move the transcript, and one pin decides between them.** A window resting on its
  * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
  * one anchored on a history page, on a row it just expanded or on a fold it just opened. That is
- * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a tool row,
- * opening a group's fold or asking for a page of history, and set again by sending. The two
+ * `view.pinned`: it is set from the scroll offset on every scroll *the reader* makes — a scroll the
+ * window issued itself is exempt, or a follow scroll landing behind a reply that grew again would
+ * clear the pin it was following on — cleared by opening a row's own
+ * disclosure, opening a group's fold or asking for a page of history, and set again by sending. Two
  * anchoring effects reach the viewport only while it is clear, and every door into them clears it
  * itself rather than trusting the geometry to have done so: a transcript barely taller than its
  * viewport is inside the top threshold and the bottom one at once.
@@ -35,32 +37,43 @@
  * as far as recovery goes.
  */
 
-import {AgentChatInput, Button, DesignTranslationProvider, Kbd} from "@kampus/design";
-import {useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
+import {AgentChatInput, Button, DesignTranslationProvider, Kbd, Markdown} from "@kampus/design";
+import {elementScroll, useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
 import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
+import {useForwardedKey} from "../ui/forwarded-key.tsx";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
-import {windowRenderer} from "../window/index.ts";
+import {prefixArmedAround, windowRenderer} from "../window/index.ts";
+import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
 import {interruptionGraceMillis, isWorking, statusLine} from "./phase.ts";
+import {QueuedMessages} from "./QueuedMessages.tsx";
 import {
 	type ChatRow,
 	chatRows,
 	mergeOlder,
-	oldestLoadedId,
+	olderPageRequest,
+	type RowItem,
 	rowIndexOfItem,
 	rowKey,
+	subagentHeads,
+	subagentRows,
 } from "./rows.ts";
+import {SessionRow} from "./SessionRow.tsx";
+import {SubagentList, type SubagentListHandle} from "./SubagentList.tsx";
+import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
-import {asChatView, type ChatView} from "./view.ts";
+import {asChatView, type ChatView, viewMain, viewSubagent} from "./view.ts";
 import "./chat.css";
 
 export type ChatWindowHost = WindowHost<AiAgentSessionState, AiAgentSessionMsg, ChatView>;
@@ -73,18 +86,26 @@ export type ChatWindowRenderer = WindowRenderer<
 
 export interface ChatWindowOptions {
 	/**
-	 * The program's own extras in the status bar, beside the phase line and the mode switch.
+	 * The program's own extras in the status bar, beside the phase line.
 	 *
 	 * This is the whole of what a thin renderer adds on top of the shared window (founder ruling
 	 * 2026-09-02, amended on #7572 / #7584), and it is a function of the live state because that is
-	 * what a renderer is: `f(state, view)`. Pi's is its usage line (#7611); a program with no extras
-	 * passes none and the bar renders exactly as it did before this slot existed.
+	 * what a renderer is: `f(state, view)`. **No program passes one today**: the founder's 2026-09-05
+	 * ruling (#8190) sent both backends' usage and session lines to the desk inspector, so the bar
+	 * carries the phase line alone. The slot itself stays — retiring it is a separate call — and a
+	 * program with no extras renders exactly the bar both backends render now.
 	 */
 	readonly extras?: (state: AiAgentSessionState) => ReactNode;
 	/** Mints one idempotency key per deliberate send (ruling 2, #7570). */
 	readonly newKey?: () => string;
 	/** The clock a send stamps its turn with, so no update cell has to read one (#7978). */
 	readonly now?: () => number;
+	/**
+	 * The window's half of the config's `features.subagentList` flag (`../../config.ts`), off by
+	 * default. It gates the running list and the removal of a subagent's rows from the transcript
+	 * together, so an operator with it off sees exactly today's window (#8405).
+	 */
+	readonly subagentList?: boolean;
 	readonly pageLimit?: number;
 	readonly overscan?: number;
 	/** First guess per row, before the row is rendered and measured. */
@@ -106,6 +127,7 @@ interface ResolvedOptions {
 	readonly extras: ((state: AiAgentSessionState) => ReactNode) | null;
 	readonly newKey: () => string;
 	readonly now: () => number;
+	readonly subagentList: boolean;
 	readonly pageLimit: number;
 	readonly overscan: number;
 	readonly estimateRowHeight: number;
@@ -119,6 +141,7 @@ const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	now: options.now ?? (() => Date.now()),
+	subagentList: options.subagentList === true,
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,
@@ -149,10 +172,14 @@ const useProcessView = (host: ChatWindowHost): ProcessView<AiAgentSessionState> 
  * text to take it, and letting it reach the desk's one keyboard listener either arms the prefix or
  * forwards it into the window's process (#7973). Modified keys are somebody else's — the desk
  * prefix is Ctrl-keyed and Alt+R is the window's — and so is every named key the region scrolls on.
+ *
+ * Unless the shell's prefix is armed, and then the bare key *is* the shell's: it is the second key
+ * of a sequence the operator already started, and swallowing it here is what left `<prefix> w`
+ * dead from the transcript all day (#8270).
  */
 const swallowBareCharacter = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
 	const bare = !event.ctrlKey && !event.metaKey && !event.altKey && [...event.key].length === 1;
-	if (bare) event.stopPropagation();
+	if (bare && !prefixArmedAround(event.target)) event.stopPropagation();
 };
 
 /**
@@ -169,12 +196,63 @@ const Placeholder = ({children}: {readonly children: ReactNode}): ReactElement =
 	</p>
 );
 
-const who: Readonly<Record<TranscriptItem["kind"], string>> = {
+// No `system` key, and none is missing: a session notice is a `session` row, never an item row.
+const who: Readonly<Record<RowItem["kind"], string>> = {
 	user: "you",
 	assistant: "agent",
 	tool: "tool",
-	system: "session",
+	thinking: "thinking",
+	compaction: "compaction",
 };
+
+/**
+ * What a row shows under its label. Three kinds carry a shape of their own: a tool call and a
+ * thinking row are disclosures over this window's one `expanded` set, and a compaction row is a
+ * divider rather than a line of prose. A session line never reaches here: `RowView` folds those
+ * into the session row. Everything else, an agent reply and what the operator typed alike,
+ * renders through the shared markdown block, which paints synchronously so the row's measurement
+ * still holds (#8012/#8226): a fence the operator sends is the fence the agent received.
+ */
+function RowBody({
+	item,
+	expanded,
+	fold,
+	onToggleRow,
+}: {
+	readonly item: RowItem;
+	readonly expanded: boolean;
+	readonly fold: ToolFold | null;
+	readonly onToggleRow: (id: string, open: boolean) => void;
+}): ReactElement {
+	if (item.kind === "tool") {
+		return (
+			<ToolRow
+				item={item}
+				expanded={expanded}
+				fold={fold}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
+	}
+	if (item.kind === "thinking") {
+		return (
+			<ThinkingRow
+				item={item}
+				expanded={expanded}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
+	}
+	if (item.kind === "compaction") return <CompactionMarker text={item.text} />;
+	// The transcript is a region inside the desk, so a `#` heading in a message is a subsection of
+	// it rather than a page title; and a transcript row is read as the lines it was typed on, so a
+	// lone newline is a break here where a document-shaped surface would fold it (#8244).
+	return (
+		<Markdown className="tuval-chat-markdown" headingBase={3} breaks>
+			{item.text}
+		</Markdown>
+	);
+}
 
 function ItemRow({
 	item,
@@ -183,30 +261,21 @@ function ItemRow({
 	expanded,
 	fold,
 	nested,
-	onToggleTool,
+	onToggleRow,
 }: {
-	readonly item: TranscriptItem;
+	readonly item: RowItem;
 	readonly interrupted: boolean;
 	readonly onResend: (() => void) | null;
 	readonly expanded: boolean;
 	readonly fold: ToolFold | null;
 	readonly nested: boolean;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
 			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
 			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
-			{item.kind === "tool" ? (
-				<ToolRow
-					item={item}
-					expanded={expanded}
-					fold={fold}
-					onToggle={(open) => onToggleTool(item.id, open)}
-				/>
-			) : (
-				<p className="tuval-chat-text">{item.text}</p>
-			)}
+			<RowBody item={item} expanded={expanded} fold={fold} onToggleRow={onToggleRow} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
 					<span className="tuval-chat-interrupted-mark">interrupted</span>
@@ -221,37 +290,45 @@ function ItemRow({
 	);
 }
 
-/**
- * The DOM id of the row carrying one item, scoped to the window so two windows over one process
- * never mint the same id. A group head's fold points `aria-controls` at these.
- */
-const rowDomId = (windowId: string, itemId: string): string => `tuval-row-${windowId}-${itemId}`;
-
 function RowView({
 	row,
-	windowId,
 	interruptedId,
 	onResend,
 	onOlder,
 	expanded,
 	unfolded,
-	onToggleTool,
+	onToggleRow,
 	onToggleFold,
 }: {
 	readonly row: ChatRow;
-	readonly windowId: string;
 	readonly interruptedId: string | null;
 	readonly onResend: (() => void) | null;
 	readonly onOlder: () => void;
 	readonly expanded: ReadonlySet<string>;
 	readonly unfolded: ReadonlySet<string>;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
 }): ReactElement {
 	if (row.kind === "loading") {
 		return (
 			<span className="tuval-chat-head" role="status">
 				Loading earlier messages…
+			</span>
+		);
+	}
+	if (row.kind === "page-error") {
+		return (
+			<span className="tuval-chat-head">
+				<span role="status">Could not load earlier messages: {row.detail}</span>
+				<Button
+					type="button"
+					variant="tertiary"
+					size="sm"
+					style={{minBlockSize: "var(--tap-min, 36px)"}}
+					onClick={onOlder}
+				>
+					Retry loading earlier messages
+				</Button>
 			</span>
 		);
 	}
@@ -265,6 +342,21 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "session") {
+		// The run's first notice is its identity, in the `expanded` set as in `rowKey`, so a notice
+		// joining the run behind it does not close a disclosure the reader opened.
+		const id = row.items[0].id;
+		return (
+			<>
+				<span className="tuval-chat-who">session</span>
+				<SessionRow
+					run={row.items}
+					expanded={expanded.has(id)}
+					onToggle={(next) => onToggleRow(id, next)}
+				/>
+			</>
+		);
+	}
 	const open = unfolded.has(row.item.id);
 	return (
 		<ItemRow
@@ -276,13 +368,13 @@ function RowView({
 				row.nestedIds.length === 0
 					? null
 					: {
-							rowIds: row.nestedIds.map((id) => rowDomId(windowId, id)),
+							count: row.nestedIds.length,
 							open,
 							onToggle: (next) => onToggleFold(row.item.id, next),
 						}
 			}
 			nested={row.nested}
-			onToggleTool={onToggleTool}
+			onToggleRow={onToggleRow}
 		/>
 	);
 }
@@ -299,19 +391,24 @@ function ChatWindow({
 
 	const process = useProcessView(host);
 	const state = process?._tag === "Live" ? process.state : null;
+	const session =
+		state === null
+			? undefined
+			: JSON.stringify([host.processId, state.sessionId, state.connection]);
 
 	// The slot is read once and then owned here: it is this window's own scratch space, and a
 	// re-read on every render would fight the writes below on a host whose `view()` lags a commit.
 	const [view, setViewLocal] = useState<ChatView>(() => asChatView(host.view()));
 	const [older, setOlder] = useState<ReadonlyArray<TranscriptItem>>([]);
 	const [loading, setLoading] = useState(false);
+	const [pageError, setPageError] = useState<string | null>(null);
 
 	// The last committed view, so `commit` can apply `next` and fork the host write out here rather
 	// than inside the `setViewLocal` updater. React documents an updater as pure and re-invokes it —
 	// `StrictMode` does so on every commit, and Tuval only ever runs in development (ADR 0345) — so
 	// a `runFork` in there is two `setView` calls per keystroke. The ref is written in the same tick
 	// as the state, which is what keeps two commits batched into one render composing: the debounced
-	// scroll offset and `toggleTool`'s expanded set both read what the previous commit wrote.
+	// scroll offset and `toggleRow`'s expanded set both read what the previous commit wrote.
 	const viewRef = useRef(view);
 
 	const commit = useCallback((next: (current: ChatView) => ChatView) => {
@@ -337,7 +434,7 @@ function ChatWindow({
 	/** The row just opened, until the layout effect below has scrolled its trigger back into view. */
 	const openedRef = useRef<string | null>(null);
 
-	const toggleTool = useCallback(
+	const toggleRow = useCallback(
 		(id: string, open: boolean) => {
 			if (open) openedRef.current = id;
 			commit((current) => {
@@ -384,26 +481,141 @@ function ChatWindow({
 
 	const setMode = useCallback((mode: Mode) => dispatch({type: "setMode", mode}), [dispatch]);
 
-	const rows = useMemo(
+	// The slots the flag makes rows disappear behind. Off, it is the shared empty set and `chatRows`
+	// folds exactly as it did; on, every row whose parent chain reaches one of these leaves the
+	// transcript (#8405).
+	const subagentSlots = state?.subagents ?? null;
+	const subagents = useMemo(
+		() => subagentHeads(subagentSlots, options.subagentList),
+		[options.subagentList, subagentSlots],
+	);
+
+	/**
+	 * Which transcript the one view slot is showing (founder ruling Q7 on #8384), or `null` for the
+	 * agent's own. Gated on the flag rather than trusted from the slot: a slot written while the flag
+	 * was on must not keep a window swapped away once it is off (#8405's containment).
+	 */
+	const viewing = options.subagentList ? view.viewing : null;
+	const viewedSlot = viewing === null ? undefined : state?.subagents[viewing.id];
+
+	/** The scroll offset `onScroll` is holding for its settle window, and the timer holding it. */
+	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const restingAt = useRef<number | null>(null);
+	useEffect(
+		() => () => {
+			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
+		},
+		[],
+	);
+
+	/**
+	 * Write the held offset now, so `scroll` describes where the *current* view rests before another
+	 * one takes its place.
+	 *
+	 * A swap that skipped this would be wrong twice over one debounce: `viewSubagent` would park an
+	 * offset up to `scrollCommitMs` behind where the reader actually is, and the timer would then fire
+	 * past the swap and write main's offset onto the subagent's `scroll` — a field that means a
+	 * different transcript now (review round 1 on #8467).
+	 */
+	const settleScroll = useCallback(() => {
+		if (commitTimer.current !== null) clearTimeout(commitTimer.current);
+		commitTimer.current = null;
+		const offset = restingAt.current;
+		restingAt.current = null;
+		if (offset === null) return;
+		commit((current) => (current.scroll === offset ? current : {...current, scroll: offset}));
+	}, [commit]);
+
+	const showSubagent = useCallback(
+		(id: string) => {
+			settleScroll();
+			commit((current) => viewSubagent(current, id));
+		},
+		[commit, settleScroll],
+	);
+	const showMain = useCallback(() => {
+		settleScroll();
+		commit(viewMain);
+	}, [commit, settleScroll]);
+
+	/**
+	 * `<c-b> a`, arriving as the key that chord's command row mints (`../commands/table.ts`). The
+	 * shell cannot address a renderer by name, so the binding forwards a key instead and this is the
+	 * window's whole share of it: hand the list its focus, or — with the flag off, where no list is
+	 * rendered and this ref is null — do nothing at all.
+	 */
+	const navigatorRef = useRef<SubagentListHandle>(null);
+	useForwardedKey(host.windowId, (key) => {
+		if (key !== FOCUS_LIST_KEY) return;
+		navigatorRef.current?.focus();
+	});
+
+	const mainRows = useMemo(
 		() =>
 			chatRows({
 				older,
 				tail: state?.transcript.items ?? [],
 				omitted: state?.transcript.omitted.items ?? 0,
 				loading,
+				pageError,
 				atOldest: view.atOldest,
 				unfolded,
+				subagents,
 			}),
-		[older, state, loading, view.atOldest, unfolded],
+		[older, state, loading, pageError, view.atOldest, unfolded, subagents],
+	);
+
+	// The swap is a swap of *this* list and nothing else: main's own rows, pages and cursor are left
+	// exactly as they were, which is what lets the back action put the window back where it was.
+	const rows = useMemo(
+		() => (viewedSlot === undefined ? mainRows : subagentRows(viewedSlot, unfolded)),
+		[viewedSlot, mainRows, unfolded],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
 	const anchorRef = useRef<string | null>(null);
 	/** Set when a page lands, cleared by the layout effect that re-anchors the viewport onto it. */
 	const reanchorRef = useRef(false);
-	const seenPageRef = useRef<AiAgentSessionState["lastPage"]>(null);
+	const pageRequestRef = useRef<object | null>(null);
+	const sessionRef = useRef(session);
+	sessionRef.current = session;
+	const priorSessionRef = useRef(session);
+	useEffect(() => {
+		if (priorSessionRef.current !== undefined && priorSessionRef.current !== session) {
+			pageRequestRef.current = null;
+			setLoading(false);
+			setPageError(null);
+			setOlder([]);
+			commit((current) => ({...current, cursor: null, atOldest: false}));
+		}
+		priorSessionRef.current = session;
+		return () => {
+			pageRequestRef.current = null;
+		};
+	}, [session, commit]);
 
 	const scrollRef = useRef<HTMLDivElement | null>(null);
+
+	/**
+	 * The offset this window last asked its scroller for, until the scroll event carrying it lands.
+	 *
+	 * A scroll the window issued itself is not the reader moving, and `onScroll` below reads it as
+	 * one without this: the follow effect scrolls to the newest row once per measurement of a
+	 * growing turn, and each of those lands at an offset the *next* measurement has already put
+	 * behind the content end — so `onNewest` answers "not on the newest turn", the pin clears, and
+	 * the follow stops dead in the middle of a streaming reply (#8174).
+	 */
+	const selfScrollRef = useRef<number | null>(null);
+	const scrollToFn = useCallback<
+		NonNullable<VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"]>
+	>(
+		(offset, scroll, instance) => {
+			selfScrollRef.current = offset + (scroll.adjustments ?? 0);
+			(options.scrollToFn ?? elementScroll)(offset, scroll, instance);
+		},
+		[options.scrollToFn],
+	);
+
 	const virtualizer = useVirtualizer({
 		count: rows.length,
 		getScrollElement: () => scrollRef.current,
@@ -417,51 +629,74 @@ function ChatWindow({
 		// of this window printed sixteen of those errors. Off, the same update lands through React's
 		// own scheduling on the next render.
 		useFlushSync: false,
-		...(options.scrollToFn === undefined ? {} : {scrollToFn: options.scrollToFn}),
+		scrollToFn,
 	});
 
 	const totalSize = virtualizer.getTotalSize();
 
 	const requestOlder = useCallback(() => {
-		if (loading || view.atOldest || rows.length === 0) return;
-		const before = oldestLoadedId(rows);
-		if (before === null) return;
-		anchorRef.current = before;
+		// A subagent's rows arrive whole with its slot, so there is no page behind them to ask for —
+		// and the ids in this list are the worker's, which the agent's own cursor knows nothing about.
+		if (viewing !== null) return;
+		if (pageRequestRef.current !== null || view.atOldest || rows.length === 0) return;
+		const request = olderPageRequest(rows);
+		if (request === null) return;
+		const {before, anchor} = request;
+		const sessionId = state?.sessionId;
+		const connection = state?.connection;
+		pageRequestRef.current = request;
+		anchorRef.current = anchor;
+		setPageError(null);
 		setLoading(true);
-		// Asking for history is leaving the newest turn, and the pin has to say so or the re-anchor
-		// below loses. On a transcript barely taller than its viewport every offset is within *both*
-		// thresholds, so the top that fires this still reads as resting on the newest turn — and
-		// when the page lands the follow effect, declared after the re-anchor, overrides it and
-		// throws the reader to the bottom of the history they just asked for.
 		commit((current) => (current.pinned ? {...current, pinned: false} : current));
-		dispatch({type: "page", before, limit: options.pageLimit});
-	}, [loading, view.atOldest, rows, commit, dispatch, options.pageLimit]);
-
-	// `lastPage` is shared session state, so every mounted window sees a page any one of them asked
-	// for (#7860). A window consumes one only while its own request is out: without the `loading`
-	// guard a window that scrolled nowhere gets the other's history prepended and its `atOldest`
-	// advanced, which is what made the per-window cursor a slot that never diverged. The seen-marker
-	// is set either way, so a window that ignored a page does not merge it later when it does ask.
-	//
-	// The guard is a proxy, not a correlation, and #7860 stays open on the residual: `loading`
-	// answers "is *my* request out", but `lastPage` carries no requester and `page` (`core/machine.ts`)
-	// issues its Cmd with no in-flight guard — so two windows whose requests overlap each still merge
-	// whichever reply lands first. Closing that needs the reply to name the window that asked, which
-	// is a change to the Msg and the core rather than to this effect.
-	useEffect(() => {
-		const page = state?.lastPage ?? null;
-		if (page === null || page === seenPageRef.current) return;
-		seenPageRef.current = page;
-		if (!loading) return;
-		setOlder((held) => mergeOlder(held, page.items));
-		setLoading(false);
-		reanchorRef.current = true;
-		commit((current) => ({
-			...current,
-			cursor: page.items[0]?.id ?? current.cursor,
-			atOldest: !page.hasMore,
-		}));
-	}, [state?.lastPage, loading, commit]);
+		// Processes.dispatchFolded holds its lock through idle AND the state read (#8274).
+		// Only this dispatch's completion can settle it; broadcast snapshots retain old outcomes.
+		void Effect.runFork(
+			Effect.gen(function* () {
+				const reply = yield* hostRef.current.dispatch({
+					type: "page",
+					before,
+					limit: options.pageLimit,
+				});
+				if (pageRequestRef.current !== request || sessionRef.current !== session) return;
+				pageRequestRef.current = null;
+				setLoading(false);
+				const completed = reply._tag === "Delivered" ? reply.view?.state : null;
+				if (
+					!isAiAgentSessionState(completed) ||
+					completed.sessionId !== sessionId ||
+					completed.connection !== connection ||
+					completed.pageOutcome === null
+				) {
+					setPageError("The page request could not be confirmed. Try again.");
+					return;
+				}
+				const outcome = completed.pageOutcome;
+				if (outcome.status === "refused") {
+					setPageError(outcome.failure.detail);
+					return;
+				}
+				const page = outcome.page;
+				setOlder((held) => mergeOlder(held, page.items));
+				setPageError(null);
+				reanchorRef.current = true;
+				commit((current) => ({
+					...current,
+					cursor: page.items[0]?.id ?? current.cursor,
+					atOldest: !page.hasMore,
+				}));
+			}),
+		);
+	}, [
+		viewing,
+		view.atOldest,
+		rows,
+		session,
+		state?.sessionId,
+		state?.connection,
+		commit,
+		options.pageLimit,
+	]);
 
 	useLayoutEffect(() => {
 		if (!reanchorRef.current) return;
@@ -489,12 +724,22 @@ function ChatWindow({
 	// A window left following its newest turn is restored onto the newest row and not onto its saved
 	// offset: that offset was the bottom when it was written, and the transcript has grown since.
 	const placedRef = useRef(false);
+	// …and once per swap after that. A swapped-in view is a different transcript, so the offset the
+	// viewport holds means nothing in it: the placement below runs again, onto the newest row of the
+	// subagent, or back onto the row and offset `viewMain` restored for the agent's own.
+	const placedViewRef = useRef<string | null>(viewing?.id ?? null);
+	useLayoutEffect(() => {
+		const id = viewing?.id ?? null;
+		if (placedViewRef.current === id) return;
+		placedViewRef.current = id;
+		placedRef.current = false;
+	}, [viewing]);
 	useLayoutEffect(() => {
 		if (placedRef.current || rows.length === 0) return;
 		placedRef.current = true;
 		if (!view.pinned && view.scroll > 0) virtualizer.scrollToOffset(view.scroll);
 		else virtualizer.scrollToIndex(rows.length - 1, {align: "end"});
-	}, [rows.length, view.pinned, view.scroll, virtualizer]);
+	}, [rows.length, view.pinned, view.scroll, viewing, virtualizer]);
 
 	// …and after that, the transcript follows the newest turn only while it is already resting on
 	// it. `totalSize` carries both cases the follow owes: a row appended, and the last row measuring
@@ -505,27 +750,34 @@ function ChatWindow({
 		virtualizer.scrollToIndex(rows.length - 1, {align: "end"});
 	}, [view.pinned, rows.length, totalSize, virtualizer]);
 
-	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	useEffect(
-		() => () => {
-			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
-		},
-		[],
-	);
-
 	const onScroll = useCallback(
 		(event: UIEvent<HTMLDivElement>) => {
 			const offset = event.currentTarget.scrollTop;
+			// This event is the arrival of the offset `scrollToFn` above just asked for, so it is the
+			// window hearing its own request rather than the reader moving. Both readings below are
+			// about where the *reader* went — whether they left the newest turn, and whether they
+			// reached the top asking for history — and neither is a question a scroll of the window's
+			// own answers.
+			const asked = selfScrollRef.current;
+			selfScrollRef.current = null;
+			const byReader = asked === null || Math.abs(offset - asked) > 1;
 			// The pin is written on the transition and not through the debounce below: a turn landing
 			// inside the settle window would otherwise read a pin the operator has already left.
-			const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
-			commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
+			if (byReader) {
+				const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
+				commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
+			}
+			// The offset is where the transcript rests whoever moved it, so it is committed either way.
+			// It is held on a ref as well as in this closure, because a swap has to be able to settle it
+			// early — `settleScroll` above.
+			restingAt.current = offset;
 			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
 			commitTimer.current = setTimeout(() => {
 				commitTimer.current = null;
+				restingAt.current = null;
 				commit((current) => (current.scroll === offset ? current : {...current, scroll: offset}));
 			}, options.scrollCommitMs);
-			if (offset <= options.topThreshold) requestOlder();
+			if (byReader && offset <= options.topThreshold) requestOlder();
 		},
 		[
 			commit,
@@ -641,6 +893,9 @@ function ChatWindow({
 	const onKeyDown = useCallback(
 		(event: ReactKeyboardEvent<HTMLDivElement>) => {
 			if (event.defaultPrevented) return;
+			// An armed prefix owns the next key from any focus, so the window's own two keys stand
+			// down for it: `<prefix> r` is a shell reload, not a resend (#8270).
+			if (prefixArmedAround(event.target)) return;
 			if (event.key === "Escape" && isWorking(phase)) {
 				event.preventDefault();
 				dispatch({type: "interrupt", at: options.now()});
@@ -678,91 +933,138 @@ function ChatWindow({
 		// composer's textarea keeps focus. A named `section` is what that owes a screen reader: the
 		// phase line, the transcript and the composer are one named region, and every control inside
 		// it is a real `button` or `textarea` with its own keyboard behaviour.
-		<section
-			className="tuval-chat"
-			aria-label="Agent chat"
-			data-scheme="dark"
-			data-window={host.windowId}
-			onKeyDown={onKeyDown}
-		>
-			<div className="tuval-chat-bar">
-				<p className="tuval-chat-phase" data-phase={phase} role="status">
-					<span className="tuval-chat-phase-dot" aria-hidden="true" />
-					{statusLine({
-						phase,
-						failure: state?.failure ?? null,
-						interruption,
-						now: options.now(),
-					})}
-				</p>
-				<div className="tuval-chat-bar-end">
-					{options.extras === null ? null : options.extras(process.state)}
-					<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
-				</div>
-			</div>
-			<div
-				ref={scrollRef}
-				className="tuval-chat-transcript"
-				onScroll={onScroll}
-				onKeyDown={swallowBareCharacter}
-				role="log"
-				aria-label="Transcript"
-				// The scroll container is the only way to older turns on a plain transcript, so a
-				// keyboard user must be able to focus it (axe scrollable-region-focusable).
-				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
-				tabIndex={0}
+		// The provider sits above the whole window, not just the composer: a design primitive the
+		// transcript mounts (a table's scroller name) reads this catalog too, and the package's own
+		// default is Turkish.
+		<DesignTranslationProvider translate={tuvalDesignTranslate}>
+			<section
+				className="tuval-chat"
+				aria-label="Agent chat"
+				data-scheme="dark"
+				data-window={host.windowId}
+				onKeyDown={onKeyDown}
 			>
-				<div className="tuval-chat-spacer" style={{height: `${totalSize}px`}}>
-					{virtualizer.getVirtualItems().map((virtual) => {
-						const row = rows[virtual.index];
-						if (row === undefined) return null;
-						return (
-							<div
-								key={virtual.key}
-								id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
-								className="tuval-chat-row"
-								data-index={virtual.index}
-								data-kind={row.kind === "item" ? row.item.kind : row.kind}
-								data-nested={row.kind === "item" && row.nested ? "true" : undefined}
-								ref={virtualizer.measureElement}
-								style={{
-									transform: `translateY(${virtual.start}px)`,
-									// One indent step per fold the row sits inside, so a subagent's own subagent
-									// reads as a further step in rather than as another row at the same level.
-									...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
-								}}
-							>
-								<RowView
-									row={row}
-									windowId={host.windowId}
-									interruptedId={interruptedId}
-									onResend={lastPrompt === null ? null : resend}
-									onOlder={requestOlder}
-									expanded={expanded}
-									unfolded={unfolded}
-									onToggleTool={toggleTool}
-									onToggleFold={toggleFold}
-								/>
-							</div>
-						);
-					})}
+				<div className="tuval-chat-bar">
+					<p className="tuval-chat-phase" data-phase={phase} role="status">
+						<span className="tuval-chat-phase-dot" aria-hidden="true" />
+						{statusLine({
+							phase,
+							failure: state?.failure ?? null,
+							interruption,
+							now: options.now(),
+						})}
+					</p>
+					<div className="tuval-chat-bar-end">
+						{options.extras === null ? null : options.extras(process.state)}
+					</div>
 				</div>
-			</div>
-			{isWorking(phase) ? (
-				// Visual only. The phase line above is the announced surface for the running turn, so a
-				// live region here would narrate that same turn twice; what this adds is the tell at
-				// the end of the transcript, where the eye already is while a turn runs.
-				<p className="tuval-chat-working" aria-hidden="true">
-					<span className="tuval-chat-working-dots">
-						<span />
-						<span />
-						<span />
-					</span>
-					{interruption === null ? "Working…" : "Interrupting…"}
-				</p>
-			) : null}
-			<DesignTranslationProvider translate={tuvalDesignTranslate}>
+				{options.subagentList ? (
+					<>
+						<SubagentList
+							ref={navigatorRef}
+							slots={process.state.subagents}
+							now={options.now}
+							viewing={viewing?.id ?? null}
+							onView={showSubagent}
+							onMain={showMain}
+						/>
+						{/* The one live region for the view slot, and the reason the visible notice below is
+						    not a second one. A `log` announces what is appended to it, so a swap — which
+						    replaces the whole transcript under the reader — and a worker finishing under an
+						    open view are both announced here or nowhere. */}
+						<p className="kp-visually-hidden" role="status">
+							{viewedSlot === undefined
+								? viewing === null
+									? "Showing the agent's own transcript."
+									: "Showing a subagent whose transcript is not in this session's state."
+								: viewedSlot.status === "finished"
+									? `Showing the ${viewedSlot.type} subagent's transcript. Finished: ${viewedSlot.lastLine}`
+									: `Showing the ${viewedSlot.type} subagent's transcript. Still running.`}
+						</p>
+					</>
+				) : null}
+				<div
+					ref={scrollRef}
+					className="tuval-chat-transcript"
+					onScroll={onScroll}
+					onKeyDown={swallowBareCharacter}
+					role="log"
+					data-view={viewing === null ? undefined : viewing.id}
+					aria-label={
+						viewedSlot === undefined ? "Transcript" : `Transcript: ${viewedSlot.type} subagent`
+					}
+					// The scroll container is the only way to older turns on a plain transcript, so a
+					// keyboard user must be able to focus it (axe scrollable-region-focusable).
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
+					tabIndex={0}
+				>
+					<div className="tuval-chat-spacer" style={{height: `${totalSize}px`}}>
+						{virtualizer.getVirtualItems().map((virtual) => {
+							const row = rows[virtual.index];
+							if (row === undefined) return null;
+							return (
+								<div
+									key={virtual.key}
+									className="tuval-chat-row"
+									data-index={virtual.index}
+									data-kind={row.kind === "item" ? row.item.kind : row.kind}
+									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
+									ref={virtualizer.measureElement}
+									style={{
+										transform: `translateY(${virtual.start}px)`,
+										// One indent step per fold the row sits inside, so a subagent's own subagent
+										// reads as a further step in rather than as another row at the same level.
+										...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
+									}}
+								>
+									<RowView
+										row={row}
+										interruptedId={interruptedId}
+										onResend={lastPrompt === null ? null : resend}
+										onOlder={requestOlder}
+										expanded={expanded}
+										unfolded={unfolded}
+										onToggleRow={toggleRow}
+										onToggleFold={toggleFold}
+									/>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+				{viewing === null ? null : (
+					// Q9, verbatim: "we should show something to user if they are actually inside a
+					// subagent that's already finished." The view stays open on the rows it had and says
+					// so at the end of them; the way back is the navigator's first row, above. Not a live
+					// region — the hidden one above carries this same sentence and announces it once.
+					<p className="tuval-chat-subagent-end" data-status={viewedSlot?.status}>
+						{viewedSlot === undefined ? (
+							"This subagent's transcript is not in this session's state."
+						) : viewedSlot.status === "finished" ? (
+							<>
+								<span className="tuval-chat-subagent-end-mark">finished</span>
+								{viewedSlot.lastLine}
+							</>
+						) : (
+							`The ${viewedSlot.type} subagent is still running.`
+						)}
+					</p>
+				)}
+				{isWorking(phase) ? (
+					// Visual only. The phase line above is the announced surface for the running turn, so a
+					// live region here would narrate that same turn twice; what this adds is the tell at
+					// the end of the transcript, where the eye already is while a turn runs.
+					<p className="tuval-chat-working" aria-hidden="true">
+						<span className="tuval-chat-working-dots">
+							<span />
+							<span />
+							<span />
+						</span>
+						{interruption === null ? "Working…" : "Interrupting…"}
+					</p>
+				) : null}
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
+				<QueuedMessages queued={process.state.queued} />
 				<UnsentMessages
 					windowId={host.windowId}
 					unsent={held.unsent}
@@ -772,13 +1074,17 @@ function ChatWindow({
 				<AgentChatInput
 					variant="focused"
 					bridge={composer.bridge}
+					// The mode picker rides the composer's `settings` slot rather than the bridge: mode is
+					// this window's vocabulary, and a bridge method would make every other implementor of
+					// `AgentChatInputBridge` answer a question only this one has (#8190).
+					settings={<ModeSwitch modes={process.state.modes} onSetMode={setMode} />}
 					initialValue={view.draft}
 					onDraftChange={(draft) =>
 						commit((current) => (current.draft === draft ? current : {...current, draft}))
 					}
 				/>
-			</DesignTranslationProvider>
-		</section>
+			</section>
+		</DesignTranslationProvider>
 	);
 }
 

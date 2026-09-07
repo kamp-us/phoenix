@@ -59,6 +59,31 @@ export const textOf = (body: unknown): string => {
 		.join("\n");
 };
 
+/**
+ * One reasoning block a body carried: its content, or the mark that the provider withheld it.
+ *
+ * A `redacted_thinking` block carries `data` — an encrypted payload no client can read — so what
+ * survives the read is only that a block was there. The line a reader sees is `map.ts`'s to write:
+ * the item union carries no redaction flag, deliberately, so nothing but text can cross.
+ *
+ * A plain `thinking` block whose text is empty but whose `signature` is not is withheld the same
+ * way, and it is what the provider actually sends: every reasoning block in `subagent-turn.json`
+ * has that shape. Read as "no reasoning here" it loses the whole turn's reasoning silently.
+ */
+export type ThinkingPart =
+	| {readonly kind: "text"; readonly text: string}
+	| {readonly kind: "withheld"};
+
+export const thinkingOf = (body: unknown): ReadonlyArray<ThinkingPart> =>
+	blocksOf(body)
+		.filter(isRecord)
+		.flatMap((block): ReadonlyArray<ThinkingPart> => {
+			if (block.type === "redacted_thinking") return [{kind: "withheld"}];
+			if (block.type !== "thinking") return [];
+			if (isNonEmptyString(block.thinking)) return [{kind: "text", text: block.thinking}];
+			return isNonEmptyString(block.signature) ? [{kind: "withheld"}] : [];
+		});
+
 export const toolUsesOf = (body: unknown): ReadonlyArray<ToolUseBlock> =>
 	blocksOf(body)
 		.filter(isRecord)

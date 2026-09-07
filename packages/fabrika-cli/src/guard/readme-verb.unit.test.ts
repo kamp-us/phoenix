@@ -1,5 +1,5 @@
 /**
- * `guard readme-guard check`, ported from v1's `readme-guard` (#938/#939) — the scope
+ * `guard readme-guard check`, ported from v1's `readme-guard` — the scope
  * filter, the fail-closed floor and the exit taxonomy, over a scripted filesystem.
  */
 import {Effect} from "effect";
@@ -73,7 +73,7 @@ describe("runReadmeGuard", () => {
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor: a scan that found nothing has proven nothing, so it reds.
+	// The fail-closed floor: a scan that found nothing has proven nothing, so it reds.
 	it("fails closed when the scan finds zero members", async () => {
 		const outcome = await run(repo({"dead-a": [], "dead-b": ["README.md"]}));
 		expect(outcome.code).toBe(ZERO_SCOPE);

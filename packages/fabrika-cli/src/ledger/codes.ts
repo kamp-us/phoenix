@@ -54,7 +54,7 @@ export const REGION_UNRESOLVABLE = 22;
  *
  * Narrower and more useful than {@link WRITE_UNKNOWN} or {@link READBACK_MISMATCH}: the create is
  * proven and the *link* is unknown, so a named child exists unlinked. Fusing it into `8` would leave a
- * successor unable to tell "something may exist" from "#4302 exists and needs linking".
+ * successor unable to tell "something may exist" from "this named child exists and needs linking".
  */
 export const LINK_UNPROVEN = 23;
 /** Proven: the declared topology is invalid — a cycle, a dangling ref, or an unplaced child. */

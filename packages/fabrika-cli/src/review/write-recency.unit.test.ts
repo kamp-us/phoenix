@@ -75,7 +75,7 @@ describe("compareWriteRecency", () => {
 	 * The case the stamp exists for, in the shape the enqueue gate meets it: a marker is posted, an
 	 * advisory is written 19 minutes later, and then the marker is corrected IN PLACE. The PATCH
 	 * leaves the marker's `created_at` at the original post, so slot time ranks the superseded
-	 * advisory above the live correction. Only the stamp gets it right (#5048).
+	 * advisory above the live correction. Only the stamp gets it right.
 	 */
 	it("a re-posted marker outranks an advisory created between the post and the re-post", () => {
 		const marker = {
@@ -118,7 +118,7 @@ describe("latestByWriteRecency", () => {
 });
 
 /**
- * The interop pin. fabrika reimplements this format and never calls v1 (ADR 0238), so nothing at
+ * The interop pin. fabrika reimplements this format and never calls v1, so nothing at
  * build time couples the two — the only thing keeping them one format is that the bytes match. The
  * literal below is v1's own matcher, copied verbatim from
  * v1's `verdict-match.ts`; if this test goes red, a fabrika-posted
