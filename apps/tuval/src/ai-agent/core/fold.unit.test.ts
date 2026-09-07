@@ -275,6 +275,15 @@ describe("folding a refused interrupt", () => {
 		expect(refused.failure).toEqual(failure);
 	});
 
+	// The half that walks to `ready` is the half whose turn already ended, so it owes that turn's
+	// send the acceptance the `phase` arm's own walk to `ready` performs. Nothing else will: the
+	// end was never narrated, so no later event reaches this send.
+	it("accepts the send whose turn had already ended when there was no live turn", () => {
+		const failure = refusal("no-live-turn", "Operation aborted");
+		const refused = foldEvent(prompting, {kind: "failure", failure}, limits);
+		expect(refused.sends).toEqual([{key: "first", state: "accepted"}]);
+	});
+
 	it("changes no phase when the session was not on a turn at all", () => {
 		const idle: AiAgentSessionState = {...initialState("/repo"), phase: "ready"};
 		const failure = refusal("no-live-turn", "Operation aborted");

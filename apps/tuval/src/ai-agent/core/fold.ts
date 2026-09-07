@@ -237,8 +237,11 @@ export const phaseAfterFailure = (
  *
  * `no-live-turn` is the case that froze the founder's desk on 2026-09-05: there was nothing left to
  * stop, so the turn ends `interrupted` and the session goes to `ready` rather than sitting at
- * `prompting` until a restart. The sends are untouched on both halves — this failure names the
- * interrupt call, and `sendAfterFailure` (`./sends.ts`) answers `null` for a tag that names no send.
+ * `prompting` until a restart. It reaches `ready` on the same terms the `phase` arm does and settles
+ * the send the same way — the backend saying there is no turn to stop *is* that turn's end reported
+ * late, and the send it belonged to has no other event coming to accept it. `settleFailedTurn` is
+ * the wrong settle here and stays unused on both halves: this failure names the interrupt call
+ * rather than a send, which is why `sendAfterFailure` (`./sends.ts`) answers `null` for the tag.
  */
 export const foldInterruptRefusal = (
 	state: AiAgentSessionState,
@@ -254,6 +257,7 @@ export const foldInterruptRefusal = (
 		interrupted: turn.interrupted ?? lastAssistantId(turn.transcript.items),
 		interruption: null,
 		failure,
+		sends: settleAccepted(turn.sends),
 	};
 };
 
