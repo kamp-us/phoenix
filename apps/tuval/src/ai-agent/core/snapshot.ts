@@ -13,6 +13,7 @@ import {
 	isCommandRef,
 	isModelRef,
 	isPendingPermission,
+	isSubagentSlots,
 	isThinkingLevel,
 	isTranscriptItems,
 	isWindowOmission,
@@ -135,6 +136,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isSends(value.sends) &&
 	isQueued(value.queued) &&
 	isPage(value.lastPage) &&
+	isSubagentSlots(value.subagents) &&
 	isFailure(value.failure);
 
 /** A snapshot the predicate refuses is `null`, never a throw — the store decides what to do. */
