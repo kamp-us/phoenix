@@ -96,6 +96,52 @@
 }
 
 /*
+ * The running-subagent list, above the transcript (#8405). One row per running worker, and the
+ * region is absent rather than empty when none is (Q4) — nothing here draws an empty state, because
+ * there is no element to draw one on.
+ *
+ * The rows are `MetaRow`s, so their layout and muted treatment are the shared primitive's; what this
+ * scope adds is the list's own box and the one thing a meta row cannot know — that the last line is
+ * the field that must give way when the row runs out of width.
+ */
+.tuval-chat-subagents {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	list-style: none;
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+}
+
+.tuval-chat-subagent {
+	flex-wrap: nowrap;
+	min-inline-size: 0;
+	font: var(--t-meta);
+}
+
+.tuval-chat-subagent-type {
+	color: var(--text-secondary);
+	font-weight: 600;
+}
+
+/* The one field that may be any length, so it is the one that truncates. */
+.tuval-chat-subagent-line {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tuval-chat-subagent-more {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+/*
  * The scroller. `overflow-anchor: none` because this window does its own prepend anchoring
  * (`./ChatWindow.tsx`) and the browser's scroll anchoring would fight it.
  */
