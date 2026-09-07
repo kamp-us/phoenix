@@ -366,7 +366,8 @@ properties of that rendering are load-bearing, all read off `Schema.toJsonSchema
 arrives as `{"type": "string", "enum": [...]}`; and a `Schema.Class` params, or any
 identifier-annotated struct, renders its root as `{"$ref": "#/$defs/<name>"}` with the object itself
 under the document's `definitions`, so the root ref is followed once before the properties are read.
-Everything else is read defensively, because the module is total.
+Unannotated input is read defensively. Explicit invalid rest declarations throw
+`InvalidRestParameter`; registration catches that refusal before publishing the description.
 
 `describeExpected(param)` renders one slot: `<name>`, or the literals joined by `|`.
 
