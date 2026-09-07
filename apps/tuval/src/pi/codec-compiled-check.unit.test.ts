@@ -88,7 +88,7 @@ const CEILING_MS = 1_000;
 describe("the pi-protocol codec's compiled validators", () => {
 	it("round-trips a 300-item transcript far below the uncompiled cost", () => {
 		const message = snapshotOf(longTranscript(ITEMS));
-		// Warm the lazy compile, so the ceiling measures validation and not the one-time ~160 ms build.
+		// Warm the lazy compile, so the ceiling measures validation and not the one-time ~170 ms build.
 		new ServerMessageDecoder().push(encodeServerMessage(message));
 
 		const started = performance.now();

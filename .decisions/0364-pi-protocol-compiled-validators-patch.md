@@ -114,11 +114,23 @@ a message the schema does not admit — speed alone would pass on a codec that v
   `ModelMetadata`, `ModelRef`, `ThinkingLevel`, `Command`, `CommandResult`, `ServerSnapshot` and
   `SessionMetadata` from the package entirely and renames `@earendil-works/pi-client`'s surface
   (`PiClient` → `Client`, session handles replaced by attachments and service subscriptions) —
-  which `apps/tuval/src/pi` is written against across 36 files. **Drop this patch as part of that
-  upgrade, not before it, and never re-cut it against 0.85.x.**
-- The four `@earendil-works/pi-*` packages are catalogued as a set at one exact version (the catalog
-  comment in `pnpm-workspace.yaml` says why): bumping one bumps all four, and this patch is
-  re-generated with them.
+  which `apps/tuval/src/pi` is written against across 36 files. The upgrade also pulls a runtime
+  dependency 0.84.3 does not carry: 0.85.1's `codec.js` imports `isJsonValue` from
+  `@earendil-works/chord`. **This patch retires with the 0.85.x upgrade — dropped as part of it, not
+  before it, and never re-cut against 0.85.x**, because validation there costs 0.110 ms on the
+  snapshot that costs 5218 ms here, so a compiled validator would buy 0.108 ms of it.
+  [#8518](https://github.com/kamp-us/phoenix/issues/8518) carries that upgrade and is where this
+  patch is deleted.
+- **The `@earendil-works/pi-*` family is eight entries across two mechanisms in
+  `pnpm-workspace.yaml`, and a bump moves all eight.** The `catalog:` block carries four —
+  `pi-ai`, `pi-client`, `pi-coding-agent`, `pi-protocol` — and `overrides:` carries four more —
+  `pi-agent-core`, `pi-ai`, `pi-telemetry`, `pi-tui`. The `overrides:` block exists because the
+  cataloged packages ask for their siblings by `^0.84.3`, and a caret picks the highest published
+  patch: 0.84.4 put a second `@earendil-works/pi-ai` in the tree beside the cataloged one, the faux
+  provider registered into one copy and the agent loop reading the other. Its own comment records
+  that as a correctness hazard rather than weight, and says to re-key the whole family. Re-keying
+  the catalog and leaving `overrides:` behind reproduces that duplicate with a green build, so read
+  both blocks' comments before bumping. This patch is re-generated with them.
 - `pnpm patch-commit` rewrites `pnpm-workspace.yaml` wholesale, stripping the catalog's comments and
   re-sorting its keys. Restore that file from `main` after committing a patch and hand-add the
   `patchedDependencies` line — the same instruction ADR
