@@ -12,7 +12,7 @@ import {assert, describe, it} from "@effect/vitest";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {type Context, Effect, Schema} from "effect";
 import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
-import {prompt} from "../../ai-agent/ports/index.ts";
+import {mode, permission, prompt, transcriptPage} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import {KernelBridge, type ScriptedKernel} from "./KernelBridge.ts";
@@ -195,7 +195,18 @@ const agentProcess = ProcessId.make("p-agent");
 const agentTable: ScriptedKernel = {
 	[agentProcess]: {
 		program: "ai-agent",
-		inPorts: {[aiAgentPortNames.prompt]: {kind: prompt.kind, accepts: prompt.is}},
+		inPorts: {
+			[aiAgentPortNames.prompt]: {kind: prompt.kind, accepts: prompt.is},
+			[aiAgentPortNames.pageRequest]: {
+				kind: transcriptPage.kind,
+				accepts: transcriptPage.ends.request.is,
+			},
+			[aiAgentPortNames.permissionDecision]: {
+				kind: permission.kind,
+				accepts: permission.ends.decision.is,
+			},
+			[aiAgentPortNames.modeSet]: {kind: mode.kind, accepts: mode.ends.set.is},
+		},
 		outPorts: {},
 	},
 };
@@ -226,6 +237,57 @@ describe("send, on the AI agent's prompt port", () => {
 					port: aiAgentPortNames.prompt,
 					payload: {text: "hi", key: "child-1", timestamp: 1_700_000_000_000},
 				}),
+			);
+			assert.isNotTrue(sent.isError);
+			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true});
+		}),
+	);
+});
+
+/**
+ * The three two-way ports, from the seat that used to read `delivered: true` on a payload the
+ * process then refused where nothing reported it (#8235). Each in-port now admits one direction,
+ * so the wrong one is an error the model reads at the send.
+ */
+const wrongWay = [
+	{
+		port: aiAgentPortNames.pageRequest,
+		kind: transcriptPage.kind,
+		wrong: {kind: "page", items: [], omitted: {items: 0, bytes: 0, reason: "none"}, next: null},
+		right: {kind: "request", before: null, limit: 20},
+	},
+	{
+		port: aiAgentPortNames.permissionDecision,
+		kind: permission.kind,
+		wrong: {kind: "pending", requests: {}},
+		right: {kind: "decision", request: "req-1", decision: "allow-once"},
+	},
+	{
+		port: aiAgentPortNames.modeSet,
+		kind: mode.kind,
+		wrong: {kind: "state", current: null, available: []},
+		right: {kind: "set", mode: "plan"},
+	},
+];
+
+describe("send, on the AI agent's two-way in-ports", () => {
+	it.effect.each(wrongWay)("refuses a wrong-direction payload on $port at the send", (each) =>
+		Effect.gen(function* () {
+			const {tools} = yield* server(agentTable);
+			const refused = yield* answered(() =>
+				tools.handlers.send({process: agentProcess, port: each.port, payload: each.wrong}),
+			);
+			assert.isTrue(refused.isError, `a wrong-direction ${each.port} payload read as delivered`);
+			assert.include(textOf(refused), "tuval/claude/PortRefused");
+			assert.include(textOf(refused), each.kind);
+		}),
+	);
+
+	it.effect.each(wrongWay)("takes the direction $port is the end for", (each) =>
+		Effect.gen(function* () {
+			const {tools} = yield* server(agentTable);
+			const sent = yield* answered(() =>
+				tools.handlers.send({process: agentProcess, port: each.port, payload: each.right}),
 			);
 			assert.isNotTrue(sent.isError);
 			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true});
