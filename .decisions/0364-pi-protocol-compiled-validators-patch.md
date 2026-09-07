@@ -39,8 +39,12 @@ Measured against this repo's pins (`typebox@1.3.7`, node 26), one `Check` call o
 | 300 items, text only | 178 KB | 15 ms | 0.21 ms |
 
 The text-only row is what names the cause: ~35 ms per tool item and near zero per text item, so the
-cost is the cyclic `JsonValue` `$ref` and nothing else. `Compile(ServerMessageSchema)` costs about
-160 ms once.
+cost is the cyclic `JsonValue` `$ref` and nothing else.
+
+Building the validators is the other side of the ledger, and the two directions are nothing like
+each other: `Compile(ServerMessageSchema)` costs ~170 ms, `Compile(ClientMessageSchema)` ~0.5 ms.
+That asymmetry follows from the schemas — the server union carries the whole transcript vocabulary
+and the client union carries a handful of small commands.
 
 Tuval pays that twice per message. `PiServerService.ts`'s `followSession` writes a whole
 `session_snapshot` — `snapshots.ts`'s `sessionSnapshot` carries `transcript: [...view.transcript]`
@@ -64,9 +68,10 @@ The patch lives at `patches/@earendil-works__pi-protocol@0.84.3.patch`, wired th
 own: the `typebox/value` import becomes `typebox/compile`, and the two `Check(Schema, value)` calls
 become `.Check(value)` on a lazily built, memoized validator.
 
-**Lazy rather than eager**, because the two builds cost ~160 ms each and a process that speaks one
-direction should pay for one validator. The desk speaks both, so it pays both — once, at the first
-message of each direction, against seconds per message saved.
+**Lazy rather than eager**, because of the asymmetry above: eager would make every process that
+speaks only the client direction pay the server union's ~170 ms for a validator it never calls. The
+desk speaks both, so it pays both — ~170 ms once, at the first message of each direction, against
+seconds per message saved.
 
 **Equivalence was checked, not assumed.** The compiled and uncompiled validators agree on all 13
 cases exercised before the patch was committed: valid snapshots with and without a transcript, an
@@ -97,8 +102,20 @@ a message the schema does not admit — speed alone would pass on a codec that v
 **Binding constraints.**
 
 - Re-key this patch on the next `@earendil-works/pi-protocol` bump — both layers, the
-  `patchedDependencies` key and the `@patch-pin` marker — and drop it once a release compiles its
-  own validators.
+  `patchedDependencies` key and the `@patch-pin` marker — and drop it once a release makes it
+  pointless.
+- **0.85.1 is that release, and phoenix cannot take it yet.** Its `dist/codec.js` still calls the
+  uncompiled `Check`, so a reader checking only that line would re-cut this patch; but the schemas
+  under it were redesigned, and that is what matters. `PROTOCOL_VERSION` goes 1 → 8, `schemas.ts`
+  becomes `protocol.ts`, and every payload is now `Type.Unsafe(Type.Unknown())` — validation never
+  walks a transcript, so the same 300-item snapshot costs **0.110 ms** uncompiled there against
+  5218 ms here. On 0.85.1 this patch buys 0.110 ms → 0.002 ms and is not worth carrying. It cannot
+  simply be taken, because the same redesign removes `SessionSnapshot`, `TranscriptItem`,
+  `ModelMetadata`, `ModelRef`, `ThinkingLevel`, `Command`, `CommandResult`, `ServerSnapshot` and
+  `SessionMetadata` from the package entirely and renames `@earendil-works/pi-client`'s surface
+  (`PiClient` → `Client`, session handles replaced by attachments and service subscriptions) —
+  which `apps/tuval/src/pi` is written against across 36 files. **Drop this patch as part of that
+  upgrade, not before it, and never re-cut it against 0.85.x.**
 - The four `@earendil-works/pi-*` packages are catalogued as a set at one exact version (the catalog
   comment in `pnpm-workspace.yaml` says why): bumping one bumps all four, and this patch is
   re-generated with them.
