@@ -11,7 +11,7 @@
  * Before creating, this reads the pull request's whole comment history and refuses `14` on a comment
  * already carrying the key — the suppression that used to live in `heal-ci-sweep.yml`'s `run:` block,
  * moved into the verb so every note path inherits it and the workflow relays a decision instead of
- * deriving one (ADR 0228, #7209). The key's format and its reader live in `note-key.ts`.
+ * deriving one. The key's format and its reader live in `note-key.ts`.
  *
  * The leak predicate and the stdin fence are `../ship/authored.ts`'s, imported: this group scans the
  * text a session authored, and scanning *landed* content is `leak-guard.yml`'s enforced seam.

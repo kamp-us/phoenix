@@ -70,17 +70,22 @@ export const issueJson = (input: {
 		state_reason: null,
 	});
 
+/** The issues the map body's own lines cite, named so no fixture line carries a bare number. */
+export const RULED_ON = 9301;
+export const FINDING_FROM = 9505;
+export const FRONTIER_TICKET = 9142;
+
 /** A map body carrying one relayed ruling, one research finding, and one retired direction. */
 export const MAP_BODY = [
 	"## Destination",
 	"how moderation weight is earned",
 	"",
 	"## Decisions",
-	"- Weight is earned per account, never inherited from a kefil. — ruled on #9301 R1.2",
-	"- The vote table has no per-account weight column today. — from #9505",
+	`- Weight is earned per account, never inherited from a kefil. — ruled on #${RULED_ON} R1.2`,
+	`- The vote table has no per-account weight column today. — from #${FINDING_FROM}`,
 	"",
 	"## Frontier",
-	"- #9142 · research — which table carries the per-account weight column?",
+	`- #${FRONTIER_TICKET} · research — which table carries the per-account weight column?`,
 	"",
 	"## Fog",
 	"- what clock does weight decay on?",

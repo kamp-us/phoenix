@@ -1,6 +1,14 @@
 import {describe, expect, it} from "vitest";
 import {parseRoadmap, roadmapRowFor} from "./roadmap.ts";
 
+/** The milestone each fixture row pins, named so no row carries a bare number. */
+const PILLARS = 17;
+const GECIT = 24;
+const MECMUA = 25;
+const MENTOR = 27;
+const FABRIKA = 44;
+const UNREAD = 99;
+
 /** The shape of the real `ROADMAP.md`, cut to the two tables this module reads. */
 const ROADMAP = `# Roadmap
 
@@ -8,9 +16,9 @@ const ROADMAP = `# Roadmap
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Four Pillars | #17 | done |
-| Geçit | #24 | active |
-| Mecmua v2 | #25 | queued |
+| Four Pillars | #${PILLARS} | done |
+| Geçit | #${GECIT} | active |
+| Mecmua v2 | #${MECMUA} | queued |
 
 ## Campaigns
 
@@ -18,12 +26,12 @@ Campaigns are bounded, milestone-backed pushes.
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| Mentor Audit | #27 | active |
-| fabrika campaign | #44 | active |
+| Mentor Audit | #${MENTOR} | active |
+| fabrika campaign | #${FABRIKA} | active |
 
 ## Something else
 
-| Not a table we read | #99 | ignored |
+| Not a table we read | #${UNREAD} | ignored |
 `;
 
 describe("parseRoadmap", () => {
@@ -75,7 +83,7 @@ describe("parseRoadmap", () => {
 | Arc | Milestone | State |
 |-----|-----------|-------|
 | Unpinned | TBD | queued |
-| Almost | see #24 | queued |
+| Almost | see #${GECIT} | queued |
 `);
 		expect(rows.arcs).toEqual([]);
 	});
@@ -89,7 +97,7 @@ describe("roadmapRowFor", () => {
 	const rows = parseRoadmap(ROADMAP);
 
 	it("joins on the `#<number>` cell, NOT the title — the two share no substring", () => {
-		// `Geçit` pins milestone #24, whose GitHub title is `Sözlük — search and discovery`.
+		// `Geçit` pins a milestone whose own title shares no substring with the arc's name.
 		expect(roadmapRowFor(rows, 24)).toBe("Geçit");
 	});
 

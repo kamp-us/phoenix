@@ -48,7 +48,7 @@ describe("runScope", () => {
 	it("renders a partial split as `part-of:<n>` — the marker resolves at this seam as it does at review's", async () => {
 		const out = await run([
 			[PULL, served(pull({body: "does things\n\nPart of #4000\n"}))],
-			[FILES, served(files("apps/web/worker/cart.ts", "README.md"))],
+			[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
 			[OWNERS, raw(CODEOWNERS)],
 		]);
 		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tpart-of:4000`);
@@ -132,7 +132,7 @@ describe("runScope", () => {
 	it("prints no governance line for a diff under no governance root", async () => {
 		const out = await run([
 			[PULL, served(pull())],
-			[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+			[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			[OWNERS, raw(CODEOWNERS)],
 		]);
 		expect(out.stdout).not.toContain("governance");
@@ -215,7 +215,7 @@ describe("runScope", () => {
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"ship scope: PR #4321 has zero changed files — nothing to ship (ADR 0092).",
+			"ship scope: PR #4321 has zero changed files — nothing to ship.",
 		);
 	});
 

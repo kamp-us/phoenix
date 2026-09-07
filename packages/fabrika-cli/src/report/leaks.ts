@@ -92,10 +92,9 @@ export const scanBody = (body: string): Scan => {
 /**
  * Whether the body's first non-whitespace run is an `@`-prefixed path.
  *
- * That is the composed body having never arrived at all — #3086's exact byte pattern, where a
- * posting flag that does not expand `@` shipped the literal path into a public artifact and left
- * the description empty. It refuses on its own code because the fix is to send the body, not to
- * mask a placeholder.
+ * That is the composed body having never arrived at all: a posting flag that does not expand `@`
+ * ships the literal path into a public artifact and leaves the description empty. It refuses on its
+ * own code because the fix is to send the body, not to mask a placeholder.
  */
 export const isBareAtReference = (body: string): boolean => {
 	const first = body.trim().split(/\s/)[0] ?? "";
@@ -109,9 +108,10 @@ export const renderLeaks = (leaks: ReadonlyArray<Leak>): ReadonlyArray<string> =
 /**
  * What `report file` and `report note` print for a redacted body: one count per {@link LeakClass}.
  *
- * `redactions` is an evidence-array under ADR 0308 — no skill reads a row, and both verbs already
- * emit a `line <n>, <class>` note per hit on the notes channel, so the rows on the answer channel
- * were a second copy of a diagnostic. The class is the whole vocabulary a reader acts on.
+ * `redactions` is an evidence-array collapsed to a per-class tally — no skill reads a row, and both
+ * verbs already emit a `line <n>, <class>` note per hit on the notes channel, so the rows on the
+ * answer channel were a second copy of a diagnostic. The class is the whole vocabulary a reader acts
+ * on.
  */
 export const redactionTally = (leaks: ReadonlyArray<Leak>): ReasonHistogram =>
 	reasonHistogram(leaks, (leak) => leak.class);

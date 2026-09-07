@@ -3,12 +3,12 @@
  *
  * **The text arrives on stdin only** — no `--body`, no `--body-file`. A path flag is how a
  * machine-local path reaches a public surface while the poster reads success, and the bare-`@`
- * refusal is that byte pattern caught after the fact (#3086).
+ * refusal is that byte pattern caught after the fact.
  *
- * The leak predicate is `../report/leaks.ts`, imported. Two known issues on that seam are inherited
+ * The leak predicate is `../report/leaks.ts`, imported. Two known limits of that seam are inherited
  * rather than resolved here, and the refusals name both: a body that proves path-cleanliness *by
- * example* trips the generic detector (#4994 — generic by design, #2393), and no verb can rewrite a
- * foreign comment (#4995). Both route to a human.
+ * example* trips the detector, which is generic by design, and no verb can rewrite a foreign
+ * comment. Both route to a human.
  */
 import type {Effect} from "effect";
 import type {StdinRead} from "../io/stdin.ts";

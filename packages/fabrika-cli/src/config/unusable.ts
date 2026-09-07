@@ -5,11 +5,10 @@
  * key's `refuseLoad` raises over a config it *could* read; a file nobody could open, a file that is
  * not a JSON object, and a key whose value the decoder rejected — that last one only where the key
  * carries no `refuseLoad`, since a key that does have one refuses the load on its own `Malformed`
- * too (#6314) — all answer `Config`, because the arms live per key in {@link Resolution} rather
- * than on the load. Reading `_tag === "Config"` as
- * "it loaded" is what let `triage apply` reach the label write with the containment check never run
- * (#6292): a gate keyed on the refusal alone is fail-open on exactly the input class this surface
- * exists to keep apart.
+ * too — all answer `Config`, because the arms live per key in {@link Resolution} rather than on the
+ * load. Reading `_tag === "Config"` as "it loaded" is what let `triage apply` reach the label write
+ * with the containment check never run: a gate keyed on the refusal alone is fail-open on exactly
+ * the input class this surface exists to keep apart.
  *
  * The two document-level arms are worded here rather than relayed from the state, because at that
  * level every key carries the same reason and a per-key attribution would be false — the file is

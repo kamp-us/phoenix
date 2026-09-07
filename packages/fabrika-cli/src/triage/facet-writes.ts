@@ -8,7 +8,7 @@
  *
  * The adds go through `POST .../labels`, which **creates an unknown label rather than rejecting it**
  * — so the caller's vocabulary precondition is not optional politeness, it is the only thing between
- * a typo and a repo-wide grey label (#4285).
+ * a typo and a repo-wide grey label.
  */
 import {Effect} from "effect";
 import type {Attempt, Shell} from "../io/git.ts";

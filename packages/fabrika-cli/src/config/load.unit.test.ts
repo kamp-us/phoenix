@@ -54,12 +54,12 @@ describe("declared values", () => {
 
 	it("reads users and teams, both `@`-prefixed as GitHub writes them", () => {
 		expect(
-			declared('{"capClearAuthors": ["@usirin", "@kamp-us/control-plane"]}', capClearAuthorsKey),
+			declared('{"capClearAuthors": ["@ada", "@acme/control-plane"]}', capClearAuthorsKey),
 		).toEqual({
 			_tag: "Declared",
 			value: [
-				{_tag: "User", login: "usirin"},
-				{_tag: "Team", org: "kamp-us", team: "control-plane"},
+				{_tag: "User", login: "ada"},
+				{_tag: "Team", org: "acme", team: "control-plane"},
 			],
 		});
 	});
@@ -89,20 +89,21 @@ describe("declared values", () => {
 		});
 	});
 
-	it("reads governed roots, and the default is phoenix's roots plus the config file", () => {
+	it("reads governed roots, and the shipped default covers the config file", () => {
 		expect(SHIPPED_GOVERNED_ROOTS).toContain(CONFIG_PATH);
-		expect(
-			declared(`{"governedRoots": [".decisions/", "${CONFIG_PATH}"]}`, governedRootsKey),
-		).toEqual({_tag: "Declared", value: [".decisions/", CONFIG_PATH]});
+		expect(declared(`{"governedRoots": ["docs/", "${CONFIG_PATH}"]}`, governedRootsKey)).toEqual({
+			_tag: "Declared",
+			value: ["docs/", CONFIG_PATH],
+		});
 	});
 });
 
 /** A malformed value refuses that key's whole value, naming what it rejected. */
 describe("malformed values", () => {
 	it.each([
-		{shape: "a key that is not an array", text: '{"capClearAuthors": "@usirin"}'},
+		{shape: "a key that is not an array", text: '{"capClearAuthors": "@ada"}'},
 		{shape: "a non-string entry", text: '{"capClearAuthors": [1]}'},
-		{shape: "an entry with no `@`", text: '{"capClearAuthors": ["usirin"]}'},
+		{shape: "an entry with no `@`", text: '{"capClearAuthors": ["ada"]}'},
 		{shape: "an entry naming a nested path", text: '{"capClearAuthors": ["@a/b/c"]}'},
 	])("capClearAuthors refuses the whole set on $shape", ({text}) => {
 		const resolved = resolve(fromText(text), capClearAuthorsKey);
@@ -142,7 +143,7 @@ describe("malformed values", () => {
 
 describe("a config cannot un-govern itself", () => {
 	it("refuses the whole load, naming the key, when the roots do not cover the config file", () => {
-		const load = fromText('{"governedRoots": [".decisions/"]}');
+		const load = fromText('{"governedRoots": ["docs/"]}');
 		expect(load._tag).toBe("Refused");
 		if (load._tag !== "Refused") return;
 		expect(load.reason).toContain("governedRoots");
@@ -150,7 +151,7 @@ describe("a config cannot un-govern itself", () => {
 	});
 
 	it("refuses every key off that load, so no value is read out of a refused config", () => {
-		const load = fromText('{"governedRoots": [".decisions/"], "capClearAuthors": ["@a"]}');
+		const load = fromText('{"governedRoots": ["docs/"], "capClearAuthors": ["@a"]}');
 		expect(resolve(load, capClearAuthorsKey)._tag).toBe("Malformed");
 	});
 

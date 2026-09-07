@@ -11,7 +11,7 @@
  * mints one and races under its nonce; a run that passes the token it was handed re-enters the lane
  * it already owns. That is what makes re-entry idempotent *and* keeps two triagers of one session
  * apart — the session id alone told each sibling of a fan-out that it held its sibling's marker, and
- * both wrote the issue (#6132).
+ * both wrote the issue.
  *
  * Everything a marker set could fail to say is a refusal instead. An unreadable comment list, a
  * shape that is not a list of comments, a marker whose ordering key will not parse — none of them
@@ -126,7 +126,7 @@ export const runClaim = (
 		// Re-entering one lane is idempotent: a second marker under the same nonce is strictly later
 		// than the first, so it can win nothing the first did not and only adds litter to clean up. It
 		// is the LANE that re-enters, not the session — a sibling lane of the same session holds a
-		// marker under another nonce, and posting its own is exactly what the race needs (#6132).
+		// marker under another nonce, and posting its own is exactly what the race needs.
 		const alreadyHeld = myMarker(
 			resolveClaim({
 				markers: markersOf(before.value),

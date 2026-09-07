@@ -2,21 +2,21 @@
  * `codeValidators` — the repo's own commands that compile and lint its code.
  *
  * Declared rather than compiled in, because the script names and their cache-bypass flags are the
- * repo's own: `lint:worktree` is a phoenix script name, and `--force` is turbo's flag, which a bare
- * `tsc` rejects outright (#6015). An argv array rather than a command line, and the `command` key
+ * repo's own: `lint:worktree` is one repo's script name, and `--force` is turbo's flag, which a bare
+ * `tsc` rejects outright. An argv array rather than a command line, and the `command` key
  * `workflowValidators` already uses, so the file has one grammar for "a command fabrika spawns".
  *
  * No `reads`. On the workflow surface that field is what makes a green checkable per file, because
  * a declared guard opens a fixed set it names; a code validator is handed no paths and compiles the
  * tree, so a per-file list here would be a claim nothing could hold it to.
  *
- * **The shipped default is empty, and phoenix declares its own pair like any other repo.** Emptiness
+ * **The shipped default is empty, and every repo declares its own pair.** Emptiness
  * costs nothing here that it costs a gate-scope key: an empty list has nothing runnable, so
  * `build check --surface code` refuses UNKNOWN on it — never green, and never `VALIDATION_RED`,
- * which stays reserved for a validator that ran and failed. Defaulting to phoenix's pair instead
- * left an adopting repo running script names it never defined: demlik declared nothing, got
+ * which stays reserved for a validator that ran and failed. Defaulting to any repo's pair instead
+ * leaves an adopting repo running script names it never defined: a repo that declared nothing got
  * `pnpm typecheck --force`, and `tsc` rejected the turbo flag outright — a red saying its code was
- * broken when the truth was that no validator was present (#6015).
+ * broken when the truth was that no validator was present.
  */
 
 import {isRecord} from "../../io/json.ts";

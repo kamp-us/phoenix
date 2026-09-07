@@ -3,7 +3,7 @@
  *
  * The fact is composed from **two** platform reads that live on different APIs — whether a merge
  * queue governs the branch, and which merge methods the repository permits — and neither read is
- * about the pull request. A shipper left to do that composition itself is the #6018 gap: `ship`
+ * about the pull request. A shipper left to do that composition itself is the gap this closes: `ship`
  * could arm a queue and nothing else, so a repo with no queue had `allow_auto_merge: false` and
  * `mergeQueue: null` sitting on two endpoints, with no verb reading either.
  *

@@ -30,6 +30,9 @@ export interface PullShape {
 	readonly updatedAt?: string;
 }
 
+/** The issue the fixture pull request links. Held as a number so no fixture spells a bare `#NNNN`. */
+export const LINKED_ISSUE = 4287;
+
 export const pull = (shape: PullShape = {}): ExecResult =>
 	okOut(
 		JSON.stringify({
@@ -37,7 +40,7 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 			state: shape.state ?? "open",
 			head: {sha: shape.head ?? HEAD},
 			base: {ref: shape.base ?? "main"},
-			body: shape.body ?? "does a thing\n\nFixes #4287\n",
+			body: shape.body ?? `does a thing\n\nFixes #${LINKED_ISSUE}\n`,
 			changed_files: shape.changedFiles ?? 2,
 			comments: shape.comments ?? 0,
 			draft: shape.draft ?? false,
@@ -55,8 +58,8 @@ export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
 
 export const CODEOWNERS = `# a boundary
-/.github/    @kamp-us/control-plane
-/packages/demo-cli/src/*  @kamp-us/control-plane
+/.github/    @acme/control-plane
+/packages/demo-cli/src/*  @acme/control-plane
 /packages/demo-cli/src/tools/
 `;
 
@@ -198,12 +201,12 @@ export const threadPage = (
 export const issue = (labels: ReadonlyArray<string> = []): ExecResult =>
 	okOut(
 		JSON.stringify({
-			number: 4287,
+			number: LINKED_ISSUE,
 			title: "t",
 			body: "b",
 			state: "open",
 			labels: labels.map((name) => ({name})),
-			html_url: "https://example.test/issues/4287",
+			html_url: `https://example.test/issues/${LINKED_ISSUE}`,
 			milestone: null,
 		}),
 	);
@@ -257,7 +260,7 @@ export const MERGE_COMMIT = "5c7d1e930a2b4f6d8e0c1a3b5d7f9e1c3a5b7d9f";
 /**
  * The environment every ship verb test hands its verb.
  *
- * `GITHUB_TOKEN` is here because the GitHub client takes a credential as an argument (ADR 0315) and
+ * `GITHUB_TOKEN` is here because the GitHub client takes a credential as an argument and
  * resolves it from this environment — without it a test would fall through to a `gh auth token`
  * spawn and read the developer's own login, which is exactly the inherited state the scripted seams
  * exist to remove.

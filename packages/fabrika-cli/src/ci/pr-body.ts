@@ -2,9 +2,9 @@
  * `ci pr-body` pure core — take a standing Release PR body and give back one
  * release-please can still parse.
  *
- * #5946: release-please copies each commit subject verbatim into the Release PR body's changelog,
- * then on the NEXT run reads that body back through an HTML parser
- * (`PullRequestBody.parse` → `extractMultipleReleases`). Commit `d8d23de1`'s subject carried a
+ * The failure it repairs: release-please copies each commit subject verbatim into the Release PR
+ * body's changelog, then on the NEXT run reads that body back through an HTML parser
+ * (`PullRequestBody.parse` → `extractMultipleReleases`). One observed commit's subject carried a
  * literal `<details>`, so the parser saw a second `<details>` element with no `<summary>` inside it
  * and `summary.match(...)` threw on `undefined` — every run since has died there, and the frozen
  * Release PR cannot groom. Escaping that one body by hand does not hold: the next green run rebuilds

@@ -13,7 +13,7 @@
  * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>`); its reads, writes and
  * read-back are `./blocked-by.ts`. **That column reports this run, not the graph**: the dependency
  * endpoint is read only when the flag is present, so a flagless run prints it empty whatever the
- * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close (#6728).
+ * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -70,7 +70,7 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
  *
  * Read through the same wire module every downstream grader reads — `build issue` and
  * `review criteria` refuse exactly what it refuses, so stamping over a body it will not answer
- * `Found` on only defers the refusal to a lane that cannot repair it (#6025).
+ * `Found` on only defers the refusal to a lane that cannot repair it.
  *
  * **`--type epic` is exempt**, and that is the load-bearing carve-out: an epic's criteria arrive per
  * child from the plan ledger rather than in its own body, so a blanket refusal would make a triaged
@@ -142,12 +142,12 @@ export const runApply = (
 			);
 		}
 		// The lanes are an open set once they are configuration, so the compile-time narrowing is
-		// gone and this decode against the resolved list is the whole refusal (#6294).
+		// gone and this decode against the resolved list is the whole refusal.
 		let lane: string | null = null;
 		if (options.lane !== null) {
 			// A repo that declares `standingLanes: []` runs none, so the enumerating message below
 			// would read `--lane must be  — got "x"` and send the caller looking for a value to
-			// type. There is none: the answer is a milestone (#6440).
+			// type. There is none: the answer is a milestone.
 			if (standingLanes.length === 0) {
 				return refuse(
 					OFF_VOCABULARY,
@@ -214,7 +214,7 @@ export const runApply = (
 		if (missing !== undefined) {
 			return refuse(
 				ZERO_SCOPE,
-				`triage apply: label ${missing} does not exist in ${repo} — refusing to write, because the API would create it (#4285).`,
+				`triage apply: label ${missing} does not exist in ${repo} — refusing to write, because the API would create it.`,
 				diagnostics,
 			);
 		}

@@ -1,6 +1,6 @@
 /**
- * `ci evidence`, ported from v1's `crabbox-manifest` (#6099) — the commit-stamp binding
- * ADR 0054 §1 rests on, and the refusals that keep a half-formed manifest off disk.
+ * `ci evidence` — the commit-stamp binding the evidence gate rests on, and the refusals
+ * that keep a half-formed manifest off disk.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";

@@ -157,14 +157,14 @@ or the search index could not be read.
 | `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
-| `13` | refused: close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
+| `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
 | `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — |
-| `21` | refused: a `--blocked-by` target is a **pull request** — ADR 0301 names a blocking PR by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
+| `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -308,7 +308,7 @@ so a PR could appear as a triageable row.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
-| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope (ADR 0092).` | 7 | refusal |
+| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope.` | 7 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `--label`, read with pagination. **`empty` and a
@@ -340,7 +340,7 @@ $ echo $?
 
 ```
 $ fabrika triage queue --label status:needs-triage-typo
-triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope (ADR 0092).
+triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope.
 $ echo $?
 7
 ```
@@ -723,7 +723,7 @@ later reader does not "fix" it back into agreement.
 | `triage provenance: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage provenance: cannot read #<n> in <repo>: <reason> — the provenance is UNKNOWN; refusing to default it.` | 11 | refusal |
 | `triage provenance: #<n> has an empty body — answering human (fail-closed).` | 0 | notice |
-| `triage provenance: #<n> in <repo> — the author is a configured operator account, so the filing is agent-reported whether or not the footer is present (#4619 ruling).` | 0 | notice |
+| `triage provenance: #<n> in <repo> — the author is a configured operator account, so the filing is agent-reported whether or not the footer is present.` | 0 | notice |
 
 **Scope** — one issue's body and its author login, read as typed JSON rather than through
 `jq -r .body`, which errors on the unescaped control characters GitHub issue bodies carry and yields
@@ -926,7 +926,7 @@ withhold the home list a triager needs.
 | `triage homes: .fabrika.jsonc is refused — <reason>, so which standing lanes this repo runs is unread; the homes list is UNKNOWN, never short.` | 11 | refusal |
 | `triage homes: cannot probe the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: cannot read the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
-| `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).` | 7 | refusal |
+| `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill.` | 7 | refusal |
 | `triage homes: the roadmap at <path> parsed to 0 arc rows — the table grammar changed or the file is truncated; refusing to answer over an unjoinable roadmap.` | 7 | refusal |
 
 **Both "cannot read" cases are `11`, not `1`.** They were `1` in an earlier revision, which fused an
@@ -1110,7 +1110,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
-| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing (ADR 0092).` | 7 | refusal |
+| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing.` | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage split: cannot read <what> in <repo>: <reason> — UNKNOWN whether a child already exists; refusing to create a possible twin.` | 11 | refusal |
@@ -1613,9 +1613,9 @@ $ fabrika triage enrich 7 --json < enriched.md
 $ fabrika triage enrich 5 < enriched.md
 triage enrich: the rewrite states an ordering on #4 that #5's live blocked_by graph carries no
 edge for (line 7: "**Blocked. Do not start until #4 has merged** — it adds the invalidate arm.").
-ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence.
-There is no override: either wire the edge — `fabrika triage apply 5 --blocked-by 4` — and
-re-send, or reword the body so it states no ordering it does not own. Nothing was written.
+The graph is the one carrier, so a builder reads the edges and never this sentence. There is no
+override: either wire the edge — `fabrika triage apply 5 --blocked-by 4` — and re-send, or reword
+the body so it states no ordering it does not own. Nothing was written.
 $ echo $?
 20
 ```
@@ -1842,7 +1842,7 @@ stamp.
 | `triage apply: --lane must be wayfinder:backlog or axis:pipeline-hardening — got "<v>".` | 10 | refusal |
 | `triage apply: milestone <n> is not an open milestone in <repo>.` | 10 | refusal |
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
-| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
+| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
 | `triage apply: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage apply: issue #<n> is already closed.` | 7 | refusal |
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -1892,8 +1892,8 @@ triaged	5	bug	p1	agent	47	#4
 
 ```
 $ fabrika triage apply 3 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 2
-triage apply: --blocked-by 2 names a pull request, not an issue — ADR 0301: a blocking pull
-request is named in the graph by the issue its merge closes, so pass that issue's number instead.
+triage apply: --blocked-by 2 names a pull request, not an issue — a blocking pull request is
+named in the graph by the issue its merge closes, so pass that issue's number instead.
 No edge was written.
 $ echo $?
 21
@@ -2030,7 +2030,7 @@ it.
 | `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
+| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
 | `triage park: the questions landed but the label swap failed: <reason> — #<n> carries the questions and may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
@@ -2163,8 +2163,8 @@ location, with the leak matcher literally named for comments.
 | `triage kill: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage kill: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |
-| `triage kill: #<n> is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
-| `triage kill: #<n> is human-filed and would be folded into #<m>, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
+| `triage kill: #<n> is agent-filed and close-eligible, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
+| `triage kill: #<n> is human-filed and would be folded into #<m>, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |
 | `triage kill: the reason comment on #<n> failed: <reason> — #<n> is NOT closed and carries no label, but the fold on #<m> DID land; delete that comment before re-running, or the fold posts twice.` | 8 | refusal |
 | `triage kill: the label step on #<n> failed after <k> of <m> change(s): <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply closed-by-triage by hand and strip any triage status label, or delete the landed comments and re-run.` | 8 | refusal |
@@ -2231,7 +2231,7 @@ $ echo $?
 
 ```
 $ fabrika triage kill 7 < reason.md
-triage kill: #7 is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.
+triage kill: #7 is agent-filed and close-eligible, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.
 $ echo $?
 13
 ```

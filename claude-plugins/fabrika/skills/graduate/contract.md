@@ -807,11 +807,11 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: the spec carries a machine-local path: <path> — refusing to file it.` | 5 | refusal |
 | `graduate emit: the spec is a bare @ path reference — not redactable, refusing to file it.` | 6 | refusal |
 | `graduate emit: #<n> does not exist.` | 7 | refusal |
-| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap (#4952).` | 7 | refusal |
+| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap.` | 7 | refusal |
 | `graduate emit: the create failed, so whether a spec issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> and the marker write failed — the spec EXISTS but #<source> does not record it, so a re-run would file a second. Post the marker or check #<source> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> but the read-back does not match what was sent.` | 9 | refusal |
-| `graduate emit: --title classifies the work ("<term>") — type and priority are triage's (ADR 0246).` | 10 | refusal |
+| `graduate emit: --title classifies the work ("<term>") — type and priority are triage's, not this group's.` | 10 | refusal |
 | `graduate emit: cannot read #<n>: <reason> — whether this trail was already graduated is UNKNOWN. Nothing was filed.` | 11 | refusal |
 | `graduate emit: #<n> carries neither grilling:session nor wayfinding:map — there is no trail to bind this spec to.` | 12 | refusal |
 | `graduate emit: #<n>'s trail reports readiness "blocked" — <n> decision(s) unresolved: <refs>. Nothing was filed.` | 13 | refusal |

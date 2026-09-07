@@ -267,7 +267,7 @@ describe("runKill", () => {
 		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
-	// --- the fold exception to the provenance guard (#6070) ------------------------------------
+	// --- the fold exception to the provenance guard -------------------------------------------
 
 	const humanFiled = (over: Record<string, unknown> = {}): HttpReply =>
 		issue({body: "I typed this myself.", ...over});
@@ -330,7 +330,7 @@ describe("runKill", () => {
 			{duplicateOf: 4290, confirm: false},
 		);
 		expect(out.code).toBe(UNCONFIRMED);
-		expect(out.stderr.at(-1)).toContain("ADR 0159");
+		expect(out.stderr.at(-1)).toContain("the confirmation is the guard");
 		expect(requests.some((c) => CLOSE.test(c) || FOLD_COMMENT.test(c))).toBe(false);
 	});
 
@@ -367,7 +367,7 @@ describe("runKill", () => {
 	it("refuses an agent-filed issue without --confirm on 13, and writes nothing", async () => {
 		const {out, requests} = await runWith(happy(), {confirm: false});
 		expect(out.code).toBe(UNCONFIRMED);
-		expect(out.stderr.at(-1)).toContain("ADR 0159");
+		expect(out.stderr.at(-1)).toContain("the confirmation is the guard");
 		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
@@ -681,7 +681,7 @@ describe("runKill", () => {
 		expect(out.stderr.at(-1)).toContain("the close is unverified");
 	});
 
-	// --- the triage-status strip (#6710) -------------------------------------------------------
+	// --- the triage-status strip ---------------------------------------------------------------
 
 	/** Any label delete on the target, for scripting; the assertions read the exact line back. */
 	const REMOVE_ANY = /DELETE .*\/repos\/o\/r\/issues\/4312\/labels\//;
@@ -777,7 +777,7 @@ describe("runKill", () => {
 	});
 });
 
-/** #5644: kill already refused a closed target; the claim half is what it was missing. */
+/** Kill already refused a closed target; the claim half is what it was missing. */
 describe("runKill — the target guard", () => {
 	const MINE = "session-mine";
 	const THEIRS = "session-theirs";
