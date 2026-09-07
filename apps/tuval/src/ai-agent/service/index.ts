@@ -16,6 +16,8 @@ export type {
 	UsageEvent,
 } from "../events.ts";
 export {
+	InterruptError,
+	type InterruptReason,
 	ListError,
 	type ListReason,
 	ModelUnsupported,

@@ -16,6 +16,8 @@ import type {Phase} from "../../ai-agent/events.ts";
  * code into the browser bundle. `boundary.unit.test.ts` reds if this stops naming a declared tag.
  */
 const START_ERROR = "tuval/ai-agent/StartError";
+/** `InterruptError`'s tag, on the same terms — the refused abort of ADR 0356. */
+const INTERRUPT_ERROR = "tuval/ai-agent/InterruptError";
 
 export const phaseLines: Readonly<Record<Phase, string>> = {
 	idle: "Not started.",
@@ -51,10 +53,10 @@ export const interruptionGraceMillis = 5_000;
 /**
  * What an outstanding interruption reads as, before and after the grace runs out.
  *
- * The second line is deliberately not a claim that the turn is still running: the generic contract
- * cannot tell a refused abort from one still in flight — `TuvalAiAgent.interrupt` declares no error
- * channel, and both layers log the refusal rather than putting it on the stream — so "not
- * confirmed" is the whole of what is known, and saying more would be inventing it.
+ * The second line is deliberately not a claim that the turn is still running: nothing has answered
+ * the abort either way, so "not confirmed" is the whole of what is known and saying more would be
+ * inventing it. A backend that *did* answer — by refusing — reads the refusal instead
+ * (`interruptRefusedLine`), which is the case this line no longer has to cover (ADR 0356).
  */
 const interruptionLine = (interruption: Interruption, now: number): string =>
 	now - interruption.requestedAt < interruptionGraceMillis
@@ -69,18 +71,26 @@ export interface Status {
 	readonly now: number;
 }
 
+/** The backend answered the abort, and the answer was no. Read only while the turn is still on. */
+const interruptRefusedLine = (failure: AgentFailure): string =>
+	`Interrupting — the agent refused to stop — ${failure.detail}`;
+
 /**
  * The phase line, or what went wrong when the phase alone would misreport it.
  *
  * An outstanding interruption outranks the plain phase line: the session really is still on the
  * turn, but "Working — Escape interrupts." is the wrong sentence to show someone who already
- * pressed Escape (#8007).
+ * pressed Escape (#8007). A refused abort outranks that in turn — a backend that said no is not the
+ * same fact as one that has not answered, which is the readout ADR 0356 buys.
  *
  * Only a `StartError` earns the failure line, and only where the session came to rest: any other
  * refusal is about one act (a prompt, a mode, an answer) rather than about the session, and the
  * phase is still the true thing to say.
  */
 export const statusLine = (status: Status): string => {
+	if (status.phase === "prompting" && status.failure?.tag === INTERRUPT_ERROR) {
+		return interruptRefusedLine(status.failure);
+	}
 	if (status.interruption !== null && status.phase === "prompting") {
 		return interruptionLine(status.interruption, status.now);
 	}
