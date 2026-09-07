@@ -9,8 +9,8 @@
  *
  * Two windows over one `testProcess` — the same double the unit tier renders against — because the
  * per-window facts (an expanded row, a page cursor) are only visible with a second window beside
- * the first. There is no runtime agent import here, so nothing about the backend is exercised or
- * claimed: what this page proves is paint and keyboard, and nothing else.
+ * the first. The default page proves paint and keyboard only. `/paging-*` adds a labelled
+ * ClaudeAiAgent replay behind scripted SDK/store and WindowHost seams; see the app README.
  */
 
 import {Effect} from "effect";
@@ -30,6 +30,7 @@ import {
 	withTranscript,
 } from "../chat.testing.ts";
 import {type ChatView, initialChatView} from "../view.ts";
+import {mountPagingProof} from "./paging.tsx";
 import "../../ui/tokens.css";
 import "./proof.css";
 
@@ -66,6 +67,9 @@ const view: ChatView = initialChatView;
 const mount = Effect.gen(function* () {
 	const host = document.getElementById("proof");
 	if (host === null) return yield* Effect.die(new Error("the proof page has no #proof element"));
+	if (location.pathname.startsWith("/paging-")) {
+		return yield* mountPagingProof(host);
+	}
 	const process = yield* testProcess<AiAgentSessionState, AiAgentSessionMsg>(
 		ProcessId.make("proof"),
 		state,
@@ -111,4 +115,8 @@ const mount = Effect.gen(function* () {
 	);
 });
 
-Effect.runFork(mount);
+void Effect.runPromise(mount).catch((cause: unknown) => {
+	setTimeout(() => {
+		throw new Error(String(cause));
+	});
+});
