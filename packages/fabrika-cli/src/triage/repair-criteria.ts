@@ -5,14 +5,14 @@
  * (`### Acceptance criteria`, level and spelling both part of it) over checkbox items. The board
  * carries hundreds of already-filed bodies that miss it — every one answers `Malformed`, and the
  * review gate may neither hand-parse the block nor invent criteria, so the PR stalls with no verdict
- * at all (#5744; #5565 is the producer-side fix and stops only *new* drift). This module plans the
- * repairs that are pure shape, so safe to automate:
+ * at all — and the producer-side fix stops only *new* drift. This module plans the repairs that
+ * are pure shape, so safe to automate:
  *
  * 1. a heading whose text is already exactly the conforming text and whose only defect is the
  *    level, rewritten to `###`;
  * 2. items written as an ordinary list under a block that carries no checkbox at all — plain
  *    bullets (`- `) or ordered items (`1. `), one family per block — each rewritten to an unchecked
- *    checkbox with its text byte-for-byte unchanged (#6001, #5981).
+ *    checkbox with its text byte-for-byte unchanged.
  *
  * Anything else is refused, never guessed — repairing drifted *text* is indistinguishable from
  * inventing a contract, and so is deciding that a prose paragraph beside the list was meant as a
@@ -24,8 +24,8 @@
  * The plan acts on the **authored region only**. The `<!-- fabrika:enriched … -->` marker (or the
  * legacy v1 envelope) is the boundary `triage enrich`'s own guards rely on, and a `##` heading down
  * inside the preserved original is a historical record — rewriting it would falsify the verbatim
- * block. Classification reads the **whole body**, because that is what the reader grades; since
- * #5852 the reader skips a `<details>` appendix, so a body whose only drift is buried there is
+ * block. Classification reads the **whole body**, because that is what the reader grades; the
+ * reader skips a `<details>` appendix, so a body whose only drift is buried there is
  * `Absent` — nothing to repair, and nothing left un-gateable either.
  */
 
@@ -145,7 +145,7 @@ const listItem = (line: string, family: ListFamily): RegExpExecArray | null =>
 /**
  * A line that opens a block of its own beside `family`'s items — a foreign block, or the *other*
  * family's marker. The reader closes the open criterion at each, so converting around one would
- * ship a list whose middle holds text no grader reads (#6001, review round 1).
+ * ship a list whose middle holds text no grader reads.
  */
 const foreignToFamily = (line: string, family: ListFamily): boolean =>
 	FOREIGN_BLOCK.test(line) ||
@@ -187,7 +187,7 @@ const familyOf = (section: ReadonlyArray<string>): ListFamily | null | "mixed" =
  * list whose middle holds text no grader ever reads. **A line that opens a block of its own is not
  * a continuation** even standing directly under an item with no blank line between them — gating
  * that refusal on the open item made it reachable only after a blank line, so `1. ordered` under
- * `- one` converted and shipped exactly the list this rule exists to refuse (#6001, review round 1).
+ * `- one` converted and shipped exactly the list this rule exists to refuse.
  * That case is now a `mixed` refusal one step earlier, and the guard stays because the two families
  * can still meet inside the window without either being the section's own.
  *
@@ -353,7 +353,7 @@ export const planRepair = (
 	// The read-back answering `Found` proves the block reads; it does not prove it reads back what
 	// the conversion rewrote. A marker this module accepts and the reader does not — `+` today, any
 	// future divergence tomorrow — converts, reads `Found` off the surviving items, and PATCHes a
-	// contract one criterion shorter than the author wrote (#6001, review round 1). Proving one
+	// contract one criterion shorter than the author wrote. Proving one
 	// criterion per converted line, rather than pinning today's marker set, is what makes the whole
 	// class unrepresentable.
 	const counted = back.value.map((span) => span.firstLine + 1);
@@ -394,7 +394,7 @@ export const planRepair = (
  *
  * An in-place edit of a filed body leaves no trace — GitHub keeps no issue-body history — so the
  * only record that the bytes moved is a comment saying so. The founder blessed the in-place edit on
- * exactly that condition (#5981, ruling of 2026-08-18): one comment per edited issue, naming every
+ * exactly that condition on 2026-08-18: one comment per edited issue, naming every
  * repair by line and stating that no criterion's text moved. It is composed here rather than at the
  * verb so the wording is unit-tested beside the plan it describes.
  */

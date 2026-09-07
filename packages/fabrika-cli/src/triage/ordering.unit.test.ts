@@ -17,9 +17,9 @@ describe("statedOrderings — what counts as a statement", () => {
 	});
 
 	/**
-	 * The co-presence rule these replace matched every one of these, and #6728's own body carries two
-	 * of them. A red none of them can clear by wiring an edge is a red with only the reword escape,
-	 * on a body that is already correct.
+	 * The co-presence rule these replace matched every one of these, and the gate's own specifying
+	 * issue carries two of them. A red none of them can clear by wiring an edge is a red with only
+	 * the reword escape, on a body that is already correct.
 	 */
 	it.each([
 		["a keyword and a reference that do not bind", "Searched for blocked work. #6734 is a defect."],
@@ -72,9 +72,9 @@ describe("statedOrderings — what counts as a statement", () => {
 /**
  * The gate's own issue, whose authored region is the hardest available case: it is *about*
  * orderings, quotes the incident's sentence, and lists the slice set — while owning no prerequisite
- * itself (#6728 carries no `blocked_by` edge). Every line here is verbatim from that body.
+ * itself. Every line here is verbatim from that body.
  */
-describe("the self-check on #6728", () => {
+describe("the self-check on the issue that specified this gate", () => {
 	it("finds no stated ordering in the issue that specified this gate", () => {
 		const authored = [
 			"prose instead. That is how 6661 → 6662 → 6663 shipped as a sentence.",
@@ -94,10 +94,10 @@ describe("the self-check on #6728", () => {
 /**
  * A gate with no override must not red a body that owns no prerequisite: the "wire the edge" escape
  * cannot clear one, so the caller is left rewording a body that is already correct. These lines are
- * verbatim from the bodies the round-1 scan of #6728 found (150 most recently created issues).
+ * verbatim from the bodies the gate's first scan found across 150 issues.
  */
 describe("statedOrderings — a phrase in somebody else's voice", () => {
-	it("skips a third-person report of another issue's prerequisite (#7238, verbatim)", () => {
+	it("skips a third-person report of another issue's prerequisite, verbatim", () => {
 		const authored = [
 			"Not folded into #7223: its",
 			"criteria are scoped to `pick-verb.ts`'s gate and it is already blocked on #7035, so folding a",

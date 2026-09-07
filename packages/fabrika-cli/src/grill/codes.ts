@@ -59,8 +59,8 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * Proven: the **invoking token** resolves below `write` on the repository, so it may not record a
- * ruling (ADR 0055). Distinct from {@link PRECONDITION_UNKNOWN}, which is a permission read that
- * failed — authority is never granted by a lookup that did not complete.
+ * ruling. Distinct from {@link PRECONDITION_UNKNOWN}, which is a permission read that failed —
+ * authority is never granted by a lookup that did not complete.
  */
 export const TOKEN_UNAUTHORIZED = 12;
 /** Proven: the question id names no question in the session. */
@@ -72,7 +72,7 @@ export const QUESTION_UNKNOWN = 13;
  * questions, and a question block missing a required field still leaves nothing to digest.
  */
 export const DIGEST_UNBINDABLE = 14;
-/** Proven: `--authorization` is missing, empty, or carries no ISO-8601 date (#4938). */
+/** Proven: `--authorization` is missing, empty, or carries no ISO-8601 date. */
 export const AUTHORIZATION_ABSENT = 15;
 /** Proven: more than one open session matches the topic — which one is live is undecidable. */
 export const SESSION_AMBIGUOUS = 16;

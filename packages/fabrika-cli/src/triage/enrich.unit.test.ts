@@ -35,7 +35,7 @@ const enrichedEpic = (issue = ISSUE): string =>
 /**
  * The RETIRED `--epic` shape detector, reproduced here as the control.
  *
- * It is what `contract.md` specified before the #4866 ruling, and reproducing it is the only way a
+ * It is what `contract.md` specified before the marker landed, and reproducing it is the only way a
  * test can show the cross-mode failure is a property of shape inspection rather than of one buggy
  * line — under it the cross-mode re-run below returns `false` and the verb wraps a second time.
  */
@@ -72,7 +72,7 @@ describe("the composed envelope", () => {
 	});
 
 	/**
-	 * The verb's ADR-0288 read-back runs over `authoredRegion(...)` and posts `composeBody(...)`. If
+	 * The verb's read-back runs over `authoredRegion(...)` and posts `composeBody(...)`. If
 	 * those two ever stop being the same leading bytes, the verb is reading something it does not
 	 * post — which is the defect 0288 §1 exists to refuse — and no test of the verb would show it.
 	 */

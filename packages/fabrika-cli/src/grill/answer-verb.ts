@@ -12,7 +12,7 @@
  * exists to protect a *ruling* from drifting out from under the founder, and a fact has no founder
  * to protect.
  *
- * **Under-determined clause, surfaced rather than invented (#5023).** The contract's shared matrix
+ * **Under-determined clause, surfaced rather than invented.** The contract's shared matrix
  * marks `DIGEST_UNBINDABLE` unreachable for this verb, while the `grill-answer` marker requires a
  * 12-hex digest field — so a round whose questions parse but whose blocks are missing a field the
  * digest is taken over leaves this verb with a marker it cannot compose and no seat allocated. It is

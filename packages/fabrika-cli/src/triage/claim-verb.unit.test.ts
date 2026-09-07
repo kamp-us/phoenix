@@ -197,7 +197,7 @@ describe("runClaim — winning", () => {
 
 describe("runClaim — two lanes of one session", () => {
 	// The defect: both siblings share CLAUDE_CODE_SESSION_ID, so a session-only marker read each
-	// sibling's claim back as its own and both wrote the issue (#6132).
+	// sibling's claim back as its own and both wrote the issue.
 	const race = (): ReadonlyArray<Scripted> => [
 		[ISSUE, issue("open")],
 		[POST, posted(5001)],

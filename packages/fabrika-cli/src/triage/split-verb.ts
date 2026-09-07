@@ -9,7 +9,7 @@
  * it is the read-after-write-consistent source, and every child this verb makes carries that label by
  * construction, so the read can see its own output. Read 2 — the parent's timeline — is
  * supplementary: it reaches children already triaged out of the queue, and it lags by an observed
- * 30–60 minutes (#4057), which is why it widens the net and carries nothing.
+ * 30–60 minutes, which is why it widens the net and carries nothing.
  *
  * **A read that cannot see is never an answer.** Every unreadable precondition — the parent, the
  * label set, the queue, the timeline, or any candidate's body — exits `11`. Falling through an
@@ -190,7 +190,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	// Read 1's label is a hardcoded literal while --repo is generic, so a renamed label or a
 	// scope-limited token returns HTTP 200 with `[]` — not a read failure, and therefore not 11. The
 	// verb would fall through to `created` and mint a twin, which makes the one verb built to be
-	// fail-closed the ADR 0092 fail-open.
+	// fail-closed the zero-scope fail-open.
 	const labels = yield* listLabels(repo);
 	if (labels._tag === "Failure") {
 		return unreadable("the label set", repo, labels.reason, []);
@@ -198,7 +198,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	if (!labels.value.includes(QUEUE_LABEL)) {
 		return refuse(
 			ZERO_SCOPE,
-			`${VERB}: label ${QUEUE_LABEL} does not exist in ${repo} — refusing to create a child over a queue that would scan nothing (ADR 0092).`,
+			`${VERB}: label ${QUEUE_LABEL} does not exist in ${repo} — refusing to create a child over a queue that would scan nothing.`,
 		);
 	}
 

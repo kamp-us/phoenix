@@ -20,9 +20,9 @@ describe("tokenize", () => {
 		]);
 	});
 
-	it("splits over the full Unicode letter class, so a Turkish stem survives (#3255)", () => {
-		expect(tokenize("sözlük tanımı düzenleyici odağı kaybediyor")).toEqual([
-			"sözlük",
+	it("splits over the full Unicode letter class, so a Turkish stem survives", () => {
+		expect(tokenize("kütüphane tanımı düzenleyici odağı kaybediyor")).toEqual([
+			"kütüphane",
 			"tanımı",
 			"düzenleyici",
 			"odağı",
@@ -31,7 +31,7 @@ describe("tokenize", () => {
 	});
 
 	it("drops Turkish stopwords too — an English-only list leaves them looking distinctive", () => {
-		expect(tokenize("sözlük için bir tanım ve çok şey")).toEqual(["sözlük", "tanım"]);
+		expect(tokenize("kütüphane için bir tanım ve çok şey")).toEqual(["kütüphane", "tanım"]);
 	});
 
 	it("caps at 12 tokens, the width ranking scores against", () => {

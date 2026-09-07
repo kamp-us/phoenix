@@ -5,8 +5,9 @@
  * The overlap with `report` is **re-exported, never re-typed**: an aligning group imports the base's
  * constant, so a drift is unrepresentable rather than merely detectable. This group shares all nine
  * seats over `3`-`11` — it is one of the few that reaches every one of them, including `10`, which is
- * load-bearing here rather than a courtesy: ADR 0246 forbids this group writing board state, and `10`
- * is that prohibition made mechanical against a classifying `--title`.
+ * load-bearing here rather than a courtesy: this group may not write board state — typing and
+ * prioritizing are triage's — and `10` is that prohibition made mechanical against a classifying
+ * `--title`.
  *
  * `12`-`18` are the group's own and clear the base's occupied seats. They carry no cross-group
  * uniqueness obligation, so `review`'s `12` and this group's `12` are two namespaces rather than a
@@ -57,8 +58,8 @@ export const SOURCE_UNRECOGNIZED = 12;
  * Proven: the trail holds an unresolved decision.
  *
  * A refusal rather than a warning, and it lives in the verb rather than in skill prose so it holds
- * even when the skill's own step is skipped: a spec synthesized over a decision nobody made is the
- * #4110 failure this seat exists to refuse.
+ * even when the skill's own step is skipped: a spec synthesized over a decision nobody made is work
+ * proceeding past a choice nobody took, and that is the failure this seat exists to refuse.
  */
 export const TRAIL_BLOCKED = 13;
 /** Proven: a decision entry is missing a digested field, or `--trail` carries no 12-hex digest. */

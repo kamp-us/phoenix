@@ -668,7 +668,7 @@ and harms no one. The implementation owes a test for the order.
 | `grill rule: the invoking token resolves to <permission> on <repo>, below write — refusing to record a ruling.` | 12 | refusal |
 | `grill rule: <id> names no question on #<n>.` | 13 | refusal |
 | `grill rule: the round holding <id> could not be digested: <reason> — the binding is UNKNOWN. Nothing was posted.` | 14 | refusal |
-| `grill rule: --authorization <path> is empty — a ruling with no quoted authorization is void (#4938).` | 15 | refusal |
+| `grill rule: --authorization <path> is empty — a ruling with no quoted authorization is void.` | 15 | refusal |
 | `grill rule: --authorization <path> carries no ISO-8601 date — the authorization must be dated.` | 15 | refusal |
 | `grill rule: <id> is a fact question — establish it with grill answer; a fact is not the founder's to rule.` | 17 | refusal |
 | `grill rule: <id> was superseded by round <n> — a retired question cannot be ruled. Rule the question that replaced it.` | 18 | refusal |
@@ -701,7 +701,7 @@ $ fabrika grill rule 9412 R2.3 --authorization authorization.md
 
 ```
 $ fabrika grill rule 9412 R2.3 --authorization empty.md
-grill rule: --authorization empty.md is empty — a ruling with no quoted authorization is void (#4938).
+grill rule: --authorization empty.md is empty — a ruling with no quoted authorization is void.
 $ echo $?
 15
 ```
