@@ -17,6 +17,7 @@ moved.
 | File | What is in it |
 |---|---|
 | [`spell.ts`](../apps/tuval/src/commands/spell.ts) | `Spell`, `defineSpell`, `SpellPath`, `Scope`, `renderPath`, the `WindowId` / `WorkspaceId` / `ClientId` brands |
+| [`rest-parameter.ts`](../apps/tuval/src/commands/rest-parameter.ts) | `RestParameter`, the explicit final free-text parameter schema, and its wire annotation key |
 | [`registry.ts`](../apps/tuval/src/commands/registry.ts) | `buildRegistry`, `SpellRegistry`, `SpellRow`, `SpellNode`, `RegistryTable`, `lookupRow`, `describeSpell` |
 | [`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
 | [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
@@ -101,11 +102,12 @@ the core spell list and the program rows, and it produces a `RegistryTable`:
   registered at exactly its path.
 - `rows`, the flat list `list` and `describe` read.
 
-Registration is the one place a spell can be refused, and there are two refusals. Two spells
+Registration is the one place a spell can be refused. Two spells
 claiming one path fail with `DuplicateSpellPath`. A spell whose `params` has no JSON Schema form
 fails with `SpellNotDescribable`: `Schema.toJsonSchemaDocument` throws at the pin, and rendering
 happens here, at registration, so a spell nobody can describe never enters the table and describing
-a registered one cannot throw. Both name the path and the source (`describeSource` renders "the core
+a registered one cannot throw. Invalid rest declarations also fail as `SpellNotDescribable`, before
+bindings or snapshots can consume them. Both failures name the path and the source (`describeSource` renders "the core
 spell list" or `program "<id>"`).
 
 `SpellRegistry` is a `Context.Service` over one `Ref` holding the table:
@@ -309,6 +311,37 @@ literals, which is the check the kernel would make anyway, made here so a page r
 accept what the kernel rejects. It also refuses a token with no parameter left to bind to, with
 `no further arguments`.
 
+### A final parameter that consumes remaining words
+
+Declare `RestParameter` from
+[`rest-parameter.ts`](../apps/tuval/src/commands/rest-parameter.ts) as the final field of a spell's
+`Schema.Struct`; wrap it in `Schema.optionalKey` when omission is allowed. It is a string schema
+annotated with `x-command-rest: true`. No other trailing string becomes rest implicitly.
+
+The registry renders that annotation using Effect's `includeAnnotationKey` option, whitelisting
+only this vendor key in addition to Effect's standard metadata. This follows
+[`Schema.ToJsonSchemaOptions.includeAnnotationKey` at rc.112](https://github.com/Effect-TS/effect/blob/effect%404.0.0-rc.112/packages/effect/src/Schema.ts)
+(see also [LLMS.md, Defining schemas and domain models](https://github.com/Effect-TS/effect/blob/main/LLMS.md#defining-schemas-and-domain-models)).
+The protocol's open JSON Schema nodes preserve it across serialization, including optional fields.
+
+`readParams` carries it as `ParamSpec.rest`. A declared rest field must be last and describe a
+string without literal choices; an invalid declaration throws `InvalidRestParameter` when the
+index is built. Registration performs the same validation inside its existing failure channel.
+
+Once a positional token or `name=value` binding starts rest capture, every following token is
+content, including another `name=value`. Earlier required parameters must already have been
+supplied; addressing rest by name does not make them optional. Token values are joined with one
+space: quoted internal whitespace, escaped characters and dots retain their meaning. Separator
+whitespace between tokens is normalized, and trailing separators add no text. The caret remains in
+the rest slot after a separator; completion offers no candidates there, even when the parameter's
+name would normally select live values.
+
+`help` and `spell describe` opt their path into rest. They retain `segmentsOf` to resolve dotted
+and whitespace-separated paths to the same command; the generic parser does not normalize dots
+in arbitrary text. [`parse/rest.unit.test.ts`](../apps/tuval/src/commands/parse/rest.unit.test.ts)
+exercises declaration refusals, the wire round trip, completion, unchanged non-rest refusals and
+the three path spellings through the real discovery handlers.
+
 `parse(input, registry, snapshot)` ([`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts))
 answers one of three (the second parameter is named `registry` and its type is `SpellIndex`):
 
@@ -333,7 +366,8 @@ properties of that rendering are load-bearing, all read off `Schema.toJsonSchema
 arrives as `{"type": "string", "enum": [...]}`; and a `Schema.Class` params, or any
 identifier-annotated struct, renders its root as `{"$ref": "#/$defs/<name>"}` with the object itself
 under the document's `definitions`, so the root ref is followed once before the properties are read.
-Everything else is read defensively, because the module is total.
+Unannotated input is read defensively. Explicit invalid rest declarations throw
+`InvalidRestParameter`; registration catches that refusal before publishing the description.
 
 `describeExpected(param)` renders one slot: `<name>`, or the literals joined by `|`.
 

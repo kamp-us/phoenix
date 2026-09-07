@@ -10,6 +10,8 @@
 import {Context, Effect, type JsonSchema, Layer, Ref, Schema} from "effect";
 import type {AnyProgram, CapabilityRequest, ProgramId} from "../registry/program.ts";
 import {DuplicateSpellPath, SpellNotDescribable, SpellNotFound} from "./errors.ts";
+import {readParams} from "./parse/spell-index.ts";
+import {REST_PARAMETER_ANNOTATION} from "./rest-parameter.ts";
 import {type AnySpell, renderPath, type SpellPath} from "./spell.ts";
 
 /** Where a registered spell came from. A refusal names both sides through `describeSource`. */
@@ -83,7 +85,13 @@ const describeParams = (
 	row: Omit<SpellRow, "paramsDocument">,
 ): Effect.Effect<JsonSchema.Document<"draft-2020-12">, SpellNotDescribable> =>
 	Effect.try({
-		try: () => Schema.toJsonSchemaDocument(row.spell.params),
+		try: () => {
+			const document = Schema.toJsonSchemaDocument(row.spell.params, {
+				includeAnnotationKey: (key) => key === REST_PARAMETER_ANNOTATION,
+			});
+			readParams(document);
+			return document;
+		},
 		catch: (cause) =>
 			new SpellNotDescribable({
 				path: renderPath(row.path),

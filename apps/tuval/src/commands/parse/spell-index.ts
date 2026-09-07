@@ -17,19 +17,31 @@
  * `{"type": "string", "enum": [...]}`. A third followed from the same reading: a `Schema.Class` or
  * an identifier-annotated struct renders its root as `{"$ref": "#/$defs/<name>"}` with the object
  * itself under the document's `definitions`, so the root ref is followed once before the properties
- * are read. Everything else is read defensively — this module is total.
+ * are read. Invalid explicit rest declarations throw `InvalidRestParameter`; registration runs
+ * this validation before publishing descriptions. Unannotated input retains its defensive reads.
  */
 
-import {Predicate} from "effect";
+import {Predicate, Schema} from "effect";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
+import {REST_PARAMETER_ANNOTATION} from "../rest-parameter.ts";
 import type {SpellPath} from "../spell.ts";
 
 /** One parameter of a spell, as the parser binds it and the palette describes it. */
 export interface ParamSpec {
 	readonly name: string;
 	readonly required: boolean;
+	readonly rest?: true;
 	/** The literal choices when the parameter is an enum; a value outside them is refused. */
 	readonly literals?: ReadonlyArray<string>;
+}
+
+export class InvalidRestParameter extends Schema.TaggedError<InvalidRestParameter>()(
+	"tuval/commands/InvalidRestParameter",
+	{name: Schema.String, reason: Schema.String},
+) {
+	override get message(): string {
+		return `rest parameter "${this.name}" ${this.reason}`;
+	}
 }
 
 export interface IndexedSpell {
@@ -106,7 +118,26 @@ export const readParams = (params: unknown): ReadonlyArray<ParamSpec> => {
 			? declaredRequired.filter((name): name is string => typeof name === "string")
 			: [],
 	);
-	return Object.keys(properties).map((name) => {
+	const names = Object.keys(properties);
+	return names.map((name, index) => {
+		const property = followRef(asRecord(properties[name]), params);
+		const rest = property?.[REST_PARAMETER_ANNOTATION];
+		if (rest !== undefined && rest !== true) {
+			throw new InvalidRestParameter({name, reason: "must be declared with true"});
+		}
+		if (rest === true) {
+			if (index !== names.length - 1) {
+				throw new InvalidRestParameter({name, reason: "must be the last declared parameter"});
+			}
+			if (
+				property?.type !== "string" ||
+				property.enum !== undefined ||
+				property.const !== undefined
+			) {
+				throw new InvalidRestParameter({name, reason: "must be a free string"});
+			}
+			return {name, required: required.has(name), rest: true};
+		}
 		const literals = stringLiterals(properties[name]);
 		return literals === undefined
 			? {name, required: required.has(name)}
