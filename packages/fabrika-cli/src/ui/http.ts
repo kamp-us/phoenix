@@ -102,11 +102,11 @@ const verifyAttachment = async (
 	) {
 		return {_tag: "Failed", reason: "the upload returned no trusted GitHub attachment URL"};
 	}
-	let url = attachment;
+	let url: URL = attachment;
 	let authenticated = true;
 	for (let redirects = 0; redirects <= 20; redirects++) {
 		// Signed asset requests can be GET-only; never forward the GitHub token across origins.
-		const probe = await attempt(
+		const probe: Response | Error = await attempt(
 			fetch(url.href, {
 				method: "GET",
 				redirect: "manual",
@@ -117,9 +117,9 @@ const verifyAttachment = async (
 			return {_tag: "Failed", reason: "the hosted attachment GET failed"};
 		}
 		if ([301, 302, 303, 307, 308].includes(probe.status)) {
-			const location = probe.headers.get("location");
+			const location: string | null = probe.headers.get("location");
 			await attempt(probe.body?.cancel() ?? Promise.resolve());
-			const next = location === null ? null : URL.parse(location, url);
+			const next: URL | null = location === null ? null : URL.parse(location, url);
 			if (
 				next === null ||
 				next.protocol !== "https:" ||
