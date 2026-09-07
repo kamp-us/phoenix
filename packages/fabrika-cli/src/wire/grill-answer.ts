@@ -5,8 +5,8 @@
  *
  * These bytes are the **agent's own record and never a ruling**. The separation is carried in the
  * artifact rather than in a convention a later reader has to know, because a comment claiming a
- * founder decision is byte-indistinguishable from one carrying it when both share a format
- * (#4619). A reader that resolves `ruled` looks for `grill-ruled` and finds nothing here.
+ * founder decision is byte-indistinguishable from one carrying it when both share a format. A
+ * reader that resolves `ruled` looks for `grill-ruled` and finds nothing here.
  *
  * Its digest is **informational**: it records which text was answered, so a reader can see the
  * question moved, and it never changes the state. A re-worded `fact` therefore stays `answered` —

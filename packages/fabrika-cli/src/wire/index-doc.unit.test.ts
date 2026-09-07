@@ -4,7 +4,7 @@
  * The first drives the **committed doc** through the reconciliation, so the page reds the moment it
  * stops agreeing with the registry. The second drives deliberately drifted docs through the same
  * function and asserts each divergence is caught — a check that cannot fail reports agreement over a
- * page that has gone stale, which is the exact defect #4968 is about.
+ * page that has gone stale, which is the whole defect this reconciliation exists to catch.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -132,7 +132,7 @@ describe("the check bites — each drift is caught", () => {
 	});
 });
 
-describe("zero scope is a refusal, never agreement (ADR 0092)", () => {
+describe("zero scope is a refusal, never agreement", () => {
 	it.each([
 		["an empty doc", "", TOY_REGISTRY],
 		["a doc with no generated region", "# the index\n\n### `toy`\n\nnarrative\n", TOY_REGISTRY],

@@ -3,14 +3,15 @@
  *
  * The precedence chain is `FABRIKA_SESSION_ID` → `CLAUDE_CODE_SESSION_ID` →
  * `PI_SUBAGENT_PARENT_SESSION`, and an environment carrying none of the three is refused by the
- * caller (#6960). Before this module every site hardcoded `CLAUDE_CODE_SESSION_ID`, so under pi —
- * the repo's sole harness — every attribution-bearing verb failed on first contact.
+ * caller. A site that hardcodes one of the three instead fails on first contact under any harness
+ * that stamps another, which is why the chain is read in one place.
  *
  * The documented invariants are preserved structurally, not enforced here: the value is whatever the
- * harness stamped — stable within a session (#5028) — and the CLI never mints or generates an
- * identity when the chain comes up empty (ADR 0215 §5 rejects lease/TTL/steal; #4500's
- * namespace-collapse reasoning). Call sites that name a directory with the id keep their own
- * single-path-segment check (`triage scratch`, `build scratch`).
+ * harness stamped — stable within a session — and the CLI never mints or generates an identity
+ * when the chain comes up empty: a minted id collapses two sessions into one namespace, and a
+ * lease, a TTL or a steal all decide ownership over an identity nobody declared. Call sites that
+ * name a directory with the id keep their own single-path-segment check (`triage scratch`,
+ * `build scratch`).
  */
 
 /**

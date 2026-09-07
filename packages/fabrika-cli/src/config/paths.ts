@@ -66,7 +66,7 @@ export const readDecisionsDir = (
  *
  * `Declined` is not a failure and not an empty corpus: it is the repo stating it keeps none, so a
  * verb that reads the corpus must say that rather than scan a directory that was never meant to
- * exist and report what it found there as the whole truth (R11.1 on #5603).
+ * exist and report what it found there as the whole truth.
  *
  * An explicit override wins over all of it. The flag names a directory the operator is pointing at,
  * and a config key cannot overrule an argument typed at the shell — including in a repo that
@@ -85,7 +85,7 @@ export type CorpusRead =
  * literal cannot: `--dir` is `adr`'s and `governance`'s spelling, `glossary check` spells the same
  * override `--decisions` and means the register directory by `--dir`, and `guard decisions-index
  * validate` has no override at all. All three inheriting one hardcoded clause sent two of them
- * after a flag their verb does not accept (#6433). Pairing the two halves in one value leaves no
+ * after a flag their verb does not accept. Pairing the two halves in one value leaves no
  * way to accept a directory without naming the flag it came from, or to advertise one the verb
  * does not have.
  */
