@@ -50,10 +50,11 @@ import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from
 import {noteSend, settledBy, settlePending} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
 import {
+	type AgentFailure,
 	type AiAgentSessionState,
 	initialState,
 	lastAssistantId,
-	settlePartialItems,
+	settleTurn,
 } from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
@@ -137,6 +138,24 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		];
 	};
 
+	const failed = (state: AiAgentSessionState, failure: AgentFailure): Step => {
+		const phase = phaseAfterFailure(state, failure);
+		// The turn is over however the failure reached the machine, so a partial the stream
+		// left in the tail — and any subagent under that turn — settles here too
+		// (`./state.ts`, `settleTurn`).
+		const turn = settleTurn(state);
+		return settleQueue([
+			{
+				...turn,
+				phase,
+				interruption: interruptionAfter(turn, phase),
+				failure,
+				sends: settlePending(turn.sends, failure),
+			},
+			noCmds,
+		]);
+	};
+
 	return defineMachine<
 		AiAgentSessionState,
 		AiAgentSessionMsg,
@@ -176,6 +195,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								sessionId: null,
 								permissions: {},
 								lastPage: null,
+								pageOutcome: null,
 								interruption: null,
 								failure: null,
 							},
@@ -366,9 +386,18 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 					? [{...state, failure: null}, [{type: "aiAgent.setThinkingLevel", level: msg.level}]]
 					: [{...state, failure: thinkingUnsupported(msg.level, state.thinking.available)}, noCmds],
 
-			page: (state, msg) => [state, [{type: "aiAgent.page", before: msg.before, limit: msg.limit}]],
+			page: (state, msg) => [
+				{...state, pageOutcome: null},
+				[{type: "aiAgent.page", before: msg.before, limit: msg.limit}],
+			],
 
-			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
+			paged: (state, msg) => [
+				{...state, lastPage: msg.page, pageOutcome: {status: "success", page: msg.page}},
+				noCmds,
+			],
+
+			pageRefused: (state, msg) =>
+				failed({...state, pageOutcome: {status: "refused", failure: msg.failure}}, msg.failure),
 
 			/**
 			 * Asking the backend to stop is not the backend having stopped (#8007).
@@ -440,22 +469,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				];
 			},
 
-			failed: (state, msg) => {
-				const phase = phaseAfterFailure(state, msg.failure);
-				// The turn is over however the failure reached the machine, so a partial the stream
-				// left in the tail settles here too (`./state.ts`, `settlePartialItems`).
-				const turn = settlePartialItems(state);
-				return settleQueue([
-					{
-						...turn,
-						phase,
-						interruption: interruptionAfter(turn, phase),
-						failure: msg.failure,
-						sends: settlePending(turn.sends, msg.failure),
-					},
-					noCmds,
-				]);
-			},
+			failed: (state, msg) => failed(state, msg.failure),
 		},
 
 		subscriptions: (state) =>

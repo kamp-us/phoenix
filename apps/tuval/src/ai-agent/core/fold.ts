@@ -25,7 +25,7 @@ import {
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
 import {markTurnRunning, settleAccepted, settlePending} from "./sends.ts";
-import {type AiAgentSessionState, settlePartialItems, type UsageTotals} from "./state.ts";
+import {type AiAgentSessionState, settleTurn, type UsageLedger} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -94,14 +94,30 @@ export const foldItem = (
 		: {items: planned.items, omitted: addOmission(transcript.omitted, planned.omitted)};
 };
 
+/**
+ * One turn's cost, folded under that turn's own id.
+ *
+ * A turn already in the ledger keeps the entry it has: the event is the backend restating what
+ * that turn cost, which a resume does routinely, and adding it a second time is the double-count
+ * #8369 closed. The model is not keyed — it is whatever the newest report named, which is what the
+ * inspector's model line has always shown.
+ */
 export const addUsage = (
-	usage: UsageTotals,
+	usage: UsageLedger,
 	event: Extract<AgentEvent, {kind: "usage"}>,
-): UsageTotals => ({
+): UsageLedger => ({
 	model: event.model,
-	inputTokens: usage.inputTokens + event.inputTokens,
-	outputTokens: usage.outputTokens + event.outputTokens,
-	cost: usage.cost + event.cost,
+	turns:
+		usage.turns[event.turn] === undefined
+			? {
+					...usage.turns,
+					[event.turn]: {
+						inputTokens: event.inputTokens,
+						outputTokens: event.outputTokens,
+						cost: event.cost,
+					},
+				}
+			: usage.turns,
 });
 
 const without = <A>(
@@ -236,7 +252,8 @@ export const foldEvent = (
 			if (coreOwned(event.phase)) return state;
 			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
 			// stream left behind — least of all `gone`, which is the stream having died mid-reply.
-			const turn = event.phase === "prompting" ? state : settlePartialItems(state);
+			// A subagent under that turn is over with it, and settles here for the same reason.
+			const turn = event.phase === "prompting" ? state : settleTurn(state);
 			if (event.phase === "gone") {
 				return {
 					...turn,
@@ -281,13 +298,19 @@ export const foldEvent = (
 			return {...state, thinking: {current: event.current, available: event.available}};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
+		// Replaced under its own id, never merged: the mapper computes the whole slot from the
+		// worker's frames, so a merge would keep a line the newer read has already superseded. A
+		// finished slot is kept rather than dropped — its rows are a view an operator may be
+		// reading (Q9, #8384).
+		case "subagent":
+			return {...state, subagents: {...state.subagents, [event.slot.id]: event.slot}};
 		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the
 		// same to the window whichever channel carried it. Routing it through `event` is what keeps
 		// the machine's identity filter over it: a late refusal from a session this process has
 		// already replaced is dropped rather than failing its successor (#8018).
 		case "failure": {
 			const phase = phaseAfterFailure(state, event.failure);
-			const turn = settlePartialItems(state);
+			const turn = settleTurn(state);
 			return {
 				...turn,
 				phase,

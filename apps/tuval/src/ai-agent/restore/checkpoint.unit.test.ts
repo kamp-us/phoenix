@@ -14,7 +14,9 @@ import {
 	initialState,
 	parseSessionState,
 	promptItemId,
+	readCheckpoint,
 	restore,
+	usageTotals,
 } from "../core/index.ts";
 import {Mode, type PermissionRequest} from "../ports/index.ts";
 import {checkpointFields, resumeMessages} from "./checkpoint.ts";
@@ -45,7 +47,10 @@ const saved: AiAgentSessionState = {
 		items: [userItem("i0"), assistantItem("i1"), toolItem("i2")],
 		omitted: {items: 3, bytes: 120, reason: "item-limit"},
 	},
-	usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
+	usage: {
+		model: "claude-opus-5",
+		turns: {i1: {inputTokens: 1_200, outputTokens: 340, cost: 0.031}},
+	},
 	permissions: {"req-1": pendingPermission({request: card, seq: 2})},
 	permissionsRaised: 2,
 	modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},
@@ -100,6 +105,25 @@ describe("what a checkpoint carries", () => {
 
 	it("carries nothing a JSON round trip would lose", () => {
 		expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
+	});
+
+	/**
+	 * A desk that saved before usage was keyed by turn holds one flat sum, and refusing it would
+	 * open that session `gone` over a shape change (#8369). The sum it renders is unchanged.
+	 */
+	it("reads a checkpoint written before usage was keyed by turn", () => {
+		const before = {
+			...JSON.parse(JSON.stringify(saved)),
+			usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
+		};
+		const read = readCheckpoint(before, "/repo");
+		expect(read).not.toBeNull();
+		expect(read === null ? null : usageTotals(read.usage)).toEqual({
+			model: "claude-opus-5",
+			inputTokens: 1_200,
+			outputTokens: 340,
+			cost: 0.031,
+		});
 	});
 });
 

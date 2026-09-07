@@ -38,6 +38,16 @@ interface ItemBase {
 	readonly id: ItemId;
 	/** Epoch milliseconds. A wall-clock number, so no backend clock type reaches the window. */
 	readonly timestamp: number;
+	/**
+	 * The id of the tool call this item ran *inside*, when a backend nests calls — an agent-spawning
+	 * tool whose worker prompts, reasons and calls tools of its own. Absent means the item is the
+	 * agent's own, which is every item a backend with no nesting concept ever emits.
+	 *
+	 * On the base rather than on the tool kind alone: a nested worker's prose is as much the worker's
+	 * as its calls are, and a window handed the tag on calls only cannot tell a worker's reply or
+	 * reasoning from the agent's own.
+	 */
+	readonly parentId?: ItemId;
 }
 
 /**
@@ -65,18 +75,12 @@ export interface AssistantItem extends ItemBase {
 	readonly partial?: boolean;
 }
 
-/**
- * `parentId` is the id of the tool call this one ran *inside*, when a backend nests calls — an
- * agent-spawning tool whose worker makes calls of its own. Absent means the call is the agent's
- * own, which is every call a backend with no nesting concept ever emits.
- */
 export interface ToolItem extends ItemBase {
 	readonly kind: "tool";
 	readonly name: string;
 	readonly input: JsonValue;
 	readonly result: ToolResult;
 	readonly status: ToolStatus;
-	readonly parentId?: ItemId;
 }
 
 /**
@@ -124,6 +128,21 @@ export type TranscriptItem =
 	| ThinkingItem
 	| CompactionItem;
 
+/**
+ * The newest row in a tail that a backend minted, or `null` when the tail holds none.
+ *
+ * The operator's own turn is recorded locally on send under an id no layer has ever seen
+ * (`../core/fold.ts`'s `promptItem`), so it cannot be a boundary a layer suppresses at: this walks
+ * back past every still-unechoed local turn to the last row the session itself produced.
+ */
+export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		const item = items[index];
+		if (item !== undefined && !(item.kind === "user" && item.local === true)) return item.id;
+	}
+	return null;
+};
+
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
 
@@ -166,6 +185,8 @@ const isId = (value: unknown): value is ItemId => typeof value === "string" && v
 const isOptionalFlag = (value: unknown): boolean =>
 	value === undefined || typeof value === "boolean";
 
+const isOptionalId = (value: unknown): boolean => value === undefined || isId(value);
+
 export const isNonNegativeInteger = (value: unknown): boolean =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
 
@@ -178,9 +199,17 @@ const isToolResult = (value: unknown): value is ToolResult =>
 
 const statuses: ReadonlySet<string> = new Set<ToolStatus>(["running", "ok", "error"]);
 
-/** The port predicate for one item: identity, clock, kind, and the tool result's own bound. */
+/**
+ * The port predicate for one item: identity, clock, parent tag, kind, and the tool result's own
+ * bound. The parent tag is read once ahead of the switch, because every kind may carry one.
+ */
 export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
-	if (!Predicate.isObject(value) || !isId(value.id) || !Number.isFinite(value.timestamp))
+	if (
+		!Predicate.isObject(value) ||
+		!isId(value.id) ||
+		!Number.isFinite(value.timestamp) ||
+		!isOptionalId(value.parentId)
+	)
 		return false;
 	switch (value.kind) {
 		case "user":
@@ -205,8 +234,7 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 				isJsonValue(value.input) &&
 				isToolResult(value.result) &&
 				typeof value.status === "string" &&
-				statuses.has(value.status) &&
-				(value.parentId === undefined || isId(value.parentId))
+				statuses.has(value.status)
 			);
 		default:
 			return false;

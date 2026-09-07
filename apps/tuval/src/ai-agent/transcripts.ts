@@ -64,7 +64,10 @@ const readFrom = (
 		Effect.gen(function* () {
 			const built = yield* Layer.build(row.aiAgent.layer as Layer.Layer<TuvalAiAgent>);
 			const agent = Context.get(built, TuvalAiAgent);
-			yield* agent.start({cwd: request.cwd, resume: request.sessionId});
+			yield* agent.start({
+				cwd: request.cwd,
+				resume: {sessionId: request.sessionId, holdsTranscript: false},
+			});
 			const page = yield* agent.page(request.before, request.limit);
 			// The port answers `hasMore`; the cursor it implies is this page's oldest item, which is
 			// what a caller hands back as `before` to walk one page further into history.

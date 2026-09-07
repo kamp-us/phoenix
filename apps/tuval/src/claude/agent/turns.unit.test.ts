@@ -121,7 +121,10 @@ describe("page", () => {
 	it.effect("reads the session's own store and returns the page oldest-first", () =>
 		on({rows: rows()}, (agent) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
 				const page = yield* agent.page(null, 10);
 				assert.deepStrictEqual(
 					page.items.map((one) => one.kind),
@@ -135,7 +138,7 @@ describe("page", () => {
 	it.effect("reads through the id it resumed, which is the id the CLI hands back", () =>
 		on({rows: rows(), opening: [message("resumed-init")]}, (agent, scripted) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
 				yield* agent.page(null, 10);
 				// A plain `resume` keeps the session's id — `resumed-init.json` is a real second
 				// `query()` over the same id (`../history/fixtures/PROVENANCE.md`) — so the existence
@@ -157,7 +160,10 @@ describe("page", () => {
 					// `resumed-init` names SESSION_ID, so resuming TOOL_SESSION_ID is a CLI that opened
 					// a session other than the one the layer is keyed on — silent, and it would break
 					// every later read.
-					yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+					yield* agent.start({
+						cwd: CWD,
+						resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+					});
 					yield* Stream.runCollect(Stream.take(agent.events, OPENED_EVENTS));
 				}),
 			).pipe(
@@ -181,7 +187,10 @@ describe("page", () => {
 			const exit = yield* Effect.exit(
 				on({rows: rows()}, (agent) =>
 					Effect.gen(function* () {
-						yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+						yield* agent.start({
+							cwd: CWD,
+							resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+						});
 						return yield* agent.page("no-such-item", 10);
 					}),
 				),

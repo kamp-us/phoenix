@@ -13,6 +13,7 @@ import {
 	isCommandRef,
 	isModelRef,
 	isPendingPermission,
+	isSubagentSlots,
 	isThinkingLevel,
 	isTranscriptItems,
 	isWindowOmission,
@@ -27,6 +28,8 @@ import {
 	initialState,
 	phases,
 	restore,
+	type TurnUsage,
+	type UsageLedger,
 	type UsageTotals,
 } from "./state.ts";
 
@@ -36,12 +39,25 @@ const isNullOrString = (value: unknown): value is string | null =>
 const isFiniteNumber = (value: unknown): value is number =>
 	typeof value === "number" && Number.isFinite(value);
 
-const isUsage = (value: unknown): value is UsageTotals =>
+/** The flat totals a checkpoint written before usage was keyed by turn carries; see `withUsageLedger`. */
+const isFlatUsage = (value: unknown): value is UsageTotals =>
 	Predicate.isObject(value) &&
 	isNullOrString(value.model) &&
 	isFiniteNumber(value.inputTokens) &&
 	isFiniteNumber(value.outputTokens) &&
 	isFiniteNumber(value.cost);
+
+const isTurnUsage = (value: unknown): value is TurnUsage =>
+	Predicate.isObject(value) &&
+	isFiniteNumber(value.inputTokens) &&
+	isFiniteNumber(value.outputTokens) &&
+	isFiniteNumber(value.cost);
+
+const isUsage = (value: unknown): value is UsageLedger =>
+	Predicate.isObject(value) &&
+	isNullOrString(value.model) &&
+	Predicate.isObject(value.turns) &&
+	Object.values(value.turns).every(isTurnUsage);
 
 const isPermissions = (value: unknown): value is Readonly<Record<string, PendingPermission>> =>
 	Predicate.isObject(value) && Object.values(value).every(isPendingPermission);
@@ -83,6 +99,12 @@ const isFailure = (value: unknown): boolean =>
 		typeof value.tag === "string" &&
 		isNullOrString(value.reason) &&
 		typeof value.detail === "string");
+
+const isPageOutcome = (value: unknown): boolean =>
+	value === null ||
+	(Predicate.isObject(value) &&
+		((value.status === "success" && value.page !== null && isPage(value.page)) ||
+			(value.status === "refused" && value.failure !== null && isFailure(value.failure))));
 
 const sendStates: ReadonlyArray<string> = ["pending", "accepted", "refused", "uncertain"];
 
@@ -135,6 +157,8 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isSends(value.sends) &&
 	isQueued(value.queued) &&
 	isPage(value.lastPage) &&
+	isPageOutcome(value.pageOutcome) &&
+	isSubagentSlots(value.subagents) &&
 	isFailure(value.failure);
 
 /** A snapshot the predicate refuses is `null`, never a throw — the store decides what to do. */
@@ -165,6 +189,39 @@ export const withCheckpointDefaults = (raw: unknown, cwd: string): unknown => {
 };
 
 /**
+ * The one entry a pre-ledger checkpoint's totals come back as. Reserved: no backend mints it.
+ */
+export const SPENT_BEFORE_LEDGER = "spent-before-ledger";
+
+/**
+ * A checkpoint written before usage was keyed by turn, read as a ledger (#8369).
+ *
+ * It carries one flat sum and no ids to attribute it to, so the sum becomes a single entry and the
+ * totals the window renders are unchanged. This is a repair rather than a default, which is why it
+ * is not `withCheckpointDefaults`' walk: the field is present and well-formed, it is the shape the
+ * ledger replaced. A turn that was in flight when that checkpoint was written is not in the ledger
+ * and can still be reported once more — this migrates the totals, it cannot recover ids the old
+ * shape never held.
+ */
+export const withUsageLedger = (raw: unknown): unknown => {
+	if (!Predicate.isObject(raw) || !isFlatUsage(raw.usage)) return raw;
+	const flat = raw.usage;
+	return {
+		...raw,
+		usage: {
+			model: flat.model,
+			turns: {
+				[SPENT_BEFORE_LEDGER]: {
+					inputTokens: flat.inputTokens,
+					outputTokens: flat.outputTokens,
+					cost: flat.cost,
+				},
+			},
+		},
+	};
+};
+
+/**
  * The checkpoint read, as the defaulting and the predicate composed once: the session, or `null`.
  *
  * One function rather than two call sites of the same pair, because `loadCheckpoint` wants the
@@ -172,7 +229,7 @@ export const withCheckpointDefaults = (raw: unknown, cwd: string): unknown => {
  * different verdict than the one the window renders would hold the wrong bytes (#8112).
  */
 export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState | null =>
-	parseSessionState(withCheckpointDefaults(loaded, cwd));
+	parseSessionState(withUsageLedger(withCheckpointDefaults(loaded, cwd)));
 
 /**
  * What the store loaded, read as a session — or the refusal, when it is not one. The machine's

@@ -12,7 +12,7 @@
  */
 
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
-import {Effect, Stream} from "effect";
+import {Deferred, Effect, Stream} from "effect";
 import {type ReactElement, StrictMode} from "react";
 import {afterEach, describe, expect, it} from "vitest";
 import {
@@ -22,11 +22,19 @@ import {
 	PAGE_ERROR,
 	PROMPT_ERROR,
 } from "../../ai-agent/core/index.ts";
+import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
+import {
+	DISPATCHED_KIND,
+	decodeServerFrame,
+	encodeFrame,
+	PROCESS_STATE_KIND,
+} from "../transport/wire.ts";
 import {growObservedElement, installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
+import type {DispatchResult} from "../window/host.ts";
 import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {
@@ -55,10 +63,65 @@ interface Harness {
 	/** Every value the window pushed at its own view slot, in order. */
 	readonly writes: ReadonlyArray<ChatView>;
 	readonly keys: ReadonlyArray<string>;
+	readonly answerPage: (
+		state: AiAgentSessionState,
+		index?: number,
+		publish?: boolean,
+	) => Promise<void>;
 }
 
 /** The send clock every dispatched prompt in this file wears. */
 const SENT_AT = 1_700_000_000_000;
+
+/** Dispatch resolves only after the handler outcome, like Processes.dispatchFolded; both channels use the shipped codec. */
+const pageCompletions = (process: TestProcess<AiAgentSessionState, AiAgentSessionMsg>) => {
+	const pendingPages: Array<Deferred.Deferred<DispatchResult>> = [];
+	const bind = (bound: ChatWindowHost): ChatWindowHost => ({
+		...bound,
+		readProcess: bound.readProcess.pipe(
+			Stream.map((view) => {
+				const decoded = decodeServerFrame(encodeFrame({kind: PROCESS_STATE_KIND, processId, view}));
+				if (decoded._tag !== "Frame" || decoded.frame.kind !== PROCESS_STATE_KIND)
+					throw new Error("snapshot codec refused");
+				const next = decoded.frame.view;
+				if (next._tag === "ProcessGone") return {...next, processId};
+				if (!isAiAgentSessionState(next.state)) throw new Error("invalid session snapshot");
+				return {...next, state: next.state, processId};
+			}),
+		),
+		dispatch: (msg) =>
+			Effect.gen(function* () {
+				yield* bound.dispatch(msg);
+				if (msg.type !== "page") return {_tag: "Delivered"} as const;
+				const completion = yield* Deferred.make<DispatchResult>();
+				pendingPages.push(completion);
+				return yield* Deferred.await(completion);
+			}),
+	});
+	const answerPage = async (
+		next: AiAgentSessionState,
+		index = pendingPages.length - 1,
+		publish = true,
+	): Promise<void> => {
+		const completion = pendingPages[index];
+		if (completion === undefined) throw new Error("no pending page dispatch");
+		if (publish) await Effect.runPromise(process.commit(next));
+		const decoded = decodeServerFrame(
+			encodeFrame({
+				kind: DISPATCHED_KIND,
+				seq: index,
+				result: {
+					_tag: "Delivered",
+					view: {revision: index + 1, state: next},
+				},
+			}),
+		);
+		if (decoded._tag !== "Frame" || decoded.frame.kind !== DISPATCHED_KIND)
+			throw new Error("completion codec refused");
+		await Effect.runPromise(Deferred.succeed(completion, decoded.frame.result));
+	};
+	return {bind, answerPage};
+};
 
 const openWindow = async (
 	state: AiAgentSessionState,
@@ -75,8 +138,9 @@ const openWindow = async (
 		process.window<ChatView>(WindowId.make("w1"), initialView ?? initialChatView),
 	);
 	const writes: Array<ChatView> = [];
+	const {bind, answerPage} = pageCompletions(process);
 	const host: ChatWindowHost = {
-		...bound,
+		...bind(bound),
 		setView: (next) =>
 			Effect.suspend(() => {
 				writes.push(next);
@@ -97,7 +161,8 @@ const openWindow = async (
 	const element = chatWindow(resolved).render(host) as ReactElement;
 	render(element, mount.strict === true ? {wrapper: StrictMode} : undefined);
 	await screen.findByRole("log", {name: "Transcript"});
-	return {process, host, scrolls, writes, keys, view: () => host.view()};
+
+	return {process, host, scrolls, writes, keys, answerPage, view: () => host.view()};
 };
 
 /**
@@ -514,7 +579,7 @@ describe("paging", () => {
 
 	it("shows a page refusal, retries without consuming the retained failure, and settles on a page", async () => {
 		const state = withTranscript(transcriptOf(4));
-		const {process, scrolls, view} = await openWindow(state, {pageLimit: 25});
+		const {process, scrolls, view, answerPage} = await openWindow(state, {pageLimit: 25});
 		await readerScrollsToTop(scrolls);
 		expect(await screen.findByText("Loading earlier messages…")).toBeDefined();
 		const failure = {
@@ -523,7 +588,7 @@ describe("paging", () => {
 			detail: "The history cursor is unknown.",
 		};
 		await act(async () => {
-			await Effect.runPromise(process.commit({...state, failure}));
+			await answerPage({...state, failure, pageOutcome: {status: "refused", failure}});
 		});
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
 		expect(
@@ -550,7 +615,11 @@ describe("paging", () => {
 
 		const repeatedFailure = {...failure};
 		await act(async () => {
-			await Effect.runPromise(process.commit({...state, failure: repeatedFailure}));
+			await answerPage({
+				...state,
+				failure: repeatedFailure,
+				pageOutcome: {status: "refused", failure: repeatedFailure},
+			});
 		});
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
 		expect(screen.getByRole("button", {name: "Retry loading earlier messages"})).toBeDefined();
@@ -559,21 +628,91 @@ describe("paging", () => {
 		await waitFor(() => expect(process.inbox()).toHaveLength(3));
 		expect(process.inbox()[2]).toEqual({type: "page", before: "i0", limit: 25});
 		await act(async () => {
-			await Effect.runPromise(
-				process.commit({
-					...state,
-					failure: repeatedFailure,
-					lastPage: {
-						items: page.items,
-						hasMore: false,
-					},
-				}),
-			);
+			await answerPage({
+				...state,
+				failure: repeatedFailure,
+				lastPage: page,
+				pageOutcome: {status: "success", page},
+			});
 		});
-		await waitFor(() => expect(view().atOldest).toBe(true));
-		expect(view().cursor).toBe("p0");
+		await waitFor(() => expect(view().cursor).toBe("p0"));
+		expect(view().atOldest).toBe(false);
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
 		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+	});
+
+	it("distinguishes success, refusal twice, and equal retained success across cloned snapshots", async () => {
+		const state = withTranscript(transcriptOf(4));
+		const {process, scrolls, view, answerPage} = await openWindow(state);
+		const failure = {tag: PAGE_ERROR, reason: "unknown-cursor", detail: "Unknown history cursor."};
+		const succeeded: AiAgentSessionState = {
+			...state,
+			failure,
+			lastPage: page,
+			pageOutcome: {status: "success", page},
+		};
+		const refused: AiAgentSessionState = {...succeeded, pageOutcome: {status: "refused", failure}};
+		await readerScrollsToTop(scrolls);
+		await act(async () => {
+			await answerPage(succeeded);
+		});
+		await waitFor(() => expect(view().cursor).toBe("p0"));
+		for (const outcome of [refused, refused, succeeded]) {
+			await scrollTo(0);
+			expect(await screen.findByText("Loading earlier messages…")).toBeDefined();
+			for (const prior of [succeeded, refused, refused]) {
+				await act(async () => {
+					await Effect.runPromise(process.commit(prior));
+				});
+				expect(screen.getByText("Loading earlier messages…")).toBeDefined();
+			}
+			await act(async () => {
+				await answerPage(outcome);
+			});
+			expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+			expect(view().atOldest).toBe(false);
+			if (outcome.pageOutcome?.status === "refused") {
+				expect(
+					screen.getByText("Could not load earlier messages: Unknown history cursor."),
+				).toBeDefined();
+			}
+		}
+		expect(process.inbox()).toHaveLength(4);
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+		await act(async () => {
+			await Effect.runPromise(process.commit(refused));
+		});
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+	});
+
+	it.each([
+		"session",
+		"connection",
+	] as const)("ignores an old completion after the %s changes", async (changed) => {
+		const state = withTranscript(transcriptOf(4));
+		const {process, scrolls, answerPage, view} = await openWindow(state);
+		await readerScrollsToTop(scrolls);
+		const replacement =
+			changed === "session"
+				? {...state, sessionId: "replacement"}
+				: {...state, connection: state.connection + 1};
+		await act(async () => {
+			await Effect.runPromise(process.commit(replacement));
+		});
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		await scrollTo(0);
+		await waitFor(() => expect(process.inbox()).toHaveLength(2));
+		await act(async () => {
+			await answerPage({...state, pageOutcome: {status: "success", page}}, 0, false);
+		});
+		expect(screen.getByText("Loading earlier messages…")).toBeDefined();
+		expect(view().cursor).toBeNull();
+		const failure = {tag: PAGE_ERROR, reason: "unknown-cursor", detail: "Replacement refused."};
+		await act(async () => {
+			await answerPage({...replacement, pageOutcome: {status: "refused", failure}}, 1);
+		});
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		expect(screen.getByText("Could not load earlier messages: Replacement refused.")).toBeDefined();
 	});
 
 	it("does not consume a page refusal observed before this window asks for history", async () => {
@@ -621,11 +760,13 @@ describe("paging", () => {
 	});
 
 	it("prepends the reply and scrolls back onto the row that was at the top", async () => {
-		const {process, scrolls} = await openWindow(withTranscript(transcriptOf(20)));
+		const {scrolls, answerPage} = await openWindow(withTranscript(transcriptOf(20)));
 		await readerScrollsToTop(scrolls);
 		const before = scrolls.length;
 		await act(async () => {
-			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+			await answerPage(
+				withTranscript(transcriptOf(20), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
 		});
 		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
 		// The viewport moved down by the height the prepend added: the row the operator was looking
@@ -644,9 +785,12 @@ describe("paging", () => {
 		// one at once, so the geometry alone still reads the top that asks for history as resting on
 		// the newest turn. Every row measures a full viewport here, so the overlap is staged from
 		// the threshold rather than from the row count; the invariant is the same either way.
-		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(20)), {
-			bottomThreshold: SCROLL_BOX,
-		});
+		const {process, scrolls, view, answerPage} = await openWindow(
+			withTranscript(transcriptOf(20)),
+			{
+				bottomThreshold: SCROLL_BOX,
+			},
+		);
 		await scrollToNewest();
 		await waitFor(() => expect(view().pinned).toBe(true));
 
@@ -656,7 +800,9 @@ describe("paging", () => {
 
 		const before = scrolls.length;
 		await act(async () => {
-			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+			await answerPage(
+				withTranscript(transcriptOf(20), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
 		});
 		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
 		await settle();
@@ -667,23 +813,27 @@ describe("paging", () => {
 	});
 
 	it("records the page cursor in its own view slot", async () => {
-		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(20)));
+		const {scrolls, view, answerPage} = await openWindow(withTranscript(transcriptOf(20)));
 		await readerScrollsToTop(scrolls);
 		await act(async () => {
-			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+			await answerPage(
+				withTranscript(transcriptOf(20), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
 		});
 		await waitFor(() => expect(view().cursor).toBe("p0"));
 		expect(view().atOldest).toBe(false);
 	});
 
 	it("drops the head row once the backend says there is nothing older", async () => {
-		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(4)));
+		const {scrolls, view, answerPage} = await openWindow(withTranscript(transcriptOf(4)));
 		await readerScrollsToTop(scrolls);
 		await act(async () => {
-			await Effect.runPromise(
-				process.commit(
-					withTranscript(transcriptOf(4), {lastPage: {items: page.items, hasMore: false}}),
-				),
+			const oldest = {...page, hasMore: false};
+			await answerPage(
+				withTranscript(transcriptOf(4), {
+					lastPage: oldest,
+					pageOutcome: {status: "success", page: oldest},
+				}),
 			);
 		});
 		await waitFor(() => expect(view().atOldest).toBe(true));
@@ -1196,6 +1346,7 @@ describe("two windows over one process", () => {
 	});
 
 	interface Pair {
+		readonly answerPage: Harness["answerPage"];
 		readonly process: TestProcess<AiAgentSessionState, AiAgentSessionMsg>;
 		readonly left: ChatWindowHost;
 		readonly right: ChatWindowHost;
@@ -1211,9 +1362,12 @@ describe("two windows over one process", () => {
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);
 		const initial: ChatView = initialChatView;
-		const left = await Effect.runPromise(process.window<ChatView>(WindowId.make("left"), initial));
-		const right = await Effect.runPromise(
-			process.window<ChatView>(WindowId.make("right"), initial),
+		const {bind, answerPage} = pageCompletions(process);
+		const left = bind(
+			await Effect.runPromise(process.window<ChatView>(WindowId.make("left"), initial)),
+		);
+		const right = bind(
+			await Effect.runPromise(process.window<ChatView>(WindowId.make("right"), initial)),
 		);
 		// One renderer serves both windows, so the offsets are recorded per scroller rather than in
 		// one list: `landPendingScrollIn` settles each window's opening scroll on its own.
@@ -1237,7 +1391,7 @@ describe("two windows over one process", () => {
 		const transcripts = await screen.findAllByRole("log", {name: "Transcript"});
 		expect(transcripts.length).toBe(2);
 		const [first, second] = transcripts as [HTMLElement, HTMLElement];
-		return {process, left, right, scrollers: [first, second]};
+		return {process, left, right, answerPage, scrollers: [first, second]};
 	};
 
 	const scrollWindowTo = scrollElementTo;
@@ -1269,22 +1423,22 @@ describe("two windows over one process", () => {
 		expect(TEST_VIEWPORT.height).toBe(1_000);
 	});
 
-	// `lastPage` is one slot of shared session state, so the reply to the left window's request is
-	// visible to the right one too. Without `ChatWindow`'s `loading` guard the right window merges
-	// a page it never asked for — it gains history it did not scroll to and its own cursor advances,
-	// which is what made #7604's per-window cursor a slot that could not diverge (#7860). Deleting
-	// that guard reds this test.
 	it("merges the page only into the window that asked for it", async () => {
-		const {process, left, right, scrollers} = await openPair(withTranscript(transcriptOf(20)), {
-			pageLimit: 25,
-		});
+		const {process, left, right, scrollers, answerPage} = await openPair(
+			withTranscript(transcriptOf(20)),
+			{
+				pageLimit: 25,
+			},
+		);
 
 		await readerOfWindowScrollsToTop(scrollers[0]);
 		await waitFor(() => expect(process.inbox().length).toBe(1));
 		expect(process.inbox()[0]).toEqual({type: "page", before: "i0", limit: 25});
 
 		await act(async () => {
-			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+			await answerPage(
+				withTranscript(transcriptOf(20), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
 		});
 
 		await waitFor(() => expect(left.view().cursor).toBe("p0"));
@@ -1296,14 +1450,16 @@ describe("two windows over one process", () => {
 		expect(right.view().atOldest).toBe(false);
 	});
 
-	// The seen-marker is set whether or not the page was merged, so the page the right window
-	// ignored is not merged later when it does ask: it waits for its own reply.
 	it("does not merge the page it ignored when it later asks for one of its own", async () => {
-		const {process, left, right, scrollers} = await openPair(withTranscript(transcriptOf(20)));
+		const {process, left, right, scrollers, answerPage} = await openPair(
+			withTranscript(transcriptOf(20)),
+		);
 
 		await readerOfWindowScrollsToTop(scrollers[0]);
 		await act(async () => {
-			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+			await answerPage(
+				withTranscript(transcriptOf(20), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
 		});
 		await waitFor(() => expect(left.view().cursor).toBe("p0"));
 

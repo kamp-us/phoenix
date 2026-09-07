@@ -17,7 +17,7 @@ import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
 import {queueLimit} from "./queue.ts";
 import {isAiAgentSessionState, loadCheckpoint} from "./snapshot.ts";
-import {type AiAgentSessionState, checkpointFields, initialState} from "./state.ts";
+import {type AiAgentSessionState, checkpointFields, initialState, usageTotals} from "./state.ts";
 
 const machine = aiAgentSessionMachine({cwd: "/repo"});
 
@@ -486,22 +486,51 @@ describe("event", () => {
 		expect(state.modes).toEqual({current: "plan", available: ["plan"]});
 	});
 
-	it("accumulates cost and tokens across usage events", () => {
-		const usage = (cost: number): AgentEvent => ({
+	it("accumulates cost and tokens across turns", () => {
+		const usage = (turn: string, cost: number): AgentEvent => ({
 			kind: "usage",
+			turn,
 			model: "claude-opus-5",
 			inputTokens: 10,
 			outputTokens: 5,
 			cost,
 		});
-		const [once] = apply(started(), {type: "event", sessionId: "session-1", event: usage(0.01)});
-		const [twice] = apply(once, {type: "event", sessionId: "session-1", event: usage(0.02)});
-		expect(twice.usage).toEqual({
+		const [once] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: usage("turn-1", 0.01),
+		});
+		const [twice] = apply(once, {
+			type: "event",
+			sessionId: "session-1",
+			event: usage("turn-2", 0.02),
+		});
+		expect(usageTotals(twice.usage)).toEqual({
 			model: "claude-opus-5",
 			inputTokens: 20,
 			outputTokens: 10,
 			cost: 0.03,
 		});
+	});
+
+	/**
+	 * A layer reports a turn's cost as a fact about that turn, and reports it again whenever a
+	 * resume walks a transcript this process has already folded (#8369). The second report is the
+	 * same turn, not a second one.
+	 */
+	it("counts one turn's cost once however often the backend reports it", () => {
+		const usage: AgentEvent = {
+			kind: "usage",
+			turn: "turn-1",
+			model: "claude-opus-5",
+			inputTokens: 10,
+			outputTokens: 5,
+			cost: 0.01,
+		};
+		const [once] = apply(started(), {type: "event", sessionId: "session-1", event: usage});
+		const [twice] = apply(once, {type: "event", sessionId: "session-1", event: usage});
+		expect(usageTotals(twice.usage)).toEqual(usageTotals(once.usage));
+		expect(usageTotals(twice.usage).cost).toBe(0.01);
 	});
 
 	it("adds a permission card and drops it when the backend settles it itself", () => {
@@ -1391,6 +1420,11 @@ describe("the Cmd each Msg answers for", () => {
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],
+		[
+			started(),
+			{type: "pageRefused", failure: {tag: "tuval/ai-agent/PageError", reason: null, detail: "x"}},
+			[],
+		],
 		[started({phase: "prompting"}), {type: "interrupt", at: SENT_AT}, ["aiAgent.interrupt"]],
 		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
 		[
@@ -1460,5 +1494,43 @@ describe("the identity filter", () => {
 			}),
 		).toBe("other");
 		expect(machine.identity?.ofMsg({type: "started", sessionId: "session-1"})).toBeUndefined();
+	});
+});
+
+describe("page completion observations", () => {
+	it("tags equal pages and repeated refusals independently of retained state", () => {
+		const page = {items: [userItem("older")], hasMore: true};
+		const failure = {
+			tag: "tuval/ai-agent/PageError",
+			reason: "unknown-cursor",
+			detail: "Unknown cursor",
+		};
+		let state = started();
+		for (const outcome of ["success", "refused", "refused", "success"] as const) {
+			state = apply(state, {type: "page", before: "oldest", limit: 10})[0];
+			expect(state.pageOutcome).toBeNull();
+			state = apply(
+				state,
+				outcome === "success" ? {type: "paged", page} : {type: "pageRefused", failure},
+			)[0];
+			expect(state.pageOutcome).toEqual(
+				outcome === "success" ? {status: "success", page} : {status: "refused", failure},
+			);
+			expect(state.lastPage).toEqual(page);
+		}
+		expect(state.failure).toEqual(failure);
+		expect(loadCheckpoint(JSON.parse(JSON.stringify(state)), "/repo").pageOutcome).toBeNull();
+		const {pageOutcome: _outcome, ...legacy} = state;
+		expect(loadCheckpoint(legacy, "/repo").phase).toBe("idle");
+		expect(loadCheckpoint(legacy, "/repo").pageOutcome).toBeNull();
+	});
+
+	it.each([
+		{status: "success", page: null},
+		{status: "refused", failure: null},
+		{status: "refused", failure: {detail: "missing tag"}},
+		{status: "other"},
+	])("rejects a malformed page outcome %j", (pageOutcome) => {
+		expect(isAiAgentSessionState({...started(), pageOutcome})).toBe(false);
 	});
 });

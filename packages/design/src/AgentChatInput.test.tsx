@@ -2,6 +2,7 @@ import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AgentChatInput} from "./AgentChatInput";
 import type {AgentChatInputBridge} from "./agent-chat-bridge";
+import {type DesignTranslate, DesignTranslationProvider, defaultDesignTranslate} from "./i18n";
 
 function response(body: unknown): Response {
 	return new Response(JSON.stringify(body), {headers: {"Content-Type": "application/json"}});
@@ -196,6 +197,74 @@ function collidingCatalogBridge(): {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AgentChatInput", () => {
+	describe.each(["focused", "harness"] as const)("%s effort picker", (variant) => {
+		const translate: DesignTranslate = (key, params) =>
+			key === "admin.agent.picker.none"
+				? "No effort selected"
+				: defaultDesignTranslate(key, params);
+		const role = variant === "focused" ? "button" : "combobox";
+		const itemRole = variant === "focused" ? "menuitemradio" : "option";
+		const selectedAttribute = variant === "focused" ? "aria-checked" : "aria-selected";
+
+		it.each([
+			{levels: ["low", "medium"] as const},
+			{levels: ["low"] as const},
+		])("picks from translated unset state with $levels", async ({levels}) => {
+			const {bridge: emptyBridge} = lateCatalogBridge();
+			let thinkingLevel: string | undefined;
+			const setPiThinkingLevel = vi.fn(async (level: string) => {
+				thinkingLevel = level;
+			});
+			const bridge: AgentChatInputBridge = {
+				...emptyBridge,
+				loadPiState: async () => ({
+					isStreaming: false,
+					...(thinkingLevel === undefined ? {} : {thinkingLevel}),
+				}),
+				loadPiThinkingLevels: async () => levels,
+				setPiThinkingLevel,
+			};
+			render(
+				<DesignTranslationProvider translate={translate}>
+					<AgentChatInput bridge={bridge} variant={variant} />
+				</DesignTranslationProvider>,
+			);
+
+			const picker = await screen.findByRole(role, {name: /düşünme eforu/});
+			await waitFor(() => {
+				expect(picker.textContent).toBe("No effort selected");
+				expect(picker.getAttribute("disabled")).toBeNull();
+			});
+			expect(setPiThinkingLevel).not.toHaveBeenCalled();
+			fireEvent.click(picker);
+			const choices = await screen.findAllByRole(itemRole);
+			expect(choices).toHaveLength(levels.length);
+			for (const choice of choices) {
+				expect(choice.getAttribute(selectedAttribute)).toBe("false");
+			}
+			fireEvent.click(screen.getByRole(itemRole, {name: "düşük"}));
+			await waitFor(() => {
+				expect(setPiThinkingLevel).toHaveBeenCalledExactlyOnceWith("low");
+				expect(picker.textContent).toBe("düşük");
+			});
+		});
+
+		it("keeps a supplied level selected", async () => {
+			const {bridge} = installHarnessFetch();
+			render(<AgentChatInput bridge={bridge} variant={variant} />);
+
+			const picker = await screen.findByRole(role, {name: /düşünme eforu/});
+			await waitFor(() => expect(picker.textContent).toBe("orta"));
+			fireEvent.click(picker);
+			expect(
+				(await screen.findByRole(itemRole, {name: "orta"})).getAttribute(selectedAttribute),
+			).toBe("true");
+			expect(screen.getByRole(itemRole, {name: "minimal"}).getAttribute(selectedAttribute)).toBe(
+				"false",
+			);
+		});
+	});
+
 	it("uses Pi's live command registry for slash completion", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);

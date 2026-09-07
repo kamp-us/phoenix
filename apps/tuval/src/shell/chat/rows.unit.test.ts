@@ -7,7 +7,16 @@
 import {describe, expect, it} from "vitest";
 import {promptItem} from "../../ai-agent/core/fold.ts";
 import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
-import {assistantItem, call, systemItem, toolItem, transcriptOf, userItem} from "./chat.testing.ts";
+import {ItemId} from "../../ai-agent/ports/index.ts";
+import {
+	assistantItem,
+	call,
+	systemItem,
+	thinkingItem,
+	toolItem,
+	transcriptOf,
+	userItem,
+} from "./chat.testing.ts";
 import type {ChatRow} from "./rows.ts";
 import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
 
@@ -160,6 +169,41 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 			"free",
 			"a",
 			"b",
+		]);
+	});
+
+	it("folds a subagent's own reply and reasoning under its head, not just its calls", () => {
+		const inside = ItemId.make("agent");
+		const prose = [
+			call("agent", {name: "Agent"}),
+			{...assistantItem("reply"), parentId: inside},
+			{...thinkingItem("weighing"), parentId: inside},
+			call("child", {parentId: "agent"}),
+		];
+		const collapsed = chatRows({...base, tail: prose, atOldest: true});
+		expect(itemIds(collapsed)).toEqual(["agent"]);
+		expect(collapsed[0]?.kind === "item" && collapsed[0].nestedIds).toEqual([
+			"reply",
+			"weighing",
+			"child",
+		]);
+
+		const open = chatRows({...base, tail: prose, atOldest: true, unfolded: new Set(["agent"])});
+		expect(open.flatMap((row) => (row.kind === "item" ? [[row.item.id, row.depth]] : []))).toEqual([
+			["agent", 0],
+			["reply", 1],
+			["weighing", 1],
+			["child", 1],
+		]);
+	});
+
+	it("leaves a row whose parent is a session notice in place rather than behind it", () => {
+		const notice = systemItem("note");
+		const child = call("child", {parentId: "note"});
+		const rows = chatRows({...base, tail: [notice, child], atOldest: true});
+		expect(rows).toEqual([
+			{kind: "session", items: [notice]},
+			{kind: "item", item: child, nestedIds: [], nested: true, depth: 1},
 		]);
 	});
 
