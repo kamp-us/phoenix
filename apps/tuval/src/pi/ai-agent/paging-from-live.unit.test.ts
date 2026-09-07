@@ -15,10 +15,10 @@
 import type {CompactionEntry, SessionEntry} from "@earendil-works/pi-coding-agent";
 import {buildContextEntries, sessionEntryToContextMessages} from "@earendil-works/pi-coding-agent";
 import {describe, expect, it} from "vitest";
-import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
+import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
-import {pageCursorAliases, pageItems} from "./entries.ts";
+import {pageItems, planPageOverEntries} from "./entries.ts";
 import {itemsOf} from "./items.ts";
 
 const at = (seconds: number): string => new Date(1_760_000_000_000 + seconds * 1_000).toISOString();
@@ -67,14 +67,13 @@ const liveTail = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<Transcrip
 	return projectTranscript(messages).flatMap((item) => [...itemsOf(item)]);
 };
 
-/** The `page` request `PiAiAgent` plans, minus the disk read. */
+/**
+ * The `page` request, minus the disk read. It goes through `planPageOverEntries` — the same
+ * function `PiAiAgent`'s `page` and `sessionTranscript` call — rather than re-typing the planner
+ * options here, so removing the cursor alias from the shipped path reds this file (#8502 review).
+ */
 const pageBefore = (entries: ReadonlyArray<SessionEntry>, before: string | null, limit = 10) =>
-	planTranscriptPage(pageItems(entries), {
-		before,
-		cursorAliases: pageCursorAliases(entries),
-		limit,
-		cursorBoundary: "containing-group",
-	});
+	planPageOverEntries(entries, {before, limit});
 
 const texts = (items: ReadonlyArray<TranscriptItem>): ReadonlyArray<string> =>
 	items.map((item) => {

@@ -37,7 +37,7 @@ import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
-import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
+import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {
 	Mode,
 	ModelRef,
@@ -70,7 +70,7 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
-import {pageCursorAliases, pageItems} from "./entries.ts";
+import {planPageOverEntries} from "./entries.ts";
 import {
 	emptyProjection,
 	eventsOf,
@@ -582,12 +582,7 @@ const make = (
 				});
 			}
 			const entries = yield* readBranch(sessionDir(current.cwd), current.id, current.cwd);
-			const planned = planTranscriptPage(pageItems(entries), {
-				before,
-				cursorAliases: pageCursorAliases(entries),
-				limit,
-				cursorBoundary: "containing-group",
-			});
+			const planned = planPageOverEntries(entries, {before, limit});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
 					// The port declares `limit > 0`; a caller that broke it has a bug this
@@ -631,11 +626,9 @@ const make = (
 				try: () => SessionManager.open(file, dirname(file), query.cwd).getBranch(),
 				catch: (cause) => transcriptUnreadable(query.sessionId, cause),
 			});
-			const planned = planTranscriptPage(pageItems(entries), {
+			const planned = planPageOverEntries(entries, {
 				before: query.before,
-				cursorAliases: pageCursorAliases(entries),
 				limit: query.limit,
-				cursorBoundary: "containing-group",
 			});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
