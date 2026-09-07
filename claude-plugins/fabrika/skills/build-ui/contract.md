@@ -366,7 +366,7 @@ registry with zero rows is `4` (a law file that names no law is malformed, not m
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui law: design-prohibitions.json exists but does not satisfy the registry schema: <first violation> — refusing the whole file; half a law is not a law.` | 4 | refusal |
-| `ui law: no design manifest at design-system-manifest.md — run /fabrika.` | 12 | refusal |
+| `ui law: no design manifest at design-system-manifest.md — run /fabrika: front-door's bootstrap drafts one.` | 12 | refusal |
 | `ui law: the law is untyped — no design-prohibitions.json beside the manifest. The manifest's prose prohibitions are the law; note LAW-SOURCE: manifest-prose in the PR.` | 13 | refusal |
 | `ui law: cannot read design-prohibitions.json: <reason> — the law is UNKNOWN, never "untyped".` | 11 | refusal |
 
