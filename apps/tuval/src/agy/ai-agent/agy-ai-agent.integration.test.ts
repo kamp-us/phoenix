@@ -12,6 +12,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {Effect, Fiber, Stream} from "effect";
 import {beforeEach, describe, expect, it} from "vitest";
+import {addUsage, emptyUsage, usageTotals} from "../../ai-agent/core/index.ts";
 import {Mode, type ThinkingLevel} from "../../ai-agent/ports/index.ts";
 import type {AgentEvent} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
@@ -80,6 +81,11 @@ const until = (
 			yield* Effect.sleep("20 millis");
 		}
 	}).pipe(Effect.timeoutOrElse({duration: "20 seconds", orElse: () => Effect.void}));
+
+const usageOf = (
+	events: ReadonlyArray<AgentEvent>,
+): ReadonlyArray<Extract<AgentEvent, {kind: "usage"}>> =>
+	events.filter((event) => event.kind === "usage");
 
 const turnEnded = (events: ReadonlyArray<AgentEvent>): boolean =>
 	events.filter((event) => event.kind === "phase" && event.phase === "ready").length >= 2;
@@ -213,6 +219,29 @@ describe("the agy layer over a scripted binary", () => {
 		expect(first).not.toContain("--conversation=fake-0000-1111-2222");
 		expect(second).toContain("--conversation=fake-0000-1111-2222");
 		expect(second).toContain("--model=claude-sonnet-4-6");
+	});
+
+	it("keeps the usage key past a respawn, so the second child's tokens still reach the ledger", async () => {
+		const collectedEvents = await drive((collected) =>
+			Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: "/repo"});
+				yield* agent.prompt("before the switch");
+				yield* until(collected, (events) => usageOf(events).length === 1);
+				yield* agent.setModel({id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)"});
+				yield* until(collected, () => launches().length === 2);
+				yield* agent.prompt("after the switch");
+				yield* until(collected, (events) => usageOf(events).length === 2);
+				return [...collected];
+			}),
+		);
+		const usage = usageOf(collectedEvents);
+		// The ordinal is the session's, not the child's: a second child restarting it at `0` would
+		// alias the first child's key, and `addUsage` keeps the entry it already holds.
+		expect(usage.map((event) => event.turn)).toEqual(["agy:usage:0", "agy:usage:1"]);
+		const totals = usageTotals(usage.reduce(addUsage, emptyUsage));
+		expect(totals.inputTokens).toBe(14);
+		expect(totals.outputTokens).toBe(6);
 	});
 
 	it("respawns on a mode switch, and offers only the two agy accepts", async () => {

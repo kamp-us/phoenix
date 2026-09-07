@@ -8,6 +8,7 @@
  */
 
 import {describe, expect, it} from "vitest";
+import {addUsage, emptyUsage, usageTotals} from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	boundToolResult,
@@ -17,7 +18,7 @@ import {
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import * as fixtures from "./fixtures.ts";
-import {type AgyTurn, eventsOf, idleTurn} from "./mapper.ts";
+import {type AgyTurn, eventsOf, idleTurn, turnFrom} from "./mapper.ts";
 
 const AT = 1_700_000_000_000;
 
@@ -341,6 +342,26 @@ describe("usage", () => {
 		const {turn} = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
 		const {events} = fold([fixtures.resultSuccess], turn);
 		expect(summed(events)).toEqual({inputTokens: 20963, outputTokens: 151});
+	});
+
+	it("keys a respawned child's usage past what the previous child spent", () => {
+		// A respawn (`setModel` / `setMode` / `setThinkingLevel`) mints a fresh carry for the new
+		// child while the core keeps the ledger it already has, so the ordinal is seeded from the
+		// session rather than restarted — `addUsage` keeps the *first* entry under a key it has seen.
+		const first = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
+		const second = fold(
+			[fixtures.init, fixtures.responseDone, fixtures.resultSuccess],
+			turnFrom(first.turn.usageReports),
+		);
+		const usage = [...first.events, ...second.events].filter((event) => event.kind === "usage");
+		expect(usage.map((event) => event.turn)).toEqual([
+			"agy:usage:0",
+			"agy:usage:1",
+			"agy:usage:2",
+			"agy:usage:3",
+		]);
+		const totals = usageTotals(usage.reduce(addUsage, emptyUsage));
+		expect(totals).toMatchObject({inputTokens: 20963 * 2, outputTokens: 151 * 2});
 	});
 
 	it("falls back to the bare binary name when init announced no model", () => {

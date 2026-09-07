@@ -61,13 +61,19 @@ const usageKey = (report: number): string => `agy:usage:${report}`;
 
 export interface AgyTurn {
 	/**
-	 * How many usage reports this session has already handed the core — the ordinal each one is
-	 * keyed by. It is session-monotonic and never resets with the turn, because the core keys a cost
-	 * on `UsageEvent.turn` and keeps the *first* report under a key it has seen (`../../ai-agent/core/fold.ts`).
-	 * agy reports usage as increments *within* a turn (steps, then the residual at `result`) and
-	 * never restates one, so keying every report on the turn itself would drop every increment after
-	 * the first. Keyed per report, the ledger sums them and the dedupe is the no-op it should be for
-	 * a backend that never re-reports.
+	 * How many usage reports this *session* has already handed the core — the ordinal each one is
+	 * keyed by. The core keys a cost on `UsageEvent.turn` and keeps the *first* report under a key it
+	 * has seen (`../../ai-agent/core/fold.ts`); agy reports usage as increments *within* a turn
+	 * (steps, then the residual at `result`) and never restates one, so keying every report on the
+	 * turn itself would drop every increment after the first. Keyed per report, the ledger sums them
+	 * and the dedupe is the no-op it should be for a backend that never re-reports.
+	 *
+	 * The carry this rides on is minted per agy *child*, and a `setModel` / `setMode` /
+	 * `setThinkingLevel` respawn hands the same core state a second child. So the ordinal cannot
+	 * originate here: the layer owns it (`AgyAiAgent.ts`, a `Ref` beside `interrupted`), seeds each
+	 * child's carry from it through `turnFrom`, and mirrors it back after every fold. Restarting it
+	 * at `0` on a respawn would alias keys the ledger has already spent and drop the new child's
+	 * tokens silently.
 	 */
 	readonly usageReports: number;
 	/** `agy/<model>` once `init` names one, else the bare binary — agy omits `init.model` on a default run. */
@@ -88,6 +94,12 @@ export const idleTurn: AgyTurn = {
 	minted: 0,
 	reported: nothingReported,
 };
+
+/**
+ * The carry a freshly launched child folds against, seeded with the session's usage ordinal so the
+ * new child's first report cannot collide with a key an earlier child already spent.
+ */
+export const turnFrom = (usageReports: number): AgyTurn => ({...idleTurn, usageReports});
 
 interface Folded {
 	readonly events: ReadonlyArray<AgentEvent>;

@@ -79,7 +79,7 @@ import {
 import {commandsOf} from "./commands.ts";
 import {systemItem} from "./items.ts";
 import {commandArgv, promptLine, sessionArgv} from "./launch.ts";
-import {type AgyTurn, eventsOf, idleTurn} from "./mapper.ts";
+import {type AgyTurn, eventsOf, turnFrom} from "./mapper.ts";
 import {
 	detailOf,
 	historyUnreadable,
@@ -169,6 +169,13 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		// timeout, so nothing but this distinguishes them (see `refusals.ts`).
 		const interrupted = yield* Ref.make(false);
 		/**
+		 * The session's usage-report ordinal, and the reason it lives here rather than on `AgyTurn`:
+		 * a respawn mints a fresh carry but keeps the core state it reports into, and the core keeps
+		 * the *first* entry under a usage key. An ordinal that restarted per child would alias keys
+		 * the ledger has already spent and drop the new child's tokens (#8178 criterion 12).
+		 */
+		const usageReports = yield* Ref.make(0);
+		/**
 		 * A pick made before any session existed, or the settings the running one was launched with.
 		 * Held rather than refused — "no session yet" is not "not offered" (#7981) — and on this
 		 * backend it is also what a respawn is composed from.
@@ -243,7 +250,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			opened: Deferred.Deferred<string, string>,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
-				const turn = yield* Ref.make<AgyTurn>(idleTurn);
+				const turn = yield* Ref.make<AgyTurn>(turnFrom(yield* Ref.get(usageReports)));
 				const lines = Stream.decodeText(child.handle.stdout).pipe(
 					Stream.splitLines,
 					Stream.runForEach((line) =>
@@ -254,6 +261,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 							}
 							const folded = eventsOf(yield* Ref.get(turn), line, Date.now());
 							yield* Ref.set(turn, folded.next);
+							yield* Ref.set(usageReports, folded.next.usageReports);
 							yield* emit(into, folded.events);
 							// The turn is over and the composer has to be let go of. The mapper says
 							// what happened in it; only the envelope says that it ended.
