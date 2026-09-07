@@ -31,12 +31,8 @@
  */
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {
-	boundToolResult,
-	type ItemId,
-	type JsonValue,
-	type ToolStatus,
-} from "../../ai-agent/ports/index.ts";
+import type {ItemId, JsonValue, ToolStatus} from "../../ai-agent/ports/index.ts";
+import {assistantItem, itemId, systemItem, toolItem, toolStatusOf, userItem} from "./items.ts";
 import {
 	type AgyResult,
 	type AgyStepUpdate,
@@ -47,8 +43,7 @@ import {
 
 type UsageEvent = Extract<AgentEvent, {readonly kind: "usage"}>;
 
-/** `ItemId` is an opaque brand, minted here so no call site writes its own cast. */
-export const itemId = (value: string): ItemId => value as ItemId;
+export {itemId} from "./items.ts";
 
 /** How much of an unreadable line reaches the transcript before it is cut. */
 export const UNREADABLE_LINE_LIMIT = 500;
@@ -87,7 +82,7 @@ interface Folded {
 
 const systemEvent = (id: string, timestamp: number, text: string): AgentEvent => ({
 	kind: "item",
-	item: {kind: "system", id: itemId(id), timestamp, text},
+	item: systemItem(id, timestamp, text),
 });
 
 /**
@@ -134,11 +129,6 @@ const subagentInput = (info: AgySubagentInfo): JsonValue => ({
 	})),
 });
 
-const toolStatusOf = (state: string): ToolStatus => {
-	if (state === "ERROR") return "error";
-	return state === "DONE" ? "ok" : "running";
-};
-
 const toolResultText = (step: AgyStepUpdate, status: ToolStatus): string => {
 	if (status === "error") {
 		const error = step.tool_info?.error;
@@ -164,8 +154,7 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 		case "user_input":
 			// v1.1.27 carries no text on this step; the core already holds the operator's own turn,
 			// so an empty row here would be a blank bubble beside it rather than an echo of it.
-			if (delta.length > 0)
-				events.push({kind: "item", item: {kind: "user", id: itemId(key), timestamp, text: delta}});
+			if (delta.length > 0) events.push({kind: "item", item: userItem(key, timestamp, delta)});
 			break;
 
 		case "agent_response":
@@ -173,7 +162,7 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 				const id = previous.responseId ?? itemId(key);
 				const text = previous.responseText + delta;
 				next = {...next, responseId: id, responseText: text};
-				events.push({kind: "item", item: {kind: "assistant", id, timestamp, text}});
+				events.push({kind: "item", item: assistantItem(id, timestamp, text)});
 			}
 			break;
 
@@ -197,15 +186,14 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 					: subagentInput(step.subagent_info);
 			events.push({
 				kind: "item",
-				item: {
-					kind: "tool",
-					id: itemId(key),
+				item: toolItem({
+					id: key,
 					timestamp,
 					name,
 					input,
-					result: boundToolResult(toolResultText(step, status)),
+					result: toolResultText(step, status),
 					status,
-				},
+				}),
 			});
 			break;
 		}
@@ -238,7 +226,7 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 
 	if (result.response.length > 0) {
 		const id = previous.responseId ?? itemId(`${result.conversation_id}:response`);
-		events.push({kind: "item", item: {kind: "assistant", id, timestamp, text: result.response}});
+		events.push({kind: "item", item: assistantItem(id, timestamp, result.response)});
 	}
 
 	const denied = result.denied_actions;
