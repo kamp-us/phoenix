@@ -159,6 +159,7 @@ export const candidatesFor = (slot: Slot, snapshot: Snapshot): ReadonlyArray<Can
 		}
 		return byPrefix(segments, slot.token.text);
 	}
+	if (slot.param.rest === true) return [];
 	if (slot.param.literals !== undefined) {
 		return byPrefix(
 			slot.param.literals.map((literal) => unstamped({value: literal, kind: "literal"})),
