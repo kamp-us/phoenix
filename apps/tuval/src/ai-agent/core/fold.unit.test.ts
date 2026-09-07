@@ -17,8 +17,10 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import type {TranscriptItem, TranscriptPayload} from "../ports/index.ts";
+import {PROMPT_ERROR} from "./failures.ts";
 import {foldEvent, foldItem, upsertItem, type WindowLimits} from "./fold.ts";
-import {initialState} from "./state.ts";
+import type {SendOutcome} from "./sends.ts";
+import {type AiAgentSessionState, initialState} from "./state.ts";
 
 const empty: TranscriptPayload = {items: [], omitted: {items: 0, bytes: 0, reason: "none"}};
 
@@ -179,5 +181,51 @@ describe("folding a subagent slot", () => {
 	it("leaves a worker running while the turn it belongs to is still going", () => {
 		const running = foldEvent(fold(), {kind: "phase", phase: "prompting"}, limits);
 		expect(running.subagents["call-1"]?.status).toBe("running");
+	});
+});
+
+/**
+ * #8236's ruling, at the arms rather than at the ledger: a per-turn failure leaves the session
+ * alive, so it settles only the send it is about, and `gone` is the terminal arm that settles every
+ * one of them.
+ */
+describe("folding a failure and a `gone` under two sends in flight", () => {
+	const limits: WindowLimits = {};
+	const refusal = {tag: PROMPT_ERROR, reason: "refused", detail: "the layer refused the handoff"};
+	const inFlight: ReadonlyArray<SendOutcome> = [
+		{key: "first", state: "pending", turn: "running"},
+		{key: "second", state: "pending", turn: "unstarted"},
+	];
+	const prompting: AiAgentSessionState = {
+		...initialState("/repo"),
+		phase: "prompting",
+		sends: inFlight,
+	};
+
+	it("settles only the failed send and keeps the other waiting for its own turn", () => {
+		const failed = foldEvent(prompting, {kind: "failure", failure: refusal}, limits);
+		expect(failed.phase).toBe("ready");
+		expect(failed.sends).toEqual([
+			{key: "first", state: "refused", failure: refusal},
+			{key: "second", state: "pending", turn: "unstarted"},
+		]);
+	});
+
+	it("accepts the send that outlived the refusal when its own turn ends", () => {
+		const failed = foldEvent(prompting, {kind: "failure", failure: refusal}, limits);
+		const running = foldEvent(failed, {kind: "phase", phase: "prompting"}, limits);
+		const ended = foldEvent(running, {kind: "phase", phase: "ready"}, limits);
+		expect(ended.sends).toEqual([
+			{key: "first", state: "refused", failure: refusal},
+			{key: "second", state: "accepted"},
+		]);
+	});
+
+	it("settles every send in flight when the session goes", () => {
+		const gone = foldEvent(prompting, {kind: "phase", phase: "gone"}, limits);
+		expect(gone.sends).toEqual([
+			{key: "first", state: "uncertain", failure: null},
+			{key: "second", state: "uncertain", failure: null},
+		]);
 	});
 });
