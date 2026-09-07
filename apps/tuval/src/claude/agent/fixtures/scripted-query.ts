@@ -45,6 +45,7 @@ export interface QueryRecord {
 	readonly models: Array<string | undefined>;
 	/** Every effort level the layer applied, in order, for the same reason (#8062). */
 	readonly efforts: Array<EffortLevel | null>;
+	readonly contextReads: Array<{detail: "summary"}>;
 	closes: number;
 	interrupts: number;
 	readonly child: SpawnedProcess | null;
@@ -65,6 +66,8 @@ export interface ScriptedBehaviour {
 	readonly endsAtOnce?: boolean;
 	/** What `supportedModels()` answers. Absent is a CLI that offers none, which is the old shape. */
 	readonly models?: ReadonlyArray<ModelInfo>;
+	readonly runningModel?: string;
+	readonly contextFails?: Error;
 	/** A `setModel` the CLI refuses. The call is still recorded, so a test sees it was attempted. */
 	readonly modelSwitchFails?: Error;
 	/** An `applyFlagSettings` the CLI refuses, recorded the same way. */
@@ -102,6 +105,7 @@ export const scriptedQuery = (
 		modes: [],
 		models: [],
 		efforts: [],
+		contextReads: [],
 		closes: 0,
 		interrupts: 0,
 		child,
@@ -177,6 +181,11 @@ export const scriptedQuery = (
 		applyFlagSettings: async (settings: {effortLevel: EffortLevel | null}) => {
 			record.efforts.push(settings.effortLevel);
 			if (behaviour.effortSwitchFails !== undefined) throw behaviour.effortSwitchFails;
+		},
+		getContextUsage: async (options: {detail: "summary"}) => {
+			record.contextReads.push(options);
+			if (behaviour.contextFails !== undefined) throw behaviour.contextFails;
+			return {model: behaviour.runningModel ?? params.options.model ?? ""};
 		},
 		supportedModels: async () => {
 			if (behaviour.catalogFails !== undefined) throw behaviour.catalogFails;
