@@ -14,9 +14,10 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option} from "effect";
+import {Context, Effect, Layer, Option, Result} from "effect";
 import {afterAll} from "vitest";
 import {boot, projectDir} from "../boot.ts";
+import {reboundTable} from "../config-fixtures/shell-rebound-keys.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {SnapshotRefused} from "../durability/errors.ts";
 import {memoryStores} from "../durability/stores.ts";
@@ -26,12 +27,14 @@ import {ProcessId} from "../process/process.ts";
 import type {AnyProgram} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
-import {defaultPrefixTable} from "./keys/index.ts";
+import type {ServeDeskOptions} from "./host/index.ts";
+import {applyKeysConfig, defaultPrefixTable} from "./keys/index.ts";
 import {showsInAWindow} from "./picker/entries.ts";
 import {
 	SHELL_VERSION,
 	shellId,
 	shellNode,
+	shellPrefixTable,
 	shellProgram,
 	shellStateOf,
 	unwiredShellEffects,
@@ -41,6 +44,11 @@ import {WindowId} from "./window/index.ts";
 
 /** The box's own config module — the user-owned surface the shell is registered through. */
 const boxConfig = fileURLToPath(new URL("../../.tuval/tuval.config.ts", import.meta.url));
+
+/** A config layer whose shell row is built on a rebound prefix, for the #7890 walk below. */
+const reboundConfig = fileURLToPath(
+	new URL("../config-fixtures/shell-rebound-keys.ts", import.meta.url),
+);
 
 const tempDirs: string[] = [];
 /** A project dir whose `.tuval/` is empty: no project config, nothing checkpointed. */
@@ -288,6 +296,57 @@ describe("the shell as a program row", () => {
 				}
 			}
 		},
+		BUDGET_MS,
+	);
+});
+
+/**
+ * The kernel's key grammar has one namer on the boot path (#7890). The shell row publishes the
+ * table it resolved, `boot` reports it, and `src/bin.ts` hands that value — never a default of its
+ * own — to `serveDesk`, whose `table` is what every attached page is sent (ADR 0353). The
+ * socket-level half of that walk belongs to `./transport/transport.integration.test.ts`; what these
+ * cases hold is the value the bin passes it.
+ */
+describe("the boot path's one prefix table", () => {
+	it(
+		"reads a shell row's own table back off the row, and the default when a config names none",
+		() => {
+			const rebound = Result.getOrThrow(applyKeysConfig(defaultPrefixTable, {prefix: "<c-a>"}));
+			assert.deepStrictEqual(
+				shellPrefixTable([shellProgram({table: rebound, effects: unwiredShellEffects})]),
+				rebound,
+			);
+			assert.deepStrictEqual(shellPrefixTable([row()]), defaultPrefixTable);
+			assert.deepStrictEqual(shellPrefixTable([]), defaultPrefixTable);
+		},
+		BUDGET_MS,
+	);
+
+	it.effect(
+		"carries a config-set table through to the value the bin hands `serveDesk`",
+		() =>
+			Effect.gen(function* () {
+				const booted = yield* boot({global: reboundConfig, project: freshProject()});
+				// The one expression `src/bin.ts` builds around the reported table.
+				const options = {
+					kernel: booted.kernel,
+					port: 0,
+					table: booted.keyTable,
+				} satisfies ServeDeskOptions;
+				assert.deepStrictEqual(options.table, reboundTable);
+				assert.notDeepEqual(options.table, defaultPrefixTable);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		BUDGET_MS,
+	);
+
+	it.effect(
+		"leaves a config that names no table on the default, on both sides",
+		() =>
+			Effect.gen(function* () {
+				const booted = yield* boot({global: boxConfig, project: freshProject()});
+				assert.deepStrictEqual(booted.keyTable, defaultPrefixTable);
+				assert.deepStrictEqual(shellPrefixTable([row()]), booted.keyTable);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		BUDGET_MS,
 	);
 });

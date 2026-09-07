@@ -29,7 +29,8 @@ import {Registry} from "./registry/Registry.ts";
 import {dispatchConfigChanged} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
-import {shellId} from "./shell/program.ts";
+import type {PrefixTable} from "./shell/keys/index.ts";
+import {shellId, shellPrefixTable} from "./shell/program.ts";
 import type {ModuleRendererRef} from "./shell/window/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
@@ -198,6 +199,13 @@ export interface Booted {
 	 */
 	readonly features: TuvalFeatures;
 	/**
+	 * The key grammar the booted shell row was built with. Carried out of the boot because the
+	 * transport sends it to every attached page (ADR 0353) and is started from `src/bin.ts`, which
+	 * holds the kernel and not the config — before this it named `defaultPrefixTable` a second time,
+	 * so a config-set table reached the shell row and nothing else (#7890).
+	 */
+	readonly keyTable: PrefixTable;
+	/**
 	 * The config read again, its spells registered and its bindings compiled against them in one
 	 * write, and then every live process handed what its own row says the new config means for it
 	 * (`reload.ts`). Nothing restarts and nothing respawns: a process keeps running under the row
@@ -260,6 +268,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		kernel: started.kernel,
 		moduleRenderers: config.moduleRenderers,
 		features: config.features,
+		keyTable: shellPrefixTable(programs),
 		reload: reload().pipe(Effect.provideContext(started.kernel)),
 	} satisfies Booted;
 });

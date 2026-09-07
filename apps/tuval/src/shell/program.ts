@@ -90,10 +90,26 @@ export const unwiredShellEffects: ShellEffects = {
 };
 
 export interface ShellProgramOptions<E = never, R = never> {
-	/** The key grammar the core routes against. Configuration, never state — it holds `Duration`s. */
+	/**
+	 * The key grammar the core routes against. Configuration, never state — it holds `Duration`s.
+	 * Absent means `defaultPrefixTable`.
+	 */
 	readonly table?: PrefixTable;
 	/** What runs the core's Cmds. Required: an absent set would be an inert desk nobody chose. */
 	readonly effects: ShellEffects<E, R>;
+}
+
+/**
+ * The one place on the boot path that names `defaultPrefixTable`. Both readers go through it — the
+ * row resolving its own option, and `shellPrefixTable` reading a config's rows back — so the value
+ * the kernel routes over and the value the transport sends cannot be two different tables (#7890,
+ * the open consequence ADR 0353 left).
+ */
+const resolveTable = (table: PrefixTable | undefined): PrefixTable => table ?? defaultPrefixTable;
+
+/** The shell's row, publishing the grammar it resolved so a later reader need not re-derive it. */
+export interface ShellRow extends AnyProgram {
+	readonly table: PrefixTable;
 }
 
 /**
@@ -110,14 +126,20 @@ export interface ShellProgramOptions<E = never, R = never> {
  * bridge all read the shell's commands there rather than from a second catalogue. Running one needs
  * `ShellDispatch`, which `AnySpell` erases; `src/boot.ts` owes it and pays it with
  * `shellDispatchKernel(shellId)`, which finds this row's live process and dispatches into it.
+ *
+ * `table` is the resolved grammar, on the row rather than only closed into the core: the transport
+ * is started from `src/bin.ts`, which holds the kernel and not the config, so without a value it
+ * could read back it had to name a default of its own (#7890).
  */
 export const shellProgram = <E = never, R = never>({
-	table = defaultPrefixTable,
+	table,
 	effects,
-}: ShellProgramOptions<E, R>): AnyProgram =>
-	({
+}: ShellProgramOptions<E, R>): ShellRow => {
+	const resolved = resolveTable(table);
+	return {
 		id: shellId,
-		core: shellCore({table}),
+		table: resolved,
+		core: shellCore({table: resolved}),
 		ports: {},
 		spells: shellSpells,
 		handlers: effects,
@@ -131,7 +153,29 @@ export const shellProgram = <E = never, R = never>({
 		// The kernel's word for the Node host is `local` (`src/registry/program.ts`); the shell runs
 		// where the kernel runs, and a browser-placed shell is not a thing this slice can spawn.
 		placement: {host: "local"},
-	}) satisfies Program<ShellState, ShellMsg, ShellCmd, never, unknown, E, R>;
+	} satisfies Program<ShellState, ShellMsg, ShellCmd, never, unknown, E, R> & {
+		readonly table: PrefixTable;
+	};
+};
+
+/**
+ * A config's rows carry whatever they were built with, and `Registry` erases none of it. Config
+ * rows are trusted local code (#7484 R1.1) — the loader checks a row's id, not its shape — so the
+ * id plus a published table is the whole test.
+ */
+const isShellRow = (program: AnyProgram): program is ShellRow =>
+	program.id === shellId && "table" in program;
+
+/**
+ * The key grammar a config's rows put the kernel on: the shell row's resolved table, or the same
+ * default that row would have taken when the config registers no shell at all (a kernel with no
+ * desk still serves a socket, and the grammar it sends a page is that default).
+ *
+ * `boot` reports this as `Booted.keyTable` and `src/bin.ts` hands that to `serveDesk`, which is
+ * what leaves the shell row the single namer of the kernel's grammar (#7890).
+ */
+export const shellPrefixTable = (programs: ReadonlyArray<AnyProgram>): PrefixTable =>
+	resolveTable(programs.find(isShellRow)?.table);
 
 /**
  * The shell's node: a root — no `parent` — with no routes, because it speaks over no port. A config
