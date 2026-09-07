@@ -6,10 +6,9 @@
  * sibling". The other half is the textual scan, which is the only thing that catches an import
  * added later by a builder who never read this file.
  *
- * The scan matters more here than on `../../pi/window/`'s twin, because the rest of `../` does not
- * exist yet: this leaf lands in epic #8162's first phase, and the wire decoder, the subprocess and
- * the layer arrive in later slices. Naming them forbidden now is what keeps a later slice from
- * reaching back into the window instead of into the mapper.
+ * The scan matters more here than on `../../pi/window/`'s twin, because this leaf landed first in
+ * epic #8162 and the wire decoder, the subprocess and the layer under `../` came after it. Naming
+ * them forbidden here is what keeps them reaching into the mapper and never back into the window.
  */
 
 import {readdirSync, readFileSync} from "node:fs";
