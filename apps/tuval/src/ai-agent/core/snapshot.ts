@@ -100,6 +100,12 @@ const isFailure = (value: unknown): boolean =>
 		isNullOrString(value.reason) &&
 		typeof value.detail === "string");
 
+const isPageOutcome = (value: unknown): boolean =>
+	value === null ||
+	(Predicate.isObject(value) &&
+		((value.status === "success" && value.page !== null && isPage(value.page)) ||
+			(value.status === "refused" && value.failure !== null && isFailure(value.failure))));
+
 const sendStates: ReadonlyArray<string> = ["pending", "accepted", "refused", "uncertain"];
 
 /**
@@ -151,6 +157,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isSends(value.sends) &&
 	isQueued(value.queued) &&
 	isPage(value.lastPage) &&
+	isPageOutcome(value.pageOutcome) &&
 	isSubagentSlots(value.subagents) &&
 	isFailure(value.failure);
 

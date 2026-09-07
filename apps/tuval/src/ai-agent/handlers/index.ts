@@ -309,14 +309,14 @@ export const aiAgentHandlers = <RIn = never>(
 				() => nothing,
 			),
 
-		// The page goes back two ways: the `paged` Msg tells the core what the last page was, and
-		// the payload rides `pageReply` so the window that asked gets the items themselves.
+		// The port publishes successful pages; the Msg records either outcome for dispatchFolded.
 		"aiAgent.page": (cmd) =>
 			Effect.gen(function* () {
 				const agent = yield* slot.current;
-				if (agent === null) return refusal(noSession);
+				if (agent === null) return [{type: "pageRefused", failure: noSession}] satisfies Follow;
 				const answered = yield* Effect.result(agent.page(cmd.before, cmd.limit));
-				if (Result.isFailure(answered)) return refusal(failureOf(answered.failure));
+				if (Result.isFailure(answered))
+					return [{type: "pageRefused", failure: failureOf(answered.failure)}] satisfies Follow;
 				// A backend that stores the conversation keeps its own copy of the turn the core
 				// recorded at the send, under its own id, and no id joins the two (#7979). Dropped
 				// here rather than at the window, so both routes one page takes — the `pageReply`

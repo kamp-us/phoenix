@@ -123,6 +123,10 @@ export interface HistoryPage {
 	readonly hasMore: boolean;
 }
 
+export type PageOutcome =
+	| {readonly status: "success"; readonly page: HistoryPage}
+	| {readonly status: "refused"; readonly failure: AgentFailure};
+
 export interface AiAgentSessionState {
 	readonly phase: Phase;
 	/** The backend's session id once `start` answered; `null` before that and after a fresh start. */
@@ -173,6 +177,8 @@ export interface AiAgentSessionState {
 	readonly queued: ReadonlyArray<QueuedPrompt>;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
 	readonly lastPage: HistoryPage | null;
+	/** The page dispatch's completion observation; retained page/failure fields are not outcomes. */
+	readonly pageOutcome: PageOutcome | null;
 	/**
 	 * The subagents this agent has spawned, by the id each is keyed on (`../ports/subagent.ts`).
 	 *
@@ -231,6 +237,7 @@ export const checkpointFields = [
 	"sends",
 	"queued",
 	"lastPage",
+	"pageOutcome",
 	// Decided to survive a restart: a subagent's rows are the whole view Q7 switches to, and they
 	// live nowhere else this process can read — the parent's checkpoint is the only carrier (the
 	// backend's own store answers for the agent's transcript, not for a worker's subtree). What a
@@ -264,6 +271,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	sends: [],
 	queued: [],
 	lastPage: null,
+	pageOutcome: null,
 	subagents: {},
 	failure: null,
 });
@@ -383,7 +391,7 @@ const markInterrupted = (
  * ends on, which is why a "does the tail end on an assistant item" predicate is the wrong reader:
  * a half-written assistant item reads as a completed reply to it.
  *
- * `failure`, `lastPage` and `interruption` are dropped. All three describe the run that ended: a
+ * `failure`, `lastPage`, `pageOutcome` and `interruption` are dropped. They describe the run that ended: a
  * refusal nobody can act on any more, a page the window asked a transport that no longer exists
  * for, and an abort in flight to a backend this process no longer holds a transport to.
  *
@@ -434,6 +442,7 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 			]),
 		),
 		lastPage: null,
+		pageOutcome: null,
 		failure: null,
 	};
 };
