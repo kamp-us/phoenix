@@ -181,13 +181,19 @@ widened scan below now names. Nothing else about that capture changed.
 
 **What `../boundary.unit.test.ts` actually checks, which is less than "no operator path returns".**
 Three things: that the fixture set has not lost a member; that no file carries either operator root
-— `Users/` or `var/folders/` — absolute, with the leading slash gone, or slug-encoded; and that
-every streamed tool call reassembles to the input its settled block carries. A path fragment cut
-past both root names matches the second check and never will, which is exactly what the
-`two-subagent-turn.json` split delta was; the third check is what catches that shape, and only
-where the fragment sits in a delta run with a settled block to disagree with. So the scan is a net
-with a known mesh, not a proof — **read a new capture yourself before committing it**, and treat
-these checks as what stops a shape that has already happened from happening twice.
+— `Users` or `var/folders` — in any of eight forms, being each root with its leading separator or
+without it, spelled with slashes or slug-encoded the way the CLI keys a project directory, and with
+`private` present or absent on the second; and that every streamed tool call reassembles to the
+input its settled block carries. The eight forms are enumerated as their own case in that file, so
+this list and the pattern cannot drift apart.
+
+**A path fragment cut past both root names matches neither root check.** It carries no root name, so
+there is nothing for that scan to match and no widening of it would help. That is exactly what the
+`two-subagent-turn.json` split delta was, and the reassembly check is the only one that catches the
+shape — and only where the fragment sits in a delta run with a settled block to disagree with. So
+these checks are a net with a known mesh, not a proof: **read a new capture yourself before
+committing it**, and treat them as what stops a shape that has already happened from happening
+twice.
 
 ## What is not captured
 

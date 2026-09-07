@@ -103,17 +103,22 @@ describe("the Claude history mapping is pure", () => {
 	});
 
 	/**
-	 * The two operator roots in every form a sanitizer can leave one in: absolute, with the leading
-	 * slash gone, and slug-encoded the way the CLI keys a project directory. The bare-prefix form is
-	 * what `two-subagent-turn.json` needed — its `input_json_delta` run splits a path across frames,
-	 * so the substitution reached the delta holding the absolute prefix and not the one holding what
-	 * followed it (#8474 review round 1).
+	 * The two operator roots, in every form a sanitizer can leave one in.
 	 *
-	 * **This is a scan for two known roots, not a proof that no operator path is left.** A tail cut
-	 * past both root names matches nothing here and never will; the reassembly check below is what
-	 * caught that one, and it catches it only where a delta run has a settled block to disagree with.
+	 * The separator is a class rather than a slash, because the CLI keys a project directory by
+	 * rewriting every separator to `-`; the leading one is optional, because a path cut across
+	 * streamed deltas leaves the second half without it. That is three axes over two roots, and
+	 * `private` optional on the second gives the eight forms the case below enumerates — one of which
+	 * (`-var-folders-…`, the second root slug-encoded without its `private` segment) fell through the
+	 * first widening (#8474 review round 2).
+	 *
+	 * **This is a scan for two known roots, not a proof that no operator path is left.** A fragment
+	 * cut past both root names matches nothing here, and no widening of this pattern will change
+	 * that: there is no root name left in it to match. The reassembly check below is the one that
+	 * catches that shape, and only where the fragment sits in a delta run with a settled block to
+	 * disagree with (#8474 review round 1).
 	 */
-	const operatorRoots = /\/?Users\/|\/?(private\/)?var\/folders\/|-Users-|-private-var-folders-/;
+	const operatorRoots = /[/-]?(private[/-])?var[/-]folders[/-]|[/-]?Users[/-]/;
 
 	it("carries no operator path in a fixture, in any of the forms a root is left in", () => {
 		const dir = join(import.meta.dirname, "fixtures");
@@ -121,6 +126,28 @@ describe("the Claude history mapping is pure", () => {
 			.filter((name) => name.endsWith(".json") || name.endsWith(".jsonl"))
 			.filter((name) => operatorRoots.test(readFileSync(join(dir, name), "utf8")));
 		expect(offenders).toEqual([]);
+	});
+
+	/**
+	 * The scan's own coverage, as a case rather than as a sentence in a docblock — `PROVENANCE.md`
+	 * tells a capture author which forms are covered, and an enumeration nothing checks is how that
+	 * claim came to be true of one root and half-true of the other.
+	 */
+	it("matches both operator roots in all eight forms", () => {
+		const forms = [
+			"/Users/someone/notes",
+			"Users/someone/notes",
+			"/private/var/folders/ab/cd/T/run",
+			"private/var/folders/ab/cd/T/run",
+			"-Users-someone-notes",
+			"Users-someone-notes",
+			"-private-var-folders-ab-cd-T-run",
+			"-var-folders-ab-cd-T-run",
+		];
+		expect(forms.filter((form) => !operatorRoots.test(form))).toEqual([]);
+		// The flip side: a fragment with no root name in it is what the scan cannot see, and the
+		// reassembly check below is why that gap is survivable.
+		expect(operatorRoots.test("xvxk83q4c0000gn/T/tu")).toBe(false);
 	});
 
 	/**
