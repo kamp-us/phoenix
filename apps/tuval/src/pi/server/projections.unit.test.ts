@@ -195,6 +195,66 @@ describe("projectTranscript over a reply still being written", () => {
 		assert.strictEqual(final[1]?.id, "item-1");
 	});
 
+	/**
+	 * The turn #8390 recorded: an adapter that settles `stopReason` before the stream ends. The
+	 * OpenAI-Responses one assigns `"stop"` at a `message` item's `final_answer` phase and keeps
+	 * pushing deltas onto the same object, and Pi's own loop stops an assistant message on
+	 * `"toolUse"` and then opens another. Every revision here is one the host published while
+	 * `AgentState.streamingMessage` was still set, so every one of them has to be marked.
+	 */
+	it("marks every revision it is handed as in flight, whatever the stop reason says", () => {
+		const settling = (text: string, stopReason: string): SourceMessage => ({
+			role: "assistant",
+			content: [{type: "text", text}],
+			provider: "faux",
+			model: "faux-1",
+			stopReason,
+			timestamp: 2,
+		});
+		const toolCall: SourceMessage = {
+			role: "assistant",
+			content: [{type: "toolCall", id: "call-1", name: "read_file", arguments: {path: "a.md"}}],
+			provider: "faux",
+			model: "faux-1",
+			stopReason: "toolUse",
+			timestamp: 2,
+		};
+		const toolResult: SourceMessage = {
+			role: "toolResult",
+			toolCallId: "call-1",
+			toolName: "read_file",
+			content: [{type: "text", text: "the file"}],
+			isError: false,
+			timestamp: 3,
+		};
+
+		const midTurn: ReadonlyArray<readonly [ReadonlyArray<SourceMessage>, SourceMessage]> = [
+			[[asked], growing("hel")],
+			[[asked], settling("hello there", "stop")],
+			[[asked], settling("hello there, reading", "toolUse")],
+			[[asked, toolCall, toolResult], growing("the file")],
+			[[asked, toolCall, toolResult], settling("the file says hi", "stop")],
+		];
+
+		for (const [messages, streaming] of midTurn) {
+			const items = projectTranscript(messages, streaming);
+			const last = items.at(-1);
+			assert.deepInclude(
+				last,
+				{role: "assistant", status: "streaming"},
+				`a revision published mid-turn read as settled: ${JSON.stringify(last)}`,
+			);
+			assert.notProperty(last, "stopReason");
+		}
+
+		// The same message once `message_end` clears `streamingMessage`: settled, and no longer
+		// keyed as in flight, so its own stop reason is what speaks.
+		assert.deepInclude(projectTranscript([asked, landed]).at(-1), {
+			status: "complete",
+			stopReason: "stop",
+		});
+	});
+
 	it("leaves the transcript untouched when nothing is in flight", () => {
 		assert.deepStrictEqual(projectTranscript([asked, landed], undefined), [
 			...projectTranscript([asked, landed]),

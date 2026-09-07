@@ -141,6 +141,21 @@ interface AssistantStatus {
 	readonly errorMessage?: string;
 }
 
+/**
+ * The status of a reply this host was handed as the one still being written.
+ *
+ * Not read off `stopReason`, because that field is the provider's and it settles before the stream
+ * does: the OpenAI-Responses adapter assigns `output.stopReason = "stop"` the moment a `message`
+ * item reports `phase: "final_answer"`, on the same live object every later delta mutates
+ * (`@earendil-works/pi-ai` `dist/api/openai-responses-shared.js:324-327`, and `output` is what each
+ * `partial` carries). Every delta after that point would project as a finished reply — unmarked,
+ * so `checkpointWorthy` saves a half-written answer once per delta (#8390, which is #8160's own
+ * no-go). Being handed the message at all is the stronger fact: `AgentState.streamingMessage` is
+ * set from `message_start` and cleared at `message_end` (`pi-agent-core` `dist/agent.js:382-390`),
+ * so a message reaching here is mid-flight whatever its `stopReason` says.
+ */
+const IN_FLIGHT: AssistantStatus = {status: "streaming"};
+
 const assistantStatus = (stopReason: string, errorMessage: string | undefined): AssistantStatus => {
 	switch (stopReason) {
 		case "stop":
@@ -170,15 +185,17 @@ const assistantStatus = (stopReason: string, errorMessage: string | undefined): 
  * rather than being dropped, because dropping it would leave the client a shorter transcript than
  * the session has.
  *
- * `streaming` is the reply still being written, projected as the last item. It carries Pi's
- * `pending` stop reason, which is the wire's `status: "streaming"` — the marker that tells a
- * client this text is not the whole reply.
+ * `streaming` is the reply still being written, projected as the last item under `status:
+ * "streaming"` — the marker that tells a client this text is not the whole reply, and the one that
+ * keeps it out of the store. That last slot is the only thing that decides the marker; see
+ * `IN_FLIGHT` for why the message's own stop reason cannot.
  */
 export const projectTranscript = (
 	messages: ReadonlyArray<SourceMessage>,
 	streaming?: SourceMessage | undefined,
 ): ReadonlyArray<TranscriptItem> => {
 	const all = streaming === undefined ? messages : [...messages, streaming];
+	const inFlight = streaming === undefined ? -1 : all.length - 1;
 	const toolInputs = new Map<string, Record<string, unknown>>();
 	for (const message of all) {
 		if (message.role !== "assistant") continue;
@@ -208,7 +225,9 @@ export const projectTranscript = (
 				...(message.responseModel === undefined ? {} : {responseModel: message.responseModel}),
 				...(message.usage === undefined ? {} : {usage: projectUsage(message.usage)}),
 				timestamp: message.timestamp,
-				...assistantStatus(message.stopReason, message.errorMessage),
+				...(index === inFlight
+					? IN_FLIGHT
+					: assistantStatus(message.stopReason, message.errorMessage)),
 			} as TranscriptItem);
 			return;
 		}
