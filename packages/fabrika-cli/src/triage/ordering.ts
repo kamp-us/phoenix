@@ -1,27 +1,26 @@
 /**
  * Does a body **state** an ordering — "do not start until #N" — and which issues does it name?
  *
- * ADR 0301 makes the native `blocked_by` graph the one carrier of "do not start this yet", and the
- * founder ruling at
- * https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763 makes `triage enrich`
- * fail-closed against a body that states an ordering the graph carries no edge for. This module is
- * the reading half of that: the writing half is `--blocked-by` in `./blocked-by.ts`.
+ * The native `blocked_by` graph is the one carrier of "do not start this yet", so `triage enrich`
+ * is fail-closed against a body that states an ordering the graph carries no edge for. This module
+ * is the reading half of that: the writing half is `--blocked-by` in `./blocked-by.ts`.
  *
  * **The phrase must bind the reference; co-presence is not a statement.** A line carrying an
  * ordering word *somewhere* and a `#N` *somewhere* matches an issue that merely writes ABOUT
- * orderings — #6728's own body says "Searched the queue and open issues for ordering/edge/blocked
- * work. #6734, #6730, #6722 and #6715 are all live fabrika gate defects", which names no
- * prerequisite at all. That red could not be cleared by wiring an edge, so it would leave the
- * caller with only the reword escape for a body that is already correct.
+ * orderings — a body saying "Searched the queue and open issues for ordering/edge/blocked work.
+ * #<a>, #<b> and #<c> are all live gate defects" names no prerequisite at all. That red could not
+ * be cleared by wiring an edge, so it would leave the caller with only the reword escape for a body
+ * that is already correct.
  *
  * **Quotations are mentions.** An inline-code span or a double-quoted span is somebody else's
- * words being reported, which is why the scan reads a line with those spans blanked — #6728 quotes
- * #6663's `"**Blocked. Do not start until #6662 has merged**"` while stating no ordering of its own.
+ * words being reported, which is why the scan reads a line with those spans blanked — a body that
+ * quotes another issue's `"**Blocked. Do not start until #<n> has merged**"` states no ordering of
+ * its own.
  *
  * **A third-person subject is somebody else's prerequisite.** A body states its own ordering as
  * "Blocked on #N"; "it is already blocked on #N" is a report about another issue, and no edge on
- * *this* issue could ever clear it. #7238 says verbatim "Not folded into #7223: its criteria are
- * scoped to … and it is already blocked on #7035" and owns no prerequisite at all (#6728 round 1).
+ * *this* issue could ever clear it. A body reading "Not folded into #<n>: its criteria are scoped
+ * to … and it is already blocked on #<m>" owns no prerequisite at all.
  *
  * Both narrowings trade a missed red for a red nobody can clear, and that trade is the right one
  * here because the refusal has **no override**: a false negative leaves an issue the old, pre-gate
@@ -68,7 +67,7 @@ const blankQuotations = (text: string): string =>
 
 /**
  * The sentence the ordering phrase opens, so a reference in the *next* sentence is not read as one
- * of its targets — "blocked by #6661. Separately, #6734 is a different defect" names one.
+ * of its targets — "blocked by #<n>. Separately, #<m> is a different defect" names one.
  */
 const sentenceFrom = (text: string, start: number): string => {
 	const end = text.indexOf(". ", start);
@@ -106,7 +105,7 @@ const phraseStart = (text: string): number | null => {
  * Every stated ordering in `text`'s contract region.
  *
  * References are collected from the ordering phrase's own sentence rather than from the whole line —
- * "unlike #6734, this depends on #6661" names one prerequisite, not two — and a blockquote line is
+ * "unlike #<m>, this depends on #<n>" names one prerequisite, not two — and a blockquote line is
  * skipped for the same reason a quoted span is.
  */
 export const statedOrderings = (text: string): ReadonlyArray<StatedOrdering> => {

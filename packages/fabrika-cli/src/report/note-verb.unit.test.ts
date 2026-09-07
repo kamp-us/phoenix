@@ -76,7 +76,7 @@ describe("runNote", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			id: 5154891644,
 			issue: 4312,
-			// ADR 0308: an evidence-array collapsed to a per-class tally; empty means `{}`.
+			// An evidence-array collapsed to a per-class tally; empty means `{}`.
 			redactions: {},
 		});
 	});
@@ -166,7 +166,7 @@ describe("runNote", () => {
 		expect(out.stderr.join("\n")).toContain("redacted a machine-local path");
 	});
 
-	/** ADR 0308: `--json` carries one count per leak class; the per-hit lines stay on stderr. */
+	/** `--json` carries one count per leak class; the per-hit lines stay on stderr. */
 	it("collapses --json redactions to a per-class tally, never rows", async () => {
 		const masked = "reproduced from /Users/<redacted> and /tmp/<redacted>";
 		const out = await run(

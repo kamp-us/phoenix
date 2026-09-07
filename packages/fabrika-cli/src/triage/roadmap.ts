@@ -4,8 +4,8 @@
  *
  * **The join key is the `#<number>` cell, never the title** — the same row-to-milestone binding
  * `roadmap-guard` enforces. Matching on the title is the obvious shortcut and it is wrong: an arc
- * named `Geçit` pins a milestone titled `Sözlük — search and discovery`, and the two share no
- * substring.
+ * and the milestone it pins are named by different people at different times, and the two routinely
+ * share no substring.
  *
  * The `State` column is deliberately not read. This reports what exists; whether an arc is active is
  * a question for the caller, not a filter here.
@@ -14,9 +14,9 @@
 /**
  * The declaration file's **shipped default**, relative to the repository root.
  *
- * #6291 put one home under the name and said a key would follow; #6296 is that key —
- * `roadmapFile` in `.fabrika.jsonc` (`../config/keys/paths.ts`), which `build pick`, `build claim`
- * and `triage homes` resolve before they read. This re-export keeps the string written once, for
+ * The path is configurable: `roadmapFile` in `.fabrika.jsonc` (`../config/keys/paths.ts`), which
+ * `build pick`, `build claim` and `triage homes` resolve before they read. This re-export keeps the
+ * default written once, for
  * the callers that scaffold the file rather than read a repo's declared one.
  */
 export {SHIPPED_ROADMAP_FILE as ROADMAP_FILE} from "../config/keys/paths.ts";

@@ -153,7 +153,7 @@ export const runCompose = <R = never>(
 		}
 
 		// Scanned after splicing, so the rendered decisions are scanned too and nothing this verb
-		// itself writes can escape the predicate (#3086).
+		// itself writes can escape the predicate.
 		const composed = composeSpec(authored, selected);
 		if (isBareAtReference(composed)) {
 			return refuse(

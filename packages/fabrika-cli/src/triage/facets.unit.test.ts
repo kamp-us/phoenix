@@ -27,7 +27,7 @@ const addedLabels = (changes: ReadonlyArray<Change>): ReadonlyArray<string> =>
 	changes.flatMap((c) => (c._tag === "AddLabels" ? [...c.labels] : []));
 
 describe("the containment invariant", () => {
-	// #4285's mechanism was a facet owning MORE than its input can produce, so a correct value read
+	// The failure shape is a facet owning MORE than its input can produce, so a correct value reads
 	// as superseded. Every case below re-derives that the pattern and the vocabulary line up, rather
 	// than trusting the note in facets.ts that says so.
 	it.each(TYPES)("keeps type:%s under the facet that owns type:*", (type) => {
@@ -89,7 +89,7 @@ describe("decodeMember", () => {
 		expect(decodeMember(AUDIENCES, "")).toBeNull();
 	});
 
-	// The lanes are an open set once they are configuration (#6294), so the refusal is this decode
+	// The lanes are an open set once they are configuration, so the refusal is this decode
 	// against the resolved list rather than a compile-time narrowing.
 	it("recognises exactly the lanes it is handed, and nothing adjacent", () => {
 		expect(decodeMember(STANDING_LANES, "wayfinder:backlog")).toBe("wayfinder:backlog");
@@ -111,7 +111,7 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 	});
 
 	it("NEVER removes the label it is applying, even when the facet's pattern matches it", () => {
-		// The exact #4285 delete: `p2` matches /^p\d+$/, so a keep set the removal does not consult
+		// The delete this guards: `p2` matches /^p\d+$/, so a keep set the removal does not consult
 		// strips the priority the run just asked for while still printing a success line.
 		const plan = planReconcile({labels: ["p2", "type:bug"], milestone: 47}, triaged, 47);
 		expect(plan.removed).not.toContain("p2");
@@ -157,7 +157,7 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 		expect(plan.changes).toEqual([]);
 	});
 
-	it("clears the milestone when the home is a standing lane (ADR 0208)", () => {
+	it("clears the milestone when the home is a standing lane", () => {
 		const facets = triagedFacets({
 			type: "chore",
 			priority: "p2",
@@ -267,7 +267,7 @@ describe("shapeViolations — the read-back's positive proof", () => {
 		expect(shapeViolations(observed, triaged, 47)).toEqual(["milestone"]);
 	});
 
-	it("names the milestone when a lane-exempt issue is still homed (ADR 0208)", () => {
+	it("names the milestone when a lane-exempt issue is still homed", () => {
 		const facets = triagedFacets({
 			type: "chore",
 			priority: "p2",

@@ -4,7 +4,7 @@
  *
  * <!-- anchor: DECISIONS-ARE-RENDERED-NOT-AUTHORED --> **`## Decisions` is rendered from the trail
  * and never authored.** The property the whole skill exists for is that a downstream reader can tell
- * the founder's decisions from the model's synthesis without the source transcript (#4227). A
+ * the founder's decisions from the model's synthesis without the source transcript. A
  * convention telling the model to label them would be exactly the prose invariant that holds until
  * the run that forgets; here the provenance word and the ref come from resolver output the model
  * never touches, so a mislabelled decision is not something an agent can produce by being careless.
@@ -13,7 +13,7 @@
  * emit` can recover the ref from it, which is what says which subset a spec covers. Anchoring the
  * parse on the **bolded provenance token** — a closed two-member set — is what keeps it unambiguous
  * when the decision text itself carries an em dash or a `·`, and it lets a ref carry a space and a
- * `#` (`#9301 R1.2`) without quoting.
+ * `#` (`#<n> R1.2`) without quoting.
  *
  * `report`'s `REQUIRED_SECTIONS` is deliberately not widened to hold these four: that constant is the
  * *intake* floor, and widening it would change what every intake filing in the repo requires to serve
@@ -123,7 +123,7 @@ export const carriesDecisionsHeading = (body: string): boolean =>
  * One `## Decisions` entry's bytes.
  *
  * The source issue is **not** repeated per line — it is in the footer once. Repeating it made a
- * map-sourced line read as two issue numbers in a row (`· #9502 #9505`).
+ * map-sourced line read as two issue numbers in a row (`· #<source> #<ref>`).
  */
 export const renderDecision = (row: DecisionRow): string =>
 	`- ${row.text} — **${row.provenance}** · ${row.ref}`;
@@ -204,10 +204,11 @@ export interface FooterFields {
  * The footer `graduate emit` appends — never `compose`.
  *
  * <!-- anchor: FILED-BY-AN-AGENT-IS-NEVER-DROPPED --> **`Filed by an agent` leads the line and is
- * not this group's to omit.** It is ADR 0159's never-auto-close signal, and `../triage/provenance.ts`
- * classifies a body by whether a line begins with `<sub>Filed by an agent` — so a spec filed without
- * it is read as human-authored and loses the signal. This group *extends* the shipped shape with the
- * source and the spec digest; it does not replace it.
+ * not this group's to omit.** It is the signal that stops an agent-filed issue from being
+ * auto-closed, and `../triage/provenance.ts` classifies a body by whether a line begins with
+ * `<sub>Filed by an agent` — so a spec filed without it is read as human-authored and loses it.
+ * This group *extends* the shipped shape with the source and the spec digest; it does not replace
+ * it.
  */
 export const renderFooter = (fields: FooterFields): string =>
 	`<sub>Filed by an agent · graduated from #${fields.source} · spec ${fields.specDigest} · ${fields.timestamp}</sub>`;
