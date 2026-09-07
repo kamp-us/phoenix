@@ -710,9 +710,10 @@ same table and the live milestone projection, and it runs at CI. A second answer
 question can contradict the gate, which is worse than no answer at all — the reasoning that dropped
 `adr classify` from the `/adr` contract, applied here.
 
-**A "may a lane open against this milestone" verb.** `build/scope-admission.ts` is the fence, and ADR
-0245's rule that one predicate answers both `build` seams is exactly what a second reader would
-break. This skill writes the cell; the fence reads it.
+**A "may a lane open against this milestone" verb.** `build/scope-admission.ts` is the fence, and one
+predicate answers both `build` seams — the pool and the claim — so the two can never state different
+facts about one milestone. A second reader is exactly what breaks that. This skill writes the cell;
+the fence reads it.
 
 **A milestone creator, and a wave-homing verb.** v1's campaign ritual created the milestone and then
 PATCHed it onto every issue carrying the wave label. Creating a milestone is board work, and homing

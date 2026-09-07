@@ -336,7 +336,7 @@ The same sentence reaches stderr as `glossary drift: <reason>.`
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary drift: cannot read <dir>: <reason> — the declared set is UNKNOWN, never "0 declared".` | 11 | refusal |
-| `glossary drift: --paths <value> matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).` | 7 | refusal |
+| `glossary drift: --paths <value> matched 0 tracked files — refusing to report a clean sweep of nothing.` | 7 | refusal |
 | `glossary drift: cannot resolve the commit that last changed <path>: <reason> — the range is UNKNOWN, never "never committed".` | 11 | refusal |
 | `glossary drift: <path> has no parseable term table — the declared set is UNKNOWN.` | 4 | refusal |
 | `glossary drift: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
@@ -367,7 +367,7 @@ removing it from the default:
 
 ```
 $ fabrika glossary drift --paths no/such/dir
-glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).
+glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing.
 $ echo $?
 7
 ```
@@ -801,7 +801,7 @@ A citation is a four-digit token in a row's second or third cell. **Live** is de
 restating it, so the two groups cannot disagree about what a status word means. That function admits
 exactly three arms — the status is `accepted`, or exactly `amended-in-part`, or begins
 `amended-in-part by`. A looser paraphrase such as "begins `amended-in-part`" is **wrong**: it would
-call `amended-in-part (0250)` live where the imported predicate does not.
+call `amended-in-part (9250)` live where the imported predicate does not.
 
 **`detail` is fixed text per `kind`**, because a caller may grep it:
 
@@ -869,13 +869,14 @@ expectation that those gates hold; it does not recompute their verdicts.
 |---|---|---|
 | `glossary check: cannot read <path>: <reason> — the outcome is UNKNOWN, never "clean".` | 11 | refusal |
 | `glossary check: <path> has no parseable term table — the outcome is UNKNOWN.` | 4 | refusal |
-| `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register (ADR 0092).` | 7 | refusal |
+| `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register.` | 7 | refusal |
 | `glossary check: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
 
 **Examples**
 
 Both the register and the decision corpus are committed fixtures in this skill's tree, so every
-printed byte reproduces:
+printed byte reproduces — including the record ids below, which are that fixture corpus's own and
+not a live repository's:
 
 ```
 $ fabrika glossary check --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers --decisions packages/fabrika-cli/test-fixtures/glossary/decisions
