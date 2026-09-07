@@ -28,7 +28,7 @@
 import features from "virtual:tuval/features";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useState} from "react";
 import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
 import {isSessionListState} from "../ai-agent/renderer-ref.ts";
 import {
@@ -48,7 +48,13 @@ import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
 import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
-import {readSessionList, type SessionListAnswer, sessionListCall} from "./session-list.ts";
+import {
+	reading,
+	readSessionList,
+	type SessionListAnswer,
+	sessionListCall,
+	settled,
+} from "./session-list.ts";
 
 /**
  * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
@@ -114,14 +120,24 @@ function LogRenderer({host}: {readonly host: WindowHost<LogState>}): ReactElemen
 export type SpellCaller = PageAttachment["call"];
 
 /**
- * The session list, read from the kernel. One call per window, sent when the window mounts and
+ * The session list, read from the kernel. One call per attempt, sent when the window mounts and
  * matched to its reply by the `CallId` it minted, so two open pickers never read each other's answer
- * (`./session-list.ts`). A socket that goes away is no answer at all: the window stays on its
- * reading state, and the desk's own connection banner is what says the link is gone.
+ * (`./session-list.ts`). A socket that goes away is no answer at all: the read stays out until its
+ * deadline passes, and the desk's own connection banner is what says the link is gone.
+ *
+ * Retry is the second correlation, and the attempt number is what carries it: a superseded call's
+ * reply still passes the `CallId` check for the call *it* answered, so the landing is refused unless
+ * the attempt it was sent for is still the current one (#8280).
  */
 const sessionListSource = (call: SpellCaller): SessionListSource => {
 	const useSessionListAnswer: SessionListSource = (window) => {
-		const [answer, setAnswer] = useState<SessionListAnswer | null>(null);
+		const [attempt, setAttempt] = useState(0);
+		const [startedAt, setStartedAt] = useState(() => Date.now());
+		const [landed, setLanded] = useState<{
+			readonly attempt: number;
+			readonly answer: SessionListAnswer;
+		} | null>(null);
+
 		useEffect(() => {
 			const spell = sessionListCall(window);
 			const fiber = Effect.runFork(
@@ -129,15 +145,26 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
 					Effect.flatMap((reply) =>
 						Effect.sync(() => {
 							const read = readSessionList(spell, reply);
-							if (read !== null) setAnswer(read);
+							if (read !== null) setLanded({attempt, answer: read});
 						}),
 					),
 					Effect.catchCause(() => Effect.void),
 				),
 			);
 			return () => void Effect.runFork(Fiber.interrupt(fiber));
-		}, [window]);
-		return answer;
+		}, [call, window, attempt]);
+
+		const retry = useCallback(() => {
+			setLanded(null);
+			setStartedAt(Date.now());
+			setAttempt((current) => current + 1);
+		}, []);
+
+		const answer = landed !== null && landed.attempt === attempt ? landed.answer : null;
+		return {
+			status: answer === null ? reading(startedAt) : settled(answer),
+			retry,
+		};
 	};
 	return useSessionListAnswer;
 };

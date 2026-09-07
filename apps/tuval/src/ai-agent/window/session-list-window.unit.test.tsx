@@ -9,8 +9,10 @@
 import {fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it, vi} from "vitest";
-import type {SessionListAnswer} from "../../page/session-list.ts";
+import type {SessionListStatus} from "../../page/session-list.ts";
+import {reading, settled} from "../../page/session-list.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
+import {SESSION_LIST_DEADLINE_MILLIS} from "../../protocol/session-list.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {bareSession, claudeSession, NOW, piSession, scrambled} from "./fixtures.ts";
 import type {OpenTarget} from "./opening.ts";
@@ -22,13 +24,22 @@ installDomShims();
 const listed = (
 	sessions: ReadonlyArray<SessionRow>,
 	unreadable: ReadonlyArray<UnreadableBackend> = [],
-): SessionListAnswer => ({_tag: "Listed", sessions, unreadable});
+): SessionListStatus => ({_tag: "Listed", sessions, unreadable});
 
 const open = (
-	answer: SessionListAnswer | null,
+	status: SessionListStatus,
 	onActivate?: (session: SessionRow, target: OpenTarget) => void,
 ): ReactElement => (
-	<SessionList answer={answer} now={NOW} {...(onActivate === undefined ? {} : {onActivate})} />
+	<SessionList status={status} now={NOW} {...(onActivate === undefined ? {} : {onActivate})} />
+);
+
+/** The wait as a window renders it: the call left at `NOW`, and this many milliseconds have passed. */
+const waiting = (elapsed: number, onRetry?: () => void): ReactElement => (
+	<SessionList
+		status={reading(NOW, SESSION_LIST_DEADLINE_MILLIS)}
+		now={NOW + elapsed}
+		{...(onRetry === undefined ? {} : {onRetry})}
+	/>
 );
 
 const rows = (): ReadonlyArray<string> =>
@@ -133,8 +144,8 @@ describe("the keyboard", () => {
 });
 
 describe("the states that are not a list", () => {
-	it("says nothing has been read yet before an answer arrives", () => {
-		render(open(null));
+	it("says it is reading before an answer arrives", () => {
+		render(waiting(0));
 		expect(screen.getByRole("status").textContent).toContain(
 			"Reading every registered backend's sessions",
 		);
@@ -189,13 +200,112 @@ describe("the states that are not a list", () => {
 			open({
 				_tag: "Refused",
 				failure: {
-					tag: "tuval/SessionListTimedOut",
-					message: "the session list did not answer within 10000ms",
+					tag: "tuval/UnknownSpell",
+					message: "no spell is registered at session list",
 					path: ["session", "list"],
 				},
 			}),
 		);
-		expect(document.body.textContent).toContain("did not answer within 10000ms");
+		expect(document.body.textContent).toContain("no spell is registered at session list");
 		expect(rows()).toHaveLength(0);
+	});
+});
+
+describe("the wait", () => {
+	it("counts the elapsed time against the deadline instead of one unchanging sentence", () => {
+		render(waiting(6_000));
+
+		const bar = screen.getByRole("progressbar");
+		expect(bar.getAttribute("aria-valuenow")).toBe("6");
+		expect(bar.getAttribute("aria-valuemax")).toBe("10");
+		expect(bar.getAttribute("aria-valuetext")).toBe("6 of 10 seconds elapsed");
+		expect(document.body.textContent).toContain("6s elapsed of a 10s deadline");
+	});
+
+	it("marks the waiting region busy and leaves the ticking readout out of the live region", () => {
+		const {rerender} = render(waiting(3_000));
+		const region = document.querySelector(".tuval-session-list-reading");
+		expect(region?.getAttribute("aria-busy")).toBe("true");
+		const announce = document.querySelector(".kp-command-palette__announce");
+		expect(announce?.textContent).toBe("");
+
+		rerender(waiting(4_000));
+		expect(document.body.textContent).toContain("4s elapsed of a 10s deadline");
+		expect(document.querySelector(".kp-command-palette__announce")?.textContent).toBe("");
+	});
+
+	it("names no backend while it waits: one reply answers the whole union", () => {
+		render(waiting(6_000));
+		expect(document.body.textContent).not.toContain("claude");
+		expect(document.body.textContent).not.toContain("pi");
+		expect(screen.queryByRole("alert")).toBeNull();
+	});
+
+	it("ends the wait at the deadline rather than reading forever", () => {
+		render(waiting(SESSION_LIST_DEADLINE_MILLIS));
+
+		expect(screen.queryByRole("progressbar")).toBeNull();
+		expect(screen.getByRole("status").textContent).toContain(
+			"ran past its deadline before any backend answered",
+		);
+		expect(document.querySelector(".kp-command-palette__announce")?.textContent).toContain(
+			"ran past its deadline",
+		);
+	});
+
+	it("says a timed-out read is not an empty store", () => {
+		render(waiting(SESSION_LIST_DEADLINE_MILLIS));
+
+		expect(document.body.textContent).not.toContain("No sessions on this machine yet.");
+		expect(document.body.textContent).toContain("says nothing about what is on this machine");
+	});
+
+	it("renders the kernel's own timeout as the timed-out state, not as a generic refusal", () => {
+		render(
+			open(
+				settled({
+					_tag: "Refused",
+					failure: {
+						tag: "tuval/SessionListTimedOut",
+						message: "the session list did not answer within 10000ms",
+						path: ["session", "list"],
+					},
+				}),
+			),
+		);
+
+		expect(screen.getByRole("status").textContent).toContain(
+			"ran past its deadline before any backend answered",
+		);
+		expect(document.body.textContent).not.toContain("The kernel refused the session list.");
+		expect(document.body.textContent).not.toContain("No sessions on this machine yet.");
+	});
+
+	it("offers a retry on the timed-out state and re-issues the read", () => {
+		const again = vi.fn();
+		render(waiting(SESSION_LIST_DEADLINE_MILLIS, again));
+
+		fireEvent.click(screen.getByRole("button", {name: "Read the sessions again"}));
+		expect(again).toHaveBeenCalledTimes(1);
+	});
+
+	it("offers the same retry on a refusal, and none while the read is still out", () => {
+		const again = vi.fn();
+		const {unmount} = render(
+			<SessionList
+				status={{
+					_tag: "Refused",
+					failure: {tag: "tuval/UnknownSpell", message: "no spell there"},
+				}}
+				now={NOW}
+				onRetry={again}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", {name: "Read the sessions again"}));
+		expect(again).toHaveBeenCalledTimes(1);
+		unmount();
+
+		render(waiting(2_000, again));
+		expect(screen.queryByRole("button", {name: "Read the sessions again"})).toBeNull();
 	});
 });
