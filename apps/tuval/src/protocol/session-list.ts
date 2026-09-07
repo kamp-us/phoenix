@@ -33,6 +33,18 @@ export const SESSION_LIST_PROGRAM = "ai-agent-sessions";
 export const SESSION_LIST_CALL_PATH = [SESSION_LIST_PROGRAM, ...SESSION_LIST_PATH] as const;
 
 /**
+ * How long the whole union may take before the call answers with a refusal instead of waiting. It
+ * lives here beside the call's address because both ends need it: the kernel bounds the walk with
+ * it (`../ai-agent/session-list.ts`) and a page counts elapsed time against it while the reply is
+ * out (`../page/session-list.ts`). Two spellings of one bound would let a window promise a deadline
+ * the kernel does not keep.
+ */
+export const SESSION_LIST_DEADLINE_MILLIS = 10_000;
+
+/** The failure tag a fired deadline arrives under, so a page can tell a timeout from a refusal. */
+export const SESSION_LIST_TIMED_OUT_TAG = "tuval/SessionListTimedOut";
+
+/**
  * One session. The five optional fields are optional because a real store leaves them out, and an
  * absent key stays absent across the wire — a row renders an absence as an absence rather than as a
  * plausible-looking zero or empty string.

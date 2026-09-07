@@ -72,7 +72,7 @@ const KERNEL =
 	"Tuval's kernel is a registry of programs and a table of running processes; a process has typed ports, an in-port you write to and an out-port you read from.";
 
 const SPAWN_DESCRIPTION = `Start a new process of a program the registry knows, as a child of your own process. ${KERNEL} Answers with the new process's id.`;
-const SEND_DESCRIPTION = `Write one payload to a named in-port of a process you spawned. ${KERNEL} The port decides what it takes, and a payload it refuses is an error naming what the port takes. One exception: a port whose protocol runs both ways takes either direction's payload, so a reply written to the end that takes requests is delivered here and refused inside the process, where nothing this tool answers reports it.`;
+const SEND_DESCRIPTION = `Write one payload to a named in-port of a process you spawned. ${KERNEL} The port decides what it takes, and a payload it refuses is an error naming what the port takes. A port whose protocol runs both ways takes one direction per end, so a reply written to the end that takes requests is refused here rather than delivered.`;
 const READ_DESCRIPTION = `Read the current value of a named out-port of a process you spawned. ${KERNEL} A port that has said nothing yet answers empty rather than making you wait.`;
 
 const text = (value: unknown): CallToolResult => ({

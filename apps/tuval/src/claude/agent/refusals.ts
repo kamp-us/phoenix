@@ -10,6 +10,7 @@ import {
 	PageError,
 	PromptError,
 	StartError,
+	TranscriptError,
 	TransportError,
 } from "../../ai-agent/service/index.ts";
 
@@ -85,6 +86,27 @@ export const subagentMalformed = (agentId: string, line: number, detail: string)
 		reason: "subagent-malformed",
 		detail: `subagent "${agentId}" line ${line}: ${detail}`,
 	});
+
+/**
+ * The three ways a *stored* session's transcript does not come back (#8233).
+ *
+ * `transcriptSessionNotFound` is the reading `sessionNotFound` above makes at `start`, moved onto
+ * the read that no longer starts anything: `getSessionMessages` "returns Array of messages, or
+ * empty array if session not found" (`sdk.d.ts`), so the empty read is two answers in one and the
+ * store's own listing is what tells them apart.
+ */
+export const transcriptSessionNotFound = (sessionId: string): TranscriptError =>
+	new TranscriptError({
+		reason: "session-not-found",
+		sessionId,
+		detail: "the Claude session store holds no session with this id",
+	});
+
+export const transcriptUnreadable = (sessionId: string, cause: unknown): TranscriptError =>
+	new TranscriptError({reason: "store-unreadable", sessionId, detail: detailOf(cause)});
+
+export const transcriptUnknownCursor = (sessionId: string, reason: string): TranscriptError =>
+	new TranscriptError({reason: "unknown-cursor", sessionId, detail: reason});
 
 /**
  * The session store could not be enumerated. Never `unsupported`: this backend does list, so a

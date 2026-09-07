@@ -11,10 +11,11 @@
  * forever. The overrun becomes `SessionTranscriptTimedOut`, which the executor turns into a
  * `SpellReplyError` a window can render.
  *
- * **It opens no process.** The read builds the backend's layer inside its own Scope
- * (`./transcripts.ts`), so `Processes`, `ProcessTable` and `Checkpoints` are untouched: reading a
- * session is read-only until the operator sends (epic #8070, ruling 2). Creating the live process
- * is the first send's act, and it happens through the picker's ordinary open with a session on it
+ * **It opens no process and no backend session.** The read builds the backend's layer inside its
+ * own Scope (`./transcripts.ts`), so `Processes`, `ProcessTable` and `Checkpoints` are untouched,
+ * and the one call it makes is the store-level `sessionTranscript` — reading a session is
+ * read-only until the operator sends (epic #8070, ruling 2; #8233). Creating the live process is
+ * the first send's act, and it happens through the picker's ordinary open with a session on it
  * (`../shell/picker/intent.ts`).
  */
 
@@ -27,7 +28,7 @@ import {
 } from "../protocol/session-transcript.ts";
 import {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";
-import type {PageError, StartError} from "./service/index.ts";
+import type {TranscriptError} from "./service/index.ts";
 import {
 	type BackendTranscript,
 	type BackendUnknown,
@@ -35,8 +36,8 @@ import {
 	type TranscriptRequest,
 } from "./transcripts.ts";
 
-/** Why one transcript read could not answer: the three refusals `readAiAgentTranscript` raises. */
-export type TranscriptRefusal = BackendUnknown | StartError | PageError;
+/** Why one transcript read could not answer: the two refusals `readAiAgentTranscript` raises. */
+export type TranscriptRefusal = BackendUnknown | TranscriptError;
 
 /**
  * One session's history over the kernel's own context. A service for the same reason

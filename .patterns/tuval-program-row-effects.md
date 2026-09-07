@@ -101,15 +101,18 @@ failures come back and they are not the same thing:
   and it must be loud.
 
 A program playing both ends of a two-way port kind names each end locally (`pageRequest` /
-`pageReply`); `compile` matches on the kind, not the key.
+`pageReply`); `compile` matches on the kind, not the key. Each end declares only its own
+direction's predicate — `transcriptPage.ends.request.inbound()`, `transcriptPage.ends.page.outbound()`
+— so the kind stays one kind for routing while the wrong direction is refused where it arrives.
 
 ## Inbound: `receive` is a pure translation with no failure channel
 
 `receive[port]` turns an admitted payload into the program's private Msg. It is a plain function —
-there is nothing to fail into. A payload the port's predicate admits but this end cannot act on (the
-`page` half of a `transcript-page` arriving where a request belongs) becomes a Msg that records the
-refusal as data, never a throw: a throw here happens inside the launcher's pump, where nobody is
-waiting for it.
+there is nothing to fail into, so nothing it is handed may need refusing. That is what the
+direction-scoped end predicate buys: a `page` written to the end that takes requests fails the
+kernel's `accepts` check at the send, where the sender reads the error, instead of arriving here to
+be recorded as a failure Msg only a rendering window would ever see (#8235, and #7991 before it for
+`prompt`).
 
 ## Starting fresh: the boot Cmd a fresh `init` emits
 

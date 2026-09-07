@@ -32,10 +32,12 @@ export {
 	sessionDescription,
 	sessionItem,
 	sessionItems,
+	sessionLabel,
 } from "./rows.ts";
 export {
 	SessionList,
 	type SessionListProps,
+	type SessionListRead,
 	type SessionListSource,
 	SessionListWindow,
 	type SessionListWindowOptions,

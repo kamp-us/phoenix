@@ -9,7 +9,6 @@ export {
 	MODEL_UNSUPPORTED,
 	PAGE_ERROR,
 	PROMPT_ERROR,
-	portRefused,
 	promptQueueFull,
 	promptUnqueued,
 	START_ERROR,
