@@ -141,6 +141,12 @@ interface Placed {
 	readonly ordinal: number;
 }
 
+/**
+ * Every call on one `PLANNER_RESPONSE` line carries the *same* result text, because agy writes one
+ * `MODEL`/`GENERIC` line for the whole batch and attributes nothing per call — there is no id on
+ * either side to pair them by. So a multi-call line renders N rows repeating one outcome, which
+ * over-reports rather than drops. Tracked as #8476 pending a captured multi-call transcript.
+ */
 const toolItemsOf = (
 	id: string,
 	timestamp: number,

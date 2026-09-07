@@ -1,8 +1,8 @@
 /**
  * The boundaries this layer keeps: it is ruling 4's `Layer<TuvalAiAgent, never, never>` (#7570),
- * no agy wire type reaches its public surface, it implements all **ten** `TuvalAiAgentApi` members
- * rather than the brief's nine, and none of `src/claude/`'s kernel-tool apparatus exists anywhere
- * under `src/agy/`.
+ * no agy wire type reaches its public surface, it implements every `TuvalAiAgentApi` member rather
+ * than the brief's nine, and none of `src/claude/`'s kernel-tool apparatus exists anywhere under
+ * `src/agy/`.
  *
  * The surface probe states its expected answer on the right of an `=`, with positive controls
  * pinned to the opposite value, per `.patterns/unconditional-test-assertions.md`'s type-level
@@ -43,7 +43,11 @@ const requiresTheSpawner: RuledShape<
 	Layer.Layer<TuvalAiAgent, never, ChildProcessSpawner.ChildProcessSpawner>
 > = false;
 
-/** Every member the port declares, as data. A tenth was added in #8062 and the brief's table has nine. */
+/**
+ * Every member this file claims the layer implements. Typed on `keyof TuvalAiAgentApi`, so a *wrong*
+ * name reds at compile time; the port's own source text below is what makes a *missing* one red,
+ * which a hand-kept count could not (the list said ten while the port declared eleven).
+ */
 const members: ReadonlyArray<keyof TuvalAiAgentApi> = [
 	"start",
 	"prompt",
@@ -54,8 +58,18 @@ const members: ReadonlyArray<keyof TuvalAiAgentApi> = [
 	"commands",
 	"setThinkingLevel",
 	"page",
+	"listSessions",
 	"events",
 ];
+
+const portSource = join(import.meta.dirname, "..", "..", "ai-agent", "service", "TuvalAiAgent.ts");
+
+/** The member names the port's interface declares, read off its text so a new one cannot be missed. */
+const declaredMembers = (text: string): ReadonlyArray<string> => {
+	const body = /export interface TuvalAiAgentApi \{[\s\S]*?\n\}/.exec(stripComments(text));
+	expect(body).not.toBeNull();
+	return [...(body?.[0] ?? "").matchAll(/^\treadonly\s+(\w+)/gm)].map(([, name]) => name ?? "");
+};
 
 const moduleDir = join(import.meta.dirname, "..");
 
@@ -82,9 +96,19 @@ describe("the agy AI agent layer's surface", () => {
 		expect(Object.keys(AgyAiAgent).sort()).toEqual(["layer"]);
 	});
 
-	it("implements all ten port members — the tenth is setThinkingLevel, absent from the brief", () => {
-		expect(members).toHaveLength(10);
-		expect(members).toContain("setThinkingLevel");
+	it("implements every port member the interface declares, by name", () => {
+		expect([...members].sort()).toEqual(
+			[...declaredMembers(readFileSync(portSource, "utf8"))].sort(),
+		);
+	});
+
+	it("reds when the port grows a member this list does not name", () => {
+		const grown = readFileSync(portSource, "utf8").replace(
+			"\treadonly events:",
+			"\treadonly rename: Effect.Effect<void>;\n\treadonly events:",
+		);
+		expect(declaredMembers(grown)).toContain("rename");
+		expect(members as ReadonlyArray<string>).not.toContain("rename");
 	});
 
 	it("names no agy wire type on the options a process fills in", () => {
