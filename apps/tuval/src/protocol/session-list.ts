@@ -33,7 +33,7 @@ export const SESSION_LIST_PROGRAM = "ai-agent-sessions";
 export const SESSION_LIST_CALL_PATH = [SESSION_LIST_PROGRAM, ...SESSION_LIST_PATH] as const;
 
 /**
- * One session. The four optional fields are optional because a real store leaves them out, and an
+ * One session. The five optional fields are optional because a real store leaves them out, and an
  * absent key stays absent across the wire — a row renders an absence as an absence rather than as a
  * plausible-looking zero or empty string.
  */
@@ -53,6 +53,11 @@ export const SessionRow = Schema.Struct({
 	 * different strings.
 	 */
 	backend: Schema.String,
+	/**
+	 * The label the store gave the session — a `/rename` title, a generated summary, a Pi
+	 * `session_info` name — which a row shows in preference to the first prompt (#8135).
+	 */
+	title: Schema.optionalKey(Schema.String),
 	firstPrompt: Schema.optionalKey(Schema.String),
 	folder: Schema.optionalKey(Schema.String),
 	branch: Schema.optionalKey(Schema.String),

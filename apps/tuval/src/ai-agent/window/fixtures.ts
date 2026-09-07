@@ -47,5 +47,20 @@ export const bareSession: SessionRow = {
 	backend: "pi",
 };
 
+/**
+ * The session the operator named. Its title and its first prompt are deliberately different
+ * strings, because that difference is the whole subject of #8135 — a fixture spelling them the same
+ * would make a row still labelling by the prompt look correct.
+ */
+export const renamedSession: SessionRow = {
+	sessionId: "r-1",
+	lastModified: NOW - 4 * HOUR,
+	programId: "claude-session",
+	backend: "claude",
+	title: "The picker rewrite",
+	firstPrompt: "why is the picker empty",
+	folder: "/Users/founder/code/phoenix",
+};
+
 /** The three, deliberately out of order: the window is what puts them newest-first. */
 export const scrambled: ReadonlyArray<SessionRow> = [piSession, bareSession, claudeSession];

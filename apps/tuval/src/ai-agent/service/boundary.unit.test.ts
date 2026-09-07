@@ -101,14 +101,15 @@ describe("the TuvalAiAgent surface", () => {
 	/**
 	 * The listing's own boundary. `SDKSessionInfo` and pi's `SessionInfo` disagree on field names,
 	 * on optionality and on whether a time is a `Date`, so an exact pin here is what refuses either
-	 * of them reaching the port. The same pin holds the four absent-able fields absent-able, which
+	 * of them reaching the port. The same pin holds the five absent-able fields absent-able, which
 	 * is the no-plausible-zero rule the row depends on.
 	 */
-	it("returns a summary that names no backend and can leave four fields absent", () => {
+	it("returns a summary that names no backend and can leave five fields absent", () => {
 		expectTypeOf<SessionSummary>().toEqualTypeOf<{
 			readonly sessionId: string;
 			readonly lastModified: number;
 			readonly backend: string;
+			readonly title?: string | undefined;
 			readonly firstPrompt?: string | undefined;
 			readonly folder?: string | undefined;
 			readonly branch?: string | undefined;

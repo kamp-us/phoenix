@@ -16,10 +16,25 @@ describe("sessionSummary", () => {
 	});
 
 	it("drops a blank, whitespace-only or null string instead of carrying it", () => {
-		const summary = sessionSummary({...base, folder: "", branch: "   ", firstPrompt: null});
+		const summary = sessionSummary({
+			...base,
+			folder: "",
+			branch: "   ",
+			firstPrompt: null,
+			title: "",
+		});
 		expect("folder" in summary).toBe(false);
 		expect("branch" in summary).toBe(false);
 		expect("firstPrompt" in summary).toBe(false);
+		expect("title" in summary).toBe(false);
+	});
+
+	// #8135: the title is the field a rename lands in, and a store that has both keeps both — a row
+	// prefers the title, but nothing here collapses the two into one.
+	it("carries a title beside the first prompt rather than in place of it", () => {
+		const summary = sessionSummary({...base, title: "Ship the picker", firstPrompt: "why blank"});
+		expect(summary.title).toBe("Ship the picker");
+		expect(summary.firstPrompt).toBe("why blank");
 	});
 
 	it("trims what it does keep", () => {

@@ -26,7 +26,7 @@ import type {SessionRow} from "../../protocol/session-list.ts";
 import type {SessionTranscript} from "../../protocol/session-transcript.ts";
 import {composerBridge} from "../../shell/chat/composer-bridge.ts";
 import {tuvalDesignTranslate} from "../../shell/chat/copy.ts";
-import {NO_FIRST_PROMPT} from "./rows.ts";
+import {sessionLabel} from "./rows.ts";
 import "./session-list-window.css";
 
 /** What a caller's read answered with. `null` is "the read is out", never "there is nothing". */
@@ -127,14 +127,14 @@ export function SessionTranscriptView({
 	return (
 		<section
 			className="tuval-session-transcript"
-			aria-label={session.firstPrompt ?? NO_FIRST_PROMPT}
+			aria-label={sessionLabel(session)}
 			data-sent={sent ? "true" : "false"}
 		>
 			<header className="tuval-session-transcript-header">
 				<Button type="button" variant="tertiary" size="sm" onClick={onBack}>
 					{COPY.back}
 				</Button>
-				<h2>{session.firstPrompt ?? NO_FIRST_PROMPT}</h2>
+				<h2>{sessionLabel(session)}</h2>
 			</header>
 			{older === null || onOlder === undefined ? null : (
 				<Button type="button" variant="tertiary" size="sm" onClick={onOlder}>
