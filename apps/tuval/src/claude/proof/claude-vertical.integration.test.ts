@@ -993,7 +993,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 										payload: {text: CHILD_PROMPT, key: "child-1", timestamp: Date.now()},
 									}),
 								),
-							) as {readonly delivered: boolean};
+							) as {readonly delivered: boolean; readonly evicted: number};
 
 							// `read` answers the port's current value, so it is polled rather than waited on:
 							// the transcript is published before the prompt lands and again after the reply.
@@ -1018,11 +1018,15 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 								);
 							});
 
-							return {child, claudeId: opened.processId, delivered: sent.delivered, transcript};
+							return {child, claudeId: opened.processId, sent, transcript};
 						}),
 					);
 					noLiveHttp(calls);
-					assert.isTrue(result.delivered, "the child's prompt port refused the payload");
+					assert.deepStrictEqual(
+						result.sent,
+						{delivered: true, evicted: 0},
+						"the child's prompt port refused the payload or dropped an earlier one",
+					);
 					assert.strictEqual(result.child.programId, CHILD_PROGRAM);
 					assert.strictEqual(
 						result.child.parentId._tag === "Some" ? result.child.parentId.value : null,

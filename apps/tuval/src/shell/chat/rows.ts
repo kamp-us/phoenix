@@ -7,12 +7,21 @@
  * and "a page prepends without duplicating what the tail already holds" are decisions a test can
  * make without a DOM.
  *
- * That second decision joins on **id, and then on text for a turn the layer never echoed** (#7998).
- * Id alone cannot deliver it: the core records the operator's own turn at send time under a
- * synthetic `local:<key>` id (`ai-agent/core/fold.ts`, `promptItem`), and a layer that emits no
- * `user` item of its own never clears that marker — so the same turn comes back from the layer's
- * history store under the layer's id and matches nothing in the tail. `unheld` below is the fold's
- * `echoOf` join applied to the page/tail stitch, under the same two guards.
+ * That second decision joins on **either of a row's two ids, and then on text for a turn the layer
+ * never echoed**. Id alone cannot deliver either half.
+ *
+ * The `alias` half is #8032: a backend may key its live tail and its history reads in two id spaces
+ * — Pi keys the tail positionally and the page by the stored session entry — so one turn arrives
+ * under two strings and a single-id join renders it twice. The backend that holds both spaces says
+ * so on the row (`ports/transcript-item.ts`, `alias`), and matching a page row's `alias` against
+ * what the tail holds is the whole of the join; nothing here learns which backend has two spaces.
+ *
+ * The text half is #7998: the core records the operator's own turn at send time under a synthetic
+ * `local:<key>` id (`ai-agent/core/fold.ts`, `promptItem`), and a layer that emits no `user` item
+ * of its own never clears that marker — so the same turn comes back from the layer's history store
+ * under the layer's id and matches nothing in the tail. `unheld` below is the fold's `echoOf` join
+ * applied to the page/tail stitch, under the same two guards. It cannot cover the `alias` half:
+ * Pi does echo, and the echo clears `local` before the operator can page at all.
  *
  * The head row is one row, never two: the loading row *replaces* the omitted-count line while a page
  * is in flight, and both disappear at the beginning of history (founder ruling, 2026-09-02).
@@ -143,7 +152,9 @@ const claimsLocal = (item: TranscriptItem, budget: Map<string, number>): boolean
 /**
  * The `page` items `held` does not already carry, in page order.
  *
- * Two joins, and the second is the fold's `echoOf` with both of its guards intact: only a *layer's*
+ * Two joins. The first is identity, and it reads both of a row's ids — its own and the `alias` its
+ * backend gave it for the other id space — so a page copy keyed differently from the tail row for
+ * one turn is still one turn. The second is the fold's `echoOf` with both of its guards intact: only a *layer's*
  * item may claim a still-`local` held one, and a `local` item never claims another, so two
  * deliberate sends of the same text stay two turns. The budget is what makes the claim one-to-one —
  * one unconfirmed turn cancels one page copy, never every copy that shares its text.
@@ -156,19 +167,27 @@ const unheld = (
 	held: ReadonlyArray<TranscriptItem>,
 	page: ReadonlyArray<TranscriptItem>,
 ): ReadonlyArray<TranscriptItem> => {
-	const known = new Set<string>(held.map((item) => item.id));
+	const known = new Set<string>();
+	for (const item of held) {
+		known.add(item.id);
+		if (item.alias !== undefined) known.add(item.alias);
+	}
 	const budget = localTextBudget(held);
 	const fresh: Array<TranscriptItem> = [];
 	for (let index = page.length - 1; index >= 0; index -= 1) {
 		const item = page[index];
 		if (item === undefined) continue;
-		if (known.has(item.id) || claimsLocal(item, budget)) continue;
+		const carried = known.has(item.id) || (item.alias !== undefined && known.has(item.alias));
+		if (carried || claimsLocal(item, budget)) continue;
 		fresh.push(item);
 	}
 	return fresh.reverse();
 };
 
-/** Prepend a page, dropping anything the window already holds. Oldest-first, in and out. */
+/**
+ * Prepend a page, dropping anything the window already holds. Oldest-first, in and out. Through the
+ * same `unheld` `chatRows` uses, so a second page cannot re-introduce a copy the first reconciled.
+ */
 export const mergeOlder = (
 	held: ReadonlyArray<TranscriptItem>,
 	page: ReadonlyArray<TranscriptItem>,

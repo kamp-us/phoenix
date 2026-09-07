@@ -32,18 +32,17 @@ export {
 	sessionDescription,
 	sessionItem,
 	sessionItems,
+	sessionLabel,
 } from "./rows.ts";
 export {
 	SessionList,
 	type SessionListProps,
+	type SessionListRead,
 	type SessionListSource,
 	SessionListWindow,
 	type SessionListWindowOptions,
 	sessionListWindow,
+	type TranscriptPaged,
 	type TranscriptSource,
 } from "./SessionListWindow.tsx";
-export {
-	type SessionTranscriptProps,
-	SessionTranscriptView,
-	type TranscriptAnswer,
-} from "./SessionTranscript.tsx";
+export {type SessionTranscriptProps, SessionTranscriptView} from "./SessionTranscript.tsx";

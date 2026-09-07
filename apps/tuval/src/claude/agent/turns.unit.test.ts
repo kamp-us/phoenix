@@ -326,7 +326,7 @@ describe("page", () => {
 		}),
 	);
 
-	it.effect("turns a throwing read into a PageError naming what the store said", () =>
+	it.effect("turns a throwing read into a PageError naming the read", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
 				on({readFails: new Error("the transcript is unreadable")}, (agent) =>
@@ -338,7 +338,10 @@ describe("page", () => {
 			);
 			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/PageError");
 			assert.strictEqual(failure(exit).reason, "store-unreadable");
-			assert.include(failure(exit).detail ?? "", "the transcript is unreadable");
+			assert.include(failure(exit).detail ?? "", "session store did not answer");
+			// The thrown value is retained rather than repeated (#8010); `refusals.unit.test.ts`
+			// is where that split is judged.
+			assert.notInclude(failure(exit).detail ?? "", "the transcript is unreadable");
 		}),
 	);
 });

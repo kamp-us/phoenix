@@ -77,6 +77,23 @@ export const isTranscriptPagePayload = (value: unknown): value is TranscriptPage
 };
 
 /**
+ * The two directions of `transcript-page`, each with a predicate that admits only its own.
+ *
+ * The union predicate above says what the *kind* carries; an end of the port takes one direction,
+ * and these are what its `accepts` check is built from (#8235). Refusing at the send is what makes
+ * a wrong-direction payload an error the caller reads, rather than a `delivered: true` followed by
+ * a refusal only a rendering window ever sees — the same move #7991 made for `prompt`.
+ */
+export type TranscriptPageRequest = Extract<TranscriptPagePayload, {readonly kind: "request"}>;
+export type TranscriptPageReply = Extract<TranscriptPagePayload, {readonly kind: "page"}>;
+
+export const isTranscriptPageRequest = (value: unknown): value is TranscriptPageRequest =>
+	isTranscriptPagePayload(value) && value.kind === "request";
+
+export const isTranscriptPageReply = (value: unknown): value is TranscriptPageReply =>
+	isTranscriptPagePayload(value) && value.kind === "page";
+
+/**
  * `prompt` — one turn of operator text. `key` is the idempotency key: a second prompt carrying a
  * key the session already saw is dropped rather than re-sent, so a transport retry is free while
  * a deliberate resend mints a new key.
@@ -201,6 +218,16 @@ export const isPermissionPayload = (value: unknown): value is PermissionPayload 
 	}
 };
 
+/** The two directions of `permission`: one answer inbound, the pending set outbound. */
+export type PermissionAnswer = Extract<PermissionPayload, {readonly kind: "decision"}>;
+export type PermissionPendingSet = Extract<PermissionPayload, {readonly kind: "pending"}>;
+
+export const isPermissionAnswer = (value: unknown): value is PermissionAnswer =>
+	isPermissionPayload(value) && value.kind === "decision";
+
+export const isPermissionPendingSet = (value: unknown): value is PermissionPendingSet =>
+	isPermissionPayload(value) && value.kind === "pending";
+
 /** A mode a program offers. The names are the program's own; the window only lists them. */
 export const Mode = Schema.String.pipe(Schema.brand("tuval/ai-agent/Mode"));
 export type Mode = typeof Mode.Type;
@@ -230,3 +257,13 @@ export const isModePayload = (value: unknown): value is ModePayload => {
 			return false;
 	}
 };
+
+/** The two directions of `mode`: one set inbound, the current mode and its list outbound. */
+export type ModeSet = Extract<ModePayload, {readonly kind: "set"}>;
+export type ModeState = Extract<ModePayload, {readonly kind: "state"}>;
+
+export const isModeSet = (value: unknown): value is ModeSet =>
+	isModePayload(value) && value.kind === "set";
+
+export const isModeState = (value: unknown): value is ModeState =>
+	isModePayload(value) && value.kind === "state";

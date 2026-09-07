@@ -28,9 +28,11 @@
 	// The slices that reach `@kampus/design` have their own lens, `tsconfig.design.json`, because
 	// the package is source-consumed and is authored with `exactOptionalPropertyTypes: false`.
 	// Excluding them here is what keeps the kernel on the strict flag; `typecheck` runs both.
-	// `src/page/` is split rather than excluded whole: the three React modules reach the chat window
+	// `src/page/` is split rather than excluded whole: the React modules reach the chat window
 	// through the page's renderer table (#7573) and go to the other lens, while `dev-server.ts` is
-	// Node-side, is imported by `src/bin.ts`, and stays here.
+	// Node-side, is imported by `src/bin.ts`, and stays here. `session-transcript.ts` is on this
+	// lens with `session-list.ts` beside it — the page's wire halves reach no React — and only the
+	// test that mounts the table over them is split off (#8238).
 	// `src/claude/proof/subagent-vertical.integration.test.ts` is split the same way and for the same
 	// reason: it mounts the shipped chat window over a live process, so it reaches `@kampus/design`
 	// through it. Its two neighbours — the config module and the capture handle — reach no React and
@@ -53,6 +55,7 @@
 		"src/page/proof/no-recovery.tsx",
 		"src/page/attached-desk.unit.test.tsx",
 		"src/page/readable-state.unit.test.tsx",
+		"src/page/session-transcript-window.unit.test.tsx",
 		"src/claude/proof/subagent-vertical.integration.test.ts"
 	]
 }

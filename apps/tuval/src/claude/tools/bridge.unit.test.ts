@@ -194,11 +194,11 @@ describe("KernelBridge over the real kernel", () => {
 				Effect.gen(function* () {
 					const bridge = yield* KernelBridge;
 					const child = yield* bridge.spawn(echoId);
-					const delivered = yield* bridge.send(child, "words", "hi");
-					return {delivered, heard: yield* bridge.read(child, "echoed")};
+					const sent = yield* bridge.send(child, "words", "hi");
+					return {sent, heard: yield* bridge.read(child, "echoed")};
 				}),
 			);
-			assert.isTrue(answer.delivered);
+			assert.deepStrictEqual(answer.sent, {delivered: true, evicted: 0});
 			assert.deepStrictEqual(answer.heard, Option.some("HI"));
 		}),
 	);

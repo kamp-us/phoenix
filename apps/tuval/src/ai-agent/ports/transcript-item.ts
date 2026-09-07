@@ -48,6 +48,18 @@ interface ItemBase {
 	 * reasoning from the agent's own.
 	 */
 	readonly parentId?: ItemId;
+	/**
+	 * The other id this same row is known by, when a backend keys its live tail and its history
+	 * reads in two id spaces. Absent means the row has one identity, which is every row a backend
+	 * with a single id space emits.
+	 *
+	 * It exists because the page/tail stitch (`shell/chat/rows.ts`) has to decide whether a page
+	 * copy and a tail row are one turn, and on Pi they never share an `id`: the live tail is keyed
+	 * positionally over the context messages, the history page by the stored session entry
+	 * (`pi/ai-agent/entries.ts`). The backend that holds both spaces states the join here rather
+	 * than the window guessing at one from text (#8032).
+	 */
+	readonly alias?: ItemId;
 }
 
 /**
@@ -88,10 +100,15 @@ export interface ToolItem extends ItemBase {
  *
  * Model-blind like every other item: no provider signature, no redaction flag, no effort level.
  * `ports/thinking.ts` is the effort-level *control* and has nothing to do with this row.
+ *
+ * `partial` is `AssistantItem`'s marker and carries exactly its contract: absent means final, and a
+ * backend re-upserts this same id as the reasoning grows. Reasoning streams before the answer does,
+ * so a window that reads the marker on one kind reads it on both without learning a second field.
  */
 export interface ThinkingItem extends ItemBase {
 	readonly kind: "thinking";
 	readonly text: string;
+	readonly partial?: boolean;
 }
 
 /**
@@ -200,15 +217,16 @@ const isToolResult = (value: unknown): value is ToolResult =>
 const statuses: ReadonlySet<string> = new Set<ToolStatus>(["running", "ok", "error"]);
 
 /**
- * The port predicate for one item: identity, clock, parent tag, kind, and the tool result's own
- * bound. The parent tag is read once ahead of the switch, because every kind may carry one.
+ * The port predicate for one item: identity, clock, parent tag, second identity, kind, and the tool
+ * result's own bound. The tags are read once ahead of the switch, because every kind may carry them.
  */
 export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 	if (
 		!Predicate.isObject(value) ||
 		!isId(value.id) ||
 		!Number.isFinite(value.timestamp) ||
-		!isOptionalId(value.parentId)
+		!isOptionalId(value.parentId) ||
+		!isOptionalId(value.alias)
 	)
 		return false;
 	switch (value.kind) {
@@ -219,9 +237,10 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 				typeof value.text === "string" &&
 				(value.detail === undefined || typeof value.detail === "string")
 			);
-		case "thinking":
 		case "compaction":
 			return typeof value.text === "string";
+		case "thinking":
+			return typeof value.text === "string" && isOptionalFlag(value.partial);
 		case "assistant":
 			return (
 				typeof value.text === "string" &&

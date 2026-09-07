@@ -9,7 +9,6 @@ export {
 	MODEL_UNSUPPORTED,
 	PAGE_ERROR,
 	PROMPT_ERROR,
-	portRefused,
 	promptQueueFull,
 	promptUnqueued,
 	START_ERROR,
@@ -58,7 +57,8 @@ export {
 	sendOutcome,
 	settleAccepted,
 	settledBy,
-	settlePending,
+	settleEndedSession,
+	settleFailedTurn,
 	type TurnProgress,
 } from "./sends.ts";
 export {

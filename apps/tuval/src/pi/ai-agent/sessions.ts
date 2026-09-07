@@ -60,12 +60,17 @@ const NO_MESSAGES = "(no messages)";
  * One `SessionInfo` as the neutral row. `branch` is left absent because Pi records no git branch —
  * `SessionInfo` has no field for one — and `firstPrompt` drops the pin's own placeholder, which is
  * a label for an empty session rather than something the operator typed.
+ *
+ * `title` is Pi's `name`, which the pin documents as the "user-defined display name from
+ * session_info entries" — the same thing Claude's `/rename` title is, so the port's one title
+ * question keeps one answer instead of one per backend (#8135). A session nobody named has none.
  */
 const rowOf = (info: SessionInfo): SessionSummary =>
 	sessionSummary({
 		sessionId: info.id,
 		lastModified: info.modified,
 		backend: "pi",
+		title: info.name,
 		firstPrompt: info.firstMessage === NO_MESSAGES ? undefined : info.firstMessage,
 		folder: info.cwd,
 		messageCount: info.messageCount,
@@ -95,6 +100,45 @@ const leavesOf = (
 		},
 		catch: (cause) => ({store, detail: detailOf(cause)}),
 	});
+
+/** Every directory the stores keep `.jsonl` files in, beside the stores that would not answer. */
+export interface StoreDirs {
+	readonly dirs: ReadonlyArray<string>;
+	readonly failures: ReadonlyArray<StoreFailure>;
+}
+
+const targetsOf = (stores: PiSessionStores): ReadonlyArray<readonly [PiSessionStore, string]> => [
+	["pi-cli", join(stores.agentDir, "sessions")],
+	...(stores.tuvalDir === undefined ? [] : [["tuval", stores.tuvalDir] as const]),
+];
+
+/**
+ * Where a stored session's file could be, across both stores.
+ *
+ * The transcript read (`./PiAiAgent.ts`) walks these to find one session's JSONL, so it reaches
+ * every row `readPiSessions` unions: a session the operator started with `pi` in a terminal lives
+ * in the CLI store and is unreachable off Tuval's own directory alone (#8233).
+ *
+ * A store that would not enumerate is named in `failures` rather than failing the call, for the
+ * reason `readPiSessions` gives — the other store's directories are still worth looking in, and it
+ * is the caller that knows whether a miss across what did answer is a miss at all.
+ */
+export const piSessionDirs = (stores: PiSessionStores): Effect.Effect<StoreDirs> =>
+	Effect.map(
+		Effect.forEach(
+			targetsOf(stores),
+			([store, root]) =>
+				leavesOf(store, root).pipe(
+					Effect.map((dirs) => ({dirs, failure: null as StoreFailure | null})),
+					Effect.catch((failure) => Effect.succeed({dirs: [] as ReadonlyArray<string>, failure})),
+				),
+			{concurrency: "unbounded"},
+		),
+		(answers) => ({
+			dirs: answers.flatMap((answer) => answer.dirs),
+			failures: answers.flatMap((answer) => (answer.failure === null ? [] : [answer.failure])),
+		}),
+	);
 
 interface StoreAnswer {
 	readonly store: PiSessionStore;
@@ -132,13 +176,11 @@ const readStore = (store: PiSessionStore, root: string): Effect.Effect<StoreAnsw
  */
 export const readPiSessions = (stores: PiSessionStores): Effect.Effect<StoreRead> =>
 	Effect.gen(function* () {
-		const targets: ReadonlyArray<readonly [PiSessionStore, string]> = [
-			["pi-cli", join(stores.agentDir, "sessions")],
-			...(stores.tuvalDir === undefined ? [] : [["tuval", stores.tuvalDir] as const]),
-		];
-		const answers = yield* Effect.forEach(targets, ([store, root]) => readStore(store, root), {
-			concurrency: "unbounded",
-		});
+		const answers = yield* Effect.forEach(
+			targetsOf(stores),
+			([store, root]) => readStore(store, root),
+			{concurrency: "unbounded"},
+		);
 
 		const seen = new Set<string>();
 		const sessions: Array<SessionSummary> = [];

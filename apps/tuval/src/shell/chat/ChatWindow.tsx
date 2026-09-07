@@ -101,9 +101,10 @@ export interface ChatWindowOptions {
 	/** The clock a send stamps its turn with, so no update cell has to read one (#7978). */
 	readonly now?: () => number;
 	/**
-	 * The window's half of the config's `features.subagentList` flag (`../../config.ts`), off by
-	 * default. It gates the running list and the removal of a subagent's rows from the transcript
-	 * together, so an operator with it off sees exactly today's window (#8405).
+	 * The window's half of the config's `features.subagentList` flag (`../../config.ts`), on by
+	 * default since the flag's flip. It gates the running list and the removal of a subagent's rows
+	 * from the transcript together, so a caller passing `false` gets exactly the pre-flag window
+	 * (#8405).
 	 */
 	readonly subagentList?: boolean;
 	readonly pageLimit?: number;
@@ -123,6 +124,14 @@ export interface ChatWindowOptions {
 	readonly scrollToFn?: VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"];
 }
 
+/**
+ * What a thin binding's own caller may set: every window option except `extras`, which the binding
+ * owns. A binding exists to fill that slot (founder ruling 2026-09-02, amended on #7572 / #7584), so
+ * a caller reaching it through the binding would be asking for the shared window under the binding's
+ * name — and before this type that argument compiled, ran, and was dropped without a signal (#7957).
+ */
+export type ThinChatWindowOptions = Omit<ChatWindowOptions, "extras">;
+
 interface ResolvedOptions {
 	readonly extras: ((state: AiAgentSessionState) => ReactNode) | null;
 	readonly newKey: () => string;
@@ -141,7 +150,7 @@ const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	now: options.now ?? (() => Date.now()),
-	subagentList: options.subagentList === true,
+	subagentList: options.subagentList !== false,
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,

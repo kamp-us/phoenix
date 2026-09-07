@@ -27,11 +27,7 @@ import {
 	type AiAgentSessionSub,
 	aiAgentSessionMachine,
 	checkpointWorthy,
-	MODE_UNSUPPORTED,
-	PAGE_ERROR,
-	portRefused,
 	readCheckpoint,
-	UNKNOWN_REQUEST,
 } from "./core/index.ts";
 import {
 	type AiAgentHandlerError,
@@ -41,13 +37,13 @@ import {
 	aiAgentPortNames,
 } from "./handlers/index.ts";
 import {
-	type ModePayload,
+	type ModeSet,
 	mode,
-	type PermissionPayload,
+	type PermissionAnswer,
 	type PromptPayload,
 	permission,
 	prompt,
-	type TranscriptPagePayload,
+	type TranscriptPageRequest,
 	transcript,
 	transcriptPage,
 } from "./ports/index.ts";
@@ -108,33 +104,19 @@ export type AiAgentProgram<RIn = never> = Program<
 > & {readonly aiAgent: AiAgentBackend<RIn>};
 
 /**
- * An inbound payload this end of a two-way port cannot act on, as data, under that port's own tag.
- *
- * A port kind admits both directions' payloads (`ports/payloads.ts` carries one tagged type per
- * kind), so the checker cannot rule out a `page` arriving where a request belongs — and neither
- * can a receiver, which is a pure translation with no channel to fail on. Refusing as a `failed`
- * Msg keeps the port's own invariant visible in the window instead of throwing inside the pump,
- * and the tag is the port's because the window renders by tag (ruling 3, #7570).
- */
-const refuse = (tag: string, detail: string): AiAgentSessionMsg => ({
-	type: "failed",
-	failure: portRefused(tag, detail),
-});
-
-/**
  * Five kinds, eight keys: a kind whose protocol runs both ways is played from both ends by this one
  * program, and a kernel `ports` record holds one direction per key, so each end is named locally and
  * `compile` matches on the kind (`ports/ports.ts`).
  */
 const portsOf = (): Readonly<Record<string, PortSchema>> => ({
 	[aiAgentPortNames.transcript]: transcript.outbound(),
-	[aiAgentPortNames.pageRequest]: transcriptPage.inbound(),
-	[aiAgentPortNames.pageReply]: transcriptPage.outbound(),
+	[aiAgentPortNames.pageRequest]: transcriptPage.ends.request.inbound(),
+	[aiAgentPortNames.pageReply]: transcriptPage.ends.page.outbound(),
 	[aiAgentPortNames.prompt]: prompt.inbound(),
-	[aiAgentPortNames.permissionPending]: permission.outbound(),
-	[aiAgentPortNames.permissionDecision]: permission.inbound(),
-	[aiAgentPortNames.modeState]: mode.outbound(),
-	[aiAgentPortNames.modeSet]: mode.inbound(),
+	[aiAgentPortNames.permissionPending]: permission.ends.pending.outbound(),
+	[aiAgentPortNames.permissionDecision]: permission.ends.decision.inbound(),
+	[aiAgentPortNames.modeState]: mode.ends.state.outbound(),
+	[aiAgentPortNames.modeSet]: mode.ends.set.inbound(),
 });
 
 export const aiAgentProgram = <RIn = never>(
@@ -157,33 +139,28 @@ export const aiAgentProgram = <RIn = never>(
 			...(options.config.byteLimit === undefined ? {} : {byteLimit: options.config.byteLimit}),
 		}),
 		ports: portsOf(),
+		// Every receiver is a pure translation with nothing to refuse: each in-port admits exactly
+		// the direction this end takes, so the kernel's `accepts` check turns an unstamped prompt
+		// (#7991) and a wrong-direction payload (#8235) away at the send, where the caller reads it.
 		receive: {
-			// A pure translation with nothing to refuse: the port's predicate requires the key and the
-			// timestamp, so the kernel's `accepts` check turns an unstamped prompt away at the send
-			// and the caller reads that refusal (#7991).
 			[aiAgentPortNames.prompt]: (payload: PromptPayload) => ({
 				type: "prompt",
 				text: payload.text,
 				key: payload.key,
 				timestamp: payload.timestamp,
 			}),
-			[aiAgentPortNames.pageRequest]: (payload: TranscriptPagePayload) =>
-				payload.kind === "request"
-					? {type: "page", before: payload.before, limit: payload.limit}
-					: refuse(PAGE_ERROR, "a page arrived on the request end of transcript-page"),
-			[aiAgentPortNames.permissionDecision]: (payload: PermissionPayload) =>
-				payload.kind === "decision"
-					? {
-							type: "answer",
-							request: payload.request,
-							decision: payload.decision,
-							...(payload.message === undefined ? {} : {message: payload.message}),
-						}
-					: refuse(UNKNOWN_REQUEST, "a pending set arrived on the answer end of permission"),
-			[aiAgentPortNames.modeSet]: (payload: ModePayload) =>
-				payload.kind === "set"
-					? {type: "setMode", mode: payload.mode}
-					: refuse(MODE_UNSUPPORTED, "a mode state arrived on the set end of mode"),
+			[aiAgentPortNames.pageRequest]: (payload: TranscriptPageRequest) => ({
+				type: "page",
+				before: payload.before,
+				limit: payload.limit,
+			}),
+			[aiAgentPortNames.permissionDecision]: (payload: PermissionAnswer) => ({
+				type: "answer",
+				request: payload.request,
+				decision: payload.decision,
+				...(payload.message === undefined ? {} : {message: payload.message}),
+			}),
+			[aiAgentPortNames.modeSet]: (payload: ModeSet) => ({type: "setMode", mode: payload.mode}),
 		},
 		handlers,
 		subs,

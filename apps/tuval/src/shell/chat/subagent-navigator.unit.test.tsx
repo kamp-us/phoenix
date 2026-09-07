@@ -231,7 +231,7 @@ describe("the chord where there is no list", () => {
 	});
 
 	it("does nothing with the flag off, where no row is focusable at all", async () => {
-		const {rendered, chord} = await openWindow(twoRunning(), {});
+		const {rendered, chord} = await openWindow(twoRunning(), {subagentList: false});
 		const before = active();
 
 		await chord();

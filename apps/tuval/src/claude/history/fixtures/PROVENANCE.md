@@ -197,6 +197,16 @@ twice.
 
 ## What is not captured
 
+**A `conversation_reset` frame.** Forcing one means sending `/clear`, exiting plan mode or starting a
+fresh session against a live CLI — an operator run with real credentials and real spend, which is not
+something a cold builder has (#8197). So no fixture here holds one, and
+`../../agent/conversation-reset.unit.test.ts` builds the frame from `sdk.d.ts`'s
+`SDKConversationResetMessage` at the pin instead — `type`, `new_conversation_id`, `uuid`,
+`session_id`, and nothing else — and says so in its own docblock. Every other frame those cases use
+is a capture from this directory. Replacing the derived frame with a real capture is
+[#8197](https://github.com/kamp-us/phoenix/issues/8197)'s open evidence, and it belongs to the same
+live capture run as the three excerpted fixtures above.
+
 **A subagent's streamed reply.** The live-stream gap this section used to name is closed from both
 ends now: `subagent-turn.json` is the SDK's stream — a worker's `user`, `assistant` (prose and
 reasoning) and tool frames all arrive parent-tagged on the parent session — and the sidechain pair
@@ -206,12 +216,19 @@ so a worker's reply is forwarded whole rather than delta by delta and no run can
 case. `events.unit.test.ts` covers it by stamping that one field over the golden `streaming-turn`
 stream, and says so at the case.
 
-**A worker's reasoning in plain text.** Both captures agree and neither has one: `subagent-turn.json`
-carries two `thinking` blocks and the sidechain pair two more, every one with a real `signature` and
-an empty `thinking` string — the provider ships a worker's reasoning encrypted. Four `query()` runs
-at this pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s
-shape is not what a live worker yields today. `blocks.ts` reads the empty-with-signature shape as
-withheld, which is what the captures forced.
+**Reasoning in plain text off a stream.** Both captures agree and neither has one:
+`subagent-turn.json` carries two `thinking` blocks and the sidechain pair two more, every one with a
+real `signature` and an empty `thinking` string — the provider ships reasoning encrypted, and its
+two `thinking_delta` frames carry the empty string for the same reason. Four `query()` runs at this
+pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s shape is
+not what a live stream yields today. `blocks.ts` reads the empty-with-signature shape as withheld,
+which is what the captures forced.
+
+`subagent-turn.json` is still the only capture whose *stream* reasons, and it is what
+`events.unit.test.ts` folds for the withheld case. For the growing row (#8288) that file stamps
+plaintext over those two `thinking_delta` frames and the `thinking` block of the `assistant` frame
+that settles them, leaving every envelope, block boundary and arrival order the capture's — and says
+so at the case.
 
 **Two workers under one *parent* tool call.** Both captures spawn workers as siblings of each other.
 A `Task` call made *by* a worker — `spawn_depth` above 1 — is uncaptured, and nothing a prompt

@@ -16,6 +16,8 @@ export type {
 	UsageEvent,
 } from "../events.ts";
 export {
+	InterruptError,
+	type InterruptReason,
 	ListError,
 	type ListReason,
 	ModelUnsupported,
@@ -27,6 +29,8 @@ export {
 	StartError,
 	type StartReason,
 	ThinkingUnsupported,
+	TranscriptError,
+	type TranscriptReason,
 	TransportError,
 	type TransportReason,
 	UnknownRequest,
@@ -54,6 +58,7 @@ export {
 	type StartedSession,
 	type StartOptions,
 	type TranscriptPage,
+	type TranscriptQuery,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
 } from "./TuvalAiAgent.ts";

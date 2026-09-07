@@ -465,10 +465,10 @@ describe("toAgentEvents over a captured streaming turn", () => {
 
 describe("toAgentEvents over a thinking delta", () => {
 	/**
-	 * No committed capture holds one: whether a turn reasons is the provider's call, not a run's
-	 * (`fixtures/PROVENANCE.md`). So this stamps the delta the SDK declares — a `thinking_delta`
-	 * carrying `thinking` — over the golden streaming turn's own first delta, and every other frame
-	 * stays the captured shape.
+	 * `streaming-turn` holds no reasoning of its own — whether a turn reasons is the provider's call,
+	 * not a run's (`fixtures/PROVENANCE.md`). So this stamps the delta the SDK declares — a
+	 * `thinking_delta` carrying `thinking` — over that capture's own deltas, and every other frame
+	 * stays the captured shape. The reasoning stream `subagent-turn` did capture is below.
 	 */
 	const reasoning = (stream: ReadonlyArray<SDKMessage>): ReadonlyArray<SDKMessage> =>
 		stream.map((one) =>
@@ -807,5 +807,183 @@ describe("toAgentEvents over a subagent's streamed reply", () => {
 			(one) => one.kind === "assistant",
 		);
 		expect(replies.map((one) => "parentId" in one)).toEqual(replies.map(() => false));
+	});
+});
+
+describe("toAgentEvents over the one captured stream that reasons", () => {
+	/**
+	 * `subagent-turn.json` is it: `content_block_start` on a `thinking` block, two `thinking_delta`
+	 * frames, a `signature_delta`, then that block's own `assistant` frame. Every one of those deltas
+	 * carries an empty `thinking` — the provider ships this pin's reasoning encrypted, in both wire
+	 * forms and in every capture (`fixtures/PROVENANCE.md`) — so what the capture proves is the
+	 * withheld half. The plaintext half is stamped over these same frames in the case below.
+	 */
+	const MSG = "msg_000000000000000000000001";
+	const {events, mapping} = run(messages("subagent-turn"));
+	const reasoning = tail(events).filter(
+		(one) => one.kind === "thinking" && one.parentId === undefined,
+	);
+
+	it("draws no growing row for withheld reasoning, and settles the row that says it was", () => {
+		expect(reasoning).toEqual([
+			{
+				kind: "thinking",
+				id: `${MSG}:thinking`,
+				timestamp: AT,
+				text: "(the provider withheld this reasoning)",
+			},
+		]);
+	});
+
+	it("keeps the block's signature out of every row, reasoning or reply", () => {
+		expect(JSON.stringify(items(events))).not.toContain("SIGNATURE-PLACEHOLDER");
+		expect(mapping.thinking).toBe("");
+	});
+});
+
+/**
+ * The captured reasoning stream with plaintext where the encrypted reasoning was: the two
+ * `thinking_delta` frames of `subagent-turn.json` and the `thinking` block of the `assistant` frame
+ * that settles them. Nothing else is touched — the envelopes, the block boundaries and the arrival
+ * order are the capture's — and no run can force the plaintext (`fixtures/PROVENANCE.md`).
+ */
+const REASONED = ["let me ", "weigh it"];
+
+const carriesThinking = (one: SDKMessage): boolean =>
+	one.type === "assistant" &&
+	Array.isArray(one.message.content) &&
+	one.message.content.some((block) => block.type === "thinking");
+
+const spokenAloud = (stream: ReadonlyArray<SDKMessage>): ReadonlyArray<SDKMessage> => {
+	let next = 0;
+	return stream.map((one) => {
+		if (
+			one.type === "stream_event" &&
+			one.event.type === "content_block_delta" &&
+			one.event.delta.type === "thinking_delta"
+		) {
+			const thinking = REASONED[next] ?? "";
+			next += 1;
+			return {...one, event: {...one.event, delta: {...one.event.delta, thinking}}} as SDKMessage;
+		}
+		if (one.type !== "assistant" || !carriesThinking(one)) return one;
+		return {
+			...one,
+			message: {
+				...one.message,
+				content: one.message.content.map((block) =>
+					block.type === "thinking" ? {...block, thinking: REASONED.join("")} : block,
+				),
+			},
+		} as SDKMessage;
+	});
+};
+
+describe("toAgentEvents over a streamed reasoning block that is not withheld", () => {
+	const MSG = "msg_000000000000000000000001";
+	const ANSWER = "msg_000000000000000000000004";
+	const {events, mapping} = run(spokenAloud(messages("subagent-turn")));
+	const reasoning = items(events).filter(
+		(one) => one.kind === "thinking" && one.parentId === undefined,
+	);
+
+	it("grows one reasoning row across the deltas instead of a row apiece", () => {
+		expect(new Set(reasoning.map((one) => one.id))).toEqual(new Set([`${MSG}:thinking`]));
+		expect(reasoning.map((one) => one.kind === "thinking" && one.text)).toEqual([
+			"let me ",
+			"let me weigh it",
+			"let me weigh it",
+		]);
+	});
+
+	it("holds the row's clock and its parent through the growth and the settle", () => {
+		expect(reasoning.map((one) => one.timestamp)).toEqual(reasoning.map(() => AT));
+		expect(reasoning.map((one) => "parentId" in one)).toEqual(reasoning.map(() => false));
+	});
+
+	it("marks every row but the settled one as still being written", () => {
+		expect(reasoning.map((one) => one.kind === "thinking" && one.partial)).toEqual([
+			true,
+			true,
+			undefined,
+		]);
+	});
+
+	it("keeps the reasoning out of the reply, and still streams the answer that follows it", () => {
+		const replies = items(events).filter(
+			(one) => one.kind === "assistant" && one.parentId === undefined,
+		);
+		expect(replies.every((one) => one.kind === "assistant" && !one.text.includes("weigh it"))).toBe(
+			true,
+		);
+		const answer = tail(events).find((one) => one.id === ANSWER);
+		expect(answer?.kind === "assistant" && answer.text.startsWith("Subagent's answer:")).toBe(true);
+		expect(answer !== undefined && !("partial" in answer)).toBe(true);
+	});
+
+	it("leaves nothing partial once the stream has ended", () => {
+		expect(tail(events).filter((one) => "partial" in one && one.partial === true)).toEqual([]);
+		expect(mapping.thinking).toBe("");
+		expect(mapping.partial).toBeNull();
+	});
+});
+
+describe("toAgentEvents over reasoning no assistant frame ever settles", () => {
+	/**
+	 * The stamped stream with the frame that carries the reasoning block dropped, which is what a
+	 * turn cut inside the block leaves: nothing downstream settles the row the deltas drew, and a row
+	 * left marked partial is one nothing checkpoints past for the rest of the session (#8170).
+	 * Dropping that frame is this case's only variable.
+	 */
+	const MSG = "msg_000000000000000000000001";
+	const stream = spokenAloud(messages("subagent-turn")).filter((one) => !carriesThinking(one));
+	const ownReasoning = (events: ReadonlyArray<AgentEvent>) =>
+		tail(events).filter((one) => one.kind === "thinking" && one.parentId === undefined);
+
+	it("settles the row at the text the deltas wrote when the stream ends", () => {
+		const {events, mapping} = run(stream);
+		expect(ownReasoning(events)).toEqual([
+			{kind: "thinking", id: `${MSG}:thinking`, timestamp: AT, text: "let me weigh it"},
+		]);
+		expect(mapping.thinking).toBe("");
+	});
+
+	it("settles it on the frame that cut the turn instead, when one arrives first", () => {
+		// `aborted` is the SDK's mark for a message the stream cut mid-word. The frame is the
+		// capture's own, of this same turn; only the mark is stamped.
+		const cut = stream.map((one) =>
+			one.type === "assistant" && one.message.id === MSG
+				? ({...one, aborted: true} as SDKMessage)
+				: one,
+		);
+		const {events, mapping} = run(cut);
+		expect(ownReasoning(events)).toEqual([
+			{kind: "thinking", id: `${MSG}:thinking`, timestamp: AT, text: "let me weigh it"},
+		]);
+		expect(mapping.thinking).toBe("");
+	});
+});
+
+describe("toAgentEvents over a subagent's streamed reasoning", () => {
+	/**
+	 * A worker's reply is forwarded whole and never streamed, so no run can force a nested
+	 * `stream_event` (`fixtures/PROVENANCE.md`). `SDKPartialAssistantMessage` declares
+	 * `parent_tool_use_id: string | null` exactly as an assistant frame does (`sdk.d.ts`, 0.3.259),
+	 * so this is the stamped reasoning stream with that one field stamped over it as well.
+	 */
+	const PARENT = "toolu_01SubagentParent";
+	const nested = spokenAloud(messages("subagent-turn")).map((one) =>
+		one.type === "stream_event" || one.type === "assistant"
+			? ({...one, parent_tool_use_id: PARENT} as SDKMessage)
+			: one,
+	);
+
+	it("tags every upsert of the growing reasoning, and the settled row that replaces them", () => {
+		const reasoning = items(run(nested).events).filter((one) => one.kind === "thinking");
+		expect(reasoning.length).toBeGreaterThan(1);
+		expect(reasoning.map((one) => one.parentId)).toEqual(reasoning.map(() => PARENT));
+		expect(
+			reasoning.filter((one) => one.kind === "thinking" && one.partial !== true).length,
+		).toBeGreaterThan(0);
 	});
 });

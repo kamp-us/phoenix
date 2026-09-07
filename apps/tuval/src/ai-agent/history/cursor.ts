@@ -4,10 +4,13 @@ export type PageCursor =
 	| {readonly kind: "page"; readonly before: string | null}
 	| {readonly kind: "unavailable"};
 
+// The partial arm is read through `in` rather than off the assistant kind, for the reason
+// `../core/state.ts`'s `holdsPartialItem` is: reasoning grows a partial row of its own now (#8288),
+// and a third kind that grows one must not need this predicate edited to stay off the cursor.
 const isUnavailable = (item: TranscriptItem): boolean =>
 	(item.kind === "user" && item.local === true) ||
 	item.id.startsWith("local:") ||
-	(item.kind === "assistant" && item.partial === true);
+	("partial" in item && item.partial === true);
 
 /** Live partial text need not have a stored frame yet; aliases only join completed rows. */
 export const pageCursor = (

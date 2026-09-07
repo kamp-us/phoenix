@@ -9,23 +9,32 @@
  * presentation rather than forking it: a window is not an overlay, and a modal inside one traps the
  * whole desk behind a list.
  *
- * **The list is handed in.** `useAnswer` is the seam: the renderer asks for the current answer and
- * renders it, so this module knows nothing about how a page gets one — the page binds a source that
- * calls `session.list` over its socket (`../../page/renderers.tsx`, #8161). It is handed this
- * window's id, because the call carries the window it came from and the kernel resolves the rest.
- * At its default it hands `null`, "nothing has been read yet", which is what a fixture or a surface
- * with no socket behind it renders.
+ * **The list is handed in.** `useAnswer` is the seam: the renderer asks where the read has got to
+ * and renders that, so this module knows nothing about how a page gets an answer — the page binds a
+ * source that calls `session.list` over its socket (`../../page/renderers.tsx`, #8161). It is handed
+ * this window's id, because the call carries the window it came from and the kernel resolves the
+ * rest. At its default it hands a read nobody sent, which is what a fixture or a surface with no
+ * socket behind it renders. `useTranscript` is the same seam for the session a row opens onto, bound
+ * to the `session.transcript` spell by the same table (#8238).
  *
- * **Four states, none of them a blank window.** No answer yet, a refused call, an empty store, and a
- * store whose backends could not be read are four different sentences — the last two are the pair
- * that matters, because a failed read rendered as an empty list tells an operator they have no
- * sessions.
+ * **Five states, none of them a blank window.** Reading, a fired deadline, a refused call, an empty
+ * store, and a store whose backends could not be read are five different sentences — the last two
+ * are the pair that matters, because a failed read rendered as an empty list tells an operator they
+ * have no sessions.
+ *
+ * **The waiting state is a state, not the absence of one** (#8280). The seam hands a `Reading` that
+ * carries when the call left and the bound it runs against, this window ticks a clock against it,
+ * and a deadline that passes with no reply ends the wait rather than spinning forever. The readout
+ * measures *time*, never work: one reply answers the whole union, so no per-backend progress exists
+ * to show and none is invented.
  */
 
-import {CommandPalette, type CommandPaletteItem} from "@kampus/design";
+import {Button, CommandPalette, type CommandPaletteItem} from "@kampus/design";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode} from "react";
-import {useCallback, useMemo, useState} from "react";
-import type {SessionListAnswer} from "../../page/session-list.ts";
+import {useCallback, useEffect, useMemo, useState} from "react";
+import type {ReadingSessions, SessionListStatus} from "../../page/session-list.ts";
+import {atClock, elapsedMillis, reading} from "../../page/session-list.ts";
+import type {TranscriptAnswer} from "../../page/session-transcript.ts";
 import {failureLine} from "../../palette/call.ts";
 import type {WindowId} from "../../protocol/ids.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
@@ -34,16 +43,16 @@ import {windowRenderer} from "../../shell/window/index.ts";
 import {
 	listView,
 	type OpenPhase,
+	type OpenRequest,
 	type OpenTarget,
 	openRead,
 	type SendPlan,
 	type SessionListView,
 	send,
 	sessionView,
-	type TranscriptRead,
 } from "./opening.ts";
 import {matchesQuery, rowValue, sessionItems} from "./rows.ts";
-import {SessionTranscriptView, type TranscriptAnswer} from "./SessionTranscript.tsx";
+import {SessionTranscriptView} from "./SessionTranscript.tsx";
 import "./session-list-window.css";
 
 const TITLE = "AI agent sessions";
@@ -56,7 +65,84 @@ const COPY = {
 	allRefused: "No sessions: every backend that could have answered refused the read.",
 	noMatch: "No session matches this filter.",
 	refused: "The kernel refused the session list.",
+	elapsed: "Time the read has been out, against its deadline",
+	timedOut: "The read ran past its deadline before any backend answered.",
+	timedOutNote:
+		"Nothing was read, so this says nothing about what is on this machine — the sessions may all still be there.",
+	retry: "Read the sessions again",
 } as const;
+
+/** Whole seconds, because a readout that ticks in milliseconds is a number nobody can read. */
+const seconds = (millis: number): number => Math.floor(millis / 1000);
+
+/**
+ * How often the elapsed readout re-renders while a read is out. Finer than the second it prints, so
+ * the wait ends near its deadline rather than up to a second after it.
+ */
+const TICK_MILLIS = 250;
+
+/**
+ * The clock the waiting readout is measured against: the caller's when it pinned one, otherwise
+ * this window's own, ticking only while a read is actually out. A pinned clock never ticks, which
+ * is what lets a test render one exact moment of the wait.
+ */
+const useClock = (pinned: number | undefined, ticking: boolean): number => {
+	const [now, setNow] = useState(() => pinned ?? Date.now());
+	useEffect(() => {
+		if (pinned !== undefined || !ticking) return;
+		const timer = setInterval(() => setNow(Date.now()), TICK_MILLIS);
+		return () => clearInterval(timer);
+	}, [pinned, ticking]);
+	return pinned ?? now;
+};
+
+/**
+ * How long the read has been out, said in time and nothing else. `role="progressbar"` rather than a
+ * live region on purpose: a reader can query it whenever it wants, and a value that changes four
+ * times a second announces nothing (Pillar 4 — the state *change* is announced, the ticks are not).
+ */
+const ReadingProgress = ({
+	status,
+	now,
+}: {
+	readonly status: ReadingSessions;
+	readonly now: number;
+}): ReactElement => {
+	const elapsed = seconds(elapsedMillis(status, now));
+	const deadline = seconds(status.deadlineMillis);
+	const fraction = elapsedMillis(status, now) / status.deadlineMillis;
+	return (
+		<div className="tuval-session-list-reading" aria-busy="true">
+			<div
+				className="tuval-session-list-progress"
+				role="progressbar"
+				aria-label={COPY.elapsed}
+				aria-valuemin={0}
+				aria-valuemax={deadline}
+				aria-valuenow={elapsed}
+				aria-valuetext={`${elapsed} of ${deadline} seconds elapsed`}
+				style={{"--tuval-elapsed": `${Math.round(fraction * 100)}%`} as Record<string, string>}
+			>
+				<div className="tuval-session-list-progress-fill" />
+			</div>
+			<p className="tuval-session-list-elapsed">{`${elapsed}s elapsed of a ${deadline}s deadline`}</p>
+		</div>
+	);
+};
+
+/**
+ * The sentence a reader is told when the state changes, and nothing while a read is merely running:
+ * it is derived from the tag alone, so the four ticks a second write the same string and the live
+ * region stays silent until the state itself moves.
+ */
+const stateAnnouncement = (status: SessionListStatus): string | null => {
+	if (status._tag === "Reading") return null;
+	if (status._tag === "TimedOut") return COPY.timedOut;
+	if (status._tag === "Refused") return COPY.refused;
+	return status.sessions.length === 1
+		? "1 session read."
+		: `${status.sessions.length} sessions read.`;
+};
 
 /** One backend that could not answer, named with the store's own words rather than a paraphrase. */
 const UnreadableBackends = ({
@@ -81,8 +167,10 @@ const UnreadableBackends = ({
 );
 
 export interface SessionListProps {
-	/** The answer to render. `null` is "nothing has been read yet", never "there are no sessions". */
-	readonly answer: SessionListAnswer | null;
+	/** The read to render, waiting state included — there is no "no state yet" to infer one from. */
+	readonly status: SessionListStatus;
+	/** Ask for the read again. Offered on both terminal failures; absent, neither shows the button. */
+	readonly onRetry?: () => void;
 	/**
 	 * A row was picked, and where it should land: `inline` for plain activation, `new-window` for
 	 * Cmd+Enter. Reported for both targets, because the inline open is this component's own act and
@@ -99,12 +187,13 @@ export interface SessionListProps {
  * it owns — the filter term, the active row, the announcement — is the palette's or this render's,
  * and none of it outlives the window.
  */
-export function SessionList({answer, onActivate, now}: SessionListProps): ReactElement {
+export function SessionList({status, onActivate, onRetry, now}: SessionListProps): ReactElement {
 	const [chosen, setChosen] = useState<string | null>(null);
-	const clock = now ?? Date.now();
+	const clock = useClock(now, status._tag === "Reading");
+	const shown = atClock(status, clock);
 
-	const sessions = answer?._tag === "Listed" ? answer.sessions : [];
-	const unreadable = answer?._tag === "Listed" ? answer.unreadable : [];
+	const sessions = shown._tag === "Listed" ? shown.sessions : [];
+	const unreadable = shown._tag === "Listed" ? shown.unreadable : [];
 
 	const byValue = useMemo(
 		() => new Map(sessions.map((session) => [rowValue(session), session])),
@@ -148,19 +237,21 @@ export function SessionList({answer, onActivate, now}: SessionListProps): ReactE
 		[byValue, onActivate],
 	);
 
-	// Only reached once an answer has landed: before that the palette is `loading` and shows
-	// `loadingLabel` instead, which is the "nothing has been read yet" state.
+	// Only reached once the read has settled: while it is out the palette is `loading` and shows
+	// `loadingLabel` instead, with the elapsed readout beside it.
 	const emptyLabel =
-		answer?._tag === "Refused"
-			? COPY.refused
-			: sessions.length === 0
-				? unreadable.length === 0
-					? COPY.emptyStore
-					: COPY.allRefused
-				: COPY.noMatch;
+		shown._tag === "TimedOut"
+			? COPY.timedOut
+			: shown._tag === "Refused"
+				? COPY.refused
+				: sessions.length === 0
+					? unreadable.length === 0
+						? COPY.emptyStore
+						: COPY.allRefused
+					: COPY.noMatch;
 
-	const error: ReactNode =
-		answer !== null && answer._tag === "Refused" ? failureLine(answer.failure) : undefined;
+	const error: ReactNode = shown._tag === "Refused" ? failureLine(shown.failure) : undefined;
+	const failed = shown._tag === "TimedOut" || shown._tag === "Refused";
 
 	return (
 		<div className="tuval-session-list">
@@ -170,33 +261,75 @@ export function SessionList({answer, onActivate, now}: SessionListProps): ReactE
 				title={TITLE}
 				placeholder={COPY.placeholder}
 				emptyLabel={emptyLabel}
-				loading={answer === null}
+				loading={shown._tag === "Reading"}
 				loadingLabel={COPY.reading}
 				filter={filter}
 				onSelect={select}
 				onKeyDown={keyDown}
 				shortcut={false}
-				announcement={chosen === null ? null : `Chose ${chosen}.`}
+				announcement={chosen === null ? stateAnnouncement(shown) : `Chose ${chosen}.`}
 				{...(error === undefined ? {} : {error})}
 			/>
+			{shown._tag === "Reading" ? <ReadingProgress status={shown} now={clock} /> : null}
+			{shown._tag === "TimedOut" ? (
+				<p className="tuval-session-list-note">{COPY.timedOutNote}</p>
+			) : null}
+			{failed && onRetry !== undefined ? (
+				<div className="tuval-session-list-retry">
+					<Button type="button" variant="tertiary" size="sm" onClick={onRetry}>
+						{COPY.retry}
+					</Button>
+				</div>
+			) : null}
 			{unreadable.length === 0 ? null : <UnreadableBackends backends={unreadable} />}
 		</div>
 	);
 }
 
+/** What the page hands the window: where the read has got to, and how to ask for it again. */
+export interface SessionListRead {
+	readonly status: SessionListStatus;
+	/** Absent when the page cannot re-issue the call — then no retry is offered rather than a dead one. */
+	readonly retry?: () => void;
+}
+
 /**
- * How the renderer gets the answer to render. The page owns it; the default hands nothing. It is a
- * hook the window calls on every render, so a source that reads state re-renders the window when the
- * answer lands. The window id rides along because a call names the window it came from.
+ * How the renderer gets the read to render. The page owns it; the default asks nobody. It is a hook
+ * the window calls on every render, so a source that reads state re-renders the window when the
+ * reply lands. The window id rides along because a call names the window it came from.
  */
-export type SessionListSource = (window: WindowId) => SessionListAnswer | null;
+export type SessionListSource = (window: WindowId) => SessionListRead;
 
-const nothingRead: SessionListSource = () => null;
+/**
+ * The default: a read that was never sent. It still starts a clock, so a surface with no socket
+ * behind it walks the same reading-then-timed-out path a real one does rather than claiming a
+ * store it never asked about.
+ */
+const nothingRead: SessionListSource = () => {
+	const [startedAt] = useState(() => Date.now());
+	return {status: reading(startedAt)};
+};
 
-/** How the renderer gets one session's transcript. The default reads none, so a window says so. */
-export type TranscriptSource = (read: TranscriptRead) => TranscriptAnswer | null;
+/** One session's transcript as the surface renders it, and the way to ask for the page before it. */
+export interface TranscriptPaged {
+	/** The history so far, waiting state included. `null` while the first read is out. */
+	readonly answer: TranscriptAnswer | null;
+	/** Absent when the caller cannot page — then the older affordance is not offered at all. */
+	readonly onOlder?: () => void;
+}
 
-const nothingPaged: TranscriptSource = () => null;
+/**
+ * How the renderer gets one session's transcript. Like `SessionListSource` it is a hook the window
+ * calls, so a source holding the landed pages re-renders the window when the next one arrives; it
+ * is handed `openRead`'s own answer and the window the call comes from. It takes the request rather
+ * than the read inside it because a row the store filed under no folder has no read to hand over,
+ * and a hook cannot be skipped for it — so the refusal is a case the source is given rather than a
+ * placeholder read invented to keep the call shape. The default reads none, so a surface with no
+ * socket behind it says the read is out rather than claiming an empty session.
+ */
+export type TranscriptSource = (request: OpenRequest, window: WindowId) => TranscriptPaged;
+
+const nothingPaged: TranscriptSource = () => ({answer: null});
 
 export interface SessionListWindowOptions {
 	readonly useAnswer?: SessionListSource;
@@ -235,7 +368,7 @@ function SessionListHost({
 	onOpenInNewWindow,
 	onSend,
 }: SessionListWindowOptions & {readonly window: WindowId}): ReactElement {
-	const answer = (useAnswer ?? nothingRead)(window);
+	const read = (useAnswer ?? nothingRead)(window);
 	const [view, setView] = useState<SessionListView>(listView);
 	const [phase, setPhase] = useState<OpenPhase>("reading");
 
@@ -255,16 +388,25 @@ function SessionListHost({
 	const back = useCallback(() => setView(listView), []);
 
 	if (view.kind === "list") {
-		return <SessionList answer={answer} onActivate={activate} />;
+		return (
+			<SessionList
+				status={read.status}
+				onActivate={activate}
+				{...(read.retry === undefined ? {} : {onRetry: read.retry})}
+			/>
+		);
 	}
 
-	const request = openRead(view.session);
-	const page = request._tag === "Read" ? (useTranscript ?? nothingPaged)(request.read) : null;
+	// The transcript is a child rather than an arm of this render, because the source is a hook:
+	// called from here it would run on the session branch and not on the list branch, which is the
+	// conditional-hook fault React refuses. The key is the session, so picking a second row unmounts
+	// the first read's state instead of folding its pages into the new session's history.
 	return (
-		<SessionTranscriptView
+		<SessionTranscriptHost
+			key={`${view.session.programId}:${view.session.sessionId}`}
 			session={view.session}
-			answer={page}
-			unopenable={request._tag === "OpenRefused"}
+			window={window}
+			useTranscript={useTranscript ?? nothingPaged}
 			onBack={back}
 			onSend={(text) => {
 				// The phase is what makes the transition happen once: the first send hands back a spawn
@@ -273,6 +415,41 @@ function SessionListHost({
 				setPhase(plan.phase);
 				onSend?.(view.session, text, plan);
 			}}
+		/>
+	);
+}
+
+/**
+ * One session's transcript over whatever source the page bound. It exists so the source is called
+ * unconditionally from a component whose whole life is this one session: the read it sends is
+ * memoised on the row, so a re-render is not a second call, and unmounting is what discards a read
+ * whose session is no longer on screen.
+ */
+function SessionTranscriptHost({
+	session,
+	window,
+	useTranscript,
+	onBack,
+	onSend,
+}: {
+	readonly session: SessionRow;
+	readonly window: WindowId;
+	readonly useTranscript: TranscriptSource;
+	readonly onBack: () => void;
+	readonly onSend: (text: string) => void;
+}): ReactElement {
+	// Memoised on the row, so the source's own effect sees one request for the life of this mount: a
+	// fresh object every render would re-send the first page on every render.
+	const request = useMemo(() => openRead(session), [session]);
+	const paged = useTranscript(request, window);
+	return (
+		<SessionTranscriptView
+			session={session}
+			answer={paged.answer}
+			unopenable={request._tag === "OpenRefused"}
+			onBack={onBack}
+			onSend={onSend}
+			{...(paged.onOlder === undefined ? {} : {onOlder: paged.onOlder})}
 		/>
 	);
 }

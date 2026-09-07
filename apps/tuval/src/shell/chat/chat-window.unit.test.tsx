@@ -239,6 +239,16 @@ const scrollElementTo = async (scroller: HTMLElement, offset: number): Promise<v
 
 const transcript = (): HTMLElement => screen.getByRole("log", {name: "Transcript"});
 
+// The window carries more than one `role="status"` — the phase line, and the subagent view slot's
+// notice that `features.subagentList` brings with it — so a bare `getByRole("status")` is ambiguous.
+const phaseLine = (): HTMLElement => {
+	const line = document.querySelector<HTMLElement>(".tuval-chat-phase");
+	if (line === null) throw new Error("no phase line");
+	return line;
+};
+
+const liveRegions = (): number => screen.getAllByRole("status").length;
+
 const scrollTo = (offset: number): Promise<void> => scrollElementTo(transcript(), offset);
 
 /**
@@ -943,8 +953,9 @@ describe("the composer", () => {
 				),
 			);
 		});
-		await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Interrupting"));
-		expect(screen.getByRole("status").textContent).not.toContain("Ready");
+		expect(phaseLine().getAttribute("role")).toBe("status");
+		await waitFor(() => expect(phaseLine().textContent).toContain("Interrupting"));
+		expect(phaseLine().textContent).not.toContain("Ready");
 	});
 
 	it("restores the draft the window was left with", async () => {
@@ -1346,6 +1357,7 @@ describe("the phase line and the contract's two placeholders", () => {
 		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "ready"}));
 		const working = () => document.querySelector(".tuval-chat-working");
 		expect(working()).toBeNull();
+		const regionsWhileReady = liveRegions();
 
 		await act(async () => {
 			await Effect.runPromise(
@@ -1353,9 +1365,11 @@ describe("the phase line and the contract's two placeholders", () => {
 			);
 		});
 		await waitFor(() => expect(working()).not.toBeNull());
-		// The phase line is the announced one; a second `status` would narrate the same turn twice.
+		// The phase line is the announced one; a `status` the tell brought with it would narrate the
+		// same turn twice. Counted against the ready window rather than against a literal, because not
+		// every live region the window carries is the tell's business.
 		expect(working()?.getAttribute("aria-hidden")).toBe("true");
-		expect(screen.getAllByRole("status").length).toBe(1);
+		expect(liveRegions()).toBe(regionsWhileReady);
 
 		await act(async () => {
 			await Effect.runPromise(process.commit(withTranscript(transcriptOf(2), {phase: "ready"})));

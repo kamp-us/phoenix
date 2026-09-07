@@ -8,7 +8,14 @@
  */
 
 import type {AgentFailure} from "../../ai-agent/events.ts";
-import {PageError, PromptError, StartError, TransportError} from "../../ai-agent/service/index.ts";
+import {
+	InterruptError,
+	PageError,
+	PromptError,
+	StartError,
+	TranscriptError,
+	TransportError,
+} from "../../ai-agent/service/index.ts";
 import type {ConnectionRefusal, Disconnected, SessionRefusal} from "../client/index.ts";
 
 export const startErrorOf = (
@@ -67,6 +74,31 @@ export const storeUnreadable = (cause: unknown): PageError =>
 	});
 
 /**
+ * The three ways a *stored* session's transcript does not come back (#8233).
+ *
+ * `transcriptSessionMissing` is the one `storeUnreadable` above cannot say. `page` reads the file
+ * of a session the layer already holds, so a missing file there is a broken store; the store read
+ * is handed an id off a listing and a file that is nowhere is the ordinary answer that the session
+ * is gone — which a caller must be able to tell from a store it could not enumerate.
+ */
+export const transcriptSessionMissing = (sessionId: string): TranscriptError =>
+	new TranscriptError({
+		reason: "session-not-found",
+		sessionId,
+		detail: "neither of Pi's session stores holds a file for this id",
+	});
+
+export const transcriptUnreadable = (sessionId: string, cause: unknown): TranscriptError =>
+	new TranscriptError({
+		reason: "store-unreadable",
+		sessionId,
+		detail: cause instanceof Error ? cause.message : String(cause),
+	});
+
+export const transcriptUnknownCursor = (sessionId: string, reason: string): TranscriptError =>
+	new TranscriptError({reason: "unknown-cursor", sessionId, detail: reason});
+
+/**
  * A send refused because the socket is gone, as the terminal failure that ends the event stream.
  *
  * The one refusal that takes the exit `follow` takes on `pi.disconnections`, and for the same
@@ -75,3 +107,22 @@ export const storeUnreadable = (cause: unknown): PageError =>
  */
 export const promptDropOf = (refusal: PromptError): TransportError =>
 	new TransportError({reason: "disconnected", detail: refusal.detail});
+
+/**
+ * A refused abort, as the plain failure the event stream carries (ADR 0356).
+ *
+ * `interrupt` keeps `Effect.Effect<void>`, so no caller is left to raise to and the stream is the
+ * only outbound channel this layer still owns. It rides as an event rather than failing the queue
+ * for `promptFailureOf`'s reason: the session is still there and every later turn still has to
+ * reach the window.
+ *
+ * `turnRunning` is the half only this layer can answer, and the fold routes on it. Pi says nothing
+ * about it in the refusal itself, so it comes from the session projection's own phase.
+ */
+export const interruptFailureOf = (refusal: SessionRefusal, turnRunning: boolean): AgentFailure => {
+	const error = new InterruptError({
+		reason: turnRunning ? "turn-running" : "no-live-turn",
+		detail: refusal.message,
+	});
+	return {tag: error._tag, reason: error.reason, detail: error.message};
+};

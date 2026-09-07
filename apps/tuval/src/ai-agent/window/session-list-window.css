@@ -11,6 +11,46 @@
 	flex: 1;
 }
 
+.tuval-session-list-reading {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.tuval-session-list-progress {
+	block-size: 4px;
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+	overflow: hidden;
+}
+
+.tuval-session-list-progress-fill {
+	block-size: 100%;
+	inline-size: var(--tuval-elapsed, 0%);
+	background: var(--accent);
+	transition: inline-size 250ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tuval-session-list-progress-fill {
+		transition: none;
+	}
+}
+
+.tuval-session-list-elapsed,
+.tuval-session-list-note {
+	flex: none;
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-session-list-retry {
+	flex: none;
+	display: flex;
+}
+
 .tuval-session-list-unreadable {
 	flex: none;
 	padding: var(--s-3);
@@ -90,4 +130,12 @@
 
 .tuval-session-transcript-refused {
 	color: var(--text-danger);
+}
+
+.tuval-session-transcript-older {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--s-2);
 }

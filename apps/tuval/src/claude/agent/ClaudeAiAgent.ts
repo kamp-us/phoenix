@@ -54,6 +54,7 @@ import {
 	type StartError,
 	type StartOptions,
 	ThinkingUnsupported,
+	type TranscriptQuery,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -79,7 +80,8 @@ import {
 } from "./options.ts";
 import {
 	controlRefused,
-	detailOf,
+	interruptFailureOf,
+	logRefused,
 	noSession,
 	noSessionToPage,
 	promptDisconnected,
@@ -90,6 +92,9 @@ import {
 	storeUnreadable,
 	streamFailed,
 	subprocessGone,
+	transcriptSessionNotFound,
+	transcriptUnknownCursor,
+	transcriptUnreadable,
 	unknownCursor,
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
@@ -121,7 +126,18 @@ interface IntroState {
 }
 
 interface Session {
-	readonly id: string;
+	/**
+	 * The conversation this session is keyed on — what a prompt is stamped with and what every
+	 * store read names.
+	 *
+	 * Rewritten in place, not readonly, because the CLI can re-key a live session: a
+	 * `conversation_reset` ends one conversation and opens another under `new_conversation_id`
+	 * (`sdk.d.ts` at the pin). `drive`, `prompt` and `page` all read the one held `Session`, so the
+	 * pump writing the new id here is what makes the next prompt land in the conversation the
+	 * operator is looking at (#8197). Replacing the whole record instead would leave `drive` on the
+	 * copy it closed over.
+	 */
+	id: string;
 	readonly cwd: string;
 	readonly handle: AgentSession;
 	readonly input: InputChannel;
@@ -231,7 +247,7 @@ const make = (
 				Effect.map((rows) => [...rows]),
 				Effect.catch((refusal) =>
 					Effect.as(
-						Effect.logWarning(`the model catalog could not be read: ${refusal.detail}`),
+						logRefused("the model catalog could not be read", refusal),
 						[] as ReadonlyArray<ModelInfo>,
 					),
 				),
@@ -249,7 +265,7 @@ const make = (
 				Effect.map(commandsOf),
 				Effect.catch((refusal) =>
 					Effect.as(
-						Effect.logWarning(`the command catalog could not be read: ${refusal.detail}`),
+						logRefused("the command catalog could not be read", refusal),
 						[] as ReadonlyArray<CommandRef>,
 					),
 				),
@@ -264,10 +280,7 @@ const make = (
 			}).pipe(
 				Effect.map((usage) => usage.model),
 				Effect.catch((refusal) =>
-					Effect.as(
-						Effect.logWarning(`the running model could not be read: ${refusal.detail}`),
-						undefined,
-					),
+					Effect.as(logRefused("the running model could not be read", refusal), undefined),
 				),
 			);
 
@@ -300,7 +313,7 @@ const make = (
 			}).pipe(
 				Effect.as(true),
 				Effect.catch((refusal) =>
-					Effect.as(Effect.logWarning(`the effort switch was refused: ${refusal.detail}`), false),
+					Effect.as(logRefused("the effort switch was refused", refusal), false),
 				),
 			);
 
@@ -312,7 +325,7 @@ const make = (
 			}).pipe(
 				Effect.as(true),
 				Effect.catch((refusal) =>
-					Effect.as(Effect.logWarning(`the model switch was refused: ${refusal.detail}`), false),
+					Effect.as(logRefused("the model switch was refused", refusal), false),
 				),
 			);
 
@@ -450,6 +463,14 @@ const make = (
 					// path for the catalog whatever produced it.
 					const pushed = step.events.findLast((event) => event.kind === "commands");
 					if (pushed !== undefined) yield* Ref.set(commands, pushed.available);
+					// Before the emit, not after: the event this frame carries walks the core back to
+					// `ready`, and a queued prompt is admitted on that same commit — so the id has to
+					// be the new conversation's by the time `prompt` reads it (#8197). The turn is
+					// over too, exactly as a `result`'s is, and no `result` is coming for it.
+					if (pulled.message.type === "conversation_reset") {
+						current.state.settled = true;
+						current.id = pulled.message.new_conversation_id;
+					}
 					yield* emit(open, step.events);
 					if (pulled.message.type === "result") {
 						current.state.settled = true;
@@ -522,7 +543,7 @@ const make = (
 
 			yield* Effect.tryPromise({
 				try: () => handle.initializationResult(),
-				catch: (cause) => startWithoutHandshake(cwd, detailOf(cause)),
+				catch: (cause) => startWithoutHandshake(cwd, cause),
 			}).pipe(Effect.tapError(() => abandon));
 
 			return {
@@ -686,10 +707,17 @@ const make = (
 				catch: controlRefused,
 			}).pipe(
 				Effect.asVoid,
-				// `interrupt` declares no error channel, so a refused interrupt is a log line: the
-				// turn the operator wanted stopped either already ended or the subprocess is gone,
-				// and both are states the next event settles.
-				Effect.catch((refusal) => Effect.logWarning(`interrupt was refused: ${refusal.detail}`)),
+				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
+				// fold routes on its own (ADR 0356). `settled` is read here rather than above because
+				// the turn can end while the control request is in flight.
+				Effect.catch((refusal) =>
+					publish([
+						{
+							kind: "failure",
+							failure: interruptFailureOf(refusal, !current.state.settled),
+						},
+					]),
+				),
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
@@ -718,10 +746,7 @@ const make = (
 							// not that: the mode did not change, so the state is re-emitted unchanged
 							// rather than a lie being put on the stream.
 							Effect.catch((refusal) =>
-								Effect.as(
-									Effect.logWarning(`the mode switch was refused: ${refusal.detail}`),
-									false,
-								),
+								Effect.as(logRefused("the mode switch was refused", refusal), false),
 							),
 						);
 			if (changed) yield* Ref.set(mode, next);
@@ -806,6 +831,56 @@ const make = (
 		});
 
 		/**
+		 * Whether the CLI's store holds a session at all, asked only where the transcript read came
+		 * back empty. `listSessions` with no options is the whole store, which is the same call
+		 * `listSessions` below makes and the same reason it makes it that way.
+		 */
+		const storeHolds = (sessionId: string) =>
+			Effect.map(
+				Effect.tryPromise({
+					try: () => sdk.listSessions(),
+					catch: (cause) => transcriptUnreadable(sessionId, cause),
+				}),
+				(stored) => stored.some((info) => info.sessionId === sessionId),
+			);
+
+		/**
+		 * `page`'s answer off the store, with no session open (#8233). `getSessionMessages` reads the
+		 * CLI's transcript files directly, so nothing here touches the `query()` this layer's `start`
+		 * owns and the read works on a layer that never opened one.
+		 */
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			const rows = yield* Effect.tryPromise({
+				try: () => sdk.getSessionMessages(query.sessionId, {dir: query.cwd}),
+				catch: (cause) => transcriptUnreadable(query.sessionId, cause),
+			});
+			// The pin answers an empty array for a session it does not hold as readily as for one
+			// that is genuinely empty (`refusals.ts`), so the listing settles which of the two this
+			// is rather than the caller reading silence as either.
+			if (rows.length === 0 && !(yield* storeHolds(query.sessionId))) {
+				return yield* transcriptSessionNotFound(query.sessionId);
+			}
+			const {items, cursorAliases} = toHistoryItems(rows, {at: Date.now()});
+			const planned = planTranscriptPage(items, {
+				before: query.before,
+				cursorAliases,
+				limit: query.limit,
+				cursorBoundary: "containing-group",
+			});
+			if (isRefusal(planned)) {
+				if (planned.reason === "limit-not-positive") {
+					return yield* Effect.die(
+						new Error(`page was asked for ${query.limit} items; the port declares limit > 0`),
+					);
+				}
+				return yield* transcriptUnknownCursor(query.sessionId, planned.reason);
+			}
+			return {items: planned.items, hasMore: planned.next !== null};
+		});
+
+		/**
 		 * One subagent this session spawned, as its own transcript and its type (#8404).
 		 *
 		 * `page`'s shape, on a different file: the live session names it, the store reads it, and
@@ -847,6 +922,7 @@ const make = (
 			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
+			sessionTranscript,
 			subagentTranscript,
 			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),

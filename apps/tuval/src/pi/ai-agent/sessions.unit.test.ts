@@ -34,7 +34,17 @@ interface Fixture {
 	readonly cwd: string;
 	readonly seconds: number;
 	readonly prompt?: string;
+	/** What `appendSessionInfo` writes when the operator names a session: a `session_info` entry. */
+	readonly name?: string;
 }
+
+const named = (name: string, seconds: number) => ({
+	type: "session_info",
+	id: `n-${seconds}`,
+	parentId: null,
+	timestamp: at(seconds),
+	name,
+});
 
 /** One session file, named the way `SessionManager.create` names one: `<stamp>_<id>.jsonl`. */
 const writeSession = (dir: string, session: Fixture): void => {
@@ -47,6 +57,7 @@ const writeSession = (dir: string, session: Fixture): void => {
 	};
 	const lines = [
 		JSON.stringify(header),
+		...(session.name === undefined ? [] : [JSON.stringify(named(session.name, session.seconds))]),
 		...(session.prompt === undefined
 			? []
 			: [JSON.stringify(said(session.prompt, session.seconds))]),
@@ -143,6 +154,32 @@ describe("the Pi backend's two session stores", () => {
 			assert.strictEqual(row?.messageCount, 1);
 			assert.strictEqual(row?.lastModified, new Date(at(30)).getTime());
 			assert.isFalse(row !== undefined && "branch" in row);
+			// Pi's title is a `session_info` entry, and this session has none (#8135).
+			assert.isFalse(row !== undefined && "title" in row);
+		}),
+	);
+
+	/**
+	 * #8135: the port asks one title question, so Pi answers it from the field the pin already has —
+	 * `SessionInfo.name`, the "user-defined display name from session_info entries" — rather than
+	 * leaving Pi with a second answer or none.
+	 */
+	it.effect("titles a session the operator named, keeping the first prompt beside it", () =>
+		Effect.gen(function* () {
+			const root = temp();
+			writeSession(tuvalStore(root), {
+				id: "renamed",
+				cwd: root,
+				seconds: 35,
+				name: "The picker rewrite",
+				prompt: "why is the picker empty",
+			});
+
+			const read = yield* readPiSessions({agentDir: temp(), tuvalDir: tuvalStore(root)});
+			const [row] = read.sessions;
+
+			assert.strictEqual(row?.title, "The picker rewrite");
+			assert.strictEqual(row?.firstPrompt, "why is the picker empty");
 		}),
 	);
 

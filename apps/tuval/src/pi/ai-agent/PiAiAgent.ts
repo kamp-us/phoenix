@@ -33,11 +33,11 @@
  */
 
 import {readdirSync} from "node:fs";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
-import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
+import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {
 	Mode,
 	ModelRef,
@@ -54,6 +54,7 @@ import {
 	PromptError,
 	type StartOptions,
 	ThinkingUnsupported,
+	type TranscriptQuery,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -69,7 +70,7 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
-import {pageCursorAliases, pageItems} from "./entries.ts";
+import {planPageOverEntries} from "./entries.ts";
 import {
 	emptyProjection,
 	eventsOf,
@@ -78,14 +79,18 @@ import {
 	type SnapshotProjection,
 } from "./items.ts";
 import {
+	interruptFailureOf,
 	promptDropOf,
 	promptErrorOf,
 	promptFailureOf,
 	startErrorOf,
 	storeUnreadable,
+	transcriptSessionMissing,
+	transcriptUnknownCursor,
+	transcriptUnreadable,
 	transportErrorOf,
 } from "./refusals.ts";
-import {readPiSessions} from "./sessions.ts";
+import {piSessionDirs, readPiSessions} from "./sessions.ts";
 
 /** A model this process may run, named the way Pi's catalog names one. */
 export interface ModelSelection {
@@ -158,6 +163,23 @@ const readBranch = (dir: string, sessionId: string, cwd: string) =>
 	});
 
 /**
+ * Where one stored session's JSONL sits, across every directory either store keeps files in, or
+ * `null` when it is in none of them. A genuine miss, told apart from a directory that would not
+ * open by the `Effect.try` around the scan (#8233).
+ */
+const locateBranch = (dirs: ReadonlyArray<string>, sessionId: string) =>
+	Effect.try({
+		try: (): string | null => {
+			for (const dir of dirs) {
+				const file = readdirSync(dir).find((name) => name.endsWith(`_${sessionId}.jsonl`));
+				if (file !== undefined) return join(dir, file);
+			}
+			return null;
+		},
+		catch: (cause) => transcriptUnreadable(sessionId, cause),
+	});
+
+/**
  * One catalog row as the interface names a model. The server's `hello` frame already carries the
  * `offered()` set — authenticated and describable — so nothing here filters again, and the raw
  * runtime catalog (four figures at this pin) never reaches the core.
@@ -211,6 +233,10 @@ const make = (
 		const dialled = yield* Ref.make(false);
 		const pump = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
 		const inbox = yield* Ref.make<Queue.Queue<FoldInput> | null>(null);
+		// Held out here rather than inside `follow` because `interrupt` reads it too: whether the
+		// session is still on a turn is the half a refused abort's tag has to carry (ADR 0356), and
+		// Pi's own refusal says nothing about it.
+		const projection = yield* Ref.make<SnapshotProjection>(emptyProjection);
 
 		const queue = yield* Effect.acquireRelease(
 			Ref.make<EventQueue>(yield* Queue.unbounded<AgentEvent, TransportError | Cause.Done>()),
@@ -237,7 +263,7 @@ const make = (
 			seed: SnapshotProjection,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
-				const projection = yield* Ref.make(seed);
+				yield* Ref.set(projection, seed);
 				const pushes = pi
 					.snapshots(sessionId)
 					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
@@ -485,10 +511,16 @@ const make = (
 			if (current === null) return;
 			yield* pi.abort(current.id).pipe(
 				Effect.asVoid,
-				// `interrupt` declares no error channel, so a refused abort is a log line: the turn
-				// the operator wanted stopped either already ended or the transport is gone, and
-				// both are states the next event settles.
-				Effect.catch((refusal) => Effect.logWarning(`interrupt was refused: ${refusal.message}`)),
+				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
+				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
+				// backend that said no from an abort still in flight.
+				Effect.catch((refusal) =>
+					Effect.gen(function* () {
+						const running = (yield* Ref.get(projection)).phase === "prompting";
+						const open = yield* Ref.get(queue);
+						yield* emit(open, [{kind: "failure", failure: interruptFailureOf(refusal, running)}]);
+					}),
+				),
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
@@ -561,12 +593,7 @@ const make = (
 				});
 			}
 			const entries = yield* readBranch(sessionDir(current.cwd), current.id, current.cwd);
-			const planned = planTranscriptPage(pageItems(entries), {
-				before,
-				cursorAliases: pageCursorAliases(entries),
-				limit,
-				cursorBoundary: "containing-group",
-			});
+			const planned = planPageOverEntries(entries, {before, limit});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
 					// The port declares `limit > 0`; a caller that broke it has a bug this
@@ -576,6 +603,51 @@ const make = (
 					);
 				}
 				return yield* new PageError({reason: "unknown-cursor", detail: planned.reason});
+			}
+			return {items: planned.items, hasMore: planned.next !== null};
+		});
+
+		/**
+		 * `page`'s answer off disk, with no session open and no transport dialled (#8233).
+		 *
+		 * It walks both stores rather than `sessionDir(cwd)` alone, because the ids it is handed come
+		 * off `listSessions` below, which unions the two — a session the operator started with `pi`
+		 * in a terminal is in the CLI store and would otherwise read as gone.
+		 *
+		 * Nothing here reaches `paintOf`: that fold builds a whole transcript's worth of `item` and
+		 * `usage` events for the attach to emit, and on this path there is no attach and no
+		 * subscriber, so the events would be built and dropped.
+		 */
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir(query.cwd)});
+			const file = yield* locateBranch(stores.dirs, query.sessionId);
+			if (file === null) {
+				// A store that would not enumerate may be the one the file was in, so a miss across the
+				// rest is not the claim that the session is gone.
+				return yield* stores.failures.length === 0
+					? transcriptSessionMissing(query.sessionId)
+					: transcriptUnreadable(
+							query.sessionId,
+							stores.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
+						);
+			}
+			const entries = yield* Effect.try({
+				try: () => SessionManager.open(file, dirname(file), query.cwd).getBranch(),
+				catch: (cause) => transcriptUnreadable(query.sessionId, cause),
+			});
+			const planned = planPageOverEntries(entries, {
+				before: query.before,
+				limit: query.limit,
+			});
+			if (isRefusal(planned)) {
+				if (planned.reason === "limit-not-positive") {
+					return yield* Effect.die(
+						new Error(`page was asked for ${query.limit} items; the port declares limit > 0`),
+					);
+				}
+				return yield* transcriptUnknownCursor(query.sessionId, planned.reason);
 			}
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
@@ -641,6 +713,7 @@ const make = (
 			commands: Effect.succeed([]),
 			setThinkingLevel,
 			page,
+			sessionTranscript,
 			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};

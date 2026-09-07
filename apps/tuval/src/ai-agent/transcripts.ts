@@ -10,10 +10,12 @@
  * process behind and no restore state to bring one back, which is what
  * `transcripts.unit.test.ts` asserts directly.
  *
- * `start({cwd, resume})` is how a backend is pointed at a session this desk never opened — the
- * resume slot's whole purpose (`./service/TuvalAiAgent.ts`) — and it is also the call that reports
- * a session the store has since lost, as `StartError({reason: "session-not-found"})`. That refusal
- * is why a lost session cannot render as an empty transcript: the read never reaches `page`.
+ * The one call it makes is `sessionTranscript`, the store-level read (founder ruling, 2026-09-07,
+ * https://github.com/kamp-us/phoenix/issues/8233#issuecomment-5567691729). It opens no backend
+ * session: nothing attaches, nothing resumes, and none of the replay a resume would fold is built
+ * for a page this call would discard. A session the store has since lost comes back as
+ * `TranscriptError({reason: "session-not-found"})`, which is why a lost session cannot render as an
+ * empty transcript.
  */
 
 import {Context, Effect, Layer, Schema} from "effect";
@@ -21,7 +23,7 @@ import type {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";
 import {type AiAgentBackendRow, readAiAgentBackends} from "./backends.ts";
 import type {TranscriptItem} from "./ports/index.ts";
-import {type PageError, type StartError, TuvalAiAgent} from "./service/index.ts";
+import {type TranscriptError, TuvalAiAgent} from "./service/index.ts";
 
 /** The request named a program row that is not a registered AI agent backend on this desk. */
 export class BackendUnknown extends Schema.TaggedError<BackendUnknown>()(
@@ -59,16 +61,17 @@ export interface BackendTranscript {
 const readFrom = (
 	row: AiAgentBackendRow,
 	request: TranscriptRequest,
-): Effect.Effect<BackendTranscript, StartError | PageError, never> =>
+): Effect.Effect<BackendTranscript, TranscriptError, never> =>
 	Effect.scoped(
 		Effect.gen(function* () {
 			const built = yield* Layer.build(row.aiAgent.layer as Layer.Layer<TuvalAiAgent>);
 			const agent = Context.get(built, TuvalAiAgent);
-			yield* agent.start({
+			const page = yield* agent.sessionTranscript({
+				sessionId: request.sessionId,
 				cwd: request.cwd,
-				resume: {sessionId: request.sessionId, holdsTranscript: false},
+				before: request.before,
+				limit: request.limit,
 			});
-			const page = yield* agent.page(request.before, request.limit);
 			// The port answers `hasMore`; the cursor it implies is this page's oldest item, which is
 			// what a caller hands back as `before` to walk one page further into history.
 			return {items: page.items, next: page.hasMore ? (page.items[0]?.id ?? null) : null};
@@ -78,7 +81,7 @@ const readFrom = (
 export const readAiAgentTranscript = (
 	services: Context.Context<never>,
 	request: TranscriptRequest,
-): Effect.Effect<BackendTranscript, BackendUnknown | StartError | PageError, Registry> =>
+): Effect.Effect<BackendTranscript, BackendUnknown | TranscriptError, Registry> =>
 	Effect.gen(function* () {
 		const rows = yield* readAiAgentBackends;
 		const row = rows.find((candidate) => candidate.id === request.programId);

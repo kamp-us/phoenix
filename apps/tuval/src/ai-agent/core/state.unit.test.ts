@@ -8,6 +8,7 @@ import {pendingPermission} from "../../ai-agent-fixtures/permissions.ts";
 import {
 	assistantItem,
 	subagentSlot,
+	thinkingItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
@@ -132,6 +133,23 @@ describe("a restored session and its subagents", () => {
 	it("keeps the rows a worker collected, so a view open on it is not blanked", () => {
 		expect(restore(loaded).subagents["call-1"]?.items).toEqual(items);
 	});
+
+	// A restore is terminal like `gone` and not a per-turn failure: the process that was running
+	// these turns is gone, so a row left `pending` waits for a turn nobody will narrate (#8236).
+	it("brings every send that was in flight back uncertain, however far its turn had got", () => {
+		const back = restore({
+			...loaded,
+			phase: "prompting",
+			sends: [
+				{key: "first", state: "pending", turn: "running"},
+				{key: "second", state: "pending", turn: "unstarted"},
+			],
+		});
+		expect(back.sends).toEqual([
+			{key: "first", state: "uncertain", failure: null},
+			{key: "second", state: "uncertain", failure: null},
+		]);
+	});
 });
 
 // #8160's coalescing, extended rather than joined by a second throttle: the two fields that move
@@ -171,6 +189,16 @@ describe("what is worth a checkpoint write", () => {
 		};
 		expect(checkpointWorthy(partial)).toBe(false);
 		expect(checkpointWorthy(base)).toBe(true);
+	});
+
+	// The gate reads the marker through `in`, so reasoning growing one costs it no arm (#8288).
+	it("refuses a state whose reasoning is still being written", () => {
+		const reasoning = {
+			...base,
+			transcript: {...base.transcript, items: [{...thinkingItem("k1"), partial: true}]},
+		};
+		expect(checkpointWorthy(reasoning)).toBe(false);
+		expect(checkpointWorthy({...reasoning, transcript: {...base.transcript}})).toBe(true);
 	});
 });
 

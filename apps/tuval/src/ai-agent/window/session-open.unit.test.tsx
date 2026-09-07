@@ -21,10 +21,10 @@ import type {WindowHost} from "../../shell/window/index.ts";
 import {WindowId} from "../../shell/window/index.ts";
 import {ItemId} from "../ports/index.ts";
 import {bareSession, claudeSession, NOW, scrambled} from "./fixtures.ts";
-import type {SendPlan, TranscriptRead} from "./opening.ts";
+import type {OpenRequest, SendPlan, TranscriptRead} from "./opening.ts";
 import {TRANSCRIPT_PAGE_SIZE} from "./opening.ts";
+import type {TranscriptPaged} from "./SessionListWindow.tsx";
 import {type SessionListWindowOptions, sessionListWindow} from "./SessionListWindow.tsx";
-import type {TranscriptAnswer} from "./SessionTranscript.tsx";
 
 installDomShims();
 
@@ -34,16 +34,19 @@ const listed = (sessions: ReadonlyArray<SessionRow>): SessionListAnswer => ({
 	unreadable: [],
 });
 
-const page = (texts: ReadonlyArray<string>): TranscriptAnswer => ({
-	_tag: "Read",
-	page: {
-		items: texts.map((text, index) => ({
-			kind: "user" as const,
-			id: ItemId.make(`m-${index}`),
-			timestamp: NOW,
-			text,
-		})),
-		next: null,
+const paged = (texts: ReadonlyArray<string>): TranscriptPaged => ({
+	answer: {
+		_tag: "Read",
+		older: {_tag: "Idle"},
+		page: {
+			items: texts.map((text, index) => ({
+				kind: "user" as const,
+				id: ItemId.make(`m-${index}`),
+				timestamp: NOW,
+				text,
+			})),
+			next: null,
+		},
 	},
 });
 
@@ -56,7 +59,7 @@ const host = {windowId: WindowId.make("w-1")} as WindowHost;
 /** The window as a page mounts it, at whatever seams a test needs. */
 const mount = (options: SessionListWindowOptions = {}): ReactElement => {
 	const renderer = sessionListWindow({
-		useAnswer: () => listed(scrambled),
+		useAnswer: () => ({status: listed(scrambled)}),
 		...options,
 	});
 	return renderer.render(host) as ReactElement;
@@ -74,7 +77,7 @@ const activate = (
 
 describe("activating a row inline", () => {
 	it("replaces the list with that session's transcript in the same window", () => {
-		activate({useTranscript: () => page(["turn one", "turn two"])});
+		activate({useTranscript: () => paged(["turn one", "turn two"])});
 
 		expect(screen.queryByRole("combobox", {name: "AI agent sessions"})).toBeNull();
 		const transcript = screen.getByRole("region", {name: claudeSession.firstPrompt ?? ""});
@@ -85,9 +88,9 @@ describe("activating a row inline", () => {
 	it("asks for one page off the port's cursor rather than the whole transcript", () => {
 		const reads: Array<TranscriptRead> = [];
 		activate({
-			useTranscript: (read) => {
-				reads.push(read);
-				return page([]);
+			useTranscript: (request: OpenRequest) => {
+				if (request._tag === "Read") reads.push(request.read);
+				return paged([]);
 			},
 		});
 
@@ -103,7 +106,7 @@ describe("activating a row inline", () => {
 	it("says a session it cannot open is unopenable rather than rendering it empty", () => {
 		// The oldest row is the one whose store reported no folder, so it is the one Enter lands on
 		// when it is the only row on offer.
-		const renderer = sessionListWindow({useAnswer: () => listed([bareSession])});
+		const renderer = sessionListWindow({useAnswer: () => ({status: listed([bareSession])})});
 		render(renderer.render(host) as ReactElement);
 		fireEvent.keyDown(field(), {key: "Enter"});
 
@@ -112,7 +115,7 @@ describe("activating a row inline", () => {
 
 	it("opens no new window", () => {
 		const elsewhere = vi.fn();
-		activate({useTranscript: () => page([]), onOpenInNewWindow: elsewhere});
+		activate({useTranscript: () => paged([]), onOpenInNewWindow: elsewhere});
 		expect(elsewhere).not.toHaveBeenCalled();
 	});
 });
@@ -120,7 +123,7 @@ describe("activating a row inline", () => {
 describe("Cmd+Enter on a row", () => {
 	it("opens it in the other window and leaves this one on the list", () => {
 		const elsewhere = vi.fn();
-		activate({useTranscript: () => page([]), onOpenInNewWindow: elsewhere}, {metaKey: true});
+		activate({useTranscript: () => paged([]), onOpenInNewWindow: elsewhere}, {metaKey: true});
 
 		expect(elsewhere).toHaveBeenCalledWith(claudeSession);
 		expect(screen.getByRole("combobox", {name: "AI agent sessions"})).toBeTruthy();
@@ -143,7 +146,7 @@ describe("the first send on an opened session", () => {
 	it("creates exactly one process on that session id, and reuses it on the second", async () => {
 		const plans: Array<SendPlan> = [];
 		activate({
-			useTranscript: () => page([]),
+			useTranscript: () => paged([]),
 			onSend: (_session, _text, plan) => plans.push(plan),
 		});
 

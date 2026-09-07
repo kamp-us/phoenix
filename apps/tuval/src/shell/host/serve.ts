@@ -35,8 +35,9 @@ export interface ServeDeskOptions {
 	readonly host?: string;
 	/**
 	 * The key grammar every attached page is sent and routes over (ADR 0353). It is the caller's,
-	 * because a kernel context does not carry it: the shell row closes over the table it was built
-	 * with and no registry row hands one back — [#7890](https://github.com/kamp-us/phoenix/issues/7890).
+	 * because a kernel context does not carry it. On the boot path the caller does not name one
+	 * either: the shell row publishes the table it resolved and `boot` reports it as
+	 * `Booted.keyTable`, which is what `src/bin.ts` passes here (#7890).
 	 */
 	readonly table: PrefixTable;
 }

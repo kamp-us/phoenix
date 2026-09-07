@@ -9,6 +9,7 @@ export {
 	type ChatWindowOptions,
 	type ChatWindowRenderer,
 	chatWindow,
+	type ThinChatWindowOptions,
 } from "./ChatWindow.tsx";
 export {type ComposerBridge, type ComposerHandlers, composerBridge} from "./composer-bridge.ts";
 export {tuvalDesignMessages, tuvalDesignTranslate} from "./copy.ts";

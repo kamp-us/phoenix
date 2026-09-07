@@ -7,7 +7,7 @@
  * `firstMessage`, a `messageCount` and a `modified` that is a `Date`, and knows no git branch.
  * Neither type may cross the port, so this is what both map inward to.
  *
- * Four of the seven fields are optional because a real store leaves them out, and `sessionSummary`
+ * Five of the eight fields are optional because a real store leaves them out, and `sessionSummary`
  * below is what keeps an absence an absence: Pi's `cwd` is the empty string for sessions old enough
  * to predate the field, and a session with no git branch is not a session on a branch named "".
  */
@@ -25,6 +25,13 @@ export interface SessionSummary {
 	 * `AiAgentSession.programId`, stamped by the one caller that holds the row (`../backends.ts`).
 	 */
 	readonly backend: string;
+	/**
+	 * The label the operator chose, or the store generated for display: Claude's `/rename` title
+	 * else its own summary, Pi's `session_info` name. Distinct from `firstPrompt` because a row
+	 * showing a rename under a field named `firstPrompt` says the operator typed something he did
+	 * not (#8135). A row prefers this over the prompt, in listing and in filtering.
+	 */
+	readonly title?: string | undefined;
 	readonly firstPrompt?: string | undefined;
 	/** The directory the session was started in. */
 	readonly folder?: string | undefined;
@@ -43,6 +50,7 @@ export interface SessionDraft {
 	/** A `Date` is taken as readily as epoch milliseconds, because one store answers in each. */
 	readonly lastModified: number | Date;
 	readonly backend: string;
+	readonly title?: string | null | undefined;
 	readonly firstPrompt?: string | null | undefined;
 	readonly folder?: string | null | undefined;
 	readonly branch?: string | null | undefined;
@@ -58,6 +66,7 @@ const count = (value: number | null | undefined): number | undefined =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 
 export const sessionSummary = (draft: SessionDraft): SessionSummary => {
+	const title = text(draft.title);
 	const firstPrompt = text(draft.firstPrompt);
 	const folder = text(draft.folder);
 	const branch = text(draft.branch);
@@ -67,6 +76,7 @@ export const sessionSummary = (draft: SessionDraft): SessionSummary => {
 		lastModified:
 			typeof draft.lastModified === "number" ? draft.lastModified : draft.lastModified.getTime(),
 		backend: draft.backend,
+		...(title === undefined ? {} : {title}),
 		...(firstPrompt === undefined ? {} : {firstPrompt}),
 		...(folder === undefined ? {} : {folder}),
 		...(branch === undefined ? {} : {branch}),

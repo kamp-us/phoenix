@@ -17,16 +17,19 @@ export const CLAUDE_BACKEND = "claude";
  * One stored session as a row.
  *
  * `messageCount` is left off rather than zero-filled: `SDKSessionInfo` carries `fileSize` and never
- * a count at the `0.3.259` pin, and `0` would read as an empty session. `summary` and `customTitle`
- * are read past for the same reason — the ruled row is first prompt, folder, branch and time
- * (#8070, ruling 6), and a rename put in a field named `firstPrompt` is a row saying something the
- * operator never typed.
+ * a count at the `0.3.259` pin, and `0` would read as an empty session.
+ *
+ * `customTitle ?? summary` fills `title` and never `firstPrompt`: at that pin `customTitle` is the
+ * `/rename` title and `summary` is documented as "custom title, auto-generated summary, or first
+ * prompt", so both are display labels rather than something the operator typed as a prompt — which
+ * is why they get their own field instead of being read past (#8135, founder ruling 2026-09-07).
  */
 const summaryOf = (info: SDKSessionInfo): SessionSummary =>
 	sessionSummary({
 		sessionId: info.sessionId,
 		lastModified: info.lastModified,
 		backend: CLAUDE_BACKEND,
+		title: info.customTitle ?? info.summary,
 		firstPrompt: info.firstPrompt,
 		folder: info.cwd,
 		branch: info.gitBranch,

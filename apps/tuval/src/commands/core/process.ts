@@ -102,6 +102,37 @@ interface Inbox {
 	readonly queue: Queue.Queue<unknown>;
 }
 
+/**
+ * What one `send` did: whether the payload landed, and how many queued payloads the in-port took
+ * off to make room for it. Only a `sliding` bound displaces anything — `dropping` refuses the new
+ * payload instead and `suspend` waits — so `evicted` is `0` under the other two (#7971).
+ */
+export interface Sent {
+	readonly delivered: boolean;
+	readonly evicted: number;
+}
+
+/**
+ * The offer and the eviction it cost, read as one step. A `sliding` queue at capacity takes its
+ * oldest payload off inside the offer and answers `true` either way, so the displacement can only
+ * be inferred from the queue's own fullness at the moment of the offer: `Queue.offerUnsafe` is the
+ * same code as `Queue.offer` for a `sliding` queue in every state (`Queue.ts` at
+ * `effect@4.0.0-rc.112`), and running it beside the fullness read inside one `Effect.sync` leaves
+ * no yield point for the port's pump to `take` between them. A queue at capacity holding nothing
+ * is a zero-capacity bound, which has no payload to lose.
+ *
+ * A `suspend` bound must keep blocking until there is room, which `offerUnsafe` will not do, so it
+ * stays on the effectful offer along with `dropping`.
+ */
+const offerCounting = (inbox: Inbox, payload: unknown): Effect.Effect<Sent> =>
+	inbox.port.bound.overflow === "sliding"
+		? Effect.sync(() => {
+				const evicted =
+					Queue.isFullUnsafe(inbox.queue) && Queue.sizeUnsafe(inbox.queue) > 0 ? 1 : 0;
+				return {delivered: Queue.offerUnsafe(inbox.queue, payload), evicted};
+			})
+		: Effect.map(Queue.offer(inbox.queue, payload), (delivered) => ({delivered, evicted: 0}));
+
 interface Entry {
 	readonly handle: ProcessHandle;
 	readonly inboxes: ReadonlyMap<string, Inbox>;
@@ -239,7 +270,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		if (!inbox.port.accepts(payload)) {
 			return yield* new PortRefused({process, port, kind: inbox.port.kind});
 		}
-		return yield* Queue.offer(inbox.queue, payload);
+		return yield* offerCounting(inbox, payload);
 	});
 
 	const read = Effect.fn("Tuval.SpawnedProcesses.read")(function* (
@@ -263,19 +294,18 @@ export class SpawnedProcesses extends Context.Service<
 			parent: Option.Option<ProcessId>,
 		) => Effect.Effect<ProcessId, UnknownProgram | UnknownProcess | OpenError | HandlerFailed>;
 		/**
-		 * `Queue.offer`'s own answer, and it covers less than a reader expects. `false` is one of two
-		 * things: a `dropping` in-port at capacity refusing the payload, or a queue that is no longer
-		 * open — the process stopped and the finalizer shut its in-port queues down. `true` is not
-		 * "nothing was lost": a `sliding` bound at capacity takes the oldest queued payload off,
-		 * appends this one and answers `true`, so a payload is dropped and no caller can learn it
-		 * (`Queue.offer` at the `effect@4.0.0-rc.112` pin). Whether `process send` should surface that
-		 * eviction is an open contract question (#7761).
+		 * `delivered` is `Queue.offer`'s own answer, and it covers less than a reader expects. `false`
+		 * is one of two things: a `dropping` in-port at capacity refusing the payload, or a queue that
+		 * is no longer open — the process stopped and the finalizer shut its in-port queues down.
+		 * `true` is not "nothing was lost", which is what `evicted` answers: a `sliding` bound at
+		 * capacity takes the oldest queued payload off to append this one, and that count is the only
+		 * way a sender can learn the earlier payload was never read (#7971).
 		 */
 		readonly send: (
 			process: ProcessId,
 			port: string,
 			payload: unknown,
-		) => Effect.Effect<boolean, UnknownProcess | UnknownPort | PortRefused>;
+		) => Effect.Effect<Sent, UnknownProcess | UnknownPort | PortRefused>;
 		readonly read: (
 			process: ProcessId,
 			port: string,
@@ -309,13 +339,10 @@ const sendSpell = defineSpell({
 	path: ["process", "send"],
 	describe: "Write one payload to a named in-port of a process.",
 	params: Schema.Struct({process: ProcessId, port: Schema.String, payload: Schema.Unknown}),
-	result: Schema.Struct({delivered: Schema.Boolean}),
+	result: Schema.Struct({delivered: Schema.Boolean, evicted: Schema.Number}),
 	execute: (args) =>
-		Effect.map(
-			Effect.flatMap(SpawnedProcesses, (spawned) =>
-				spawned.send(args.process, args.port, args.payload),
-			),
-			(delivered) => ({delivered}),
+		Effect.flatMap(SpawnedProcesses, (spawned) =>
+			spawned.send(args.process, args.port, args.payload),
 		),
 	capabilities: [{family: "process"}],
 });

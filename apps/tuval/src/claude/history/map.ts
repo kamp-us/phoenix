@@ -39,6 +39,13 @@ import {
 const itemId = (value: string): ItemId => value as ItemId;
 
 /**
+ * The reasoning row of a turn, keyed off the turn's own row and suffixed. One frame carrying both a
+ * thinking block and text is two rows, and two rows sharing an id would fold into one — and the
+ * deltas that grow this row take the same key, so growing and settled are one row.
+ */
+const thinkingId = (turnId: string): ItemId => itemId(`${turnId}:thinking`);
+
+/**
  * One tool call the transcript has opened and not yet settled. `at` is the call's own clock, kept
  * so the settled row lands at the time of the call rather than of its answer — a transcript read
  * oldest-first has to stay monotonic, and a row that jumped forward when it settled would not.
@@ -91,6 +98,16 @@ export interface Mapping {
 	 * on the frame's own uuid and appended below whatever arrived in between (#8366).
 	 */
 	readonly settled: PartialReply | null;
+	/**
+	 * The reasoning block the deltas are growing, as they have written it so far; empty when none is
+	 * open. It needs no id, clock or parent of its own: a reasoning block belongs to the turn the
+	 * open reply already names, and its row is that reply's id suffixed `:thinking` — the same key
+	 * `assistantEvents` settles on, so the growing row and the settled one are one row (#8288).
+	 *
+	 * Reset at each reasoning block rather than joined across them, because the frame that settles
+	 * one carries that block alone: joining would grow a row the settle then shrinks.
+	 */
+	readonly thinking: string;
 	/** Every subagent slot this stream has opened, by the spawning call's id. */
 	readonly subagents: ReadonlyMap<string, SubagentSlot>;
 	/** How many messages this mapping had nothing to say about. */
@@ -102,6 +119,7 @@ export const emptyMapping: Mapping = {
 	toolCalls: new Map(),
 	partial: null,
 	settled: null,
+	thinking: "",
 	subagents: new Map(),
 	skipped: 0,
 };
@@ -339,14 +357,20 @@ export const assistantEvents = (
 	const tagged = parentId === null ? {} : {parentId: itemId(parentId)};
 	const emitted: Array<TranscriptItem> = [];
 	const thinking = thinkingOf(body);
-	if (thinking.length > 0) {
-		// Suffixed rather than the frame's own uuid, because one frame carrying both a thinking block
-		// and text is two rows, and two rows sharing an id would fold into one.
+	// Only a frame of the open reply's own turn ends it, for the same reason it alone closes the
+	// reply below: a subagent's frame arrives mid-stream and carries a stop reason of its own.
+	const endsOpen = open !== null && ends;
+	// What the deltas of this turn's open reasoning block wrote, when the run streamed them. A frame
+	// carrying the block settles the row they drew; an *ending* frame that carries no block settles
+	// it at the text they wrote, because a cut turn must not leave that row partial forever (#8288).
+	const reasoning =
+		thinking.length > 0 ? thinkingTextOf(thinking) : endsOpen ? mapping.thinking : "";
+	if (reasoning.length > 0) {
 		emitted.push({
 			kind: "thinking",
-			id: itemId(`${id}:thinking`),
+			id: thinkingId(id),
 			timestamp: at,
-			text: thinkingTextOf(thinking),
+			text: reasoning,
 			...tagged,
 		});
 	}
@@ -405,6 +429,7 @@ export const assistantEvents = (
 			// A row this frame leaves settled stays reachable, so a further frame of the same turn —
 			// a trailing content block — still lands on it rather than beside it.
 			settled: reply === null || (open !== null && !ends) ? mapping.settled : reply,
+			thinking: thinking.length > 0 || endsOpen ? "" : mapping.thinking,
 		},
 		events,
 	};
@@ -443,6 +468,21 @@ const textDeltaOf = (event: Record<string, unknown>): string => {
 	return typeof delta.text === "string" ? delta.text : "";
 };
 
+/**
+ * The reasoning one frame adds: "concatenate the `thinking` values of successive `thinking_delta`
+ * events to assemble the block's full `thinking` value" (`@anthropic-ai/sdk`, `BetaThinkingDelta`).
+ *
+ * A `signature_delta` carries a `signature` and no reasoning at all — an opaque value the API reads
+ * back, not text (`BetaSignatureDelta`) — so it adds nothing here and reaches no row. The captured
+ * `thinking_delta` frames add nothing either: the provider ships this pin's reasoning encrypted, so
+ * their `thinking` is empty and the settled block is what says a block was there.
+ */
+const thinkingDeltaOf = (event: Record<string, unknown>): string => {
+	const delta = event.delta;
+	if (!isRecord(delta) || delta.type !== "thinking_delta") return "";
+	return typeof delta.thinking === "string" ? delta.thinking : "";
+};
+
 /** The `message_delta` that announces the turn's stop reason, which ends the stream with it. */
 const stopsStream = (event: Record<string, unknown>): boolean =>
 	event.type === "message_delta" && stopReasonOf(event.delta) !== null;
@@ -460,8 +500,9 @@ const grown = (open: PartialReply, text: string): PartialReply => ({
  * counted rather than given an id of its own — that happens to a reader that joined the stream
  * mid-turn, and inventing a key for it would put a second row on screen for one answer.
  *
- * A `thinking_delta` is not assistant text. The reasoning a turn streams is the `thinking` item
- * kind's, never folded into the reply, so it leaves this row where it was.
+ * A `thinking_delta` is not assistant text. The reasoning a turn streams grows a `thinking` row of
+ * its own, keyed off this reply's id and settled by the same frame that settles the block — so the
+ * row the operator watches open is the row that stays (#8288). It never touches the reply.
  *
  * The end of the stream is what settles the row: `message_stop`, or the `message_delta` carrying
  * the turn's `stop_reason`. Nothing earlier can, because the turn emits one `assistant` frame per
@@ -481,30 +522,59 @@ export const partialReplyEvents = (
 		if (id.length === 0) return skipMessage(mapping);
 		const at = timestampOf(message, options.at);
 		const parentId = parentToolUseIdOf(message);
-		return {mapping: {...mapping, partial: {id, text: "", at, parentId}}, events: []};
+		return {mapping: {...mapping, partial: {id, text: "", at, parentId}, thinking: ""}, events: []};
 	}
 	const open = mapping.partial;
 	if (open === null) return skipMessage(mapping);
 	const tagged = open.parentId === null ? {} : {parentId: itemId(open.parentId)};
 	if (event.type === "message_stop" || stopsStream(event)) {
-		if (open.text.length === 0)
-			return {mapping: {...mapping, partial: null, settled: open}, events: []};
-		const settledRow: TranscriptItem = {
-			kind: "assistant",
-			id: itemId(open.id),
-			timestamp: open.at,
-			text: open.text,
-			...tagged,
-		};
-		const folded = foldSlots(mapping, [settledRow], open.parentId, 0);
+		const settledRows: Array<TranscriptItem> = [];
+		// Reasoning the deltas drew that no `assistant` frame ever carried — a turn cut mid-block is
+		// the case. The end of the stream is the last moment it can settle, and a row left marked
+		// partial is a row nothing checkpoints past for the rest of the session (#8170).
+		if (mapping.thinking.length > 0) {
+			settledRows.push({
+				kind: "thinking",
+				id: thinkingId(open.id),
+				timestamp: open.at,
+				text: mapping.thinking,
+				...tagged,
+			});
+		}
+		if (open.text.length > 0) {
+			settledRows.push({
+				kind: "assistant",
+				id: itemId(open.id),
+				timestamp: open.at,
+				text: open.text,
+				...tagged,
+			});
+		}
+		const folded = foldSlots(mapping, settledRows, open.parentId, 0);
 		return {
-			mapping: {...mapping, partial: null, settled: open, subagents: folded.subagents},
-			events: [item(settledRow), ...folded.events],
+			mapping: {
+				...mapping,
+				partial: null,
+				settled: open,
+				thinking: "",
+				subagents: folded.subagents,
+			},
+			events: [...settledRows.map(item), ...folded.events],
 		};
 	}
 	if (event.type === "content_block_start") {
 		const block = event.content_block;
-		if (!isRecord(block) || block.type !== "text") return skipMessage(mapping);
+		if (!isRecord(block)) return skipMessage(mapping);
+		if (block.type === "thinking") {
+			// The block's own opening text, replacing whatever the last reasoning block wrote: the
+			// `assistant` frame that settles a block carries that block alone. A block opens empty and
+			// its `signature` is not reasoning, so nothing is drawn until a delta arrives.
+			return {
+				mapping: {...mapping, thinking: typeof block.thinking === "string" ? block.thinking : ""},
+				events: [],
+			};
+		}
+		if (block.type !== "text") return skipMessage(mapping);
 		// `textOf` joins a body's text blocks on a newline, so the growing row joins them the same
 		// way: without this the last upsert would reflow text the operator was already reading.
 		const lead = open.text.length === 0 ? "" : "\n";
@@ -512,6 +582,23 @@ export const partialReplyEvents = (
 		return {mapping: {...mapping, partial: grown(open, lead + opening)}, events: []};
 	}
 	if (event.type !== "content_block_delta") return skipMessage(mapping);
+	const reasoning = thinkingDeltaOf(event);
+	if (reasoning.length > 0) {
+		const thinking = mapping.thinking + reasoning;
+		const upsert: TranscriptItem = {
+			kind: "thinking",
+			id: thinkingId(open.id),
+			timestamp: open.at,
+			text: thinking,
+			partial: true,
+			...tagged,
+		};
+		const line = slotLine(mapping, open.parentId, lineOf(upsert));
+		return {
+			mapping: {...mapping, thinking, subagents: line.subagents},
+			events: [item(upsert), ...line.events],
+		};
+	}
 	const text = textDeltaOf(event);
 	if (text.length === 0) return skipMessage(mapping);
 	const partial = grown(open, text);
@@ -733,6 +820,30 @@ export const commandsChangedEvents = (message: unknown, mapping: Mapping): Mappi
 	isRecord(message)
 		? {mapping, events: [{kind: "commands", available: commandsOf(message.commands)}]}
 		: skipMessage(mapping);
+
+/**
+ * `/clear`, plan-mode exit and the fresh-session flows: the CLI ended this conversation and opened
+ * another under `new_conversation_id` (`sdk.d.ts` at the `0.3.259` pin, `SDKConversationResetMessage`,
+ * whose own note tells a surface to "mount a fresh transcript under new_conversation_id").
+ *
+ * The mapping goes back to empty with it. Its memory is the ended conversation's — the open tool
+ * calls it is holding names, the reply its deltas were growing, the subagent slots underneath — and
+ * carrying any of that into the next conversation would join a new frame to a row that no longer
+ * exists. `model` and `skipped` survive: the model is the session's, and the skip count is this
+ * stream's running total rather than a conversation's.
+ *
+ * A frame with no usable id is skipped rather than reset on, because the whole event *is* the id: a
+ * reset the core cannot key would swap the session onto nothing and strand the next prompt.
+ */
+export const conversationResetEvents = (message: unknown, mapping: Mapping): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const sessionId = message.new_conversation_id;
+	if (typeof sessionId !== "string" || sessionId.length === 0) return skipMessage(mapping);
+	return {
+		mapping: {...emptyMapping, model: mapping.model, skipped: mapping.skipped},
+		events: [{kind: "session-reset", sessionId}],
+	};
+};
 
 /** A denial the operator never got to answer. The line names the tool, which is the whole point. */
 export const permissionDeniedEvents = (

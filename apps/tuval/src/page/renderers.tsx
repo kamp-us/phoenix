@@ -28,7 +28,7 @@
 import features from "virtual:tuval/features";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useState} from "react";
 import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
 import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
 import {isSessionListState} from "../ai-agent/renderer-ref.ts";
@@ -38,18 +38,33 @@ import {
 	SESSION_LIST_WINDOW_REF,
 	type SessionListSource,
 	sessionListWindow,
+	type TranscriptSource,
 } from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
 import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
-import type {ChatWindowOptions} from "../shell/chat/index.ts";
+import type {ThinChatWindowOptions} from "../shell/chat/index.ts";
 import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
 import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
-import {readSessionList, type SessionListAnswer, sessionListCall} from "./session-list.ts";
+import {
+	reading,
+	readSessionList,
+	type SessionListAnswer,
+	sessionListCall,
+	settled,
+} from "./session-list.ts";
+import {
+	askedOlder,
+	landedPage,
+	noPages,
+	pagedAnswer,
+	readSessionTranscript,
+	sessionTranscriptCall,
+} from "./session-transcript.ts";
 
 /**
  * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
@@ -115,14 +130,24 @@ function LogRenderer({host}: {readonly host: WindowHost<LogState>}): ReactElemen
 export type SpellCaller = PageAttachment["call"];
 
 /**
- * The session list, read from the kernel. One call per window, sent when the window mounts and
+ * The session list, read from the kernel. One call per attempt, sent when the window mounts and
  * matched to its reply by the `CallId` it minted, so two open pickers never read each other's answer
- * (`./session-list.ts`). A socket that goes away is no answer at all: the window stays on its
- * reading state, and the desk's own connection banner is what says the link is gone.
+ * (`./session-list.ts`). A socket that goes away is no answer at all: the read stays out until its
+ * deadline passes, and the desk's own connection banner is what says the link is gone.
+ *
+ * Retry is the second correlation, and the attempt number is what carries it: a superseded call's
+ * reply still passes the `CallId` check for the call *it* answered, so the landing is refused unless
+ * the attempt it was sent for is still the current one (#8280).
  */
 const sessionListSource = (call: SpellCaller): SessionListSource => {
 	const useSessionListAnswer: SessionListSource = (window) => {
-		const [answer, setAnswer] = useState<SessionListAnswer | null>(null);
+		const [attempt, setAttempt] = useState(0);
+		const [startedAt, setStartedAt] = useState(() => Date.now());
+		const [landed, setLanded] = useState<{
+			readonly attempt: number;
+			readonly answer: SessionListAnswer;
+		} | null>(null);
+
 		useEffect(() => {
 			const spell = sessionListCall(window);
 			const fiber = Effect.runFork(
@@ -130,17 +155,91 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
 					Effect.flatMap((reply) =>
 						Effect.sync(() => {
 							const read = readSessionList(spell, reply);
-							if (read !== null) setAnswer(read);
+							if (read !== null) setLanded({attempt, answer: read});
 						}),
 					),
 					Effect.catchCause(() => Effect.void),
 				),
 			);
 			return () => void Effect.runFork(Fiber.interrupt(fiber));
-		}, [window]);
-		return answer;
+		}, [call, window, attempt]);
+
+		const retry = useCallback(() => {
+			setLanded(null);
+			setStartedAt(Date.now());
+			setAttempt((current) => current + 1);
+		}, []);
+
+		const answer = landed !== null && landed.attempt === attempt ? landed.answer : null;
+		return {
+			status: answer === null ? reading(startedAt) : settled(answer),
+			retry,
+		};
 	};
 	return useSessionListAnswer;
+};
+
+/**
+ * One session's transcript, read from the kernel a page at a time. The first page leaves when the
+ * transcript mounts and every later one leaves when the operator asks for older history, each
+ * correlated on the `CallId` it minted (`./session-transcript.ts`) so a reply belonging to another
+ * call — the list's, the other window's, the page this one superseded — is never folded in.
+ *
+ * **The cursor is what a request is, and the attempt is what makes it a new one.** A page that
+ * lands moves the cursor; a page that fails does not, so asking again asks for the same page rather
+ * than skipping the history that did not arrive. Two consecutive requests can therefore carry the
+ * same cursor, which is why the attempt counter is in the dependencies: without it a retry would be
+ * an effect whose inputs did not change and no call would leave.
+ *
+ * **Nothing here outlives the session it was opened for.** The whole state is this hook's, the hook
+ * is mounted per selected session by the window (`../ai-agent/window/SessionListWindow.tsx`), and a
+ * reply that lands after the read it belongs to was superseded is dropped rather than folded.
+ */
+const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
+	const useSessionTranscript: TranscriptSource = (request, window) => {
+		const [paging, setPaging] = useState(noPages);
+		const [cursor, setCursor] = useState<string | null>(null);
+		const [attempt, setAttempt] = useState(0);
+
+		useEffect(() => {
+			if (request._tag !== "Read") return;
+			let current = true;
+			const spell = sessionTranscriptCall({...request.read, before: cursor}, window);
+			const fiber = Effect.runFork(
+				call(spell).pipe(
+					Effect.flatMap((reply) =>
+						Effect.sync(() => {
+							if (!current) return;
+							const landing = readSessionTranscript(spell, reply);
+							if (landing !== null) setPaging((held) => landedPage(held, cursor, landing));
+						}),
+					),
+					Effect.catchCause(() => Effect.void),
+				),
+			);
+			return () => {
+				current = false;
+				void Effect.runFork(Fiber.interrupt(fiber));
+			};
+		}, [call, request, window, cursor, attempt]);
+
+		const next = paging.next;
+		const olderOut = paging.older._tag === "Reading";
+		const older = useCallback(() => {
+			if (next === null || olderOut) return;
+			setPaging(askedOlder);
+			setCursor(next);
+			setAttempt((current) => current + 1);
+		}, [next, olderOut]);
+
+		const answer = request._tag === "Read" ? pagedAnswer(paging) : null;
+		// The affordance is offered only where there is a page to ask for, so the surface's own rule
+		// ("gone once there is nothing older") and this one cannot disagree about the end of history.
+		return answer !== null && answer._tag === "Read" && answer.page.next !== null
+			? {answer, onOlder: older}
+			: {answer};
+	};
+	return useSessionTranscript;
 };
 
 /**
@@ -152,7 +251,7 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
  * Nothing here reaches `../config.ts` at runtime: the flags arrive as generated source and the
  * shape arrives as a type (`./assets.d.ts`), so the page's Node-free walk is unaffected.
  */
-const chatOptions: ChatWindowOptions = {subagentList: features.subagentList};
+const chatOptions: ThinChatWindowOptions = {subagentList: features.subagentList};
 
 const claudeWindow = claudeChatWindow(chatOptions);
 const piWindow = piChatWindow(chatOptions);
@@ -179,7 +278,10 @@ export const pageRenderers = (call: SpellCaller): Readonly<Record<string, Readab
 	[AGY_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, agyWindow),
 	[SESSION_LIST_WINDOW_REF.ref]: readsState(
 		isSessionListState,
-		sessionListWindow({useAnswer: sessionListSource(call)}),
+		sessionListWindow({
+			useAnswer: sessionListSource(call),
+			useTranscript: sessionTranscriptSource(call),
+		}),
 	),
 });
 

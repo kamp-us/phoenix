@@ -23,9 +23,15 @@ import {
 	type UserItem,
 	type WindowOmission,
 } from "../ports/index.ts";
-import {START_ERROR} from "./failures.ts";
-import {markTurnRunning, settleAccepted, settlePending} from "./sends.ts";
-import {type AiAgentSessionState, settleTurn, type UsageLedger} from "./state.ts";
+import {INTERRUPT_ERROR, START_ERROR} from "./failures.ts";
+import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} from "./sends.ts";
+import {
+	type AiAgentSessionState,
+	emptyOmission,
+	lastAssistantId,
+	settleTurn,
+	type UsageLedger,
+} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -215,6 +221,46 @@ export const phaseAfterFailure = (
 	return state.phase;
 };
 
+/**
+ * Where a refused interrupt leaves the session — the one failure `phaseAfterFailure` does not
+ * decide (ADR 0356).
+ *
+ * `interrupt` declares no error channel, so a backend that will not stop reaches the core only as
+ * this tag on the event stream, and routing it through the walk-to-`ready` above would say the turn
+ * had stopped on the very event that says it has not. The `reason` the refusing adapter stamped is
+ * the whole input, because it is the only party that knows which half it is on.
+ *
+ * `turn-running` changes nothing but the failure the window renders: the reply is still streaming,
+ * so `settleTurn` is exactly wrong here — it would take the partial marker off a paragraph the
+ * backend is still writing — and the outstanding `interruption` stays, since the operator's request
+ * is answered rather than withdrawn.
+ *
+ * `no-live-turn` is the case that froze the founder's desk on 2026-09-05: there was nothing left to
+ * stop, so the turn ends `interrupted` and the session goes to `ready` rather than sitting at
+ * `prompting` until a restart. It reaches `ready` on the same terms the `phase` arm does and settles
+ * the send the same way — the backend saying there is no turn to stop *is* that turn's end reported
+ * late, and the send it belonged to has no other event coming to accept it. `settleFailedTurn` is
+ * the wrong settle here and stays unused on both halves: this failure names the interrupt call
+ * rather than a send, which is why `sendAfterFailure` (`./sends.ts`) answers `null` for the tag.
+ */
+export const foldInterruptRefusal = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState => {
+	if (state.phase !== "prompting" || failure.reason === "turn-running") {
+		return {...state, failure};
+	}
+	const turn = settleTurn(state);
+	return {
+		...turn,
+		phase: "ready",
+		interrupted: turn.interrupted ?? lastAssistantId(turn.transcript.items),
+		interruption: null,
+		failure,
+		sends: settleAccepted(turn.sends),
+	};
+};
+
 export const foldEvent = (
 	state: AiAgentSessionState,
 	event: AgentEvent,
@@ -244,10 +290,10 @@ export const foldEvent = (
 		// `settleAccepted` reaches that running send and no other. Neither reads "whichever send is
 		// pending", which is how a later turn accepted an older, never-started one (#8107).
 		//
-		// `gone` is the other half: a session that ended under a send in flight can never answer
-		// for it, so every send in flight becomes recoverable instead. Refusals reach the send by
-		// their own arms below, and they arrive before this line does — both rows push the turn's
-		// failure ahead of the phase that closes it.
+		// `gone` is the other half, and it is the terminal arm: a session that ended under a send in
+		// flight can never answer for it, so `settleEndedSession` makes every one of them
+		// recoverable. Refusals reach the send by their own arms below, and they arrive before this
+		// line does — both rows push the turn's failure ahead of the phase that closes it.
 		case "phase": {
 			if (coreOwned(event.phase)) return state;
 			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
@@ -259,7 +305,7 @@ export const foldEvent = (
 					...turn,
 					phase: event.phase,
 					interruption: interruptionAfter(turn, event.phase),
-					sends: settlePending(turn.sends, null),
+					sends: settleEndedSession(turn.sends, null),
 				};
 			}
 			return {
@@ -296,6 +342,35 @@ export const foldEvent = (
 			return {...state, commands: event.available};
 		case "thinking":
 			return {...state, thinking: {current: event.current, available: event.available}};
+		// The turn's end and the swap in one commit, because the events Sub is keyed on the session
+		// id and a second event under the old one would be filtered out (`../events.ts`).
+		//
+		// `ready` rather than a phase the layer narrates: a local command produces no `result`, so
+		// this event is the only thing that will ever say the turn is over (#8197). The send that
+		// asked for it is accepted on the same rule an ordinary turn's end uses — the oldest send
+		// the layer said had begun, and no other (`./sends.ts`). What is queued is untouched here;
+		// the machine's own `settleQueue` admits its head off the `ready`, so nothing an operator
+		// wrote is dropped by the reset.
+		//
+		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker,
+		// the abort still outstanding over it, its permission cards — which no answer can reach any
+		// more — its subagent rows and the page read off it. The usage ledger stays: the reset does
+		// not un-spend what this session already spent.
+		case "session-reset":
+			return {
+				...state,
+				phase: "ready",
+				sessionId: event.sessionId,
+				transcript: {items: [], omitted: emptyOmission},
+				interrupted: null,
+				interruption: null,
+				permissions: {},
+				subagents: {},
+				lastPage: null,
+				pageOutcome: null,
+				sends: settleAccepted(state.sends),
+				failure: null,
+			};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// Replaced under its own id, never merged: the mapper computes the whole slot from the
@@ -308,7 +383,14 @@ export const foldEvent = (
 		// same to the window whichever channel carried it. Routing it through `event` is what keeps
 		// the machine's identity filter over it: a late refusal from a session this process has
 		// already replaced is dropped rather than failing its successor (#8018).
+		//
+		// This is the per-turn arm, not the terminal one: `phaseAfterFailure` can walk the session
+		// back to `ready`, so `settleFailedTurn` settles the send this failure is about and leaves
+		// every other in flight `pending` for its own turn's end (#8236).
 		case "failure": {
+			if (event.failure.tag === INTERRUPT_ERROR) {
+				return foldInterruptRefusal(state, event.failure);
+			}
 			const phase = phaseAfterFailure(state, event.failure);
 			const turn = settleTurn(state);
 			return {
@@ -316,7 +398,7 @@ export const foldEvent = (
 				phase,
 				interruption: interruptionAfter(turn, phase),
 				failure: event.failure,
-				sends: settlePending(turn.sends, event.failure),
+				sends: settleFailedTurn(turn.sends, event.failure),
 			};
 		}
 	}
