@@ -7,7 +7,7 @@ export type PageCursor =
 const isLocal = (item: TranscriptItem): boolean =>
 	(item.kind === "user" && item.local === true) || item.id.startsWith("local:");
 
-/** Resolve a held local echo to the next stored item; absence never means the newest end. */
+/** Skip window-only echoes; backend projections join live ids to stored ids in the page planner. */
 export const pageCursor = (
 	held: ReadonlyArray<TranscriptItem>,
 	before: string | null,
@@ -20,6 +20,6 @@ export const pageCursor = (
 		return before.startsWith("local:") ? {kind: "unavailable"} : {kind: "page", before};
 	}
 	if (!isLocal(item)) return {kind: "page", before};
-	const stored = held.slice(index + 1).find((candidate) => !isLocal(candidate));
-	return stored === undefined ? {kind: "unavailable"} : {kind: "page", before: stored.id};
+	const backend = held.slice(index + 1).find((candidate) => !isLocal(candidate));
+	return backend === undefined ? {kind: "unavailable"} : {kind: "page", before: backend.id};
 };

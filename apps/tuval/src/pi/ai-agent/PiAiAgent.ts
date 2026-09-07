@@ -69,7 +69,7 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
-import {pageItems} from "./entries.ts";
+import {pageCursorAliases, pageItems} from "./entries.ts";
 import {
 	emptyProjection,
 	eventsOf,
@@ -563,6 +563,7 @@ const make = (
 			const entries = yield* readBranch(sessionDir(current.cwd), current.id, current.cwd);
 			const planned = planTranscriptPage(pageItems(entries), {
 				before,
+				cursorAliases: pageCursorAliases(entries),
 				limit,
 				cursorBoundary: "containing-group",
 			});

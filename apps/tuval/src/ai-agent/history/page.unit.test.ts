@@ -62,6 +62,52 @@ describe("the page bound", () => {
 		expect(older.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
 	});
 
+	it("joins a selected live cursor to stored history without changing the local anchor", () => {
+		const local = {...userItem("local:send"), local: true};
+		const cursor = pageCursor([local, assistantItem("live-reply")], local.id);
+		expect(cursor).toEqual({kind: "page", before: "live-reply"});
+		if (cursor.kind !== "page") return;
+		const page = planTranscriptPage(history, {
+			before: cursor.before,
+			cursorAliases: new Map([["live-reply", "a3"]]),
+			cursorBoundary: "containing-group",
+			limit: 3,
+		});
+		expect(page.kind).toBe("page");
+		if (page.kind === "page") expect(page.items.map((item) => item.id)).toEqual(["u2", "a2", "t2"]);
+		expect(local.id).toBe("local:send");
+	});
+
+	it("preserves explicit newest reads, stored ids and group-boundary distinctions with aliases", () => {
+		const cursorAliases = new Map([
+			["u2", "u3"],
+			["live-reply", "a3"],
+		]);
+		for (const before of [null, "u2"]) {
+			expect(planTranscriptPage(history, {before, cursorAliases, limit: 3})).toEqual(
+				planTranscriptPage(history, {before, limit: 3}),
+			);
+		}
+		expect(planTranscriptPage(history, {before: "live-reply", cursorAliases, limit: 3})).toEqual({
+			kind: "refused",
+			reason: "cursor-splits-group",
+			cursor: "a3",
+		});
+	});
+
+	it("never turns an unknown live alias or an absent alias target into a newest read", () => {
+		for (const cursorAliases of [new Map<string, string>(), new Map([["live", "missing"]])]) {
+			const page = planTranscriptPage(history, {
+				before: "live",
+				cursorAliases,
+				cursorBoundary: "containing-group",
+				limit: 3,
+			});
+			expect(page.kind).toBe("refused");
+			if (page.kind === "refused") expect(page.reason).toBe("cursor-not-found");
+		}
+	});
+
 	it("emits an exchange larger than the limit whole, so paging never stalls", () => {
 		const big = [userItem("u1"), assistantItem("a1"), toolItem("t1"), toolItem("t2")];
 		const page = planTranscriptPage(big, {before: null, limit: 2});

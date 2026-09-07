@@ -6,15 +6,20 @@
  * consumes the iterable exactly as the real one does.
  */
 
+import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
+import {pageCursor} from "../../ai-agent/history/cursor.ts";
+import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {
 	CWD,
 	message,
+	messages,
 	OPENED_EVENTS,
 	on,
 	rows,
 	SESSION_ID,
+	START_EVENTS,
 	TOOL_SESSION_ID,
 } from "./fixtures/harness.ts";
 
@@ -152,6 +157,65 @@ describe("page", () => {
 			}),
 		),
 	);
+
+	it.effect("pages from a captured live streamed reply after a local oldest row", () => {
+		const opening = messages("streaming-turn");
+		// Replay the captured assistant body through the SDK's stored envelope, not page(null).
+		const stored: ReadonlyArray<SessionMessage> = [
+			...rows(),
+			{
+				type: "user",
+				uuid: "stored-stream-prompt",
+				session_id: SESSION_ID,
+				message: {role: "user", content: "stream a reply"},
+				parent_tool_use_id: null,
+				parent_agent_id: null,
+			},
+			...opening.flatMap((frame): SessionMessage[] =>
+				frame.type === "assistant" ? [{...frame, parent_agent_id: null}] : [],
+			),
+		];
+		return on({opening, rows: stored, deferOpening: true}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				yield* agent.prompt("stream a reply");
+				const events = yield* Stream.runCollect(
+					Stream.takeUntil(
+						agent.events,
+						(event) => event.kind === "phase" && event.phase === "ready",
+					),
+				);
+				const replies = events.flatMap((event) =>
+					event.kind === "item" && event.item.kind === "assistant" ? [event.item] : [],
+				);
+				assert.isTrue(replies.some((item) => item.partial === true));
+				const reply = replies.at(-1);
+				assert.isDefined(reply);
+				if (reply === undefined) return;
+				assert.isUndefined(reply.partial);
+				assert.strictEqual(reply.id, "msg_00000000000000000006");
+				assert.isFalse(stored.some((row) => row.uuid === reply.id));
+				const local: TranscriptItem = {
+					kind: "user",
+					id: ItemId.make("local:stream-send"),
+					text: "stream a reply",
+					timestamp: 0,
+					local: true,
+				};
+				const cursor = pageCursor([local, reply], local.id);
+				assert.strictEqual(cursor.kind, "page");
+				if (cursor.kind !== "page") return;
+				const older = yield* agent.page(cursor.before, 10);
+				assert.deepStrictEqual(
+					older.items.map((item) => item.kind),
+					["user", "tool", "assistant"],
+				);
+				assert.strictEqual(older.items[0]?.id, rows()[0]?.uuid);
+				assert.strictEqual(local.id, "local:stream-send");
+			}),
+		);
+	});
 
 	it.effect("reads through the id it resumed, which is the id the CLI hands back", () =>
 		on({rows: rows(), opening: [message("resumed-init")]}, (agent, scripted) =>

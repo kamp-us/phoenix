@@ -763,9 +763,10 @@ const make = (
 				try: () => sdk.getSessionMessages(current.id, {dir: current.cwd}),
 				catch: storeUnreadable,
 			});
-			const {items} = toHistoryItems(rows, {at: Date.now()});
+			const {items, cursorAliases} = toHistoryItems(rows, {at: Date.now()});
 			const planned = planTranscriptPage(items, {
 				before,
+				cursorAliases,
 				limit,
 				cursorBoundary: "containing-group",
 			});

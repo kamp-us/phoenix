@@ -4,10 +4,13 @@
  * conversation read through both wire forms.
  */
 
-import type {SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import type {SDKAssistantMessage, SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
+import {planTranscriptPage} from "../../ai-agent/history/page.ts";
+import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {toHistoryItems} from "./items.ts";
+import {emptyMapping} from "./map.ts";
 
 const AT = 1_700_000_000_000;
 const rows = loadFixture("session-messages") as ReadonlyArray<SessionMessage>;
@@ -44,6 +47,60 @@ describe("toHistoryItems over a captured session", () => {
 	});
 });
 
+describe("live streaming identities in stored history", () => {
+	it("aliases thinking and reply ids without replacing stored frame identities", () => {
+		const frames = loadFixture("thinking-turn") as ReadonlyArray<SDKAssistantMessage>;
+		const frame = frames[0];
+		expect(frame).toBeDefined();
+		if (frame === undefined) return;
+		const stream = loadFixture("streaming-turn") as ReadonlyArray<SDKMessage>;
+		const start = stream.find(
+			(message) => message.type === "stream_event" && message.event.type === "message_start",
+		);
+		expect(start?.type).toBe("stream_event");
+		if (start?.type !== "stream_event" || start.event.type !== "message_start") return;
+		// Captured reasoning body, opened by the captured stream envelope under that body's id.
+		const opened = toAgentEvents(
+			{
+				...start,
+				event: {
+					...start.event,
+					message: {...start.event.message, id: frame.message.id},
+				},
+			},
+			emptyMapping,
+			{at: AT},
+		);
+		let mapping = opened.mapping;
+		const live = frames.flatMap((frame) => {
+			const step = toAgentEvents(frame, mapping, {at: AT});
+			mapping = step.mapping;
+			return step.events.flatMap((event) => (event.kind === "item" ? [event.item] : []));
+		});
+		const stored: ReadonlyArray<SessionMessage> = frames.map((frame) => ({
+			...frame,
+			parent_agent_id: null,
+		}));
+		const {items, cursorAliases} = toHistoryItems(stored, {at: AT});
+		expect(live.some((item) => item.kind === "thinking")).toBe(true);
+		for (const item of live.filter(
+			(item) => item.kind === "thinking" || item.kind === "assistant",
+		)) {
+			const storedId = item.kind === "thinking" ? `${frame.uuid}:thinking` : frames[1]?.uuid;
+			expect(item.id).not.toBe(storedId);
+			expect(cursorAliases.get(item.id)).toBe(storedId);
+			expect(items.some((item) => item.id === storedId)).toBe(true);
+			const page = planTranscriptPage(items, {
+				before: item.id,
+				cursorAliases,
+				cursorBoundary: "containing-group",
+				limit: 10,
+			});
+			expect(page.kind).toBe("page");
+		}
+	});
+});
+
 describe("toHistoryItems over rows it has no shape for", () => {
 	it("counts a system row and never throws", () => {
 		const system: unknown = {
@@ -60,6 +117,6 @@ describe("toHistoryItems over rows it has no shape for", () => {
 	});
 
 	it("answers an empty session with an empty transcript", () => {
-		expect(toHistoryItems([], {at: AT})).toEqual({items: [], skipped: 0});
+		expect(toHistoryItems([], {at: AT})).toEqual({items: [], cursorAliases: new Map(), skipped: 0});
 	});
 });

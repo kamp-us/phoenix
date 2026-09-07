@@ -41,6 +41,33 @@ first compaction renumbers the array, and then every row after the cut reads as 
 Content, then cost, then phase. A consumer rendering in arrival order must never show a settled
 phase above a reply that has not landed yet, and usage annotates a turn that is already on screen.
 
+## Paging joins a separate identity space
+
+An item id used for live upserts is not necessarily a stored paging cursor. Keep the visual anchor
+and the cursor separate: [`history/cursor.ts`](../apps/tuval/src/ai-agent/history/cursor.ts) skips
+local echoes once for the handler and window, returning an explicit unavailable result rather than
+turning absence into `before: null` (the newest end).
+
+Backend mappers project their identity joins as `cursorAliases`; the shared
+[`page.ts`](../apps/tuval/src/ai-agent/history/page.ts) resolves them before validating the group
+boundary. A stored id wins over an alias, and a missing target still refuses. Neither transcript is
+re-keyed. The default remains a strict group-start cursor; adapters that page from a live row inside
+an exchange opt into `containing-group`.
+
+Pi's [`entries.ts`](../apps/tuval/src/pi/ai-agent/entries.ts) counts the current context's messages,
+not all disk messages: at 0.84.3, `buildSessionContext` composes `buildContextEntries` and
+`sessionEntryToContextMessages`, including compaction summaries and invisible custom messages.
+Those same exports associate live positions with stored entry ids without a text or timestamp join.
+Claude's [`items.ts`](../apps/tuval/src/claude/history/items.ts) instead associates streaming
+`message.id` with stored frame `uuid`, including the derived thinking id. Its SDK 0.3.259
+`SDKAssistantMessage` can deliver one frame per content block, so the first matching stored row owns
+the cursor boundary. These are backend projections, not copies of the shared cursor rule.
+
+Tests must start with live events, not an id obtained from `page(null)`: the latter proves only
+stored-to-stored traversal. The real Pi session test and Claude's captured-stream replay in their
+respective agent suites exercise that initial transition; shared history tests preserve explicit
+newest reads, stored cursors and refusal behavior.
+
 ## The foreseeable worse version
 
 Re-emitting the whole transcript on every revision. It is correct, it passes every test that checks
