@@ -55,7 +55,7 @@ import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
-import {interruptionGraceMillis, isWorking, statusLine} from "./phase.ts";
+import {interruptionGraceMillis, isWorking, statusLine, workingTell} from "./phase.ts";
 import {QueuedMessages} from "./QueuedMessages.tsx";
 import {
 	type ChatRow,
@@ -1069,7 +1069,12 @@ function ChatWindow({
 							<span />
 							<span />
 						</span>
-						{interruption === null ? "Working…" : "Interrupting…"}
+						{workingTell({
+							phase,
+							failure: state?.failure ?? null,
+							interruption,
+							now: options.now(),
+						})}
 					</p>
 				) : null}
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />

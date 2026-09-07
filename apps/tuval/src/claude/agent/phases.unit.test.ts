@@ -117,10 +117,10 @@ describe("a turn ends on its result", () => {
 });
 
 /**
- * Claude's half of #8007. The layer's `interrupt` declares no error channel and logs a refused
- * one, so nothing about the abort itself reaches the core — the confirming event is the turn's own
- * `result`, which the pump emits `ready` for on every subtype including the errors an aborted turn
- * ends on.
+ * Claude's half of #8007, on the path where the CLI takes the abort: the confirming event is the
+ * turn's own `result`, which the pump emits `ready` for on every subtype including the errors an
+ * aborted turn ends on. A refused one is a failure event of its own and reads in
+ * `interrupt-refusal.unit.test.ts` (ADR 0356).
  */
 describe("an interruption over the Claude event path", () => {
 	const asked = (
