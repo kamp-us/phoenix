@@ -124,6 +124,7 @@ export const on = <A, E>(
 			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
 			...(harness.commands === undefined ? {} : {commands: harness.commands}),
 			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
+			...(harness.interruptFails === undefined ? {} : {interruptFails: harness.interruptFails}),
 			...(harness.effortSwitchFails === undefined
 				? {}
 				: {effortSwitchFails: harness.effortSwitchFails}),

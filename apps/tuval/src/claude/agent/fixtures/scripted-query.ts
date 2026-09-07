@@ -83,6 +83,12 @@ export interface ScriptedBehaviour {
 	readonly commands?: ReadonlyArray<SlashCommand>;
 	/** A `supportedCommands()` that throws — a session with no slash picker, not a failed open. */
 	readonly commandsFail?: Error;
+	/**
+	 * An `interrupt()` the CLI refuses, recorded the same way a refused `setModel` is. The SDK's own
+	 * rejection carries no account of why (`sdk.d.ts`, `Query.interrupt`), which is what makes the
+	 * layer's reading of its own turn state the input the fold routes on (ADR 0356).
+	 */
+	readonly interruptFails?: Error;
 }
 
 export const scriptedQuery = (
@@ -176,6 +182,7 @@ export const scriptedQuery = (
 		initializationResult: () => handshake,
 		interrupt: async () => {
 			record.interrupts += 1;
+			if (behaviour.interruptFails !== undefined) throw behaviour.interruptFails;
 			return undefined;
 		},
 		setPermissionMode: async (mode: PermissionMode) => {

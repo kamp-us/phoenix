@@ -958,6 +958,33 @@ describe("the composer", () => {
 		expect(phaseLine().textContent).not.toContain("Ready");
 	});
 
+	// The bar and the tell render together, so they have to say one thing: a refusal the bar names
+	// while the tell still claims an abort is in flight reads as an abort the backend has not
+	// answered, which is the case ADR 0356 exists to tell apart.
+	it("says a refused interrupt was refused, in the bar and in the tell alike", async () => {
+		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "prompting"}));
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(
+					withTranscript(transcriptOf(2), {
+						phase: "prompting",
+						interruption: {requestedAt: SENT_AT},
+						failure: {
+							tag: "tuval/ai-agent/InterruptError",
+							reason: "turn-running",
+							detail: "the agent transport failed (refused): Operation aborted",
+						},
+					}),
+				),
+			);
+		});
+		await waitFor(() => expect(phaseLine().textContent).toContain("refused to stop"));
+		expect(phaseLine().textContent).not.toContain("has not confirmed");
+		const tell = document.querySelector(".tuval-chat-working");
+		expect(tell?.textContent).toContain("refused");
+		expect(tell?.textContent).not.toBe("Interrupting…");
+	});
+
 	it("restores the draft the window was left with", async () => {
 		await openWindow(
 			withTranscript(transcriptOf(2)),

@@ -871,9 +871,9 @@ describe("interrupt", () => {
 		expect(next.interruption).toEqual({requestedAt: SENT_AT});
 	});
 
-	// The refusal case as the generic contract can see it: `interrupt` declares no error channel and
-	// both layers log a refused abort, so a refusal reaches the core as nothing at all. The session
-	// must therefore stay busy with the request on the record, never fall back to ready.
+	// A second press while the first ask is still unanswered: nothing has confirmed a stop, so the
+	// session stays busy with the request on the record rather than falling back to ready. (A
+	// backend that answers by refusing is a failure event instead — `../core/fold.unit.test.ts`.)
 	it("leaves a refused abort outstanding rather than fabricating a stop", () => {
 		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
 		const [again, cmds] = apply(asked, {type: "interrupt", at: SENT_AT + 3_000});
