@@ -70,7 +70,7 @@ describe("splicePlan on a re-plan", () => {
 		});
 	});
 
-	/** #4879: cutting at a `## Dependencies` heading inside the preserved brief is how a body is destroyed. */
+	/** Cutting at a `## Dependencies` heading inside the preserved brief is how a body is destroyed. */
 	it("refuses a dependencies heading that resolves inside the preserved brief envelope", () => {
 		const trap = [
 			"## Pitch",

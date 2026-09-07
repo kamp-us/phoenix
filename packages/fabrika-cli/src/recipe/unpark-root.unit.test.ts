@@ -1,5 +1,5 @@
 /**
- * Where `recipe unpark` looks for the lane its caller named (#7380).
+ * Where `recipe unpark` looks for the lane its caller named.
  *
  * The verb relays `lane status`, and those verbs derive their root off the owning repository, so a
  * bare cwd-relative default here made one lane key name two directories: from a worktree the lane
@@ -52,7 +52,7 @@ const unparkFrom = (fs: ReturnType<typeof fakeFs>, cwd: string, root: Option.Opt
 		),
 	);
 
-describe("the lanes root recipe unpark resolves (#7380)", () => {
+describe("the lanes root recipe unpark resolves", () => {
 	it("reaches the primary checkout's lane from a worktree cwd instead of proving it absent", async () => {
 		const out = await unparkFrom(repoFs(), WORKTREE_CWD, Option.none());
 

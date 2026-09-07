@@ -6,16 +6,16 @@
  * `./governed-roots.ts`, which shipped ahead of this one; the two stay apart so this module can be
  * written without touching it.
  *
- * **Absent is not declined.** An absent key resolves to phoenix's current value, so a repo that
- * declares nothing behaves exactly as it does today. An explicitly declined key resolves to "this
- * repo has no such surface" and the verbs that read it degrade in the way their own contract
+ * **Absent is not declined.** An absent key resolves to the shipped value, so a repo that declares
+ * nothing behaves exactly as it did before the key existed. An explicitly declined key resolves to
+ * "this repo has no such surface" and the verbs that read it degrade in the way their own contract
  * declares — which is a different answer from a path that is simply not there yet.
  *
  * Only {@link decisionsDirKey} is declinable, and the asymmetry is deliberate. A repo with no
  * decision corpus changes what `governance` may conclude and what `adr` may write, so the absence
- * has to be *declared* before those verbs will act on it (R11.1 on #5603). The other two name files
- * whose readers already answer "no such file" from the filesystem — `build pick` on a missing
- * roadmap — so a decline key there would be a second way to say what the tree already says.
+ * has to be *declared* before those verbs will act on it. The other two name files whose readers
+ * already answer "no such file" from the filesystem — `build pick` on a missing roadmap — so a
+ * decline key there would be a second way to say what the tree already says.
  */
 
 import type {JsonSchema} from "../json-schema.ts";
@@ -38,7 +38,7 @@ export type PathValue =
 
 export const atPath = (path: string): PathValue => ({_tag: "Path", path});
 
-/** Phoenix's current values — what a repo declaring nothing still gets. */
+/** The shipped values — what a repo declaring nothing still gets. */
 export const SHIPPED_DECISIONS_DIR = ".decisions";
 export const SHIPPED_ROADMAP_FILE = "ROADMAP.md";
 export const SHIPPED_CYCLE_DOC = "product-development-cycle.md";

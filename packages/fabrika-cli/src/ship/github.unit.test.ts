@@ -120,7 +120,7 @@ describe("the envelope proof", () => {
 		expect(read.runs.map((entry) => entry.checkSuiteId)).toEqual([91, 91]);
 	});
 
-	// The join key onto the workflow run is what tells a concurrency-cancel from a failure (#6834),
+	// The join key onto the workflow run is what tells a concurrency-cancel from a failure,
 	// and the platform's own schema types `check_suite` as nullable — so the row can really arrive
 	// without it, and an unjoinable row is UNKNOWN rather than a run with no supersession.
 	it("refuses a check run that names no check suite rather than dropping the join key", async () => {
@@ -193,14 +193,14 @@ describe("absence stays a proven answer, never a failed read", () => {
 	});
 
 	it("serves the raw bytes through the raw media type, not a JSON envelope", async () => {
-		const http = fakeHttp([[/contents/, {status: 200, body: "* @kamp-us/core\n"}]]);
+		const http = fakeHttp([[/contents/, {status: 200, body: "* @acme/core\n"}]]);
 		const read = await run(readFileAtRef("o/r", ".github/CODEOWNERS", "main"), http);
-		expect(read).toEqual({_tag: "Present", value: "* @kamp-us/core\n"});
+		expect(read).toEqual({_tag: "Present", value: "* @acme/core\n"});
 	});
 
 	it("reads a 404 team as Absent — the team does not exist in this org", async () => {
 		const http = fakeHttp([[/teams/, {status: 404, body: '{"message":"Not Found"}'}]]);
-		expect((await run(listTeamMembers("kamp-us", "core"), http))._tag).toBe("Absent");
+		expect((await run(listTeamMembers("acme", "core"), http))._tag).toBe("Absent");
 	});
 
 	it("pages a present team and hands back every login", async () => {
@@ -208,7 +208,7 @@ describe("absence stays a proven answer, never a failed read", () => {
 			[/members\?per_page=100&page=1$/, json([{login: "a"}], linkNext("https://x/?page=2"))],
 			[/&page=2$/, json([{login: "b"}])],
 		]);
-		const read = await run(listTeamMembers("kamp-us", "core"), http);
+		const read = await run(listTeamMembers("acme", "core"), http);
 		expect(read).toEqual({_tag: "Present", value: ["a", "b"]});
 	});
 });

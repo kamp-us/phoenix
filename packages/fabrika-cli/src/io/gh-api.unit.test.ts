@@ -273,7 +273,7 @@ describe("pagedEnvelope", () => {
 
 	/**
 	 * Without this field a capped envelope walk is a plain `Ok` carrying a short list, and every
-	 * caller that does not reconcile `declared` reads it as the whole answer (#6690's finding 2).
+	 * caller that does not reconcile `declared` reads it as the whole answer.
 	 */
 	it("returns exhausted: false when the cap is reached with a next link outstanding", async () => {
 		const http = fakeHttp([
@@ -499,7 +499,7 @@ describe("githubHttpTimeoutSeconds", () => {
 		try {
 			process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = "1";
 			// Headers arrive instantly; the body stream never produces a byte — the shape of a
-			// silent post-header drop (#7025 criterion 4).
+			// silent post-header drop.
 			const request = HttpClientRequest.get("https://api.github.com/repos/o/r/pulls/1");
 			const http = Layer.succeed(HttpClient.HttpClient)(
 				HttpClient.make(() =>
@@ -515,7 +515,7 @@ describe("githubHttpTimeoutSeconds", () => {
 			expect(result._tag).toBe("Unreachable");
 			if (result._tag === "Unreachable") {
 				// The hung invocation's own record — which exchange, which bound, measured elapsed
-				// (#7025 criterion 1).
+				// so the report names the exchange rather than restating the configured bound.
 				expect(result.reason).toMatch(
 					/^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/1 exceeded its 1s client-side bound after \d+\.\ds$/,
 				);

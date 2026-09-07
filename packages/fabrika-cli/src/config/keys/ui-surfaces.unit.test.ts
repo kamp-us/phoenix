@@ -15,14 +15,14 @@ import {
 
 const WEB = {
 	name: "web",
-	prefix: "apps/web/src/",
+	prefix: "apps/site/src/",
 	mount: "/",
 	command: "pnpm dev --port {{port}}",
 };
-const TUVAL = {
-	name: "tuval-chat",
-	prefix: "apps/tuval/src/",
-	mount: "/tuval/chat",
+const DESK = {
+	name: "desk-chat",
+	prefix: "apps/desk/src/",
+	mount: "/desk/chat",
 	basePath: "/",
 	command: "pnpm proof:chat --port {{port}}",
 };
@@ -43,7 +43,7 @@ const rowsOf = (rows: ReadonlyArray<unknown>): ReadonlyArray<UiSurface> => {
 };
 
 describe("the shipped default", () => {
-	it("is the empty list on both no-file and no-key, so no repo inherits phoenix's surfaces", () => {
+	it("is the empty list on both no-file and no-key, so no repo inherits another's surfaces", () => {
 		expect(resolve(loadConfig({_tag: "Absent"}), uiSurfacesKey)).toMatchObject({
 			_tag: "Default",
 			value: [],
@@ -71,17 +71,17 @@ describe("a declared uiSurfaces row", () => {
 	it("accepts more than one row, each with its own command, mount and readiness probe", () => {
 		const answer = rowsOf([
 			{...WEB, readyPath: "/api/health"},
-			{...TUVAL, readyPath: "/index.html"},
+			{...DESK, readyPath: "/index.html"},
 		]);
 		expect(answer.map((row) => [row.name, row.mount, row.readyPath])).toEqual([
 			["web", "/", "/api/health"],
-			["tuval-chat", "/tuval/chat", "/index.html"],
+			["desk-chat", "/desk/chat", "/index.html"],
 		]);
 	});
 
 	it("allows two rows under one prefix — web and web-lab are two mounts over one source root", () => {
 		const answer = rowsOf([WEB, {...WEB, name: "web-lab", mount: "/lab"}]);
-		expect(prefixesOf(answer)).toEqual(["apps/web/src/"]);
+		expect(prefixesOf(answer)).toEqual(["apps/site/src/"]);
 	});
 
 	const NAME = `"${UI_SURFACES}[].name" is missing or is not a kebab-case app name`;
@@ -97,8 +97,8 @@ describe("a declared uiSurfaces row", () => {
 		["no command", [{name: "web", prefix: "a/", mount: "/"}], COMMAND],
 		["a non-string command", [{...WEB, command: 3}], COMMAND],
 		["no prefix", [{name: "web", mount: "/", command: "x {{port}}"}], PREFIX],
-		["a prefix with no trailing slash", [{...WEB, prefix: "apps/web/src"}], PREFIX],
-		["an absolute prefix", [{...WEB, prefix: "/apps/web/src/"}], PREFIX],
+		["a prefix with no trailing slash", [{...WEB, prefix: "apps/site/src"}], PREFIX],
+		["an absolute prefix", [{...WEB, prefix: "/apps/site/src/"}], PREFIX],
 		["a parent-relative prefix", [{...WEB, prefix: "../web/src/"}], PREFIX],
 		["no mount", [{name: "web", prefix: "a/", command: "x {{port}}"}], MOUNT],
 		["a relative mount", [{...WEB, mount: "lab"}], MOUNT],
@@ -128,12 +128,8 @@ describe("a declared uiSurfaces row", () => {
 			[{...WEB, command: "pnpm dev --worker {{port:worker}}"}],
 			LIST_VIOLATION.noPort("web"),
 		],
-		[
-			"two rows under one name",
-			[WEB, {...TUVAL, name: "web"}],
-			LIST_VIOLATION.duplicateName("web"),
-		],
-		["two rows under one mount", [WEB, {...TUVAL, mount: "/"}], LIST_VIOLATION.duplicateMount("/")],
+		["two rows under one name", [WEB, {...DESK, name: "web"}], LIST_VIOLATION.duplicateName("web")],
+		["two rows under one mount", [WEB, {...DESK, mount: "/"}], LIST_VIOLATION.duplicateMount("/")],
 	])("refuses %s — the whole-list rule no field check can state", (_label, rows, reason) => {
 		expect(declared(rows)).toMatchObject({_tag: "Malformed", reason});
 	});

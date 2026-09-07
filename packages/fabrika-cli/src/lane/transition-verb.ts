@@ -3,12 +3,12 @@
  *
  * The order is the contract: validate against the folded state FIRST, append ONLY an event the
  * machine accepts. An invalid event — no cell in the current state, outside the six, wrong phase,
- * finished workflow — never reaches the append, so the refusal leaves `events.jsonl` untouched
- * (#5671, run 8). An append that fails is {@link APPEND_UNKNOWN}, never reported as recorded.
+ * finished workflow — never reaches the append, so the refusal leaves `events.jsonl` untouched.
+ * An append that fails is {@link APPEND_UNKNOWN}, never reported as recorded.
  *
  * The whole load → fold → validate → append section runs inside the lane's write lock
  * ([`append-lock.ts`](append-lock.ts)), so a shell recording its own terminal cannot validate
- * against bytes another writer is about to move under it (#5994). Lock-budget exhaustion refuses
+ * against bytes another writer is about to move under it. Lock-budget exhaustion refuses
  * {@link CONCURRENT_WRITE} — retry this same event — never an ordinary machine-refusal code.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
@@ -49,13 +49,13 @@ export interface TransitionOptions extends LaneRef {
 	 *
 	 * A driver originates parks the shells cannot report (`operate` §4), so the cause field has to
 	 * reach the ledger on this path too — a `BLOCKED` only a driver could record would otherwise be
-	 * novel by construction, which is the gap #6480 closed on the shell's path.
+	 * novel by construction, which is the gap the cause field closed on the shell's path.
 	 */
 	readonly cause: string | null;
 	/**
-	 * The lane classes standing at this event, which the `class:<name>` arms route on (ADR 0317).
+	 * The lane classes standing at this event, which the `class:<name>` arms route on.
 	 *
-	 * The driver relays a shipped verb's answer here and never derives one (ADR 0228): `lane prove`
+	 * The driver relays a shipped verb's answer here and never derives one: `lane prove`
 	 * writes nothing by design and the append path stays offline, so the class rides the event line
 	 * exactly as `--cause` does. Empty leaves the standing set alone; a spelling outside the closed
 	 * set is refused rather than routed as unclassed.
@@ -64,9 +64,9 @@ export interface TransitionOptions extends LaneRef {
 	/**
 	 * Waits this event grants, on an `UNBLOCKED` out of a wait park; `null` grants none.
 	 *
-	 * It rides the resume so the clear and the grant are one recorded line — `recipe unpark` passes it
-	 * once it has proven the queue moved, and a human passes `--grant-wait` when that read cannot run
-	 * (ADR 0313). A resume that needs one and carries none is `applyEvent`'s `unbudgeted-resume`.
+	 * It rides the resume so the clear and the grant are one recorded line — `recipe unpark` passes
+	 * it once it has proven the queue moved, and a human passes `--grant-wait` when that read cannot
+	 * run. A resume that needs one and carries none is `applyEvent`'s `unbudgeted-resume`.
 	 */
 	readonly waitGrant: number | null;
 }

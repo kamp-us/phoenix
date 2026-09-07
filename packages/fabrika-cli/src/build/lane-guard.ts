@@ -9,7 +9,7 @@
  * proves nothing; the branch's nonce is passed in as the asking lane's identity, so the branch name and
  * the live claim have to agree on the same UUID — which is what a second lane of the same session
  * cannot fake. When the winner is another lane of this same session the refusal is re-mapped to `14`:
- * inside one session that is a wrong tree to be standing in, not a wrong session (#6037).
+ * inside one session that is a wrong tree to be standing in, not a wrong session.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

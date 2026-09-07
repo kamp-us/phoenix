@@ -56,7 +56,7 @@ const program = Effect.gen(function* () {
 	const own = yield* path.fromFileUrl(packageRootUrl);
 	// No `orElseSucceed` fallback here on purpose: an un-canonicalizable own root makes the self-check
 	// compare two paths that may name the same install, which is precisely how a copy delegates to
-	// itself forever. Failing is the only honest answer (#4784).
+	// itself forever. Failing is the only honest answer.
 	const selfPackageRoot = yield* fs
 		.realPath(own)
 		.pipe(
@@ -67,13 +67,13 @@ const program = Effect.gen(function* () {
 		);
 	// Both walks stay on the `E` channel, so an ancestor that cannot be probed ends the run with the
 	// diagnostic below. An unreadable origin must never soften into "no checkout", which reads as the
-	// global install and re-opens the branch #4956 closed.
+	// global install and silently hands the invocation to the wrong copy.
 	const selfOrigin = yield* originOf(selfPackageRoot);
 	const invocationDir = process.cwd();
 	const repoRoot = yield* discoverRepoRoot(invocationDir);
 	const local = repoRoot === undefined ? undefined : yield* probeLocalInstall(repoRoot);
 	// The relation, not the two roots, is what the refusal turns on: a worktree of the copy's own
-	// repository is a different checkout but the same project (#5679).
+	// repository is a different checkout but the same project.
 	const origin = yield* relateCopy(selfOrigin, repoRoot);
 	const resolution = resolve({selfPackageRoot, origin, repoRoot, local});
 

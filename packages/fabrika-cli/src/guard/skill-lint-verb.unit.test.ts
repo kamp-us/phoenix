@@ -4,7 +4,7 @@
  *
  * The floors are what the port moved out of `skill-gh-lint.yml`'s bash and into a tested verb, so
  * each one is asserted here rather than trusted: a symlinked corpus root, an empty walk, and a
- * plugin dir the walk never reached (#5004).
+ * plugin dir the walk never reached.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -88,14 +88,14 @@ describe("runSkillLint", () => {
 		expect(plain.stderr.some((line) => line.startsWith("::error"))).toBe(false);
 	});
 
-	it("reds a walk that matched no file rather than passing it (ADR 0092)", async () => {
+	it("reds a walk that matched no file rather than passing it", async () => {
 		const outcome = await run(corpus({}));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join("\n")).toContain("ZERO .md/.sh files");
 	});
 
-	it("reds a plugin dir the walk never reached (#5004)", async () => {
+	it("reds a plugin dir the walk never reached", async () => {
 		const scoped = corpus({fabrika: {"SKILL.md": skill()}});
 		const outcome = await run({
 			...scoped,

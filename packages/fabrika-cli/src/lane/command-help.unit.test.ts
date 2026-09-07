@@ -1,7 +1,7 @@
 /**
  * `--help` is the lane adapter's public contract. Keep every repository-rooted verb aligned with
  * the derivation and refusal semantics in ground.ts rather than preserving the old cwd-relative
- * story on commands that happen not to exercise that branch in their verb unit tests (#5815).
+ * story on commands that happen not to exercise that branch in their verb unit tests.
  */
 import {describe, expect, it} from "vitest";
 import type {CommandNode} from "../unknown-subcommand.ts";
@@ -52,7 +52,7 @@ const flagHelp = (leaf: DescribedCommand): string => {
 	return (leaf.config?.flags ?? []).map(text).join(" ");
 };
 
-describe("the lane group's repository-root help contract (#5815)", () => {
+describe("the lane group's repository-root help contract", () => {
 	it.each(
 		ROOTED_VERBS,
 	)("lane %s describes repository derivation and both refusal seats", (name) => {
@@ -75,12 +75,12 @@ describe("the lane group's repository-root help contract (#5815)", () => {
 
 describe("the closed park-cause set --cause advertises", () => {
 	// The listing is what an operator reads before parking, so a token missing from it is a token
-	// nobody names — and a `BLOCKED` carrying no cause is Novel forever (#6480, #7217).
+	// nobody names — and a `BLOCKED` carrying no cause is Novel forever.
 	it.each(PARK_CAUSE_TOKENS)("lane transition --cause offers %s", (token) => {
 		expect(flagHelp(leafNamed("transition"))).toContain(token);
 	});
 
-	it("offers the rendered gate's three causes beside the four that predate them (#7423)", () => {
+	it("offers the rendered gate's three causes beside the four that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"campaign-paused",
 			"head-behind-base",

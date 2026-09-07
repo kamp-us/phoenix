@@ -6,15 +6,14 @@
  *
  * - **Every response's status is read before its bytes are interpreted.** The status arrives as a
  *   number, so `Absent` and `Unknown` are told apart by the platform's own answer instead of by
- *   scraping `(HTTP 404)` out of a `gh` error string, which is what the package did until #6644 read
- *   a ported 403 as no status at all.
+ *   scraping `(HTTP 404)` out of a `gh` error string, which reads a ported 403 as no status at all.
  * - **Every list read returns its own completeness proof beside what it received.** A caller that
  *   cannot see the proof cannot refuse a truncated read, and a truncated read that answers anyway
  *   is a verdict over unknown scope. Which proof depends on what the platform declares: an envelope
  *   read proves completeness by `total_count`, a bare-array read declares no count at all and its
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
- * REST throughout, with three carves recorded in ADR 0315: {@link graphqlRead} for review threads
+ * REST throughout, with exactly three carves: {@link graphqlRead} for review threads
  * and their mutations, the auto-merge mutation, and `pullsClosing` in `./pulls.ts`. Issue
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
@@ -22,7 +21,7 @@
  * {@link resolveToken} is the one producer, and a caller holding no `token` cannot construct a
  * request at all. Adapters outside this file take `(repo, …)` and reach {@link ambientToken} for
  * theirs, and they erase the transport requirement with {@link onTransport} rather than publishing
- * `HttpClient` up through 45 verb annotations (ADR 0315, as amended).
+ * `HttpClient` up through every verb annotation.
  */
 
 import {Duration, Effect, Option} from "effect";
@@ -51,7 +50,7 @@ const DEFAULT_HTTP_TIMEOUT_SECONDS = 60;
 /**
  * The client-side bound on one GitHub HTTP exchange. `HttpClient.execute` has no timeout of its
  * own, so a stalled transport (black-holed connect, silent drop) blocks a verb indefinitely —
- * observed live as gate shells stuck 240s+ on one call (#7025). Failing fast turns the stall into
+ * observed live as gate shells stuck minutes on one call. Failing fast turns the stall into
  * the existing `Unreachable` outcome, which every caller already treats as data. Override for
  * tests and pathological networks with `FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS`.
  */
@@ -78,7 +77,7 @@ const definedOnly = (env: Readonly<Record<string, string | undefined>>): Record<
 };
 
 /**
- * The credential, in the order ADR 0315 rules: `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token`
+ * The credential, in one fixed order: `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token`
  * **only when `gh` is present**.
  *
  * The env path is the contract and is what keeps this package binary-free. The `gh` leg resolves a
@@ -114,7 +113,7 @@ let memoisedToken: Attempt<string> | null = null;
  * The credential an adapter reaches for, resolved once per process off `process.env`.
  *
  * An adapter's signature is `(repo, …)` and has nowhere to take an `env`, so the resolution happens
- * here rather than being threaded through every verb (ADR 0315, as amended). The memo is not a
+ * here rather than being threaded through every verb. The memo is not a
  * micro-optimisation: without it the `gh auth token` leg spawns a subprocess per request, which is
  * the cost this whole port exists to remove. A refusal memoises too — the env does not change
  * mid-run, so re-asking a logged-out `gh` fifty times only reprints one answer.
@@ -199,7 +198,7 @@ const served = <A>(
 ): Api<Served<A>> =>
 	Effect.gen(function* () {
 		// Read once per exchange: the bound that is applied and the bound a refusal reports must be
-		// the same number even if the env moves between the two reads (review finding on #7048).
+		// the same number even if the env moves between the two reads.
 		const boundSeconds = githubHttpTimeoutSeconds();
 		const startedAtMs = Date.now();
 		return yield* Effect.catch(
@@ -217,7 +216,7 @@ const served = <A>(
 				),
 				// The bound covers the WHOLE exchange — connect through final body byte. Above
 				// `flatMap(read)` it would spare a stalled body stream, which dies exactly as hard as
-				// a black-holed connect (#7025 criterion 4).
+				// a black-holed connect.
 				Effect.timeout(Duration.seconds(boundSeconds)),
 			),
 			(error: unknown) =>
@@ -225,7 +224,7 @@ const served = <A>(
 					_tag: "Unreachable",
 					reason: Cause.isTimeoutError(error)
 						? // The hung invocation's own record: which call, which bound, how long it actually
-							// held the lane (#7025 criterion 1) — measured wall-clock, not the configured
+							// held the lane — measured wall-clock, not the configured
 							// bound restated.
 							`${request.method} ${request.url} exceeded its ${boundSeconds}s client-side bound after ${((Date.now() - startedAtMs) / 1000).toFixed(1)}s`
 						: `the GitHub API could not be reached: ${String(error)}`,
@@ -328,7 +327,7 @@ export const authedExistence = <A>(
  *
  * The body travels as JSON on the wire, which is what retires the `gh`-era `-f key=value` argv
  * shape and the `-f body=@file` scar with it: `@` made `gh` read the value as a *path*, so a
- * four-character body posted the four characters of the path and read back as success (#4683). A
+ * four-character body posted the four characters of the path and read back as success. A
  * JSON body has no such form, so the hazard is gone rather than guarded.
  */
 export const restWrite = (
@@ -352,7 +351,7 @@ const MESSAGE_CAP = 200;
  *
  * Every non-2xx arm in this module and in `./issues.ts` builds its reason here, because the string
  * used to be constructed at five call sites and enriching one of them would have left the other
- * four naming a bare number (#6708). The status leads: a caller telling a permission denial apart
+ * four naming a bare number. The status leads: a caller telling a permission denial apart
  * from a validation failure reads the number, and the message is the clause that separates a
  * fixable input from an unfixable one.
  *
@@ -553,7 +552,7 @@ export const pagedEnvelope = (
 	});
 
 /**
- * The one non-REST leg, and it is a carve rather than a default (ADR 0315).
+ * The one non-REST leg, and it is a carve rather than a default.
  *
  * Three things need it and nothing else may: review-thread resolution state with the reply and
  * resolve mutations, `enablePullRequestAutoMerge`, and `pullsClosing` in `./pulls.ts`. Issue

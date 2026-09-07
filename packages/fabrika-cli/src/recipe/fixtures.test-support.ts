@@ -12,7 +12,7 @@ import {WAIT_BUDGET} from "../wait-budget.ts";
 
 export const LANES_ROOT = ".fabrika/lanes";
 
-/** The lane the fixtures drive: the `ship` fixtures' issue, whose PR is their #4321. */
+/** The lane the fixtures drive — the same issue the `ship` fixtures' pull request closes. */
 export const LANE = "4287";
 export const WORKFLOW = `${LANES_ROOT}/${LANE}/workflow.json`;
 export const LOG = `${LANES_ROOT}/${LANE}/events.jsonl`;
@@ -36,7 +36,7 @@ export const eventLog = (...events: ReadonlyArray<string>): string =>
 export const PARKED_AT_CP = eventLog("WIP", "DONE", "PASS", "BLOCKED");
 
 /**
- * queued → … → ship, then a dwell that spends the whole wait budget — the #6717 park.
+ * queued → … → ship, then a dwell that spends the whole wait budget — the queue-stall park.
  *
  * The first `WIP` out of `ship` is unguarded, so it takes `WAIT_BUDGET` more to spend the budget and
  * one beyond that to fall through into the stall.
@@ -54,7 +54,7 @@ export const PARKED_BLOCKED = eventLog("BLOCKED");
 /**
  * queued → build → blocked, with a `cause` on the parking line — what a shell's `--cause` records.
  *
- * Parked out of `build` rather than `queued`, because that is where the #6395 park is actually
+ * Parked out of `build` rather than `queued`, because that is where the worktree park is actually
  * taken: the builder's `build branch --resume-lane` refuses, so the history state `UNBLOCKED` walks
  * back into is `build`.
  */
@@ -67,13 +67,13 @@ export const parkedBlockedOn = (cause: string): string =>
 		cause,
 	})}\n`;
 
-/** The #6395 park: BLOCKED because a working tree still held the lane branch. */
+/** The worktree-holds-branch park: BLOCKED because a working tree still held the lane branch. */
 export const PARKED_ON_WORKTREE = parkedBlockedOn("worktree-holds-branch");
 
-/** The #7217 park: BLOCKED because the campaign homing the lane's milestone read `paused`. */
+/** The campaign-paused park: BLOCKED because the campaign homing the milestone read `paused`. */
 export const PARKED_ON_CAMPAIGN = parkedBlockedOn("campaign-paused");
 
-/** The #6770 park: BLOCKED because the provider killed the shell before it reported a terminal. */
+/** The spawn-dead park: BLOCKED because the provider killed the shell before a terminal. */
 export const PARKED_ON_SPAWN = parkedBlockedOn("spawn-dead");
 
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
@@ -124,7 +124,7 @@ export const worktreeList = (
  * The closing-PR edge `pullsClosing` reads, each node's GraphQL state named.
  *
  * The state is the fixture's to say because it is what the read filters on, and `MERGED` is the one
- * the queue-moved recipe's own success case turns on — a landed PR is closed (#6717).
+ * the queue-moved recipe's own success case turns on — a landed PR is closed.
  */
 export const closingPullsIn = (
 	...rows: ReadonlyArray<{readonly number: number; readonly state: string}>

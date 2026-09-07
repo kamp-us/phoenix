@@ -6,7 +6,7 @@
  * collapsible into the value beside it:
  *
  * - `assigneesObserved` splits *the payload carried no `assignees` key* from *the key was there and
- *   held nothing*. `UNVERIFIABLE_ASSIGNEE` rests on exactly that split (#4693's landed shape).
+ *   held nothing*. `UNVERIFIABLE_ASSIGNEE` rests on exactly that split.
  * - `criteria` carries the imported wire read's own token rather than a count alone, so an `absent`
  *   block and a `malformed` one stay distinguishable after the read.
  */
@@ -39,7 +39,7 @@ export interface Phase {
 	readonly members: ReadonlyArray<string>;
 }
 
-/** An edge is ordered `[dependent, prerequisite]`: `["#4302","#4301"]` reads *#4302 requires #4301*. */
+/** An edge is ordered `[dependent, prerequisite]`: `["#b","#a"]` reads *child b requires child a*. */
 export type DependencyEdge = readonly [string, string];
 
 export interface PlanTopology {

@@ -71,12 +71,12 @@ describe("docTemplate", () => {
 		const text = docTemplate(
 			"Worker queue retry",
 			null,
-			"https://github.com/acme/repo/issues/1#issuecomment-1",
+			"https://forge.example/acme/repo/issues/1#issuecomment-1",
 		);
 		expect(text).toContain("## Prospective scope");
 		expect(text).toContain("Do not claim current call sites that do not exist");
 		expect(text).toContain(
-			"[the binding decision](https://github.com/acme/repo/issues/1#issuecomment-1)",
+			"[the binding decision](https://forge.example/acme/repo/issues/1#issuecomment-1)",
 		);
 	});
 

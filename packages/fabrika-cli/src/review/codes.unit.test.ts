@@ -6,7 +6,7 @@ import * as review from "./codes.ts";
 /**
  * The parity assertion the acceptance criterion names: where this group's codes overlap the shipped
  * writing verbs', they match **code for code**, read from the shipped package and never from a
- * contract.md (#4752).
+ * contract.md.
  *
  * The test is not redundant with the re-export in `./codes.ts`. It pins the *claim* — that these
  * particular meanings are the ones aligned — so a future edit that swaps a re-export for a numeral

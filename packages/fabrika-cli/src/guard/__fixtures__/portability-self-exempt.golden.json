@@ -1,0 +1,10 @@
+{
+	"pins": "The files guard portability-guard check may not scan, as path suffixes in list order. A guard has to spell out what it forbids, so its own source and tests are literal examples of the thing — and the exemption is per file, never a directory, because a guard-directory-wide carve-out would silently drop every other guard from the scan. A file added here is one nothing checks, so the list is pinned rather than merely written.",
+	"suffixes": [
+		"/src/guard/portability.ts",
+		"/src/guard/portability-verb.ts",
+		"/src/guard/portability.unit.test.ts",
+		"/src/guard/portability-verb.unit.test.ts",
+		"/src/guard/portability.golden.test.ts"
+	]
+}

@@ -1,6 +1,6 @@
 /**
  * `guard roadmap-guard check`'s pure core — does `ROADMAP.md` still agree with the live milestone
- * projection? Ported from v1's `roadmap-guard` (#2620/#2628/#2660/#5012).
+ * projection? Ported from v1's `roadmap-guard`.
  *
  * **`ROADMAP.md` is the only surface parsed here.** Milestones are the projection it is checked
  * against, never a second source it is reconciled with — so drift always has one author.
@@ -10,13 +10,13 @@
  *        milestone on activation, so a queued arc with no pin is legal; nothing else may defer.
  *   I2 — EXACTLY ONE arc is `active`. Arcs only: campaigns run concurrently.
  *   I3 — every OPEN milestone is claimed by some row.
- *   I4 — zero arc rows or zero milestones fails closed, never a vacuous green (ADR 0092).
+ *   I4 — zero arc rows or zero milestones fails closed, never a vacuous green.
  *   I5 — an `active` or `paused` row's milestone is open and a `done` row's is closed. A queued arc
  *        is exempt (I1's lazy pin); a row whose pin dangles is already an I1 and is not re-reported.
  *
- * I6 — the focus-row-honesty check — retired with the `## Focus` table it kept honest (ADR 0304):
- * a campaign's `active` cell IS the dispatch permission, so there is no second declaration surface
- * left to reconcile.
+ * I6 — the focus-row-honesty check — retired with the `## Focus` table it kept honest: a campaign's
+ * `active` cell IS the dispatch permission, so there is no second declaration surface left to
+ * reconcile.
  *
  * Total and IO-free: `./roadmap-verb.ts` reads the file and the projection.
  */
@@ -26,7 +26,7 @@ export type ArcState = "active" | "queued" | "done";
 /**
  * A campaign has no queued state — a newly added row is `paused`, and it ends `done`. `paused` is
  * alive but not being executed: its milestone is open and no lane opens against it, which is what
- * makes this one cell the dispatch permission (ADR 0304).
+ * makes this one cell the dispatch permission.
  */
 export type CampaignState = "active" | "paused" | "done";
 
@@ -54,7 +54,7 @@ export interface Milestone {
 const ARC_STATES: ReadonlyArray<string> = ["active", "queued", "done"];
 /**
  * A newly added campaign row defaults to `paused` — flipping it to `active` is the separate act
- * that grants dispatch permission, so naming a campaign never grants it (founder ruling on #6289).
+ * that grants dispatch permission, so naming a campaign never grants it.
  */
 const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "paused", "done"];
 
@@ -171,7 +171,7 @@ export const judge = (
 		// A dangling pin is already an I1; reporting it again as an I5 would double-count one fault.
 		if (m === undefined) continue;
 		// `paused` sits with `active`: pausing a campaign says nothing about its milestone — the work
-		// is alive, just not being dispatched (ADR 0304).
+		// is alive, just not being dispatched.
 		const expected =
 			row.state === "active" || row.state === "paused"
 				? "open"
@@ -201,7 +201,7 @@ export const judge = (
 /** The verb label every report below is prefixed with, and the verb's own refusals reuse. */
 export const VERB = "guard roadmap-guard check";
 
-/** The human report for a verdict. It names what was scanned, per ADR 0092. */
+/** The human report for a verdict. It names what was scanned, not only what failed. */
 export const renderReport = (verdict: RoadmapVerdict): string => {
 	if (verdict.pass) {
 		const active =
@@ -216,7 +216,7 @@ export const renderReport = (verdict: RoadmapVerdict): string => {
 	if (verdict.reason === "zero-scope") {
 		return (
 			`${VERB}: scanned ${verdict.arcCount} arc row(s) and ${verdict.milestoneCount} milestone(s) — ` +
-			"zero scope on one side, fail-closed (ADR 0092, I4). Is ROADMAP.md's `## Arcs` table present and " +
+			"zero scope on one side, fail-closed (I4). Is ROADMAP.md's `## Arcs` table present and " +
 			"are there milestones to project onto? A vacuous pass would hide real drift."
 		);
 	}
@@ -225,11 +225,11 @@ export const renderReport = (verdict: RoadmapVerdict): string => {
 		`${VERB}: ${verdict.violations.length} ROADMAP.md ↔ milestone drift violation(s):\n` +
 		`${lines.join("\n")}\n\n` +
 		"ROADMAP.md's `## Arcs`/`## Campaigns` tables and the GitHub milestone projection have drifted.\n" +
-		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I5, #2632/#2660)."
+		"Reconcile the offending row(s)/milestone(s) above against invariants I1–I5."
 	);
 };
 
-/** A milestone cell (`#17`) resolved to its number, else `null`. */
+/** A milestone cell (`#N`) resolved to its number, else `null`. */
 export const parseMilestoneCell = (cell: string): number | null => {
 	const m = cell.match(/#(\d+)/);
 	return m?.[1] === undefined ? null : Number(m[1]);

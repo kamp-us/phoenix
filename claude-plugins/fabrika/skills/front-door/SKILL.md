@@ -93,7 +93,7 @@ Route on the **condition**, not on a description: name the skill and the situati
 read.** Check the name against the list before you write it. Where a condition has no listed skill —
 issues are waiting and nothing on the roster triages them — the honest routing line is *"this work
 is unstaffed in this install; it is yours by hand for now"*, and that is a useful answer, not a
-failure to find one. The pull the other way is strong: you know what the phoenix roster looks like,
+failure to find one. The pull the other way is strong: you know what a familiar roster looks like,
 so a plausible name arrives faster than the menu does. A name that is not on the menu is a skill the
 human will type and not find.
 
@@ -162,7 +162,7 @@ EOF
 than leaving `triage homes` to refuse over it in some later session.
 
 <!-- anchor: DESIGN-LAW-IS-REPO-CONTENT --> **The design law is repo content, never skill content.**
-phoenix's manifest is one repo's instance. Write what *this* repo's evidence supports; a pillar
+A design manifest is one repo's own instance. Write what *this* repo's evidence supports; a pillar
 carried in from somewhere else is a foreign opinion wearing local clothes.
 
 ## 4 — The decision digest is displayed, never ranked here

@@ -155,8 +155,8 @@ map at all.
 **The edges are map topology and real blockedness both.** A native `blocked_by` edge gates pipeline
 eligibility whoever wrote it, so a destination stays unpickable until its frontier tickets close —
 `build claim`, `build pick` and `build eligible` all read this graph. That gating is intended, not a
-side effect: ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md), ruled for
-map edges at [#6271](https://github.com/kamp-us/phoenix/issues/6271#issuecomment-5362260727).
+side effect: the native dependency graph is the one carrier of blockedness, and a map edge is a
+real edge on it like any other.
 
 **Done when** every open question you named is a ticket, and `map read` shows the frontier you
 intended.
@@ -221,10 +221,10 @@ needs. Do not reimplement any of that here, and never write an answer onto the m
 number you invent or relay by hand: `grill open --ticket <t>` binds the session to the ticket and
 prints the session, and running it again on the same ticket resumes that same session rather than
 minting a second one. That is the only mechanism carrying a ticket into a session — a topic composed
-from the ticket's title binds nothing, and the map never learns where the ruling went (#5661).
+from the ticket's title binds nothing, and the map never learns where the ruling went.
 
 ```bash
-fabrika grill open --ticket 9144 --repo kamp-us/phoenix   # → {"session":9301,…}
+fabrika grill open --ticket 9144 --repo <owner/name>   # → {"session":9301,…}
 fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
 ```
 

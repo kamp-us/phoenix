@@ -2,8 +2,8 @@
  * `status menu` — the landed skill roster, derived from the installed plugin's skills tree.
  *
  * **The roster is derived, never stored.** No committed menu file and no generate step: the
- * directory is the list, the same on-demand idiom ADR 0129 applies to the repo's decision records. A
- * committed roster is a copy, and a copy rots.
+ * directory is the list, read on demand at the moment the question is asked. A committed roster is a
+ * copy, and a copy rots.
  *
  * **The header has two states, not three.** `unknown` is a *composite* rendering — this verb refuses
  * instead, because a caller invoking `menu` directly reads the exit status.
@@ -38,7 +38,7 @@ export const rosterRefusal = (verb: string, roster: RosterUnresolved): VerbOutco
 	roster._tag === "AbsentExplicit"
 		? refuse(
 				ZERO_SCOPE,
-				`${verb}: --skills-dir ${roster.display} is proven absent — refusing to answer (ADR 0092).`,
+				`${verb}: --skills-dir ${roster.display} is proven absent — refusing to answer.`,
 			)
 		: refuse(
 				PRECONDITION_UNKNOWN,

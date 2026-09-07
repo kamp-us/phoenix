@@ -1,10 +1,10 @@
 /**
  * `catalog-guard`'s pure half — is every dependency in a workspace `package.json` sourced from the
- * pnpm `catalog:` (or an internal `workspace:` ref) rather than a hardcoded version string (#2737)?
+ * pnpm `catalog:` (or an internal `workspace:` ref) rather than a hardcoded version string?
  *
  * The rule is the root `CLAUDE.md`'s "Every dependency via `catalog:`": one shared version per dep,
  * declared once in `pnpm-workspace.yaml`. A hardcoded semver introduces a second version and breaks
- * frozen-lockfile CI downstream — PR #535 hardcoded `@distilled.cloud/cloudflare` and did exactly
+ * frozen-lockfile CI downstream — a PR once hardcoded `@distilled.cloud/cloudflare` and did exactly
  * that. The convention was written but unenforced, so it held only by reviewer vigilance.
  *
  * Scope and the fail-closed floor live at the IO boundary in `./catalog-verb.ts`; this module never
@@ -32,7 +32,7 @@ export interface PackageManifest {
 /**
  * An explicit, reasoned exception to the catalog rule. A dep is exempt only when its `name` matches
  * AND (`path` is unset OR equals the manifest's path). `reason` is mandatory so an exception can
- * never be added without a recorded justification (#2737).
+ * never be added without a recorded justification.
  */
 export interface AllowlistEntry {
 	readonly name: string;
@@ -44,7 +44,7 @@ export interface AllowlistEntry {
 /**
  * The sanctioned non-catalog deps. Empty today — every workspace member is already on
  * `catalog:`/`workspace:`. Add an entry ONLY for a genuinely unavoidable exception, each with a
- * recorded `reason`; a silent tolerance is the bug #2737 exists to prevent.
+ * recorded `reason`; a silent tolerance is the bug this guard exists to prevent.
  */
 export const DEFAULT_ALLOWLIST: ReadonlyArray<AllowlistEntry> = [];
 
@@ -56,7 +56,7 @@ export interface CatalogViolation {
 	readonly value: string;
 }
 
-/** The manifest fields the catalog rule governs (#2737). */
+/** The manifest fields the catalog rule governs. */
 export const DEP_FIELDS = ["dependencies", "devDependencies", "peerDependencies"] as const;
 
 /** Flatten a parsed `package.json` object into `DepEntry`s over the governed fields. */
@@ -99,7 +99,7 @@ export const findViolations = (
 	return violations;
 };
 
-const WHY = "a second version of a dep breaks frozen-lockfile CI (#535)";
+const WHY = "a second version of a dep breaks frozen-lockfile CI";
 
 /** The one-line summary of a scan that found nothing. */
 export const cleanSummary = (verb: string, scanned: number): string =>
@@ -122,7 +122,7 @@ export const violationReport = (
 
 /**
  * One annotation per violation, on the manifest line that pins the version when `lineOf` can find
- * it — a file-level annotation otherwise, since GitHub drops a `line=` it cannot place (#3868).
+ * it — a file-level annotation otherwise, since GitHub drops a `line=` it cannot place.
  */
 export const violationAnnotations = (
 	violations: ReadonlyArray<CatalogViolation>,

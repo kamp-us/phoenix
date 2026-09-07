@@ -5,7 +5,7 @@
  * something under it, while the review reader dropped every bullet carrying no `Said` field and then
  * called a section of zero surviving entries `malformed`. A body that fully satisfied the producer
  * was therefore guaranteed to fail the consumer closed, and no author-facing doc stated the field
- * grammar either side was judging against (#5566). Registering the section as a wire format is what
+ * grammar either side was judging against. Registering the section as a wire format is what
  * makes that disagreement unrepresentable: one module owns the bytes, and both sides read it.
  *
  * `read` is total, and `Found` carries a {@link DeviationsDisclosure} rather than a bare list,
@@ -19,8 +19,8 @@
  * whether anyone accepted it — so the refusal now names the missing field at the point the body is
  * written, instead of costing a review round that could not say what was wrong.
  *
- * v1's §DEV supplied the semantics — the four fields, the seven classes, the M/R/D tiers — and was
- * read as prior art, never called (ADR 0238).
+ * An older pipeline's deviations section supplied the semantics — the four fields, the seven
+ * classes, the M/R/D tiers — and was read as prior art, never called.
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";

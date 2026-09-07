@@ -59,7 +59,7 @@ export const announcedApps = (commentBody: string): readonly string[] => {
 export interface PreviewAnnouncement {
 	readonly app: string;
 	readonly url: string;
-	/** The head SHA the preview deployed — what binds pixels to a tree (ADR 0058). */
+	/** The head SHA the preview deployed — what binds pixels to a tree. */
 	readonly deployedSha: string;
 }
 
@@ -81,7 +81,7 @@ const ANY_URL = /https?:\/\/[^\s<>()"'`\]]+/;
 const EVERY_URL = new RegExp(ANY_URL.source, "g");
 /**
  * The deployed head SHA, read only in an **anchored** form — `@ <sha>`, `(<sha>)` (the shape
- * phoenix's own deploy comment upserts), a backticked SHA, or `head <sha>`.
+ * a deploy comment commonly upserts), a backticked SHA, or `head <sha>`.
  *
  * A bare hex-looking word is deliberately not read as a SHA: ordinary English words spell in hex
  * (`defaced`), and a wrong SHA here would bind pixels to a tree nobody deployed.

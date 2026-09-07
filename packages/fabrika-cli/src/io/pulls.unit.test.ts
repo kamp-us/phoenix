@@ -37,7 +37,7 @@ interface Node {
 
 const pr = (number: number, state = "OPEN"): Node => ({
 	number,
-	url: `https://github.com/kamp-us/phoenix/pull/${number}`,
+	url: `https://github.com/o/r/pull/${number}`,
 	state,
 });
 
@@ -57,9 +57,10 @@ const page = (nodes: ReadonlyArray<Node>, endCursor: string | null = null): Http
 
 const run = (script: ReadonlyArray<readonly [RegExp, HttpReply]>, issue = 5751) => {
 	const {http, layer} = wired(script);
-	return Effect.runPromise(Effect.provide(pullsClosing("kamp-us/phoenix", issue), layer)).then(
-		(result) => ({result, http}),
-	);
+	return Effect.runPromise(Effect.provide(pullsClosing("o/r", issue), layer)).then((result) => ({
+		result,
+		http,
+	}));
 };
 
 describe("pullsClosing", () => {
@@ -68,7 +69,7 @@ describe("pullsClosing", () => {
 
 		expect(result).toEqual({
 			_tag: "Ok",
-			value: [{number: 5803, url: "https://github.com/kamp-us/phoenix/pull/5803"}],
+			value: [{number: 5803, url: "https://github.com/o/r/pull/5803"}],
 		});
 	});
 
@@ -84,8 +85,8 @@ describe("pullsClosing", () => {
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
-				{number: 5803, url: "https://github.com/kamp-us/phoenix/pull/5803"},
-				{number: 5804, url: "https://github.com/kamp-us/phoenix/pull/5804"},
+				{number: 5803, url: "https://github.com/o/r/pull/5803"},
+				{number: 5804, url: "https://github.com/o/r/pull/5804"},
 			],
 		});
 	});
@@ -97,7 +98,7 @@ describe("pullsClosing", () => {
 
 		expect(result).toEqual({
 			_tag: "Ok",
-			value: [{number: 5803, url: "https://github.com/kamp-us/phoenix/pull/5803"}],
+			value: [{number: 5803, url: "https://github.com/o/r/pull/5803"}],
 		});
 	});
 
@@ -114,15 +115,13 @@ describe("pullsClosing", () => {
 			[once(GRAPHQL), page([pr(5803)], "cursor-1")],
 			[GRAPHQL, page([pr(5804)])],
 		]);
-		const result = await Effect.runPromise(
-			Effect.provide(pullsClosing("kamp-us/phoenix", 5751), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(pullsClosing("o/r", 5751), layer));
 
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
-				{number: 5803, url: "https://github.com/kamp-us/phoenix/pull/5803"},
-				{number: 5804, url: "https://github.com/kamp-us/phoenix/pull/5804"},
+				{number: 5803, url: "https://github.com/o/r/pull/5803"},
+				{number: 5804, url: "https://github.com/o/r/pull/5804"},
 			],
 		});
 		expect(http.bodies[1]).toContain("cursor-1");
@@ -162,7 +161,9 @@ describe("pullsClosing", () => {
 
 	it("refuses a repo that is not owner/name", async () => {
 		const {http, layer} = wired([[GRAPHQL, page([pr(5803)])]]);
-		const result = await Effect.runPromise(Effect.provide(pullsClosing("phoenix", 5751), layer));
+		const result = await Effect.runPromise(
+			Effect.provide(pullsClosing("name-with-no-owner", 5751), layer),
+		);
 
 		expect(result._tag).toBe("Failure");
 		expect(http.calls).toEqual([]);
@@ -180,9 +181,7 @@ describe("getPullRequest — three arms, never two", () => {
 
 	it("reads a served pull request", async () => {
 		const {layer} = wired([[/pulls\/4318/, served(200, record)]]);
-		const result = await Effect.runPromise(
-			Effect.provide(getPullRequest("kamp-us/phoenix", 4318), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(getPullRequest("o/r", 4318), layer));
 		expect(result._tag).toBe("Present");
 		expect(result._tag === "Present" && result.value.headSha).toBe("abc");
 	});
@@ -191,23 +190,17 @@ describe("getPullRequest — three arms, never two", () => {
 		const absent = wired([[/pulls/, served(404, {message: "Not Found"})]]);
 		const unreadable = wired([[/pulls/, served(502, {message: "Bad gateway"})]]);
 
+		expect(await Effect.runPromise(Effect.provide(getPullRequest("o/r", 1), absent.layer))).toEqual(
+			{_tag: "Absent"},
+		);
 		expect(
-			await Effect.runPromise(Effect.provide(getPullRequest("kamp-us/phoenix", 1), absent.layer)),
-		).toEqual({_tag: "Absent"});
-		expect(
-			(
-				await Effect.runPromise(
-					Effect.provide(getPullRequest("kamp-us/phoenix", 1), unreadable.layer),
-				)
-			)._tag,
+			(await Effect.runPromise(Effect.provide(getPullRequest("o/r", 1), unreadable.layer)))._tag,
 		).toBe("Unknown");
 	});
 
 	it("reads a 200 of the wrong shape as Unknown, never as a pull request", async () => {
 		const {layer} = wired([[/pulls/, served(200, {message: "Not Found"})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(getPullRequest("kamp-us/phoenix", 1), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(getPullRequest("o/r", 1), layer));
 		expect(result._tag).toBe("Unknown");
 	});
 });
@@ -215,17 +208,13 @@ describe("getPullRequest — three arms, never two", () => {
 describe("permissionFor", () => {
 	it("keeps a 404 a proven Absent — a non-collaborator holds no permission", async () => {
 		const {layer} = wired([[/collaborators/, served(404, {message: "Not Found"})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(permissionFor("kamp-us/phoenix", "someone"), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(permissionFor("o/r", "someone"), layer));
 		expect(result).toEqual({_tag: "Absent"});
 	});
 
 	it("reads the permission a collaborator holds", async () => {
 		const {layer} = wired([[/collaborators/, served(200, {permission: "write"})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(permissionFor("kamp-us/phoenix", "someone"), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(permissionFor("o/r", "someone"), layer));
 		expect(result).toEqual({_tag: "Present", value: "write"});
 	});
 });
@@ -234,27 +223,21 @@ describe("getPullDiff", () => {
 	it("asks for the diff media type and hands back the text, unparsed", async () => {
 		const diff = "diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n";
 		const {http, layer} = wired([[/pulls\/4318/, {status: 200, body: diff}]]);
-		const result = await Effect.runPromise(
-			Effect.provide(getPullDiff("kamp-us/phoenix", 4318), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(getPullDiff("o/r", 4318), layer));
 		expect(result).toEqual({_tag: "Ok", value: diff});
-		expect(http.calls[0]).toBe("GET https://api.github.com/repos/kamp-us/phoenix/pulls/4318");
+		expect(http.calls[0]).toBe("GET https://api.github.com/repos/o/r/pulls/4318");
 		expect(http.headers[0]?.accept).toBe("application/vnd.github.diff");
 	});
 
 	it("refuses a diff GitHub did not serve, naming GitHub's own message", async () => {
 		const {layer} = wired([[/pulls/, served(404, {message: "Not Found"})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(getPullDiff("kamp-us/phoenix", 1), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(getPullDiff("o/r", 1), layer));
 		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404: Not Found"});
 	});
 
 	it("falls back to the bare status when the refusal body carries no message", async () => {
 		const {layer} = wired([[/pulls/, served(404, {})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(getPullDiff("kamp-us/phoenix", 1), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(getPullDiff("o/r", 1), layer));
 		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404"});
 	});
 });
@@ -265,17 +248,13 @@ describe("listPullFiles", () => {
 			[/&page=1$/, served(200, [{filename: "a.ts"}], linkNext("https://api.github.com/x?page=2"))],
 			[/&page=2$/, served(200, [{filename: "b.ts"}])],
 		]);
-		const result = await Effect.runPromise(
-			Effect.provide(listPullFiles("kamp-us/phoenix", 4318), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(listPullFiles("o/r", 4318), layer));
 		expect(result).toEqual({_tag: "Ok", value: ["a.ts", "b.ts"]});
 	});
 
 	it("refuses an entry that is not a changed file rather than shortening the list", async () => {
 		const {layer} = wired([[/files/, served(200, [{sha: "abc"}])]]);
-		const result = await Effect.runPromise(
-			Effect.provide(listPullFiles("kamp-us/phoenix", 4318), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(listPullFiles("o/r", 4318), layer));
 		expect(result._tag).toBe("Failure");
 	});
 });
@@ -286,7 +265,7 @@ describe("patchComment", () => {
 			[/issues\/comments\/99/, served(200, {html_url: "https://github.com/c/99"})],
 		]);
 		const result = await Effect.runPromise(
-			Effect.provide(patchComment("kamp-us/phoenix", 99, "new body"), layer),
+			Effect.provide(patchComment("o/r", 99, "new body"), layer),
 		);
 		expect(result).toEqual({_tag: "Ok", value: "https://github.com/c/99"});
 		expect(http.calls[0]).toContain("PATCH");
@@ -296,7 +275,7 @@ describe("patchComment", () => {
 	it("refuses a 200 that is not an edited comment", async () => {
 		const {layer} = wired([[/comments/, served(200, {message: "ok?"})]]);
 		const result = await Effect.runPromise(
-			Effect.provide(patchComment("kamp-us/phoenix", 99, "new body"), layer),
+			Effect.provide(patchComment("o/r", 99, "new body"), layer),
 		);
 		expect(result._tag).toBe("Failure");
 	});

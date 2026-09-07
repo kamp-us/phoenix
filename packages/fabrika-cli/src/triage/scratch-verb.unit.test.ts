@@ -8,7 +8,7 @@ import {CLAIM_NOT_HELD, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runScratch} from "./scratch-verb.ts";
 
 const SESSION = "s-9f2e";
-/** Two lanes of ONE session — the fan-out shape #6630 is about. */
+/** Two lanes of ONE session — the fan-out shape the nonce exists for. */
 const UUID_A = "c1a4d6f8-0000-4000-8000-000000000001";
 const UUID_B = "b7e30912-0000-4000-8000-000000000002";
 const TOKEN_A = composeClaimToken(SESSION, UUID_A);
@@ -50,7 +50,7 @@ describe("runScratch", () => {
 
 	/**
 	 * The whole point of the verb: a fan-out runs under one session id, so two lanes asking for the
-	 * same slug on the same issue must not be handed the same file (#6630).
+	 * same slug on the same issue must not be handed the same file.
 	 */
 	it("hands two lanes of one session two directories on one issue", async () => {
 		const first = await run(held(NONCE_A));

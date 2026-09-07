@@ -149,7 +149,7 @@ describe("runOpen — minting and resuming", () => {
 			noHits,
 			[
 				CREATE,
-				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+				{status: 201, body: '{"number":9140,"html_url":"https://forge.example/o/r/issues/9140"}'},
 			],
 			[ADD_LABEL, served("{}")],
 			[NEW_MAP, served(minted)],
@@ -180,7 +180,7 @@ describe("runOpen — minting and resuming", () => {
 			noHits,
 			[
 				CREATE,
-				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+				{status: 201, body: '{"number":9140,"html_url":"https://forge.example/o/r/issues/9140"}'},
 			],
 			[ADD_LABEL, served("{}")],
 			[NEW_MAP, served(issueJson({number: 9140, body: composed, labels: ["wayfinding:map"]}))],
@@ -199,7 +199,7 @@ describe("runOpen — minting and resuming", () => {
 			noHits,
 			[
 				CREATE,
-				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+				{status: 201, body: '{"number":9140,"html_url":"https://forge.example/o/r/issues/9140"}'},
 			],
 			[ADD_LABEL, {status: 502, body: "{}"}],
 		]);
@@ -267,7 +267,7 @@ describe("runOpen — minting and resuming", () => {
 			[SEARCH, served(searchHits())],
 			[
 				CREATE,
-				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+				{status: 201, body: '{"number":9140,"html_url":"https://forge.example/o/r/issues/9140"}'},
 			],
 			[ADD_LABEL, served("{}")],
 			[NEW_MAP, served(issueJson({number: 9140, body: composed, labels: ["wayfinding:map"]}))],

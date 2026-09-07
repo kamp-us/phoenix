@@ -13,7 +13,7 @@
  * together, which no shipped shape does — and a read-back that cannot see all three cannot prove the
  * one create call landed every birth attribute.
  *
- * The package's two standing disciplines hold throughout, unchanged by the move off `gh` (ADR 0315):
+ * The package's two standing disciplines hold throughout, unchanged by the move off `gh`:
  * every list read pages in full and hands back the proof it did, and a shape that is not what was
  * asked for is a failure, never an empty result. Every write here still proves itself by a read-back
  * or by the caller's own re-read — a write's own response echo is not evidence anywhere it was not
@@ -142,8 +142,8 @@ export interface CreatedChild {
  *
  * v1's create hardcoded exactly three `labels[]` with no pass-through and set no milestone, so a
  * fourth required label could only be applied by a follow-up PATCH — and a follow-up PATCH opens a
- * window in which the child exists with **no** `ready-for:` value, which is the fail-open shape the
- * #4780 ruling forbids.
+ * window in which the child exists with **no** `ready-for:` value, the fail-open shape a child must
+ * never be born into.
  */
 export const createChildIssue = (
 	env: Readonly<Record<string, string | undefined>>,

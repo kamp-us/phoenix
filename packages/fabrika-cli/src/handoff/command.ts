@@ -12,7 +12,7 @@
  *
  * **The answer channel is machine, unconditionally, so there is no `--json` flag**, and there is no
  * `--body` or `--body-file`: `take` reads its asserted half from stdin so a machine-local path has no
- * route into a posted artifact (#3086, #3173).
+ * route into a posted artifact.
  */
 
 import {Effect, Option} from "effect";

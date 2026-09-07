@@ -4,7 +4,7 @@
  * **Zero matching sessions is a fact, not a failed read**: no session existing is the ordinary
  * first-run state, and the verb mints one. A search that could not complete is
  * `PRECONDITION_UNKNOWN` and mints nothing, because a caller that reads a failed search as "none"
- * opens a second session and splits the record (ADR 0092).
+ * opens a second session and splits the record.
  *
  * The label write is part of the create, never a caller's follow-up: the label is what makes the
  * session findable, so a created-but-unlabelled issue is the state this verb exists to prevent —
@@ -18,7 +18,7 @@
  * wayfinding frontier ticket records the ticket in its body (`../wire/came-from.ts`) and later runs
  * match on *that*, so the same ticket resumes the same session however either title was edited
  * afterwards — the property a title match cannot hold, and without which a second run mints a
- * duplicate and splits the record the map is waiting on (#5661). The number is provenance only: the
+ * duplicate and splits the record the map is waiting on. The number is provenance only: the
  * ticket issue is read for its title and its existence, never for instruction.
  *
  * **A session whose binding does not parse stops the run.** The match walks open session bodies, and
@@ -194,7 +194,7 @@ export const runOpen = (
 		}
 
 		// The key is the ticket whenever there is one: a title match cannot survive either title
-		// being edited, and a second session on one ticket is the split the map cannot see (#5661).
+		// being edited, and a second session on one ticket is the split the map cannot see.
 		const wanted = normalizeTopic(topic);
 		const key = ticket === null ? `topic "${topic}"` : `ticket #${ticket}`;
 		let matches: ReadonlyArray<IssueDetail>;

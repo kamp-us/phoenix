@@ -13,7 +13,7 @@ const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
 const VIEWER = /^GET https:\/\/api\.github\.com\/user$/;
 const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
-const TEAM = /orgs\/kamp-us\/teams\/control-plane\/members/;
+const TEAM = /orgs\/o\/teams\/control-plane\/members/;
 const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
 const POST = /^POST \S+\/repos\/o\/r\/issues\/4310\/comments/;
 const GET_COMMENT = /^GET \S+\/repos\/o\/r\/issues\/comments\/\d+$/;
@@ -166,7 +166,7 @@ describe("runClear", () => {
 			{},
 			{},
 			[
-				[CONFIG, {status: 200, body: '{"capClearAuthors": ["@kamp-us/control-plane"]}'}],
+				[CONFIG, {status: 200, body: '{"capClearAuthors": ["@o/control-plane"]}'}],
 				[TEAM, {status: 502, body: '{"message":"Bad Gateway"}'}],
 			],
 		);
@@ -237,7 +237,7 @@ describe("runClear", () => {
 		expect(parsed.cap).toBe(CAP_ROUND + 2);
 	});
 
-	/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
+	/** A committed set narrows the ACL; it never stands in for one. */
 	it("refuses a configured account that resolves below write at the ACL", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],

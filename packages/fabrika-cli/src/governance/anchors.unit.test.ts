@@ -92,9 +92,9 @@ describe("scanAnchors", () => {
 });
 
 /**
- * The live shape of the defect, taken from the merged PR #5501: an anchored claim whose continuation
- * line was reworded while the anchor's own line stayed byte-identical, so no `+`/`-` line in that
- * 98-file diff carried an anchor tag at all.
+ * The live shape of the defect: an anchored claim whose continuation line was reworded while the
+ * anchor's own line stayed byte-identical, so no `+`/`-` line in the diff carried an anchor tag at
+ * all.
  */
 const PACKED_BRANCH = (checkout: string): string =>
 	[
@@ -111,7 +111,7 @@ const PACKED_BRANCH = (checkout: string): string =>
  * The same defect in the other half of the guarded corpus, taken from `handoff/ground.ts`: the claim
  * lives in a TypeScript docblock, where every continuation line opens with the star markdown reads as
  * a new list item — so the block used to end on the line after the tag and the reworded checkout was
- * invisible (#5514).
+ * invisible.
  */
 const PACKED_BRANCH_DOCBLOCK = (checkout: string): string =>
 	[
@@ -165,7 +165,7 @@ describe("anchorBlocksIn", () => {
 	});
 
 	// The over-capture this file's own tests exposed: the tag sits inside a TypeScript string literal,
-	// so the lines below it are unrelated code the anchor never covered (#5514).
+	// so the lines below it are unrelated code the anchor never covered.
 	it("does NOT continue past a tag that real content precedes — it covered no lines below it", () => {
 		expect(anchorBlocksIn('expect(scan("<!-- anchor: A --> one"));\nexpect(other());\n')).toEqual([
 			{name: "A", line: 1, text: 'one"));'},
@@ -182,7 +182,7 @@ describe("anchorBlocksIn", () => {
 	});
 
 	// Half the guarded corpus writes its claims in docblocks, where a continuation line and a list item
-	// are the same bytes and only the frame tells them apart (#5514).
+	// are the same bytes and only the frame tells them apart.
 	it("continues through a docblock's star continuation lines and stops at the comment's end", () => {
 		expect(anchorBlocksIn(PACKED_BRANCH_DOCBLOCK("a fresh worktree"))).toEqual([
 			{
@@ -216,7 +216,7 @@ describe("anchorBlocksIn", () => {
 });
 
 describe("scanAnchorBlocks", () => {
-	it("reports the PR #5501 shape: an anchored paragraph reworded below an untouched anchor line", () => {
+	it("reports an anchored paragraph reworded below an untouched anchor line", () => {
 		expect(
 			scanAnchorBlocks(
 				"contract.md",
@@ -233,7 +233,7 @@ describe("scanAnchorBlocks", () => {
 		]);
 	});
 
-	it("reports the PR #5501 shape in a TypeScript docblock too — the .ts half of the corpus", () => {
+	it("reports the same rewording in a TypeScript docblock too — the .ts half of the corpus", () => {
 		expect(
 			scanAnchorBlocks(
 				"ground.ts",
@@ -307,7 +307,7 @@ describe("scanAnchorBlocks", () => {
 	});
 
 	// Positional pairing alone answers the wrong question here: both blocks are intact, but the old
-	// occurrence 1 lands against the new occurrence 2's text and reads as reworded (#5514).
+	// occurrence 1 lands against the new occurrence 2's text and reads as reworded.
 	it("reports NOTHING when a new same-named anchor is INSERTED above an intact one", () => {
 		expect(
 			scanAnchorBlocks(

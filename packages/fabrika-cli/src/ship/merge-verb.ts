@@ -4,7 +4,7 @@
  * **The second landing path, not a flag on the first.** `ship enqueue` carries no merge-method flag
  * by construction, because a method alongside the queue arm conflicts with the queue and no-ops the
  * enqueue silently at exit 0. That argument is about a queue-governed base and says nothing about a
- * base with no queue — where, before this verb, `ship` could land nothing at all (#6018). So the
+ * base with no queue — where, before this verb, `ship` could land nothing at all. So the
  * method surface lives here, on the path where the queue is *proven absent*, and `ship enqueue`
  * still has none.
  *
@@ -123,7 +123,7 @@ export const runMerge = (
 				diagnostics,
 			);
 		}
-		// Both landing verbs refuse a definite not-mergeable read here (#6902): the endpoint would
+		// Both landing verbs refuse a definite not-mergeable read here: the endpoint would
 		// reject this call with a rejection indistinguishable from a write whose outcome nobody knows,
 		// and the queue arm would be accepted and then parked.
 		if (!mergeability.value.mergeable) {

@@ -1,5 +1,5 @@
 /**
- * The range digest's durability, driven against **real git** in a throwaway repository (#5825).
+ * The range digest's durability, driven against **real git** in a throwaway repository.
  *
  * The claim under test is not one about hashing — it is one about what git leaves behind when a
  * child's range is merged into an epic branch. "A clean merge preserves the destination blobs" and

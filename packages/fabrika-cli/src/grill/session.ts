@@ -8,7 +8,7 @@
  *
  * **A recorded ruling is bound to an authority, not to a string.** Every marker's author is
  * resolved against repository permissions before it counts, and a permission read that *fails* is
- * UNKNOWN rather than a demotion — the invariant `../build/claim.ts` states and ADR 0055 owns. The
+ * UNKNOWN rather than a demotion — the same invariant `../build/claim.ts` states. The
  * gate applies to all three markers, not only to rulings: `clear` requires every question to be
  * `answered`, `ruled` or `superseded`, and `clear` is the token a downstream skill keys on, so an
  * un-gated answer or retirement would let any account with push access walk a session into the
@@ -18,7 +18,7 @@
  * been opened and not yet grilled is the ordinary first state, and it reads `empty`. A read that
  * failed leaves every question's state UNKNOWN — never `open` — because an unpaginated or truncated
  * read would silently drop the newest rounds and report a ruled question as open, which is the
- * fail-open direction (ADR 0092).
+ * fail-open direction.
  */
 
 import {Effect} from "effect";
@@ -289,5 +289,5 @@ export const retirements = (scan: MarkerScan): ReadonlyMap<QuestionId, number> =
 	return retired;
 };
 
-/** An ISO-8601 date, which is what makes a quoted authorization datable (#4938). */
+/** An ISO-8601 date, which is what makes a quoted authorization datable. */
 export const ISO_DATE = /\d{4}-\d{2}-\d{2}/;

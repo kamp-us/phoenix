@@ -10,7 +10,7 @@
  *   would turn a broken read into a clean zero-scope refusal about a real ledger.
  * - **Absence is decided by HTTP status, never by matching text against an error string.** v1 used
  *   `/404|not found/i.test(stderr)`, which reads an auth-hidden repo as a proven-absent issue. Since
- *   the port off `gh` (ADR 0315) the status is a number the response carried.
+ *   the port off `gh` onto the REST client the status is a number the response carried.
  *
  * The credential is an argument to every leg of the client, so each read resolves one from the `env`
  * its caller hands down — never from `process`, which is what keeps a test's environment scripted.
@@ -65,7 +65,7 @@ export interface SubIssueLink {
  *
  * Each entry must carry a readable `state` — an entry without one fails the whole read rather than
  * defaulting to open, because a silently-defaulted state is exactly how `lane emit` booted closed
- * children as `queued` (#5746).
+ * children as `queued`.
  *
  * **A walk that never reached a terminal page fails.** The proof is a `rel="next"` still outstanding
  * at the page cap: a child list nobody proved was all of it must not read back as a shorter ledger.

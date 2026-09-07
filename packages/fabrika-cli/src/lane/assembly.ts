@@ -4,7 +4,7 @@
  * The assembly branch used to be cut with `git switch --create` in whatever tree invoked `operate`,
  * which in practice is a human's working tree: it then sat on `epic/<n>` for the whole run, tools
  * that read files there read the epic branch instead of the default one, and a second epic had no
- * checkout left to integrate in (#6163). So the branch gets a worktree of its own, one per run, and
+ * checkout left to integrate in. So the branch gets a worktree of its own, one per run, and
  * every git write the assembly seat performs is proven to happen outside the main working tree
  * before it runs.
  *
@@ -110,7 +110,7 @@ export const standingInLinkedWorktree: Shell<Attempt<boolean>> = Effect.gen(func
 export type AssemblySeat =
 	/** A linked worktree holds `epic/<n>` — the seat the run is meant to assemble in. */
 	| {readonly _tag: "Isolated"; readonly path: string; readonly expected: string}
-	/** The main working tree itself is on `epic/<n>` — the conscription #6163 exists to refuse. */
+	/** The main working tree itself is on `epic/<n>` — the conscription this verb exists to refuse. */
 	| {readonly _tag: "Conscripted"; readonly path: string; readonly expected: string}
 	/**
 	 * Git holds a record for the branch at a directory that is gone. No tree to work in, and the

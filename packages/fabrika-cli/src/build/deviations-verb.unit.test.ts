@@ -106,7 +106,7 @@ describe("runDeviations", () => {
 	it("creates the marker when the child carries none", async () => {
 		const seams = seamsFor([
 			...board(),
-			[POST, served({id: 900, html_url: "https://github.com/o/r/issues/6566#c900"}, 201)],
+			[POST, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"}, 201)],
 			[getComment(900), served({body: composed(NONE)})],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runDeviations(options), seams.layer));
@@ -117,20 +117,20 @@ describe("runDeviations", () => {
 			commentId: 900,
 			upsert: "created",
 			retracted: 0,
-			url: "https://github.com/o/r/issues/6566#c900",
+			url: "https://example.test/o/r/issues/6566#c900",
 		});
 		expect(writtenBody(seams, POST)).toBe(composed(NONE));
 	});
 
 	/**
-	 * The whole bug (#6691): the repair round's disclosure must REPLACE the first, because
+	 * The whole bug: the repair round's disclosure must REPLACE the first, because
 	 * `wire read --format build-deviations` refuses two conforming headings as undecidable — so a
 	 * second comment strands the epic's tail review on an UNKNOWN.
 	 */
 	it("edits the standing marker on a second disclosure, and posts no second comment", async () => {
 		const first = seamsFor([
 			...board(),
-			[POST, served({id: 900, html_url: "https://github.com/o/r/issues/6566#c900"}, 201)],
+			[POST, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"}, 201)],
 			[getComment(900), served({body: composed(NONE)})],
 		]);
 		const opened = await Effect.runPromise(Effect.provide(runDeviations(options), first.layer));
@@ -140,7 +140,7 @@ describe("runDeviations", () => {
 		// The second round reads the board the first round left, not a hand-written stand-in.
 		const second = seamsFor([
 			...board({id: 900, body: landed}),
-			[PATCH, served({id: 900, html_url: "https://github.com/o/r/issues/6566#c900"})],
+			[PATCH, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"})],
 			[getComment(900), served({body: composed(FULL)})],
 			[POST, served({message: "a second comment must never be created"}, 500)],
 		]);
@@ -164,7 +164,7 @@ describe("runDeviations", () => {
 	it("retracts a stacked marker a pre-fix lane left, so one comment survives", async () => {
 		const seams = seamsFor([
 			...board({id: 900, body: composed(NONE)}, {id: 901, body: composed(NONE)}),
-			[PATCH, served({id: 901, html_url: "https://github.com/o/r/issues/6566#c901"})],
+			[PATCH, served({id: 901, html_url: "https://example.test/o/r/issues/6566#c901"})],
 			[getComment(901), served({body: composed(FULL)})],
 			[DELETE_ONE, served({}, 204)],
 		]);
@@ -186,7 +186,7 @@ describe("runDeviations", () => {
 		const out = await run(
 			[
 				...board({id: 900, body: composed(NONE)}, {id: 901, body: composed(NONE)}),
-				[PATCH, served({id: 901, html_url: "https://github.com/o/r/issues/6566#c901"})],
+				[PATCH, served({id: 901, html_url: "https://example.test/o/r/issues/6566#c901"})],
 				[getComment(901), served({body: composed(FULL)})],
 				[DELETE_ONE, GATEWAY],
 			],
@@ -202,7 +202,7 @@ describe("runDeviations", () => {
 				{id: 800, body: `${buildDeviations.KEY_PREFIX} #6567\n\n${NONE}`},
 				{id: 801, body: "quoting build-deviations: #6566 in prose"},
 			),
-			[POST, served({id: 900, html_url: "https://github.com/o/r/issues/6566#c900"}, 201)],
+			[POST, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"}, 201)],
 			[getComment(900), served({body: composed(NONE)})],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runDeviations(options), seams.layer));
@@ -213,7 +213,7 @@ describe("runDeviations", () => {
 	it("composes the marker line from the positional, not from stdin", async () => {
 		const seams = seamsFor([
 			...board(),
-			[POST, served({id: 900, html_url: "https://github.com/o/r/issues/6566#c900"}, 201)],
+			[POST, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"}, 201)],
 			[getComment(900), served({body: composed(NONE)})],
 		]);
 		await Effect.runPromise(
@@ -312,7 +312,7 @@ describe("runDeviations", () => {
 	it("refuses when the landed comment does not read back as this disclosure", async () => {
 		const out = await run([
 			...board(),
-			[POST, served({id: 900, html_url: "https://github.com/o/r/issues/6566#c900"}, 201)],
+			[POST, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"}, 201)],
 			[getComment(900), served({body: "the marker never landed"})],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);

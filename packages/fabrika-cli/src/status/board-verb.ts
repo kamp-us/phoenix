@@ -4,11 +4,11 @@
  * **Counts only.** `fabrika build pick` and `build eligible` answer which issue is next and
  * `build verdicts` / `ship gate` answer a pull request's state; a second answer here could
  * contradict the verb that actually claims the work. There is no "banked" bucket either — what
- * marks a pull request banked is an open decision (#4103).
+ * marks a pull request banked is an open decision.
  *
  * **An absent label renders `unknown`, never `0`.** A zero count means the label exists and nothing
- * carries it; an absent label means the question was never askable — the #4060 shape, where a fresh
- * repo would be told its queue is clear.
+ * carries it; an absent label means the question was never askable — the shape where a fresh repo
+ * would be told its queue is clear.
  */
 import {Effect} from "effect";
 import {scannedLine} from "../build/target.ts";

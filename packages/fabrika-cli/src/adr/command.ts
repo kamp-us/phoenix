@@ -154,7 +154,7 @@ const newCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new ADR file from the canonical template."),
 	Command.withDescription(
-		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
+		"Scaffold <dir>/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
 	),
 );
 

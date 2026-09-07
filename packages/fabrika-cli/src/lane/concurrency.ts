@@ -4,7 +4,7 @@
  *
  * The count is over the boot's own root and nothing beside it, which is what keeps
  * `.fabrika/lanes-archived` and `.fabrika/chores` out of it without either name appearing here: both
- * are sibling roots, so a lane archived is a lane already gone from this read (ADR 0352), and a
+ * are sibling roots, so a lane archived is a lane already gone from this read, and a
  * chore lane is counted by nobody.
  *
  * **Only a lane proven done frees its seat.** A lane whose record will not load or whose log will not

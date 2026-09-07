@@ -12,7 +12,7 @@
  * read-back is what makes the marker true.
  *
  * This verb takes no view on whether the rerun is wise — where the failing context is itself a gate
- * checking its own output a bounded retry can be actively harmful (#5335); that judgment is the
+ * checking its own output a bounded retry can be actively harmful; that judgment is the
  * skill's and is exercised before this verb is called.
  */
 import {Effect} from "effect";

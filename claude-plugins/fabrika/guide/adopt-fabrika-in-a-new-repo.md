@@ -45,8 +45,7 @@ itself,
 says in one line what each surface is.
 
 **A `read-back conformed` from `status bootstrap` means one surface landed — it does not mean the
-setup is finished**, and nothing in that verb's output says so
-([#5772](https://github.com/kamp-us/phoenix/issues/5772)).
+setup is finished**, and nothing in that verb's output says so.
 
 The dispositions are yours to change: a repo that runs no design system declares
 `"surfaceDispositions": {"design-manifest": "degrade"}` and stops being told to build one; every key
@@ -106,8 +105,7 @@ fabrika status bootstrap gitignore-row
 
 It appends its own block to `.gitignore` and rewrites nothing already there; the collision guard is
 the row `/.fabrika/` appearing anywhere in the file, so a row you added by hand with the same
-spelling reads as `exists`. Commit the change before running a lane
-([#5777](https://github.com/kamp-us/phoenix/issues/5777)).
+spelling reads as `exists`. Commit the change before running a lane.
 
 ## 6. Write a `ROADMAP.md`
 
@@ -115,17 +113,17 @@ spelling reads as `exists`. Commit the change before running a lane
 unless you say otherwise, and an absent file means no focus is declared and the scope fence is
 inert.
 
-An absent roadmap no longer stops you — `triage homes` degrades on it
-([#5773](https://github.com/kamp-us/phoenix/issues/5773)) — but without the file nothing homes to an
-arc and the scope fence never fires, so writing it is a first-triage quality step, not a blocker.
+An absent roadmap no longer stops you — `triage homes` degrades on it — but without the file
+nothing homes to an arc and the scope fence never fires, so writing it is a first-triage quality
+step, not a blocker.
 
 The grammar is a parse contract, not a convention
 ([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)),
 and two facts carry this recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
 cell naming the pinned milestone as `#<number>` — the arc's name is never matched on. Zero campaign
 rows is legal and zero arc rows refuses; the campaigns table is parsed a second time by the build
-fence, stricter because a row's `State` cell is its dispatch permission
-([ADR 0304](../../../.decisions/0304-campaign-active-is-the-dispatch-permission.md)).
+fence, stricter because a row's `State` cell is its dispatch permission: a campaign dispatches work
+only while that cell reads `active`.
 
 Draft it and hand it to the verb, which reports what its own parser joined out of the bytes it wrote:
 
@@ -143,8 +141,8 @@ EOF
 status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
 ```
 
-`0 arcs` there means the table did not parse. Fix it before moving on, or the join is silently empty
-([#5778](https://github.com/kamp-us/phoenix/issues/5778)).
+`0 arcs` there means the table did not parse. Fix it before moving on, or the join is silently
+empty.
 
 ## 7. Open at least one milestone
 
@@ -163,7 +161,7 @@ not match `^#(\d+)$`.
 
 `triage homes` also prints a `lane` row per **standing lane** — a label that is a home in its own
 right, for work no milestone owns. You get one only where your repo both declares the lane and
-carries its label. A fresh repo declares both — phoenix's pair is the shipped default — but carries
+carries its label. A fresh repo declares both — the CLI ships a pair of defaults — but carries
 neither label, so you get none, and stderr says so:
 
 ```
@@ -180,13 +178,11 @@ from failing a write at the end of a full triage run.
 If you want none at all, say so: `"standingLanes": []` under `boardVocabulary`. Then `triage homes`
 reads no labels, offers no lane, and prints `standing lanes: this repo declares none.` — every issue
 homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is a different answer:
-it falls to phoenix's pair, which then gets filtered against your board.
+it falls to the shipped pair, which then gets filtered against your board.
 
-[ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) rules that lanes come from
-your repo, never from a CLI literal. Until
-[#6469](https://github.com/kamp-us/phoenix/issues/6469) evicts the shipped default, it reaches no
-board that has not created the labels, and the empty declaration above is how you opt out of it
-entirely.
+Standing lanes come from your repo, never from a CLI literal. The shipped default is still there
+until a later change evicts it, and it reaches no board that has not created the labels, so the
+empty declaration above is how you opt out of it entirely.
 
 ## 9. Add the config file
 
@@ -194,12 +190,11 @@ entirely.
 in
 [`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts).
 Every key is fail-closed — an absent file, an absent key, an empty array and a malformed entry all
-give the narrowest behaviour, never the permissive one — and a key you leave out falls back to
-phoenix's value, which is what every repo ran on before these keys existed.
+give the narrowest behaviour, never the permissive one — and a key you leave out falls back to the
+shipped default, which is what every repo ran on before these keys existed.
 
-Add the file only when a default does not fit your repo. phoenix's own file at
-[`.fabrika.jsonc`](../../../.fabrika.jsonc) is the worked example, with the reasoning for each value
-in comments.
+Add the file only when a default does not fit your repo. The repo that authors fabrika keeps its own
+`.fabrika.jsonc` as the worked example, with the reasoning for each value in comments.
 
 ## 10. Re-run the front door
 

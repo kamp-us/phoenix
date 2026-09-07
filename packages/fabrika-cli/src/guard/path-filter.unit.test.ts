@@ -1,7 +1,7 @@
 /**
  * The `path-filter-guard` rule — the `path-filter-guard.unit.test.ts` cases from the v1 CLI.
  *
- * The basis cases are the ones the #3722 defect needed: byte-identical globs passed the pre-#3722
+ * The basis cases are the ones the basis defect needed: byte-identical globs passed the earlier
  * guard while the two steps read two different changed-file sets, so equality of the LISTS is
  * asserted separately from equality of the `(token, base)` pair, and both are proven to red alone.
  */
@@ -30,7 +30,7 @@ ${inputs}          filters: |
 ${globs.map((g) => `              - '${g}'`).join("\n")}
 `;
 
-const GLOBS = ["apps/web/**", "packages/**"];
+const GLOBS = ["apps/site/**", "packages/**"];
 
 describe("judge", () => {
 	it("passes identical glob sets read against the same basis", () => {
@@ -60,7 +60,7 @@ describe("judge", () => {
 		});
 	});
 
-	// The #3722 defect verbatim: equal lists, unequal readers. The pre-fix guard passed this.
+	// The basis defect verbatim: equal lists, unequal readers. The pre-fix guard passed this.
 	it("reds equal globs read against a different token", () => {
 		expect(
 			judge({
@@ -118,7 +118,7 @@ describe("renderReport", () => {
 		const report = renderReport(
 			judge({ciText: workflow("e2e", ["a/**"]), deployText: workflow("deploy", ["b/**"])}),
 		);
-		expect(report).toContain("#2372");
+		expect(report).toContain("wedge ci-required");
 		expect(report).toContain("ONLY in ci.yml changes.e2e");
 	});
 });

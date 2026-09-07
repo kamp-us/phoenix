@@ -2,7 +2,7 @@
  * The end-to-end half of the unknown-subcommand guard: the **exit status** a caller actually reads.
  *
  * The unit tests cover the resolution; only a real process proves the code, and the code is the part
- * that carried the lie — `fabrika triage --help` exited 0 (#4822). An assertion on stdout alone would
+ * that carried the lie — `fabrika triage --help` exited 0. An assertion on stdout alone would
  * have passed against the defect, because the defect printed help.
  *
  * The fixture token is no longer `triage`: that group is registered now, so reusing the reported

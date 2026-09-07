@@ -80,13 +80,13 @@ describe("runCheck", () => {
 		expect(out.stderr.at(-1)).toContain("bootstrap, not clean");
 	});
 
-	// Present-and-empty and absent are different facts and never share a code (ADR 0092).
+	// Present-and-empty and absent are different facts and never share a code.
 	it("reds on a register that is present and holds zero rows", async () => {
 		const out = await run(fakeFs({files: {[TERMS_PATH]: LANGUAGE_NO_ROWS}}));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`glossary check: ${DIR}/TERMS.md holds 0 rows — refusing to report a clean scan of an empty register (ADR 0092).`,
+			`glossary check: ${DIR}/TERMS.md holds 0 rows — refusing to report a clean scan of an empty register.`,
 		);
 	});
 
@@ -97,7 +97,7 @@ describe("runCheck", () => {
 		expect(out.stdout.split("\n")[0]).toBe("defects");
 	});
 
-	// #6433: the flag is an override, not the only way to name a corpus.
+	// The flag is an override, not the only way to name a corpus.
 	it("resolves the corpus from the repo's config when --decisions is absent", async () => {
 		const out = await run(corpus(), {decisions: null});
 		expect(out.code).toBe(0);
@@ -115,7 +115,7 @@ describe("runCheck", () => {
 		expect(out.stdout).toContain("citations-unverified\t-\t-\t-\t");
 		expect(out.stdout).toContain("declines `decisionsDir`");
 		// The remedy clause names this verb's own override. `--dir` is the register directory here,
-		// so inheriting `adr`'s spelling would send the reader to repoint the registers (#6433).
+		// so inheriting `adr`'s spelling would send the reader to repoint the registers.
 		expect(out.stdout).toContain("Point --decisions at a corpus to read one anyway.");
 		expect(out.stdout).not.toContain("Point --dir");
 		// The word a declined corpus must never produce: a dead citation is a claim about a corpus
@@ -123,7 +123,7 @@ describe("runCheck", () => {
 		expect(out.stdout).not.toContain("citation-dead");
 	});
 
-	// #6433: a repo that keeps no corpus and cites nothing has no defect it could ever clear.
+	// A repo that keeps no corpus and cites nothing has no defect it could ever clear.
 	it("reports clean on a declined corpus when no row cites anything", async () => {
 		const fs = withDecisions(
 			{[TERMS_PATH]: TERMS_CLEAN, [`${REPO}/.fabrika.jsonc`]: '{"decisionsDir": null}'},

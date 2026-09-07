@@ -1,10 +1,11 @@
 /**
  * The pure transform: a decoded crabbox `RunSummary` + a parsed JUnit
- * `TestSummary` + the stamped commit + a logs ref → an ADR 0054 §2 `Manifest`.
+ * `TestSummary` + the stamped commit + a logs ref → a run-evidence `Manifest`.
  *
  * `buildManifest` is total over its decoded inputs — no IO, no throw — so the
- * whole adapter's correctness is unit-testable without git or a filesystem
- * (its unit tests run it directly; ADR 0082). It derives `checks[]` from per-command
+ * whole adapter's correctness is unit-testable without git or a filesystem,
+ * and its tests call it directly rather than through a runtime that would only
+ * prove the wiring. It derives `checks[]` from per-command
  * `exitCode` (0 → `pass`, non-zero → `fail`), preferring the run-summary's
  * `commands[]` and falling back to a single check from the top-level `exitCode`;
  * folds the JUnit into `tests`; and carries crabbox's provider/lease facts into
@@ -26,8 +27,8 @@ export interface AdapterInput {
 	readonly environment?: string;
 	/**
 	 * Checks produced OUTSIDE crabbox that fold into the same `checks[]` — e.g. the
-	 * headless worker-bundle node-core assertion (#1836), which runs on the runner,
-	 * not in the crabbox container. Appended after the crabbox-derived checks, so a
+	 * headless bundle assertion a repo runs on the runner rather than inside the
+	 * crabbox container. Appended after the crabbox-derived checks, so a
 	 * `fabrika ship evidence` gate reads them as SHA-bound evidence alongside the test checks.
 	 */
 	readonly extraChecks?: ReadonlyArray<Check>;
@@ -56,7 +57,7 @@ const deriveChecks = (summary: RunSummary): ReadonlyArray<Check> => {
 	}));
 };
 
-/** Fold crabbox's provider/lease facts into the optional ADR 0054 §2 `lease` block. */
+/** Fold crabbox's provider/lease facts into the manifest's optional `lease` block. */
 const deriveLease = (summary: RunSummary): Manifest["lease"] => ({
 	provider: summary.provider,
 	...(summary.leaseId !== undefined ? {leaseId: summary.leaseId} : {}),
@@ -65,7 +66,7 @@ const deriveLease = (summary: RunSummary): Manifest["lease"] => ({
 });
 
 /**
- * Build the ADR 0054 §2 manifest. Pure: same inputs → same manifest, no IO. The
+ * Build the run-evidence manifest. Pure: same inputs → same manifest, no IO. The
  * commit is the binding key (stamped upstream, asserted non-empty there); this
  * function trusts it as already-resolved.
  */

@@ -165,7 +165,7 @@ describe("campaign state — the write and its read-back", () => {
 	it("refuses an unreadable table on 12, saying nothing was written", async () => {
 		const {outcome} = await run(APPROVED, tree(TWO_ROWS.replace("| paused |", "| snoozed |")));
 		expect(outcome.code).toBe(12);
-		expect(outcome.stderr.at(-1)).toContain("(ADR 0304). NOTHING was written.");
+		expect(outcome.stderr.at(-1)).toContain("table is unreadable. NOTHING was written.");
 	});
 
 	it("flips a row carrying no trailing pipe, which the parse reads and campaign list prints", async () => {

@@ -17,14 +17,14 @@ const found = (body: string): number | null => {
 
 describe("renderCameFrom", () => {
 	it("renders a ticket as an issue reference and nothing as standalone", () => {
-		expect(renderCameFrom(5652)).toBe("#5652");
+		expect(renderCameFrom(6)).toBe("#6");
 		expect(renderCameFrom(null)).toBe(STANDALONE);
 	});
 });
 
 describe("read round-trips what the writers compose", () => {
 	it("reads back a bound section", () => {
-		expect(found(cameFromSection(5652))).toBe(5652);
+		expect(found(cameFromSection(6))).toBe(6);
 	});
 
 	it("reads a standalone section as a proven-unbound artifact", () => {
@@ -47,10 +47,10 @@ describe("read separates a body with no section from one it could not parse", ()
 	});
 
 	it.each([
-		["a drifted heading level", "### Came from\n\n#5652\n"],
-		["a drifted heading spelling", "## Came From\n\n#5652\n"],
+		["a drifted heading level", "### Came from\n\n#6\n"],
+		["a drifted heading spelling", "## Came From\n\n#6\n"],
 		["a section holding prose", "## Came from\n\nthe founder mentioned it on a call\n"],
-		["a section holding a bare number", "## Came from\n\n5652\n"],
+		["a section holding a bare number", "## Came from\n\n6\n"],
 		["an empty section", "## Came from\n"],
 		["a section whose next line is the next heading", "## Came from\n\n## Question\n\nwhy?\n"],
 		["two conforming headings", "## Came from\n\n#1\n\n## Came from\n\n#2\n"],
@@ -65,7 +65,7 @@ describe("read separates a body with no section from one it could not parse", ()
 
 describe("ticketOf", () => {
 	it("projects a reference to its number and standalone to nothing", () => {
-		expect(ticketOf("#5652" as CameFromBinding)).toBe(5652);
+		expect(ticketOf("#6" as CameFromBinding)).toBe(6);
 		expect(ticketOf(STANDALONE as CameFromBinding)).toBeNull();
 	});
 });

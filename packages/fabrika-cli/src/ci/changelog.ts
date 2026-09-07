@@ -1,16 +1,15 @@
 /**
  * `ci changelog` pure core — the IO-free projection that turns a set
  * of shipped-work entries (closed-issue title + triaged `type:*` label, with a
- * merged-PR `(#NNN)` backlink) into a Keep a Changelog release section (ADR 0069,
- * issue #394).
+ * merged-PR backlink) into a Keep a Changelog release section.
  *
  * The changelog is a *derived* artifact: the source of truth is the pipeline's
  * structured metadata (the `type:*` taxonomy from `skills/gh-issue-intake-formats.md`),
- * not the file's own prose. This module owns the one non-obvious decision the ADR
- * delegated to "the CLI's business": the `type:*` → Keep-a-Changelog category map
- * (`TYPE_CATEGORY`), unit-tested here. An entry with no recognized `type:*` is mapped
- * to the `Uncategorized` category — surfaced, never silently dropped (the ADR's
- * standing-input-contract consequence).
+ * not the file's own prose. This module owns the one decision the projection rule
+ * leaves to the CLI: the `type:*` → Keep-a-Changelog category map (`TYPE_CATEGORY`),
+ * unit-tested here. An entry with no recognized `type:*` is mapped to the
+ * `Uncategorized` category — surfaced, never silently dropped, because the label set
+ * an issue carries is an input this projection does not control.
  *
  * Everything here is total over `ChangelogEntry[]`: `groupByType` buckets by category,
  * `renderSection` renders one `## [version] — date` block, `deriveChangelog` is the
@@ -20,8 +19,8 @@
 
 /**
  * The Keep a Changelog categories this projection emits, in render order. `Uncategorized`
- * is phoenix's addition for the ADR's "flag, never drop" rule — an entry whose issue
- * carries no recognized `type:*` lands here instead of vanishing.
+ * is this projection's addition, carrying the "flag, never drop" rule — an entry whose
+ * issue carries no recognized `type:*` lands here instead of vanishing.
  */
 export const CATEGORY_ORDER = ["Added", "Changed", "Fixed", "Decisions", "Uncategorized"] as const;
 
@@ -132,14 +131,13 @@ const KAC_HEADER = `# Changelog
 All notable changes to this project are documented in this file.
 
 This file is **generated** — its source of truth is the pipeline's closed-issue and
-merged-PR metadata (the \`type:*\` taxonomy), derived by \`fabrika ci changelog\`
-per [ADR 0069](.decisions/0069-derived-changelog-from-shipped-work.md). Regenerate it;
-do not hand-edit it. The format follows [Keep a Changelog](https://keepachangelog.com).`;
+merged-PR metadata (the \`type:*\` taxonomy), derived by \`fabrika ci changelog\`.
+Regenerate it; do not hand-edit it. The format follows [Keep a Changelog](https://keepachangelog.com).`;
 
 /**
  * The top-level projection: render a full `CHANGELOG.md` body — the Keep a Changelog
  * header plus each release section, newest first. Passing one release yields one section
- * (the per-release-batch cadence the ADR fixes).
+ * (the per-release-batch cadence).
  */
 export const deriveChangelog = (
 	releases: ReadonlyArray<{

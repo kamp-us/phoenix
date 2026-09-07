@@ -2,16 +2,16 @@
  * `guard codeowners-cp check` core — every path the §CP regex marks control-plane has a covering
  * `.github/CODEOWNERS` row.
  *
- * The drift it closes (#955): §CP is one anchored regex, CODEOWNERS enumerates the same paths
+ * The drift it closes: §CP is one anchored regex, CODEOWNERS enumerates the same paths
  * LITERALLY, and a pattern set and a literal set drift silently. A §CP path added to the regex with
- * no CODEOWNERS row is control-plane by regex yet outside `require_code_owner_review` — and because
- * the `main` ruleset pairs `required_approving_review_count: 0` with `require_code_owner_review:
- * true`, a path matching NO row merges on ZERO approvals (#934/#953). This reads the §CP set FROM
+ * no CODEOWNERS row is control-plane by regex yet outside `require_code_owner_review` — and when a
+ * branch ruleset pairs `required_approving_review_count: 0` with `require_code_owner_review:
+ * true`, a path matching NO row merges on ZERO approvals. This reads the §CP set FROM
  * the regex, never a re-hardcoded copy.
  *
- * **This is the one §CP site that is deliberately PATH-ONLY, and it is not a defect** (#4161).
+ * **This is the one §CP site that is deliberately PATH-ONLY, and it is not a defect.**
  * Everywhere else a bare path answer is non-authoritative — §CP has a second, content-inferred
- * source (a guard-touching `.decisions/**` ADR, ADR 0164). CODEOWNERS structurally cannot express a
+ * source (a guard-touching decision record). CODEOWNERS structurally cannot express a
  * content predicate: GitHub matches it on paths. So the content clause is enforced at the
  * merge-deciding gates, which is where a merge is actually decided.
  *
@@ -53,13 +53,13 @@ export const splitTopLevelBranches = (re: string): ReadonlyArray<string> =>
  * then normalize each expansion to a path (unescape `\.`, drop the `$` anchor).
  */
 export const expandBranch = (branch: string): ReadonlyArray<CpPath> => {
-	// `([^/]+/)*` is the any-depth segment prefix (#2950) — a QUANTIFIED group, so the alternation
+	// `([^/]+/)*` is the any-depth segment prefix — a QUANTIFIED group, so the alternation
 	// loop below cannot expand it. Translate it up front to CODEOWNERS' `**/`.
 	const anyDepth = branch.replace(/\(\[\^\/\]\+\/\)\*/g, "**/");
 	const normalize = (s: string): CpPath => {
 		const base = s.replace(/\$/g, "").replace(/\\\./g, ".");
 		// `[^/]+` and gitignore's `*` both mean "one or more non-slash", so a within-segment regex
-		// wildcard becomes a real glob a CODEOWNERS row can own (ADR 0174).
+		// wildcard becomes a real glob a CODEOWNERS row can own.
 		if (base.includes("[^/]+")) {
 			return {path: base.replace(/\[\^\/\]\+/g, "*"), kind: "glob"};
 		}
@@ -147,6 +147,6 @@ export const renderReport = (uncovered: ReadonlyArray<CpPath>): string => {
 		"require_code_owner_review leaves it under-protected — and at the ruleset's zero required\n" +
 		"approvals, a path matching no row merges with no approval at all. Add a literal CODEOWNERS\n" +
 		"row (owned by a human team) for each path above — or, if a path left the §CP boundary, drop\n" +
-		"it from `control-plane-re.ts` too. (#955)"
+		"it from `control-plane-re.ts` too."
 	);
 };

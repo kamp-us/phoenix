@@ -1,5 +1,5 @@
 /**
- * The seam #2246 (the review-design skill) codes against: capture a UI PR's
+ * The seam the review-design skill codes against: capture a UI PR's
  * changed surfaces over its preview deploy, host each as a GitHub attachment,
  * and return one record per surface.
  *
@@ -16,7 +16,7 @@
  *
  * Only a genuine CAPTURE failure short-circuits (`CaptureError`); the upload leg
  * never fails the effect, so a broken endpoint degrades `hostedUrl`/`uploadError`
- * but never loses `localPath` and never breaks the gate (ADR 0165).
+ * but never loses `localPath` and never breaks the gate.
  */
 import {Effect} from "effect";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
@@ -36,7 +36,7 @@ export interface CaptureRecord {
 	readonly hostedUrl: string | null;
 	/** The upload diagnostic when the fallback fired, else `null`. */
 	readonly uploadError: string | null;
-	/** Runtime errors thrown into the page during the render — the #2594 crash signal. */
+	/** Runtime errors thrown into the page during the render — the crash signal. */
 	readonly pageErrors: readonly PageError[];
 }
 
@@ -59,7 +59,7 @@ export interface CaptureAndUploadRequest {
 
 /**
  * PURE: fold an upload outcome onto a captured surface. `localPath` is copied
- * straight through and is never conditional on the upload (ADR 0165).
+ * straight through and is never conditional on the upload.
  */
 export const mergeRecord = (captured: CapturedSurface, outcome: UploadOutcome): CaptureRecord => ({
 	surface: captured.surface,

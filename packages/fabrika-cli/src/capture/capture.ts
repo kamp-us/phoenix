@@ -5,10 +5,10 @@
  * (`upload.ts`) hold the unit-tested logic; this file launches a browser, visits
  * each `Shot.url` at its viewport, screenshots it, and persists it.
  *
- * `localPath` is the PRIMARY judged artifact (ADR 0165), so capture ALWAYS
+ * `localPath` is the PRIMARY judged artifact, so capture ALWAYS
  * produces it on success — losing it is never acceptable. Each capture also
  * collects the runtime errors thrown into the page during the render
- * (`pageErrors`) — the crash signal the gate fails on (see `page-errors.ts`, #2594).
+ * (`pageErrors`) — the crash signal the gate fails on (see `page-errors.ts`).
  */
 import {mkdir, writeFile} from "node:fs/promises";
 import {join} from "node:path";
@@ -35,7 +35,7 @@ export interface CapturedSurface {
 	/** The filesystem-safe PNG name (basename of `localPath`) — also the upload attachment name. */
 	readonly fileName: string;
 	readonly pngBytes: Uint8Array;
-	/** Runtime errors thrown into the page during this render — the #2594 crash signal. */
+	/** Runtime errors thrown into the page during this render — the crash signal. */
 	readonly pageErrors: readonly PageError[];
 	/**
 	 * The navigation's HTTP status, absent when the navigation served no response.
@@ -48,13 +48,13 @@ export interface CapturedSurface {
 	/**
 	 * Whether this context was signed in when the shot was taken, present only when the caller asked
 	 * for the proof. Pixels cannot answer it: a cookie that does not authenticate renders the
-	 * visitor's page, which is a valid PNG under the signed-in name (#7051).
+	 * visitor's page, which is a valid PNG under the signed-in name.
 	 */
 	readonly sessionProof?: SessionProof;
 	/**
 	 * Whether the forced flags took, present only when the caller forced any. Pixels cannot answer
 	 * it either: an unhonored override renders the flag-off page, a valid PNG under the flag-on
-	 * name (#7218).
+	 * name.
 	 */
 	readonly overrideProof?: OverrideProof;
 }
@@ -87,8 +87,8 @@ export interface CaptureOptions {
 	readonly fullPage?: boolean;
 	/**
 	 * Cookies seeded into every shot's browser context before navigation — the session cookie an
-	 * `:auth` shot presents (`auth.ts`) and the `phoenix_flag_overrides` cookie a forced shot
-	 * carries (`flag-override.ts`, #2963/#7218). Absent ⇒ no cookies.
+	 * `:auth` shot presents (`auth.ts`) and the flag-override cookie a forced shot
+	 * carries (`flag-override.ts`). Absent ⇒ no cookies.
 	 */
 	readonly cookies?: readonly CaptureCookie[];
 	/**
@@ -199,7 +199,7 @@ export const captureShots = (
 							const page = await context.newPage();
 							// Listen across the WHOLE navigation window (attached before goto), so a
 							// runtime error thrown during mount/init is caught even when the frame
-							// still renders acceptably (#2594). `networkidle` already settles past
+							// still renders acceptably. `networkidle` already settles past
 							// React mount + effects, so no arbitrary sleep is needed — the events
 							// have fired by the time goto resolves.
 							const pageErrors: PageError[] = [];

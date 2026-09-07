@@ -19,7 +19,7 @@
  * still-indefinite value is UNKNOWN and refuses on `11`. A read that could not produce a definite
  * answer must never resolve to one. A definite `mergeable: false` refuses on `16` instead of arming:
  * the conflict is already proven by the read the verb just performed, and arming on it spends an
- * enqueue round plus one of the lane's retries to rediscover it at reconcile (#6902).
+ * enqueue round plus one of the lane's retries to rediscover it at reconcile.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

@@ -2,10 +2,10 @@
  * The `## Dependencies` grammar — canonical here, validated by `build check --surface plan` and
  * rendered into an epic ledger by `ledger topology`.
  *
- * **This block is a rendering, never a source of blockedness.** #5387 ruled that every dependency
- * in fabrika sits behind GitHub's native `blocked_by` edges and that a prose block is at most a
- * picture of them; ADR 0301 extends that to standalone issues. `build eligible` therefore parses
- * nothing here — it reads the graph through `./blockedness.ts` (#5913). What still reads this
+ * **This block is a rendering, never a source of blockedness.** Every dependency in fabrika sits
+ * behind GitHub's native `blocked_by` edges — an epic's children and a standalone issue alike — and
+ * a prose block is at most a picture of them. `build eligible` therefore parses
+ * nothing here — it reads the graph through `./blockedness.ts`. What still reads this
  * grammar reads it for planning and sequencing: the plan surface's well-formedness check, the
  * ledger renderer, and the epic machine emitter. A reader that wants to know whether work may start
  * asks the graph.
@@ -27,7 +27,7 @@
  *
  * **Any other non-blank line inside the section is unparseable, and unparseability refuses.** "No
  * parseable edges" is never read as "no edges" — a topology nobody could read is not a topology
- * proving nothing blocks (ADR 0092, #4104).
+ * proving nothing blocks.
  *
  * **The section ends at the next ATX heading or at the first thematic break (`---`, `***`, `___`),
  * whichever comes first** — this is the canonical statement of that boundary, and `plan/ledger.ts`
@@ -35,7 +35,7 @@
  * filed body is amended by appending a dated block below the original, and that block is
  * conventionally introduced by a bare `---`; with `## Dependencies` last, a heading-only boundary
  * put that separator inside the section and refused the whole topology over a line that was never
- * part of it (#5816).
+ * part of it.
  */
 
 /** A reference in the topology: a real issue, or an id local to the ledger. */
@@ -174,7 +174,7 @@ export interface RequiredEdge {
  *
  * The rendering is not the carrier, so a plan that only *says* `#N requires: #M` leaves the graph
  * empty and both build gates blind — which is how a child gated behind an unruled decision was
- * admitted for construction (#6616). This is the bridge: `ledger edges` writes what it names, and the
+ * admitted for construction. This is the bridge: `ledger edges` writes what it names, and the
  * plan gate reds on a pair the board does not carry.
  *
  * The rule is {@link predecessorsOf}'s and is not restated — every subject the block names is asked

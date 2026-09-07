@@ -2,7 +2,7 @@
  * `triage provenance` — was this issue reported by an agent or typed by a human?
  *
  * The predicate itself lives in `./provenance.ts` — including the operator-account signal the
- * #4619 ruling added — exported because `triage kill` re-checks it rather than trusting a caller
+ * Exported because `triage kill` re-checks it rather than trusting a caller
  * to have run this verb.
  *
  * **A present-but-empty body answers `human`; an unreadable one refuses.** Those are different
@@ -28,7 +28,7 @@ export interface ProvenanceOptions {
 
 const AGENT_REASON = "the 'Filed by an agent' marker is present in the body";
 const OPERATOR_REASON =
-	"the author is a configured operator account, so the filing is agent-reported whether or not the footer is present (#4619 ruling)";
+	"the author is a configured operator account, so the filing is agent-reported whether or not the footer is present";
 const HUMAN_REASON =
 	"no line begins '<sub>Filed by an agent' and the author is not a configured operator account";
 const EMPTY_REASON =

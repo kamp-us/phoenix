@@ -47,7 +47,7 @@ export interface PullRecord {
 	readonly merged: boolean;
 	/** The base branch — whose queue regime, never this PR's history, decides `ship disarm`'s policy. */
 	readonly baseRef: string;
-	/** Whether a merge intent is currently parked on the PR (ADR 0198's armed state). */
+	/** Whether a merge intent is currently parked on the PR — the armed state `ship disarm` clears. */
 	readonly autoMerge: boolean;
 	/** The PR's author — the §CP cardinality table's `sole owner authored the PR` arm. */
 	readonly authorLogin: string;
@@ -150,9 +150,9 @@ export interface CheckRun {
 	 * The check-run's `output.title`, which is how a run says *why* it concluded as it did.
 	 *
 	 * `null` for a run that published no output — most runs do not, and a title nobody wrote must not
-	 * read as an empty one. `ship floor --publish-check` writes a title per row of ADR 0318's table,
-	 * and `review/governance-owed.ts` reads that title back to tell a stale floor from an unresolved
-	 * one, which the name/status/conclusion triple cannot distinguish (#7441).
+	 * read as an empty one. `ship floor --publish-check` writes one title per floor outcome, and
+	 * `review/governance-owed.ts` reads that title back to tell a stale floor from an unresolved
+	 * one, which the name/status/conclusion triple cannot distinguish.
 	 */
 	readonly title: string | null;
 }
@@ -281,7 +281,7 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
  * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
  * body; what this narrows is how many records that costs.
  *
- * **Why this survives #5850's retirement of the same read.** {@link pullsClosing} replaced it
+ * **Why this survives the retirement of the same read elsewhere.** {@link pullsClosing} replaced it
  * everywhere the question is "which PR closes this issue", and is authoritative there — an edge, not
  * an index, so it has no lag. It is built from closing keywords, so it cannot see a `Part of #N` PR
  * — the body shape `build --partial` emits for an epic child, and the normal shape for a lane task
@@ -319,7 +319,7 @@ export const searchOpenPulls = (
 /**
  * Which pull requests a caller counts. `open` is every caller that acts *on* a PR; `open-or-merged`
  * is the one that asks whether a PR reached the end of the merge queue, where the clearing case is a
- * merged and therefore closed PR (#6717).
+ * merged and therefore closed PR.
  */
 export type PullScope = "open" | "open-or-merged";
 
@@ -344,7 +344,7 @@ const CLOSERS_QUERY =
  *
  * v1 asked `search/issues` for `<issue> in:body`, which matches any prose quoting the number: a PR
  * closing a different issue but naming this one in a table came back as a candidate, and the
- * caller's several-hits refusal then parked a lane that had exactly one real PR (#5805). The edge
+ * caller's several-hits refusal then parked a lane that had exactly one real PR. The edge
  * read here is the one GitHub builds from a closing keyword, so a mention is not a hit and
  * "several" means what the caller needs it to mean — two PRs each declaring they close this issue.
  *

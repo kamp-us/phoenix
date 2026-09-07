@@ -73,7 +73,7 @@ const THEIRS = marker("s-77aa", "9d8c7b6a-5f4e-3d2c-1b0a-998877665544");
 /** A marker of the same SESSION under another nonce — a sibling lane's, which release must NOT sweep. */
 const SIBLING_MARKER = marker("s-9f2e", SIBLING_UUID);
 
-const POSTED = served({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}, 201);
+const POSTED = served({id: 9001, html_url: "https://example.test/o/r/issues/4312#c"}, 201);
 const ECHO = served({body: MINE});
 
 const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name}));
@@ -107,7 +107,7 @@ const NO_CAMPAIGNS = fakeFs({files: {}});
 /**
  * Both seams with every `blocked_by` edge list answering empty.
  *
- * The claim seam reads the graph on the path to every marker (ADR 0301), so a script about any other
+ * The claim seam reads the graph on the path to every marker, so a script about any other
  * axis would otherwise hit an unscripted read and refuse on `11`. A test about blockedness scripts
  * those edges itself and wins on first match.
  */
@@ -165,7 +165,7 @@ describe("runClaim", () => {
 	});
 
 	/**
-	 * The two-lanes-one-session race (#6037). Lane B mints `SIBLING_UUID`, posts it, and re-reads a
+	 * The two-lanes-one-session race. Lane B mints `SIBLING_UUID`, posts it, and re-reads a
 	 * thread where lane A's marker is earlier. Under the session-only rule it was told `won` and handed
 	 * back a nonce that held nothing, which `build branch` then cut a branch on.
 	 *
@@ -177,7 +177,7 @@ describe("runClaim", () => {
 		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
-			[POST, served({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}, 201)],
+			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
 			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
 			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
 			[perm("agent"), WRITES],
@@ -420,8 +420,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	 * The dispatch route's own regression. `build pick` has always excluded a body with no readable
 	 * contract, but the pool is the browse path: a number handed straight to `claim` — an operator
 	 * naming a lane, an `operate` lane, a resume — passed through no pool, so the same issue reached
-	 * construction and `review criteria` was the first thing to catch it, a whole build later
-	 * (#6554, on #6462 → PR #6552).
+	 * construction and `review criteria` was the first thing to catch it, a whole build later.
 	 */
 	const NO_CONTRACT = issue({
 		milestone: {number: 44},
@@ -602,7 +601,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 
 /**
  * Repair claims a PR number, and a PR carries no milestone and no `ready-for:` label of its own — so
- * while any campaign was active the fence refused every one of them (#5562). The subject the two axes
+ * while any campaign was active the fence refused every one of them. The subject the two axes
  * read is the issue the PR's lane serves.
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
@@ -628,7 +627,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			body: CRITERIA_BODY,
 			state: "open",
 			labels,
-			html_url: "https://github.com/o/r/issues/5553",
+			html_url: "https://example.test/o/r/issues/5553",
 			milestone: milestone === null ? null : {number: milestone},
 			state_reason: null,
 		});
@@ -732,7 +731,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	 * The prior-build gate asks "has this child been built and graded", which a repair lane has
 	 * already answered by naming a PR — `build verdicts` folds that PR's own verdicts. So the gate
 	 * must not fire here: it would cost a comment page for nothing, and a PR thread carrying a range
-	 * marker or a broken one would refuse the very repair it was written to route to (#6386).
+	 * marker or a broken one would refuse the very repair it was written to route to.
 	 */
 	it("never runs the prior-build gate on a PR target — repair has already answered its question", async () => {
 		const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(44));
@@ -842,7 +841,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	});
 
 	/**
-	 * The decision arm (founder ruling on #5866, built as #5914). An ADR PR is served by a
+	 * The decision arm. A decision-record PR is served by a
 	 * `type:decision` issue, and triage routes those to `ready-for:human` — so before this the repair
 	 * lane failed a fence the issue could never pass, and the only way through was an operator's
 	 * `--override`, which spent the override's audit value on routine repair.
@@ -863,7 +862,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(
 				out.stderr.some((line) =>
 					line.includes(
-						"repairing open PR #4312, whose served issue is type:decision: the audience axis does not bind (#5914)",
+						"repairing open PR #4312, whose served issue is type:decision: the audience axis does not bind;",
 					),
 				),
 			).toBe(true);
@@ -874,7 +873,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(JSON.parse(out.stdout).override).toBeUndefined();
 		});
 
-		// It refused at 21 until #5490 seated the type axis. The exemption's other arm is unchanged —
+		// It refused at 21 until the type axis was seated. The exemption's other arm is unchanged —
 		// the direct claim is still refused, still writes nothing — but the reason it prints is now the
 		// objection an operator can act on rather than a label they could talk past.
 		it("refuses the very same issue on type when it is claimed directly, writing nothing", async () => {
@@ -913,7 +912,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				),
 			);
 			// The DECISION fixture is `ready-for:human`, which triage re-stamps when it routes a ruled
-			// decision to an agent. Until it does, the claim stops here (ADR 0300's binding constraint).
+			// decision to an agent. Until it does, the claim stops here.
 			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
@@ -982,7 +981,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 });
 
 /**
- * The purpose axis (#5175): the audience fence binds a build claim only.
+ * The purpose axis: the audience fence binds a build claim only.
  *
  * The epic below is the census shape the ruling rests on — homed in the campaign, `type:epic`, and
  * carrying no `ready-for:` label at all, because an epic earns one only after it is planned and
@@ -1017,7 +1016,7 @@ describe("runClaim — the purpose axis", () => {
 		labels: labelled("type:epic", "p1", "status:triaged"),
 	});
 
-	// Both fences bind this epic under build. It refused at 21 until #5490 seated the type axis; type
+	// Both fences bind this epic under build. It refused at 21 until the type axis was seated; type
 	// is read first now, and an epic is refused whatever its `ready-for:` label says, which is what
 	// the audience axis alone could never prove. The `type:bug` case below keeps 21 under test.
 	it("keeps the fence with no purpose passed — 30, and no marker written", async () => {
@@ -1154,7 +1153,7 @@ describe("runRelease", () => {
 		]);
 	});
 
-	// The complement half of the #6610 ruling (ADR 0323): a lane that ends normally frees the branch
+	// The complement half of the retirement ruling: a lane that ends normally frees the branch
 	// on its way out, so the pin `build branch --resume-lane` refuses on never forms in the first
 	// place. Detaching is the whole act — the branch survives, and so does anything uncommitted.
 	it("detaches this tree's HEAD when the tree is standing on the released lane's own branch", async () => {
@@ -1250,13 +1249,13 @@ describe("runRelease", () => {
 });
 
 /**
- * The protocol's fixed point: one LANE, one marker, one token (#5782, scoped per lane by #6037).
+ * The protocol's fixed point: one LANE, one marker, one token.
  *
- * Before #5782 N claims left N markers, `claim` printed its own fresh nonce while `confirm` and
+ * Before it, N claims left N markers, `claim` printed its own fresh nonce while `confirm` and
  * `requireClaim` read the earliest one, and each `release` peeled a single marker off the stack — so
- * `build branch --resume` cut its branch off a nonce the caller had never been shown. That fix held
- * the fixed point per SESSION, which is the rule that told a sibling lane it owned its neighbour's
- * claim (#6037). Each property is asserted here per lane instead, and every one of them is paired
+ * `build branch --resume` cut its branch off a nonce the caller had never been shown. The first fix
+ * held the fixed point per SESSION, which is the rule that told a sibling lane it owned its
+ * neighbour's claim. Each property is asserted here per lane instead, and every one of them is paired
  * with the sibling case it must NOT swallow: idempotence short-circuits only for the lane that named
  * its own token, and release retracts only markers carrying that token.
  */
@@ -1288,8 +1287,8 @@ describe("the claim protocol", () => {
 
 	/**
 	 * The narrowing itself. Under the session-scoped short-circuit, lane B naming its own token on a
-	 * number lane A holds was answered `won` with lane A's marker — the #6037 defect, arriving through
-	 * #5782's idempotence rather than through the race.
+	 * number lane A holds was answered `won` with lane A's marker — the sibling-lane defect, arriving
+	 * through the fixed point's idempotence rather than through the race.
 	 */
 	it("does NOT short-circuit for a sibling lane's marker — it races it, and loses", async () => {
 		const shell = unblocked([
@@ -1298,7 +1297,7 @@ describe("the claim protocol", () => {
 				comments({id: 9001, body: MINE}),
 				comments({id: 9001, body: MINE}, {id: 9002, body: SIBLING_MARKER}),
 			),
-			[POST, served({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}, 201)],
+			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
 			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: SIBLING_MARKER})],
 			[perm("agent"), WRITES],
 			[DELETE, NO_CONTENT],
@@ -1363,7 +1362,7 @@ describe("the claim protocol", () => {
 });
 
 /**
- * Board-attested succession (ADR 0295): the dead session's claim becomes this session's through an
+ * Board-attested succession: the dead session's claim becomes this session's through an
  * adopt marker on the same number, and never through a TTL, a lease or a steal.
  */
 describe("runAdopt / succession", () => {
@@ -1603,7 +1602,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	// The adopt names ONE lane by its whole token, so succession confers exactly what an ordinary win
-	// confers and never re-widens ownership back to a session (#6060). A third session and a sibling
+	// confers and never re-widens ownership back to a session. A third session and a sibling
 	// lane of the successor's own session are refused by the same test, which is the point.
 	it.each([
 		["a third session", "s-3rd", `build:s-3rd:${LANE_UUID}`],
@@ -1632,7 +1631,7 @@ describe("runAdopt / succession", () => {
 });
 
 /**
- * The precondition gate ADR 0301 puts on the claim seam: the native `blocked_by` graph is the one
+ * The precondition gate on the claim seam: the native `blocked_by` graph is the one
  * carrier of "do not start this yet", and a number handed straight to a lane passes through no pool,
  * so this is where the refusal has teeth.
  */
@@ -1715,7 +1714,7 @@ describe("runClaim — the blockedness gate", () => {
 	});
 
 	/**
-	 * The divergence #7035 reported: `build eligible` discharged an edge whose blocker's work had
+	 * The two readers diverged: `build eligible` discharged an edge whose blocker's work had
 	 * landed on the epic run's assembly branch and this seam refused the same edge on 16, so every
 	 * sequential epic tracer after the first parked at a human.
 	 */
@@ -1781,7 +1780,7 @@ describe("runClaim — the blockedness gate", () => {
 	});
 
 	/**
-	 * The ordering ADR 0301 names: the two pure axes answer without IO, so a number the fence already
+	 * The ordering: the two pure axes answer without IO, so a number the fence already
 	 * refuses must never cost the graph read. The proof is the absent call, not the exit code.
 	 */
 	it("reads no edges at all when a pure axis already refused", async () => {
@@ -1806,10 +1805,10 @@ describe("runClaim — the blockedness gate", () => {
 });
 
 /**
- * The FAIL-then-respawn path (#6386): an epic child released after a `FAIL` was offered to the next
- * lane as ordinary work, because "no lane holds this number" and "this number has no reviewed build"
- * are different facts and the protocol only ever asked the first. It reproduced twice on epic #5631,
- * each time costing a whole build lane and, on #6298, producing two divergent implementations of one
+ * The FAIL-then-respawn path: an epic child released after a `FAIL` was offered to the next lane as
+ * ordinary work, because "no lane holds this number" and "this number has no reviewed build" are
+ * different facts and the protocol only ever asked the first. It reproduced twice on one epic, each
+ * time costing a whole build lane and once producing two divergent implementations of one
  * criterion.
  */
 describe("runClaim — the prior-build gate on an epic child", () => {
@@ -1828,7 +1827,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		expect(out.stderr.join("\n")).toContain("review-code FAIL over");
 		expect(out.stderr.join("\n")).toContain("comment 8801");
 		// The route is the mechanized entry, never the pieces: naming them here is what handed the
-		// ordering decision back to a builder, who then inverted it and parked an epic (#7187).
+		// ordering decision back to a builder, who then inverted it and parked an epic.
 		expect(out.stderr.join("\n")).toContain('"fabrika build resume-child 4312"');
 		expect(out.stderr.join("\n")).not.toContain("--resume-lane");
 	});
@@ -1879,7 +1878,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 	});
 
 	/**
-	 * The opposite polarity, same hazard (#6715): a `PASS` child is the *more* finished of the two and
+	 * The opposite polarity, same hazard: a `PASS` child is the *more* finished of the two and
 	 * was the one that admitted freely, so a fresh lane could re-implement work a reviewer had graded.
 	 * The refusal points at the fold, never at `--resume`, because a passed child has nothing to repair.
 	 */
@@ -1990,7 +1989,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			],
 		]);
 		// A FAIL missing its content binding is still a reviewer saying no. Counting it and admitting
-		// the claim anyway would read a broken verdict as "the reviewer never ran" (#6386, criterion 6).
+		// the claim anyway would read a broken verdict as "the reviewer never ran".
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.join("\n")).toContain('UNKNOWN, never "no prior build"');
 		expect(out.stderr.join("\n")).toContain("#8802");
