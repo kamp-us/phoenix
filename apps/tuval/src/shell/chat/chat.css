@@ -180,6 +180,7 @@
 	white-space: nowrap;
 }
 
+/* The tail's own door (#8407): a control, so it carries the row reset above plus its muted type. */
 .tuval-chat-subagent-more {
 	font: var(--t-meta);
 	color: var(--text-muted);

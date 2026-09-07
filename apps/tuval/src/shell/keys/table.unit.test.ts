@@ -33,6 +33,7 @@ describe("defaultPrefixTable", () => {
 			["z", "window:zoom", false],
 			["x", "window:close", false],
 			["w", "window:pick", false],
+			["a", "window:focus-list", false],
 			["N", "workspace:create", false],
 			["<c-h>", "workspace:previous", true],
 			["<c-l>", "workspace:next", true],

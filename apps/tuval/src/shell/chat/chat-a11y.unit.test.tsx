@@ -452,6 +452,35 @@ describe("the running-subagent list", () => {
 		rendered.unmount();
 	});
 
+	/**
+	 * The focus model the chord lands in (#8407). One tab stop and arrows to walk, so the list is a
+	 * composite the operator enters once — and every row still reachable and still visibly focused
+	 * wherever the walk leaves it, which is what `probeFocus` reads.
+	 */
+	it("carries one tab stop, moves it with the arrows, and shows focus wherever it lands", async () => {
+		const rendered = await mountList();
+		const root = rendered.container.firstElementChild as HTMLElement;
+		const picks = Array.from(root.querySelectorAll<HTMLButtonElement>(".tuval-chat-subagent-pick"));
+
+		expect(picks.map((pick) => pick.tabIndex)).toEqual([0, -1]);
+		for (const pick of picks) {
+			expect(await probeFocus(root, pick)).toEqual([]);
+		}
+
+		await act(async () => {
+			(picks[0] as HTMLButtonElement).focus();
+			fireEvent.keyDown(picks[0] as HTMLButtonElement, {key: "ArrowDown", bubbles: true});
+		});
+
+		// Focus moved onto a control with a name of its own, which is the whole announcement a moved
+		// focus owes: the row is read out where it lands.
+		expect(document.activeElement).toBe(picks[1]);
+		expect(picks[1]?.textContent).toContain("builder");
+		expect(picks.map((pick) => pick.tabIndex)).toEqual([-1, 0]);
+
+		rendered.unmount();
+	});
+
 	it(
 		"holds the enforced pillar-4 invariants with workers running",
 		async () => {

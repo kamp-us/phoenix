@@ -45,6 +45,8 @@ import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
 import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
+import {useForwardedKey} from "../ui/forwarded-key.tsx";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
@@ -67,7 +69,7 @@ import {
 	subagentRows,
 } from "./rows.ts";
 import {SessionRow} from "./SessionRow.tsx";
-import {SubagentList} from "./SubagentList.tsx";
+import {SubagentList, type SubagentListHandle} from "./SubagentList.tsx";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
@@ -536,6 +538,18 @@ function ChatWindow({
 		commit(viewMain);
 	}, [commit, settleScroll]);
 
+	/**
+	 * `<c-b> a`, arriving as the key that chord's command row mints (`../commands/table.ts`). The
+	 * shell cannot address a renderer by name, so the binding forwards a key instead and this is the
+	 * window's whole share of it: hand the list its focus, or — with the flag off, where no list is
+	 * rendered and this ref is null — do nothing at all.
+	 */
+	const navigatorRef = useRef<SubagentListHandle>(null);
+	useForwardedKey(host.windowId, (key) => {
+		if (key !== FOCUS_LIST_KEY) return;
+		navigatorRef.current?.focus();
+	});
+
 	const mainRows = useMemo(
 		() =>
 			chatRows({
@@ -947,6 +961,7 @@ function ChatWindow({
 				{options.subagentList ? (
 					<>
 						<SubagentList
+							ref={navigatorRef}
 							slots={process.state.subagents}
 							now={options.now}
 							viewing={viewing?.id ?? null}

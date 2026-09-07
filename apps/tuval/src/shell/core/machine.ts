@@ -144,6 +144,15 @@ export type ShellMsg =
 			readonly takesKeys?: boolean;
 	  }
 	| {readonly type: "window.unbind"; readonly windowId?: WindowId}
+	| {
+			/**
+			 * Hand this key to the focused window as if it had been pressed there. The Msg knows
+			 * nothing about what any window does with it: a window that draws no list for
+			 * `FOCUS_LIST_KEY` ignores it, exactly as a process with no `key` cell does (#8407).
+			 */
+			readonly type: "window.forwardKey";
+			readonly key: string;
+	  }
 	| {readonly type: "window.setView"; readonly view: ViewState; readonly windowId?: WindowId}
 	| {
 			readonly type: "layout.resize";
@@ -504,6 +513,34 @@ const viewOf = (state: ShellState, windowId: WindowId): {readonly view?: ViewSta
 export const cellsFor = (table: PrefixTable): ShellCells => {
 	const apply = (state: ShellState, msg: ShellMsg): Step => runCell(cells, state, msg);
 
+	/**
+	 * Hand one key to the focused window, both halves of what that means: the Cmd that delivers it
+	 * into the window's *process*, and the `ToWindow` answer the page reads to deliver it into the
+	 * window's *renderer* (`../ui/press.ts`). They reach two different places, and the renderer is
+	 * the one where a list's focus lives — which is why an empty window, whose program has no
+	 * process to forward to, still forwards to whatever is drawn in it (the picker).
+	 *
+	 * `window.forwardKey` runs this too, and that is what lets a bound chord reach a renderer no
+	 * command name can address: the binding names a command, the command mints a key, and this
+	 * writes the same answer an unbound press of that key would have written (#8407).
+	 */
+	const toFocusedWindow = (state: ShellState, key: string): Step => {
+		const workspace = activeWorkspace(state);
+		const next: ShellState =
+			state.lastPress === undefined
+				? state
+				: {...state, lastPress: {...state.lastPress, outcome: {_tag: "ToWindow", key}}};
+		// An empty window has no process to forward to, and a window whose program never declared
+		// `takesKeys` has no cell for one, so the key is dropped rather than queued (#7973).
+		const processId = workspace === undefined ? null : keyTargetOf(workspace, workspace.focused);
+		return [
+			next,
+			processId === null || workspace === undefined
+				? NO_CMDS
+				: [{type: "forwardKey", processId, windowId: workspace.focused, key}],
+		];
+	};
+
 	const pressKey = (state: ShellState, msg: Extract<ShellMsg, {type: "keys.press"}>): Step => {
 		const answer = route(table, toRouter(state.prefix), msg.key);
 		const prefix = fromRouter(answer.next);
@@ -514,24 +551,8 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		const routed: ShellState = {...state, prefix, lastPress: recorded(msg, answer)};
 
 		if (answer._tag === "ToWindow") {
-			const workspace = activeWorkspace(routed);
-			const processId = workspace === undefined ? null : keyTargetOf(workspace, workspace.focused);
-			// An empty window has no process to forward to, and a window whose program never declared
-			// `takesKeys` has no cell for one, so the key is dropped rather than queued (#7973).
-			return [
-				routed,
-				processId === null || workspace === undefined
-					? timer
-					: [
-							...timer,
-							{
-								type: "forwardKey",
-								processId,
-								windowId: workspace.focused,
-								key: answer.key,
-							},
-						],
-			];
+			const [next, cmds] = toFocusedWindow(routed, answer.key);
+			return [next, [...timer, ...cmds]];
 		}
 
 		if (answer._tag !== "Command") return [routed, timer];
@@ -552,6 +573,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
 		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
 		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
+		"window.forwardKey": (state, msg) => toFocusedWindow(state, msg.key),
 		"window.setView": setView,
 		"layout.resize": resizeStack,
 		"layout.zoom": zoomWindow,

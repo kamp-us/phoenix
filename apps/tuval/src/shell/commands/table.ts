@@ -18,6 +18,7 @@
 
 import {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
+import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import type {CommandName} from "../keys/table.ts";
 import type {Direction} from "../layout/index.ts";
 import {type PickerCommand, pickerCommands} from "../picker/intent.ts";
@@ -127,6 +128,15 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 			"Return the focused window to the picker. The process it was showing keeps running, and the picker offers it back.",
 		params: noParams,
 		toMsg: () => ({type: "window.unbind"}),
+	}),
+	// The one row whose Msg carries a key rather than a decision. A binding names a command and a
+	// command names a Msg, so nothing bound can address a window's *renderer* — where a list's focus
+	// lives — and this row closes that gap by forwarding a key no keyboard can produce (#8407).
+	defineCommand({
+		path: ["window", "focus-list"],
+		describe: "Move focus into the focused window's own list, when it draws one.",
+		params: noParams,
+		toMsg: () => ({type: "window.forwardKey", key: FOCUS_LIST_KEY}),
 	}),
 	...pickerCommands.map(pickerRow),
 	defineCommand({
