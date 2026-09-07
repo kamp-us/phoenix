@@ -14,6 +14,10 @@
  * documented contract — `item-<index>` over the message list it was handed — which is what lets an
  * entry be matched back to its projected item here and re-keyed to the entry's own stable id.
  *
+ * That re-key is also why a row read back here carries `alias`: the live tail keeps the positional
+ * id, so a page copy and the tail row for one turn share no `id` and the window would render both.
+ * `alias` is the live id for the same row, and it is what the page/tail stitch joins on (#8032).
+ *
  * A `compaction` is the one entry that moved the transcript out from under the reader, so it gets
  * the port's own boundary kind; every other non-message entry — a branch summary, a model or
  * thinking-level change, an extension's own entry, a rename, a label — is one collapsed `system`
@@ -46,6 +50,11 @@ const millisOf = (timestamp: string): number => {
  * that identity is what makes a later result supersede its running row — and everything else
  * takes the entry's own id, which is stable across the renumbering a compaction causes. A turn's
  * reasoning row is derived from that same entry id, so it stays distinct from the reply beside it.
+ *
+ * The re-key is what leaves Pi with two id spaces, so `aliased` below states the join between them:
+ * a stored row carries the live tail's own id for the same turn in `alias`, which is how the
+ * window's page/tail stitch knows a page copy and a tail row are one turn rather than two (#8032).
+ * A tool row needs none — `toolCallId` is the same string on both paths.
  */
 const onEntry = (item: TranscriptItem, entry: SessionMessageEntry): TranscriptItem => {
 	const timestamp = millisOf(entry.timestamp);
@@ -131,7 +140,21 @@ export const pageCursorAliases = (
 	return aliases;
 };
 
+/** `pageCursorAliases` read the other way: a stored id → the live tail's own id for that row. */
+const liveIdsOf = (entries: ReadonlyArray<SessionEntry>): ReadonlyMap<string, string> => {
+	const live = new Map<string, string>();
+	for (const [alias, stored] of pageCursorAliases(entries)) live.set(stored, alias);
+	return live;
+};
+
+/** Stamp a stored row with the live id for the same turn, when the two spaces disagree about it. */
+const aliased = (item: TranscriptItem, live: ReadonlyMap<string, string>): TranscriptItem => {
+	const alias = live.get(item.id);
+	return alias === undefined || alias === item.id ? item : {...item, alias: itemId(alias)};
+};
+
 export const pageItems = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<TranscriptItem> => {
+	const live = liveIdsOf(entries);
 	const messages = entries.flatMap((entry) =>
 		entry.type === "message" ? [entry.message as SourceMessage] : [],
 	);
@@ -148,7 +171,7 @@ export const pageItems = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<T
 			// A message whose role the wire does not carry — an extension's own — projects to
 			// nothing, and its index is spent all the same, which is why the counter advances first.
 			if (source !== undefined)
-				for (const item of itemsOf(source)) items.push(onEntry(item, entry));
+				for (const item of itemsOf(source)) items.push(aliased(onEntry(item, entry), live));
 			continue;
 		}
 		const notice = noticeItemOf(entry);
