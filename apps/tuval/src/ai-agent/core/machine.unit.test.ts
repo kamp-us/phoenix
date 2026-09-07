@@ -1420,6 +1420,11 @@ describe("the Cmd each Msg answers for", () => {
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],
+		[
+			started(),
+			{type: "pageRefused", failure: {tag: "tuval/ai-agent/PageError", reason: null, detail: "x"}},
+			[],
+		],
 		[started({phase: "prompting"}), {type: "interrupt", at: SENT_AT}, ["aiAgent.interrupt"]],
 		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
 		[
@@ -1489,5 +1494,43 @@ describe("the identity filter", () => {
 			}),
 		).toBe("other");
 		expect(machine.identity?.ofMsg({type: "started", sessionId: "session-1"})).toBeUndefined();
+	});
+});
+
+describe("page completion observations", () => {
+	it("tags equal pages and repeated refusals independently of retained state", () => {
+		const page = {items: [userItem("older")], hasMore: true};
+		const failure = {
+			tag: "tuval/ai-agent/PageError",
+			reason: "unknown-cursor",
+			detail: "Unknown cursor",
+		};
+		let state = started();
+		for (const outcome of ["success", "refused", "refused", "success"] as const) {
+			state = apply(state, {type: "page", before: "oldest", limit: 10})[0];
+			expect(state.pageOutcome).toBeNull();
+			state = apply(
+				state,
+				outcome === "success" ? {type: "paged", page} : {type: "pageRefused", failure},
+			)[0];
+			expect(state.pageOutcome).toEqual(
+				outcome === "success" ? {status: "success", page} : {status: "refused", failure},
+			);
+			expect(state.lastPage).toEqual(page);
+		}
+		expect(state.failure).toEqual(failure);
+		expect(loadCheckpoint(JSON.parse(JSON.stringify(state)), "/repo").pageOutcome).toBeNull();
+		const {pageOutcome: _outcome, ...legacy} = state;
+		expect(loadCheckpoint(legacy, "/repo").phase).toBe("idle");
+		expect(loadCheckpoint(legacy, "/repo").pageOutcome).toBeNull();
+	});
+
+	it.each([
+		{status: "success", page: null},
+		{status: "refused", failure: null},
+		{status: "refused", failure: {detail: "missing tag"}},
+		{status: "other"},
+	])("rejects a malformed page outcome %j", (pageOutcome) => {
+		expect(isAiAgentSessionState({...started(), pageOutcome})).toBe(false);
 	});
 });

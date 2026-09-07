@@ -35,6 +35,7 @@ export type ChatRow =
 	| {readonly kind: "older"; readonly items: number}
 	/** A `page` request is out. */
 	| {readonly kind: "loading"}
+	| {readonly kind: "page-error"; readonly detail: string}
 	/**
 	 * A run of consecutive session notices as one row. A burst of hook frames landing mid-turn is a
 	 * row that grows rather than N rows that push everything the reader was looking at down the page.
@@ -63,6 +64,7 @@ export interface ChatRowsInput {
 	/** How many items the live-tail bound dropped, off `transcript.omitted`. */
 	readonly omitted: number;
 	readonly loading: boolean;
+	readonly pageError?: string | null;
 	readonly atOldest: boolean;
 	/** The ids of the group heads whose folded rows are showing, off this window's own view slot. */
 	readonly unfolded?: ReadonlySet<string>;
@@ -71,7 +73,7 @@ export interface ChatRowsInput {
 /**
  * A stable key per row, so the virtualizer's measurement cache survives a prepend. Item rows key on
  * the item's own id — which is stable across an update, since a tool result re-sends the same id
- * with a new status (ruling 1, #7570) — and the two head rows key on their kind, of which at most
+ * with a new status (ruling 1, #7570) — and the head rows key on their kind, of which at most
  * one is ever present.
  */
 export const rowKey = (row: ChatRow): string => {
@@ -205,7 +207,9 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	}
 	const rows: Array<ChatRow> = [];
 	if (!input.atOldest && items.length > 0) {
-		rows.push(input.loading ? {kind: "loading"} : {kind: "older", items: input.omitted});
+		if (input.loading) rows.push({kind: "loading"});
+		else if (input.pageError != null) rows.push({kind: "page-error", detail: input.pageError});
+		else rows.push({kind: "older", items: input.omitted});
 	}
 	const roots = items.filter((item) => headOf(item, heads) === undefined);
 	const reachable = new Set<string>();

@@ -3,8 +3,8 @@
  * amended on #7572 / #7584). It is a `WindowRenderer` (#7553) over the `ai-agent-session` state and
  * the five ports' vocabulary, and it knows nothing about Pi or Claude: everything it reads is the
  * model-blind item union of `../../ai-agent/ports/`, and everything it sends is a Msg of
- * `../../ai-agent/core/`. Both of those are `import type` only, so this module pulls no agent code
- * into the browser bundle at all.
+ * `../../ai-agent/core/`. Only the pure snapshot predicate is imported at runtime; no backend
+ * or agent service reaches the browser.
  *
  * Four things here are not obvious from the code:
  *
@@ -43,6 +43,7 @@ import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
 import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {prefixArmedAround, windowRenderer} from "../window/index.ts";
@@ -302,6 +303,22 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "page-error") {
+		return (
+			<span className="tuval-chat-head">
+				<span role="status">Could not load earlier messages: {row.detail}</span>
+				<Button
+					type="button"
+					variant="tertiary"
+					size="sm"
+					style={{minBlockSize: "var(--tap-min, 36px)"}}
+					onClick={onOlder}
+				>
+					Retry loading earlier messages
+				</Button>
+			</span>
+		);
+	}
 	if (row.kind === "older") {
 		return (
 			<span className="tuval-chat-head">
@@ -361,12 +378,17 @@ function ChatWindow({
 
 	const process = useProcessView(host);
 	const state = process?._tag === "Live" ? process.state : null;
+	const session =
+		state === null
+			? undefined
+			: JSON.stringify([host.processId, state.sessionId, state.connection]);
 
 	// The slot is read once and then owned here: it is this window's own scratch space, and a
 	// re-read on every render would fight the writes below on a host whose `view()` lags a commit.
 	const [view, setViewLocal] = useState<ChatView>(() => asChatView(host.view()));
 	const [older, setOlder] = useState<ReadonlyArray<TranscriptItem>>([]);
 	const [loading, setLoading] = useState(false);
+	const [pageError, setPageError] = useState<string | null>(null);
 
 	// The last committed view, so `commit` can apply `next` and fork the host write out here rather
 	// than inside the `setViewLocal` updater. React documents an updater as pure and re-invokes it —
@@ -453,17 +475,34 @@ function ChatWindow({
 				tail: state?.transcript.items ?? [],
 				omitted: state?.transcript.omitted.items ?? 0,
 				loading,
+				pageError,
 				atOldest: view.atOldest,
 				unfolded,
 			}),
-		[older, state, loading, view.atOldest, unfolded],
+		[older, state, loading, pageError, view.atOldest, unfolded],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
 	const anchorRef = useRef<string | null>(null);
 	/** Set when a page lands, cleared by the layout effect that re-anchors the viewport onto it. */
 	const reanchorRef = useRef(false);
-	const seenPageRef = useRef<AiAgentSessionState["lastPage"]>(null);
+	const pageRequestRef = useRef<object | null>(null);
+	const sessionRef = useRef(session);
+	sessionRef.current = session;
+	const priorSessionRef = useRef(session);
+	useEffect(() => {
+		if (priorSessionRef.current !== undefined && priorSessionRef.current !== session) {
+			pageRequestRef.current = null;
+			setLoading(false);
+			setPageError(null);
+			setOlder([]);
+			commit((current) => ({...current, cursor: null, atOldest: false}));
+		}
+		priorSessionRef.current = session;
+		return () => {
+			pageRequestRef.current = null;
+		};
+	}, [session, commit]);
 
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -506,46 +545,64 @@ function ChatWindow({
 	const totalSize = virtualizer.getTotalSize();
 
 	const requestOlder = useCallback(() => {
-		if (loading || view.atOldest || rows.length === 0) return;
+		if (pageRequestRef.current !== null || view.atOldest || rows.length === 0) return;
 		const request = olderPageRequest(rows);
 		if (request === null) return;
 		const {before, anchor} = request;
+		const sessionId = state?.sessionId;
+		const connection = state?.connection;
+		pageRequestRef.current = request;
 		anchorRef.current = anchor;
+		setPageError(null);
 		setLoading(true);
-		// Asking for history is leaving the newest turn, and the pin has to say so or the re-anchor
-		// below loses. On a transcript barely taller than its viewport every offset is within *both*
-		// thresholds, so the top that fires this still reads as resting on the newest turn — and
-		// when the page lands the follow effect, declared after the re-anchor, overrides it and
-		// throws the reader to the bottom of the history they just asked for.
 		commit((current) => (current.pinned ? {...current, pinned: false} : current));
-		dispatch({type: "page", before, limit: options.pageLimit});
-	}, [loading, view.atOldest, rows, commit, dispatch, options.pageLimit]);
-
-	// `lastPage` is shared session state, so every mounted window sees a page any one of them asked
-	// for (#7860). A window consumes one only while its own request is out: without the `loading`
-	// guard a window that scrolled nowhere gets the other's history prepended and its `atOldest`
-	// advanced, which is what made the per-window cursor a slot that never diverged. The seen-marker
-	// is set either way, so a window that ignored a page does not merge it later when it does ask.
-	//
-	// The guard is a proxy, not a correlation, and #7860 stays open on the residual: `loading`
-	// answers "is *my* request out", but `lastPage` carries no requester and `page` (`core/machine.ts`)
-	// issues its Cmd with no in-flight guard — so two windows whose requests overlap each still merge
-	// whichever reply lands first. Closing that needs the reply to name the window that asked, which
-	// is a change to the Msg and the core rather than to this effect.
-	useEffect(() => {
-		const page = state?.lastPage ?? null;
-		if (page === null || page === seenPageRef.current) return;
-		seenPageRef.current = page;
-		if (!loading) return;
-		setOlder((held) => mergeOlder(held, page.items));
-		setLoading(false);
-		reanchorRef.current = true;
-		commit((current) => ({
-			...current,
-			cursor: page.items[0]?.id ?? current.cursor,
-			atOldest: !page.hasMore,
-		}));
-	}, [state?.lastPage, loading, commit]);
+		// Processes.dispatchFolded holds its lock through idle AND the state read (#8274).
+		// Only this dispatch's completion can settle it; broadcast snapshots retain old outcomes.
+		void Effect.runFork(
+			Effect.gen(function* () {
+				const reply = yield* hostRef.current.dispatch({
+					type: "page",
+					before,
+					limit: options.pageLimit,
+				});
+				if (pageRequestRef.current !== request || sessionRef.current !== session) return;
+				pageRequestRef.current = null;
+				setLoading(false);
+				const completed = reply._tag === "Delivered" ? reply.view?.state : null;
+				if (
+					!isAiAgentSessionState(completed) ||
+					completed.sessionId !== sessionId ||
+					completed.connection !== connection ||
+					completed.pageOutcome === null
+				) {
+					setPageError("The page request could not be confirmed. Try again.");
+					return;
+				}
+				const outcome = completed.pageOutcome;
+				if (outcome.status === "refused") {
+					setPageError(outcome.failure.detail);
+					return;
+				}
+				const page = outcome.page;
+				setOlder((held) => mergeOlder(held, page.items));
+				setPageError(null);
+				reanchorRef.current = true;
+				commit((current) => ({
+					...current,
+					cursor: page.items[0]?.id ?? current.cursor,
+					atOldest: !page.hasMore,
+				}));
+			}),
+		);
+	}, [
+		view.atOldest,
+		rows,
+		session,
+		state?.sessionId,
+		state?.connection,
+		commit,
+		options.pageLimit,
+	]);
 
 	useLayoutEffect(() => {
 		if (!reanchorRef.current) return;

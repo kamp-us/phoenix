@@ -53,6 +53,7 @@ const cutMidReply: AiAgentSessionState = {
 	sends: [{key: "send-0", state: "pending", turn: "unstarted"}],
 	queued: [],
 	lastPage: null,
+	pageOutcome: null,
 	subagents: {},
 	failure: null,
 };

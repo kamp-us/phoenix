@@ -163,12 +163,16 @@ describe("chat window boundary", () => {
 		expect(written.filter(([, tag]) => tag === undefined || !declared.has(tag))).toEqual([]);
 	});
 
-	it("agent imports are type-only except the pure shared cursor decision", () => {
+	it("agent runtime imports admit only the pure snapshot predicate and cursor decision", () => {
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
 				.filter((line) => !line.includes('"../../ai-agent/history/cursor.ts"'))
 				.filter((line) => !/^import type\b/.test(line))
+				.filter(
+					(line) =>
+						line !== 'import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";',
+				)
 				.map((line) => `${name}: ${line.trim()}`),
 		);
 		expect(offenders).toEqual([]);

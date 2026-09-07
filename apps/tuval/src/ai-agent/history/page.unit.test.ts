@@ -185,6 +185,21 @@ describe("a local echo is not a stored page cursor", () => {
 		expect(pageCursor([reply, local], local.id)).toEqual({kind: "unavailable"});
 	});
 
+	it("never selects a partial reply that need not have a stored frame", () => {
+		const partial = {...reply, partial: true};
+		expect(pageCursor([local, partial], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([local, partial], partial.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([local, partial, ...older], local.id)).toEqual({
+			kind: "page",
+			before: older[0]?.id,
+		});
+		expect(pageCursor([local, partial], null)).toEqual({kind: "page", before: null});
+		expect(pageCursor([local, {...reply, partial: false}], local.id)).toEqual({
+			kind: "page",
+			before: reply.id,
+		});
+	});
+
 	it("uses the domain marker even when the local id has no prefix", () => {
 		const marked = {...local, id: stored.id};
 		expect(pageCursor([marked, reply], marked.id)).toEqual({kind: "page", before: reply.id});

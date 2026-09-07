@@ -82,8 +82,10 @@ describe("readSubagentTranscript over a captured subagent", () => {
 		expect(exit.value.type).toBe("probe-plugin:probe-grep");
 		expect(exit.value.items.map((one) => one.kind)).toEqual([
 			"user",
+			"thinking",
 			"assistant",
 			"tool",
+			"thinking",
 			"assistant",
 		]);
 	});
@@ -93,7 +95,7 @@ describe("readSubagentTranscript over a captured subagent", () => {
 		expect(Exit.isSuccess(exit)).toBe(true);
 		if (!Exit.isSuccess(exit)) return;
 		expect(exit.value.type).toBe("subagent");
-		expect(exit.value.items).toHaveLength(4);
+		expect(exit.value.items).toHaveLength(6);
 	});
 
 	it("scans the store when the project name the CLI wrote is not the derived one", () => {

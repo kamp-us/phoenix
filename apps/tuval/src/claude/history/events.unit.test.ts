@@ -15,6 +15,7 @@ import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	byteLength,
 	type ItemId,
+	isSubagentSlot,
 	TOOL_RESULT_BYTE_LIMIT,
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
@@ -703,5 +704,108 @@ describe("toAgentEvents is pure", () => {
 		expect(first.events).toEqual(second.events);
 		expect(mapping.toolCalls.size).toBe(0);
 		expect(mapping.skipped).toBe(0);
+	});
+});
+
+describe("toAgentEvents over a captured subagent turn", () => {
+	const {events} = run(messages("subagent-turn"));
+	const SPAWN = "toolu_000000000000000000000001";
+	const slots = events.flatMap((one) => (one.kind === "subagent" ? [one.slot] : []));
+	// The folded transcript rather than the raw events, which carry a tool row twice: once running,
+	// once settled.
+	const inside = tail(events).filter((one) => one.parentId === SPAWN);
+
+	it("tags the worker's reasoning and its prose with the call that spawned them", () => {
+		expect(inside.filter((one) => one.kind === "thinking")).toHaveLength(1);
+		const prose = inside.filter((one) => one.kind === "assistant");
+		expect(prose.length).toBeGreaterThan(0);
+		expect(prose.map((one) => one.parentId)).toEqual(prose.map(() => SPAWN));
+	});
+
+	it("tags the worker's own inbound turn, which landed top-level on the desk run", () => {
+		const prompts = inside.filter((one) => one.kind === "user");
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]?.kind === "user" && prompts[0].text.startsWith("Read pantry.txt")).toBe(true);
+	});
+
+	it("leaves the agent's own reasoning, prose and tool calls untagged", () => {
+		const own = tail(events).filter((one) => one.parentId === undefined);
+		expect(own.map((one) => one.kind)).toContain("thinking");
+		expect(own.map((one) => one.kind)).toContain("assistant");
+		expect(own.flatMap((one) => (one.kind === "tool" ? [one.name] : []))).toEqual(["Agent"]);
+	});
+
+	it("opens the slot at the spawning call, with that call's id, type and clock", () => {
+		const opened = slots.find((one) => one.id === SPAWN);
+		const call = tail(events).find((one) => one.id === SPAWN);
+		expect(opened).toMatchObject({type: "general-purpose", status: "running", tokens: 0});
+		expect(opened?.startedAt).toBe(call?.timestamp);
+	});
+
+	it("follows the newest nested line and grows the token count off the nested frames", () => {
+		const running = slots.filter((one) => one.status === "running");
+		const tokens = running.map((one) => one.tokens);
+		expect(running.at(-1)?.lastLine).toBe("**Word:** `zeytinyagi` — 10 letters.");
+		// The backend's own `task_notification` for this worker reads 25,508.
+		expect(running.at(-1)?.tokens).toBe(25_229);
+		expect(tokens).toEqual([...tokens].sort((a, b) => a - b));
+	});
+
+	it("admits every item kind the worker produced, in arrival order, one entry each", () => {
+		const held = slots.at(-1)?.items ?? [];
+		expect(held.map((one) => one.kind)).toEqual([
+			"user",
+			"assistant",
+			"tool",
+			"thinking",
+			"assistant",
+		]);
+		// The worker's one call opens `running` and settles `ok` under one id; the slot holds the
+		// settled row where the running one was, exactly as the transcript does.
+		expect(new Set(held.map((one) => one.id)).size).toBe(held.length);
+		expect(held.flatMap((one) => (one.kind === "tool" ? [one.status] : []))).toEqual(["ok"]);
+	});
+
+	it("marks the slot finished when the spawning call settles, and moves nothing after (Q2)", () => {
+		const finished = slots.filter((one) => one.status === "finished");
+		expect(finished).toHaveLength(1);
+		expect(slots.at(-1)?.status).toBe("finished");
+		const last = slots.filter((one) => one.status === "running").at(-1);
+		expect(finished[0]).toEqual({...last, status: "finished"});
+	});
+
+	it("emits slots the port admits", () => {
+		expect(slots.length).toBeGreaterThan(0);
+		expect(slots.every(isSubagentSlot)).toBe(true);
+	});
+});
+
+describe("toAgentEvents over a subagent's streamed reply", () => {
+	/**
+	 * The one part of a nested turn no capture holds: `subagent-turn.json` shows the CLI forwards a
+	 * worker's frames whole and streams none of them, so a nested `stream_event` run cannot be forced
+	 * from a query. `SDKPartialAssistantMessage` declares `parent_tool_use_id: string | null` exactly
+	 * as the assistant and user frames do (`sdk.d.ts`, 0.3.259), so this is the golden
+	 * `streaming-turn` stream with that one field stamped over it and every other key untouched.
+	 */
+	const PARENT = "toolu_01SubagentParent";
+	const nested = messages("streaming-turn").map((one) =>
+		one.type === "stream_event" || one.type === "assistant"
+			? ({...one, parent_tool_use_id: PARENT} as SDKMessage)
+			: one,
+	);
+
+	it("tags every upsert of the growing reply, and the settled row that replaces them", () => {
+		const replies = items(run(nested).events).filter((one) => one.kind === "assistant");
+		expect(replies.length).toBeGreaterThan(1);
+		expect(replies.map((one) => one.parentId)).toEqual(replies.map(() => PARENT));
+		expect(replies.filter((one) => one.partial !== true).length).toBeGreaterThan(0);
+	});
+
+	it("leaves the captured top-level stream's upserts carrying no parent at all", () => {
+		const replies = items(run(messages("streaming-turn")).events).filter(
+			(one) => one.kind === "assistant",
+		);
+		expect(replies.map((one) => "parentId" in one)).toEqual(replies.map(() => false));
 	});
 });

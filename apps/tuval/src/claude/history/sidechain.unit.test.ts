@@ -22,11 +22,22 @@ describe("readSidechain over a captured subagent", () => {
 	it("answers the transcript oldest first, one item per thing that happened", () => {
 		expect(read.kind).toBe("transcript");
 		if (isSidechainRefusal(read)) return;
-		expect(read.items.map((one) => one.kind)).toEqual(["user", "assistant", "tool", "assistant"]);
+		// Both reasoning frames carry a signature and an empty `thinking` string, which `blocks.ts`
+		// reads as withheld rather than as no reasoning at all (#8403).
+		expect(read.items.map((one) => one.kind)).toEqual([
+			"user",
+			"thinking",
+			"assistant",
+			"tool",
+			"thinking",
+			"assistant",
+		]);
 		expect(read.items.map((one) => one.timestamp)).toEqual([
 			Date.parse("2026-07-22T08:10:08.771Z"),
+			Date.parse("2026-07-22T08:10:12.044Z"),
 			Date.parse("2026-07-22T08:10:12.074Z"),
 			Date.parse("2026-07-22T08:10:12.118Z"),
+			Date.parse("2026-07-22T08:10:14.587Z"),
 			Date.parse("2026-07-22T08:10:14.590Z"),
 		]);
 	});

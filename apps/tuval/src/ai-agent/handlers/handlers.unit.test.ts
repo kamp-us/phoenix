@@ -281,6 +281,34 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	it.live("does not submit a live partial cursor before its stored frame exists", () => {
+		const probe = probeOf();
+		const partial = {...assistantItem("streaming"), partial: true};
+		const script = {
+			...plainReply,
+			turns: [{events: [{kind: "item" as const, item: partial}]}],
+		};
+		return withKernel(script, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "partial", timestamp: 1});
+				yield* eventually(() =>
+					sessionOf(handle).transcript.items.some((item) => item.id === partial.id),
+				);
+				for (const before of ["local:partial", partial.id]) {
+					const folded = yield* handle.dispatchFolded({type: "page", before, limit: 10});
+					assert.isTrue(isAiAgentSessionState(folded.summary.state));
+					if (!isAiAgentSessionState(folded.summary.state)) return;
+					assert.isNull(folded.summary.state.pageOutcome);
+				}
+				assert.deepStrictEqual(probe.pages, []);
+				assert.isNull(sessionOf(handle).lastPage);
+				assert.isNull(sessionOf(handle).failure);
+			}),
+		);
+	});
+
 	it.live("answers a transcript-page request on the page reply port", () => {
 		const probe = probeOf();
 		return withKernel(plainReply, probe, (spawn, log) =>
@@ -301,6 +329,30 @@ describe("the AI agent handlers under a process", () => {
 			}),
 		);
 	});
+
+	it.live(
+		"samples each page's tagged outcome after handler completion, even when values repeat",
+		() => {
+			const probe = probeOf();
+			return withKernel(plainReply, probe, (spawn) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).phase === "ready");
+					for (const before of [null, "unknown", "unknown", null]) {
+						const folded = yield* handle.dispatchFolded({type: "page", before, limit: 3});
+						assert.isTrue(isAiAgentSessionState(folded.summary.state));
+						if (!isAiAgentSessionState(folded.summary.state)) return;
+						const state = folded.summary.state;
+						assert.strictEqual(state.pageOutcome?.status, before === null ? "success" : "refused");
+						assert.isNotNull(state.lastPage);
+						if (before !== null) assert.strictEqual(state.failure?.reason, "unknown-cursor");
+					}
+					assert.strictEqual(sessionOf(handle).pageOutcome?.status, "success");
+					assert.strictEqual(sessionOf(handle).failure?.reason, "unknown-cursor");
+				}),
+			);
+		},
+	);
 
 	it.live("crosses a permission event out and an inbound answer back in", () => {
 		const probe = probeOf();

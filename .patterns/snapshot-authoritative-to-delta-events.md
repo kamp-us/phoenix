@@ -45,8 +45,11 @@ phase above a reply that has not landed yet, and usage annotates a turn that is 
 
 An item id used for live upserts is not necessarily a stored paging cursor. Keep the visual anchor
 and the cursor separate: [`history/cursor.ts`](../apps/tuval/src/ai-agent/history/cursor.ts) skips
-local echoes once for the handler and window, returning an explicit unavailable result rather than
-turning absence into `before: null` (the newest end).
+local echoes and partial assistant rows once for the handler and window, returning an explicit
+unavailable result rather than turning absence into `before: null` (the newest end). A partial row
+can arrive before its first completed block exists in storage; a live id alone does not prove that
+an alias has a target. Completion makes that row eligible on the next request; the local visual
+anchor stays independent.
 
 Backend mappers project their identity joins as `cursorAliases`; the shared
 [`page.ts`](../apps/tuval/src/ai-agent/history/page.ts) resolves them before validating the group
@@ -65,8 +68,10 @@ the cursor boundary. These are backend projections, not copies of the shared cur
 
 Tests must start with live events, not an id obtained from `page(null)`: the latter proves only
 stored-to-stored traversal. The real Pi session test and Claude's captured-stream replay in their
-respective agent suites exercise that initial transition; shared history tests preserve explicit
-newest reads, stored cursors and refusal behavior.
+respective agent suites exercise that initial transition. The Claude replay also pauses after the
+first text delta, with no future assistant frames in its store, and proves no read occurs until the
+reply completes. Shared history tests preserve explicit newest reads, stored cursors and refusal
+behavior.
 
 ## The foreseeable worse version
 

@@ -120,3 +120,31 @@ describe("toHistoryItems over rows it has no shape for", () => {
 		expect(toHistoryItems([], {at: AT})).toEqual({items: [], cursorAliases: new Map(), skipped: 0});
 	});
 });
+
+describe("toHistoryItems over a stored subagent turn", () => {
+	/**
+	 * `subagent-turn.json` is a live stream, and its `assistant` and `user` frames are the two row
+	 * types `getSessionMessages` returns — same keys, `parent_tool_use_id` among them — so the stored
+	 * path reads the same conversation the streaming one does.
+	 */
+	const stored = (loadFixture("subagent-turn") as ReadonlyArray<SessionMessage>).filter(
+		(row) => row.type === "assistant" || row.type === "user",
+	);
+	const {items} = toHistoryItems(stored, {at: AT});
+
+	it("keeps the worker's rows tagged with the call that spawned them", () => {
+		const inside = items.filter((one) => one.parentId === "toolu_000000000000000000000001");
+		expect(inside.map((one) => one.kind)).toEqual([
+			"user",
+			"assistant",
+			"tool",
+			"thinking",
+			"assistant",
+		]);
+	});
+
+	it("leaves the agent's own rows untagged", () => {
+		const own = items.filter((one) => one.parentId === undefined);
+		expect(own.flatMap((one) => (one.kind === "tool" ? [one.name] : []))).toEqual(["Agent"]);
+	});
+});

@@ -4,10 +4,12 @@ export type PageCursor =
 	| {readonly kind: "page"; readonly before: string | null}
 	| {readonly kind: "unavailable"};
 
-const isLocal = (item: TranscriptItem): boolean =>
-	(item.kind === "user" && item.local === true) || item.id.startsWith("local:");
+const isUnavailable = (item: TranscriptItem): boolean =>
+	(item.kind === "user" && item.local === true) ||
+	item.id.startsWith("local:") ||
+	(item.kind === "assistant" && item.partial === true);
 
-/** Skip window-only echoes; backend projections join live ids to stored ids in the page planner. */
+/** Live partial text need not have a stored frame yet; aliases only join completed rows. */
 export const pageCursor = (
 	held: ReadonlyArray<TranscriptItem>,
 	before: string | null,
@@ -19,7 +21,7 @@ export const pageCursor = (
 	if (item === undefined) {
 		return before.startsWith("local:") ? {kind: "unavailable"} : {kind: "page", before};
 	}
-	if (!isLocal(item)) return {kind: "page", before};
-	const backend = held.slice(index + 1).find((candidate) => !isLocal(candidate));
+	if (!isUnavailable(item)) return {kind: "page", before};
+	const backend = held.slice(index + 1).find((candidate) => !isUnavailable(candidate));
 	return backend === undefined ? {kind: "unavailable"} : {kind: "page", before: backend.id};
 };
