@@ -99,8 +99,8 @@
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
-			"ceiling": 286,
-			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child. Eleven of the 297 this row carried were copies of shipped strings #8310 rewrote at their source and mirrored here in the same commit: six `ui manifest` / `ui law` / `ui render` / `ui evidence` stderr pins in the build-ui contract, three `glossary check` / `glossary drift` stderr pins in the glossary contract, and the glossary contract's two references to the bare-hash fixture line, which now carries a one-digit hash. So 286 is what #8300 still owns.",
+			"ceiling": 11,
+			"why": "#8300 swept the prose of the build-ui, campaign, adr, glossary and taste-color skills; build-ui, glossary and taste-color reached zero and the 11 left are values rather than sentences. This count is measured on the tree with #8310's CLI sweep merged in, and every stderr line these contracts pin was re-checked against that source, so no pin here quotes a string the shipped verbs no longer print. Each of the 11 is the placeholder milestone or pull-request number a worked example echoes back out of a line the shipped verbs format with a literal `#` — `rowLine` and the table writer in packages/fabrika-cli/src/campaign/table.ts, the two `already holds` refusals in campaign/open-verb.ts and state-verb.ts, and `adr resolve`'s `PR #<n>` detail in packages/fabrika-cli/src/adr/resolve.ts. The example cannot drop the `#` without quoting a line no verb prints, so each is 9xxx, above any live range, and the row drops only when the guard stops reading a printed `#<n>` example as a ticket — the matcher gap #8418 tracks.",
 			"paths": [
 				"claude-plugins/fabrika/skills/build-ui",
 				"claude-plugins/fabrika/skills/campaign",

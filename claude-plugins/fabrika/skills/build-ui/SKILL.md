@@ -55,14 +55,15 @@ Code-as-text, prose, and plans are `build`'s; a `type:decision` is `/adr`'s. Jud
 rendered surface is `review-ui`'s. **When in doubt, the work is not yours.** Gate the choice with
 `fabrika build eligible $issue_or_pr_number`, then claim with `fabrika build claim
 $issue_or_pr_number`. Keep the token it prints — it is `<claim-token>` below, this LANE's name, and
-every later verb takes it as `--token` (#6037). Re-confirm before every later mutation.
+every later verb takes it as `--token`: a session runs several lanes at once, so without it a verb
+can only tell that *some* lane of this session holds the number, which is how two lanes both ran one
+repair. Re-confirm before every later mutation.
 
 **Composition — what holds when `build` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
-ticket routes to it whole (ADR
-[0319](../../../../.decisions/0319-skill-composition-via-shell-skills-list.md)). Under that co-load
-the claim-only rule and the doubt clause above stop refusing a ticket that also carries text: claim
-it and build all of it, because the text half is `build`'s law to apply, not a reason to decline.
+ticket routes to it whole. Under that co-load the claim-only rule and the doubt clause above stop
+refusing a ticket that also carries text: claim it and build all of it, because the text half is
+`build`'s law to apply, not a reason to decline.
 **The diff's class picks the law per file** — a ui-class file builds under this skill, a text file
 under `build`'s — and **`fabrika ui manifest` (step 2) stays mandatory before any ui-class file is
 touched**, co-load or not. Co-load lifts nothing else: a ticket with no rendered surface at all is
@@ -77,7 +78,7 @@ fabrika ui manifest
 ```
 
 This resolves the **repo's** design surfaces by convention — the design manifest, the typed
-prohibition registry, the component inventory. Phoenix's `design-system-manifest.md` is an
+prohibition registry, the component inventory. A repo's own `design-system-manifest.md` is an
 instance, not the definition: whatever repo you run in, its manifest is the law you build to.
 **Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to run
 `/fabrika` — front-door's bootstrap drafts a manifest from the repo's own CSS and pages.
@@ -189,10 +190,9 @@ from the old head no longer describe this one), answer findings in a
 
 ## Expectations you hold but never recompute
 
-- **Token discipline** — the repo's token gate (phoenix: `design-token-guard.yml`) reds raw hex
-  and the raw-px ratchet in CI. Build to pass it; never mint a rival token verdict.
-- **Inventory freshness and the a11y floor** — the repo's gates where they exist (phoenix:
-  `design-inventory-guard.yml`, `a11y-pbt.yml`).
+- **Token discipline** — the repo's own token gate reds raw hex and the raw-px ratchet in CI. Build
+  to pass it; never mint a rival token verdict.
+- **Inventory freshness and the a11y floor** — the repo's gates for each, where it declares them.
 - **The rendered verdict** — `review-ui`'s gate owns PASS/FAIL over what you built. Your
   render→look→fix predicts it; the gate decides.
 - Follow-up observations leave through `/report` the moment you see them — never scope creep.

@@ -1,16 +1,15 @@
 # `campaign` — derived CLI contract
 
-**Skill:** [`campaign`](SKILL.md) · **Authoring brief:** [#6347](https://github.com/kamp-us/phoenix/issues/6347) · **Date:** 2026-08-20
+**Skill:** [`campaign`](SKILL.md) · **Date:** 2026-08-20
 
 Three verbs under a `campaign` group in `packages/fabrika-cli/`. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs all three; where this spec
 and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** v1's `campaign`,
-`roadmap` and `roadmap-guard` tools were read for their semantics and their scars and are cited
-below as grounding; nothing here invokes them, nothing under `claude-plugins/kampus-pipeline/` or
-`packages/pipeline-cli/` is reached, and no v1 script is ported. Both trees are deleted from the
-working tree in any case — the deletion test is the reason that is a feature (#4638, ADR 0238).
+**`fabrika` calls the retired v1 pipeline CLI nowhere, and neither does the skill.** v1's campaign,
+roadmap and roadmap-guard tools were read for their semantics and their scars and are cited
+below as grounding; nothing here invokes them and no v1 script is ported. Both trees are deleted in
+any case — the deletion test is the reason that is a feature.
 
 **What the roadmap guard already owns is not re-derived here.** `fabrika guard roadmap-guard check`
 ([`guard/roadmap.ts`](../../../../packages/fabrika-cli/src/guard/roadmap.ts)) judges I1–I5: every row
@@ -18,8 +17,7 @@ pins an existing milestone by number, exactly one arc is active, every open mile
 zero scope fails closed, and a row's state agrees with its milestone's open/closed reality. So no
 verb below checks that a milestone exists, that it is open, or that the table is in sync — a second
 answer to a merge-gating question is the failure mode, and the skill states the expectation instead
-(criterion 6 of the brief; ADR 0238's "ask whether the skill needs the answer, or only needs to
-expect it").
+— ask whether the skill needs the answer, or only needs to expect it.
 
 **Dispatch permission is likewise read, never computed.**
 [`build/scope-admission.ts`](../../../../packages/fabrika-cli/src/build/scope-admission.ts) decides
@@ -41,7 +39,7 @@ All three verbs bind to **`readCampaigns`'s parse**, in `build/scope-admission.t
 whose answer decides whether a lane may open, so it is the one a writer must not disagree with: a row
 this skill reports or writes and the fence calls `Malformed` is a campaign that reads as declared and
 dispatches nothing. Binding to `guard/roadmap.ts` instead would buy exactly that divergence — a
-second cell like `(was #47)` is a pin to the guard's loose parser and `Malformed` to the fence, and a
+second number in the cell is a pin to the guard's loose parser and `Malformed` to the fence, and a
 bad *milestone* cell would be invisible to a report the fence refuses to read. The guard's looser
 parser is not a bug to fix here; it serves invariants that judge a pin's referent rather than admit a
 row, and re-pointing it is outside this skill's lane.
@@ -85,9 +83,9 @@ implementation scaffolds the heading and another refuses.
 | `campaign open` | append a new `paused` row pinning a milestone, past the approval trace | the row's bytes, its insertion point and the trace check are fixed; *which* campaign to name is the founder's, and it arrives as an argument |
 | `campaign state` | rewrite one row's `State` cell, past the approval trace | a one-cell rewrite with a closed value set, a duplicate-write refusal and a read-back; deciding to flip is the ruling this verb demands a citation for |
 
-`open` and `state` are deliberately **not** fused into one upsert. ADR 0304's whole ruling is that
-naming a campaign and granting it dispatch are separate acts; a verb that did both on one call would
-re-open in code exactly what the ruling closed in the grammar.
+`open` and `state` are deliberately **not** fused into one upsert. The whole ruling behind this
+group is that naming a campaign and granting it dispatch are separate acts; a verb that did both on
+one call would re-open in code exactly what the ruling closed in the grammar.
 
 ## Shared conventions
 
@@ -156,7 +154,7 @@ re-open in code exactly what the ruling closed in the grammar.
   obligation: `12` here is *the campaigns table is unreadable*, and `triage`'s and `review`'s `12`
   are two other namespaces, not a collision.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit.
-- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**,
+- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md)**,
   paginated. The collaborator-permission read is `permissionFor`'s
   (`repos/<repo>/collaborators/<login>/permission`) and is not re-implemented here. What is local to
   this group: team membership for a `@org/team` entry in
@@ -188,16 +186,16 @@ exists to avoid. That is `parseCampaigns`'s rule and the writers keep it.
 **A data row is readable only when it has exactly three cells, a non-empty first cell, a second cell
 matching `^#(\d+)$`, and a third cell that lowercases to one of the three states.** Any row failing
 any of those four makes the **whole** table unreadable (`12`) — not just the row, and not just a bad
-state cell. A fence never falls back to the rows it could parse (ADR 0304), so a partial answer is
+state cell. A fence never falls back to the rows it could parse, so a partial answer is
 the one thing no verb here may return. The refusal carries `parseCampaigns`'s own reason string, so
 `campaign list` and the `build` fence name the same defect in the same words.
 
 **An absent table and a table with no rows are one well-formed default, and they are a fact rather
 than a failed read.** `campaign list` answers `none` at exit `0` for both. This is the deliberate
-exception to ADR 0092's fail-closed-on-zero-scope rule, and it is ruled: nothing declared means the
-fence is off, not closed (founder ruling on #5011, carried onto this surface by ADR 0304). A judging
-verb would red here; `list` supplies an input and its empty answer is a fact, which is the
-distinction the interface convention's rule 4 asks every verb to settle in its header.
+exception to the fail-closed-on-zero-scope rule, and it is ruled: nothing declared means the fence
+is off, not closed. A judging verb would red here; `list` supplies an input and its empty answer is
+a fact, which is the distinction the interface convention's rule 4 asks every verb to settle in its
+header.
 
 **A table whose every row is `paused` or `done` is a different input, and `list` does not call it
 `none`.** It prints those rows, because they are declared: someone opened each one and the file says
@@ -215,7 +213,7 @@ The single source for what `--cites` proves. Both write verbs run it before touc
 is the marker:
 
 ```
-campaign-approve: #47 active · 2026-08-20T04:11:09Z
+campaign-approve: #<milestone> active · 2026-08-20T04:11:09Z
 ```
 
 **Grammar.** The comment body is split on `\r?\n` and only the **first** element is matched:
@@ -224,7 +222,7 @@ campaign-approve: #47 active · 2026-08-20T04:11:09Z
 /^\s*\*{0,2}\s*campaign-approve:\s*#(?<milestone>\d+)\s+(?<state>active|paused|done)\s*·\s*(?<ts>\S+?)\s*\*{0,2}\s*$/i
 ```
 
-Emphasis-tolerant at both ends (`**campaign-approve: #47 active · …**` matches), keyword
+Emphasis-tolerant at both ends (`**campaign-approve: #<milestone> active · …**` matches), keyword
 case-insensitive, separator the middle dot `·` (U+00B7). `<ts>` must additionally match
 `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/` **and** parse: `Number.isFinite(Date.parse(ts))`.
 A regex-shaped but calendar-invalid date (`2026-02-30T00:00:00Z`) is malformed.
@@ -233,14 +231,13 @@ A regex-shaped but calendar-invalid date (`2026-02-30T00:00:00Z`) is malformed.
 against the comment's own `created_at`; it is evidence a human reader dates the ruling by, and its
 only mechanical job is to make the marker a deliberate line rather than a phrase somebody typed in
 passing. Stated because a validated input with no stated effect is where one implementer adds a
-freshness rule and another does not (ADR 0247). v1 ordered candidate approvals by timestamp because
+freshness rule and another does not. v1 ordered candidate approvals by timestamp because
 it scanned a whole label for them; a cited URL names exactly one, so there is nothing left to
 order.
 
 **Why the first line, and why the body is split rather than matched whole.** v1's docs said first
 line and its implementation required the whole body to *be* the marker, so a founder who wrote their
-approval and then explained it read as `malformed`
-([#3831](https://github.com/kamp-us/phoenix/issues/3831)). Matching `body.split(/\r?\n/)[0]` is the
+approval and then explained it read as `malformed`. Matching `body.split(/\r?\n/)[0]` is the
 fix, and it closes the inverse at the same time: a marker quoted mid-body inside somebody else's
 comment is a quotation, never a grant. Both directions are load-bearing, so the anchor is neither
 loosened to whole-body matching nor tightened back to a marker-only body.
@@ -249,11 +246,10 @@ loosened to whole-body matching nor tightened back to a marker-only body.
 the state the write produces — `paused` for `campaign open`, the `--to` value for `campaign state`.
 An approval of one campaign never authorizes another, and an approval to pause never authorizes a
 start. That state binding is this contract's own derivation, not v1's: v1's marker named a wave label
-and a direction was implicit, which under ADR 0304 would let one grant re-start a campaign any number
-of times.
+and a direction was implicit, which would let one grant re-start a campaign any number of times.
 
-**Authority — two clauses, both required** (ADR
-[0294](../../../../.decisions/0294-config-narrows-the-acl-never-replaces-it.md)).
+**Authority — two clauses, both required**, because config narrows the repo's ACL and never
+replaces it.
 
 1. **The configured set.** The comment's author login is resolved against `.fabrika.jsonc`'s
    `campaignAuthors` (below), case-insensitively for a `@user` entry, by REST membership for a
@@ -269,18 +265,17 @@ of times.
 `build clear`'s pair is the shape being copied, constant for constant:
 [`build/clearances.ts`](../../../../packages/fabrika-cli/src/build/clearances.ts) holds
 `WRITE_FLOOR = {admin, maintain, write}` over the same `permissionFor`, and its refusal reads
-*"authority is the ACL's, never `.fabrika.jsonc`'s alone (ADR 0055)"*. The two clauses are
+*"authority is the ACL's, never `.fabrika.jsonc`'s alone"*. The two clauses are
 conjunctive and neither substitutes: widening the file grants nothing to an account with no
 collaboration, and holding `write+` grants nothing to an account the repo did not name.
 
 **Clause 2 is load-bearing here specifically, and not a formality.** These verbs run against a
 working tree before any pull request exists, so there is no base ref to resolve `campaignAuthors` at
 and the file is the one the same actor is editing — which is exactly the *"a checked-in identity list
-is instructions, not enforcement"* hole ADR [0055](../../../../.decisions/0055-acl-sourced-review-authz.md)
-supersedes 0051 to close. The privilege behind this key is the dispatch permission itself, so a login
-appended to `campaignAuthors` on a branch, by somebody with no collaboration on the repo, must not
-satisfy the check. The live read is what makes that true; the marker's presence is evidence, never
-permission.
+is instructions, not enforcement"* hole the live-ACL rule exists to close. The privilege behind this
+key is the dispatch permission itself, so a login appended to `campaignAuthors` on a branch, by
+somebody with no collaboration on the repo, must not satisfy the check. The live read is what makes
+that true; the marker's presence is evidence, never permission.
 
 **Repository binding.** The cited URL must resolve under `--repo`. A comment in another repository is
 `15`.
@@ -305,8 +300,8 @@ A new `.fabrika.jsonc` key, modelled on
 sharing its decoder shape: an array of `@user` or `@org/team` strings, **shipped default `[]`**.
 
 **It is a narrowing predicate over the live ACL, never authority on its own** — the *Authority*
-clauses above are what this key means, and ADR 0294 binds it without a new record: *"Any future
-`.fabrika.jsonc` key naming who may act inherits this rule."* Copying `capClearAuthors`'s decoder
+clauses above are what this key means, and every future `.fabrika.jsonc` key naming who may act
+inherits that rule without a record of its own. Copying `capClearAuthors`'s decoder
 means copying its authority clause too, not only its shape.
 
 The empty default is the only one this key can have. A set that filled itself in on an absent file
@@ -316,7 +311,7 @@ remedy is a founder writing the key.
 
 JSON-schema description: *"Who may declare a campaign or flip its lifecycle state
 (`fabrika campaign open` / `fabrika campaign state`), narrowing the repository's collaborator ACL —
-an entry here still needs `write` or above on the repo (ADR 0294). Each entry is a GitHub `@user` or
+an entry here still needs `write` or above on the repo. Each entry is a GitHub `@user` or
 `@org/team`, `@`-prefixed. Empty (or absent) means nobody may declare."*
 
 ---
@@ -342,7 +337,7 @@ fabrika campaign list [--state <active|paused|done>] [--file <path>] [--json]
 **Output** — machine channel. The row line grammar, one row per line, in table order. When no row
 survives (an absent table, an empty one, or a `--state` that matches nothing) stdout is the single
 line `none` — a positive token, because empty stdout is byte-identical to a verb that never ran.
-Under `--json`: `{"rows":[{"milestone":47,"state":"active","name":"fabrika everywhere"}],"file":"ROADMAP.md"}`,
+Under `--json`: `{"rows":[{"milestone":9047,"state":"active","name":"fabrika everywhere"}],"file":"ROADMAP.md"}`,
 with `rows: []` for the `none` case.
 
 **Exit status**
@@ -375,14 +370,14 @@ the filtered result**, so a `--state` run still says what it read past:
 Both examples run against a `ROADMAP.md` whose `## Campaigns` table holds exactly these two rows:
 
 ```
-| Taste-Skill Library | #42 | paused |
-| fabrika everywhere | #47 | active |
+| Taste-Skill Library | #9042 | paused |
+| fabrika everywhere | #9047 | active |
 ```
 
 ```
 $ fabrika campaign list
-#42	paused	Taste-Skill Library
-#47	active	fabrika everywhere
+#9042	paused	Taste-Skill Library
+#9047	active	fabrika everywhere
 ```
 
 ```
@@ -394,7 +389,7 @@ $ echo $?
 
 ```
 $ fabrika campaign list --json
-{"rows":[{"milestone":42,"state":"paused","name":"Taste-Skill Library"},{"milestone":47,"state":"active","name":"fabrika everywhere"}],"file":"ROADMAP.md"}
+{"rows":[{"milestone":9042,"state":"paused","name":"Taste-Skill Library"},{"milestone":9047,"state":"active","name":"fabrika everywhere"}],"file":"ROADMAP.md"}
 ```
 
 `--json` carries exactly the rows the line grammar would have printed, so `--state done --json` is
@@ -402,10 +397,10 @@ $ fabrika campaign list --json
 
 **Grounding**
 
-- ADR 0304 — the three states; one unreadable row makes the whole table unreadable; nothing active
-  means the fence is off, not closed.
-- Founder ruling on #5011 — the empty declaration admits everything, which is why zero rows here is
-  `0` and not ADR 0092's red.
+- **The three states, and the whole-table rule**: one unreadable row makes the whole table
+  unreadable, and nothing active means the fence is off rather than closed.
+- **An empty declaration admits everything**, which is why zero rows here is `0` and not the
+  fail-closed red a judging gate would return.
 - `build/scope-admission.ts`'s `parseCampaigns` — the all-rows parse this verb binds to, the one
   `readCampaigns` narrows for the fence, so the report and the dispatch fence cannot disagree about
   what a row says.
@@ -454,9 +449,9 @@ Two states have no last row, and each has specified bytes:
   Nothing else is scaffolded: the prose `ROADMAP.md` carries under its table is founder-voice, and a
   verb that generated it would be writing in a voice that is not its own. The state is always `paused` and there
 is no flag to change it: a row that could be written `active` is a write that grants dispatch in the
-same stroke that names the campaign, which is the shape ADR 0304 forbids. Nothing outside the table
-is touched — the `## Dependency graph` block is the caller's edit, for the reason in *Considered and
-deliberately not derived*.
+same stroke that names the campaign, which is the shape the two-write rule forbids. Nothing outside
+the table is touched — the `## Dependency graph` block is the caller's edit, for the reason in
+*Considered and deliberately not derived*.
 
 Order of operations: resolve config → read and parse the file → refuse a duplicate → check the trace
 (marker, binding, `campaignAuthors`, then the live ACL read) → write → read back. The trace check
@@ -467,7 +462,7 @@ A `<name>` containing `|` or a newline is a usage error: it cannot be written in
 
 **Output** — machine channel. The written row, read back, in the row line grammar. There is no empty
 answer: a run that wrote nothing exits non-zero. Under `--json`:
-`{"row":{"milestone":47,"state":"paused","name":"fabrika everywhere"},"file":"ROADMAP.md"}`.
+`{"row":{"milestone":9047,"state":"paused","name":"fabrika everywhere"},"file":"ROADMAP.md"}`.
 
 **Exit status**
 
@@ -526,38 +521,38 @@ appended "<name>" #<n> paused to <file> — dispatches nothing until it is flipp
 
 **Examples**
 
-Against the same two-row fixture, with `.fabrika.jsonc` declaring `"campaignAuthors": ["@usirin"]`,
-and `https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028` a comment by `usirin`
-whose first line is `campaign-approve: #52 paused · 2026-08-20T04:11:09Z`:
+Against the same two-row fixture, with `.fabrika.jsonc` declaring `"campaignAuthors": ["@maintainer"]`,
+and `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>` a comment by `maintainer`
+whose first line is a `campaign-approve:` marker approving milestone 9052 `paused`:
 
 ```
-$ fabrika campaign open "Mecmua reading layout" --milestone 52 --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028
-#52	paused	Mecmua reading layout
+$ fabrika campaign open "Reading layout" --milestone 9052 --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>
+#9052	paused	Reading layout
 ```
 
 ```
-$ fabrika campaign open "fabrika everywhere" --milestone 52 --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028
-campaign open: ROADMAP.md already holds "fabrika everywhere" at #47 — NOTHING was written.
+$ fabrika campaign open "fabrika everywhere" --milestone 9052 --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>
+campaign open: ROADMAP.md already holds "fabrika everywhere" at #9047 — NOTHING was written.
 $ echo $?
 19
 ```
 
 ```
-$ fabrika campaign open "Mecmua reading layout" --milestone 52 --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028 --json
-{"row":{"milestone":52,"state":"paused","name":"Mecmua reading layout"},"file":"ROADMAP.md"}
+$ fabrika campaign open "Reading layout" --milestone 9052 --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id> --json
+{"row":{"milestone":9052,"state":"paused","name":"Reading layout"},"file":"ROADMAP.md"}
 ```
 
 **Grounding**
 
-- ADR 0304 / founder ruling on #6289 — a new row is `paused`; there is no flag to write it `active`.
-- ADR 0055 / ADR 0294 — the configured set narrows a live `write+` ACL read; both clauses run and
-  the verb fails closed on either.
-- ADR 0300 — a cited ruling comment is what makes a founder decision actionable by an agent; this
-  verb applies the same citation idiom to a roadmap write.
-- #3831 — the marker is anchored to the comment's first line, so an approval carrying rationale
-  beneath it is not malformed, and a quoted approval is not a grant.
-- v1's `create-milestone.sh` shipped an unchecked POST whose failure surfaced only as an empty
-  number. Nothing here creates a milestone at all, and every write is read back.
+- **A new row is `paused`**, and there is no flag to write it `active`.
+- **The configured set narrows a live `write+` ACL read**; both clauses run and the verb fails
+  closed on either.
+- **A cited ruling comment is what makes a human decision actionable by an agent**, and this verb
+  applies that same citation idiom to a roadmap write.
+- **The marker is anchored to the comment's first line**, so an approval carrying rationale beneath
+  it is not malformed, and a quoted approval is not a grant.
+- **v1 shipped an unchecked milestone-creating POST whose failure surfaced only as an empty
+  number.** Nothing here creates a milestone at all, and every write is read back.
 - `roadmap-guard` I1/I3 own whether the pinned milestone exists and whether every open milestone is
   claimed. This verb does not check either.
 
@@ -599,7 +594,7 @@ of the file is byte-identical afterwards. Re-padding would be a second, silent e
 not ask for, and on a table whose columns are already ragged it would rewrite rows nobody touched.
 
 **Output** — machine channel. The rewritten row, read back, in the row line grammar. Under `--json`:
-`{"row":{"milestone":47,"state":"active","name":"fabrika everywhere"},"from":"paused","file":"ROADMAP.md"}`.
+`{"row":{"milestone":9047,"state":"active","name":"fabrika everywhere"},"from":"paused","file":"ROADMAP.md"}`.
 
 **Exit status**
 
@@ -661,38 +656,39 @@ against #<n>.`
 
 **Examples**
 
-Against the same two-row fixture, with `"campaignAuthors": ["@usirin"]` and
-`https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028` a comment by `usirin` whose
-first line is `campaign-approve: #42 active · 2026-08-20T04:11:09Z`:
+Against the same two-row fixture, with `"campaignAuthors": ["@maintainer"]` and
+`https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>` a comment by `maintainer` whose
+first line is a `campaign-approve:` marker approving milestone 9042 `active`:
 
 ```
-$ fabrika campaign state '#42' --to active --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028
-#42	active	Taste-Skill Library
+$ fabrika campaign state '#9042' --to active --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>
+#9042	active	Taste-Skill Library
 ```
 
 ```
-$ fabrika campaign state 'fabrika everywhere' --to active --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028
-campaign state: "fabrika everywhere" #47 already holds active — NOTHING was written.
+$ fabrika campaign state 'fabrika everywhere' --to active --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>
+campaign state: "fabrika everywhere" #9047 already holds active — NOTHING was written.
 $ echo $?
 20
 ```
 
 ```
-$ fabrika campaign state '#42' --to active --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028 --json
-{"row":{"milestone":42,"state":"active","name":"Taste-Skill Library"},"from":"paused","file":"ROADMAP.md"}
+$ fabrika campaign state '#9042' --to active --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id> --json
+{"row":{"milestone":9042,"state":"active","name":"Taste-Skill Library"},"from":"paused","file":"ROADMAP.md"}
 ```
 
 **Grounding**
 
-- ADR 0304 — the flip to `active` is the dispatch permission; resuming a paused campaign is that same
+- **The flip to `active` is the dispatch permission**, and resuming a paused campaign is that same
   flip.
-- ADR 0055 / ADR 0294 — the ACL check is the verb's, `campaignAuthors` only narrows it, and it fails
-  closed on either clause.
-- v1's `open-roadmap-pr.sh` hard-validated its state argument (`case "$STATE" in active|done`) and
-  refused anything else; the closed value set survives, widened to the three ADR 0304 states.
+- **The ACL check is the verb's**; `campaignAuthors` only narrows it, and it fails closed on either
+  clause.
+- **v1 hard-validated its state argument and refused anything else**; the closed value set survives,
+  widened to the three states above.
 - v1 paired closing the milestone with the flip to `done` and refused to flip over an open milestone.
   Here that check is `roadmap-guard`'s I5 and is **not** repeated: the skill states the expectation
-  and the guard holds the verdict, per ADR 0238.
+  and the guard holds the verdict, because a second answer to a merge-gating question is the failure
+  mode.
 - v1's `git switch -c` was deliberately kept out of its scripts, because a script that branches
   mutates whichever checkout the caller happens to sit in. Nothing here branches, commits or pushes
   either.
@@ -714,32 +710,33 @@ same table and the live milestone projection, and it runs at CI. A second answer
 question can contradict the gate, which is worse than no answer at all — the reasoning that dropped
 `adr classify` from the `/adr` contract, applied here.
 
-**A "may a lane open against this milestone" verb.** `build/scope-admission.ts` is the fence, and ADR
-0245's rule that one predicate answers both `build` seams is exactly what a second reader would
-break. This skill writes the cell; the fence reads it.
+**A "may a lane open against this milestone" verb.** `build/scope-admission.ts` is the fence, and one
+predicate answers both `build` seams — the pool and the claim — so the two can never state different
+facts about one milestone. A second reader is exactly what breaks that. This skill writes the cell;
+the fence reads it.
 
 **A milestone creator, and a wave-homing verb.** v1's campaign ritual created the milestone and then
 PATCHed it onto every issue carrying the wave label. Creating a milestone is board work, and homing
 issues onto one is `triage`'s (`triage homes`). Folding either in here would put two skills on one
 board mutation.
 
-**A priority normalizer.** v1's step 3 deleted `p0`/`p2` and posted `p1` on every open wave issue,
-under ADR 0214. **ADR 0219 superseded that**: campaign membership confers a *home*, never a priority
-band, and 0219 records the measured skew the old rule produced — all 19 open `p0`s were factory work
-with zero product among them, and two sibling issues triaged six minutes apart came out `p1` and
-`p0` from the same ADR. Priority is triage's band, set per issue. A campaign verb that re-priced a
-milestone would re-seed exactly that skew.
+**A priority normalizer.** v1's campaign ritual deleted `p0`/`p2` and posted `p1` on every open
+wave issue. That rule was superseded: campaign membership confers a *home*, never a priority band.
+The measured skew it produced was stark — every open `p0` in the queue was factory work with no
+product among it, and two sibling issues triaged six minutes apart came out on different bands from
+the same rule. Priority is triage's band, set per issue. A campaign verb that re-priced a milestone
+would re-seed exactly that skew.
 
 **A `## Dependency graph` regenerator.** The mermaid block is generated content whose generator was
-deleted with the v1 verb package (#6100); `ROADMAP.md` records that it is hand-maintained until a
+deleted with the v1 verb package, and the roadmap file records that it is hand-maintained until a
 fabrika verb owns it again. Writing half of that generator here — a node appended on `open`, a class
 restyled on `state` — would put a second partial writer on a block that needs one whole one, and the
 partial writer would look authoritative. The skill carries the node-id grammar and the author makes
 the edit, until the generator is rebuilt.
 
 **A wave-label-bound trace.** v1 bound approval to an audit wave's label and scanned every issue
-carrying it for a marker. fabrika's campaigns are not audit waves — #46 and #47 carry no wave label —
-so the wave is not an identifier this repo's campaigns have. The milestone number is, and ADR 0304
-makes it the single link to the operational projection, so the marker binds to `#<milestone>` and the
-caller cites the comment directly. That also deletes v1's whole scan, with its zero-scope refusal and
+carrying it for a marker. fabrika's campaigns are not audit waves and carry no wave label, so the
+wave is not an identifier a campaign has. The milestone number is, and it is the single link to the
+operational projection, so the marker binds to `#<milestone>` and the caller cites the comment
+directly. That also deletes v1's whole scan, with its zero-scope refusal and
 its "earliest founder approval wins" tie-break, neither of which has anything left to order.
