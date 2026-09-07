@@ -45,6 +45,12 @@ export interface PullRecord {
 	readonly draft: boolean;
 	/** Merged is not derivable from `state`: a merged PR reads `closed` (`ship reconcile`'s `landed`). */
 	readonly merged: boolean;
+	/**
+	 * The commit the merge produced on the base branch, or `null` where the board published none —
+	 * an unmerged PR has one by construction, and a merged one can lack it while the platform is
+	 * still computing it. The evidence a `lane settle` landing names.
+	 */
+	readonly mergeCommitSha: string | null;
 	/** The base branch — whose queue regime, never this PR's history, decides `ship disarm`'s policy. */
 	readonly baseRef: string;
 	/** Whether a merge intent is currently parked on the PR — the armed state `ship disarm` clears. */
@@ -73,6 +79,10 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 		comments: typeof comments === "number" ? comments : 0,
 		draft: value.draft === true,
 		merged: value.merged === true,
+		mergeCommitSha:
+			typeof value.merge_commit_sha === "string" && value.merge_commit_sha !== ""
+				? value.merge_commit_sha
+				: null,
 		baseRef: isRecord(base) && typeof base.ref === "string" ? base.ref : "",
 		autoMerge: isRecord(value.auto_merge),
 		authorLogin: isRecord(user) && typeof user.login === "string" ? user.login : "",

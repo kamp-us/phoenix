@@ -389,11 +389,13 @@ export const GRANT_REFUSED = 47;
 export const LANE_IS_CHILD = 48;
 
 /**
- * `lane archive` was pointed at a lane whose issue is still open on the board.
+ * A verb whose whole entitlement is a closed issue was pointed at a lane whose issue is still open
+ * on the board — `lane archive`, or `lane settle`.
  *
  * An archive moves a lane out of every sweep, so the closed issue is half of what makes that safe:
- * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Its own seat
- * because the remedy is to drive the lane, not to fix the record.
+ * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Settling ends the
+ * lane outright, and an open issue's closure has said nothing yet. Its own seat because the remedy
+ * on both is to drive the lane, not to fix the record.
  */
 export const ISSUE_LIVE = 49;
 

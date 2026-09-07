@@ -69,6 +69,56 @@ export const CLEARED_EVENT = "CLEARED";
 export const CORRECTED_EVENT = "CORRECTED";
 
 /**
+ * The ninth and tenth events: the two board-proven terminals, appended by `lane settle` once it has
+ * read what the driving issue's closure says, and by nothing else.
+ *
+ * `CANCELLED` is a not-planned or duplicate close — the board dropped the work. `LANDED` is a
+ * completed close with a merged pull request linking the issue — the work shipped outside the lane's
+ * own flow, which is what a hand-shipped lane parked in `build` or `review` looks like.
+ *
+ * Both are injected as a cell on every state, the way {@link CLEARED_EVENT} is, and for the same
+ * reason: a lane booted before they existed carries its own copy of `workflow.json` under
+ * `.fabrika/lanes/<n>/`, and a document-declared transition would reach none of them. Unlike a
+ * clearance they move the task — into {@link BOARD_TERMINALS}' final for the event.
+ *
+ * Neither is an operator event: {@link OPERATOR_EVENTS} still holds six, and `lane transition`
+ * refuses both, so the operator's vocabulary is closed exactly as it was and a `DONE`'s proof
+ * semantics are untouched.
+ */
+export const CANCELLED_EVENT = "CANCELLED";
+
+export const LANDED_EVENT = "LANDED";
+
+/**
+ * The finals a board-proven terminal lands in — the compiler's own states, never a document's.
+ *
+ * Each is in `finals` so its phase folds, and in neither `errorFinals` nor `openFinals`: a settled
+ * lane did not trip and has no door out. `deriveStatus` reads each as its own workflow terminal
+ * rather than folding it into `complete` (which would claim this lane's own flow finished it) or
+ * `tripped` (which would claim it failed).
+ *
+ * The `board:` prefix is load-bearing rather than decoration: an emitted epic machine already owns a
+ * document state called `landed` (`emit.ts`'s `initialFor`, a child booted over a completed close),
+ * and the compiler refuses a document that names one of its own finals — so an unprefixed name here
+ * would refuse every epic lane in the repo. It also says where the fact came from, which is the one
+ * thing separating these two leaves from the ones a lane's own flow earns.
+ */
+export const BOARD_TERMINALS: Readonly<Record<string, string>> = {
+	[CANCELLED_EVENT]: "board:cancelled",
+	[LANDED_EVENT]: "board:landed",
+};
+
+export const CANCELLED_STATE = "board:cancelled";
+
+export const LANDED_STATE = "board:landed";
+
+export const isBoardTerminalEvent = (event: string): boolean =>
+	Object.hasOwn(BOARD_TERMINALS, event);
+
+export const isBoardTerminalState = (state: string): boolean =>
+	Object.values(BOARD_TERMINALS).includes(state);
+
+/**
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
  * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
  * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
@@ -265,6 +315,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const waitParks = new Map<string, Set<string>>();
 	const partialStates = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
+		if (isBoardTerminalState(name)) {
+			defects.push(
+				`task "${taskId}": state "${name}" is one of the compiler's own board-proven finals on every task, never a document's state`,
+			);
+			continue;
+		}
 		if (nodeType(node) === "final") finals.add(name);
 	}
 
@@ -287,6 +343,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			if (msg === CLEARED_EVENT) {
 				defects.push(
 					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition`,
+				);
+				continue;
+			}
+			if (isBoardTerminalEvent(msg)) {
+				defects.push(
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a board-proven terminal is the compiler's own cell on every state, never a document's transition`,
 				);
 				continue;
 			}
@@ -379,8 +441,16 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
-	// Read BEFORE the clearance cell is injected: an open final is one the DOCUMENT left a door in.
-	// The injected cell targets nothing, so counting it would read every final as a park.
+	// Each board-proven final is the compiler's, so it holds a row of its own: a `CLEARED` landing on
+	// an already-settled task must fold, not throw the log unreplayable.
+	for (const state of Object.values(BOARD_TERMINALS)) {
+		finals.add(state);
+		table[state] = {};
+	}
+
+	// Read BEFORE the injected cells: an open final is one the DOCUMENT left a door in. The clearance
+	// cell targets nothing and the cancellation cell is not a door out, so counting either would read
+	// every final as a park.
 	const openFinals = new Set(
 		Object.entries(table)
 			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
@@ -397,6 +467,16 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		return [{...s, cleared, maxRetries: budgetWith(declared, cleared)}, []];
 	};
 	for (const cells of Object.values(table)) cells[CLEARED_EVENT] = clearedCell;
+
+	// One cell per state per board terminal, so each reaches every lane already on disk, whose
+	// `workflow.json` was copied from a template that never declared it. A board final itself gets
+	// none: settling a settled task would fold as movement that did not happen.
+	for (const [event, terminal] of Object.entries(BOARD_TERMINALS)) {
+		const cell: Cell = (s) => [{...s, type: terminal, was: s.type}, []];
+		for (const [name, cells] of Object.entries(table)) {
+			if (!isBoardTerminalState(name)) cells[event] = cell;
+		}
+	}
 
 	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")

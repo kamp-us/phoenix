@@ -15,6 +15,7 @@ const PULL_RECORD = {
 	comments: 0,
 	draft: false,
 	merged: false,
+	mergeCommitSha: null,
 	baseRef: "main",
 	autoMerge: false,
 	authorLogin: "an-author",

@@ -1,7 +1,7 @@
 ---
 id: 0322
 title: A lane whose issue closed elsewhere is demoted at read time, not reconciled on disk
-status: accepted
+status: amended-in-part by [0365](0365-a-board-closed-lane-ends-in-a-recorded-terminal.md)
 date: 2026-08-21
 tags: [fabrika, lane, pipeline, viewer, state-machine]
 ---
