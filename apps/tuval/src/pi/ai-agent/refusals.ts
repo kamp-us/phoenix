@@ -8,7 +8,13 @@
  */
 
 import type {AgentFailure} from "../../ai-agent/events.ts";
-import {PageError, PromptError, StartError, TransportError} from "../../ai-agent/service/index.ts";
+import {
+	PageError,
+	PromptError,
+	StartError,
+	TranscriptError,
+	TransportError,
+} from "../../ai-agent/service/index.ts";
 import type {ConnectionRefusal, Disconnected, SessionRefusal} from "../client/index.ts";
 
 export const startErrorOf = (
@@ -65,6 +71,31 @@ export const storeUnreadable = (cause: unknown): PageError =>
 		reason: "store-unreadable",
 		detail: cause instanceof Error ? cause.message : String(cause),
 	});
+
+/**
+ * The three ways a *stored* session's transcript does not come back (#8233).
+ *
+ * `transcriptSessionMissing` is the one `storeUnreadable` above cannot say. `page` reads the file
+ * of a session the layer already holds, so a missing file there is a broken store; the store read
+ * is handed an id off a listing and a file that is nowhere is the ordinary answer that the session
+ * is gone — which a caller must be able to tell from a store it could not enumerate.
+ */
+export const transcriptSessionMissing = (sessionId: string): TranscriptError =>
+	new TranscriptError({
+		reason: "session-not-found",
+		sessionId,
+		detail: "neither of Pi's session stores holds a file for this id",
+	});
+
+export const transcriptUnreadable = (sessionId: string, cause: unknown): TranscriptError =>
+	new TranscriptError({
+		reason: "store-unreadable",
+		sessionId,
+		detail: cause instanceof Error ? cause.message : String(cause),
+	});
+
+export const transcriptUnknownCursor = (sessionId: string, reason: string): TranscriptError =>
+	new TranscriptError({reason: "unknown-cursor", sessionId, detail: reason});
 
 /**
  * A send refused because the socket is gone, as the terminal failure that ends the event stream.

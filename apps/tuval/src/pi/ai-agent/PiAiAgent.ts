@@ -33,7 +33,7 @@
  */
 
 import {readdirSync} from "node:fs";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
@@ -54,6 +54,7 @@ import {
 	PromptError,
 	type StartOptions,
 	ThinkingUnsupported,
+	type TranscriptQuery,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -83,9 +84,12 @@ import {
 	promptFailureOf,
 	startErrorOf,
 	storeUnreadable,
+	transcriptSessionMissing,
+	transcriptUnknownCursor,
+	transcriptUnreadable,
 	transportErrorOf,
 } from "./refusals.ts";
-import {readPiSessions} from "./sessions.ts";
+import {piSessionDirs, readPiSessions} from "./sessions.ts";
 
 /** A model this process may run, named the way Pi's catalog names one. */
 export interface ModelSelection {
@@ -155,6 +159,23 @@ const readBranch = (dir: string, sessionId: string, cwd: string) =>
 			return SessionManager.open(join(dir, file), dir, cwd).getBranch();
 		},
 		catch: storeUnreadable,
+	});
+
+/**
+ * Where one stored session's JSONL sits, across every directory either store keeps files in, or
+ * `null` when it is in none of them. A genuine miss, told apart from a directory that would not
+ * open by the `Effect.try` around the scan (#8233).
+ */
+const locateBranch = (dirs: ReadonlyArray<string>, sessionId: string) =>
+	Effect.try({
+		try: (): string | null => {
+			for (const dir of dirs) {
+				const file = readdirSync(dir).find((name) => name.endsWith(`_${sessionId}.jsonl`));
+				if (file !== undefined) return join(dir, file);
+			}
+			return null;
+		},
+		catch: (cause) => transcriptUnreadable(sessionId, cause),
 	});
 
 /**
@@ -581,6 +602,53 @@ const make = (
 		});
 
 		/**
+		 * `page`'s answer off disk, with no session open and no transport dialled (#8233).
+		 *
+		 * It walks both stores rather than `sessionDir(cwd)` alone, because the ids it is handed come
+		 * off `listSessions` below, which unions the two — a session the operator started with `pi`
+		 * in a terminal is in the CLI store and would otherwise read as gone.
+		 *
+		 * Nothing here reaches `paintOf`: that fold builds a whole transcript's worth of `item` and
+		 * `usage` events for the attach to emit, and on this path there is no attach and no
+		 * subscriber, so the events would be built and dropped.
+		 */
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir(query.cwd)});
+			const file = yield* locateBranch(stores.dirs, query.sessionId);
+			if (file === null) {
+				// A store that would not enumerate may be the one the file was in, so a miss across the
+				// rest is not the claim that the session is gone.
+				return yield* stores.failures.length === 0
+					? transcriptSessionMissing(query.sessionId)
+					: transcriptUnreadable(
+							query.sessionId,
+							stores.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
+						);
+			}
+			const entries = yield* Effect.try({
+				try: () => SessionManager.open(file, dirname(file), query.cwd).getBranch(),
+				catch: (cause) => transcriptUnreadable(query.sessionId, cause),
+			});
+			const planned = planTranscriptPage(pageItems(entries), {
+				before: query.before,
+				cursorAliases: pageCursorAliases(entries),
+				limit: query.limit,
+				cursorBoundary: "containing-group",
+			});
+			if (isRefusal(planned)) {
+				if (planned.reason === "limit-not-positive") {
+					return yield* Effect.die(
+						new Error(`page was asked for ${query.limit} items; the port declares limit > 0`),
+					);
+				}
+				return yield* transcriptUnknownCursor(query.sessionId, planned.reason);
+			}
+			return {items: planned.items, hasMore: planned.next !== null};
+		});
+
+		/**
 		 * Both of Pi's stores, unioned (#8099). A read of disk rather than of the transport, so it
 		 * answers before `start` and after a drop.
 		 *
@@ -641,6 +709,7 @@ const make = (
 			commands: Effect.succeed([]),
 			setThinkingLevel,
 			page,
+			sessionTranscript,
 			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};
