@@ -63,6 +63,7 @@ import {
 	type RowItem,
 	rowIndexOfItem,
 	rowKey,
+	subagentHeads,
 } from "./rows.ts";
 import {SessionRow} from "./SessionRow.tsx";
 import {SubagentList} from "./SubagentList.tsx";
@@ -477,14 +478,12 @@ function ChatWindow({
 
 	const setMode = useCallback((mode: Mode) => dispatch({type: "setMode", mode}), [dispatch]);
 
-	// The slots the flag makes rows disappear behind. Off, it is empty and `chatRows` folds exactly
-	// as it did; on, every row whose parent chain reaches one of these leaves the transcript (#8405).
+	// The slots the flag makes rows disappear behind. Off, it is the shared empty set and `chatRows`
+	// folds exactly as it did; on, every row whose parent chain reaches one of these leaves the
+	// transcript (#8405).
 	const subagentSlots = state?.subagents ?? null;
 	const subagents = useMemo(
-		() =>
-			options.subagentList && subagentSlots !== null
-				? new Set(Object.keys(subagentSlots))
-				: new Set<string>(),
+		() => subagentHeads(subagentSlots, options.subagentList),
 		[options.subagentList, subagentSlots],
 	);
 

@@ -18,7 +18,7 @@
  * is in flight, and both disappear at the beginning of history (founder ruling, 2026-09-02).
  */
 
-import type {ItemId, SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {ItemId, SubagentSlot, SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
 
 /**
  * What an `item` row may carry. A session notice is deliberately not one: every `SystemItem` lands
@@ -77,6 +77,25 @@ export interface ChatRowsInput {
 	 */
 	readonly subagents?: ReadonlySet<string>;
 }
+
+/**
+ * What the window hands `chatRows` with the flag off: one frozen empty set, for the life of the
+ * module. A fresh `new Set()` per worker frame would be a new memo value on a path that is meant to
+ * be a literal no-op, so the window's `subagents` memo would produce a changed dependency for a
+ * transcript nothing about the flag touches.
+ */
+export const NO_SUBAGENTS: ReadonlySet<string> = Object.freeze(new Set<string>());
+
+/**
+ * The spawning calls whose rows leave the window: the slots the session holds, or nothing at all
+ * when the flag is off. The identity is the point — off, this answers the same set every time, so
+ * the memo reading it never sees a change.
+ */
+export const subagentHeads = (
+	slots: Readonly<Record<string, SubagentSlot>> | null | undefined,
+	enabled: boolean,
+): ReadonlySet<string> =>
+	enabled && slots !== null && slots !== undefined ? new Set(Object.keys(slots)) : NO_SUBAGENTS;
 
 /**
  * A stable key per row, so the virtualizer's measurement cache survives a prepend. Item rows key on
@@ -237,7 +256,7 @@ const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
  */
 export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	const loaded = [...unheld(input.tail, input.older), ...input.tail];
-	const subagents = input.subagents ?? new Set<string>();
+	const subagents = input.subagents ?? NO_SUBAGENTS;
 	const hidden = subagents.size === 0 ? null : insideSubagent(loaded, subagents);
 	const items = hidden === null ? loaded : loaded.filter((item) => !hidden.has(String(item.id)));
 	const unfolded = input.unfolded ?? new Set<string>();
