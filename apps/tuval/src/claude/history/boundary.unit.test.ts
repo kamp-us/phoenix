@@ -74,6 +74,7 @@ describe("the Claude history mapping is pure", () => {
 			"resumed-init",
 			"session-messages",
 			"streaming-turn",
+			"subagent-turn",
 			"thinking-turn",
 			"tool-turn",
 			"unknown-message",
