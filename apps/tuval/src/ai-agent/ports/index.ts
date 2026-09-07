@@ -39,6 +39,12 @@ export {
 	transcriptPage,
 } from "./ports.ts";
 export {
+	isSubagentSlot,
+	isSubagentSlots,
+	type SubagentSlot,
+	type SubagentStatus,
+} from "./subagent.ts";
+export {
 	isThinkingLevel,
 	type ThinkingLevel,
 	thinkingLevels,

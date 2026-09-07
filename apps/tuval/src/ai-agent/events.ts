@@ -26,6 +26,7 @@ import type {
 	ModelRef,
 	PermissionDecision,
 	PermissionRequest,
+	SubagentSlot,
 	ThinkingLevel,
 	TranscriptItem,
 } from "./ports/index.ts";
@@ -132,6 +133,20 @@ export interface FailureEvent {
 	readonly failure: AgentFailure;
 }
 
+/**
+ * One subagent's slot, whole, as its mapper last computed it. Same `slot.id` twice means the later
+ * one supersedes, exactly as `item` does — the id is the spawning call's, so a worker that writes a
+ * hundred lines is a hundred replacements of one row and never a hundred rows.
+ *
+ * It rides this stream rather than a channel of its own for the reason every other kind does: one
+ * subscription, one ordering (founder ruling 1, #7570). A second channel would let a worker's slot
+ * arrive before the tool call that spawned it.
+ */
+export interface SubagentEvent {
+	readonly kind: "subagent";
+	readonly slot: SubagentSlot;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
@@ -151,4 +166,5 @@ export type AgentEvent =
 	| CommandsEvent
 	| ThinkingEvent
 	| UsageEvent
+	| SubagentEvent
 	| FailureEvent;
