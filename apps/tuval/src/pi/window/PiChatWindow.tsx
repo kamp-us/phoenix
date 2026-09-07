@@ -20,5 +20,9 @@ import {chatWindow} from "../../shell/chat/index.ts";
 export const piChatWindow = (options: ChatWindowOptions = {}): ChatWindowRenderer =>
 	chatWindow(options);
 
-/** The renderer `PI_CHAT_WINDOW_REF` names, at its defaults: what a page's renderer table binds. */
+/**
+ * The renderer `PI_CHAT_WINDOW_REF` names, at its defaults — every feature flag off. The page's
+ * table no longer binds it: that table builds its own at the operator's flags (#8439). This stays as
+ * the defaults themselves, which is what a test mounting the window without options wants.
+ */
 export const PiChatWindow: ChatWindowRenderer = piChatWindow();

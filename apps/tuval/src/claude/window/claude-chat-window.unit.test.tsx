@@ -135,9 +135,14 @@ describe("the window's scheme", () => {
 });
 
 describe("the row's renderer reference", () => {
-	it("resolves to this renderer in the page's table", () => {
+	// Not an identity check against `ClaudeChatWindow` any more: the page builds its own renderer at
+	// the operator's feature flags, so the table holds an equivalent renderer rather than this
+	// module's default constant (#8439). What is still checked is that the reference has a seat, that
+	// the seat holds a renderer of the kind the reference declares, and its guard.
+	it("resolves to a renderer of this kind in the page's table", () => {
 		const entry = renderers[CLAUDE_CHAT_WINDOW_REF.ref];
-		expect(entry?.renderer).toBe(ClaudeChatWindow);
+		expect(entry?.renderer.kind).toBe(CLAUDE_CHAT_WINDOW_REF.kind);
+		expect(entry?.renderer.kind).toBe(ClaudeChatWindow.kind);
 		// Guarded by the session state's own predicate, so a kernel sending an older shape refuses in
 		// this window instead of throwing through it (#8157).
 		expect(entry?.admits(claudeSessionState())).toBe(true);
