@@ -56,7 +56,14 @@ describe("toAgentEvents over a captured init", () => {
 	it("reports the model the session named, and no phase", () => {
 		const {events, mapping} = run([message("init")]);
 		expect(events).toEqual([
-			{kind: "usage", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 0, cost: 0},
+			{
+				kind: "usage",
+				turn: "claude:model-announcement",
+				model: "claude-fable-5-1",
+				inputTokens: 0,
+				outputTokens: 0,
+				cost: 0,
+			},
 		]);
 		expect(mapping.model).toBe("claude-fable-5-1");
 	});
@@ -64,7 +71,14 @@ describe("toAgentEvents over a captured init", () => {
 	it("reads a resumed session's init the same way", () => {
 		const {events} = run([message("resumed-init")]);
 		expect(events).toEqual([
-			{kind: "usage", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 0, cost: 0},
+			{
+				kind: "usage",
+				turn: "claude:model-announcement",
+				model: "claude-fable-5-1",
+				inputTokens: 0,
+				outputTokens: 0,
+				cost: 0,
+			},
 		]);
 	});
 });
@@ -101,6 +115,7 @@ describe("toAgentEvents over a captured plain turn", () => {
 		expect(usage).toHaveLength(2);
 		expect(usage[1]).toEqual({
 			kind: "usage",
+			turn: "00000000-0000-4000-8000-000000000006",
 			model: "claude-fable-5-1",
 			inputTokens: 2,
 			outputTokens: 4,

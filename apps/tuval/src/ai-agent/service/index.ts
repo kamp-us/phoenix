@@ -50,6 +50,7 @@ export {
 	sessionSummary,
 } from "./sessions.ts";
 export {
+	type ResumeTarget,
 	type StartedSession,
 	type StartOptions,
 	type TranscriptPage,

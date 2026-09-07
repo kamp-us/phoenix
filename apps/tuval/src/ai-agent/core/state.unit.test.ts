@@ -51,7 +51,10 @@ const saved: AiAgentSessionState = {
 		items: [userItem("i0"), assistantItem("i1"), toolItem("i2")],
 		omitted: {items: 3, bytes: 120, reason: "item-limit"},
 	},
-	usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
+	usage: {
+		model: "claude-opus-5",
+		turns: {i1: {inputTokens: 1_200, outputTokens: 340, cost: 0.031}},
+	},
 	permissions: {"req-1": pendingPermission({request: card, seq: 3})},
 	permissionsRaised: 3,
 	modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},

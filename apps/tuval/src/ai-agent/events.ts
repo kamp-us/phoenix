@@ -150,6 +150,15 @@ export interface SubagentEvent {
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
+	/**
+	 * Which turn this cost belongs to, under the reporting backend's own id for it.
+	 *
+	 * A report is not an increment. A resume re-reports turns the process has already folded — the
+	 * reconnect hands its own tail through as the fold's seed, and a row the restore marked
+	 * `interrupted` differs from the backend's copy by that marker alone (#8369) — so the core keys
+	 * the cost on this and the second report of one turn adds nothing.
+	 */
+	readonly turn: string;
 	readonly model: string;
 	readonly inputTokens: number;
 	readonly outputTokens: number;
