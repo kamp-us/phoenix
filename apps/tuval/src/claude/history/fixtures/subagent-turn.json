@@ -74,7 +74,7 @@
 		"product_feedback_disabled": false,
 		"uuid": "00000000-0000-4000-8000-000000000003",
 		"memory_paths": {
-			"auto": "/home/user/.claude/projects/-private-var-folders-8f-r3k3t6817cgbsxsxvxk83q4c0000gn-T-fabrika-build-00000000-0000-4000-8000-000000000004-8403-64d5387e-capture-cwd/memory/"
+			"auto": "/home/user/.claude/projects/-tmp-tuval-capture/memory/"
 		},
 		"messaging_socket_path": "/tmp/cc-socks/27275.sock",
 		"fast_mode_state": "off",
