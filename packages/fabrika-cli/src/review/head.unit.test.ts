@@ -26,6 +26,7 @@ const PULL: PullRecord = {
 	comments: 0,
 	draft: false,
 	merged: false,
+	mergeCommitSha: null,
 	baseRef: "main",
 	autoMerge: false,
 	authorLogin: "kampus-bot",

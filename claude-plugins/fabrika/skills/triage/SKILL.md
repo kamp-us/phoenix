@@ -322,7 +322,7 @@ EOF
   (`fabrika wire doc-section --heading "triage kill" < <skill-base>/contract.md`).
   **A kill closes the issue and never touches a lane.** Where the killed issue had a lane booted on
   it, that ledger stays owed until its driver records the cancellation terminal with
-  `fabrika lane cancel <lane>` — that is `operate`'s step, not yours, and hand-deleting the lane
+  `fabrika lane settle <lane>` — that is `operate`'s step, not yours, and hand-deleting the lane
   directory is not the protocol.
 
 ```bash

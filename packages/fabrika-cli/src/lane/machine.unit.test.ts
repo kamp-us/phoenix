@@ -15,6 +15,8 @@ import {
 	CLEARED_EVENT,
 	type CompiledLane,
 	compile,
+	LANDED_EVENT,
+	LANDED_STATE,
 	type LaneMsg,
 	OPERATOR_EVENTS,
 	type TaskState,
@@ -191,6 +193,7 @@ describe("the compiler — structural recognition", () => {
 		// and in neither of the two derived sets: a cancellation did not trip, and it has no door out.
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual([
 			CANCELLED_STATE,
+			LANDED_STATE,
 			"frozen",
 			"shipped",
 		]);
@@ -224,10 +227,15 @@ describe("the compiler — structural recognition", () => {
 		// Both injected cells are on `shipped` too, and neither must make it a park: an open final is
 		// one the DOCUMENT left a door in, a clearance is a door out of nothing, and a cancellation
 		// leads to a terminal rather than back into the lane.
-		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT, CANCELLED_EVENT]);
+		expect(defined(summary.tasks.issue).states.shipped).toEqual([
+			CLEARED_EVENT,
+			CANCELLED_EVENT,
+			LANDED_EVENT,
+		]);
 		// The cancellation final holds neither cell of its own: a second cancellation would fold as
 		// movement that did not happen.
 		expect(defined(summary.tasks.issue).states[CANCELLED_STATE]).toEqual([CLEARED_EVENT]);
+		expect(defined(summary.tasks.issue).states[LANDED_STATE]).toEqual([CLEARED_EVENT]);
 		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual(["frozen"]);
 	});
 
@@ -260,6 +268,7 @@ describe("the compiler — structural recognition", () => {
 			"BLOCKED",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
+			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states.review).toEqual([
 			"PASS",
@@ -267,6 +276,7 @@ describe("the compiler — structural recognition", () => {
 			"FAIL",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
+			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states.ship).toEqual([
 			"DONE",
@@ -275,6 +285,7 @@ describe("the compiler — structural recognition", () => {
 			"FAIL",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
+			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states["ship:queued"]).toEqual([
 			"DONE",
@@ -283,13 +294,19 @@ describe("the compiler — structural recognition", () => {
 			"FAIL",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
+			LANDED_EVENT,
 		]);
-		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT, CANCELLED_EVENT]);
+		expect(defined(summary.tasks.issue).states.shipped).toEqual([
+			CLEARED_EVENT,
+			CANCELLED_EVENT,
+			LANDED_EVENT,
+		]);
 		// `frozen` is a final that carries a door: a park the lane trips on, not an end.
 		expect(defined(summary.tasks.issue).states.frozen).toEqual([
 			"UNBLOCKED",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
+			LANDED_EVENT,
 		]);
 		expect(summary.trigger).toBeUndefined();
 	});
@@ -396,6 +413,7 @@ describe("the compiler — structural recognition", () => {
 		// declares — the six a chore template may listen for are unchanged.
 		listened.delete(CLEARED_EVENT);
 		listened.delete(CANCELLED_EVENT);
+		listened.delete(LANDED_EVENT);
 
 		for (const event of listened) expect(OPERATOR_EVENTS).toContain(event);
 	});
@@ -407,20 +425,24 @@ describe("the compiler — structural recognition", () => {
 		expect(defectsOf(workflow)).toContain("never a document's transition");
 	});
 
-	it("refuses a document that declares the cancellation itself, on any lane", () => {
-		const workflow = twoPhaseWorkflow();
-		stateNode(workflow, "task_a", "doing").on[`TASK_A.${CANCELLED_EVENT}`] = "checking";
+	it("refuses a document that declares a board-proven terminal itself, on any lane", () => {
+		for (const event of [CANCELLED_EVENT, LANDED_EVENT]) {
+			const workflow = twoPhaseWorkflow();
+			stateNode(workflow, "task_a", "doing").on[`TASK_A.${event}`] = "checking";
 
-		expect(defectsOf(workflow)).toContain("never a document's transition");
+			expect(defectsOf(workflow)).toContain("never a document's transition");
+		}
 	});
 
-	it("refuses a document that names a state the compiler's cancellation final owns", () => {
-		const workflow = twoPhaseWorkflow();
-		regionStates(workflow, "task_a")[CANCELLED_STATE] = {type: "final"};
+	it("refuses a document that names a state one of the compiler's board finals owns", () => {
+		for (const state of [CANCELLED_STATE, LANDED_STATE]) {
+			const workflow = twoPhaseWorkflow();
+			regionStates(workflow, "task_a")[state] = {type: "final"};
 
-		expect(defectsOf(workflow)).toContain(
-			`state "${CANCELLED_STATE}" is the compiler's own cancellation final`,
-		);
+			expect(defectsOf(workflow)).toContain(
+				`state "${state}" is one of the compiler's own board-proven finals`,
+			);
+		}
 	});
 });
 

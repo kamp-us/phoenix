@@ -457,30 +457,38 @@ replay leaves both sweeps through `node <fabrika> lane archive <lane>`, which mo
 the archived root and touches no log — an unreplayable lane is archived, never sealed in place. It
 refuses at `49` on an open issue and `50` on a log that replays, so it can never hide live work.
 
-**A lane whose issue the board dropped ends through a verb too, and that verb is yours to run.** An
-issue closed `not_planned` or `duplicate` while its lane sits nonterminal owes no artifact, and none
-of the six can say so — `DONE` claims a PR that never existed, `BLOCKED` only parks, and `UNBLOCKED`
-resumes the work the board just dropped — which is why lane 5983 got hand-deleted, taking its whole
-append-only history with it. Record the terminal instead:
+**A lane whose own flow never reached a terminal ends through a verb too, and that verb is yours to
+run.** Two stranded shapes. An issue closed `not_planned` or `duplicate` while its lane sits
+nonterminal owes no artifact. An issue closed `completed` over a merged PR, while its lane still sits
+in `build` or `review`, was hand-shipped past the ledger. Neither is reachable by the six — `DONE`
+claims an open PR that is not there, `BLOCKED` only parks, and `UNBLOCKED` resumes work that is
+already over — which is why lane 5983 got hand-deleted, taking its whole append-only history with it.
+Record the terminal instead:
 
 ```bash
-node <fabrika> lane cancel <lane>
+node <fabrika> lane settle <lane>
 ```
 
-**You record it, and nobody else does.** The close itself is triage's — `triage kill` closes a
-duplicate, and a founder or triager closes a wontfix — but neither touches a ledger, so the lane
-stays owed until the driver holding it runs this verb. Run it on any lane whose fold you find
-nonterminal over an issue the board has closed without landing anything, including one you inherit
-from a dead session. **Never delete a lane directory to end it**: the directory stays where it is,
-one line is appended, and `lane history <lane>` still reads the whole log.
+**You record it, and nobody else does.** The close itself is somebody else's — `triage kill` closes a
+duplicate, a founder or triager closes a wontfix, a human merges a PR by hand — and none of them
+touches a ledger, so the lane stays owed until the driver holding it runs this verb. Run it on any
+lane whose fold you find nonterminal over an issue the board has already closed, including one you
+inherit from a dead session. **Never delete a lane directory to end it**: the directory stays where
+it is, one line is appended, and `lane history <lane>` still reads the whole log.
 
-The board is the whole entitlement and the verb reads it for you: `completed` refuses at `52` and
-sends you to `lane reconcile` then `lane archive`, since work that shipped is the shipped path's; an
-open issue refuses at `49`; an unreadable board or a close carrying no `state_reason` is `11` with
-nothing appended. If you hold the lane's claim, pass `--token <your lane-claim token>` — without it
-the verb refuses at `31` rather than end a lane another session is driving. The lane then folds to
-the terminal `cancelled`, which is neither `complete` nor `tripped`, so it stops holding a seat
-against `laneConcurrencyCap` and never appears in a stale sweep again.
+The board is the whole entitlement and the verb reads it for you. A `not_planned`/`duplicate` close
+records `CANCELLED`. A `completed` close records `LANDED` — but only alongside at least one merged
+pull request whose body links the issue, and the line carries those PR numbers and the merge commit
+as its evidence. Everything else appends nothing: an open issue refuses at `49`, and a failed read, a
+close carrying no reason, and a `completed` close naming no merged linking PR are all `11` — the
+board saying "done" while naming nothing that did it is genuinely unread, not a landing. If you hold
+the lane's claim, pass `--token <your lane-claim token>`; without it the verb refuses at `31` rather
+than end a lane another session is driving.
+
+The lane then folds to `board:cancelled` or `board:landed`, neither of which is `complete` or
+`tripped`, so it stops holding a seat against `laneConcurrencyCap` and never appears in a stale sweep
+again. Neither event is an operator event — `lane transition` refuses both — so `DONE`'s own proof
+semantics are untouched (ADR 0365).
 
 The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
 because staleness was the only wrongness it could see and a coder-template lane booted on an epic
@@ -930,8 +938,8 @@ fold reads (`human:novel-park` is the named park a recipe refusal folds to), and
 caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
-**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, `cancelled`, and a chore's
-`swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
+**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, `board:cancelled`,
+`board:landed`, and a chore's `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
 node <fabrika> lane print $lane_key | gh issue comment $lane_key --body-file -

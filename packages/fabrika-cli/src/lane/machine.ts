@@ -69,25 +69,53 @@ export const CLEARED_EVENT = "CLEARED";
 export const CORRECTED_EVENT = "CORRECTED";
 
 /**
- * The ninth event: the board cancelled this lane's work. Appended by `lane cancel` once the driving
- * issue reads closed with a not-planned or duplicate outcome, and by nothing else.
+ * The ninth and tenth events: the two board-proven terminals, appended by `lane settle` once it has
+ * read what the driving issue's closure says, and by nothing else.
  *
- * Injected as a cell on every state, the way {@link CLEARED_EVENT} is, and for the same reason: a
- * lane booted before this event existed carries its own copy of `workflow.json` under
+ * `CANCELLED` is a not-planned or duplicate close — the board dropped the work. `LANDED` is a
+ * completed close with a merged pull request linking the issue — the work shipped outside the lane's
+ * own flow, which is what a hand-shipped lane parked in `build` or `review` looks like.
+ *
+ * Both are injected as a cell on every state, the way {@link CLEARED_EVENT} is, and for the same
+ * reason: a lane booted before they existed carries its own copy of `workflow.json` under
  * `.fabrika/lanes/<n>/`, and a document-declared transition would reach none of them. Unlike a
- * clearance it moves the task — into {@link CANCELLED_STATE}.
+ * clearance they move the task — into {@link BOARD_TERMINALS}' final for the event.
+ *
+ * Neither is an operator event: {@link OPERATOR_EVENTS} still holds six, and `lane transition`
+ * refuses both. See ADR 0365.
  */
 export const CANCELLED_EVENT = "CANCELLED";
 
+export const LANDED_EVENT = "LANDED";
+
 /**
- * The final a cancellation lands in — the compiler's own state, never a document's.
+ * The finals a board-proven terminal lands in — the compiler's own states, never a document's.
  *
- * It is in `finals` so its phase folds, and in neither `errorFinals` nor `openFinals`: a cancelled
- * lane did not trip and has no door out. `deriveStatus` reads it as its own workflow terminal rather
- * than folding it into `complete` (which would claim the work landed) or `tripped` (which would
- * claim it failed).
+ * Each is in `finals` so its phase folds, and in neither `errorFinals` nor `openFinals`: a settled
+ * lane did not trip and has no door out. `deriveStatus` reads each as its own workflow terminal
+ * rather than folding it into `complete` (which would claim this lane's own flow finished it) or
+ * `tripped` (which would claim it failed).
+ *
+ * The `board:` prefix is load-bearing rather than decoration: an emitted epic machine already owns a
+ * document state called `landed` (`emit.ts`'s `initialFor`, a child booted over a completed close),
+ * and the compiler refuses a document that names one of its own finals — so an unprefixed name here
+ * would refuse every epic lane in the repo. It also says where the fact came from, which is the one
+ * thing separating these two leaves from the ones a lane's own flow earns.
  */
-export const CANCELLED_STATE = "cancelled";
+export const BOARD_TERMINALS: Readonly<Record<string, string>> = {
+	[CANCELLED_EVENT]: "board:cancelled",
+	[LANDED_EVENT]: "board:landed",
+};
+
+export const CANCELLED_STATE = "board:cancelled";
+
+export const LANDED_STATE = "board:landed";
+
+export const isBoardTerminalEvent = (event: string): boolean =>
+	Object.hasOwn(BOARD_TERMINALS, event);
+
+export const isBoardTerminalState = (state: string): boolean =>
+	Object.values(BOARD_TERMINALS).includes(state);
 
 /**
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
@@ -286,9 +314,9 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const waitParks = new Map<string, Set<string>>();
 	const partialStates = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
-		if (name === CANCELLED_STATE) {
+		if (isBoardTerminalState(name)) {
 			defects.push(
-				`task "${taskId}": state "${CANCELLED_STATE}" is the compiler's own cancellation final on every task, never a document's state`,
+				`task "${taskId}": state "${name}" is one of the compiler's own board-proven finals on every task, never a document's state`,
 			);
 			continue;
 		}
@@ -317,9 +345,9 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				);
 				continue;
 			}
-			if (msg === CANCELLED_EVENT) {
+			if (isBoardTerminalEvent(msg)) {
 				defects.push(
-					`task "${taskId}": state "${stateName}" declares "${eventName}" — a cancellation is the compiler's own cell on every state, never a document's transition`,
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a board-proven terminal is the compiler's own cell on every state, never a document's transition`,
 				);
 				continue;
 			}
@@ -412,10 +440,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
-	// The cancellation final is the compiler's, so it holds a row of its own: a `CLEARED` landing on
-	// an already-cancelled task must fold, not throw the log unreplayable.
-	finals.add(CANCELLED_STATE);
-	table[CANCELLED_STATE] = {};
+	// Each board-proven final is the compiler's, so it holds a row of its own: a `CLEARED` landing on
+	// an already-settled task must fold, not throw the log unreplayable.
+	for (const state of Object.values(BOARD_TERMINALS)) {
+		finals.add(state);
+		table[state] = {};
+	}
 
 	// Read BEFORE the injected cells: an open final is one the DOCUMENT left a door in. The clearance
 	// cell targets nothing and the cancellation cell is not a door out, so counting either would read
@@ -437,12 +467,14 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	};
 	for (const cells of Object.values(table)) cells[CLEARED_EVENT] = clearedCell;
 
-	// One cell per state, targeting the compiler's own final — so the terminal reaches every lane
-	// already on disk, whose `workflow.json` was copied from a template that never declared it.
-	// `cancelled` itself gets none: a second cancellation would fold as movement that did not happen.
-	const cancelledCell: Cell = (s) => [{...s, type: CANCELLED_STATE, was: s.type}, []];
-	for (const [name, cells] of Object.entries(table)) {
-		if (name !== CANCELLED_STATE) cells[CANCELLED_EVENT] = cancelledCell;
+	// One cell per state per board terminal, so each reaches every lane already on disk, whose
+	// `workflow.json` was copied from a template that never declared it. A board final itself gets
+	// none: settling a settled task would fold as movement that did not happen.
+	for (const [event, terminal] of Object.entries(BOARD_TERMINALS)) {
+		const cell: Cell = (s) => [{...s, type: terminal, was: s.type}, []];
+		for (const [name, cells] of Object.entries(table)) {
+			if (!isBoardTerminalState(name)) cells[event] = cell;
+		}
 	}
 
 	const staleGrants = Array.isArray(ctx.clearedRounds)

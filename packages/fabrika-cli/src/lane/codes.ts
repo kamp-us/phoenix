@@ -390,12 +390,12 @@ export const LANE_IS_CHILD = 48;
 
 /**
  * A verb whose whole entitlement is a closed issue was pointed at a lane whose issue is still open
- * on the board — `lane archive`, or `lane cancel`.
+ * on the board — `lane archive`, or `lane settle`.
  *
  * An archive moves a lane out of every sweep, so the closed issue is half of what makes that safe:
- * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. A cancellation
- * ends the lane outright, and an open issue is live work nobody dropped. Its own seat because the
- * remedy on both is to drive the lane, not to fix the record.
+ * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Settling ends the
+ * lane outright, and an open issue's closure has said nothing yet. Its own seat because the remedy
+ * on both is to drive the lane, not to fix the record.
  */
 export const ISSUE_LIVE = 49;
 
@@ -418,14 +418,3 @@ export const LOG_REPLAYS = 50;
  * opens it, because a cap with an override is the spoken instruction it replaced.
  */
 export const CONCURRENCY_CAPPED = 51;
-
-/**
- * `lane cancel` was pointed at a lane whose issue closed with the work LANDED — GitHub's
- * `state_reason: completed`.
- *
- * Its own seat rather than {@link ISSUE_LIVE}'s or {@link EVENT_REFUSED}'s, because the remedy is a
- * different verb and not a different lane state: a landed close is the shipped path's, and the route
- * is `lane reconcile` to bring the ledger to the board, then `lane archive`. Recording it as a
- * cancellation would say the opposite of what the board says about work that shipped.
- */
-export const CLOSURE_LANDED = 52;
