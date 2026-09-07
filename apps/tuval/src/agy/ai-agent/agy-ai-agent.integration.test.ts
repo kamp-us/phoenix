@@ -112,7 +112,10 @@ describe("the agy layer over a scripted binary", () => {
 		const started = await drive(() =>
 			Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
-				return yield* agent.start({cwd: "/repo", resume: {sessionId: "kept-1234", holdsTranscript: false}});
+				return yield* agent.start({
+					cwd: "/repo",
+					resume: {sessionId: "kept-1234", holdsTranscript: false},
+				});
 			}),
 		);
 		expect(started.sessionId).toBe("kept-1234");

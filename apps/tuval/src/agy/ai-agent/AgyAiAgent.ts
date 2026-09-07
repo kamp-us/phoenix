@@ -57,8 +57,8 @@ import {
 } from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
-	ModelUnsupported,
 	ListError,
+	ModelUnsupported,
 	ModeUnsupported,
 	type ResumeTarget,
 	type StartError,
