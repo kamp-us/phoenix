@@ -5,13 +5,14 @@
  * (`../../ai-agent/ports/subagent.ts`), so the list a window draws is the same list for every agent
  * program the moment that program's mapper fills the slot (founder ruling Q11 on #8384).
  *
- * A row carries the four fields Q1 names and nothing else — no count of the rows the slot holds,
- * which was a verbatim "no". `startedAt` rather than an elapsed number: elapsed is what a clock the
+ * A row draws the four fields Q1 names and nothing else — no count of the rows the slot holds, which
+ * was a verbatim "no". `startedAt` rather than an elapsed number: elapsed is what a clock the
  * component reads makes of it, and computing it here would freeze it at the render that built the
- * model.
+ * model. `status` and `current` are not a fifth and sixth field but the row's own state: which
+ * navigator entry is the one showing, and whether its worker still runs (#8406).
  */
 
-import type {ItemId, SubagentSlot} from "../../ai-agent/ports/index.ts";
+import type {ItemId, SubagentSlot, SubagentStatus} from "../../ai-agent/ports/index.ts";
 
 /** How many rows the list shows before the tail collapses into one "more" row (Q3). */
 export const SUBAGENT_ROW_CAP = 5;
@@ -23,6 +24,13 @@ export interface SubagentRow {
 	/** Epoch milliseconds, so the row's elapsed is the reader's own clock minus this. */
 	readonly startedAt: number;
 	readonly tokens: number;
+	/**
+	 * A `finished` row is only ever here because it is the one being viewed (Q9). It draws neither
+	 * elapsed nor tokens — Q2 answered "no" to both once a worker stops.
+	 */
+	readonly status: SubagentStatus;
+	/** This row's transcript is the one the window is showing.  */
+	readonly current: boolean;
 }
 
 export interface SubagentListModel {
@@ -31,16 +39,31 @@ export interface SubagentListModel {
 	readonly more: number;
 }
 
+const rowOf = (slot: SubagentSlot, current: boolean): SubagentRow => ({
+	id: slot.id,
+	type: slot.type,
+	lastLine: slot.lastLine,
+	startedAt: slot.startedAt,
+	tokens: slot.tokens,
+	status: slot.status,
+	current,
+});
+
 /**
- * The running workers, oldest-first and capped.
+ * The list the window draws, oldest-first and capped, plus the viewed worker wherever it is.
  *
  * Oldest-first, tie-broken on the id, because the order has to hold still: a list sorted by
  * anything that moves — the last line, the token count — would re-order itself under a reader's
- * eyes on every frame the workers write. A finished slot is not here at all: it left the list the
- * moment its worker stopped (Q2), and its spawning call is a plain tool row again.
+ * eyes on every frame the workers write.
+ *
+ * A finished slot left the list the moment its worker stopped (Q2) — *unless* it is the one being
+ * viewed, and then it is appended. That is what keeps the navigator honest under Q9: the operator
+ * inside a subagent that finishes still sees which transcript they are reading and can pick another,
+ * where a list that simply dropped the row would leave the view with no name on it.
  */
 export const runningSubagents = (
 	slots: Readonly<Record<string, SubagentSlot>>,
+	viewing: string | null = null,
 ): SubagentListModel => {
 	const running = Object.values(slots)
 		.filter((slot) => slot.status === "running")
@@ -49,15 +72,15 @@ export const runningSubagents = (
 				? left.id.localeCompare(right.id)
 				: left.startedAt - right.startedAt,
 		);
+	const shown = running.slice(0, SUBAGENT_ROW_CAP);
+	const held = new Set<string>(shown.map((slot) => slot.id));
+	const viewed = viewing === null || held.has(viewing) ? undefined : slots[viewing];
 	return {
-		rows: running.slice(0, SUBAGENT_ROW_CAP).map((slot) => ({
-			id: slot.id,
-			type: slot.type,
-			lastLine: slot.lastLine,
-			startedAt: slot.startedAt,
-			tokens: slot.tokens,
-		})),
-		more: Math.max(0, running.length - SUBAGENT_ROW_CAP),
+		rows: [
+			...shown.map((slot) => rowOf(slot, slot.id === viewing)),
+			...(viewed === undefined ? [] : [rowOf(viewed, true)]),
+		],
+		more: running.length - shown.length - (viewed?.status === "running" ? 1 : 0),
 	};
 };
 

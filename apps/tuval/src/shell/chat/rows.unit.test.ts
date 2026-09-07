@@ -28,6 +28,7 @@ import {
 	rowIndexOfItem,
 	rowKey,
 	subagentHeads,
+	subagentRows,
 } from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
@@ -595,5 +596,58 @@ describe("subagentHeads", () => {
 	// silently hide rows in every window of the process.
 	it("hands out a set nothing can add to", () => {
 		expect(Object.isFrozen(NO_SUBAGENTS)).toBe(true);
+	});
+});
+
+/**
+ * The swapped-in view's own list (#8406, founder ruling Q7). The slot carries everything the worker
+ * produced, so this is a build over one array with no page walk and no live-tail stitch. What it has
+ * to get right is the depth: every row in the slot names the spawning call as its parent, and that
+ * call is the agent's row rather than one of these.
+ */
+describe("subagentRows", () => {
+	const under = (head: string) => ({parentId: ItemId.make(head)});
+
+	it("reads the worker's own rows at depth zero, not as rows nested under a head it lacks", () => {
+		const rows = subagentRows(
+			subagentSlot("agent", {
+				items: [
+					{...userItem("u1", "go and look"), ...under("agent")},
+					{...assistantItem("a1", "looking"), ...under("agent")},
+					call("t1", {parentId: "agent"}),
+				],
+			}),
+		);
+		expect(itemIds(rows)).toEqual(["u1", "a1", "t1"]);
+		expect(rows.every((row) => row.kind === "item" && !row.nested && row.depth === 0)).toBe(true);
+	});
+
+	it("has no head row: a subagent's rows arrive with its slot, and nothing older can be asked for", () => {
+		const rows = subagentRows(
+			subagentSlot("agent", {items: [{...userItem("u1", "go"), ...under("agent")}]}),
+		);
+		expect(rows.map((row) => row.kind)).toEqual(["item"]);
+	});
+
+	it("is empty for a worker that has written nothing yet", () => {
+		expect(subagentRows(subagentSlot("agent"))).toEqual([]);
+	});
+
+	// A call the worker made itself heads a fold inside this view exactly as it does in the agent's,
+	// so #8027's disclosure still holds one level in.
+	it("still folds the calls the worker nested under its own", () => {
+		const slot = subagentSlot("agent", {
+			items: [
+				call("t1", {parentId: "agent"}),
+				{...assistantItem("nested", "reading"), ...under("t1")},
+			],
+		});
+		const folded = subagentRows(slot);
+		expect(itemIds(folded)).toEqual(["t1"]);
+		expect(folded[0]?.kind === "item" && folded[0].nestedIds).toEqual(["nested"]);
+
+		const open = subagentRows(slot, new Set(["t1"]));
+		expect(itemIds(open)).toEqual(["t1", "nested"]);
+		expect(open[1]?.kind === "item" && open[1].depth).toBe(1);
 	});
 });

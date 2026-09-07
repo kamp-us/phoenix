@@ -116,6 +116,46 @@
 	background: var(--surface-sunken);
 }
 
+.tuval-chat-subagent-item {
+	display: flex;
+	min-inline-size: 0;
+}
+
+/*
+ * Each row is a button, because picking one swaps the window's view slot (#8406). It is styled as
+ * the row rather than as a control: the affordance is the hover and the focus ring, and a row of
+ * buttons drawn as buttons would read as a toolbar rather than as a list to walk.
+ */
+.tuval-chat-subagent-pick {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	padding: var(--s-1) var(--s-2);
+	border: 0;
+	border-radius: var(--r-sm);
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-align: start;
+	cursor: pointer;
+	/* The list is dense, so the row's own height is the target rather than a taller padded box. */
+	min-block-size: var(--tap-min, 36px);
+}
+
+.tuval-chat-subagent-pick:hover {
+	background: var(--surface-raised);
+}
+
+.tuval-chat-subagent-pick:focus-visible {
+	outline: 2px solid var(--focus-ring, var(--text-primary));
+	outline-offset: 1px;
+}
+
+/* The one showing. The mark is the left rule plus the stronger text, never colour alone. */
+.tuval-chat-subagent-pick[aria-current="true"] {
+	background: var(--surface-raised);
+	box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
 .tuval-chat-subagent {
 	flex-wrap: nowrap;
 	min-inline-size: 0;
@@ -125,6 +165,10 @@
 .tuval-chat-subagent-type {
 	color: var(--text-secondary);
 	font-weight: 600;
+}
+
+.tuval-chat-subagent-pick[aria-current="true"] .tuval-chat-subagent-type {
+	color: var(--text-primary);
 }
 
 /* The one field that may be any length, so it is the one that truncates. */
@@ -139,6 +183,28 @@
 .tuval-chat-subagent-more {
 	font: var(--t-meta);
 	color: var(--text-muted);
+}
+
+/*
+ * The line at the end of a subagent's own view (Q9): what became of the worker, under its rows,
+ * where the eye already is when the transcript stops moving.
+ */
+.tuval-chat-subagent-end {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	font: var(--t-meta);
+	color: var(--text-muted);
+	border-block-start: 1px solid var(--border-faint);
+}
+
+.tuval-chat-subagent-end-mark {
+	color: var(--text-secondary);
+	font: var(--t-micro);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
 }
 
 /*

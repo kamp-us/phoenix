@@ -462,4 +462,63 @@ describe("the running-subagent list", () => {
 		},
 		SLOW,
 	);
+
+	/**
+	 * The swap (#8406). A `log` announces what is *appended* to it, so replacing the whole transcript
+	 * under a reader announces nothing at all — the window owes a live region of its own, and it owes
+	 * the picking control to the keyboard as much as to the mouse.
+	 */
+	it("reaches every navigator row from the keyboard and announces the swap", async () => {
+		const rendered = await mountList();
+		const root = rendered.container.firstElementChild as HTMLElement;
+		const status = () =>
+			Array.from(root.querySelectorAll<HTMLElement>('[role="status"]'))
+				.map((region) => region.textContent ?? "")
+				.join(" ");
+
+		const picks = Array.from(root.querySelectorAll<HTMLButtonElement>(".tuval-chat-subagent-pick"));
+		expect(picks).toHaveLength(2);
+		expect(status()).toContain("Showing the agent's own transcript.");
+		for (const control of picks) {
+			expect(await probeFocus(root, control)).toEqual([]);
+			expect(control.getAttribute("aria-current")).toBeNull();
+		}
+
+		// A button is activated by Enter and Space, so pressing it *is* the keyboard path — what a
+		// keyboard user needs beyond that is to reach it, which the focus probe above just proved.
+		const reviewer = picks[0] as HTMLButtonElement;
+		await act(async () => {
+			reviewer.focus();
+			reviewer.click();
+		});
+
+		expect(document.activeElement).toBe(reviewer);
+		expect(reviewer.getAttribute("aria-current")).toBe("true");
+		expect(status()).toContain("Showing the reviewer subagent's transcript.");
+		expect(screen.getByRole("log", {name: "Transcript: reviewer subagent"})).toBeTruthy();
+
+		const back = root.querySelector<HTMLButtonElement>(".tuval-chat-subagent-pick");
+		expect(back?.textContent).toBe("Back to the agent transcript");
+		expect(await probeFocus(root, back as HTMLElement)).toEqual([]);
+		await act(async () => {
+			(back as HTMLButtonElement).click();
+		});
+		expect(status()).toContain("Showing the agent's own transcript.");
+
+		rendered.unmount();
+	});
+
+	it(
+		"holds the enforced pillar-4 invariants inside a subagent's own view",
+		async () => {
+			const rendered = await mountList();
+			const root = rendered.container.firstElementChild as HTMLElement;
+			await act(async () => {
+				root.querySelector<HTMLButtonElement>(".tuval-chat-subagent-pick")?.click();
+			});
+			expect(await scanRegions(root)).toEqual([]);
+			rendered.unmount();
+		},
+		SLOW,
+	);
 });
