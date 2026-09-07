@@ -147,6 +147,26 @@ export interface SubagentEvent {
 	readonly slot: SubagentSlot;
 }
 
+/**
+ * The backend has finished a conversation and stood a fresh one up in its place, under the id this
+ * carries. The session survives; the conversation does not.
+ *
+ * A local command answers without a model turn, so no `result` frame follows it and no turn-end
+ * `ready` is coming — a `/clear` therefore left the session `prompting` for ever (#8197). This is
+ * the turn's end *and* the swap, one event, because they have to commit together: the events Sub is
+ * keyed on the session id (`core/messages.ts`), so a second event pushed under the old id after the
+ * swap is dropped by the machine's own identity filter.
+ *
+ * `sessionId` is the backend's id for the new conversation, and the core's `sessionId` becomes it —
+ * that is what the next prompt is stamped with and what a checkpoint resumes. Nothing of the old
+ * conversation is deleted: its transcript leaves the live tail because it is not this conversation's,
+ * and the backend's own store still holds it for the session list.
+ */
+export interface SessionResetEvent {
+	readonly kind: "session-reset";
+	readonly sessionId: string;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
@@ -174,6 +194,7 @@ export type AgentEvent =
 	| ModelEvent
 	| CommandsEvent
 	| ThinkingEvent
+	| SessionResetEvent
 	| UsageEvent
 	| SubagentEvent
 	| FailureEvent;

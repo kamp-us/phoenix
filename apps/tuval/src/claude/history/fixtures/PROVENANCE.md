@@ -197,6 +197,16 @@ twice.
 
 ## What is not captured
 
+**A `conversation_reset` frame.** Forcing one means sending `/clear`, exiting plan mode or starting a
+fresh session against a live CLI — an operator run with real credentials and real spend, which is not
+something a cold builder has (#8197). So no fixture here holds one, and
+`../../agent/conversation-reset.unit.test.ts` builds the frame from `sdk.d.ts`'s
+`SDKConversationResetMessage` at the pin instead — `type`, `new_conversation_id`, `uuid`,
+`session_id`, and nothing else — and says so in its own docblock. Every other frame those cases use
+is a capture from this directory. Replacing the derived frame with a real capture is
+[#8197](https://github.com/kamp-us/phoenix/issues/8197)'s open evidence, and it belongs to the same
+live capture run as the three excerpted fixtures above.
+
 **A subagent's streamed reply.** The live-stream gap this section used to name is closed from both
 ends now: `subagent-turn.json` is the SDK's stream — a worker's `user`, `assistant` (prose and
 reasoning) and tool frames all arrive parent-tagged on the parent session — and the sidechain pair
