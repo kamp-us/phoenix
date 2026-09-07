@@ -25,7 +25,7 @@ import {
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
 import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} from "./sends.ts";
-import {type AiAgentSessionState, settleTurn, type UsageLedger} from "./state.ts";
+import {type AiAgentSessionState, emptyOmission, settleTurn, type UsageLedger} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -296,6 +296,35 @@ export const foldEvent = (
 			return {...state, commands: event.available};
 		case "thinking":
 			return {...state, thinking: {current: event.current, available: event.available}};
+		// The turn's end and the swap in one commit, because the events Sub is keyed on the session
+		// id and a second event under the old one would be filtered out (`../events.ts`).
+		//
+		// `ready` rather than a phase the layer narrates: a local command produces no `result`, so
+		// this event is the only thing that will ever say the turn is over (#8197). The send that
+		// asked for it is accepted on the same rule an ordinary turn's end uses — the oldest send
+		// the layer said had begun, and no other (`./sends.ts`). What is queued is untouched here;
+		// the machine's own `settleQueue` admits its head off the `ready`, so nothing an operator
+		// wrote is dropped by the reset.
+		//
+		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker,
+		// the abort still outstanding over it, its permission cards — which no answer can reach any
+		// more — its subagent rows and the page read off it. The usage ledger stays: the reset does
+		// not un-spend what this session already spent.
+		case "session-reset":
+			return {
+				...state,
+				phase: "ready",
+				sessionId: event.sessionId,
+				transcript: {items: [], omitted: emptyOmission},
+				interrupted: null,
+				interruption: null,
+				permissions: {},
+				subagents: {},
+				lastPage: null,
+				pageOutcome: null,
+				sends: settleAccepted(state.sends),
+				failure: null,
+			};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// Replaced under its own id, never merged: the mapper computes the whole slot from the

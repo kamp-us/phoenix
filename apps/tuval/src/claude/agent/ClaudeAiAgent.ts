@@ -125,7 +125,18 @@ interface IntroState {
 }
 
 interface Session {
-	readonly id: string;
+	/**
+	 * The conversation this session is keyed on — what a prompt is stamped with and what every
+	 * store read names.
+	 *
+	 * Rewritten in place, not readonly, because the CLI can re-key a live session: a
+	 * `conversation_reset` ends one conversation and opens another under `new_conversation_id`
+	 * (`sdk.d.ts` at the pin). `drive`, `prompt` and `page` all read the one held `Session`, so the
+	 * pump writing the new id here is what makes the next prompt land in the conversation the
+	 * operator is looking at (#8197). Replacing the whole record instead would leave `drive` on the
+	 * copy it closed over.
+	 */
+	id: string;
 	readonly cwd: string;
 	readonly handle: AgentSession;
 	readonly input: InputChannel;
@@ -454,6 +465,14 @@ const make = (
 					// path for the catalog whatever produced it.
 					const pushed = step.events.findLast((event) => event.kind === "commands");
 					if (pushed !== undefined) yield* Ref.set(commands, pushed.available);
+					// Before the emit, not after: the event this frame carries walks the core back to
+					// `ready`, and a queued prompt is admitted on that same commit — so the id has to
+					// be the new conversation's by the time `prompt` reads it (#8197). The turn is
+					// over too, exactly as a `result`'s is, and no `result` is coming for it.
+					if (pulled.message.type === "conversation_reset") {
+						current.state.settled = true;
+						current.id = pulled.message.new_conversation_id;
+					}
 					yield* emit(open, step.events);
 					if (pulled.message.type === "result") {
 						current.state.settled = true;

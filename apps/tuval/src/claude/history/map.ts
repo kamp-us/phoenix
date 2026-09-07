@@ -821,6 +821,30 @@ export const commandsChangedEvents = (message: unknown, mapping: Mapping): Mappi
 		? {mapping, events: [{kind: "commands", available: commandsOf(message.commands)}]}
 		: skipMessage(mapping);
 
+/**
+ * `/clear`, plan-mode exit and the fresh-session flows: the CLI ended this conversation and opened
+ * another under `new_conversation_id` (`sdk.d.ts` at the `0.3.259` pin, `SDKConversationResetMessage`,
+ * whose own note tells a surface to "mount a fresh transcript under new_conversation_id").
+ *
+ * The mapping goes back to empty with it. Its memory is the ended conversation's — the open tool
+ * calls it is holding names, the reply its deltas were growing, the subagent slots underneath — and
+ * carrying any of that into the next conversation would join a new frame to a row that no longer
+ * exists. `model` and `skipped` survive: the model is the session's, and the skip count is this
+ * stream's running total rather than a conversation's.
+ *
+ * A frame with no usable id is skipped rather than reset on, because the whole event *is* the id: a
+ * reset the core cannot key would swap the session onto nothing and strand the next prompt.
+ */
+export const conversationResetEvents = (message: unknown, mapping: Mapping): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const sessionId = message.new_conversation_id;
+	if (typeof sessionId !== "string" || sessionId.length === 0) return skipMessage(mapping);
+	return {
+		mapping: {...emptyMapping, model: mapping.model, skipped: mapping.skipped},
+		events: [{kind: "session-reset", sessionId}],
+	};
+};
+
 /** A denial the operator never got to answer. The line names the tool, which is the whole point. */
 export const permissionDeniedEvents = (
 	message: unknown,
