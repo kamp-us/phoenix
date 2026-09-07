@@ -43,7 +43,12 @@ const KERNEL_TAGS = {
 } as const;
 
 const Spawned = Schema.Struct({process: ProcessId});
-const Sent = Schema.Struct({delivered: Schema.Boolean});
+const Sent = Schema.Struct({delivered: Schema.Boolean, evicted: Schema.Number});
+/**
+ * The `send` reply as this side reads it: `delivered` is whether the payload landed, `evicted` how
+ * many queued payloads a `sliding` in-port took off to make room for it (#7971).
+ */
+export type Sent = typeof Sent.Type;
 const Read = Schema.Union([
 	Schema.Struct({empty: Schema.Literal(true)}),
 	Schema.Struct({empty: Schema.Literal(false), value: Schema.Unknown}),
@@ -75,7 +80,7 @@ export class KernelBridge extends Context.Service<
 			process: ProcessId,
 			port: string,
 			payload: unknown,
-		) => Effect.Effect<boolean, UnknownProcess | UnknownPort | PortRefused>;
+		) => Effect.Effect<Sent, UnknownProcess | UnknownPort | PortRefused>;
 		readonly read: (
 			process: ProcessId,
 			port: string,
@@ -147,8 +152,7 @@ const make = Effect.fn("Tuval.KernelBridge.make")(function* (scope: Scope) {
 			failure.tag === KERNEL_TAGS.portRefused
 				? Effect.fail(new PortRefused({process, port, detail: failure.message}))
 				: liftPortFailure(SEND, process, port, "in", failure);
-		const answer = yield* call(SEND, {process, port, payload}, Sent, lift);
-		return answer.delivered;
+		return yield* call(SEND, {process, port, payload}, Sent, lift);
 	});
 
 	const read = Effect.fn("Tuval.KernelBridge.read")(function* (process: ProcessId, port: string) {
@@ -232,7 +236,7 @@ const buildScripted = (table: ScriptedKernel): KernelBridge["Service"] => {
 				detail: `port "${port}" takes ${declared.kind} and refused the payload`,
 			});
 		}
-		return true;
+		return {delivered: true, evicted: 0};
 	});
 
 	const read = Effect.fn("Tuval.KernelBridge.scripted.read")(function* (

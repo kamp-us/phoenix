@@ -468,7 +468,7 @@ describe("the agent proof", () => {
 
 			const spawned = answerAt("process.spawn") as {readonly process: string};
 			assert.isString(spawned.process);
-			assert.deepStrictEqual(answerAt("process.send"), {delivered: true});
+			assert.deepStrictEqual(answerAt("process.send"), {delivered: true, evicted: 0});
 			assert.deepStrictEqual(answerAt("echo.repeat"), {word: "haha"});
 		}),
 	);

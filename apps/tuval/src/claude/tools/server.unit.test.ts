@@ -122,7 +122,7 @@ describe("the tuval tool server", () => {
 				}),
 			);
 			assert.isNotTrue(sent.isError);
-			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true});
+			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true, evicted: 0});
 
 			const held = yield* answered(() =>
 				tools.handlers.read({process: scriptedProcess, port: "echoed"}),
@@ -239,7 +239,7 @@ describe("send, on the AI agent's prompt port", () => {
 				}),
 			);
 			assert.isNotTrue(sent.isError);
-			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true});
+			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true, evicted: 0});
 		}),
 	);
 });
@@ -290,7 +290,7 @@ describe("send, on the AI agent's two-way in-ports", () => {
 				tools.handlers.send({process: agentProcess, port: each.port, payload: each.right}),
 			);
 			assert.isNotTrue(sent.isError);
-			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true});
+			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true, evicted: 0});
 		}),
 	);
 });
