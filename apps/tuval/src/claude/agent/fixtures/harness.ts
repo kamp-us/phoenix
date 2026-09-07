@@ -114,6 +114,8 @@ export const on = <A, E>(
 			...(harness.deferOpening === undefined ? {} : {deferOpening: harness.deferOpening}),
 			...(harness.endsAtOnce === undefined ? {} : {endsAtOnce: harness.endsAtOnce}),
 			...(harness.models === undefined ? {} : {models: harness.models}),
+			...(harness.runningModel === undefined ? {} : {runningModel: harness.runningModel}),
+			...(harness.contextFails === undefined ? {} : {contextFails: harness.contextFails}),
 			...(harness.modelSwitchFails === undefined
 				? {}
 				: {modelSwitchFails: harness.modelSwitchFails}),
