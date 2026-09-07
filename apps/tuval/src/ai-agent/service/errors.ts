@@ -94,8 +94,21 @@ export class ThinkingUnsupported extends Schema.TaggedError<ThinkingUnsupported>
 	}
 }
 
-/** Why a page of history did not come back. History is the backend's store, so it can be missing. */
-export const PageReason = Schema.Literals(["unknown-cursor", "store-unreadable", "disconnected"]);
+/**
+ * Why a page of history did not come back. History is the backend's store, so it can be missing.
+ *
+ * The two subagent cases are separate from `store-unreadable` because a subagent's transcript is a
+ * file of its own: a subagent nobody stored and a store that would not open are different answers,
+ * and so is a file that opened and then held a line nothing can parse. Collapsing any of them into
+ * an empty transcript would say the subagent spoke and said nothing (#8404).
+ */
+export const PageReason = Schema.Literals([
+	"unknown-cursor",
+	"store-unreadable",
+	"disconnected",
+	"subagent-not-found",
+	"subagent-malformed",
+]);
 export type PageReason = typeof PageReason.Type;
 
 export class PageError extends Schema.TaggedError<PageError>()("tuval/ai-agent/PageError", {

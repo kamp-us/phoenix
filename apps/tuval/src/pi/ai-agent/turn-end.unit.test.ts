@@ -79,6 +79,7 @@ const stub = Effect.gen(function* () {
 		connected: Effect.succeed(true),
 		createSession: () => Effect.succeed(SESSION),
 		attachSession: () => Effect.succeed(SESSION),
+		heldSnapshot: () => Effect.succeed(snapshot([], "idle", 0)),
 		prompt: () => Deferred.await(ended),
 		abort: () => Effect.never,
 		setModel: () => Effect.never,

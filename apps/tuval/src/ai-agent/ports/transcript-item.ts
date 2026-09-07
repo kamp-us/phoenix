@@ -128,6 +128,21 @@ export type TranscriptItem =
 	| ThinkingItem
 	| CompactionItem;
 
+/**
+ * The newest row in a tail that a backend minted, or `null` when the tail holds none.
+ *
+ * The operator's own turn is recorded locally on send under an id no layer has ever seen
+ * (`../core/fold.ts`'s `promptItem`), so it cannot be a boundary a layer suppresses at: this walks
+ * back past every still-unechoed local turn to the last row the session itself produced.
+ */
+export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		const item = items[index];
+		if (item !== undefined && !(item.kind === "user" && item.local === true)) return item.id;
+	}
+	return null;
+};
+
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
 

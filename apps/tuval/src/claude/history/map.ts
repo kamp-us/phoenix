@@ -643,9 +643,9 @@ export const resultEvents = (
 ): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 	const failed = message.is_error === true || message.subtype !== "success";
 	if (failed) {
-		const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 		const subtype = typeof message.subtype === "string" ? message.subtype : "error";
 		return {
 			mapping,
@@ -665,6 +665,7 @@ export const resultEvents = (
 		events: [
 			{
 				kind: "usage",
+				turn: id,
 				model: mapping.model,
 				inputTokens: tokensOf(message.usage, "input_tokens"),
 				outputTokens: tokensOf(message.usage, "output_tokens"),
@@ -673,6 +674,13 @@ export const resultEvents = (
 		],
 	};
 };
+
+/**
+ * The turn id `init`'s announcement rides under. It is not a turn: `init` fires at the start of
+ * every turn and carries no spend, so one reserved key keeps the session's ledger from growing an
+ * empty entry per turn while the model it names still lands (`core/fold.ts`, `addUsage`).
+ */
+const MODEL_ANNOUNCEMENT = "claude:model-announcement";
 
 /**
  * `init` is where a session says which model it is, and the only place it ever says so.
@@ -687,7 +695,9 @@ export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 	const model = typeof message.model === "string" ? message.model : mapping.model;
 	return {
 		mapping: {...mapping, model},
-		events: [{kind: "usage", model, inputTokens: 0, outputTokens: 0, cost: 0}],
+		events: [
+			{kind: "usage", turn: MODEL_ANNOUNCEMENT, model, inputTokens: 0, outputTokens: 0, cost: 0},
+		],
 	};
 };
 

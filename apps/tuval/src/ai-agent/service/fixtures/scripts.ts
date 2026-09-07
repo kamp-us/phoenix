@@ -173,6 +173,7 @@ export const permissionTurn: AgentScript = {...empty, turns: [{events: permissio
 /** A usage report rides the same stream as everything else, and no port ever carries it. */
 export const usageEvent = {
 	kind: "usage",
+	turn: "a2",
 	model: "claude-opus-5",
 	inputTokens: 1_200,
 	outputTokens: 340,

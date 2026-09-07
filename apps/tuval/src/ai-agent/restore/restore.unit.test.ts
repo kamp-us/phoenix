@@ -242,12 +242,27 @@ describe("a restored agent session", () => {
 			yield* runToTheCut(stores, starts);
 			assert.deepStrictEqual(starts, [{cwd: CWD}], "the first run did not open a fresh session");
 
-			yield* resume(stores, script(), starts, (_restored, _log, settled) =>
+			yield* resume(stores, script(), starts, (restored, _log, settled) =>
 				Effect.gen(function* () {
 					const after = yield* settled;
 					assert.deepStrictEqual(
 						starts[1],
-						{cwd: CWD, resume: SESSION_ID, mode: modes.current},
+						// `holdsTranscript` is the reconnect's own half of #8369: this process came back
+						// with its committed tail, so the layer owes it no replay of the history. The
+						// tail itself rides with it — where it stops is the boundary the layer
+						// suppresses at, so a turn the session finished while the socket was down still
+						// emits, and each row is the copy this process holds, so one that moved under
+						// the boundary emits too (#8374). Here `a1` is the reply the cut caught
+						// mid-write, carried back marked `interrupted`.
+						{
+							cwd: CWD,
+							resume: {
+								sessionId: SESSION_ID,
+								holdsTranscript: true,
+								held: restored.transcript.items,
+							},
+							mode: modes.current,
+						},
 						"the reconnect did not resume the checkpointed session id on its saved mode",
 					);
 					assert.strictEqual(starts.length, 2, "the resume opened more than one session");
@@ -338,7 +353,7 @@ describe("a restored agent session", () => {
 					// policy retries a start, so the count is the policy's; what matters is that not one
 					// of those tries was a bare `{cwd}`, which is the fresh session #7514 refuses.
 					assert.deepStrictEqual(
-						starts.slice(1).map((options) => options.resume),
+						starts.slice(1).map((options) => options.resume?.sessionId),
 						starts.slice(1).map(() => SESSION_ID),
 						"an open after the restore asked for a fresh session instead of the saved one",
 					);

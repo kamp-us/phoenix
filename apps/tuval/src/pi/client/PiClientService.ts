@@ -74,6 +74,13 @@ export interface PiClientApi {
 		options?: OpenSessionOptions,
 	) => Effect.Effect<PiSessionRef, ConnectionRefusal>;
 	readonly attachSession: (sessionId: string) => Effect.Effect<PiSessionRef, SessionRefusal>;
+	/**
+	 * The snapshot the lease on this session landed with — the transcript Pi had already sent by
+	 * the time `createSession` or `attachSession` answered. `PiSessionRef` keeps only the three
+	 * fields a caller needs to run the session; a resume needs the transcript itself, to seed its
+	 * snapshot diff so the first push after reattaching folds to zero events (#8369).
+	 */
+	readonly heldSnapshot: (sessionId: string) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/** Needs a lease this client took through `createSession` or `attachSession`. */
 	readonly prompt: (
 		sessionId: string,
@@ -263,6 +270,16 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 				: Effect.succeed(lease);
 		};
 
+		const heldSnapshot = Effect.fn("PiClientService.heldSnapshot")(function* (sessionId: string) {
+			const lease = yield* leased(sessionId);
+			return lease.snapshot === undefined
+				? yield* new ProtocolRefused({
+						code: "internal_error",
+						detail: `no snapshot arrived for session ${lease.id}`,
+					})
+				: lease.snapshot;
+		});
+
 		const prompt = Effect.fn("PiClientService.prompt")(function* (sessionId: string, text: string) {
 			const lease = yield* leased(sessionId);
 			return yield* Effect.tryPromise({
@@ -336,6 +353,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			connected: Effect.sync(() => client.connected),
 			createSession,
 			attachSession,
+			heldSnapshot,
 			prompt,
 			abort,
 			setModel,

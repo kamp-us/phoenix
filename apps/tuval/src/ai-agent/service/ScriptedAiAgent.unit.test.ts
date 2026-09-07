@@ -101,7 +101,7 @@ describe("start", () => {
 	it.effect("replays the prior items when it resumes the session", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
 				const events = yield* take(agent, START_EVENTS + history.length);
 				const replayed = events.filter((event) => event.kind === "item").map(({item}) => item);
 				assert.deepStrictEqual(replayed, [...history]);
@@ -112,7 +112,12 @@ describe("start", () => {
 	it.effect("fails session-not-found when the resumed id is not this session's", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
-				const exit = yield* Effect.exit(agent.start({cwd: CWD, resume: "session-someone-else"}));
+				const exit = yield* Effect.exit(
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: "session-someone-else", holdsTranscript: false},
+					}),
+				);
 				const error = causeError(exit);
 				assert.strictEqual(error._tag, "tuval/ai-agent/StartError");
 				assert.strictEqual(error.reason, "session-not-found");
@@ -126,7 +131,10 @@ describe("start", () => {
 	it.effect("resumes a session that is genuinely empty, replaying nothing", () =>
 		on(emptySession, (agent) =>
 			Effect.gen(function* () {
-				const session = yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				const session = yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION_ID, holdsTranscript: false},
+				});
 				assert.strictEqual(session.sessionId, SESSION_ID);
 				const events = yield* take(agent, START_EVENTS);
 				assert.deepStrictEqual(
@@ -311,7 +319,7 @@ describe("models", () => {
 				yield* take(agent, START_EVENTS + 1);
 				// A resumed start re-announces what the session is on, which is the picked model and
 				// not the script's opening one — the switch outlives the turn it was made between.
-				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
 				const resumed = yield* take(agent, START_EVENTS + history.length);
 				assert.deepStrictEqual(resumed.at(-4), {
 					kind: "model",
@@ -380,7 +388,7 @@ describe("thinking levels", () => {
 				yield* agent.start({cwd: CWD});
 				yield* agent.setThinkingLevel("max");
 				yield* take(agent, START_EVENTS + 1);
-				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
 				const resumed = yield* take(agent, START_EVENTS + history.length);
 				assert.deepStrictEqual(resumed.at(-2), {
 					kind: "thinking",

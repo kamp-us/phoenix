@@ -25,7 +25,7 @@ import {
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
 import {markTurnRunning, settleAccepted, settlePending} from "./sends.ts";
-import {type AiAgentSessionState, settleTurn, type UsageTotals} from "./state.ts";
+import {type AiAgentSessionState, settleTurn, type UsageLedger} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -94,14 +94,30 @@ export const foldItem = (
 		: {items: planned.items, omitted: addOmission(transcript.omitted, planned.omitted)};
 };
 
+/**
+ * One turn's cost, folded under that turn's own id.
+ *
+ * A turn already in the ledger keeps the entry it has: the event is the backend restating what
+ * that turn cost, which a resume does routinely, and adding it a second time is the double-count
+ * #8369 closed. The model is not keyed — it is whatever the newest report named, which is what the
+ * inspector's model line has always shown.
+ */
 export const addUsage = (
-	usage: UsageTotals,
+	usage: UsageLedger,
 	event: Extract<AgentEvent, {kind: "usage"}>,
-): UsageTotals => ({
+): UsageLedger => ({
 	model: event.model,
-	inputTokens: usage.inputTokens + event.inputTokens,
-	outputTokens: usage.outputTokens + event.outputTokens,
-	cost: usage.cost + event.cost,
+	turns:
+		usage.turns[event.turn] === undefined
+			? {
+					...usage.turns,
+					[event.turn]: {
+						inputTokens: event.inputTokens,
+						outputTokens: event.outputTokens,
+						cost: event.cost,
+					},
+				}
+			: usage.turns,
 });
 
 const without = <A>(

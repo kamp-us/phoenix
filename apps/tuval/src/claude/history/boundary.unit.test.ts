@@ -57,10 +57,12 @@ describe("the Claude history mapping is pure", () => {
 
 	it("keeps every fixture the tests name, so none can be quietly dropped", () => {
 		const fixtures = readdirSync(join(import.meta.dirname, "fixtures"))
-			.filter((name) => name.endsWith(".json"))
-			.map((name) => name.replace(/\.json$/, ""))
+			.filter((name) => name.endsWith(".json") || name.endsWith(".jsonl"))
+			.map((name) => name.replace(/\.jsonl?$/, ""))
 			.sort();
 		expect(fixtures).toEqual([
+			"agent-a1b2c3d4e5f60718a",
+			"agent-a1b2c3d4e5f60718a.meta",
 			"assistant-turn",
 			"compact-boundary",
 			"error-result",
@@ -82,7 +84,7 @@ describe("the Claude history mapping is pure", () => {
 	it("carries no operator path in a fixture", () => {
 		const dir = join(import.meta.dirname, "fixtures");
 		const offenders = readdirSync(dir)
-			.filter((name) => name.endsWith(".json"))
+			.filter((name) => name.endsWith(".json") || name.endsWith(".jsonl"))
 			.filter((name) => /\/Users\/|\/var\/folders\//.test(readFileSync(join(dir, name), "utf8")));
 		expect(offenders).toEqual([]);
 	});

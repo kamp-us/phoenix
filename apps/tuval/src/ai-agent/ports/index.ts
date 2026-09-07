@@ -59,6 +59,7 @@ export {
 	isTranscriptItem,
 	isTranscriptItems,
 	type JsonValue,
+	newestBackendItemId,
 	type ResultOmission,
 	type SystemItem,
 	type ThinkingItem,

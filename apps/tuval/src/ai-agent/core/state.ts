@@ -27,14 +27,50 @@ import {promptUnqueued} from "./failures.ts";
 import {type QueuedPrompt, releaseQueued} from "./queue.ts";
 import type {SendOutcome} from "./sends.ts";
 
-/** Cumulative for the session: the core owns the running totals, the layer reports the deltas. */
-export interface UsageTotals {
+/** What one turn spent. No model of its own: the ledger holds the last one named. */
+export interface TurnUsage {
+	readonly inputTokens: number;
+	readonly outputTokens: number;
+	readonly cost: number;
+}
+
+/**
+ * What the session has spent, under each turn's own id.
+ *
+ * Keyed rather than summed, and that is the whole point: a layer reports a turn's cost as a fact
+ * about that turn, not as an increment, and it reports it again whenever a resume walks a
+ * transcript this process has already folded (#8369). A running sum cannot tell that second report
+ * from a second turn, so every path that resumes has to carry "already counted" correctly and
+ * exactly one of them getting it wrong is a wrong number on the operator's screen. Under a key
+ * there is nothing to carry: folding a turn already here is a no-op.
+ *
+ * The totals are derived (`usageTotals`) rather than stored beside this, so no total can disagree
+ * with the turns it is a sum of.
+ */
+export interface UsageLedger {
 	/** The model the last usage event named, or `null` before any has arrived. */
+	readonly model: string | null;
+	readonly turns: Readonly<Record<string, TurnUsage>>;
+}
+
+/** Cumulative for the session, as a window renders it: the ledger summed. */
+export interface UsageTotals {
 	readonly model: string | null;
 	readonly inputTokens: number;
 	readonly outputTokens: number;
 	readonly cost: number;
 }
+
+export const usageTotals = (usage: UsageLedger): UsageTotals =>
+	Object.values(usage.turns).reduce<UsageTotals>(
+		(totals, turn) => ({
+			model: totals.model,
+			inputTokens: totals.inputTokens + turn.inputTokens,
+			outputTokens: totals.outputTokens + turn.outputTokens,
+			cost: totals.cost + turn.cost,
+		}),
+		{model: usage.model, inputTokens: 0, outputTokens: 0, cost: 0},
+	);
 
 export interface ModeState {
 	readonly current: Mode | null;
@@ -104,7 +140,7 @@ export interface AiAgentSessionState {
 	readonly interrupted: ItemId | null;
 	/** An interruption asked for and not yet confirmed by an event; `null` when none is in flight. */
 	readonly interruption: Interruption | null;
-	readonly usage: UsageTotals;
+	readonly usage: UsageLedger;
 	/**
 	 * Pending permission cards by request id: one arrives with an event, and one leaves on the
 	 * confirmation of its answer rather than on the click that answered it (#8006).
@@ -207,7 +243,7 @@ export type CheckpointField = (typeof checkpointFields)[number];
 
 export const emptyOmission: WindowOmission = {items: 0, bytes: 0, reason: "none"};
 
-export const emptyUsage: UsageTotals = {model: null, inputTokens: 0, outputTokens: 0, cost: 0};
+export const emptyUsage: UsageLedger = {model: null, turns: {}};
 
 export const initialState = (cwd: string): AiAgentSessionState => ({
 	phase: "idle",
