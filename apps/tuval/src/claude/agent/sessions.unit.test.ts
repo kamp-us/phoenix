@@ -54,6 +54,7 @@ describe("listSessions on the Claude backend", () => {
 					sessionId: "00000000-0000-4000-8000-00000000000b",
 					lastModified: 1_760_000_900_000,
 					backend: "claude",
+					title: "the newest chat",
 					firstPrompt: "list my sessions",
 					folder: "/Users/founder/code/tuval",
 					branch: "umut/session-list",
@@ -106,9 +107,46 @@ describe("listSessions on the Claude backend", () => {
 							sessionId: "00000000-0000-4000-8000-00000000000c",
 							lastModified: 1_760_000_000_000,
 							backend: "claude",
+							title: "a session the store knows little about",
 						},
 					]);
 				}),
+		),
+	);
+
+	/**
+	 * #8135, founder ruling 2026-09-07. `customTitle` is what `/rename` set and `summary` is the
+	 * SDK's own display title, so both are labels and neither may land in `firstPrompt` — a row
+	 * saying the operator typed a name he chose from a menu is the defect the field split fixes.
+	 */
+	it.effect("titles a renamed session by its rename, never by its summary or its prompt", () =>
+		on(
+			{
+				sessions: [
+					{
+						sessionId: "00000000-0000-4000-8000-00000000000d",
+						summary: "auto-generated summary",
+						customTitle: "The picker rewrite",
+						lastModified: 1_760_000_000_000,
+						firstPrompt: "why is the picker empty",
+					},
+				],
+			},
+			(agent) =>
+				Effect.gen(function* () {
+					const [row] = yield* agent.listSessions;
+					assert.strictEqual(row?.title, "The picker rewrite");
+					assert.strictEqual(row?.firstPrompt, "why is the picker empty");
+				}),
+		),
+	);
+
+	it.effect("falls back to the SDK's own summary when nobody renamed the session", () =>
+		on({sessions: stored}, (agent) =>
+			Effect.gen(function* () {
+				const [row] = yield* agent.listSessions;
+				assert.strictEqual(row?.title, "the newest chat");
+			}),
 		),
 	);
 

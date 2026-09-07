@@ -5,7 +5,7 @@
 
 import {describe, expect, it} from "vitest";
 import type {SessionRow} from "../../protocol/session-list.ts";
-import {bareSession, claudeSession, NOW, piSession, scrambled} from "./fixtures.ts";
+import {bareSession, claudeSession, NOW, piSession, renamedSession, scrambled} from "./fixtures.ts";
 import {
 	lastModifiedLabel,
 	matchesQuery,
@@ -14,6 +14,7 @@ import {
 	rowValue,
 	sessionDescription,
 	sessionItems,
+	sessionLabel,
 } from "./rows.ts";
 
 describe("newestFirst", () => {
@@ -71,6 +72,20 @@ describe("sessionItems", () => {
 	it("labels a session the store did name with that prompt", () => {
 		expect(sessionItems([claudeSession], NOW)[0]?.label).toBe("Wire the session list window");
 	});
+
+	// #8135, founder ruling 2026-09-07: the name the operator chose beats the prompt he happened to
+	// open with. #8070 ruling 6 keeps the prompt everywhere he chose nothing.
+	it("labels a renamed session by its title, not by its first prompt", () => {
+		expect(sessionItems([renamedSession], NOW)[0]?.label).toBe("The picker rewrite");
+	});
+});
+
+describe("sessionLabel", () => {
+	it("reads the three label states in order: title, first prompt, the absence said out loud", () => {
+		expect(sessionLabel(renamedSession)).toBe("The picker rewrite");
+		expect(sessionLabel(claudeSession)).toBe("Wire the session list window");
+		expect(sessionLabel(bareSession)).toBe(NO_FIRST_PROMPT);
+	});
 });
 
 describe("lastModifiedLabel", () => {
@@ -87,6 +102,12 @@ describe("matchesQuery", () => {
 	it("matches the first prompt", () => {
 		expect(matchesQuery(claudeSession, "session list")).toBe(true);
 		expect(matchesQuery(piSession, "session list")).toBe(false);
+	});
+
+	// The box has to match what the row shows, or a renamed session vanishes when you type its name.
+	it("matches the title on a session that has one, and not its hidden first prompt", () => {
+		expect(matchesQuery(renamedSession, "picker rewrite")).toBe(true);
+		expect(matchesQuery(renamedSession, "why is the picker empty")).toBe(false);
 	});
 
 	it("matches the folder", () => {

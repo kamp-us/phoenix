@@ -32,6 +32,7 @@ export {
 	sessionDescription,
 	sessionItem,
 	sessionItems,
+	sessionLabel,
 } from "./rows.ts";
 export {
 	SessionList,

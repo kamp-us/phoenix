@@ -60,12 +60,17 @@ const NO_MESSAGES = "(no messages)";
  * One `SessionInfo` as the neutral row. `branch` is left absent because Pi records no git branch —
  * `SessionInfo` has no field for one — and `firstPrompt` drops the pin's own placeholder, which is
  * a label for an empty session rather than something the operator typed.
+ *
+ * `title` is Pi's `name`, which the pin documents as the "user-defined display name from
+ * session_info entries" — the same thing Claude's `/rename` title is, so the port's one title
+ * question keeps one answer instead of one per backend (#8135). A session nobody named has none.
  */
 const rowOf = (info: SessionInfo): SessionSummary =>
 	sessionSummary({
 		sessionId: info.id,
 		lastModified: info.modified,
 		backend: "pi",
+		title: info.name,
 		firstPrompt: info.firstMessage === NO_MESSAGES ? undefined : info.firstMessage,
 		folder: info.cwd,
 		messageCount: info.messageCount,
