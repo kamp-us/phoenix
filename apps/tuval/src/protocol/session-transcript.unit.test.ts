@@ -32,12 +32,32 @@ const admitted: ReadonlyArray<readonly [string, TranscriptItem]> = [
 		"an interrupted assistant turn",
 		{kind: "assistant", id: ItemId.make("a2"), timestamp: AT, text: "hi", interrupted: true},
 	],
+	[
+		"an assistant turn a subagent wrote",
+		{
+			kind: "assistant",
+			id: ItemId.make("a3"),
+			timestamp: AT,
+			text: "hi",
+			parentId: ItemId.make("t1"),
+		},
+	],
 	["a system line", {kind: "system", id: ItemId.make("s1"), timestamp: AT, text: "resumed"}],
 	[
 		"a system line with a folded detail",
 		{kind: "system", id: ItemId.make("s2"), timestamp: AT, text: "hook ran", detail: "exit 0"},
 	],
 	["a thinking row", {kind: "thinking", id: ItemId.make("th1"), timestamp: AT, text: "weighing"}],
+	[
+		"a thinking row a subagent reasoned out",
+		{
+			kind: "thinking",
+			id: ItemId.make("th2"),
+			timestamp: AT,
+			text: "weighing",
+			parentId: ItemId.make("t1"),
+		},
+	],
 	[
 		"a compaction marker",
 		{kind: "compaction", id: ItemId.make("c1"), timestamp: AT, text: "context compacted"},
