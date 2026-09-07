@@ -10,12 +10,12 @@
  * what covers it.
  *
  * A truncated diff is refused rather than scanned. An under-reported hit list reads as a
- * checked-clean answer that was never checked (#3925's class). For the same reason each changed
+ * checked-clean answer that was never checked. For the same reason each changed
  * file is read at the merge base as well as at the head, so an anchor's paragraph is compared whole
- * instead of only where the diff happens to touch it — see `anchors.ts` (#5514). That "before" read
+ * instead of only where the diff happens to touch it — see `anchors.ts`. That "before" read
  * is a point read at one commit, not a range, so nothing recomputes a merge base for it the way a
  * three-dot diff would: reading it at the base *branch tip* compares this PR's anchors against
- * main's newest bytes and invents a move nobody made (#5770/#6077).
+ * main's newest bytes and invents a move nobody made.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -40,7 +40,7 @@ const VERB = "governance guards";
 const UNKNOWN_TAIL = "the diff cannot be bound to a commit, so what it shows is UNKNOWN.";
 
 /**
- * How many guard-bearing files survive the collapse (ADR 0308). The list is evidence, not an answer:
+ * How many guard-bearing files survive the collapse. The list is evidence, not an answer:
  * the skill cites its existence and never reads a row, so a handful of paths names the neighbourhood
  * the reader then opens for themselves, and `more` carries the rest.
  */
@@ -70,7 +70,7 @@ export const runGuards = (
 			requireOpen: true,
 			closedReason: "nothing to scan.",
 			requireFiles: true,
-			emptyReason: "nothing to scan (ADR 0092).",
+			emptyReason: "nothing to scan.",
 			unknownMessage: (reason) =>
 				`${VERB}: cannot read PR #${pr} in ${repo}: ${reason} — UNKNOWN, never "nothing moved".`,
 		});
@@ -93,7 +93,7 @@ export const runGuards = (
 		if (carried < target.pull.changedFiles) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: the diff at ${head.sha} carries ${carried} of #${pr}'s ${target.pull.changedFiles} declared files — refusing a partial anchor scan (#3925's class).`,
+				`${VERB}: the diff at ${head.sha} carries ${carried} of #${pr}'s ${target.pull.changedFiles} declared files — refusing a partial anchor scan.`,
 				diagnostics,
 			);
 		}
@@ -109,7 +109,7 @@ export const runGuards = (
 
 		// Anchors are counted at the bound commit rather than off the diff: `inReach` is how many
 		// anchored invariants EXIST in the files this diff touches, which is the denominator that makes
-		// "I scanned nothing and found nothing" unrenderable as a pass (ADR 0092).
+		// "I scanned nothing and found nothing" unrenderable as a pass.
 		const inTree: Array<{readonly path: string; readonly anchors: number}> = [];
 		const blockHits: AnchorHit[] = [];
 		let compared = 0;

@@ -64,7 +64,7 @@ const readCorpus = (dir: string): Effect.Effect<Corpus, never, FileSystem.FileSy
 				_tag: "Refused" as const,
 				outcome: refuse(
 					ZERO_SCOPE,
-					`${VERB}: scanned ${root}, 0 decision records — refusing to answer (ADR 0092).`,
+					`${VERB}: scanned ${root}, 0 decision records — refusing to answer.`,
 				),
 			};
 		}
@@ -139,7 +139,7 @@ export const runSweep = (
 				requireOpen: true,
 				closedReason: "nothing to sweep.",
 				requireFiles: true,
-				emptyReason: "refusing to sweep over an empty diff (ADR 0092).",
+				emptyReason: "refusing to sweep over an empty diff.",
 				unknownMessage: (reason) =>
 					`${VERB}: cannot read PR #${pr} in ${repo}: ${reason} — what the subject says is UNKNOWN.`,
 			});
@@ -167,7 +167,7 @@ export const runSweep = (
 			if (listed.value.length < target.pull.changedFiles) {
 				return refuse(
 					INCOMPLETE_SCAN,
-					`${VERB}: ${head.sha} carries ${listed.value.length} of the ${target.pull.changedFiles} files #${pr} declares — refusing to prove ${subjectId} is in this PR from a short read (#3999).`,
+					`${VERB}: ${head.sha} carries ${listed.value.length} of the ${target.pull.changedFiles} files #${pr} declares — refusing to prove ${subjectId} is in this PR from a short read.`,
 					diagnostics,
 				);
 			}

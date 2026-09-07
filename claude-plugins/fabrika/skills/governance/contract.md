@@ -430,20 +430,20 @@ directory is always a subset of
 |---|---|---|
 | `governance scope: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance scope: PR #<n> is closed — nothing to derive.` | 7 | refusal |
-| `governance scope: PR #<n> has zero changed files — refusing to derive over an empty diff (ADR 0092).` | 7 | refusal |
-| `governance scope: <base>..<tip> changes no path — refusing to derive over an empty diff (ADR 0092).` | 7 | refusal |
+| `governance scope: PR #<n> has zero changed files — refusing to derive over an empty diff.` | 7 | refusal |
+| `governance scope: <base>..<tip> changes no path — refusing to derive over an empty diff.` | 7 | refusal |
 | `governance scope: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance scope: --base and --tip come together — a range has two ends.` | 10 | refusal |
-| `governance scope: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).` | 10 | refusal |
+| `governance scope: --sha does not combine with --base/--tip — a range verdict binds content, not a head.` | 10 | refusal |
 | `governance scope: --<base\|tip> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance scope: a range is its own subject — drop the pull-request number, or drop --base/--tip.` | 10 | refusal |
 | `governance scope: name a pull request, or scope a range with --base and --tip — there is no subject here.` | 10 | refusal |
 | `governance scope: cannot read PR #<n> in <repo>: <reason> — whether the namespace is required is UNKNOWN, never "not-required".` | 11 | refusal |
 | `governance scope: <what> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
 | `governance scope: cannot resolve the merge base of <base>..<tip>: <reason> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
-| `governance scope: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
-| `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read (#3999).` | 13 | refusal |
-| `governance scope: <base>..<tip> carries <k> of the <m> files its ends change — refusing to derive from a short read (#3999).` | 13 | refusal |
+| `governance scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
+| `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read.` | 13 | refusal |
+| `governance scope: <base>..<tip> carries <k> of the <m> files its ends change — refusing to derive from a short read.` | 13 | refusal |
 | `governance scope: root <name> is absent in this repository — the derivation covered <k> of 4 roots.` | 0 | notice |
 | `governance scope: partitioned <k> of <k> declared changed files at <subject> across 4 roots.` | 0 | notice |
 
@@ -551,7 +551,7 @@ implementer reproduces scores from the imported module, never from this document
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `governance sweep: scanned <dir>, 0 decision records — refusing to answer (ADR 0092).` | 7 | refusal |
+| `governance sweep: scanned <dir>, 0 decision records — refusing to answer.` | 7 | refusal |
 | `governance sweep: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance sweep: --record "<v>" is not a four-digit decision id.` | 10 | refusal |
 | `governance sweep: --sha "<v>" is not a head SHA — expected 7–40 lowercase hex characters.` | 10 | refusal |
@@ -560,8 +560,8 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: #<n> at <sha> carries no decision record <id> — nothing to sweep.` | 11 | refusal |
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
-| `governance sweep: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
-| `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read (#3999).` | 13 | refusal |
+| `governance sweep: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
+| `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read.` | 13 | refusal |
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
 
@@ -715,12 +715,12 @@ anchors rather than invariants.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `governance guards: PR #<n> not found in <repo>.` | 7 | refusal |
-| `governance guards: PR #<n> has zero changed files — nothing to scan (ADR 0092).` | 7 | refusal |
+| `governance guards: PR #<n> has zero changed files — nothing to scan.` | 7 | refusal |
 | `governance guards: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance guards: <what> — the diff cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `governance guards: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
-| `governance guards: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
-| `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan (#3925's class).` | 13 | refusal |
+| `governance guards: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
+| `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan.` | 13 | refusal |
 | `governance guards: cannot read <path> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: scanned <k> files, <m> anchored invariants in reach, <j> compared block-by-block against <base>.` | 0 | notice |
 
@@ -1037,7 +1037,7 @@ clothes.
 | `governance post: --sha "<v>" is not a head SHA — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance post: --clause is blank — a verdict with no clause states nothing.` | 10 | refusal |
 | `governance post: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
-| `governance post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
+| `governance post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live>.` | 12 | refusal |
 | `governance post: #<n>'s diff touches no governance root (<roots>) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.` | 14 | refusal |
 | `governance post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; re-read #<n>'s comments before retrying.` | 8 | refusal |
 | `governance post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
@@ -1159,12 +1159,12 @@ grow the rubric past what the founder's ruling authorized.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `governance digest: scanned <dir>, 0 decision records — refusing to answer (ADR 0092).` | 7 | refusal |
+| `governance digest: scanned <dir>, 0 decision records — refusing to answer.` | 7 | refusal |
 | `governance digest: --since "<v>" is not a YYYY-MM-DD date.` | 10 | refusal |
 | `governance digest: --until <b> precedes --since <a> — an empty window is a usage error, not a result.` | 10 | refusal |
 | `governance digest: cannot fetch or resolve <base>: <reason> — what landed is UNKNOWN, never "none".` | 11 | refusal |
 | `governance digest: cannot read landing commit <sha>: <reason> — the window is UNKNOWN.` | 11 | refusal |
-| `governance digest: the history is shallow and its boundary <sha> falls inside the window — refusing a partial landing list (#3999's class).` | 13 | refusal |
+| `governance digest: the history is shallow and its boundary <sha> falls inside the window — refusing a partial landing list.` | 13 | refusal |
 | `governance digest: walked <base> from <since> to <until>, <k> commits touching <dir>.` | 0 | notice |
 
 **Scope** — the commits on `--base` between `--since` and `--until` that touch `--dir`, and for each
@@ -1262,7 +1262,7 @@ rows in the same order, then compare the whole body through `normalizeForReadbac
 | `governance readout: no rows on stdin — an empty readout is not a readout.` | 3 | refusal |
 | `governance readout: the assembled body carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
 | `governance readout: the body is a bare "@" path reference — the rows never arrived. Send them on stdin.` | 6 | refusal |
-| `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it (#4952).` | 7 | refusal |
+| `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it.` | 7 | refusal |
 | ``governance readout: no artifact issue given, `$FABRIKA_GOVERNANCE_READOUT_ISSUE` is unset, and <repo> has no open issue titled "Governance readout" — refusing to guess where the digest lands.`` | 7 | refusal |
 | `governance readout: issue #<n> is closed — a readout nobody reads is not a readout.` | 7 | refusal |
 | `governance readout: row <k>'s kind "<v>" is outside tension/blast/routine.` | 10 | refusal |

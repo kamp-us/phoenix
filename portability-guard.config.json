@@ -76,8 +76,8 @@
 			"paths": ["claude-plugins/fabrika/skills/review-ui/contract.md"]
 		},
 		"plugin-governance": {
-			"ceiling": 25,
-			"why": "#8296 swept the prose; every one of the 25 left is a value rather than a sentence. 20 are stderr lines the shipped verbs print, pinned in the Errors tables — rewriting a pin first would make the contract quote a line no verb prints, so 16 shrink when packages/fabrika-cli/src/governance and packages/fabrika-cli/src/status are swept by #8309, and 4 when packages/fabrika-cli/src/review is swept by #8305. 3 are the `governance-digest` round-trip fixture rows copied from the wire registry, which move with packages/fabrika-cli/src/wire under #8307. 2 are the `settings-patch` marketplace source the bootstrap registry writes, a constant in packages/fabrika-cli/src/status that #8309 owns. So #8309 retires 18, #8305 4 and #8307 3.",
+			"ceiling": 5,
+			"why": "#8296 swept the prose and #8309 the 20 stderr pins — 16 whose source lives in packages/fabrika-cli/src/governance and packages/fabrika-cli/src/status, and 4 head-drift and range-flag refusals composed in packages/fabrika-cli/src/review, which #8305 had already swept in this base, so the pins were quoting lines no verb prints. Each of the 5 left is a value rather than a sentence. 3 are the `governance-digest` round-trip fixture rows copied from the wire registry, which move with packages/fabrika-cli/src/wire under #8307. 2 are the `settings-patch` marketplace source the bootstrap registry writes, a constant in packages/fabrika-cli/src/status that stays until #8395 puts the marketplace name and its source on config.",
 			"paths": [
 				"claude-plugins/fabrika/skills/governance",
 				"claude-plugins/fabrika/skills/front-door"
@@ -143,8 +143,8 @@
 			]
 		},
 		"cli-capture": {
-			"ceiling": 646,
-			"why": "The capture, governance, recipe, status and hook groups' source, cleared by #8309, the capture sweep child.",
+			"ceiling": 43,
+			"why": "#8309 swept the capture, governance, recipe, status and hook groups' prose to zero; 43 residues are values rather than sentences. 30 are `.decisions/` fixture paths in the governance test batteries — every one must sit under a shipped governed root, or the classification the assertion checks is a partition the verb never makes; that prefix is `SHIPPED_GOVERNED_ROOTS`/`SHIPPED_DECISIONS_DIR`, a compiled-in literal of the class #7478 moves onto config, the same edge cli-lane and cli-ship already wait on. 7 are the placeholder owner/repo issue and pull-request URLs the governance, recipe and status batteries assert a fetched artifact's html_url against, cleared by #8350, the fixture-URL ticket. 6 are the `settings-patch` marketplace source in status/bootstrap-verb.ts and the two assertions that read it back — fabrika's own publication address, compiled in with no key reaching it, which #8395 puts on config.",
 			"paths": [
 				"packages/fabrika-cli/src/capture",
 				"packages/fabrika-cli/src/governance",

@@ -326,6 +326,21 @@ The harness also refuses a shape it cannot statically verify at all: `for f in a
 
 **Owner:** [#5197](https://github.com/kamp-us/phoenix/issues/5197), which keeps its scope. `worktree-sweep-detach.sh`'s successor is part of it — a reclaimer with no dispatcher reclaims nothing.
 
+## Where the golden hook envelopes were captured
+
+`packages/fabrika-cli/src/hook/__fixtures__/PROVENANCE.md` states the capture method and says the raw
+bytes were posted to the authoring repository's issue tracker before either fixture was written. It
+no longer names the threads, because the plugin's own text has to read the same in any repository.
+The threads are phoenix's, so they are named here:
+
+| Capture | Fixtures | Thread | Comment |
+|---|---|---|---|
+| 1 — the surface envelopes | `session-start.payload.golden.json`, `pre-tool-use.payload.golden.json` | [#5074](https://github.com/kamp-us/phoenix/issues/5074) | `5233372828` |
+| 2 — the spawn envelopes | `pre-tool-use-spawn.payload.golden.json`, `pre-tool-use-spawn-unset-model.payload.golden.json` | [#5075](https://github.com/kamp-us/phoenix/issues/5075) | `5233974204` |
+
+Both were captured 2026-08-09 against Claude Code 2.1.226. A re-capture updates `PROVENANCE.md` and
+this table in the same commit.
+
 ## Related
 
 [#5075](https://github.com/kamp-us/phoenix/issues/5075) · [#5076](https://github.com/kamp-us/phoenix/issues/5076) · [#5077](https://github.com/kamp-us/phoenix/issues/5077) · [#5078](https://github.com/kamp-us/phoenix/issues/5078) · [#4927](https://github.com/kamp-us/phoenix/issues/4927) (the container) · [#4934](https://github.com/kamp-us/phoenix/issues/4934) (the worktree grading) · [#5726](https://github.com/kamp-us/phoenix/issues/5726) (the 2.1.233 re-scope) · [#5198](https://github.com/kamp-us/phoenix/issues/5198) (the transcription this replaces) · [#4791](https://github.com/kamp-us/phoenix/issues/4791) (publish) · ADR [0238](../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)
