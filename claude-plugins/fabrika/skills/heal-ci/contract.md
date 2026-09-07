@@ -68,12 +68,12 @@ the same tracked debt the sibling contracts carry.)
 - **A wedge-clearing verb** (cancel the stranded check, re-run it). The lever mutates CI runs this
   lane does not own, and a bounded run cannot supervise the retry it triggers — both halves of the
   ruling that settled it. `diagnose` reports `wedged` and names the contexts; the lever is an
-  operator's.
+  operator's to pull.
 - **A check-surface *repair* verb** (arm, rename or disarm a required context). That is a
   repository-settings mutation with a human's name on it, and arming a required check wrong has cost
   a whole wedged merge queue. `surface` diagnoses and stops.
 - **A dispatch or adoption verb.** A detector converts a strand into claimable work; an engine
-  never free-scan-adopts. No verb here assigns, claims, or spawns a lane, and `sweep` writes
+  never free-scan-adopts, so no verb here assigns, claims, or spawns a lane and `sweep` writes
   nothing at all.
 - **A tracking-issue minter for an unlinked PR.** A conversation-authored doc or ADR PR may
   legitimately carry no linked issue, and minting one to satisfy a link guard is banned outright.
@@ -298,9 +298,8 @@ third step (strip trailing newlines) is the one a re-derivation drops, and dropp
 
 `heal-ci note` shares the leak predicate **already implemented** at
 [`report/leaks.ts`](../../../../packages/fabrika-cli/src/report/leaks.ts) — import it, never
-re-derive it. This is the authored-text guard only; scanning *landed* content is the repo's own
-leak workflow's
-enforced seam.
+re-derive it. This is the authored-text guard only; scanning *landed* content is the enforced seam
+of the repo's own leak workflow.
 
 ### The note suppression key is a specified format too
 
@@ -529,7 +528,7 @@ $ echo $?
   commits behind base; inactivity alone would not have caught it.
 - Attendedness is not keyed on the linked issue, and a legitimately issueless PR is not a stall.
 - Informational contexts are excluded before the rollup, so a preview-deploy red never reads as a
-  healable stall.
+  healable stall of any kind.
 - This verb reads verdict markers and emits none.
 - v1's `resolve-failing-run.sh:43` exited `3` on a green head, so the healthiest outcome was a
   failure to any `|| exit 1` caller; here `attended` is an exit-`0` answer token.
@@ -631,7 +630,7 @@ false-completeness this verb exists to prevent.
 ```
 $ fabrika heal-ci sweep
 swept	23	3
-pr	4315	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94	human
+pr	9416	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94	human
 pr	9413	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18	review
 pr	9412	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	ship
 ```
@@ -644,8 +643,8 @@ swept	18	0
 **Grounding**
 
 - The 2026-08-09 design input behind this group — both live strands were found by luck rather than
-  by a sweep, so the lane must be reachable on a schedule and must classify green PRs, not only red
-  ones.
+  by a sweep, so the lane must be reachable on a schedule, and it must classify green PRs and not
+  only red ones.
 - A detector emits claimable work and never adopts or dispatches.
 - The scanned count travels with the claim; a zero-stall answer over an unproven scope is the pass
   a guard must never emit.
@@ -695,7 +694,7 @@ With `--json`: `{"outcome":…,"sha":…,"required":[{"name":…,"state":…}…
 **`unprobeable` is the permission answer, and it is not `no-requirements`.** The two halves of the
 declared set do not read alike, and the difference is load-bearing — **probed live against a real
 repository with a `repo`-scoped token (scopes `repo`, `workflow`, `read:org`, no `admin`) rather
-than assumed**:
+than assumed, never taken on trust**:
 
 - `GET /repos/{repo}/branches/{base}/protection` answered **`404 "Branch not protected"`**. That
   status is returned **both** when a branch genuinely has no protection **and** when the caller
@@ -775,7 +774,7 @@ facts	required:2	producing:1	extra:1
 ```
 
 ```
-$ fabrika heal-ci surface 4330
+$ fabrika heal-ci surface 9417
 surface	no-requirements	7c31a0de
 extra	unit tests
 extra	actionlint
@@ -1037,7 +1036,7 @@ $ echo $?
 - A table of prose descriptions is an uninvented core that passes every presence check; the literal
   patterns and the stated precedence are what make two implementations agree.
 - The informational carve-out happens upstream in `logs`, so this table never encodes which
-  contexts block.
+  contexts are the blocking ones.
 
 ---
 
@@ -1292,7 +1291,7 @@ $ echo $?
   key, paged the comments and globbed for a hit. That deduped the scheduled path alone, left every
   other caller posting bare, and put the workflow on the wrong side of the relay rule — a script
   deriving a decision rather than relaying a verb's. Moving it here fixes both, and every note path
-  inherits it.
+  now inherits the suppression.
 
 ---
 

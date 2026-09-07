@@ -217,9 +217,8 @@ moved — it relays `ship reconcile`, so only `landed` or `ejected` clears — a
 the `UNBLOCKED` and the fresh conclusive read in one event. Exit `13` is the queue genuinely not
 having moved, and the park stands. Run it when you work the row rather than routing a human, and a
 stall self-heals on the next scheduled pass — a queue dwell is a wait, not a park. `sweep` itself
-still
-writes nothing on its own authority — the verb is yours to run on the row you are working, never the
-sweep's to run over the board.
+still writes nothing on its own authority — the verb is yours to run on the row you are working,
+never the sweep's to run over the board.
 
 ## Sweep — the scheduled surface
 

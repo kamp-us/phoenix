@@ -145,10 +145,9 @@ never fall through to the template.
 The parent epic's lane already carries this number as one of its tasks, and a second ledger booted
 over it is two documents describing one piece of work with nothing reconciling them. The `46` guard
 above cannot see this case — both facts it reads are facts about the issue itself, and a child
-carries neither. The refusal names
-the parent, so end `STOPPED` and drive that lane instead; never boot the child. An issue that is
-both an epic and a child still routes to `lane emit` on `46`, because the machine it needs has not
-changed.
+carries neither. The refusal names the parent, so end `STOPPED` and drive that lane instead; never
+boot the child. An issue that is both an epic and a child still routes to `lane emit` on `46`,
+because the machine it needs has not changed.
 
 A lane already booted on the coder template before this refusal existed is not repaired in place: a
 lane on disk is never re-emitted over, so `lane emit` answers `14` and names the two steps — retire
@@ -462,8 +461,7 @@ It writes only where the lane's own event log folds to the same state through bo
 re-run's. One of those calls is now a verb: a lane whose issue is closed AND whose log will never
 replay leaves both sweeps through `node <fabrika> lane archive <lane>`, which moves its directory to
 the archived root and touches no log — an unreplayable lane is archived, never sealed in place. It
-refuses at
-`49` on an open issue and `50` on a log that replays, so it can never hide live work.
+refuses at `49` on an open issue and `50` on a log that replays, so it can never hide live work.
 
 The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
 because staleness was the only wrongness it could see and a coder-template lane booted on an epic
@@ -498,8 +496,8 @@ or an event recorded this pass.
 **A shell records its own terminal.** Every spawned shell ends by invoking
 `lane report <lane> --root <root> --task <task> --token <TOKEN>` against the lane, root and task its
 brief named — the same `--task` you pass on your own `lane transition`, because the shell's report
-resolves a task exactly as yours does and refuses at exit `13` on a multi-task lane without one.
-The token→event map is code
+resolves a task exactly as yours does and refuses at exit `13` on a multi-task lane without one. The
+token→event map is code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)),
 never a table you execute — an unrecognised token is that verb's refusal (exit `32`), not a reading
 of yours. **That verb proves before it appends**: it runs `lane prove`'s read on the mapped event
@@ -513,10 +511,9 @@ Two reads stay yours, because no shell can take them:
   yourself, below, and where the proof refuses there too, the refusal table is what you route on —
   a `22` is a `BLOCKED`, never the `DONE` the spawn printed;
 - **a dead or unresponsive spawn, a report you cannot parse, and a permission denial a shell
-  reports** — each is a BLOCKED-class
-  outcome, never something to route around, and never a retry-in-place: retries belong to the
-  machine (`FAIL` spends one; `frozen` is its answer), and you never re-spawn what the fold has not
-  re-asked for. Record `BLOCKED`.
+  reports** — each is a BLOCKED-class outcome, never something to route around, and never a
+  retry-in-place: retries belong to the machine (`FAIL` spends one; `frozen` is its answer), and
+  you never re-spawn what the fold has not re-asked for. Record `BLOCKED`.
 
 **A dead spawn's residue is yours to clear.** `BLOCKED` records where the lane stands; it
 does not clean up after the shell that died, and what a dead spawn leaves behind is an incident
@@ -531,8 +528,8 @@ this order:
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
   is the whole act: the spawn ran under your session id, so its marker resolves as
   this session's and the verb that already exists retracts it. No new verb and no widened one — a
-  founder ruling rejected a lease, a TTL and steal outright, and eviction by inference from absence stays
-  banned: a claim is released under a proven identity, never inferred gone.
+  founder ruling rejected a lease, a TTL and steal outright, and eviction by inference from absence
+  stays banned: a claim is released under a proven identity, never inferred gone.
 - **Retire the worktree it left**, with `fabrika build retire <n>`. A tree left standing holds the
   lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
   exit `11`. The verb does the two dead-spawn steps in their order —
@@ -555,8 +552,7 @@ originate. Its recipe row then clears the park once the two obligations above ar
 reads that no claim stands on the issue and no working tree holds its lane branch, which is the whole
 of what would refuse the same brief being dispatched again. It never reads whether the provider is
 back — your next dispatch is that test, and a still-down provider re-parks the lane. A claim you
-could not release
-holds the park at exit `13` instead, which is the succession below.
+could not release holds the park at exit `13` instead, which is the succession below.
 
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
@@ -659,8 +655,7 @@ instead of to `shipped` — the criteria that PR left undischarged are still bui
 the board still calls open now has a lane that agrees. You record nothing extra and read nothing
 extra: `lane prove` reads the closure off the merged PR's own body and `lane report` lands it as
 `partial` on the event line, so what you do is route the leaf `lane status` prints next. A closing
-merge
-folds to `shipped` exactly as it always did.
+merge folds to `shipped` exactly as it always did.
 
 `lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
 of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit
