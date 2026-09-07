@@ -34,6 +34,11 @@ export interface ScriptedQuery extends AgentSession {
 	readonly say: (message: SDKMessage) => void;
 	/** End the generator. A run that never sent a `result` is a subprocess that died mid-turn. */
 	readonly stop: () => void;
+	/**
+	 * Make the message iterator itself throw, which is the transport failing rather than the session
+	 * ending — the one arm `stop` cannot script, and the only way into `streamFailed` (#8010).
+	 */
+	readonly fail: (cause: unknown) => void;
 	readonly record: QueryRecord;
 }
 
@@ -88,6 +93,7 @@ export const scriptedQuery = (
 	const buffered: Array<SDKMessage> = behaviour.deferOpening === true ? [] : [...opening];
 	let waiting: ((message: SDKMessage | null) => void) | null = null;
 	let stopped = false;
+	let thrown: {readonly cause: unknown} | null = null;
 
 	const child =
 		params.options.spawnClaudeCodeProcess === undefined
@@ -157,6 +163,7 @@ export const scriptedQuery = (
 	async function* stream(): AsyncGenerator<SDKMessage, void> {
 		while (true) {
 			const message = await next();
+			if (thrown !== null) throw thrown.cause;
 			if (message === null) return;
 			yield message;
 		}
@@ -208,6 +215,11 @@ export const scriptedQuery = (
 			abandonHandshake();
 			deliver(null);
 		},
+		fail: (cause: unknown) => {
+			thrown = {cause};
+			stopped = true;
+			deliver(null);
+		},
 		record,
 	});
 
@@ -235,6 +247,11 @@ export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	/** A read that throws instead of answering. */
 	readonly readFails?: Error;
+	/**
+	 * A `query()` that throws rather than handing back a session — the SDK's own arm for a CLI it
+	 * could not spawn, which is where its `errorClass` stamps arrive (#8010).
+	 */
+	readonly openFails?: Error;
 	/** What `listSessions` answers. Absent is a store holding none, which is a truthful empty list. */
 	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
 	/** A listing that throws — a store that would not open, not a store with nothing in it. */
@@ -253,6 +270,7 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
+				if (options.openFails !== undefined) throw options.openFails;
 				const query = scriptedQuery(params, options.opening, options);
 				opened.push(query);
 				return query;

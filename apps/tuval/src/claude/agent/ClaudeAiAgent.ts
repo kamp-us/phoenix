@@ -80,7 +80,7 @@ import {
 } from "./options.ts";
 import {
 	controlRefused,
-	detailOf,
+	logRefused,
 	noSession,
 	noSessionToPage,
 	promptDisconnected,
@@ -235,7 +235,7 @@ const make = (
 				Effect.map((rows) => [...rows]),
 				Effect.catch((refusal) =>
 					Effect.as(
-						Effect.logWarning(`the model catalog could not be read: ${refusal.detail}`),
+						logRefused("the model catalog could not be read", refusal),
 						[] as ReadonlyArray<ModelInfo>,
 					),
 				),
@@ -253,7 +253,7 @@ const make = (
 				Effect.map(commandsOf),
 				Effect.catch((refusal) =>
 					Effect.as(
-						Effect.logWarning(`the command catalog could not be read: ${refusal.detail}`),
+						logRefused("the command catalog could not be read", refusal),
 						[] as ReadonlyArray<CommandRef>,
 					),
 				),
@@ -268,10 +268,7 @@ const make = (
 			}).pipe(
 				Effect.map((usage) => usage.model),
 				Effect.catch((refusal) =>
-					Effect.as(
-						Effect.logWarning(`the running model could not be read: ${refusal.detail}`),
-						undefined,
-					),
+					Effect.as(logRefused("the running model could not be read", refusal), undefined),
 				),
 			);
 
@@ -304,7 +301,7 @@ const make = (
 			}).pipe(
 				Effect.as(true),
 				Effect.catch((refusal) =>
-					Effect.as(Effect.logWarning(`the effort switch was refused: ${refusal.detail}`), false),
+					Effect.as(logRefused("the effort switch was refused", refusal), false),
 				),
 			);
 
@@ -316,7 +313,7 @@ const make = (
 			}).pipe(
 				Effect.as(true),
 				Effect.catch((refusal) =>
-					Effect.as(Effect.logWarning(`the model switch was refused: ${refusal.detail}`), false),
+					Effect.as(logRefused("the model switch was refused", refusal), false),
 				),
 			);
 
@@ -526,7 +523,7 @@ const make = (
 
 			yield* Effect.tryPromise({
 				try: () => handle.initializationResult(),
-				catch: (cause) => startWithoutHandshake(cwd, detailOf(cause)),
+				catch: (cause) => startWithoutHandshake(cwd, cause),
 			}).pipe(Effect.tapError(() => abandon));
 
 			return {
@@ -693,7 +690,7 @@ const make = (
 				// `interrupt` declares no error channel, so a refused interrupt is a log line: the
 				// turn the operator wanted stopped either already ended or the subprocess is gone,
 				// and both are states the next event settles.
-				Effect.catch((refusal) => Effect.logWarning(`interrupt was refused: ${refusal.detail}`)),
+				Effect.catch((refusal) => logRefused("interrupt was refused", refusal)),
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
@@ -722,10 +719,7 @@ const make = (
 							// not that: the mode did not change, so the state is re-emitted unchanged
 							// rather than a lie being put on the stream.
 							Effect.catch((refusal) =>
-								Effect.as(
-									Effect.logWarning(`the mode switch was refused: ${refusal.detail}`),
-									false,
-								),
+								Effect.as(logRefused("the mode switch was refused", refusal), false),
 							),
 						);
 			if (changed) yield* Ref.set(mode, next);
