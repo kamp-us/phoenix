@@ -496,11 +496,45 @@ function ChatWindow({
 	const viewing = options.subagentList ? view.viewing : null;
 	const viewedSlot = viewing === null ? undefined : state?.subagents[viewing.id];
 
-	const showSubagent = useCallback(
-		(id: string) => commit((current) => viewSubagent(current, id)),
-		[commit],
+	/** The scroll offset `onScroll` is holding for its settle window, and the timer holding it. */
+	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const restingAt = useRef<number | null>(null);
+	useEffect(
+		() => () => {
+			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
+		},
+		[],
 	);
-	const showMain = useCallback(() => commit(viewMain), [commit]);
+
+	/**
+	 * Write the held offset now, so `scroll` describes where the *current* view rests before another
+	 * one takes its place.
+	 *
+	 * A swap that skipped this would be wrong twice over one debounce: `viewSubagent` would park an
+	 * offset up to `scrollCommitMs` behind where the reader actually is, and the timer would then fire
+	 * past the swap and write main's offset onto the subagent's `scroll` — a field that means a
+	 * different transcript now (review round 1 on #8467).
+	 */
+	const settleScroll = useCallback(() => {
+		if (commitTimer.current !== null) clearTimeout(commitTimer.current);
+		commitTimer.current = null;
+		const offset = restingAt.current;
+		restingAt.current = null;
+		if (offset === null) return;
+		commit((current) => (current.scroll === offset ? current : {...current, scroll: offset}));
+	}, [commit]);
+
+	const showSubagent = useCallback(
+		(id: string) => {
+			settleScroll();
+			commit((current) => viewSubagent(current, id));
+		},
+		[commit, settleScroll],
+	);
+	const showMain = useCallback(() => {
+		settleScroll();
+		commit(viewMain);
+	}, [commit, settleScroll]);
 
 	const mainRows = useMemo(
 		() =>
@@ -702,14 +736,6 @@ function ChatWindow({
 		virtualizer.scrollToIndex(rows.length - 1, {align: "end"});
 	}, [view.pinned, rows.length, totalSize, virtualizer]);
 
-	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	useEffect(
-		() => () => {
-			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
-		},
-		[],
-	);
-
 	const onScroll = useCallback(
 		(event: UIEvent<HTMLDivElement>) => {
 			const offset = event.currentTarget.scrollTop;
@@ -728,9 +754,13 @@ function ChatWindow({
 				commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
 			}
 			// The offset is where the transcript rests whoever moved it, so it is committed either way.
+			// It is held on a ref as well as in this closure, because a swap has to be able to settle it
+			// early — `settleScroll` above.
+			restingAt.current = offset;
 			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
 			commitTimer.current = setTimeout(() => {
 				commitTimer.current = null;
+				restingAt.current = null;
 				commit((current) => (current.scroll === offset ? current : {...current, scroll: offset}));
 			}, options.scrollCommitMs);
 			if (byReader && offset <= options.topThreshold) requestOlder();

@@ -10,10 +10,10 @@
  * `./subagents.unit.test.ts`.
  */
 
-import {act, render, within} from "@testing-library/react";
+import {act, fireEvent, render, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
-import {describe, expect, it} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import type {SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
@@ -150,10 +150,22 @@ const pick = async (root: ParentNode, label: string) => {
 	});
 };
 
+/** jsdom never moves a scroller, so the offset a scroll event reports is set on the element. */
+const scrollTo = async (scroller: HTMLElement, offset: number) => {
+	Object.defineProperty(scroller, "scrollTop", {configurable: true, value: offset});
+	await act(async () => {
+		fireEvent.scroll(scroller);
+	});
+};
+
 const atOldest = (over: Partial<ChatView> = {}): ChatView => ({
 	...initialChatView,
 	atOldest: true,
 	...over,
+});
+
+afterEach(() => {
+	vi.useRealTimers();
 });
 
 describe("swapping the view slot to a subagent", () => {
@@ -247,6 +259,41 @@ describe("the way back to the agent's own transcript", () => {
 
 		expect(view().viewing).toEqual({id: "agent", from: {pinned: false, scroll: 640}});
 		expect([view().pinned, view().scroll]).toEqual([true, 0]);
+		rendered.unmount();
+	});
+
+	/**
+	 * The offset is committed on a settle timer, so a swap taken inside that window has two ways to
+	 * get the park wrong: it can park an offset one debounce behind the reader, and the pending timer
+	 * can then land main's offset on the `scroll` field the subagent view now owns (review round 1 on
+	 * #8467). Both are closed by settling the offset before the swap, and both are asserted here —
+	 * dropping the `settleScroll()` call from `showSubagent` reds each of them.
+	 */
+	it("settles the pending scroll commit before it parks, and lands nothing on the subagent", async () => {
+		vi.useFakeTimers({shouldAdvanceTime: true});
+		const {rendered, view} = await openOne(
+			agentSession(reviewer()),
+			{scrollCommitMs: 150},
+			atOldest({pinned: false, scroll: 10}),
+		);
+		const scroller = rendered.container.querySelector(".tuval-chat-transcript") as HTMLElement;
+		// The first event is the window hearing the scroll its own first paint asked for; the second is
+		// the reader, which is the one whose offset the settle window is holding.
+		await scrollTo(scroller, 10);
+		await scrollTo(scroller, 640);
+		expect(view().scroll, "still inside the settle window").toBe(10);
+
+		await pick(rendered.container, "reviewer");
+
+		expect(view().viewing).toEqual({id: "agent", from: {pinned: false, scroll: 640}});
+		expect(view().scroll).toBe(0);
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(400);
+		});
+
+		expect(view().viewing?.from.scroll).toBe(640);
+		expect(view().scroll, "main's offset must not land on the subagent's view").toBe(0);
 		rendered.unmount();
 	});
 });

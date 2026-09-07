@@ -87,13 +87,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * Read a slot back. Total by construction: a window opened onto this program for the first time
- * holds `null`, and a slot written by another program holds something else entirely — neither is an
- * error the surface may throw on, because the contract's own fallbacks are values.
- */
-/**
- * Read the view slot back. Total like everything beside it: a slot from a build that had no such
- * field, and one whose record is any other shape, are both a window on main.
+ * Read the view slot's own field back. Total like everything beside it: a slot from a build that had
+ * no such field, and one whose record is any other shape, are both a window on main.
  */
 const asSubagentView = (value: unknown): ChatSubagentView | null => {
 	if (!isRecord(value)) return null;
@@ -108,6 +103,11 @@ const asSubagentView = (value: unknown): ChatSubagentView | null => {
 	};
 };
 
+/**
+ * Read a slot back. Total by construction: a window opened onto this program for the first time
+ * holds `null`, and a slot written by another program holds something else entirely — neither is an
+ * error the surface may throw on, because the contract's own fallbacks are values.
+ */
 export const asChatView = (value: ViewState | undefined): ChatView => {
 	if (!isRecord(value)) return initialChatView;
 	return {

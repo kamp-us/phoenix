@@ -70,8 +70,10 @@ export const unknownCursor = (reason: string): PageError =>
  * transcript: a sidechain file nobody wrote, a store that would not open and a line that will not
  * parse are three different things to have to tell an operator, and "this subagent said nothing"
  * is none of them.
+ *
+ * `subagentNotFound` appends the id itself and is the only place that names it — a caller that
+ * spells it in its own `detail` says it twice.
  */
-/** The id is appended here and named nowhere else — a caller that spells it again says it twice. */
 export const subagentNotFound = (agentId: string, detail: string): PageError =>
 	new PageError({reason: "subagent-not-found", detail: `${detail} (${agentId})`});
 
