@@ -34,6 +34,25 @@ import type {
 /**
  * Where a session is, as the core's `ai-agent-session` machine names it (#7497). The layer
  * reports it; the machine stores it and the window renders the phase line off that.
+ *
+ * **When a layer owes one.** Per turn, exactly twice: `prompting` as the turn starts and `ready`
+ * as it ends, however it ended. `starting` and `reconnecting` are the core's own — it is already
+ * inside the open a layer would be describing — so `coreOwned` in `core/fold.ts` drops both, and a
+ * layer sending one writes to a channel nobody reads. `idle` is the core's initial state
+ * (`core/state.ts`, `initialState`) and no layer sends it; `gone` is the layer's terminal report,
+ * for a transport that is actually away.
+ *
+ * **What omitting the turn-end `ready` costs.** The `prompt` cell in `core/machine.ts` has an arm
+ * per case: at `ready` it admits the send, at `prompting` it *queues* it (`enqueue`, bounded by
+ * `queueLimit` in `core/queue.ts`, #8159) and answers `promptQueueFull` only once the queue is
+ * full, and every other phase is `promptRefused`. The queue's head is admitted by `settleQueue`,
+ * and only when the session comes back to `ready`. So a turn left at `prompting` never refuses
+ * outright — it silently swallows each later prompt into a queue that never drains, then answers
+ * `promptQueueFull` for the rest of the session. Nothing types it: `AgentEvent` carries no "turn over" shape, so the
+ * omission compiles and passes every generic test — #7963 (Claude sent no turn-end phase at all)
+ * and #7897 (Pi sent it and the host's queue coalesced it away) are the two that shipped. The
+ * shape a layer holds it with is in
+ * [`.patterns/agent-layer-phase-contract.md`](../../../../.patterns/agent-layer-phase-contract.md).
  */
 export type Phase = "idle" | "starting" | "ready" | "prompting" | "reconnecting" | "gone";
 
