@@ -1,0 +1,125 @@
+---
+id: 0364
+title: "`@earendil-works/pi-protocol` compiles its typebox validators once, carried as a local patch until upstream takes it"
+status: accepted
+date: 2026-09-07
+tags: [tuval, dependencies, performance, pi]
+---
+
+# 0364 — `@earendil-works/pi-protocol` compiles its typebox validators once, carried as a local patch until upstream takes it
+
+**What this decides:** phoenix patches its pinned `@earendil-works/pi-protocol` so the Pi wire codec
+builds each message validator once instead of re-walking the schema on every message, and offers the
+same change upstream rather than routing around the codec in our own code.
+
+## Context
+
+Streaming a Pi reply in the Tuval desk crawled, and the desk's node process sat at 100% CPU for the
+whole turn ([#8515](https://github.com/kamp-us/phoenix/issues/8515)).
+
+The cost is in the dependency, not in Tuval. `@earendil-works/pi-protocol@0.84.3`'s
+`dist/codec.js` calls `Check(ServerMessageSchema, value)` from `typebox/value` on every encode
+(`parseServerMessage`, reached from `encodeProtocolMessage`) and again on every decode
+(`ValidatedMessageDecoder.push`). `Check` is typebox's interpreted path: it re-walks the schema per
+call and nothing is cached. `dist/schemas.js` then declares `JsonValueSchema` as a
+`Type.Cyclic({JsonValue: Type.Union([… Type.Array(Type.Ref("JsonValue")),
+Type.Record(Type.String(), Type.Ref("JsonValue"))])})`, and that cyclic `$ref` is re-resolved per
+node. A tool item's `input` and `details` are that schema, so every tool call in a transcript pays
+for the whole walk.
+
+Measured against this repo's pins (`typebox@1.3.7`, node 26), one `Check` call on a
+`session_snapshot`:
+
+| message | JSON size | uncompiled `Check` | compiled `Check` |
+|---|---|---|---|
+| 1 item | 0.5 KB | 0.069 ms | 0.004 ms |
+| 32 items (16 tool calls) | 21 KB | 563 ms | 0.14 ms |
+| 100 items (50 tool calls) | 63 KB | 1791 ms | 0.45 ms |
+| 300 items (150 tool calls) | 184 KB | 5218 ms | 0.69 ms |
+| 300 items, text only | 178 KB | 15 ms | 0.21 ms |
+
+The text-only row is what names the cause: ~35 ms per tool item and near zero per text item, so the
+cost is the cyclic `JsonValue` `$ref` and nothing else. `Compile(ServerMessageSchema)` costs about
+160 ms once.
+
+Tuval pays that twice per message. `PiServerService.ts`'s `followSession` writes a whole
+`session_snapshot` — `snapshots.ts`'s `sessionSnapshot` carries `transcript: [...view.transcript]`
+— every time the session handle signals a change, and a streamed turn signals on every delta. The
+Pi server and the Pi client both live inside the desk process, so each snapshot is validated once on
+the way out and once on the way in. On a 300-item transcript that is about 10 s of validation CPU
+per snapshot, which is why the process pins rather than merely lagging.
+
+Nothing in phoenix's own code can avoid it. Both ends of the socket run the dependency's validator,
+and the protocol's own refusal semantics are what that validator is for — declining to validate
+would be a different decision about the wire, not a performance fix.
+
+## Decision
+
+**`@earendil-works/pi-protocol@0.84.3` is patched in-repo so `parseClientMessage` and
+`parseServerMessage` each use a validator built once with `Compile` from `typebox/compile`, and the
+same change is offered upstream to `earendil-works/pi`.**
+
+The patch lives at `patches/@earendil-works__pi-protocol@0.84.3.patch`, wired through
+`patchedDependencies` in `pnpm-workspace.yaml`. It touches one file and adds no behaviour of its
+own: the `typebox/value` import becomes `typebox/compile`, and the two `Check(Schema, value)` calls
+become `.Check(value)` on a lazily built, memoized validator.
+
+**Lazy rather than eager**, because the two builds cost ~160 ms each and a process that speaks one
+direction should pay for one validator. The desk speaks both, so it pays both — once, at the first
+message of each direction, against seconds per message saved.
+
+**Equivalence was checked, not assumed.** The compiled and uncompiled validators agree on all 13
+cases exercised before the patch was committed: valid snapshots with and without a transcript, an
+unknown top-level type, an extra property, a missing required field, a wrong-typed field, an empty
+`minLength: 1` id, a negative timestamp, a status off its union, a deep `JsonValue`, an `undefined`
+inside a `JsonValue`, a thinking level off its union, and a streaming item carrying a `stopReason`
+its variant forbids. The patch is a speed change, not a laxity change.
+
+Round trip through the real codec (`encodeServerMessage` then `ServerMessageDecoder.push`), which is
+the pair of `Check` calls the desk actually pays per snapshot:
+
+| transcript | unpatched | patched |
+|---|---|---|
+| 1 item | 0.88 ms | 0.15 ms |
+| 51 items (25 tool calls) | 2114 ms | 1.32 ms |
+| 301 items (150 tool calls) | 10444 ms | 5.93 ms |
+
+The patch is held the way every maintained patch here is held, in the two layers
+[`.patterns/dependency-patch-behavior-pins.md`](../.patterns/dependency-patch-behavior-pins.md)
+defines and `fabrika guard patch-guard check` fails closed on: the version-keyed
+`patchedDependencies` entry, which is pnpm's own loud-fail on version drift, and a behavior pin —
+`apps/tuval/src/pi/codec-compiled-check.unit.test.ts`, carrying the
+`// @patch-pin: @earendil-works/pi-protocol@0.84.3` marker. That pin asserts both halves: a
+300-item round trip under a 1 s ceiling (three orders of magnitude above the patched cost and three
+below the unpatched one, so no machine's speed moves the verdict), and that the codec still refuses
+a message the schema does not admit — speed alone would pass on a codec that validated nothing.
+
+**Binding constraints.**
+
+- Re-key this patch on the next `@earendil-works/pi-protocol` bump — both layers, the
+  `patchedDependencies` key and the `@patch-pin` marker — and drop it once a release compiles its
+  own validators.
+- The four `@earendil-works/pi-*` packages are catalogued as a set at one exact version (the catalog
+  comment in `pnpm-workspace.yaml` says why): bumping one bumps all four, and this patch is
+  re-generated with them.
+- `pnpm patch-commit` rewrites `pnpm-workspace.yaml` wholesale, stripping the catalog's comments and
+  re-sorting its keys. Restore that file from `main` after committing a patch and hand-add the
+  `patchedDependencies` line — the same instruction ADR
+  [0361](0361-manti-menu-highlighted-value-patch.md) records.
+
+## Consequences
+
+The desk's per-message validation cost stops scaling with transcript length, which is the whole of
+the reported slowness on a session long enough to hold tool calls.
+
+What this does **not** fix: `followSession` still sends the entire transcript on every session
+change, so a streamed turn still moves ~180 KB per delta across the loopback socket and still
+rebuilds the whole snapshot object each time. The protocol already carries `item_updated` and
+`assistant_delta` progress messages that would bound that work regardless of transcript length.
+That is a separate decision about what Tuval's Pi server sends, and #8515 carries it.
+
+This is [ADR 0038](0038-dependency-patches-local-only.md)'s shape — a local `pnpm patch` committed
+to the repo, never an external patch source, with upstreaming encouraged and the merged release, not
+the in-flight PR, as the thing phoenix eventually depends on. ADR
+[0170](0170-workers-cache-via-alchemy-effect-pnpm-patch.md) and ADR
+[0361](0361-manti-menu-highlighted-value-patch.md) are the same move on other pins.
