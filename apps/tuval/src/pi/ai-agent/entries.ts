@@ -30,6 +30,7 @@ import {
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type {TranscriptItem as PiTranscriptItem} from "@earendil-works/pi-protocol";
+import {planTranscriptPage, type TranscriptPageResult} from "../../ai-agent/history/index.ts";
 import type {SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
 import {itemId, itemsOf, thinkingId} from "./items.ts";
@@ -155,3 +156,22 @@ export const pageItems = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<T
 	}
 	return items;
 };
+
+/**
+ * One page of this branch, planned the one way every caller must plan it.
+ *
+ * `cursorAliases` is what joins the window's live `item-<index>` cursor to the stored ids
+ * `pageItems` keys by, and it is the whole of #8204's fix — so it lives here, where a test can
+ * exercise the same construction the callers do, rather than being re-typed at each call site,
+ * where dropping it reds nothing.
+ */
+export const planPageOverEntries = (
+	entries: ReadonlyArray<SessionEntry>,
+	bound: {readonly before: string | null; readonly limit: number},
+): TranscriptPageResult =>
+	planTranscriptPage(pageItems(entries), {
+		before: bound.before,
+		cursorAliases: pageCursorAliases(entries),
+		limit: bound.limit,
+		cursorBoundary: "containing-group",
+	});
