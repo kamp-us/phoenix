@@ -484,7 +484,7 @@ covered nothing has proven nothing.
 
 ```
 $ fabrika ui render --out after --surface /board
-{"set":"after","captures":[{"surface":"/board","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/board.png","width":1280,"height":2140,"sha256":"9c41…","firstRender":false}]}
+{"set":"after","captures":[{"surface":"/board","path":"/tmp/fabrika-build/s-9f2e/9312-c1a4d6f8/after/board.png","width":1280,"height":2140,"sha256":"9c41…","firstRender":false}]}
 ```
 
 **Grounding**
@@ -573,7 +573,7 @@ $ fabrika ui golden --surface /board
 ```
 
 ```
-$ fabrika ui golden --surface /board --candidate /tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/board.png
+$ fabrika ui golden --surface /board --candidate /tmp/fabrika-build/s-9f2e/9312-c1a4d6f8/after/board.png
 {"surface":"/board","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
 ```
 
