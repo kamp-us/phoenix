@@ -7,6 +7,7 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import {isTranscriptPagePayload, type TranscriptItem} from "../ports/index.ts";
+import {pageCursor} from "./cursor.ts";
 import {groupTranscript, itemBytes} from "./groups.ts";
 import {planTranscriptPage} from "./page.ts";
 
@@ -61,6 +62,52 @@ describe("the page bound", () => {
 		expect(older.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
 	});
 
+	it("joins a selected live cursor to stored history without changing the local anchor", () => {
+		const local = {...userItem("local:send"), local: true};
+		const cursor = pageCursor([local, assistantItem("live-reply")], local.id);
+		expect(cursor).toEqual({kind: "page", before: "live-reply"});
+		if (cursor.kind !== "page") return;
+		const page = planTranscriptPage(history, {
+			before: cursor.before,
+			cursorAliases: new Map([["live-reply", "a3"]]),
+			cursorBoundary: "containing-group",
+			limit: 3,
+		});
+		expect(page.kind).toBe("page");
+		if (page.kind === "page") expect(page.items.map((item) => item.id)).toEqual(["u2", "a2", "t2"]);
+		expect(local.id).toBe("local:send");
+	});
+
+	it("preserves explicit newest reads, stored ids and group-boundary distinctions with aliases", () => {
+		const cursorAliases = new Map([
+			["u2", "u3"],
+			["live-reply", "a3"],
+		]);
+		for (const before of [null, "u2"]) {
+			expect(planTranscriptPage(history, {before, cursorAliases, limit: 3})).toEqual(
+				planTranscriptPage(history, {before, limit: 3}),
+			);
+		}
+		expect(planTranscriptPage(history, {before: "live-reply", cursorAliases, limit: 3})).toEqual({
+			kind: "refused",
+			reason: "cursor-splits-group",
+			cursor: "a3",
+		});
+	});
+
+	it("never turns an unknown live alias or an absent alias target into a newest read", () => {
+		for (const cursorAliases of [new Map<string, string>(), new Map([["live", "missing"]])]) {
+			const page = planTranscriptPage(history, {
+				before: "live",
+				cursorAliases,
+				cursorBoundary: "containing-group",
+				limit: 3,
+			});
+			expect(page.kind).toBe("refused");
+			if (page.kind === "refused") expect(page.reason).toBe("cursor-not-found");
+		}
+	});
+
 	it("emits an exchange larger than the limit whole, so paging never stalls", () => {
 		const big = [userItem("u1"), assistantItem("a1"), toolItem("t1"), toolItem("t2")];
 		const page = planTranscriptPage(big, {before: null, limit: 2});
@@ -108,6 +155,70 @@ describe("the page bound", () => {
 			reason: "limit-not-positive",
 			limit: 0,
 		});
+	});
+});
+
+describe("a local echo is not a stored page cursor", () => {
+	const local = {...userItem("local:send", "latest prompt"), local: true};
+	const stored = userItem("stored-user", local.text);
+	const reply = assistantItem("stored-assistant");
+	const older = [userItem("old-user"), assistantItem("old-assistant")];
+
+	it("skips the local prompt and loads older whole exchanges from its stored reply", () => {
+		const cursor = pageCursor([local, reply], local.id);
+		expect(cursor).toEqual({kind: "page", before: reply.id});
+		if (cursor.kind !== "page") return;
+		const page = planTranscriptPage([...older, stored, reply], {
+			before: cursor.before,
+			limit: 10,
+			cursorBoundary: "containing-group",
+		});
+		expect(page.kind).toBe("page");
+		if (page.kind !== "page") return;
+		expect(page.items).toEqual(older);
+		expect(page.next).toBeNull();
+	});
+
+	it("has no request for an all-local tail or an evicted local cursor", () => {
+		expect(pageCursor([local], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([reply, local], local.id)).toEqual({kind: "unavailable"});
+	});
+
+	it("never selects a partial reply that need not have a stored frame", () => {
+		const partial = {...reply, partial: true};
+		expect(pageCursor([local, partial], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([local, partial], partial.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([local, partial, ...older], local.id)).toEqual({
+			kind: "page",
+			before: older[0]?.id,
+		});
+		expect(pageCursor([local, partial], null)).toEqual({kind: "page", before: null});
+		expect(pageCursor([local, {...reply, partial: false}], local.id)).toEqual({
+			kind: "page",
+			before: reply.id,
+		});
+	});
+
+	it("uses the domain marker even when the local id has no prefix", () => {
+		const marked = {...local, id: stored.id};
+		expect(pageCursor([marked, reply], marked.id)).toEqual({kind: "page", before: reply.id});
+	});
+
+	it("preserves an explicit newest read and stored cursors from window-owned older pages", () => {
+		expect(pageCursor([local], null)).toEqual({kind: "page", before: null});
+		expect(pageCursor([local, reply], "old-user")).toEqual({kind: "page", before: "old-user"});
+		expect(pageCursor([local, reply], reply.id)).toEqual({kind: "page", before: reply.id});
+	});
+
+	it("still refuses an absent stored cursor in containing-group mode", () => {
+		expect(
+			planTranscriptPage(older, {
+				before: "absent",
+				limit: 10,
+				cursorBoundary: "containing-group",
+			}),
+		).toEqual({kind: "refused", reason: "cursor-not-found", cursor: "absent"});
 	});
 });
 

@@ -577,6 +577,54 @@ describe("paging", () => {
 		expect(await screen.findByText("Loading earlier messages…")).toBeDefined();
 	});
 
+	it("pages with a stored id and reanchors to the older local row, not that cursor", async () => {
+		const tail = [{...userItem("local:send", "local prompt"), local: true}, ...transcriptOf(20)];
+		const {process, scrolls, answerPage} = await openWindow(withTranscript(tail), {
+			pageLimit: 25,
+			estimateRowHeight: TEST_VIEWPORT.height,
+		});
+		await readerScrollsToTop(scrolls);
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(process.inbox()[0]).toEqual({type: "page", before: "i0", limit: 25});
+		const before = scrolls.length;
+		await act(async () => {
+			await answerPage(
+				withTranscript(tail, {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
+		});
+		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
+		// The older-history head and two prepended rows precede the local anchor, not four rows.
+		expect(scrolls.at(-1)).toBe(3 * TEST_VIEWPORT.height);
+	});
+
+	it("does not dispatch a partial live id before the reply has completed", async () => {
+		const local = {...userItem("local:stream-send", "local prompt"), local: true};
+		const reply = {...assistantItem("live-reply", "streaming reply"), partial: true};
+		const {process, scrolls} = await openWindow(withTranscript([local, reply]));
+		await readerScrollsToTop(scrolls);
+		await settle();
+		expect(process.inbox()).toEqual([]);
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript([local, {...reply, partial: false}])));
+		});
+		await scrollTo(0);
+		await waitFor(() => expect(process.inbox()).toHaveLength(1));
+		expect(process.inbox()[0]).toEqual({type: "page", before: reply.id, limit: 50});
+	});
+
+	it("does not request the newest page when every held row is local", async () => {
+		const tail = transcriptOf(20).map((item) => ({
+			...userItem(`local:${item.id}`, `local ${item.id}`),
+			local: true,
+		}));
+		const {process, scrolls} = await openWindow(withTranscript(tail));
+		await readerScrollsToTop(scrolls);
+		await settle();
+		expect(process.inbox()).toEqual([]);
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+	});
+
 	it("shows a page refusal, retries without consuming the retained failure, and settles on a page", async () => {
 		const state = withTranscript(transcriptOf(4));
 		const {process, scrolls, view, answerPage} = await openWindow(state, {pageLimit: 25});

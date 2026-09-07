@@ -19,7 +19,7 @@ import type {
 	ThinkingLevelChangeEntry,
 } from "@earendil-works/pi-coding-agent";
 import {describe, expect, it} from "vitest";
-import {pageItems} from "./entries.ts";
+import {pageCursorAliases, pageItems} from "./entries.ts";
 
 /** The package's root does not re-export the label entry's interface; the union still names it. */
 type LabelEntry = Extract<SessionEntry, {type: "label"}>;
@@ -59,6 +59,55 @@ describe("a session branch as pageable history", () => {
 		expect(items).toEqual([
 			{kind: "user", id: "e1", timestamp: Date.parse(at(1)), text: "older question"},
 			{kind: "assistant", id: "e2", timestamp: Date.parse(at(2)), text: "older answer"},
+		]);
+	});
+
+	it("aliases live positions using Pi's compacted context, not the full stored branch", () => {
+		const compaction: CompactionEntry = {
+			type: "compaction",
+			id: "compact",
+			parentId: "a2",
+			timestamp: at(5),
+			summary: "older exchange summarized",
+			firstKeptEntryId: "u2",
+			tokensBefore: 4_000,
+		};
+		const custom: CustomMessageEntry = {
+			type: "custom_message",
+			id: "custom",
+			parentId: "compact",
+			timestamp: at(6),
+			customType: "extension",
+			content: "hidden context",
+			display: false,
+		};
+		const entries = [
+			message("u1", null, 1, said("old")),
+			message("a1", "u1", 2, replied("old answer")),
+			message("u2", "a1", 3, said("kept")),
+			message("a2", "u2", 4, replied("kept answer")),
+			compaction,
+			custom,
+			message("u3", "custom", 7, said("latest")),
+			message("a3", "u3", 8, replied("latest answer")),
+		];
+		const aliases = pageCursorAliases(entries);
+		expect(aliases.get("item-0")).toBeUndefined();
+		expect(aliases.get("item-1")).toBe("u2");
+		expect(aliases.get("item-2")).toBe("a2");
+		expect(aliases.get("item-3")).toBeUndefined();
+		expect(aliases.get("item-4")).toBe("u3");
+		expect(aliases.get("item-5")).toBe("a3");
+		expect(aliases.get("item-5:thinking")).toBe("a3:thinking");
+		expect(aliases.get("item-6")).toBeUndefined();
+		expect(pageItems(entries).map((item) => item.id)).toEqual([
+			"u1",
+			"a1",
+			"u2",
+			"a2",
+			"compact",
+			"u3",
+			"a3",
 		]);
 	});
 
