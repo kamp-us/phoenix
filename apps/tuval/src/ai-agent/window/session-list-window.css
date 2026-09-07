@@ -131,3 +131,11 @@
 .tuval-session-transcript-refused {
 	color: var(--text-danger);
 }
+
+.tuval-session-transcript-older {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--s-2);
+}
