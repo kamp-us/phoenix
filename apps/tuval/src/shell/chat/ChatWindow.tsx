@@ -309,7 +309,13 @@ function RowView({
 		return (
 			<span className="tuval-chat-head">
 				<span role="status">Could not load earlier messages: {row.detail}</span>
-				<Button type="button" variant="tertiary" size="sm" onClick={onOlder}>
+				<Button
+					type="button"
+					variant="tertiary"
+					size="sm"
+					style={{minBlockSize: "var(--tap-min, 36px)"}}
+					onClick={onOlder}
+				>
 					Retry loading earlier messages
 				</Button>
 			</span>
