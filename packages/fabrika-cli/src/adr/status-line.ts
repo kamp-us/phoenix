@@ -37,8 +37,8 @@ const isAmendedInPart = (status: string): boolean => /^amended-in-part\s+by\b/i.
  * The status value to write.
  *
  * `supersede` replaces whatever was there. `amend-in-part` **appends** to an existing
- * `amended-in-part by` list in id order — ADR 0023 carries three such links today, and a verb that
- * overwrote instead of appending would silently drop two live relationships. A link already in the
+ * `amended-in-part by` list in id order — one record can carry several such links, and a verb that
+ * overwrote instead of appending would silently drop the ones already there. A link already in the
  * list is a no-op: the value comes back unchanged, and the verb still exits 0.
  */
 export const nextStatusValue = (

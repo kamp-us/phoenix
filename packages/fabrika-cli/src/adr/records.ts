@@ -2,11 +2,11 @@
  * The shared vocabulary of an ADR record: what its filename means, what its frontmatter says,
  * and which statuses are *live*.
  *
- * fabrika owns this predicate rather than importing one (ADR 0238). The semantics the contract
+ * fabrika owns this predicate rather than importing one. The semantics the contract
  * fixes: `accepted` is live, and so is `amended-in-part`, whose unamended remainder still stands;
  * `proposed` is not yet live and `superseded` is no longer. Presence on the base ref is a separate
- * fact from authority — `landed` vs `live` — and conflating them licenses citing 36 of the 233
- * records on `main` that are present and not live.
+ * fact from authority — `landed` vs `live` — and conflating them licenses citing a record that is
+ * present on the base ref and not live.
  */
 
 /** A record filename plus its full text — the unit every pure function here consumes. */

@@ -9,8 +9,8 @@
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
  * **`--ready-for` is optional at the parser and refused in the verb body.** A parser-required flag's
- * absence is exit `1`, indistinguishable from a typo; an absent audience is a decision nobody made
- * (#4780), which must be provable as `10`. `--body-digest`, `--child` and `--title` stay
+ * absence is exit `1`, indistinguishable from a typo; an absent audience is a decision nobody made,
+ * which must be provable as `10`. `--body-digest`, `--child` and `--title` stay
  * parser-required, because their absence is an ordinary usage error with no semantic content and their
  * fail-open risk is a *wrong* value — which is `21` and `10` respectively, not a missing one.
  */
@@ -117,26 +117,26 @@ const child = leafCommand(
 		readyFor: Flag.string("ready-for").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the child's audience: human | agent. Optional at the parser and REFUSED on 10 when absent — a child never inherits its audience by omission (#4780)",
+				"the child's audience: human | agent. Optional at the parser and REFUSED on 10 when absent — a child never inherits its audience by omission",
 			),
 		),
 		assignee: Flag.string("assignee").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the login a held child is born assigned to; required with --ready-for human (#4693)",
+				"the login a held child is born assigned to; required with --ready-for human",
 			),
 		),
 		milestone: Flag.string("milestone").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the title of an open milestone; required unless --label carries a standing lane (#5969)",
+				"the title of an open milestone; required unless --label carries a standing lane",
 			),
 		),
 		token: tokenFlag,
 		label: Flag.string("label").pipe(
 			Flag.atLeast(0),
 			Flag.withDescription(
-				"a further label applied in the same create call; repeatable, and every value must already exist in the repo taxonomy (#4285)",
+				"a further label applied in the same create call; repeatable, and every value must already exist in the repo taxonomy",
 			),
 		),
 		repo: repoFlag,
@@ -196,7 +196,7 @@ const topology = leafCommand(
 ).pipe(
 	Command.withShortDescription("Validate the declared topology and render its Dependencies block."),
 	Command.withDescription(
-		'Validate the topology declared on STDIN — one "#<ref> phase <n> [requires #<a>, #<b>]" line per child, order-indifferent — against the run manifest, render the "## Dependencies" block, and parse it back through the shipped reader before staging it. Prints {"answer":"staged","epic":n,"document":"topology","phases":n,"children":n,"edges":{"rows":[["#4303","#4301"]],"more":0},"bytes":n} — the edges are a cap-and-count under ADR 0308, the first 5 pairs plus how many followed. It cannot see a shared-file conflict — whether two children in one phase write the same module is the skill\'s judgment. Exits 3 (stdin held nothing), 4 (a line does not parse), 7 (the epic is proven absent or closed, or the run manifest holds zero children), 10 (not a type:epic, or a phase is not a positive integer), 11 (a read failed — nothing was staged), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a cycle, a reference to a non-child, a manifest child placed nowhere, or a rendered block that does not parse back to the declared edges). Example: fabrika ledger topology 4300 --token build:s-9f2e:c1a4d6f8-… < topo.txt',
+		'Validate the topology declared on STDIN — one "#<ref> phase <n> [requires #<a>, #<b>]" line per child, order-indifferent — against the run manifest, render the "## Dependencies" block, and parse it back through the shipped reader before staging it. Prints {"answer":"staged","epic":n,"document":"topology","phases":n,"children":n,"edges":{"rows":[["#<child>","#<prerequisite>"]],"more":0},"bytes":n} — the edges are a cap-and-count: the first 5 pairs plus how many followed. It cannot see a shared-file conflict — whether two children in one phase write the same module is the skill\'s judgment. Exits 3 (stdin held nothing), 4 (a line does not parse), 7 (the epic is proven absent or closed, or the run manifest holds zero children), 10 (not a type:epic, or a phase is not a positive integer), 11 (a read failed — nothing was staged), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a cycle, a reference to a non-child, a manifest child placed nowhere, or a rendered block that does not parse back to the declared edges). Example: fabrika ledger topology 4300 --token build:s-9f2e:c1a4d6f8-… < topo.txt',
 	),
 );
 
@@ -270,7 +270,7 @@ const edges = leafCommand(
 ).pipe(
 	Command.withShortDescription("Write the epic's declared dependencies into the blocked_by graph."),
 	Command.withDescription(
-		'Read the epic\'s own ## Dependencies block and write every edge it requires into GitHub\'s native blocked_by graph, then prove each one by re-reading the graph. That graph is the ONE carrier of blockedness and both build gates read only it (ADR 0301). Reconcile, never replace: an edge already present is "already", an edge no ledger authored is left alone. It reads the epic body, not this run\'s staged topology, so an epic planned by an earlier run reconciles the same way — and it is idempotent, so a re-run over a reconciled epic writes nothing. Prints {"answer":"reconciled","epic":n,"required":k,"already":k,"written":k,"verified":true}. Exits 4 (the ## Dependencies block is unparseable), 7 (the epic is proven absent or closed, or declares no topology — zero scope), 8 (edges were POSTed and the graph could not be re-read — UNKNOWN), 9 (the graph does not read back carrying every required edge), 10 (not a type:epic), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a prerequisite the block names is proven absent, so no edge can point at it). Example: fabrika ledger edges 4300 --token build:s-9f2e:c1a4d6f8-…',
+		'Read the epic\'s own ## Dependencies block and write every edge it requires into GitHub\'s native blocked_by graph, then prove each one by re-reading the graph. That graph is the ONE carrier of blockedness and both build gates read only it. Reconcile, never replace: an edge already present is "already", an edge no ledger authored is left alone. It reads the epic body, not this run\'s staged topology, so an epic planned by an earlier run reconciles the same way — and it is idempotent, so a re-run over a reconciled epic writes nothing. Prints {"answer":"reconciled","epic":n,"required":k,"already":k,"written":k,"verified":true}. Exits 4 (the ## Dependencies block is unparseable), 7 (the epic is proven absent or closed, or declares no topology — zero scope), 8 (edges were POSTed and the graph could not be re-read — UNKNOWN), 9 (the graph does not read back carrying every required edge), 10 (not a type:epic), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a prerequisite the block names is proven absent, so no edge can point at it). Example: fabrika ledger edges 4300 --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 

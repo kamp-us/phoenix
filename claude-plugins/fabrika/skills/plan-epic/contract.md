@@ -533,7 +533,7 @@ call site — so the tree is stale by default until shown otherwise.
 | `ledger open: #<n> is not a type:epic — refusing to plan it.` | 10 | refusal |
 | `ledger open: cannot read <what>: <reason> — the ground is UNKNOWN.` | 11 | refusal |
 | `ledger open: this lane does not hold #<n>'s claim.` | 15 | refusal |
-| `ledger open: base is <k> commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).` | 20 | refusal |
+| `ledger open: base is <k> commit(s) behind origin/main — a plan derived here is derived on stale ground.` | 20 | refusal |
 | `ledger open: #<n>'s body carries <k> "## Plan (plan-epic)" headings — the plan mode has no single meaning.` | 22 | refusal |
 
 **Scope** — one epic, its sub-issue children, the open backlog for the dedup rank, one repo-file
@@ -551,7 +551,7 @@ $ fabrika ledger open 3 --token <claim-token>
 
 ```
 $ fabrika ledger open 3 --token <claim-token>
-ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).
+ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground.
 $ echo $?
 20
 ```
@@ -816,11 +816,11 @@ link, deliberately** — see step 5.
 | `ledger child: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `ledger child: created #<c> and could not re-read it — the outcome is UNKNOWN.` | 8 | refusal |
 | `ledger child: created #<c> and it does not read back as sent — it needs a human eye.` | 9 | refusal |
-| `ledger child: --ready-for is required — a child must never inherit its audience by omission (#4780).` | 10 | refusal |
-| `ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).` | 10 | refusal |
-| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 10 | refusal |
+| `ledger child: --ready-for is required — a child must never inherit its audience by omission.` | 10 | refusal |
+| `ledger child: --ready-for human requires --assignee — a held child is born assigned.` | 10 | refusal |
+| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
-| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).` | 10 | refusal |
+| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
 | `ledger child: this lane does not hold #<n>'s claim.` | 15 | refusal |
@@ -840,7 +840,7 @@ $ fabrika ledger child 3 --title "queue view: fate loader" --type type:feature -
 
 ```
 $ fabrika ledger child 3 --title "moderation queue triage rules" --type type:feature --priority p1 --ready-for human --token <claim-token> < child.md
-ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).
+ledger child: --ready-for human requires --assignee — a held child is born assigned.
 $ echo $?
 10
 ```
@@ -933,7 +933,7 @@ skill carries, and the verb does not pretend otherwise.
 | `ledger topology: #<n> is declared <k> times — a child sits in exactly one phase.` | 24 | refusal |
 | `ledger topology: the rendered block does not parse back to the declared edges — refusing to stage it.` | 24 | refusal |
 | `ledger topology: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `ledger topology: the run manifest holds zero children — refusing to render a topology over zero scope (ADR 0092).` | 7 | refusal |
+| `ledger topology: the run manifest holds zero children — refusing to render a topology over zero scope.` | 7 | refusal |
 | `ledger topology: #<n> is not a type:epic — refusing to declare a topology for it.` | 10 | refusal |
 | `ledger topology: phase "<v>" is not a positive integer.` | 10 | refusal |
 | `ledger topology: cannot read <what>: <reason> — nothing was staged.` | 11 | refusal |
@@ -1162,7 +1162,7 @@ answers `written: 0`.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ledger edges: #<n>'s ## Dependencies block is unparseable at line <k>: <text>` | 4 | refusal |
-| `ledger edges: #<n> declares no topology — refusing to answer over zero scope (ADR 0092).` | 7 | refusal |
+| `ledger edges: #<n> declares no topology — refusing to answer over zero scope.` | 7 | refusal |
 | `ledger edges: <k> edge(s) were POSTed and cannot be confirmed — cannot read <what>: <reason>.` | 8 | refusal |
 | `ledger edges: <k> edge(s) do not read back on the graph — it needs a human eye.` | 9 | refusal |
 | `ledger edges: #<n> is not a type:epic — refusing to write edges for it.` | 10 | refusal |
@@ -1184,7 +1184,7 @@ ledger edges: scanned 3 required edges.
 
 ```
 $ fabrika ledger edges 3 --token <claim-token>
-ledger edges: #3 declares no topology — refusing to answer over zero scope (ADR 0092).
+ledger edges: #3 declares no topology — refusing to answer over zero scope.
 $ echo $?
 7
 ```

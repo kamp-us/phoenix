@@ -21,7 +21,7 @@ const base = (overrides: ReadonlyArray<Scripted> = []) =>
 	fakeSeams([
 		...overrides,
 		[/^git remote$/, okOut("origin\n")],
-		[/^git remote get-url origin$/, okOut("https://github.com/kamp-us/phoenix.git\n")],
+		[/^git remote get-url origin$/, okOut("https://github.com/o/r.git\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[
@@ -36,14 +36,12 @@ const base = (overrides: ReadonlyArray<Scripted> = []) =>
 			/pulls\/4711\/files/,
 			{
 				status: 200,
-				body: JSON.stringify([
-					{status: "added", filename: ".decisions/0239-campaign-milestones.md"},
-				]),
+				body: JSON.stringify([{status: "added", filename: ".records/0239-campaign-milestones.md"}]),
 			},
 		],
 	]);
 
-const options = {ids: ["0164"], dir: ".decisions", base: "origin/main", repo: null, json: false};
+const options = {ids: ["0164"], dir: ".records", base: "origin/main", repo: null, json: false};
 
 const run = (overrides: ReadonlyArray<Scripted> = [], opts: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runResolve({...options, ...opts}), base(overrides).layer));
@@ -116,8 +114,8 @@ describe("runResolve", () => {
 		expect(out.stderr.at(-1)).toContain("indistinguishable from");
 	});
 
-	// An empty `.decisions/` is a fresh adopter's normal state, and nobody holds the id there —
-	// which is exactly what `absent` says (#5254).
+	// An empty record directory is a fresh adopter's normal state, and nobody holds the id there —
+	// which is exactly what `absent` says.
 	it("answers absent against a readable-but-empty --dir", async () => {
 		const out = await run([
 			[/^git ls-tree/, okOut("")],
@@ -140,7 +138,7 @@ describe("runResolve", () => {
 		expect(out.code).not.toBe(1);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			'adr resolve: cannot read .decisions at origin/main: fatal: not a tree object — every state is UNKNOWN, never "absent".',
+			'adr resolve: cannot read .records at origin/main: fatal: not a tree object — every state is UNKNOWN, never "absent".',
 		);
 	});
 
@@ -163,7 +161,7 @@ describe("runResolve", () => {
 		expect(out.code).toBe(DIR_UNREADABLE);
 		expect(out.code).not.toBe(1);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("cannot read .decisions/0164-guard.md");
+		expect(out.stderr.at(-1)).toContain("cannot read .records/0164-guard.md");
 	});
 
 	it("refuses two records claiming one id on its own proven code, not on 1", async () => {

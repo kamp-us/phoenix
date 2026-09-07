@@ -6,11 +6,11 @@
  * spending a chance to fix itself — and a wait is a lane that did nothing wrong sitting behind a
  * merge queue. Riding one counter would make a PR that dwelt in the queue arrive at its first real
  * FAIL with no repair rounds left, which is a budget spent on a queue's clock rather than on the
- * work (ADR 0313).
+ * work. The two counters therefore stay separate.
  *
  * The value is four observations of the same wait: the shipper's own bounded watch, then three
- * driver re-folds. #6178 sat ~13m45s against the shipper's ~480s horizon, so a bound of three
- * covers roughly four horizons without ever letting the wait run open-ended.
+ * driver re-folds. The wait that forced this bound sat ~13m45s against the shipper's ~480s horizon,
+ * so a bound of three covers roughly four horizons without ever letting the wait run open-ended.
  */
 
 /** The re-folds a waiting task gets before its wait escalates to a human park. */

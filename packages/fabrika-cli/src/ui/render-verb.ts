@@ -2,18 +2,17 @@
  * `ui render` — render the named surfaces in this tree and capture one **validated** PNG each.
  *
  * Two properties carry the whole verb. First, scope is exactly the `--surface` operands: nothing here
- * scans a diff, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092), and a
- * dropped surface is the skill's explicit act — re-invoking without it — never the tool's silent
- * tolerance (#4305 / #3232). Second, validity is part of the answer: a capture that is zero bytes,
- * undecodable or zero-area is `16`, because a capture nobody can open is not evidence (#3925's class)
- * and v1 checked capture success nowhere at all.
+ * scans a diff, so "rendered nothing, found nothing wrong" is unrepresentable, and a dropped surface
+ * is the skill's explicit act — re-invoking without it — never the tool's silent tolerance. Second,
+ * validity is part of the answer: a capture that is zero bytes, undecodable or zero-area is `16`,
+ * because a capture nobody can open is not evidence and v1 checked capture success nowhere at all.
  *
  * The set manifest is the seam to `ui evidence`: `<set>/manifest.json` holds the exact stdout bytes,
  * so no value crosses that seam by memory.
  *
  * A surface resolves to the app whose declared mount is its longest match, and only the apps some
  * requested surface resolves to are started — so a worker-free surface never waits on a worker's
- * readiness probe, and a repo with two runnable apps can render both (#7992).
+ * readiness probe, and a repo with two runnable apps can render both.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -194,7 +193,7 @@ const shoot = (
 			return {
 				_tag: "Bad" as const,
 				code: SURFACE_UNREACHABLE,
-				line: `${VERB}: surface "${surface}" is unreachable in this tree (${shot.reason}) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations (#4305).`,
+				line: `${VERB}: surface "${surface}" is unreachable in this tree (${shot.reason}) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations.`,
 			};
 		}
 		if (shot._tag === "Crashed") {
@@ -224,7 +223,7 @@ const shoot = (
 			return {
 				_tag: "Bad" as const,
 				code: CAPTURE_INVALID,
-				line: `${VERB}: surface "${surface}" captured invalid bytes (${image.detail}) — a capture nobody can open is not evidence (#3925's class).`,
+				line: `${VERB}: surface "${surface}" captured invalid bytes (${image.detail}) — a capture nobody can open is not evidence.`,
 			};
 		}
 		return {

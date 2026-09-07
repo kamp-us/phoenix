@@ -448,7 +448,7 @@ An **absent** `## Dependencies` block is *not* `4` — it is defect `MISSING_DEP
 | `plan read: #<n>'s child #<c> carries <k> "<field>" lines — a field declared twice has no single meaning.` | 4 | refusal |
 | `plan read: #<n>'s user stories are numbered <list> — a story list must run from 1 with no gaps or repeats.` | 4 | refusal |
 | `plan read: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `plan read: #<n> has zero sub-issue children — there is no ledger to read (ADR 0092).` | 7 | refusal |
+| `plan read: #<n> has zero sub-issue children — there is no ledger to read.` | 7 | refusal |
 | `plan read: #<n> is not a type:epic — refusing to read it as one.` | 10 | refusal |
 | `plan read: cannot read <what>: <reason> — the ledger is UNKNOWN.` | 11 | refusal |
 
@@ -465,7 +465,7 @@ $ fabrika plan read 3
 
 ```
 $ fabrika plan read 3
-plan read: #3 has zero sub-issue children — there is no ledger to read (ADR 0092).
+plan read: #3 has zero sub-issue children — there is no ledger to read.
 $ echo $?
 7
 ```
@@ -545,13 +545,13 @@ nobody asked for.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `plan check: #<n> has zero children — refusing to answer over zero scope (ADR 0092).` | 7 | refusal |
+| `plan check: #<n> has zero children — refusing to answer over zero scope.` | 7 | refusal |
 | `plan check: #<n> is not a type:epic — refusing to gate it.` | 10 | refusal |
 | `plan check: the ledger grammar refused: <reason>` | 4 | refusal |
 | `plan check: cannot read <what>: <reason> — the floor is UNKNOWN, not clean.` | 11 | refusal |
 | `plan check: cannot read <what>: <reason> — who may approve is unread, so the approval is UNKNOWN, not absent.` | 11 | refusal |
-| `plan check: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).` | 25 | refusal |
-| `plan check: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve (ADR 0289).` | 25 | refusal |
+| `plan check: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor.` | 25 | refusal |
+| `plan check: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve.` | 25 | refusal |
 
 **Scope** — every child of the epic, no sampling and no cap. The stderr `scannedLine` names the
 scanned set on **both** arms, so a clean answer states the scope it rests on. Zero scope is `7`.
@@ -719,18 +719,18 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `plan flip: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).` | 25 | refusal |
-| `plan flip: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve (ADR 0289).` | 25 | refusal |
+| `plan flip: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor.` | 25 | refusal |
+| `plan flip: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve.` | 25 | refusal |
 | `plan flip: the floor is not clean (<k> defect(s)) — refusing to flip.` | 20 | refusal |
 | `plan flip: the plan moved since the check (digest <a> → <b>) — re-check before flipping.` | 21 | refusal |
 | `plan flip: <a> of <n> children flipped; <b> unchanged (#<x>, #<y>) — the epic is half-flipped and needs a human.` | 22 | refusal |
 | `plan flip: every child flipped but epic #<n> does not carry ready-for:agent alone — the epic is half-flipped and needs a human.` | 22 | refusal |
-| `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 23 | refusal |
+| `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 23 | refusal |
 | `plan flip: wrote <n> label change(s) and could not re-read <what> — the outcome is UNKNOWN.` | 8 | refusal |
 | `plan flip: #<n> is held by <token>, not by <this lane's token>.` | 15 | refusal |
 | `plan flip: --digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `plan flip: #<n> is not a type:epic — refusing to flip its children.` | 10 | refusal |
-| `plan flip: #<n> has zero children — refusing to act over zero scope (ADR 0092).` | 7 | refusal |
+| `plan flip: #<n> has zero children — refusing to act over zero scope.` | 7 | refusal |
 | `plan flip: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `plan flip: the ledger grammar refused during the re-gate: <reason>` | 4 | refusal |
 
@@ -851,8 +851,8 @@ which is what `10` means.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `plan verdict: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).` | 25 | refusal |
-| `plan verdict: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve (ADR 0289).` | 25 | refusal |
+| `plan verdict: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor.` | 25 | refusal |
+| `plan verdict: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve.` | 25 | refusal |
 | `plan verdict: --digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `plan verdict: --polarity <v> disagrees with the derived floor (<derived>) — a verdict relays the floor, it does not form one.` | 10 | refusal |
 | `plan verdict: caveat kind "<v>" is not in the closed set (ac-not-checkable, brief-fidelity, slice-too-broad, dependency-implied-not-declared).` | 10 | refusal |

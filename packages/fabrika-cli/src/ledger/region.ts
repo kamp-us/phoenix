@@ -1,11 +1,11 @@
 /**
  * Where the plan goes in the epic body, resolved by anchors rather than by position.
  *
- * **Detection is the verb-written enrichment marker, never a position** (#4850, #4866): with the
+ * **Detection is the verb-written enrichment marker, never a position**: with the
  * marker doing the detecting, appending the plan below the preserved brief envelope breaks no
  * detector, so no layout inversion is needed. What the marker buys here is the *bound*: a
  * `## Dependencies` heading that resolves **inside** the preserved brief is not this run's anchor, and
- * cutting there is how v1 destroyed a body (#4879).
+ * cutting there is how v1 destroyed a body.
  *
  * **The region is never cut to end-of-file.** v1's replace branch sliced from the `## Dependencies`
  * heading to EOF on the assumption that dependencies are the last section, destroying anything a human
@@ -99,7 +99,7 @@ export const splicePlan = (input: SpliceInput): Splice => {
 	const envelope = envelopeOf(lines);
 	if (envelope !== null && dependencies > envelope.start && dependencies < envelope.end) {
 		return unresolvable(
-			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there (#4879).`,
+			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there.`,
 		);
 	}
 	if (dependencies < start) {

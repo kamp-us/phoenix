@@ -11,7 +11,7 @@ import {
 
 const fixture = `# fixture domain vocabulary (TERMS)
 
-Prose that mentions #3227). as a bare hash, which is not a heading.
+Prose that mentions #7). as a bare hash, which is not a heading.
 
 ## Core / shape
 
@@ -29,8 +29,8 @@ Prose that mentions #3227). as a bare hash, which is not a heading.
 
 describe("normalizeKey", () => {
 	it("folds case with a Unicode-aware lowercase, so Turkish nouns are not dropped (#4481)", () => {
-		expect(normalizeKey("Sözlük")).toBe("sözlük");
-		expect(normalizeKey("Geçit")).toBe("geçit");
+		expect(normalizeKey("Çekirdek")).toBe("çekirdek");
+		expect(normalizeKey("Düğüm")).toBe("düğüm");
 	});
 
 	it("folds hyphens, underscores and whitespace runs to one space", () => {
@@ -44,10 +44,10 @@ describe("normalizeKey", () => {
 		expect(normalizeKey("**depo**")).toBe("depo");
 	});
 
-	// The v1 alias-splitting produced three false duplicates; a parenthetical is a qualifier (#4206).
+	// The v1 alias-splitting produced three false duplicates; a parenthetical is a qualifier.
 	it("keeps the whole cell as one key — no split on a parenthesis, slash or comma", () => {
 		expect(normalizeKey("Database (tag)")).toBe("database (tag)");
-		expect(normalizeKey("sözlük (sozluk)")).toBe("sözlük (sozluk)");
+		expect(normalizeKey("çekirdek (cekirdek)")).toBe("çekirdek (cekirdek)");
 		expect(normalizeKey("Database (tag)")).not.toBe(normalizeKey("tag"));
 	});
 });
@@ -105,7 +105,7 @@ describe("parseRegister", () => {
 	const parsed = parseRegister(fixture);
 	const value = parsed._tag === "Parsed" ? parsed.value : null;
 
-	it("reads only `^## ` headings, so a prose line beginning `#3227).` is not a phantom section", () => {
+	it("reads only `^## ` headings, so a prose line carrying a bare hash is not a phantom section", () => {
 		expect(value?.sections.map((section) => section.name)).toEqual(["Core / shape", "Indexing"]);
 	});
 

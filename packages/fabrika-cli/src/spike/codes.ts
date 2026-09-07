@@ -96,7 +96,7 @@ export const REMOVAL_UNPROVEN = 16;
 export const TREE_MOVED = 17;
 /** Proven: the workspace for this nonce belongs to different work — another spike, question or kind. */
 export const WORKSPACE_MISMATCH = 18;
-/** Proven: the capture author does not hold `write` or better on the repository (ADR 0055). */
+/** Proven: the capture author does not hold `write` or better on the repository. */
 export const AUTHOR_UNAUTHORIZED = 19;
 /** Proven: the spike issue landed and its manifest could not be completed to name it. */
 export const MANIFEST_INCOMPLETE = 20;

@@ -26,10 +26,10 @@ describe("runSections", () => {
 		);
 	});
 
-	// A `^#` scan counts the prose line beginning `#3227).` as a section; the required space does not.
+	// A `^#` scan counts the fixture's bare-hash prose line as a section; the required space does not.
 	it("does not report a prose line beginning with a hash as a section", async () => {
 		const out = await run(fakeFs({files: {[TERMS_PATH]: TERMS}}));
-		expect(out.stdout).not.toContain("3227");
+		expect(out.stdout).not.toContain("bare hash");
 	});
 
 	it("answers the bootstrap line for an absent register — never empty stdout", async () => {

@@ -34,10 +34,7 @@ export const runLaw = (): Effect.Effect<
 			);
 		}
 		if (manifest._tag === "Absent") {
-			return refuse(
-				NO_MANIFEST,
-				`${VERB}: no design manifest at ${MANIFEST_PATH} — run /fabrika (#4952).`,
-			);
+			return refuse(NO_MANIFEST, `${VERB}: no design manifest at ${MANIFEST_PATH} — run /fabrika.`);
 		}
 
 		const registry = yield* probe(root.root, REGISTRY_PATH);

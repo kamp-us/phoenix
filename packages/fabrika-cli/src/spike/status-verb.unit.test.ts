@@ -141,7 +141,7 @@ describe("runStatus reports per-field state inside exit 0", () => {
 	});
 });
 
-describe("the near-totality is bounded by ADR 0092", () => {
+describe("the near-totality is bounded — an unreadable state still refuses", () => {
 	it("refuses a manifest that does not parse on 4 — that is not `absent`", async () => {
 		const outcome = await run(happy, {}, {directories: [WORKSPACE], files: {[MANIFEST]: "{}\n"}});
 		expect(outcome.code).toBe(MALFORMED_RECORD);

@@ -19,7 +19,7 @@
  * `../build/dependencies.ts` parser, and this spec adds no second grammar for it. The **section
  * boundary** is imported from there for the same reason — a section ends at the next heading of
  * equal or shallower depth, or at the first thematic break, and the two readers would silently
- * disagree about where a ledger's last section ends if each spelled that rule itself (#5816).
+ * disagree about where a ledger's last section ends if each spelled that rule itself.
  */
 
 import {isThematicBreak} from "../build/dependencies.ts";
@@ -156,8 +156,8 @@ const STORIES_VALUE = /^(none|\d+(\s*,\s*\d+)*)$/i;
  *
  * `NonConforming` is deliberately **not** a refusal: it reads as absent — which is what
  * `MISSING_STORY` tests — and the offending value is carried so the defect's `detail` can quote it.
- * v1 harvested every bare integer anywhere in the value, so `**Stories:** 1, 3 (see #4021)` silently
- * claimed story 4021.
+ * v1 harvested every bare integer anywhere in the value, so a value like `1, 3 (see the ticket
+ * numbered 9021)` silently claimed a story 9021 nobody wrote.
  */
 export type ChildStories =
 	| {readonly _tag: "Ids"; readonly ids: ReadonlyArray<number>}

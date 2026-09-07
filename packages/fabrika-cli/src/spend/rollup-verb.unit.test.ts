@@ -123,7 +123,7 @@ describe("spend rollup — the answer", () => {
 	});
 
 	/**
-	 * The three breakdowns are evidence-arrays under ADR 0308: they make the totals auditable and no
+	 * The three breakdowns are bounded evidence: they make the totals auditable and no
 	 * skill reads a row of one by name, so an unbounded ledger must not print an unbounded answer.
 	 */
 	describe("the three breakdowns are bounded evidence, never the whole row set", () => {

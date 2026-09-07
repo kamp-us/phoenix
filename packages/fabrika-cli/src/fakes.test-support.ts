@@ -65,7 +65,7 @@ export interface FakeFsOptions {
 	 * Paths whose read fails for a reason other than absence — `PermissionDenied`.
 	 *
 	 * Distinct from an absent file on purpose: a caller that folds the two together turns "I could
-	 * not open it" into "it was deleted", which is the fail-open direction (#5304).
+	 * not open it" into "it was deleted", which is the fail-open direction.
 	 */
 	readonly unreadable?: ReadonlyArray<string>;
 	/** Paths whose writes fail. */
@@ -90,7 +90,7 @@ export interface FakeFsOptions {
 	readonly survivesRemoval?: ReadonlyArray<string>;
 	/**
 	 * Directory paths whose creation fails `AlreadyExists` even when nothing is there — modeling a
-	 * lock another writer holds, so the losing side of an append race is testable on demand (#5994).
+	 * lock another writer holds, so the losing side of an append race is testable on demand.
 	 */
 	readonly mkdirExisting?: ReadonlyArray<string>;
 }
@@ -242,7 +242,7 @@ export interface FakeShell {
 	 *
 	 * Without it, a caller that hands bytes to a child through stdin is indistinguishable from one
 	 * that hands it nothing — the argv is identical (`git commit -F -`) either way — so the whole
-	 * file-free carrying path would be untestable at this seam (#5484).
+	 * file-free carrying path would be untestable at this seam.
 	 */
 	readonly inputs: ReadonlyArray<string>;
 	/**
@@ -251,7 +251,7 @@ export interface FakeShell {
 	 *
 	 * Without it, a command run in another tree is indistinguishable from the same command run here
 	 * — the argv is identical either way — so "the install ran in the assembly worktree" would be a
-	 * claim no test could hold (#7188).
+	 * claim no test could hold.
 	 */
 	readonly cwds: ReadonlyArray<string | null>;
 }
@@ -358,7 +358,7 @@ export const faultingShell: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
 /**
  * The `PlatformError` `NodeChildProcessSpawner` really fails a signal-killed child's `exitCode` with
  * — reproduced through the same `PlatformError.systemError` constructor and the same nested `cause`,
- * so a test over it binds to the dependency's shape rather than to a literal string (#4792).
+ * so a test over it binds to the dependency's shape rather than to a literal string.
  */
 export const signalledExitError = (
 	signal: NodeJS.Signals,
@@ -430,7 +430,7 @@ export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", r
 /**
  * A tree with no `.fabrika.jsonc` in it — every config key resolves to its shipped default.
  *
- * The layer a verb needs once it reads the path surface (#6296) and the test is not about the
+ * The layer a verb needs once it reads the path surface and the test is not about the
  * config. It is `fakeFs`'s empty case rather than a second noop layer so a test that later *does*
  * declare a config swaps this for a `fakeFs({files: {…}})` and nothing else changes.
  */
@@ -551,8 +551,7 @@ const isReply = (answer: ExecResult | HttpReply): answer is HttpReply => "status
  *
  * A verb that reads over HTTP and shells out for git in the same run has one ordered account of
  * what the world answered, not two lists a reader has to zip back together — and a row moved from
- * one seam to the other during the `gh`-to-fetch port (ADR 0315) changes its reply, never its
- * place.
+ * one seam to the other during the `gh`-to-fetch port changes its reply, never its place.
  */
 export const fakeSeams = (
 	script: ReadonlyArray<Scripted>,
@@ -561,7 +560,7 @@ export const fakeSeams = (
 ): {
 	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>;
 	readonly calls: ReadonlyArray<string>;
-	/** What each spawn was handed on stdin, aligned with `calls` — a `git commit -F -` claim (#5484). */
+	/** What each spawn was handed on stdin, aligned with `calls` — a `git commit -F -` claim. */
 	readonly inputs: ReadonlyArray<string>;
 	readonly requests: ReadonlyArray<string>;
 	readonly bodies: ReadonlyArray<string>;
@@ -570,7 +569,7 @@ export const fakeSeams = (
 	 *
 	 * The only place an `Accept` claim can be read: two reads of one URL that differ solely by
 	 * `Accept` — the pull metadata read and the diff read — are one line in `requests`, so a fence
-	 * pinning which of them ran can be stated nowhere else (#5117, #5122).
+	 * pinning which of them ran can be stated nowhere else.
 	 */
 	readonly headers: ReadonlyArray<Readonly<Record<string, string>>>;
 	/** Both seams' traffic in one order — the only place a "X happened before Y" claim can be read. */

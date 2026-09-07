@@ -53,7 +53,7 @@ describe("fabrika ui, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => 
 	});
 
 	it("refuses an off-grammar set name with NOTHING on stdout", () => {
-		const run = fabrika(["ui", "render", "--out", "After", "--surface", "/pano"]);
+		const run = fabrika(["ui", "render", "--out", "After", "--surface", "/board"]);
 		expect(run.code).toBe(OFF_VOCABULARY);
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain('ui render: --out "After" is not a kebab-case set name.');

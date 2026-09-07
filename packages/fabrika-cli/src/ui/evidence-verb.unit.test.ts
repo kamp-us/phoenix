@@ -53,10 +53,10 @@ const setManifest = (set: string, rows: ReadonlyArray<{surface: string; firstRen
 	});
 
 const files = (): Record<string, Uint8Array | string> => ({
-	[`${SCRATCH}/before/manifest.json`]: setManifest("before", [{surface: "/pano"}]),
-	[`${SCRATCH}/before/pano.png`]: PNG,
-	[`${SCRATCH}/after/manifest.json`]: setManifest("after", [{surface: "/pano"}]),
-	[`${SCRATCH}/after/pano.png`]: PNG,
+	[`${SCRATCH}/before/manifest.json`]: setManifest("before", [{surface: "/board"}]),
+	[`${SCRATCH}/before/board.png`]: PNG,
+	[`${SCRATCH}/after/manifest.json`]: setManifest("after", [{surface: "/board"}]),
+	[`${SCRATCH}/after/board.png`]: PNG,
 });
 
 const POSTED_ID = 512347;
@@ -83,7 +83,7 @@ const script = (overrides: ReadonlyArray<Scripted> = []): ReadonlyArray<Scripted
 			status: 201,
 			body: JSON.stringify({
 				id: POSTED_ID,
-				html_url: "https://github.com/o/r/pull/4318#issuecomment-1",
+				html_url: "https://github.com/o/r/comment-1",
 			}),
 		},
 	],
@@ -128,9 +128,9 @@ const withReadback = (
 const EXPECTED_BODY = composeEvidence(
 	[
 		{
-			surface: "/pano",
-			before: "https://github.com/user-attachments/assets/before/pano",
-			after: "https://github.com/user-attachments/assets/after/pano",
+			surface: "/board",
+			before: "https://github.com/user-attachments/assets/before/board",
+			after: "https://github.com/user-attachments/assets/after/board",
 		},
 	],
 	HEAD,
@@ -159,26 +159,28 @@ describe("parseSetManifest", () => {
 
 describe("pairSets", () => {
 	it("pairs by surface id and labels a firstRender surface as new", () => {
-		const before = [{surface: "/pano", path: "b", sha256: SHA, firstRender: false}];
+		const before = [{surface: "/board", path: "b", sha256: SHA, firstRender: false}];
 		const after = [
-			{surface: "/pano", path: "a", sha256: SHA, firstRender: false},
-			{surface: "/yeni", path: "y", sha256: SHA, firstRender: true},
+			{surface: "/board", path: "a", sha256: SHA, firstRender: false},
+			{surface: "/new", path: "y", sha256: SHA, firstRender: true},
 		];
 		const paired = pairSets(before, after);
 		expect(paired).toEqual({
 			_tag: "Pairs",
 			pairs: [
-				{surface: "/pano", before: before[0], after: after[0]},
-				{surface: "/yeni", before: null, after: after[1]},
+				{surface: "/board", before: before[0], after: after[0]},
+				{surface: "/new", before: null, after: after[1]},
 			],
 		});
 	});
 
 	it("refuses an after-surface with neither a before nor a firstRender mark", () => {
-		expect(pairSets([], [{surface: "/pano", path: "a", sha256: SHA, firstRender: false}])).toEqual({
-			_tag: "Unexplained",
-			surface: "/pano",
-		});
+		expect(pairSets([], [{surface: "/board", path: "a", sha256: SHA, firstRender: false}])).toEqual(
+			{
+				_tag: "Unexplained",
+				surface: "/board",
+			},
+		);
 	});
 });
 
@@ -225,8 +227,8 @@ describe("runEvidence", () => {
 			script(),
 			{
 				files: {
-					[`${SCRATCH}/after/manifest.json`]: setManifest("after", [{surface: "/pano"}]),
-					[`${SCRATCH}/after/pano.png`]: PNG,
+					[`${SCRATCH}/after/manifest.json`]: setManifest("after", [{surface: "/board"}]),
+					[`${SCRATCH}/after/board.png`]: PNG,
 				},
 			},
 			{before: null},
@@ -300,7 +302,7 @@ describe("runEvidence", () => {
 
 	it("refuses on 11 when a capture cannot be read", async () => {
 		const withoutPng = files();
-		delete withoutPng[`${SCRATCH}/after/pano.png`];
+		delete withoutPng[`${SCRATCH}/after/board.png`];
 		const outcome = await run(script(), {files: withoutPng});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("nothing was uploaded or posted");
@@ -308,7 +310,7 @@ describe("runEvidence", () => {
 
 	it("refuses on 16 when a capture no longer hashes to its manifest sha256, uploading nothing", async () => {
 		const tampered = files();
-		tampered[`${SCRATCH}/after/pano.png`] = encodePng(2, 2, solid(2, 2, [255, 0, 0, 255]));
+		tampered[`${SCRATCH}/after/board.png`] = encodePng(2, 2, solid(2, 2, [255, 0, 0, 255]));
 		const uploaded: string[] = [];
 		const seams = fakeSeams(script());
 		const outcome = await Effect.runPromise(
@@ -351,17 +353,18 @@ describe("runEvidence", () => {
 		expect(seams.requests.some((line) => line.startsWith("POST"))).toBe(false);
 	});
 
-	// Seat 6 is the #3086 backstop, and `runEvidence` cannot reach it: `composeEvidence` always leads
-	// with its own `**UI evidence**` header, so the composed body's first token is never an `@` path —
-	// including when an upload leg hands back an `@` path in place of a URL. What is testable, and
-	// what this pins, is that the predicate the seat rides on refuses the #3086 body while no body the
-	// verb composes trips it. Whether the seat should move onto each upload URL instead is #5170.
+	// Seat 6 is the bare-`@`-path backstop, and `runEvidence` cannot reach it: `composeEvidence` always
+	// leads with its own `**UI evidence**` header, so the composed body's first token is never an `@`
+	// path — including when an upload leg hands back an `@` path in place of a URL. What is testable,
+	// and what this pins, is that the predicate the seat rides on refuses a body that *is* a bare `@`
+	// path while no body the verb composes trips it. Whether the seat should move onto each upload URL
+	// instead is still open.
 	it("keeps the composed comment out of seat 6's bare @ path refusal", () => {
 		expect(isBareAtReference("@/tmp/ui-evidence.md")).toBe(true);
 		expect(isBareAtReference(EXPECTED_BODY)).toBe(false);
 		expect(
 			isBareAtReference(
-				composeEvidence([{surface: "/pano", before: null, after: "@/tmp/after-pano.png"}], HEAD),
+				composeEvidence([{surface: "/board", before: null, after: "@/tmp/after-board.png"}], HEAD),
 			),
 		).toBe(false);
 	});
@@ -369,7 +372,7 @@ describe("runEvidence", () => {
 
 /**
  * The repair round's ground: `build branch --resume` checks out `build/pr-<pr>-<nonce>` and points
- * its upstream at the PR's head ref, so the local name and the head ref never agree (#7402).
+ * its upstream at the PR's head ref, so the local name and the head ref never agree.
  */
 const RESUME_BRANCH = `build/pr-4318-${NONCE}`;
 const RESUME_SCRATCH = `/tmp/fabrika-build/s-9f2e/4318-${NONCE}`;
@@ -409,7 +412,7 @@ const resumeScript = (upstream: string | null): ReadonlyArray<Scripted> => [
 			status: 201,
 			body: JSON.stringify({
 				id: POSTED_ID,
-				html_url: "https://github.com/o/r/pull/4318#issuecomment-1",
+				html_url: "https://github.com/o/r/comment-1",
 			}),
 		},
 	],

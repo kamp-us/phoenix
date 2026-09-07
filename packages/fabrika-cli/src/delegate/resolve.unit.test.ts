@@ -116,10 +116,11 @@ describe("resolve", () => {
 });
 
 /**
- * The two cases #4956 fused, and the third #5679 split back out. All three reach the delegate
- * comparison with `selfPackageRoot` outside the cwd's repo root, so `origin` is the only fact
- * separating them — and these assertions disagree on the outcome, which is what makes a future edit
- * that drops the field fail rather than quietly restore the wrong answer.
+ * The two cases the foreign-checkout refusal once fused, and the third the worktree-peer rule split
+ * back out. All three reach the delegate comparison with `selfPackageRoot` outside the cwd's repo
+ * root, so `origin` is the only fact separating them — and these assertions disagree on the outcome,
+ * which is what makes a future edit that drops the field fail rather than quietly restore the wrong
+ * answer.
  */
 describe("resolve — an install, a worktree peer and a foreign checkout are NOT the same input", () => {
 	const input = {repoRoot: "/repo", local: {_tag: "found", install}} as const;
@@ -143,7 +144,7 @@ describe("resolve — an install, a worktree peer and a foreign checkout are NOT
 	});
 
 	/**
-	 * #5679: the copy on `PATH` is a link into the primary checkout, so it belongs to a checkout — but
+	 * The copy on `PATH` is a link into the primary checkout, so it belongs to a checkout — but
 	 * the cwd's worktree is that same repository, and refusing there is what made the bare `fabrika`
 	 * unusable from every worktree.
 	 */
@@ -188,7 +189,7 @@ describe("globalWarning", () => {
 	/**
 	 * The reasons come off their real producers, never a literal: the defect was the *splice* between
 	 * the template and whatever each producer hands it, so a test that supplies its own clause tests
-	 * the one arrangement that was never broken (#6027).
+	 * the one arrangement that was never broken.
 	 */
 	const warn = (reason: RepoPredicate, declared: string | undefined, repoRoot = "/repo") =>
 		globalWarning({repoRoot, reason, globalVersion: "0.1.0", declared});

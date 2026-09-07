@@ -3,13 +3,11 @@
  *
  * A total function from edges to a verdict: cycles, dangling refs and orphans are all decidable, and
  * the verb decides them. **What it cannot see is a shared-file conflict** — whether two children in one
- * phase write the same module is a judgment the skill carries (#3709), and the verb does not pretend
- * otherwise.
+ * phase write the same module is a judgment the skill carries, and the verb does not pretend otherwise.
  *
  * Zero scope reds on `7` rather than `24`, because nothing was validated: an empty manifest means the
  * epic has no children at all, and rendering a topology over none would produce a block the gate reads
- * as an epic every one of whose children is orphaned. A refused scope is not an invalid topology
- * (ADR 0092).
+ * as an epic every one of whose children is orphaned. A refused scope is not an invalid topology.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -33,7 +31,7 @@ import {checkTopology, type DeclaredLine, parseLine} from "./topology-doc.ts";
 
 const VERB = "ledger topology";
 
-/** Enough pairs to recognise the parse, not enough to reprint the caller's own stdin (ADR 0308). */
+/** Enough pairs to recognise the parse, not enough to reprint the caller's own stdin. */
 const EDGE_CAP = 5;
 
 export const MESSAGES: LedgerMessages = {
@@ -77,7 +75,7 @@ export const runTopology = (
 		if (manifest.value.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: the run manifest holds zero children — refusing to render a topology over zero scope (ADR 0092).`,
+				`${VERB}: the run manifest holds zero children — refusing to render a topology over zero scope.`,
 				notes,
 			);
 		}

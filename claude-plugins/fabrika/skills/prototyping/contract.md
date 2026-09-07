@@ -440,7 +440,7 @@ orphaned workspace is always collectable.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `spike open: --nonce "<value>" is not eight lowercase hex characters — nonces are minted by this verb, not supplied, except to re-enter a run.` | 10 | refusal |
-| `spike open: --kind "<value>" is not logic or ui — those are the two ruled artifact shapes (#5017).` | 10 | refusal |
+| `spike open: --kind "<value>" is not logic or ui — those are the two ruled artifact shapes.` | 10 | refusal |
 | `spike open: the workspace path <resolved> resolves inside the repository at <treeRoot> — a spike that lives in the tree is the defect this skill exists to prevent. Nothing was written.` | 13 | refusal |
 | `spike open: a workspace for nonce <nonce> holds a different <question|kind> — mint a new run rather than reusing it.` | 18 | refusal |
 | `spike open: a workspace for nonce <nonce> exists but its manifest does not parse: <first violation> — refusing the whole file; re-entry cannot be decided against half a manifest.` | 4 | refusal |
@@ -705,7 +705,7 @@ idempotent branch is the one exception: it posts nothing and only ensures the cl
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence (#4111). Run something through spike run, or dispose with --forfeit.` | 14 | refusal |
+| `spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence. Run something through spike run, or dispose with --forfeit.` | 14 | refusal |
 | `spike capture: the decision carries a machine-local path: <first hit>. Describe what the path was; do not paste it.` | 5 | refusal |
 | `spike capture: the decision is a bare @ path reference — write the decision, not a pointer to it.` | 6 | refusal |
 | `spike capture: stdin was read and held nothing — a spike with no decision has captured nothing.` | 3 | refusal |
@@ -715,7 +715,7 @@ idempotent branch is the one exception: it posts nothing and only ensures the cl
 | `spike capture: --nonce "<value>" is not eight lowercase hex characters.` | 10 | refusal |
 | `spike capture: spike #<n> is proven absent — nothing to capture onto; check the number.` | 7 | refusal |
 | `spike capture: spike #<n> is closed and carries no capture marker for nonce <nonce> — there is nothing to supersede. Open a new spike for a new question.` | 7 | refusal |
-| `spike capture: <login> holds <permission> on <repo>, below write — a decision recorded here would carry no authority (ADR 0055).` | 19 | refusal |
+| `spike capture: <login> holds <permission> on <repo>, below write — a decision recorded here would carry no authority.` | 19 | refusal |
 | `spike capture: cannot read <what>: <reason> — nothing was posted, and authority is UNKNOWN, never granted.` | 11 | refusal |
 | `spike capture: the comment post failed: <reason> — it may or may not have landed; read spike #<n> before re-running.` | 8 | refusal |
 | `spike capture: the decision landed as comment <id> but the close failed: <reason> — the decision IS on the record; re-run to close.` | 8 | refusal |
@@ -739,7 +739,7 @@ MD
 $ fabrika spike capture 9310 --nonce 7f3a9c21 <<'MD'
 It works.
 MD
-spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence (#4111). Run something through spike run, or dispose with --forfeit.
+spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence. Run something through spike run, or dispose with --forfeit.
 $ echo $?
 14
 ```

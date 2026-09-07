@@ -88,17 +88,9 @@
 				"claude-plugins/fabrika/skills/front-door"
 			]
 		},
-		"plugin-planning": {
-			"ceiling": 21,
-			"why": "The prose is swept; every remaining hit is a value rather than a sentence. All 21 are stderr lines the shipped `ledger` and `plan` verbs print, quoted verbatim in the Errors tables and worked examples — each a copy of a string that lives in packages/fabrika-cli/src/ledger/ and packages/fabrika-cli/src/plan/, so it moves only when that string does. Rewriting the pin first would make the contract quote a line no verb prints. #8310, the CLI tail sweep, owns those two directories and pays this floor down with them.",
-			"paths": [
-				"claude-plugins/fabrika/skills/plan-epic",
-				"claude-plugins/fabrika/skills/check-epic-plan"
-			]
-		},
 		"plugin-discovery": {
-			"ceiling": 300,
-			"why": "The grilling, wayfinding, graduate and prototyping skills' text, cleared by #8298, the discovery sweep child.",
+			"ceiling": 296,
+			"why": "The grilling, wayfinding, graduate and prototyping skills' text, cleared by #8298, the discovery sweep child. Four of the original 300 were the `spike open` and `spike capture` stderr lines pinned verbatim in the prototyping contract's Errors tables and one worked example; #8310 rewrote those strings in packages/fabrika-cli/src/spike/ and mirrored each pin in the same commit, so 296 is what #8298 still owns.",
 			"paths": [
 				"claude-plugins/fabrika/skills/grilling",
 				"claude-plugins/fabrika/skills/wayfinding",
@@ -112,8 +104,8 @@
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
-			"ceiling": 302,
-			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child.",
+			"ceiling": 291,
+			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child. Eleven of the original 302 were copies of shipped strings #8310 rewrote at their source and mirrored here in the same commit: six `ui manifest` / `ui law` / `ui render` / `ui evidence` stderr pins in the build-ui contract, three `glossary check` / `glossary drift` stderr pins in the glossary contract, and the glossary contract's two references to the bare-hash fixture line, which now carries a one-digit hash. So 291 is what #8300 still owns.",
 			"paths": [
 				"claude-plugins/fabrika/skills/build-ui",
 				"claude-plugins/fabrika/skills/campaign",
@@ -170,8 +162,8 @@
 			]
 		},
 		"cli-tail": {
-			"ceiling": 664,
-			"why": "The remaining small groups and the top-level modules under src/, cleared by #8310, the CLI tail sweep child.",
+			"ceiling": 4,
+			"why": "#8310 swept the remaining small groups and the top-level modules under src/ to four residues, none of them prose. All four are citation URLs under test in packages/fabrika-cli/src/decision — three in rule-verb.unit.test.ts and one in ruling-verb.unit.test.ts. `parseCitation` and `RULING_URL_RE` pin the github.com host in their own regexes, so a citation on any other host exercises nothing and the assertion stops testing what it names. Same class as the two build/ rows already carved out for it; the host pin itself is the portability defect, parked behind #8359.",
 			"paths": ["packages/fabrika-cli/src"]
 		}
 	}

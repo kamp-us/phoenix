@@ -1,7 +1,6 @@
 // @patch-pin: effect@4.0.0-beta.92
 /**
- * The documented `--` separator binds its trailing argv to the leaf verb's declared argument
- * (#7115).
+ * The documented `--` separator binds its trailing argv to the leaf verb's declared argument.
  *
  * The vendored parser reset the lexer's post-`--` operands when it recursed into a subcommand, so
  * every token after `--` was bound two levels up and dropped before the leaf's params saw it — a

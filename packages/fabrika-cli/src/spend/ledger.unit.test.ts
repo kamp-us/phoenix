@@ -1,5 +1,5 @@
 /**
- * The spend ledger's two halves, driven against a temp directory with no model call (#5009).
+ * The spend ledger's two halves, driven against a temp directory with no model call.
  *
  * The append tier runs on the real Node filesystem on purpose: append-only-ness is a property of the
  * open flag, and a scripted `FileSystem` double would assert the call rather than the behaviour.

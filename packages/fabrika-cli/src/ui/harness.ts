@@ -1,19 +1,18 @@
 /**
  * `design-harness.json` — how this repo renders and where its evidence lives.
  *
- * The portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge: the commands, the
+ * The portable replacement for v1's hardcoded knowledge of one repo's dev server: the commands, the
  * surface namespace and the readiness probes are the repo's own declaration, so the render leg needs
  * no knowledge of any particular stack. Validated whole-file, the same rule the registry gets.
  *
- * A repo has more than one runnable app (phoenix has two under ADR 0345), so the declaration is a
- * list of apps rather than one server. Each app owns a `mount` — a prefix of the surface namespace —
- * and a surface resolves to the app whose mount is its longest match, never onto one shared base
- * URL. Readiness is per app, so a surface served by a worker-free app goes green the moment that app
- * answers.
+ * A repo can hold more than one runnable app, so the declaration is a list of apps rather than one
+ * server. Each app owns a `mount` — a prefix of the surface namespace — and a surface resolves to the
+ * app whose mount is its longest match, never onto one shared base URL. Readiness is per app, so a
+ * surface served by a worker-free app goes green the moment that app answers.
  *
  * No app declares a port. A command carries `{{port}}` placeholders the render leg fills with freshly
  * allocated free ports at start, because a fixed port is not a per-worktree resource: two lanes
- * rendering at once would either collide or, worse, capture each other's tree (#7992).
+ * rendering at once would either collide or, worse, capture each other's tree.
  *
  * `storageState` is the one key naming a file rather than a value: a Playwright storage-state
  * snapshot, so a repo whose surfaces sit behind a login can be rendered as a logged-in user. It is a
@@ -222,7 +221,7 @@ export const surfacePath = (app: HarnessApp, surface: string): string => {
 export const surfaceUrl = (origin: string, app: HarnessApp, surface: string): string =>
 	`${origin.replace(/\/+$/, "")}${surfacePath(app, surface)}`;
 
-/** `/` → `root`; every other route becomes its slug (`/pano/yeni` → `pano-yeni`). */
+/** `/` → `root`; every other route becomes its slug (`/board/new` → `board-new`). */
 export const surfaceSlug = (route: string): string => {
 	const trimmed = route.replace(/^\/+/, "").replace(/\/+$/, "");
 	return trimmed === "" ? "root" : trimmed.replace(/\//g, "-");

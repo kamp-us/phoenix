@@ -1,19 +1,19 @@
 /**
  * fabrika's token meter — reconstruct one run's billed token spend from its transcript, offline.
  *
- * The formula is **specified, not chosen**: ADR 0112 §2 fixes billed spend as the sum of the four
- * `usage` components over every `assistant` message, because Claude Code persists only those
- * per-message components into a transcript and never its own `cost.total_tokens` aggregate.
+ * The formula is **specified, not chosen**: billed spend is fixed as the sum of the four `usage`
+ * components over every `assistant` message, because Claude Code persists only those per-message
+ * components into a transcript and never its own `cost.total_tokens` aggregate.
  *
  *   billed = Σ (input_tokens + cache_creation_input_tokens
  *             + cache_read_input_tokens + output_tokens)
  *
- * ADR 0238 is why this exists here rather than being imported: fabrika re-implements what it needs
- * instead of reaching into v1, and duplication is the accepted price of keeping v1 deletable. The
- * two-rulers risk that duplication would otherwise carry is closed by a **shared committed
- * fixture** — `fixtures/one-ruler/transcript.jsonl` plus its expected figures, asserted by this
- * package's unit tier *and* by v1's `token-spend` tier, so both implementations are pinned to one
- * set of numbers rather than trusted to agree (#4777).
+ * This lives here rather than being imported because fabrika re-implements what it needs instead of
+ * reaching into v1: duplication is the accepted price of keeping v1 deletable. The two-rulers risk
+ * that duplication would otherwise carry is closed by a **shared committed fixture** —
+ * `fixtures/one-ruler/transcript.jsonl` plus its expected figures, asserted by this package's unit
+ * tier *and* by v1's `token-spend` tier, so both implementations are pinned to one set of numbers
+ * rather than trusted to agree.
  *
  * `cache_read` stays visible on its own because it is the cumulative cached prefix re-reported every
  * turn: it dominates `billed` and grows with turn count, which is itself the context-bloat signal.
@@ -24,8 +24,7 @@
  *
  * `classifyRunSpend` at the bottom is the other half of the same rule: what a transcript's spend
  * *is* when it cannot be reconstructed. It reads as a spend rule, not an eval one, so it lives here
- * with its own ingredients — every consumer (`eval/`, `spend read`) imports it from this one owner
- * (#5050).
+ * with its own ingredients — every consumer (`eval/`, `spend read`) imports it from this one owner.
  */
 
 /** The four-component reconstruction of a run's billed token spend, plus its comparators. */
@@ -38,7 +37,7 @@ export interface StageSpend {
 	readonly cacheRead: number;
 	/** Σ `output_tokens` over assistant messages. */
 	readonly output: number;
-	/** `input + cacheCreate + cacheRead + output` — the headline billed total (ADR 0112 §2). */
+	/** `input + cacheCreate + cacheRead + output` — the headline billed total. */
 	readonly billed: number;
 	/** `input + cacheCreate + output` — the cross-run comparator (not re-counted per turn). */
 	readonly exCacheRead: number;
@@ -111,11 +110,11 @@ export const reconstructSpend = (transcript: string): StageSpend => {
  * zero can never be fabricated where a measurement is missing.
  *
  * `NoBilledTurns` is the third: a transcript that exists and parses cleanly but carries **zero**
- * billed assistant turns, which reconstructs to a genuine, well-formed zero indistinguishable from a
- * free run. That is not hypothetical — a `claude -p` run whose skill failed to resolve writes
- * exactly such a transcript, and `token-spend` reports all-zeros at exit 0 (measured on 2.1.220,
- * #4673 §6). Folding it into `Reconstructed` would put the fabricated zero back that this union
- * exists to keep out.
+ * billed assistant turns, which reconstructs to a genuine, well-formed zero indistinguishable from
+ * a free run. That is not hypothetical — a `claude -p` run whose skill failed to resolve writes
+ * exactly such a transcript, and `token-spend` reports all-zeros at exit 0 (measured on 2.1.220).
+ * Folding it into `Reconstructed` would put the fabricated zero back that this union exists to keep
+ * out.
  */
 export type RunSpend =
 	| {readonly _tag: "Reconstructed"; readonly spend: StageSpend}
