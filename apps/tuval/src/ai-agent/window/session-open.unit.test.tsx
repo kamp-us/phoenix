@@ -56,7 +56,7 @@ const host = {windowId: WindowId.make("w-1")} as WindowHost;
 /** The window as a page mounts it, at whatever seams a test needs. */
 const mount = (options: SessionListWindowOptions = {}): ReactElement => {
 	const renderer = sessionListWindow({
-		useAnswer: () => listed(scrambled),
+		useAnswer: () => ({status: listed(scrambled)}),
 		...options,
 	});
 	return renderer.render(host) as ReactElement;
@@ -103,7 +103,7 @@ describe("activating a row inline", () => {
 	it("says a session it cannot open is unopenable rather than rendering it empty", () => {
 		// The oldest row is the one whose store reported no folder, so it is the one Enter lands on
 		// when it is the only row on offer.
-		const renderer = sessionListWindow({useAnswer: () => listed([bareSession])});
+		const renderer = sessionListWindow({useAnswer: () => ({status: listed([bareSession])})});
 		render(renderer.render(host) as ReactElement);
 		fireEvent.keyDown(field(), {key: "Enter"});
 
