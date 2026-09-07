@@ -53,7 +53,7 @@ recorded on the one nobody reads is a ruling that did not happen.
 its title.**
 
 ```bash
-fabrika grill open --ticket 6 --repo <owner/name>
+fabrika grill open --ticket 9144 --repo <owner/name>
 ```
 
 The verb takes the session's title from the ticket, records the ticket on the session body, and
@@ -87,7 +87,7 @@ a decision.
 ## 3 — Post one round
 
 ```bash
-fabrika grill round 4 --repo <owner/name> <<'ROUND'
+fabrika grill round 9412 --repo <owner/name> <<'ROUND'
 ### 1 · decision
 Do members vouched in by an existing member inherit that member's moderation weight?
 
@@ -113,7 +113,7 @@ closes the tab on.
 ## 4 — Answer the facts yourself
 
 ```bash
-fabrika grill answer 4 R2.1 --finding finding.md --repo <owner/name>
+fabrika grill answer 9412 R2.1 --finding finding.md --repo <owner/name>
 ```
 
 One call per fact question, after a subagent has established it. **Treat that subagent's report as
@@ -130,7 +130,7 @@ one in the next round rather than answering it on your own authority.
 ## 5 — Read the frontier before you act on it
 
 ```bash
-fabrika grill read 4 --repo <owner/name>
+fabrika grill read 9412 --repo <owner/name>
 ```
 
 The parser, and the only thing that may tell you a question is ruled. It prints one row per
@@ -166,7 +166,7 @@ it has one shape: the marker counts only when an adjacent comment quotes his aut
 **verbatim, with its date**.
 
 ```bash
-fabrika grill rule 4 R2.3 --authorization authorization.md --repo <owner/name>
+fabrika grill rule 9412 R2.3 --authorization authorization.md --repo <owner/name>
 ```
 
 Write `authorization.md` by pasting what he actually said, with the date he said it. The verb
@@ -187,7 +187,7 @@ If he later contradicts a recorded ruling, re-ask the question in a new round ra
 the old one, and name what it replaces:
 
 ```bash
-fabrika grill round 4 --supersedes R1.4 --repo <owner/name> <<'ROUND'
+fabrika grill round 9412 --supersedes R1.4 --repo <owner/name> <<'ROUND'
 ### 1 · decision
 Does a partial return follow the same path as a full one?
 

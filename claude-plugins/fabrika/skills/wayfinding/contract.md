@@ -108,11 +108,11 @@ Five sections, in this order, and nothing else:
 How vouched members earn moderation weight.
 
 ## Decisions
-- Weight is earned per account, never inherited from a voucher. — ruled on #8 R2.3
+- Weight is earned per account, never inherited from a voucher. — ruled on #9301 R2.3
 
 ## Frontier
-- #5 · research — does better-auth mint a single-use token without a new table?
-- #6 · decision — does an invited newcomer start at 0 reputation? — forked to #8
+- #9142 · research — does better-auth mint a single-use token without a new table?
+- #9144 · decision — does an invited newcomer start at 0 reputation? — forked to #9301
 
 ## Fog
 - Whether weight decays, and on what clock.
@@ -153,7 +153,7 @@ One `wire`-shaped marker, first line of the ticket's opening comment, composed w
 `src/build/claim.ts`'s `composeMarker`:
 
 ```
-map-ticket: #4 · research · 7f3a9c21
+map-ticket: #9140 · research · 7f3a9c21
 ```
 
 The map number binds the ticket to its map, the kind is from the closed set, and the trailing field
@@ -362,7 +362,7 @@ Reads the caller's enumerated open questions from stdin, one per line.
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"created":true,"destination":"how moderation weight is earned","questions":2,"answeredCandidates":[{"question":"does weight inherit from a voucher?","candidates":[{"issue":9098,"score":7,"title":"Moderation weight is earned per account"}]}],"digest":"a1b2c3d4e5f6","scanned":{"maps":7,"candidates":0}}
+{"map":9140,"created":true,"destination":"how moderation weight is earned","questions":2,"answeredCandidates":[{"question":"does weight inherit from a voucher?","candidates":[{"issue":9098,"score":7,"title":"Moderation weight is earned per account"}]}],"digest":"a1b2c3d4e5f6","scanned":{"maps":7,"candidates":0}}
 ```
 
 `created` is `false` on a resume. `questions` counts the supplied lines that parsed as questions and are now the map's
@@ -470,7 +470,7 @@ why the orphan is named rather than prevented.
 
 ```
 $ printf 'does a suspended account keep its weight?\nwhat clock does weight decay on?\n' | fabrika map open --destination "how moderation weight is earned"
-{"map":4,"created":true,"destination":"how moderation weight is earned","questions":2,"answeredCandidates":[],"digest":"a1b2c3d4e5f6","scanned":{"maps":7,"candidates":0}}
+{"map":9140,"created":true,"destination":"how moderation weight is earned","questions":2,"answeredCandidates":[],"digest":"a1b2c3d4e5f6","scanned":{"maps":7,"candidates":0}}
 $ echo $?
 0
 ```
@@ -505,7 +505,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map read 4 [--repo <owner/name>]
+fabrika map read 9140 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -518,7 +518,7 @@ fabrika map read 4 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"frontier":"awaiting-founder","digest":"a1b2c3d4e5f6","destination":"how moderation weight is earned","tickets":[{"number":5,"kind":"research","question":"which table carries the per-account weight column?","state":"open","blockedBy":[],"blocking":[7]},{"number":7,"kind":"research","question":"where does the weight audit record live?","state":"lane-held","nonce":"7f3a9c21","blockedBy":[5],"blocking":[]},{"number":9146,"kind":"research","question":"does the audit log already record weight changes?","state":"lane-closed","outcome":"no-evidence","blockedBy":[],"blocking":[]},{"number":6,"kind":"decision","question":"does a suspended account keep its weight?","state":"forked","session":8,"blockedBy":[],"blocking":[]},{"number":9141,"kind":"research","question":"is a per-account weight column representable today?","state":"graduated","blockedBy":[],"blocking":[]},{"number":9147,"kind":"prototype","question":"what would a decay curve feel like in the moderation queue?","state":"retired","retiredBy":"a decay curve nobody can predict","blockedBy":[],"blocking":[]}],"outOfScope":[{"direction":"a per-topic weight multiplier","reason":"it makes every moderation action's authority unreadable without a topic lookup","recordedAt":"2026-06-29"},{"direction":"importing the old forum's reputation score","reason":"the old score counted post volume, the behaviour this system exists to stop rewarding","recordedAt":"2026-07-02"}],"fog":1,"counts":{"open":1,"lane-held":1,"lane-closed":1,"forked":1,"graduated":1,"retired":1,"blocked":1},"disregarded":[{"ticket":9148,"reason":"malformed","detail":"map-ticket marker names no kind from the closed set"}],"scanned":{"children":6,"edgeReads":12,"comments":14}}
+{"map":9140,"frontier":"awaiting-founder","digest":"a1b2c3d4e5f6","destination":"how moderation weight is earned","tickets":[{"number":9142,"kind":"research","question":"which table carries the per-account weight column?","state":"open","blockedBy":[],"blocking":[9143]},{"number":9143,"kind":"research","question":"where does the weight audit record live?","state":"lane-held","nonce":"7f3a9c21","blockedBy":[9142],"blocking":[]},{"number":9146,"kind":"research","question":"does the audit log already record weight changes?","state":"lane-closed","outcome":"no-evidence","blockedBy":[],"blocking":[]},{"number":9144,"kind":"decision","question":"does a suspended account keep its weight?","state":"forked","session":9301,"blockedBy":[],"blocking":[]},{"number":9141,"kind":"research","question":"is a per-account weight column representable today?","state":"graduated","blockedBy":[],"blocking":[]},{"number":9147,"kind":"prototype","question":"what would a decay curve feel like in the moderation queue?","state":"retired","retiredBy":"a decay curve nobody can predict","blockedBy":[],"blocking":[]}],"outOfScope":[{"direction":"a per-topic weight multiplier","reason":"it makes every moderation action's authority unreadable without a topic lookup","recordedAt":"2026-06-29"},{"direction":"importing the old forum's reputation score","reason":"the old score counted post volume, the behaviour this system exists to stop rewarding","recordedAt":"2026-07-02"}],"fog":1,"counts":{"open":1,"lane-held":1,"lane-closed":1,"forked":1,"graduated":1,"retired":1,"blocked":1},"disregarded":[{"ticket":9148,"reason":"malformed","detail":"map-ticket marker names no kind from the closed set"}],"scanned":{"children":6,"edgeReads":12,"comments":14}}
 ```
 
 **Ticket row keys.** `number`, `kind`, `question`, `state`, `blockedBy` and `blocking` are present
@@ -616,15 +616,15 @@ must fail closed on. Here an empty read that cannot be proven empty is `11`.
 **Examples**
 
 ```
-$ fabrika map read 4
-{"map":4,"frontier":"empty","digest":"0f1e2d3c4b5a","destination":"how moderation weight is earned","tickets":[],"outOfScope":[],"fog":1,"counts":{"open":0,"lane-held":0,"lane-closed":0,"forked":0,"graduated":0,"retired":0,"blocked":0},"disregarded":[],"scanned":{"children":0,"edgeReads":0,"comments":1}}
+$ fabrika map read 9140
+{"map":9140,"frontier":"empty","digest":"0f1e2d3c4b5a","destination":"how moderation weight is earned","tickets":[],"outOfScope":[],"fog":1,"counts":{"open":0,"lane-held":0,"lane-closed":0,"forked":0,"graduated":0,"retired":0,"blocked":0},"disregarded":[],"scanned":{"children":0,"edgeReads":0,"comments":1}}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika map read 9
-map read: #9 does not exist, or is not a wayfinding map.
+$ fabrika map read 9999
+map read: #9999 does not exist, or is not a wayfinding map.
 $ echo $?
 7
 ```
@@ -653,7 +653,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map ticket 4 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?" [--blocks 7] [--blocked-by 5] [--repo <owner/name>]
+fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?" [--blocks 9143] [--blocked-by 9142] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -671,7 +671,7 @@ fabrika map ticket 4 --digest a1b2c3d4e5f6 --kind research --question "does bett
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"ticket":9145,"kind":"research","blockedBy":[5],"blocking":[],"digest":"b2c3d4e5f6a1"}
+{"map":9140,"ticket":9145,"kind":"research","blockedBy":[9142],"blocking":[],"digest":"b2c3d4e5f6a1"}
 ```
 
 `digest` is the map's digest **after** the splice, so a caller filing several tickets threads it
@@ -735,15 +735,15 @@ the single line specified in *The ticket marker* above, and nothing else.
 **Examples**
 
 ```
-$ fabrika map ticket 4 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?"
-{"map":4,"ticket":9145,"kind":"research","blockedBy":[],"blocking":[],"digest":"b2c3d4e5f6a1"}
+$ fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?"
+{"map":9140,"ticket":9145,"kind":"research","blockedBy":[],"blocking":[],"digest":"b2c3d4e5f6a1"}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika map ticket 4 --digest 000000000000 --kind decision --question "does an invited newcomer start at 0 reputation?"
-map ticket: #4's body moved since --digest 000000000000 (now b2c3d4e5f6a1) — nothing was written. Re-read and re-apply.
+$ fabrika map ticket 9140 --digest 000000000000 --kind decision --question "does an invited newcomer start at 0 reputation?"
+map ticket: #9140's body moved since --digest 000000000000 (now b2c3d4e5f6a1) — nothing was written. Re-read and re-apply.
 $ echo $?
 12
 ```
@@ -772,7 +772,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map lane 4 --ticket 7 --nonce 7f3a9c21 [--repo <owner/name>]
+fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -787,7 +787,7 @@ fabrika map lane 4 --ticket 7 --nonce 7f3a9c21 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"ticket":7,"nonce":"7f3a9c21","lane":"held"}
+{"map":9140,"ticket":9143,"nonce":"7f3a9c21","lane":"held"}
 ```
 
 `lane` is a closed set of two: `held` (this nonce now holds it) and `resumed` (this nonce already
@@ -832,8 +832,8 @@ someone else's lane.
 **Examples**
 
 ```
-$ fabrika map lane 4 --ticket 7 --nonce 7f3a9c21
-{"map":4,"ticket":7,"nonce":"7f3a9c21","lane":"held"}
+$ fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21
+{"map":9140,"ticket":9143,"nonce":"7f3a9c21","lane":"held"}
 $ echo $?
 0
 ```
@@ -859,7 +859,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map finding 4 --ticket 7 --nonce 7f3a9c21 --outcome answered --finding finding.md [--repo <owner/name>]
+fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome answered --finding finding.md [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -876,7 +876,7 @@ fabrika map finding 4 --ticket 7 --nonce 7f3a9c21 --outcome answered --finding f
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"ticket":7,"outcome":"answered","comment":9234567891,"lane":"released"}
+{"map":9140,"ticket":9143,"outcome":"answered","comment":9234567891,"lane":"released"}
 ```
 
 <!-- anchor: NOTHING-IS-NOT-EMPTY --> **The outcome vocabulary keeps three answers apart that an
@@ -921,14 +921,14 @@ complete is `11`.
 **Examples**
 
 ```
-$ fabrika map finding 4 --ticket 7 --nonce 7f3a9c21 --outcome no-evidence
-{"map":4,"ticket":7,"outcome":"no-evidence","comment":9234567891,"lane":"released"}
+$ fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome no-evidence
+{"map":9140,"ticket":9143,"outcome":"no-evidence","comment":9234567891,"lane":"released"}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika map finding 4 --ticket 7 --nonce 7f3a9c21 --outcome answered
+$ fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome answered
 map finding: --outcome answered requires --finding — an answered lane with no finding is indistinguishable from one that found nothing.
 $ echo $?
 4
@@ -951,11 +951,11 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map fork 4 --digest a1b2c3d4e5f6 --ticket 6 --session 8 [--repo <owner/name>]
+fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301 [--repo <owner/name>]
 ```
 
 ```
-fabrika map fork 4 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310 [--repo <owner/name>]
+fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310 [--repo <owner/name>]
 ```
 
 Exactly one of `--session` or `--spike` is given, and which one is admitted is decided by the
@@ -977,7 +977,7 @@ does not admit is `20`.
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"ticket":6,"session":8,"state":"forked","digest":"c3d4e5f6a1b2"}
+{"map":9140,"ticket":9144,"session":9301,"state":"forked","digest":"c3d4e5f6a1b2"}
 ```
 
 **Exit status**
@@ -1023,8 +1023,8 @@ whole given-grounding law reduced to the agent typing `(@founder)` after an entr
 **Examples**
 
 ```
-$ fabrika map fork 4 --digest a1b2c3d4e5f6 --ticket 6 --session 8
-{"map":4,"ticket":6,"session":8,"state":"forked","digest":"c3d4e5f6a1b2"}
+$ fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
+{"map":9140,"ticket":9144,"session":9301,"state":"forked","digest":"c3d4e5f6a1b2"}
 $ echo $?
 0
 ```
@@ -1049,7 +1049,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map record 4 --digest a1b2c3d4e5f6 --ticket 7 --finding finding.md [--ruled-on 8 --question-id R2.3] [--repo <owner/name>]
+fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md [--ruled-on 9301 --question-id R2.3] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -1068,7 +1068,7 @@ fabrika map record 4 --digest a1b2c3d4e5f6 --ticket 7 --finding finding.md [--ru
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"ticket":7,"recorded":"— from #7","closed":true,"resumed":false,"digest":"d4e5f6a1b2c3"}
+{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"resumed":false,"digest":"d4e5f6a1b2c3"}
 ```
 
 `resumed` is `true` when this run only closed the ticket because the answer was already on the map —
@@ -1173,8 +1173,8 @@ that could not complete is `11`.
 **Examples**
 
 ```
-$ fabrika map record 4 --digest a1b2c3d4e5f6 --ticket 7 --finding finding.md
-{"map":4,"ticket":7,"recorded":"— from #7","closed":true,"resumed":false,"digest":"d4e5f6a1b2c3"}
+$ fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md
+{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"resumed":false,"digest":"d4e5f6a1b2c3"}
 $ echo $?
 0
 ```
@@ -1183,8 +1183,8 @@ Resuming a run whose close did not land — `map read` first for the map's new d
 arguments against that digest:
 
 ```
-$ fabrika map record 4 --digest d4e5f6a1b2c3 --ticket 7 --finding finding.md
-{"map":4,"ticket":7,"recorded":"— from #7","closed":true,"resumed":true,"digest":"d4e5f6a1b2c3"}
+$ fabrika map record 9140 --digest d4e5f6a1b2c3 --ticket 9143 --finding finding.md
+{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"resumed":true,"digest":"d4e5f6a1b2c3"}
 $ echo $?
 0
 ```
@@ -1206,7 +1206,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika map descope 4 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md [--repo <owner/name>]
+fabrika map descope 9140 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -1222,7 +1222,7 @@ fabrika map descope 4 --digest a1b2c3d4e5f6 --direction "a per-topic weight mult
 **Output** — machine. One JSON object:
 
 ```json
-{"map":4,"direction":"a per-topic weight multiplier","entries":3,"digest":"e5f6a1b2c3d4"}
+{"map":9140,"direction":"a per-topic weight multiplier","entries":3,"digest":"e5f6a1b2c3d4"}
 ```
 
 `entries` is the out-of-scope section's size after the append — it only ever grows.
@@ -1275,8 +1275,8 @@ existing entry is `9`, because the read-back proves the body no longer holds wha
 **Examples**
 
 ```
-$ fabrika map descope 4 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md
-{"map":4,"direction":"a per-topic weight multiplier","entries":3,"digest":"e5f6a1b2c3d4"}
+$ fabrika map descope 9140 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md
+{"map":9140,"direction":"a per-topic weight multiplier","entries":3,"digest":"e5f6a1b2c3d4"}
 $ echo $?
 0
 ```

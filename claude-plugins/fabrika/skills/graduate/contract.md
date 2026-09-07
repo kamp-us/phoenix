@@ -174,7 +174,7 @@ Weight is earned per account and capped per topic; the vote table carries the ca
 - The vote table has no per-account weight column today. — **established** · R2.1
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #4.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 ```
 
 - `## Problem`, `## Solution` and `## Out of scope` arrive on **stdin**, authored by the caller. A
@@ -192,25 +192,25 @@ being careless. The three sections the model *does* author carry no authority cl
 
 **Each `## Decisions` entry is `- <text> — **<provenance>** · <ref>`**, where `ref` is the trail
 row's own `ref` field verbatim and `provenance` is from a closed set of two. The source issue is
-**not** repeated per line — it is in the footer once, and repeating it made a map-sourced line read
-as two issue numbers in a row (`· #2 #6`).
+**not** repeated per line — it is in the footer once, and repeating it made a map-sourced line
+render two issue numbers in a row, the ticket's and the source's.
 
 <!-- anchor: THE-DECISIONS-LINE-IS-PARSEABLE-BACK --> **The line is written so `graduate emit` can
 recover the ref from it**, which matters because that parse is what says which subset a spec covers.
 The rule is exact: a decision line matches `^- (?P<text>.+) — \*\*(?P<provenance>ruled|established)\*\* · (?P<ref>.+)$`,
 and `ref` is everything after the **last** ` · ` that follows the bolded provenance token. Anchoring
 on the bolded token — a closed two-member set — is what keeps the parse unambiguous when the text
-itself contains an em dash or a `·`, and it lets a ref carry a space and a `#` (`#8 R1.2`)
-without quoting. A line in the `## Decisions` section that does not match is `18`: the section is
-machine-rendered at both ends, so a line that will not parse means the body was edited by hand.
+itself contains an em dash or a `·`, and it lets a ref carry a space and a `#` without quoting. A
+line in the `## Decisions` section that does not match is `18`: the section is machine-rendered at
+both ends, so a line that will not parse means the body was edited by hand.
 
 **`ref` is shaped by the source kind**, and a reader tells them apart by shape alone:
 
 | Source | `ref` shape | Example |
 |---|---|---|
 | `grilling` | `R<round>.<n>` — the question id | `R2.3` |
-| `map`, from a graduated ticket | `#<ticket>` | `#6` |
-| `map`, from a `## Decisions` line relaying a session ruling | `#<session> <question-id>` | `#8 R1.2` |
+| `map`, from a graduated ticket | `#<ticket>` | `#9505` |
+| `map`, from a `## Decisions` line relaying a session ruling | `#<session> <question-id>` | `#9301 R1.2` |
 
 The provenance words:
 
@@ -227,7 +227,7 @@ and nobody established is not on the trail — it is an open question, and it ma
 line, in this exact shape, one line, newline-terminated:
 
 ```
-<sub>Filed by an agent · graduated from #4 · spec a1b2c3d4e5f6 · 2026-08-09T18:36:48Z</sub>
+<sub>Filed by an agent · graduated from #9412 · spec a1b2c3d4e5f6 · 2026-08-09T18:36:48Z</sub>
 ```
 
 <!-- anchor: FILED-BY-AN-AGENT-IS-NEVER-DROPPED --> **`Filed by an agent` leads the line and is not
@@ -247,7 +247,7 @@ timestamp is ISO-8601 UTC. The bytes are fixed here because the read-back at `9`
 One new `wire` format, `graduate-emitted`, first line of its own comment on the **source** issue:
 
 ```
-graduate-emitted: #4 → #5 @ a1b2c3d4e5f6 · covers R1.2;R1.4;R1.1;R1.3 · 2026-08-09T18:36:48Z
+graduate-emitted: #9412 → #9520 @ a1b2c3d4e5f6 · covers R1.2;R1.4;R1.1;R1.3 · 2026-08-09T18:36:48Z
 ```
 
 | Field | Shape |
@@ -266,8 +266,8 @@ making the judgment `trail` already makes — or to admit coverage is underivabl
 caller unable to tell a remainder from a duplicate. Putting the refs in the marker keeps `read` pure
 and makes the question answerable from the artifact.
 
-**The separator is `;`, not `,`, because a map ref contains a space** (`#8 R1.2`), so a
-comma-separated list of them is ambiguous. No ref shape defined above can contain a `;`.
+**The separator is `;`, not `,`, because a map ref contains a space**, so a comma-separated list of
+them is ambiguous. No ref shape defined above can contain a `;`.
 
 **Read is total and three-valued**, on the
 [`src/wire/verdict-marker.ts`](../../../../packages/fabrika-cli/src/wire/verdict-marker.ts) model:
@@ -475,7 +475,7 @@ designed out of the digest layer. The seat turns on `covers`, not on `state`.
 **Invocation**
 
 ```
-fabrika graduate trail 4 [--repo <owner/name>]
+fabrika graduate trail 9412 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -493,7 +493,7 @@ a merge of two trails, and guessing which one is live would be judgment inside a
 **Output** — machine. One JSON object; every key below is always present:
 
 ```json
-{"source":4,"kind":"grilling","readiness":"ready","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.3","provenance":"ruled","text":"Weight is earned per account, never inherited from a voucher."},{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[],"outOfScope":[],"counts":{"ruled":1,"established":1,"unresolved":0}}
+{"source":9412,"kind":"grilling","readiness":"ready","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.3","provenance":"ruled","text":"Weight is earned per account, never inherited from a voucher."},{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[],"outOfScope":[],"counts":{"ruled":1,"established":1,"unresolved":0}}
 ```
 
 | Key | Type | Meaning |
@@ -567,15 +567,15 @@ readable against them. **Zero decisions is a fact** (`empty`); a read that could
 **Examples**
 
 ```
-$ fabrika graduate trail 4
-{"source":4,"kind":"grilling","readiness":"blocked","trailDigest":"4e2f8a0b6c13","decisions":[{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[{"ref":"R2.2","state":"open"}],"outOfScope":[],"counts":{"ruled":0,"established":1,"unresolved":1}}
+$ fabrika graduate trail 9412
+{"source":9412,"kind":"grilling","readiness":"blocked","trailDigest":"4e2f8a0b6c13","decisions":[{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[{"ref":"R2.2","state":"open"}],"outOfScope":[],"counts":{"ruled":0,"established":1,"unresolved":1}}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika graduate trail 9
-graduate trail: #9 does not exist.
+$ fabrika graduate trail 9999
+graduate trail: #9999 does not exist.
 $ echo $?
 7
 ```
@@ -618,7 +618,7 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #4.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 SPEC
 ```
 
@@ -631,8 +631,8 @@ SPEC
 | stdin | markdown | yes | — | the three authored sections — `## Problem`, `## Solution`, `## Out of scope` — in that order |
 
 <!-- anchor: DECISIONS-IS-REPEATABLE-NOT-COMMA-SEPARATED --> **`--decisions` is repeated, not
-comma-joined**, because a map ref contains a space (`#8 R1.2`) and a comma-separated list of such
-refs cannot be split unambiguously. `--decisions "#8 R1.2" --decisions "#7"` is the shape; a
+comma-joined**, because a map ref contains a space and a comma-separated list of such refs cannot be
+split unambiguously. `--decisions "#9301 R1.2" --decisions "#9507"` is the shape; a
 single comma-joined value is a usage error at `1`.
 
 **Output** — **machine channel**, with a shape that differs from the group default: stdout is the
@@ -682,7 +682,7 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #4.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 SPEC
 ## Problem
 Moderation weight is unbounded, so one vouched account can outvote a whole topic.
@@ -695,7 +695,7 @@ Weight is earned per account and capped per topic; the vote table carries the ca
 - The vote table has no per-account weight column today. — **established** · R2.1
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #4.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 ```
 
 ```
@@ -723,7 +723,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika graduate emit 4 --spec spec.md --title "Cap moderation weight per topic" [--repo <owner/name>]
+fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic" [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -785,7 +785,7 @@ positional, and everything else is re-derived from the source itself.
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"source":4,"issue":5,"url":"https://github.com/<owner>/<repo>/issues/5","specDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
+{"source":9412,"issue":9520,"url":"https://github.com/<owner>/<repo>/issues/9520","specDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
 ```
 
 | Key | Type | Meaning |
@@ -830,13 +830,13 @@ hygiene. A read that could not complete is `11` and files nothing.
 **Examples**
 
 ```
-$ fabrika graduate emit 4 --spec spec.md --title "Cap moderation weight per topic"
-{"source":4,"issue":5,"url":"https://github.com/<owner>/<repo>/issues/5","specDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
+$ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"
+{"source":9412,"issue":9520,"url":"https://github.com/<owner>/<repo>/issues/9520","specDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
 ```
 
 ```
-$ fabrika graduate emit 4 --spec spec.md --title "Cap moderation weight per topic"
-graduate emit: #4 already graduated this decision set into #5 at spec digest a1b2c3d4e5f6 — refusing to file the same spec twice. A DIFFERENT subset of the trail may still be graduated.
+$ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"
+graduate emit: #9412 already graduated this decision set into #9520 at spec digest a1b2c3d4e5f6 — refusing to file the same spec twice. A DIFFERENT subset of the trail may still be graduated.
 $ echo $?
 15
 ```
@@ -878,7 +878,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika graduate read 4 [--repo <owner/name>]
+fabrika graduate read 9412 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -891,7 +891,7 @@ fabrika graduate read 4 [--repo <owner/name>]
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"source":4,"state":"graduated","emissions":[{"issue":5,"specDigest":"a1b2c3d4e5f6","covers":["R1.2","R1.4","R1.1","R1.3"],"emittedAt":"2026-08-09T18:36:48Z","comment":5234567892}],"disregarded":[],"scanned":{"comments":14}}
+{"source":9412,"state":"graduated","emissions":[{"issue":9520,"specDigest":"a1b2c3d4e5f6","covers":["R1.2","R1.4","R1.1","R1.3"],"emittedAt":"2026-08-09T18:36:48Z","comment":5234567892}],"disregarded":[],"scanned":{"comments":14}}
 ```
 
 | Key | Type | Meaning |
@@ -943,15 +943,15 @@ read that could not complete is `11`, never an empty history.
 **Examples**
 
 ```
-$ fabrika graduate read 4
-{"source":4,"state":"ungraduated","emissions":[],"disregarded":[],"scanned":{"comments":3}}
+$ fabrika graduate read 9412
+{"source":9412,"state":"ungraduated","emissions":[],"disregarded":[],"scanned":{"comments":3}}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika graduate read 9
-graduate read: #9 does not exist.
+$ fabrika graduate read 9999
+graduate read: #9999 does not exist.
 $ echo $?
 7
 ```

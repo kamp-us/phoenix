@@ -389,7 +389,7 @@ judgment living inside a verb, and it would make `16` fire on titles a human rea
 **Output** — machine. One JSON object; every key below is always present:
 
 ```json
-{"session":4,"topic":"comment moderation model","ticket":null,"created":false,"url":"https://github.com/<owner>/<repo>/issues/4"}
+{"session":9412,"topic":"comment moderation model","ticket":null,"created":false,"url":"https://github.com/<owner>/<repo>/issues/9412"}
 ```
 
 | Key | Type | Meaning |
@@ -430,12 +430,12 @@ failed search as "none" opens a second session and splits the record.
 
 ```
 $ fabrika grill open --topic "comment moderation model"
-{"session":4,"topic":"comment moderation model","ticket":null,"created":true,"url":"https://github.com/<owner>/<repo>/issues/4"}
+{"session":9412,"topic":"comment moderation model","ticket":null,"created":true,"url":"https://github.com/<owner>/<repo>/issues/9412"}
 ```
 
 ```
 $ fabrika grill open --topic "comment moderation model"
-grill open: 2 open sessions match topic "comment moderation model": #4, #5 — refusing to guess which one is live.
+grill open: 2 open sessions match topic "comment moderation model": #9412, #9431 — refusing to guess which one is live.
 $ echo $?
 16
 ```
@@ -460,13 +460,13 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika grill round 4 [--supersedes <id>]... [--repo <owner/name>]
+fabrika grill round 9412 [--supersedes <id>]... [--repo <owner/name>]
 ```
 
 Reads the round body from **stdin**. An example a caller can paste verbatim:
 
 ```
-fabrika grill round 4 <<'ROUND'
+fabrika grill round 9412 <<'ROUND'
 ### 1 · fact
 Does the vote table already carry a per-account weight column?
 
@@ -485,7 +485,7 @@ ROUND
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"session":4,"round":2,"digest":"a1b2c3d4e5f6","questions":[{"id":"R2.1","kind":"fact"},{"id":"R2.2","kind":"decision"}],"supersedes":["R1.4"],"comment":5234567890,"supersedeComment":5234567891}
+{"session":9412,"round":2,"digest":"a1b2c3d4e5f6","questions":[{"id":"R2.1","kind":"fact"},{"id":"R2.2","kind":"decision"}],"supersedes":["R1.4"],"comment":5234567890,"supersedeComment":5234567891}
 ```
 
 | Key | Type | Meaning |
@@ -554,7 +554,7 @@ the requirement that a wrong recorded answer be retracted in the open rather tha
 **Invocation**
 
 ```
-fabrika grill answer 4 R2.1 --finding finding.md [--repo <owner/name>]
+fabrika grill answer 9412 R2.1 --finding finding.md [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -569,7 +569,7 @@ fabrika grill answer 4 R2.1 --finding finding.md [--repo <owner/name>]
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"session":4,"question":"R2.1","kind":"fact","comment":5234567891,"recordedAs":"agent"}
+{"session":9412,"question":"R2.1","kind":"fact","comment":5234567891,"recordedAs":"agent"}
 ```
 
 | Key | Type | Meaning |
@@ -621,7 +621,7 @@ Records a founder ruling. It is the only sanctioned path by which an agent recor
 **Invocation**
 
 ```
-fabrika grill rule 4 R2.3 --authorization authorization.md [--repo <owner/name>]
+fabrika grill rule 9412 R2.3 --authorization authorization.md [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -636,7 +636,7 @@ fabrika grill rule 4 R2.3 --authorization authorization.md [--repo <owner/name>]
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"session":4,"question":"R2.3","digest":"a1b2c3d4e5f6","authorization":5234567893,"marker":5234567892,"resolvesTo":"ruled"}
+{"session":9412,"question":"R2.3","digest":"a1b2c3d4e5f6","authorization":5234567893,"marker":5234567892,"resolvesTo":"ruled"}
 ```
 
 | Key | Type | Meaning |
@@ -694,12 +694,12 @@ failed lookup.
 **Examples**
 
 ```
-$ fabrika grill rule 4 R2.3 --authorization authorization.md
-{"session":4,"question":"R2.3","digest":"a1b2c3d4e5f6","authorization":5234567893,"marker":5234567892,"resolvesTo":"ruled"}
+$ fabrika grill rule 9412 R2.3 --authorization authorization.md
+{"session":9412,"question":"R2.3","digest":"a1b2c3d4e5f6","authorization":5234567893,"marker":5234567892,"resolvesTo":"ruled"}
 ```
 
 ```
-$ fabrika grill rule 4 R2.3 --authorization empty.md
+$ fabrika grill rule 9412 R2.3 --authorization empty.md
 grill rule: --authorization empty.md is empty — a ruling with no quoted authorization is void (#4938).
 $ echo $?
 15
@@ -730,7 +730,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika grill read 4 [--repo <owner/name>]
+fabrika grill read 9412 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -743,7 +743,7 @@ fabrika grill read 4 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"session":4,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
+{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
 ```
 
 **`ticket`** is the issue the session was opened on, read back from its body's `came-from` binding,
@@ -864,15 +864,15 @@ pagination is load-bearing rather than hygiene.
 **Examples**
 
 ```
-$ fabrika grill read 4
-{"session":4,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
+$ fabrika grill read 9412
+{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika grill read 4 --repo <owner>/nonexistent
-grill read: session #4 does not exist, or is not a grilling session.
+$ fabrika grill read 9412 --repo <owner>/nonexistent
+grill read: session #9412 does not exist, or is not a grilling session.
 $ echo $?
 7
 ```
