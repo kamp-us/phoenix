@@ -42,6 +42,31 @@ describe("chatRows", () => {
 		expect(rows.map((row) => row.kind)).toEqual(["loading", "item", "item"]);
 	});
 
+	it("replaces the omitted line with the refusal detail and keeps the history cursor", () => {
+		const rows = chatRows({
+			...base,
+			tail: transcriptOf(2),
+			omitted: 4,
+			pageError: "The history cursor is unknown.",
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["page-error", "item", "item"]);
+		expect(rows[0]).toEqual({kind: "page-error", detail: "The history cursor is unknown."});
+		expect(oldestLoadedId(rows)).toBe("i0");
+		expect(rowKey({kind: "page-error", detail: "The history cursor is unknown."})).toBe(
+			"page-error",
+		);
+	});
+
+	it("shows loading instead of a prior refusal while retrying", () => {
+		const rows = chatRows({
+			...base,
+			tail: transcriptOf(2),
+			pageError: "The history cursor is unknown.",
+			loading: true,
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["loading", "item", "item"]);
+	});
+
 	it("drops the head row at the beginning of history", () => {
 		const rows = chatRows({...base, tail: transcriptOf(2), atOldest: true});
 		expect(rows.map((row) => row.kind)).toEqual(["item", "item"]);

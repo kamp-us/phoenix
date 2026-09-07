@@ -20,7 +20,7 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/cor
 import {ProcessId} from "../../../process/process.ts";
 import {testProcess} from "../../window/fixtures.ts";
 import {WindowId} from "../../window/index.ts";
-import {chatWindow} from "../ChatWindow.tsx";
+import {type ChatWindowHost, chatWindow} from "../ChatWindow.tsx";
 import {
 	assistantItem,
 	call,
@@ -72,12 +72,40 @@ const mount = Effect.gen(function* () {
 	);
 	const left = yield* process.window<ChatView>(WindowId.make("left"), view);
 	const right = yield* process.window<ChatView>(WindowId.make("right"), view);
+	const paging = (host: ChatWindowHost): ChatWindowHost => {
+		let attempts = 0;
+		return {
+			...host,
+			dispatch: (msg) =>
+				Effect.gen(function* () {
+					if (msg.type !== "page") return yield* host.dispatch(msg);
+					attempts += 1;
+					yield* Effect.sleep("250 millis");
+					const failure = {
+						tag: "tuval/ai-agent/PageError",
+						reason: "unknown-cursor",
+						detail: "The history cursor is unknown.",
+					};
+					const page = {
+						items: [userItem("older", "Earlier history is available again.")],
+						hasMore: false,
+					};
+					const completed: AiAgentSessionState = {
+						...state,
+						failure,
+						pageOutcome: attempts === 1 ? {status: "refused", failure} : {status: "success", page},
+					};
+					yield* process.commit(completed);
+					return {_tag: "Delivered", view: {revision: attempts, state: completed}} as const;
+				}),
+		};
+	};
 	const renderer = chatWindow();
 	createRoot(host).render(
 		<StrictMode>
 			<div className="tuval-surface proof-desk" data-scheme="dark">
-				<div className="proof-pane">{renderer.render(left)}</div>
-				<div className="proof-pane">{renderer.render(right)}</div>
+				<div className="proof-pane">{renderer.render(paging(left))}</div>
+				<div className="proof-pane">{renderer.render(paging(right))}</div>
 			</div>
 		</StrictMode>,
 	);
