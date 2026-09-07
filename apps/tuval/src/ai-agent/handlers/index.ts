@@ -347,8 +347,14 @@ export const aiAgentHandlers = <RIn = never>(
 					dispatch({type: "event", sessionId: sub.sessionId, event});
 					const next = yield* projection.fold((state) => foldEvent(state, event, limits));
 					if (next === null) return;
-					if (event.kind === "item") yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
-					if (event.kind === "permission" || event.kind === "permission-resolved") {
+					// A reset empties both projections rather than moving one row of either, so it
+					// publishes on the same two ports an item and a card do — a window left rendering
+					// the old conversation's tail and its unanswerable cards is the reset half-done.
+					const reset = event.kind === "session-reset";
+					if (event.kind === "item" || reset) {
+						yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
+					}
+					if (event.kind === "permission" || event.kind === "permission-resolved" || reset) {
 						yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
 					}
 					if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));

@@ -16,6 +16,7 @@ import {
 	assistantEvents,
 	commandsChangedEvents,
 	compactBoundaryEvents,
+	conversationResetEvents,
 	initEvents,
 	type Mapping,
 	type MappingOptions,
@@ -44,6 +45,10 @@ export const toAgentEvents = (
 			return partialReplyEvents(message, mapping, options);
 		case "rate_limit_event":
 			return systemNoticeEvents(message, mapping, options);
+		// Not a notice, and not a row: it ends a turn no `result` will ever end and re-keys the
+		// session (`./map.ts`, and #8197 for the hang that came of dropping it).
+		case "conversation_reset":
+			return conversationResetEvents(message, mapping);
 		case "system":
 			if (message.subtype === "init") return initEvents(message, mapping);
 			if (message.subtype === "permission_denied") {
