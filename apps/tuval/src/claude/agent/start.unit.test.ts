@@ -203,6 +203,7 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 							{kind: "phase", phase: "prompting"},
 							{
 								kind: "usage",
+								turn: "claude:model-announcement",
 								model: "claude-fable-5-1",
 								inputTokens: 0,
 								outputTokens: 0,

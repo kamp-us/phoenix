@@ -66,7 +66,9 @@ export {
 	loadCheckpoint,
 	parseSessionState,
 	readCheckpoint,
+	SPENT_BEFORE_LEDGER,
 	withCheckpointDefaults,
+	withUsageLedger,
 } from "./snapshot.ts";
 export {
 	type AgentFailure,
@@ -88,5 +90,8 @@ export {
 	settleRunningSubagents,
 	settleTurn,
 	type ThinkingState,
+	type TurnUsage,
+	type UsageLedger,
 	type UsageTotals,
+	usageTotals,
 } from "./state.ts";

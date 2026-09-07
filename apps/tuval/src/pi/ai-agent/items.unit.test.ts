@@ -262,6 +262,7 @@ describe("one revision folded into events", () => {
 		]);
 		expect(folded.events.at(-2)).toEqual({
 			kind: "usage",
+			turn: "item-1",
 			model: "faux/faux-1",
 			inputTokens: 11,
 			outputTokens: 22,
@@ -322,6 +323,7 @@ describe("one revision folded into events", () => {
 			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
 			{
 				kind: "usage",
+				turn: "item-1",
 				model: "faux/faux-1",
 				inputTokens: 11,
 				outputTokens: 22,
@@ -347,6 +349,7 @@ describe("one revision folded into events", () => {
 			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
 			{
 				kind: "usage",
+				turn: "item-1",
 				model: "faux/faux-1",
 				inputTokens: 11,
 				outputTokens: 22,
@@ -385,6 +388,7 @@ describe("one revision folded into events", () => {
 			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
 			{
 				kind: "usage",
+				turn: "item-1",
 				model: "faux/faux-1",
 				inputTokens: 11,
 				outputTokens: 22,

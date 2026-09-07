@@ -14,6 +14,10 @@
  * the whole snapshot would bury it for the life of the session, which is why the seed cuts at that
  * tail rather than at the snapshot — and why it suppresses against the caller's own copy of each
  * row, so one that settled under the cut while the transport was gone still emits (#8374).
+ *
+ * What the operator is shown and what they are charged come apart here, and both are pinned. A cost
+ * is folded under its turn's id, so a resume may restate a turn the process already counted without
+ * moving the totals — the last two cases walk that in both directions.
  */
 
 import type {
@@ -22,7 +26,15 @@ import type {
 } from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Effect, Layer, Option, Queue, Stream} from "effect";
-import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
+import {
+	type AiAgentSessionState,
+	foldEvent,
+	initialState,
+	restore,
+	usageTotals,
+} from "../../ai-agent/core/index.ts";
+import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {AgentEvent, Phase, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
 import {itemsOf} from "./items.ts";
@@ -135,6 +147,34 @@ const itemIds = (events: ReadonlyArray<AgentEvent>): ReadonlyArray<string> =>
 
 const usages = (events: ReadonlyArray<AgentEvent>): number =>
 	events.filter((event) => event.kind === "usage").length;
+
+/** The tool row the agent was still running when the process went away. */
+const running: PiTranscriptItem = {
+	id: "item-2",
+	role: "tool",
+	toolCallId: "call-1",
+	toolName: "read_file",
+	input: {path: "README.md"},
+	content: [],
+	timestamp: 12,
+	status: "running",
+	isError: false,
+};
+
+/** A session whose ledger already holds what `reply` cost, as a checkpoint would carry it. */
+const counted = (items: ReadonlyArray<TranscriptItem>, phase: Phase): AiAgentSessionState => ({
+	...initialState(CWD),
+	phase,
+	transcript: {items: [...items], omitted: {items: 0, bytes: 0, reason: "none"}},
+	usage: {
+		model: `${SESSION.model.provider}/${SESSION.model.id}`,
+		turns: {[reply.id]: {inputTokens: 11, outputTokens: 22, cost: 0.42}},
+	},
+});
+
+/** What the session has spent once every event of this push has been folded into it. */
+const spent = (state: AiAgentSessionState, events: ReadonlyArray<AgentEvent>) =>
+	usageTotals(events.reduce((carried, event) => foldEvent(carried, event, {}), state).usage);
 
 describe("a Pi session resumed by a caller that already holds its transcript", () => {
 	it.live(
@@ -309,6 +349,72 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 					Effect.scoped,
 				);
 			}),
+	);
+
+	/**
+	 * Criterion 5, the direction a seed can lose: a resume that shows the operator nothing new must
+	 * cost them nothing new either.
+	 */
+	it.live("leaves the totals where they were when the resume adds no item", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				const tail = held(user, reply);
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION.id, holdsTranscript: true, held: tail},
+				});
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* drain(events);
+
+				yield* client.push(HELD);
+				const folded = yield* drain(events);
+				assert.strictEqual(
+					spent(counted(tail, "ready"), folded).cost,
+					0.42,
+					"the resume charged the session again for a turn it had already counted",
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	/**
+	 * Criterion 5, the other direction, and the ordinary shape of an agent parked mid-work: a
+	 * multi-step turn checkpointed on a running tool row at phase `prompting`.
+	 *
+	 * `restore` marks the tail's newest assistant row `interrupted`, walking back past the tool row
+	 * to reach it (`core/state.ts`) — so the reply this process already paid for comes back
+	 * carrying a marker the backend's copy does not have, and the reconnect hands that marked tail
+	 * through as the fold's seed. The turn is behind the seed's boundary and still differs from the
+	 * snapshot, so its cost is re-reported; keying the cost on the turn is what makes the second
+	 * report cost nothing (#8369).
+	 */
+	it.live("counts a turn parked under an interrupted marker exactly once", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				const parked = counted(held(user, reply, running), "prompting");
+				const marked = restore(parked).transcript.items;
+				assert.ok(
+					marked.some((item) => item.kind === "assistant" && item.interrupted === true),
+					"the restore left the parked reply unmarked, so this pins nothing",
+				);
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION.id, holdsTranscript: true, held: marked},
+				});
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* drain(events);
+
+				yield* client.push(snapshot([user, reply, running], "turn", 8));
+				const folded = yield* drain(events);
+				assert.strictEqual(spent(parked, folded).cost, 0.42, "the parked turn's cost landed twice");
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
 	);
 
 	it.live("opens a fresh session on an empty projection, so its first snapshot paints", () =>

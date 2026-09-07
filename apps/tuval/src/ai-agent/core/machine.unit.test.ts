@@ -17,7 +17,7 @@ import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
 import {queueLimit} from "./queue.ts";
 import {isAiAgentSessionState, loadCheckpoint} from "./snapshot.ts";
-import {type AiAgentSessionState, checkpointFields, initialState} from "./state.ts";
+import {type AiAgentSessionState, checkpointFields, initialState, usageTotals} from "./state.ts";
 
 const machine = aiAgentSessionMachine({cwd: "/repo"});
 
@@ -486,22 +486,51 @@ describe("event", () => {
 		expect(state.modes).toEqual({current: "plan", available: ["plan"]});
 	});
 
-	it("accumulates cost and tokens across usage events", () => {
-		const usage = (cost: number): AgentEvent => ({
+	it("accumulates cost and tokens across turns", () => {
+		const usage = (turn: string, cost: number): AgentEvent => ({
 			kind: "usage",
+			turn,
 			model: "claude-opus-5",
 			inputTokens: 10,
 			outputTokens: 5,
 			cost,
 		});
-		const [once] = apply(started(), {type: "event", sessionId: "session-1", event: usage(0.01)});
-		const [twice] = apply(once, {type: "event", sessionId: "session-1", event: usage(0.02)});
-		expect(twice.usage).toEqual({
+		const [once] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: usage("turn-1", 0.01),
+		});
+		const [twice] = apply(once, {
+			type: "event",
+			sessionId: "session-1",
+			event: usage("turn-2", 0.02),
+		});
+		expect(usageTotals(twice.usage)).toEqual({
 			model: "claude-opus-5",
 			inputTokens: 20,
 			outputTokens: 10,
 			cost: 0.03,
 		});
+	});
+
+	/**
+	 * A layer reports a turn's cost as a fact about that turn, and reports it again whenever a
+	 * resume walks a transcript this process has already folded (#8369). The second report is the
+	 * same turn, not a second one.
+	 */
+	it("counts one turn's cost once however often the backend reports it", () => {
+		const usage: AgentEvent = {
+			kind: "usage",
+			turn: "turn-1",
+			model: "claude-opus-5",
+			inputTokens: 10,
+			outputTokens: 5,
+			cost: 0.01,
+		};
+		const [once] = apply(started(), {type: "event", sessionId: "session-1", event: usage});
+		const [twice] = apply(once, {type: "event", sessionId: "session-1", event: usage});
+		expect(usageTotals(twice.usage)).toEqual(usageTotals(once.usage));
+		expect(usageTotals(twice.usage).cost).toBe(0.01);
 	});
 
 	it("adds a permission card and drops it when the backend settles it itself", () => {
