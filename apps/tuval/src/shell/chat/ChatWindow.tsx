@@ -101,9 +101,10 @@ export interface ChatWindowOptions {
 	/** The clock a send stamps its turn with, so no update cell has to read one (#7978). */
 	readonly now?: () => number;
 	/**
-	 * The window's half of the config's `features.subagentList` flag (`../../config.ts`), off by
-	 * default. It gates the running list and the removal of a subagent's rows from the transcript
-	 * together, so an operator with it off sees exactly today's window (#8405).
+	 * The window's half of the config's `features.subagentList` flag (`../../config.ts`), on by
+	 * default since the flag's flip. It gates the running list and the removal of a subagent's rows
+	 * from the transcript together, so a caller passing `false` gets exactly the pre-flag window
+	 * (#8405).
 	 */
 	readonly subagentList?: boolean;
 	readonly pageLimit?: number;
@@ -141,7 +142,7 @@ const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	now: options.now ?? (() => Date.now()),
-	subagentList: options.subagentList === true,
+	subagentList: options.subagentList !== false,
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,

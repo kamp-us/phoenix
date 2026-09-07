@@ -18,7 +18,7 @@
 
 import {dirname} from "node:path";
 import {Effect, Schema} from "effect";
-import {featuresOff, type TuvalFeatures} from "../features.ts";
+import {featuresDefault, type TuvalFeatures} from "../features.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
 import type {ModuleRendererRef} from "../shell/window/index.ts";
 
@@ -63,7 +63,7 @@ export interface PageServerOptions {
 	readonly moduleRenderers?: ReadonlyArray<ModuleRendererRef>;
 	/**
 	 * The booted config's feature flags (`../config.ts`), merged and every one resolved to a boolean.
-	 * Absent means `featuresOff` — what a caller serving the page over its own rows rather than a
+	 * Absent means `featuresDefault` — what a caller serving the page over its own rows rather than a
 	 * founder's config wants.
 	 */
 	readonly features?: TuvalFeatures;
@@ -139,10 +139,10 @@ export const featuresSource = (features: TuvalFeatures): string => {
 /**
  * The plugin serving that module. Exported because the renderer table imports the specifier
  * unconditionally, so every environment loading the table has to answer it: the dev server below
- * with the founder's flags, and `vitest.config.ts` with `featuresOff` — the flags-off desk a unit
- * test means to render.
+ * with the founder's flags, and `vitest.config.ts` with `featuresDefault` — the desk a unit test
+ * means to render.
  */
-export const featuresPlugin = (features: TuvalFeatures = featuresOff) => {
+export const featuresPlugin = (features: TuvalFeatures = featuresDefault) => {
 	const source = featuresSource(features);
 	return {
 		name: "tuval-features",

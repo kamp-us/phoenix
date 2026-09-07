@@ -26,7 +26,7 @@ import {
 } from "./commands/bindings/index.ts";
 // Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
 // flag record, and this module reaches `node:*` (#8439).
-import {featuresOff, type TuvalFeatures} from "./features.ts";
+import {featuresDefault, type TuvalFeatures} from "./features.ts";
 import {type Graph, NodeId} from "./ports/graph.ts";
 import {type AnyProgram, ProgramId} from "./registry/program.ts";
 import {
@@ -56,7 +56,8 @@ const GraphSchema = Schema.Struct({nodes: Schema.Array(GraphNode)});
 /**
  * The feature flags a layer *states*. Every key is optional, and that is the whole point: absent
  * means "this layer says nothing", not "off", so a project layer naming one flag cannot put back to
- * its default a flag the global layer turned on. `featuresOff` is where a flag nobody stated lands.
+ * its default a flag the global layer turned on. `featuresDefault` is where a flag nobody stated
+ * lands.
  */
 const DeclaredFeatures = Schema.Struct({
 	/**
@@ -66,7 +67,7 @@ const DeclaredFeatures = Schema.Struct({
 	subagentList: Schema.optionalKey(Schema.Boolean),
 });
 
-export {featuresOff, type TuvalFeatures} from "./features.ts";
+export {featuresDefault, type TuvalFeatures} from "./features.ts";
 
 /** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
 export const TuvalConfig = Schema.Struct({
@@ -244,7 +245,7 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		// Widened back: the loader checked each row's id and nothing else, and that is all a caller
 		// may assume of one.
 		programs: declared.map((program): unknown => program.row),
-		features: {...featuresOff, ...base.features, ...over.features},
+		features: {...featuresDefault, ...base.features, ...over.features},
 		moduleRenderers: moduleRendererRefs(declared),
 		graph: {nodes: mergeById(base.graph.nodes, over.graph.nodes, (node) => node.id)},
 		keys: [

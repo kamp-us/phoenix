@@ -79,11 +79,12 @@ describe("the feature-flag module", () => {
 		);
 	});
 
-	// The page reads `features.subagentList` and gets a boolean either way: an absent key would read
-	// `undefined`, which is falsy and so passes by luck until a flag defaults on.
-	it("carries every flag as false when no layer declares a features block", async () => {
+	// The page reads `features.subagentList` and gets a boolean either way. `subagentList` defaults
+	// on, so an absent key reading `undefined` would now be wrong in the direction that shows: the
+	// operator who stated nothing would get the flag off.
+	it("carries every flag at its default when no layer declares a features block", async () => {
 		expect(await generated("two-rows", "one-counter")).toBe(
-			'export default {\n\t"subagentList": false,\n};\n',
+			'export default {\n\t"subagentList": true,\n};\n',
 		);
 	});
 
