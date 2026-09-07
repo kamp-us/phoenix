@@ -64,13 +64,14 @@ import {
 	rowIndexOfItem,
 	rowKey,
 	subagentHeads,
+	subagentRows,
 } from "./rows.ts";
 import {SessionRow} from "./SessionRow.tsx";
 import {SubagentList} from "./SubagentList.tsx";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
-import {asChatView, type ChatView} from "./view.ts";
+import {asChatView, type ChatView, viewMain, viewSubagent} from "./view.ts";
 import "./chat.css";
 
 export type ChatWindowHost = WindowHost<AiAgentSessionState, AiAgentSessionMsg, ChatView>;
@@ -487,7 +488,21 @@ function ChatWindow({
 		[options.subagentList, subagentSlots],
 	);
 
-	const rows = useMemo(
+	/**
+	 * Which transcript the one view slot is showing (founder ruling Q7 on #8384), or `null` for the
+	 * agent's own. Gated on the flag rather than trusted from the slot: a slot written while the flag
+	 * was on must not keep a window swapped away once it is off (#8405's containment).
+	 */
+	const viewing = options.subagentList ? view.viewing : null;
+	const viewedSlot = viewing === null ? undefined : state?.subagents[viewing.id];
+
+	const showSubagent = useCallback(
+		(id: string) => commit((current) => viewSubagent(current, id)),
+		[commit],
+	);
+	const showMain = useCallback(() => commit(viewMain), [commit]);
+
+	const mainRows = useMemo(
 		() =>
 			chatRows({
 				older,
@@ -500,6 +515,13 @@ function ChatWindow({
 				subagents,
 			}),
 		[older, state, loading, pageError, view.atOldest, unfolded, subagents],
+	);
+
+	// The swap is a swap of *this* list and nothing else: main's own rows, pages and cursor are left
+	// exactly as they were, which is what lets the back action put the window back where it was.
+	const rows = useMemo(
+		() => (viewedSlot === undefined ? mainRows : subagentRows(viewedSlot, unfolded)),
+		[viewedSlot, mainRows, unfolded],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
@@ -565,6 +587,9 @@ function ChatWindow({
 	const totalSize = virtualizer.getTotalSize();
 
 	const requestOlder = useCallback(() => {
+		// A subagent's rows arrive whole with its slot, so there is no page behind them to ask for —
+		// and the ids in this list are the worker's, which the agent's own cursor knows nothing about.
+		if (viewing !== null) return;
 		if (pageRequestRef.current !== null || view.atOldest || rows.length === 0) return;
 		const request = olderPageRequest(rows);
 		if (request === null) return;
@@ -615,6 +640,7 @@ function ChatWindow({
 			}),
 		);
 	}, [
+		viewing,
 		view.atOldest,
 		rows,
 		session,
@@ -650,12 +676,22 @@ function ChatWindow({
 	// A window left following its newest turn is restored onto the newest row and not onto its saved
 	// offset: that offset was the bottom when it was written, and the transcript has grown since.
 	const placedRef = useRef(false);
+	// …and once per swap after that. A swapped-in view is a different transcript, so the offset the
+	// viewport holds means nothing in it: the placement below runs again, onto the newest row of the
+	// subagent, or back onto the row and offset `viewMain` restored for the agent's own.
+	const placedViewRef = useRef<string | null>(viewing?.id ?? null);
+	useLayoutEffect(() => {
+		const id = viewing?.id ?? null;
+		if (placedViewRef.current === id) return;
+		placedViewRef.current = id;
+		placedRef.current = false;
+	}, [viewing]);
 	useLayoutEffect(() => {
 		if (placedRef.current || rows.length === 0) return;
 		placedRef.current = true;
 		if (!view.pinned && view.scroll > 0) virtualizer.scrollToOffset(view.scroll);
 		else virtualizer.scrollToIndex(rows.length - 1, {align: "end"});
-	}, [rows.length, view.pinned, view.scroll, virtualizer]);
+	}, [rows.length, view.pinned, view.scroll, viewing, virtualizer]);
 
 	// …and after that, the transcript follows the newest turn only while it is already resting on
 	// it. `totalSize` carries both cases the follow owes: a row appended, and the last row measuring
@@ -879,7 +915,28 @@ function ChatWindow({
 					</div>
 				</div>
 				{options.subagentList ? (
-					<SubagentList slots={process.state.subagents} now={options.now} />
+					<>
+						<SubagentList
+							slots={process.state.subagents}
+							now={options.now}
+							viewing={viewing?.id ?? null}
+							onView={showSubagent}
+							onMain={showMain}
+						/>
+						{/* The one live region for the view slot, and the reason the visible notice below is
+						    not a second one. A `log` announces what is appended to it, so a swap — which
+						    replaces the whole transcript under the reader — and a worker finishing under an
+						    open view are both announced here or nowhere. */}
+						<p className="kp-visually-hidden" role="status">
+							{viewedSlot === undefined
+								? viewing === null
+									? "Showing the agent's own transcript."
+									: "Showing a subagent whose transcript is not in this session's state."
+								: viewedSlot.status === "finished"
+									? `Showing the ${viewedSlot.type} subagent's transcript. Finished: ${viewedSlot.lastLine}`
+									: `Showing the ${viewedSlot.type} subagent's transcript. Still running.`}
+						</p>
+					</>
 				) : null}
 				<div
 					ref={scrollRef}
@@ -887,7 +944,10 @@ function ChatWindow({
 					onScroll={onScroll}
 					onKeyDown={swallowBareCharacter}
 					role="log"
-					aria-label="Transcript"
+					data-view={viewing === null ? undefined : viewing.id}
+					aria-label={
+						viewedSlot === undefined ? "Transcript" : `Transcript: ${viewedSlot.type} subagent`
+					}
 					// The scroll container is the only way to older turns on a plain transcript, so a
 					// keyboard user must be able to focus it (axe scrollable-region-focusable).
 					// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
@@ -927,6 +987,24 @@ function ChatWindow({
 						})}
 					</div>
 				</div>
+				{viewing === null ? null : (
+					// Q9, verbatim: "we should show something to user if they are actually inside a
+					// subagent that's already finished." The view stays open on the rows it had and says
+					// so at the end of them; the way back is the navigator's first row, above. Not a live
+					// region — the hidden one above carries this same sentence and announces it once.
+					<p className="tuval-chat-subagent-end" data-status={viewedSlot?.status}>
+						{viewedSlot === undefined ? (
+							"This subagent's transcript is not in this session's state."
+						) : viewedSlot.status === "finished" ? (
+							<>
+								<span className="tuval-chat-subagent-end-mark">finished</span>
+								{viewedSlot.lastLine}
+							</>
+						) : (
+							`The ${viewedSlot.type} subagent is still running.`
+						)}
+					</p>
+				)}
 				{isWorking(phase) ? (
 					// Visual only. The phase line above is the announced surface for the running turn, so a
 					// live region here would narrate that same turn twice; what this adds is the tell at

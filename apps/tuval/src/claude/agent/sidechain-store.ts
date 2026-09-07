@@ -74,7 +74,7 @@ const locateSessionDir = Effect.fn("Claude.locateSessionDir")(function* (
 	for (const entry of yield* fs.readDirectory(projects).pipe(unreadable)) {
 		if (yield* fs.exists(at(entry)).pipe(unreadable)) return at(entry);
 	}
-	return yield* subagentNotFound(session.id, `no stored session directory for "${session.id}"`);
+	return yield* subagentNotFound(session.id, "no stored session directory for this session");
 });
 
 /**
@@ -95,7 +95,7 @@ export const readSubagentTranscript = Effect.fn("Claude.readSubagentTranscript")
 
 	const file = path.join(dir, sidechainFileName(agentId));
 	if (!(yield* fs.exists(file).pipe(unreadable))) {
-		return yield* subagentNotFound(agentId, `no transcript file for subagent "${agentId}"`);
+		return yield* subagentNotFound(agentId, "no transcript file for this subagent");
 	}
 	const jsonl = yield* fs.readFileString(file).pipe(unreadable);
 	const meta = yield* fs

@@ -33,6 +33,7 @@ const chatViewFitsTheSlot: ViewState = {
 	atOldest: false,
 	expanded: [],
 	unfolded: [],
+	viewing: null,
 } satisfies ChatView;
 
 /**
@@ -112,6 +113,7 @@ describe("chat window boundary", () => {
 			atOldest: false,
 			expanded: [],
 			unfolded: [],
+			viewing: null,
 		});
 		expect(interfaceMisfitsTheSlot).toBe(asInterface);
 		expect(isWindowRenderer).toBe(true);

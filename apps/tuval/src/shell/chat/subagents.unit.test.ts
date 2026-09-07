@@ -27,6 +27,8 @@ describe("runningSubagents", () => {
 					lastLine: "reading rows.ts",
 					startedAt: 1_756_000_000_000,
 					tokens: 2_400,
+					status: "running",
+					current: false,
 				},
 			],
 			more: 0,
@@ -81,6 +83,47 @@ describe("runningSubagents", () => {
 			subagentSlot(`s${index}`, {startedAt: index, status: index < 7 ? "running" : "finished"}),
 		);
 		expect(runningSubagents(slots(...running)).more).toBe(2);
+	});
+});
+
+/**
+ * The navigator's half (#8406). Which row is marked, and the one case the running set alone cannot
+ * answer: the worker being read has stopped, and its row must still be in the list under Q9.
+ */
+describe("runningSubagents as the navigator", () => {
+	it("marks the viewed worker and nothing else", () => {
+		const model = runningSubagents(slots(subagentSlot("a"), subagentSlot("b")), "b");
+		expect(model.rows.map((row) => [row.id, row.current])).toEqual([
+			["a", false],
+			["b", true],
+		]);
+	});
+
+	it("keeps a finished worker in the list while it is the one being read (Q9)", () => {
+		const model = runningSubagents(
+			slots(subagentSlot("a"), subagentSlot("b", {status: "finished"})),
+			"b",
+		);
+		expect(model.rows.map((row) => [row.id, row.status, row.current])).toEqual([
+			["a", "running", false],
+			["b", "finished", true],
+		]);
+		expect(model.more).toBe(0);
+	});
+
+	it("pulls a viewed worker in past the cap, and stops counting it as left off", () => {
+		const running = Array.from({length: 10}, (_, index) =>
+			subagentSlot(`s${index}`, {startedAt: index}),
+		);
+		const model = runningSubagents(slots(...running), "s9");
+		expect(model.rows.map((row) => row.id)).toEqual(["s0", "s1", "s2", "s3", "s4", "s9"]);
+		expect(model.rows.at(-1)?.current).toBe(true);
+		expect(model.more).toBe(4);
+	});
+
+	it("marks nothing when the viewed id names no slot this session holds", () => {
+		const model = runningSubagents(slots(subagentSlot("a")), "gone");
+		expect(model.rows.map((row) => [row.id, row.current])).toEqual([["a", false]]);
 	});
 });
 

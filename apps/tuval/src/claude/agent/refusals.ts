@@ -71,6 +71,7 @@ export const unknownCursor = (reason: string): PageError =>
  * parse are three different things to have to tell an operator, and "this subagent said nothing"
  * is none of them.
  */
+/** The id is appended here and named nowhere else — a caller that spells it again says it twice. */
 export const subagentNotFound = (agentId: string, detail: string): PageError =>
 	new PageError({reason: "subagent-not-found", detail: `${detail} (${agentId})`});
 

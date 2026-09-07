@@ -77,6 +77,12 @@ export interface ChatRowsInput {
 	 * this be one boolean and no second code path.
 	 */
 	readonly subagents?: ReadonlySet<string>;
+	/**
+	 * The call this whole list ran inside, set only when the list is one subagent's own transcript
+	 * (#8406). Its children are this list's top level, so they read at depth zero instead of as rows
+	 * nested under a head the list does not contain.
+	 */
+	readonly head?: string;
 }
 
 /**
@@ -303,12 +309,35 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 		if (!unfolded.has(item.id)) return;
 		for (const child of group) emit(child, depth + 1);
 	};
-	for (const item of roots) emit(item, item.parentId === undefined ? 0 : 1);
+	for (const item of roots) {
+		emit(item, item.parentId === undefined || item.parentId === input.head ? 0 : 1);
+	}
 	for (const item of items) {
 		if (!reachable.has(item.id)) emit(item, 1);
 	}
 	return rows;
 };
+
+/**
+ * One subagent's own transcript, as the swapped-in view renders it (#8406, founder ruling Q7).
+ *
+ * The slot carries every item the worker produced, so this needs no page walk and no live tail, and
+ * `atOldest` is true: a subagent's rows arrive with its slot or not at all, and there is nothing
+ * older to ask the backend for.
+ */
+export const subagentRows = (
+	slot: SubagentSlot,
+	unfolded?: ReadonlySet<string>,
+): ReadonlyArray<ChatRow> =>
+	chatRows({
+		older: [],
+		tail: slot.items,
+		omitted: 0,
+		loading: false,
+		atOldest: true,
+		head: slot.id,
+		...(unfolded === undefined ? {} : {unfolded}),
+	});
 
 /** The prepend anchor: the visually oldest item, including a local echo. */
 export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null => {

@@ -1,12 +1,13 @@
 /**
  * What one chat window keeps in its own `view` slot, and how a slot of unknown shape is read back.
  *
- * Six facts live here and nothing else: whether the transcript is following its newest turn, where
+ * Seven facts live here and nothing else: whether the transcript is following its newest turn, where
  * it was scrolled to otherwise, what was typed and not yet sent, how far back into history this
- * window has walked, which rows it has disclosed, and which group heads have their folded rows
- * showing. Two windows over one process share the transcript and own one of these each (#7484
- * R1.1), so everything here is per-window — including `expanded`, which is why the same tool call
- * can be open in one window and closed in the other.
+ * window has walked, which rows it has disclosed, which group heads have their folded rows showing,
+ * and which transcript the window's one view slot is showing. Two windows over one process share
+ * the transcript and own one of these each (#7484 R1.1), so everything here is per-window —
+ * including `expanded`, which is why the same tool call can be open in one window and closed in the
+ * other, and including `viewing`, which is what lets two windows sit on two different subagents.
  *
  * `expanded` and `unfolded` are two facts, not one: opening a call's input panel and revealing the
  * subagent rows it heads are different asks, and one control doing both is what left the revealed
@@ -20,6 +21,21 @@
 
 import type {ViewState} from "../window/index.ts";
 import {asOutgoing, type OutgoingSend} from "./outgoing.ts";
+
+/**
+ * The subagent this window's one view slot is showing, and where main was left when it swapped.
+ *
+ * One field rather than two, because "which transcript is showing" and "where main was parked" are
+ * the same fact: a window on main has no parked position to restore, and a window on a subagent
+ * always has one. Split, a slot could say it is on main while parking an offset — a state the back
+ * action could not read.
+ */
+export type ChatSubagentView = {
+	/** The spawning call's item id — the key of the slot whose transcript is showing. */
+	readonly id: string;
+	/** Where main was resting when this window swapped away from it. The back action restores it. */
+	readonly from: {readonly pinned: boolean; readonly scroll: number};
+};
 
 export type ChatView = {
 	/**
@@ -46,6 +62,13 @@ export type ChatView = {
 	readonly expanded: ReadonlyArray<string>;
 	/** The ids of the group heads whose folded rows this window is showing. Absent means folded. */
 	readonly unfolded: ReadonlyArray<string>;
+	/**
+	 * Which transcript the one view slot shows: `null` is the agent's own, a record is the subagent
+	 * swapped in over it (founder ruling Q7 on #8384 — one window, one slot, swapped in place).
+	 * `pinned` and `scroll` above always describe the *current* view, which is why the place main was
+	 * left is parked in here rather than overwritten.
+	 */
+	readonly viewing: ChatSubagentView | null;
 };
 
 export const initialChatView: ChatView = {
@@ -57,6 +80,7 @@ export const initialChatView: ChatView = {
 	atOldest: false,
 	expanded: [],
 	unfolded: [],
+	viewing: null,
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -67,6 +91,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * holds `null`, and a slot written by another program holds something else entirely — neither is an
  * error the surface may throw on, because the contract's own fallbacks are values.
  */
+/**
+ * Read the view slot back. Total like everything beside it: a slot from a build that had no such
+ * field, and one whose record is any other shape, are both a window on main.
+ */
+const asSubagentView = (value: unknown): ChatSubagentView | null => {
+	if (!isRecord(value)) return null;
+	if (typeof value.id !== "string" || value.id.length === 0) return null;
+	const from = isRecord(value.from) ? value.from : {};
+	return {
+		id: value.id,
+		from: {
+			pinned: from.pinned !== false,
+			scroll: typeof from.scroll === "number" && Number.isFinite(from.scroll) ? from.scroll : 0,
+		},
+	};
+};
+
 export const asChatView = (value: ViewState | undefined): ChatView => {
 	if (!isRecord(value)) return initialChatView;
 	return {
@@ -84,5 +125,26 @@ export const asChatView = (value: ViewState | undefined): ChatView => {
 		unfolded: Array.isArray(value.unfolded)
 			? value.unfolded.filter((id): id is string => typeof id === "string")
 			: [],
+		viewing: asSubagentView(value.viewing),
 	};
+};
+
+/**
+ * Swap the slot onto a subagent, parking where main was left. Already there is a no-op, and a swap
+ * straight from one subagent to another keeps the *original* park: main was left once.
+ *
+ * The swapped-in view starts on its own newest row rather than on main's offset, which is an offset
+ * into a transcript this one is not.
+ */
+export const viewSubagent = (view: ChatView, id: string): ChatView => {
+	if (view.viewing?.id === id) return view;
+	const from = view.viewing?.from ?? {pinned: view.pinned, scroll: view.scroll};
+	return {...view, pinned: true, scroll: 0, viewing: {id, from}};
+};
+
+/** Swap back to main, onto the row and offset it was left on. Already there is a no-op. */
+export const viewMain = (view: ChatView): ChatView => {
+	if (view.viewing === null) return view;
+	const {from} = view.viewing;
+	return {...view, pinned: from.pinned, scroll: from.scroll, viewing: null};
 };
