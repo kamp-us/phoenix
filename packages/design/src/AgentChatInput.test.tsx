@@ -207,8 +207,8 @@ describe("AgentChatInput", () => {
 		const selectedAttribute = variant === "focused" ? "aria-checked" : "aria-selected";
 
 		it.each([
-			{levels: ["low", "medium"]},
-			{levels: ["low"]},
+			{levels: ["low", "medium"] as const},
+			{levels: ["low"] as const},
 		])("picks from translated unset state with $levels", async ({levels}) => {
 			const {bridge: emptyBridge} = lateCatalogBridge();
 			let thinkingLevel: string | undefined;
