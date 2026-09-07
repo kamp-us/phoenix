@@ -3,6 +3,7 @@ import {
 	assistantItem,
 	randomStream,
 	randomTranscript,
+	thinkingItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
@@ -197,6 +198,21 @@ describe("a local echo is not a stored page cursor", () => {
 		expect(pageCursor([local, {...reply, partial: false}], local.id)).toEqual({
 			kind: "page",
 			before: reply.id,
+		});
+	});
+
+	// Reasoning grows a partial row of its own (#8288), and it need not have a stored frame either.
+	it("never selects reasoning that is still being written", () => {
+		const growing = {...thinkingItem("stored-thinking"), partial: true};
+		expect(pageCursor([local, growing], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([local, growing], growing.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([local, growing, ...older], local.id)).toEqual({
+			kind: "page",
+			before: older[0]?.id,
+		});
+		expect(pageCursor([local, thinkingItem("stored-thinking")], local.id)).toEqual({
+			kind: "page",
+			before: "stored-thinking",
 		});
 	});
 

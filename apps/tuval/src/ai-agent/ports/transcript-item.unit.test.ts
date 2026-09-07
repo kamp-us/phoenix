@@ -2,11 +2,19 @@ import {describe, expect, it} from "vitest";
 import {
 	boundToolResult,
 	byteLength,
+	type CompactionItem,
 	ItemId,
 	isTranscriptItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type TranscriptItem,
 } from "./transcript-item.ts";
+
+/**
+ * The streaming marker is the growing kinds' alone. A compaction boundary is written once and never
+ * rewritten, so it declares nothing a reader could watch — giving it the field reds here with
+ * TS2322, at the line that says why.
+ */
+const compactionStreamsNothing: "partial" extends keyof CompactionItem ? false : true = true;
 
 const at = 1_756_000_000_000;
 const id = (value: string) => ItemId.make(value);
@@ -52,6 +60,19 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...assistant, partial: "true"})).toBe(false);
 		expect(isTranscriptItem({...assistant, partial: 1})).toBe(false);
 		expect(isTranscriptItem({...assistant, partial: null})).toBe(false);
+	});
+
+	it("admits reasoning still being written, and reasoning that has finished", () => {
+		expect(isTranscriptItem({...thinking, partial: true})).toBe(true);
+		expect(isTranscriptItem({...thinking, partial: false})).toBe(true);
+		expect(isTranscriptItem({...thinking, partial: undefined})).toBe(true);
+	});
+
+	it("refuses a reasoning partial marker that is not a flag", () => {
+		expect(isTranscriptItem({...thinking, partial: "true"})).toBe(false);
+		expect(isTranscriptItem({...thinking, partial: 1})).toBe(false);
+		expect(isTranscriptItem({...thinking, partial: null})).toBe(false);
+		expect(compactionStreamsNothing).toBe(true);
 	});
 
 	it("refuses an item of an unknown kind", () => {

@@ -88,10 +88,15 @@ export interface ToolItem extends ItemBase {
  *
  * Model-blind like every other item: no provider signature, no redaction flag, no effort level.
  * `ports/thinking.ts` is the effort-level *control* and has nothing to do with this row.
+ *
+ * `partial` is `AssistantItem`'s marker and carries exactly its contract: absent means final, and a
+ * backend re-upserts this same id as the reasoning grows. Reasoning streams before the answer does,
+ * so a window that reads the marker on one kind reads it on both without learning a second field.
  */
 export interface ThinkingItem extends ItemBase {
 	readonly kind: "thinking";
 	readonly text: string;
+	readonly partial?: boolean;
 }
 
 /**
@@ -219,9 +224,10 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 				typeof value.text === "string" &&
 				(value.detail === undefined || typeof value.detail === "string")
 			);
-		case "thinking":
 		case "compaction":
 			return typeof value.text === "string";
+		case "thinking":
+			return typeof value.text === "string" && isOptionalFlag(value.partial);
 		case "assistant":
 			return (
 				typeof value.text === "string" &&

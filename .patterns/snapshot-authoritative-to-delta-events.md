@@ -45,7 +45,7 @@ phase above a reply that has not landed yet, and usage annotates a turn that is 
 
 An item id used for live upserts is not necessarily a stored paging cursor. Keep the visual anchor
 and the cursor separate: [`history/cursor.ts`](../apps/tuval/src/ai-agent/history/cursor.ts) skips
-local echoes and partial assistant rows once for the handler and window, returning an explicit
+local echoes and every partial row once for the handler and window, returning an explicit
 unavailable result rather than turning absence into `before: null` (the newest end). A partial row
 can arrive before its first completed block exists in storage; a live id alone does not prove that
 an alias has a target. Completion makes that row eligible on the next request; the local visual
