@@ -18,8 +18,11 @@ import type {
 	SessionInfoEntry,
 	ThinkingLevelChangeEntry,
 } from "@earendil-works/pi-coding-agent";
+import {buildContextEntries, sessionEntryToContextMessages} from "@earendil-works/pi-coding-agent";
 import {describe, expect, it} from "vitest";
+import {projectTranscript, type SourceMessage} from "../server/index.ts";
 import {pageCursorAliases, pageItems} from "./entries.ts";
+import {itemsOf} from "./items.ts";
 
 /** The package's root does not re-export the label entry's interface; the union still names it. */
 type LabelEntry = Extract<SessionEntry, {type: "label"}>;
@@ -57,8 +60,20 @@ describe("a session branch as pageable history", () => {
 			message("e2", "e1", 2, replied("older answer")),
 		]);
 		expect(items).toEqual([
-			{kind: "user", id: "e1", timestamp: Date.parse(at(1)), text: "older question"},
-			{kind: "assistant", id: "e2", timestamp: Date.parse(at(2)), text: "older answer"},
+			{
+				kind: "user",
+				id: "e1",
+				alias: "item-0",
+				timestamp: Date.parse(at(1)),
+				text: "older question",
+			},
+			{
+				kind: "assistant",
+				id: "e2",
+				alias: "item-1",
+				timestamp: Date.parse(at(2)),
+				text: "older answer",
+			},
 		]);
 	});
 
@@ -156,7 +171,7 @@ describe("a session branch as pageable history", () => {
 		const items = pageItems([compaction, message("e2", "e1", 2, said("carry on"))]);
 		expect(items).toEqual([
 			{kind: "compaction", id: "e1", timestamp: Date.parse(at(1)), text: "we agreed on the plan"},
-			{kind: "user", id: "e2", timestamp: Date.parse(at(2)), text: "carry on"},
+			{kind: "user", id: "e2", alias: "item-1", timestamp: Date.parse(at(2)), text: "carry on"},
 		]);
 	});
 
@@ -190,8 +205,20 @@ describe("a session branch as pageable history", () => {
 			}),
 		]);
 		expect(items.slice(1)).toEqual([
-			{kind: "thinking", id: "e2:thinking", timestamp: Date.parse(at(2)), text: "weighing it up"},
-			{kind: "assistant", id: "e2", timestamp: Date.parse(at(2)), text: "here is the answer"},
+			{
+				kind: "thinking",
+				id: "e2:thinking",
+				alias: "item-1:thinking",
+				timestamp: Date.parse(at(2)),
+				text: "weighing it up",
+			},
+			{
+				kind: "assistant",
+				id: "e2",
+				alias: "item-1",
+				timestamp: Date.parse(at(2)),
+				text: "here is the answer",
+			},
 		]);
 	});
 
@@ -201,7 +228,7 @@ describe("a session branch as pageable history", () => {
 			message("e2", "e1", 2, said("still mine")),
 		]);
 		expect(items).toEqual([
-			{kind: "user", id: "e2", timestamp: Date.parse(at(2)), text: "still mine"},
+			{kind: "user", id: "e2", alias: "item-1", timestamp: Date.parse(at(2)), text: "still mine"},
 		]);
 	});
 });
@@ -287,7 +314,115 @@ describe("the session's own entries as collapsed notices", () => {
 		const page = [laterPi, message("e2", "e1", 2, said("still here"))];
 		expect(() => pageItems(page)).not.toThrow();
 		expect(pageItems(page)).toEqual([
-			{kind: "user", id: "e2", timestamp: Date.parse(at(2)), text: "still here"},
+			{kind: "user", id: "e2", alias: "item-0", timestamp: Date.parse(at(2)), text: "still here"},
 		]);
+	});
+});
+
+/**
+ * The two id spaces one Pi turn lives in. The live tail is built the way the host builds it
+ * (`../server/AgentSessionHost.ts`: `buildContextEntries` → `sessionEntryToContextMessages` →
+ * `projectTranscript`) rather than hand-numbered, because hand-numbered positions would agree with
+ * `alias` by construction and prove nothing about the path the window actually renders.
+ */
+describe("the live id a stored row is also known by", () => {
+	const liveIds = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<string> => {
+		const messages = buildContextEntries([...entries]).flatMap(
+			sessionEntryToContextMessages,
+		) as ReadonlyArray<SourceMessage>;
+		return projectTranscript(messages).flatMap((item) =>
+			itemsOf(item).map((row) => String(row.id)),
+		);
+	};
+
+	it("gives a stored user turn the id the live tail keys the same turn by", () => {
+		const entries = [
+			message("e1", null, 1, said("first question")),
+			message("e2", "e1", 2, replied("first answer")),
+		];
+		expect(liveIds(entries)).toEqual(["item-0", "item-1"]);
+		expect(pageItems(entries).map((item) => [item.id, item.alias])).toEqual([
+			["e1", "item-0"],
+			["e2", "item-1"],
+		]);
+	});
+
+	it("gives an assistant turn's reasoning row its own live id, not the reply's", () => {
+		const entries = [
+			message("e1", null, 1, said("think first")),
+			message("e2", "e1", 2, {
+				role: "assistant",
+				content: [
+					{type: "thinking", thinking: "weighing it up"},
+					{type: "text", text: "here is the answer"},
+				],
+				provider: "faux",
+				model: "faux-1",
+				stopReason: "stop",
+				timestamp: 0,
+			}),
+		];
+		expect(liveIds(entries)).toEqual(["item-0", "item-1:thinking", "item-1"]);
+		expect(pageItems(entries).map((item) => [item.id, item.alias])).toEqual([
+			["e1", "item-0"],
+			["e2:thinking", "item-1:thinking"],
+			["e2", "item-1"],
+		]);
+	});
+
+	it("follows the renumbering a compaction causes rather than the stored order", () => {
+		const compaction: CompactionEntry = {
+			type: "compaction",
+			id: "compact",
+			parentId: "e4",
+			timestamp: at(5),
+			summary: "the first exchange, summarized",
+			firstKeptEntryId: "e3",
+			tokensBefore: 4_000,
+		};
+		const entries = [
+			message("e1", null, 1, said("first question")),
+			message("e2", "e1", 2, replied("first answer")),
+			message("e3", "e2", 3, said("second question")),
+			message("e4", "e3", 4, replied("second answer")),
+			compaction,
+			message("e5", "compact", 6, said("third question")),
+		];
+		// The stored order is untouched; the live tail starts at the summary the compaction left.
+		expect(pageItems(entries).map((item) => [item.id, item.alias])).toEqual([
+			["e1", undefined],
+			["e2", undefined],
+			["e3", "item-1"],
+			["e4", "item-2"],
+			["compact", undefined],
+			["e5", "item-3"],
+		]);
+		expect(liveIds(entries)).toEqual(["item-1", "item-2", "item-3"]);
+	});
+
+	it("leaves a tool row unaliased — its call id is the same string on both paths", () => {
+		const entries = [
+			message("e1", null, 1, said("read it")),
+			message("e2", "e1", 2, {
+				role: "assistant",
+				content: [{type: "toolCall", id: "call-1", name: "read_file", arguments: {path: "a.md"}}],
+				provider: "faux",
+				model: "faux-1",
+				stopReason: "toolUse",
+				timestamp: 0,
+			}),
+			message("e3", "e2", 3, {
+				role: "toolResult",
+				toolCallId: "call-1",
+				toolName: "read_file",
+				content: [{type: "text", text: "file body"}],
+				isError: false,
+				timestamp: 0,
+			}),
+		];
+		const tool = pageItems(entries).at(-1);
+		expect(tool?.id).toBe("call-1");
+		expect(tool?.alias).toBeUndefined();
+		expect(liveIds(entries)).toContain("call-1");
 	});
 });
