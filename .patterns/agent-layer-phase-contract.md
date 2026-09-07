@@ -23,8 +23,8 @@ Per turn, exactly two `phase` events:
 
 `starting` and `reconnecting` are not the layer's to send because the core is already inside the
 open the layer would be describing: it is `ready` off the `started` that the layer's own `start`
-call answered, so folding a late `starting` would walk a live session backwards into a phase that
-refuses prompts. `coreOwned` in
+call answered, so folding a late `starting` would walk a live session backwards into a phase where
+`promptRefused` is the only answer a prompt gets. `coreOwned` in
 [`core/fold.ts`](../apps/tuval/src/ai-agent/core/fold.ts) drops both, which makes a layer that
 sends one a layer writing to a channel nobody reads
 ([#7925](https://github.com/kamp-us/phoenix/issues/7925)).
@@ -38,10 +38,20 @@ sends one a layer writing to a channel nobody reads
   ([#8005](https://github.com/kamp-us/phoenix/issues/8005),
   [#8007](https://github.com/kamp-us/phoenix/issues/8007)). The turn-end `ready` is not decoration
   on a phase line — it is the event four pieces of state wait on.
-- [`core/machine.ts`](../apps/tuval/src/ai-agent/core/machine.ts) — the `prompt` cell admits a send
-  from `ready` alone and answers every other phase with `promptRefused`, recorded as data rather
-  than thrown. A session left at `prompting` therefore refuses each later prompt, silently, for the
-  rest of its life.
+- [`core/machine.ts`](../apps/tuval/src/ai-agent/core/machine.ts) — the `prompt` cell, which has an
+  arm per case and records every answer as data rather than throwing it. At `ready` the send is
+  admitted. At `prompting` it is **queued** (`enqueue`, bounded by `queueLimit` in
+  [`core/queue.ts`](../apps/tuval/src/ai-agent/core/queue.ts)) and answered `promptQueueFull` only
+  once the queue is full — a prompt written while the turn runs waits rather than being refused
+  ([#8159](https://github.com/kamp-us/phoenix/issues/8159)). Every other phase — `idle`,
+  `starting`, `reconnecting`, `gone` — is `promptRefused`. What drains the queue is `settleQueue`,
+  and it admits the head only when the session lands back on `ready` (at `gone` or `idle` it
+  releases what is queued with `promptUnqueued` instead).
+
+So a session wedged at `prompting` by a missing turn-end `ready` does not refuse anything at first:
+it swallows each later prompt into a queue nothing will ever drain, and then answers
+`promptQueueFull` once that queue fills. Fatal either way, but `promptRefused` is not the failure to
+grep for, and it is not what a conformance test over this contract should assert.
 
 The pair is load-bearing, not just the end of it. A layer's `prompt` returns at the *send*, and the
 `prompt` cell has already walked the session to `prompting` on its own before `aiAgent.prompt` is
@@ -57,7 +67,8 @@ running; only that turn's end accepts it.
   nobody ran, and its `PromptError` settles the send on its own arm), and `drive` publishes `ready`
   on the SDK's `result` message, which is the one frame that means a turn is over. The per-turn
   `init` frame is not that frame: it leads a turn rather than closing one, and taking it for the
-  turn-end phase was #7963.
+  turn-end phase was #7963. Copy its turn handling, not its `start`: that emits a layer `starting`
+  the core drops on the floor, and its own comment beside the line says so.
 - [`pi/ai-agent/items.ts`](../apps/tuval/src/pi/ai-agent/items.ts) — `phaseOf` derives the pair from
   the backend's own session phase (`idle` → `ready`, anything else → `prompting`) and the fold
   emits it only on a change. A snapshot-pushing backend gets the contract for free this way; what
@@ -80,4 +91,4 @@ coalescing step in between can swallow the event, and the core cannot tell a swa
 a layer that never sent one.
 
 A conformance test over every layer would be stronger than this doc. The layers differ enough in how
-a turn is driven that its shape is an open question, tracked separately rather than guessed at here.
+a turn is driven that its shape is an open question; no such test exists today and none is filed.
