@@ -17,6 +17,7 @@ import type {
 	Mode,
 	ModelRef,
 	PendingPermission,
+	SubagentSlot,
 	ThinkingLevel,
 	TranscriptItem,
 	TranscriptPayload,
@@ -136,6 +137,15 @@ export interface AiAgentSessionState {
 	readonly queued: ReadonlyArray<QueuedPrompt>;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
 	readonly lastPage: HistoryPage | null;
+	/**
+	 * The subagents this agent has spawned, by the id each is keyed on (`../ports/subagent.ts`).
+	 *
+	 * A record rather than a list because every update is an upsert under the spawning call's id,
+	 * and the window's own order is `startedAt`, which each slot carries — so nothing here depends
+	 * on key order. A finished slot stays: its rows are the view an operator may still be reading
+	 * (Q9 on #8384).
+	 */
+	readonly subagents: Readonly<Record<string, SubagentSlot>>;
 	readonly failure: AgentFailure | null;
 }
 
@@ -185,6 +195,11 @@ export const checkpointFields = [
 	"sends",
 	"queued",
 	"lastPage",
+	// Decided to survive a restart: a subagent's rows are the whole view Q7 switches to, and they
+	// live nowhere else this process can read — the parent's checkpoint is the only carrier (the
+	// backend's own store answers for the agent's transcript, not for a worker's subtree). What a
+	// restart does change is liveness: `restore` brings every slot back finished.
+	"subagents",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
 
@@ -213,6 +228,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	sends: [],
 	queued: [],
 	lastPage: null,
+	subagents: {},
 	failure: null,
 });
 
@@ -255,6 +271,48 @@ export const settlePartialItems = (state: AiAgentSessionState): AiAgentSessionSt
 				transcript: {...state.transcript, items: state.transcript.items.map(settledItem)},
 			}
 		: state;
+
+/** Is any subagent still writing? Its slot moves on every line the worker produces. */
+export const holdsRunningSubagent = (state: AiAgentSessionState): boolean =>
+	Object.values(state.subagents).some((slot) => slot.status === "running");
+
+/**
+ * Mark every running subagent finished, keeping its rows.
+ *
+ * A worker runs inside its parent's turn, so the turn ending is the worker ending — whatever the
+ * turn came to. Without this a slot the layer never closed stays `running` for the rest of the
+ * process, and the gate below then refuses every later state of the session, freezing its copy on
+ * disk exactly as a stranded partial item did (#8170).
+ */
+export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessionState =>
+	holdsRunningSubagent(state)
+		? {
+				...state,
+				subagents: Object.fromEntries(
+					Object.entries(state.subagents).map(([id, slot]) => [
+						id,
+						slot.status === "running" ? {...slot, status: "finished" as const} : slot,
+					]),
+				),
+			}
+		: state;
+
+/** Everything a turn's end settles: the reply still being written, and the workers under it. */
+export const settleTurn = (state: AiAgentSessionState): AiAgentSessionState =>
+	settleRunningSubagents(settlePartialItems(state));
+
+/**
+ * Is this state worth a checkpoint write? The predicate a program hands the host (`../program.ts`).
+ *
+ * Both arms are the same rule read over two fields: a value that is superseded by the next frame
+ * costs a write per frame and, saved, freezes a mid-flight reading as the final one. A running
+ * subagent's slot is such a value — its last line and its token count move on every nested line the
+ * worker writes, which at the founder's concurrency is the busiest thing in the state. So the
+ * coalescing #8160 built is extended here rather than joined by a second throttle: one predicate,
+ * two reasons a state is not yet settled.
+ */
+export const checkpointWorthy = (state: AiAgentSessionState): boolean =>
+	!holdsPartialItem(state) && !holdsRunningSubagent(state);
 
 /** The newest assistant turn in the tail, which is the one a restart can have cut. */
 export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
@@ -302,6 +360,11 @@ const markInterrupted = (
  * — and a window that reopens on this session offers its operator that text rather than resending
  * it.
  *
+ * No subagent comes back running. Nothing is pumping one any more — the layer that was reading its
+ * frames went with the process — so a row still claiming to be live is a lie the operator cannot
+ * clear, and it would hold the checkpoint gate shut for the rest of the restored session. The rows
+ * it collected stay, because that is the view Q9 refuses to blank under a reader.
+ *
  * A card that was `answering` comes back `unresolved`. The call carrying that answer went with the
  * process, so whether the backend applied it is exactly what nobody knows — and an entry restored
  * to `open` would offer a second answer to an authorization that may already stand (#8006).
@@ -313,7 +376,7 @@ const markInterrupted = (
 export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	const cut = loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null;
 	return {
-		...loaded,
+		...settleRunningSubagents(loaded),
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
