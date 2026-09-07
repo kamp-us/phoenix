@@ -9,7 +9,7 @@
  * The verb is the **only** emit path, and it re-reads what it posted: v1 hand-posted a gate verdict at
  * least once and it read as genuine for weeks.
  *
- * **The approval is re-read inside that same re-derive** and refuses on `25` (ADR 0289) — an
+ * **The approval is re-read inside that same re-derive** and refuses on `25` — an
  * unapproved plan gets no verdict at all, not even a `FAIL`, because a posted verdict is the gate
  * saying it ran, and on an unapproved plan the gate is exactly what did not run.
  */
@@ -51,8 +51,8 @@ import type {Ledger} from "./model.ts";
 
 const VERB = "plan verdict";
 
-/** The gate's namespace — its own, never `review`'s. A plan verdict wearing a review namespace is
- * the family confusion the partition ruling removed (#4891). */
+/** The gate's namespace — its own, never `review`'s. A plan verdict wearing a review namespace would
+ * read back as one of the review gate's own markers, and each family owns its namespace. */
 export const NAMESPACE = "check-epic-plan";
 
 export const MESSAGES: PlanMessages = {
@@ -227,7 +227,7 @@ export const runVerdict = (
 		}
 
 		// The bare-@ probe runs ahead of the caveat grammar, unlike the leak scan below: a body that is
-		// itself an unexpanded `@path` never arrived at all (#3086), so there is no caveat line to grade
+		// itself an unexpanded `@path` never arrived at all, so there is no caveat line to grade
 		// and reporting it as an off-vocabulary kind would send the caller looking at the wrong thing.
 		if (isBareAtReference(authored)) {
 			return refuse(

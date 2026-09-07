@@ -17,10 +17,10 @@
  * | `127` | the verb never ran at all (unresolved binary)         |
  * | `3`+  | the verb's own proven outcomes                        |
  *
- * A verdict a verb PROVED must never share an exit code with a failure to invoke (#4208, #4219):
- * `1` is what the Effect CLI returns for a bad flag and what a failed module load returns, so a
- * proven refusal seated there is unreadable as proof — `[ $? -ne 0 ]` would read "never ran" as
- * "ran and proved it".
+ * A verdict a verb PROVED must never share an exit code with a failure to invoke: `1` is what the
+ * Effect CLI returns for a bad flag and what a failed module load returns, so a proven refusal
+ * seated there is unreadable as proof — `[ $? -ne 0 ]` would read "never ran" as "ran and proved
+ * it".
  */
 
 /** The answer is on stdout. */
@@ -35,8 +35,8 @@ export const FAILED = 1;
  * **Seated at `126` because `2` blocks a tool call, and this state may never block one.** A
  * `PreToolUse` hook's exit `2` is the harness's *one* code for "block the tool call"
  * (`hook/harness-exit.ts`), so while this state sat there a fabrika that could not bootstrap
- * blocked every `Task`/`Workflow` spawn in the session — the exact inverse of ADR 0250's ruled
- * fail-open polarity for a hook whose verb never ran (#5423).
+ * blocked every `Task`/`Workflow` spawn in the session — the exact inverse of the ruled polarity for
+ * a hook whose verb never ran, which is to fail open.
  *
  * `126` rather than the `3`+ band because this is not a verb's proven outcome and no group owns it:
  * every group's `3`+ band is already occupied by facts of its own (`3` is `EMPTY_STDIN` across the

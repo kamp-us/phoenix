@@ -1,9 +1,9 @@
 /**
- * Where a repo's design surfaces live — **filename conventions, not phoenix facts**.
+ * Where a repo's design surfaces live — **filename conventions, not one repo's facts**.
  *
- * The portability ruling on #4941: this group reads whatever repo it runs in, and phoenix is one
- * instance. v1 fetched the manifest from a hardcoded GitHub URL, which reads the wrong repo's law in
- * any fork and nothing at all on a network fault; here the law is the tree's own bytes.
+ * This group reads whatever repo it runs in, and no repo is privileged. v1 fetched the manifest from
+ * a hardcoded GitHub URL, which reads the wrong repo's law in any fork and nothing at all on a
+ * network fault; here the law is the tree's own bytes.
  */
 
 /** The design manifest — the one surface whose absence refuses (`12`). */

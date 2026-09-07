@@ -44,7 +44,7 @@ export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files, the
  * corpus holds zero decision records, the window holds zero landings, or the readout artifact is
- * proven absent — a fail-closed refusal (ADR 0092).
+ * proven absent — a fail-closed refusal.
  *
  * *Proven* is the operative word. A 404 is a fact about the repository; an unreachable GitHub is not
  * a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
@@ -71,7 +71,7 @@ export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
  * Refused: this post would retire a standing verdict of the OPPOSITE polarity at the same head — or,
  * ranged, over the same range — and `--supersede` was not passed. `review`'s seat, for the fact this
  * group proves identically: `governance post` and `review post` share one range-scoped write path
- * (`../review/range-post.ts`), so a caller reading a `17` off either must read one meaning (#7411).
+ * (`../review/range-post.ts`), so a caller reading a `17` off either must read one meaning.
  */
 export const SUPERSEDES_VERDICT = REVIEW_SUPERSEDES_VERDICT;
 

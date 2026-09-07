@@ -14,9 +14,9 @@
  * History: this table lived at `report/codes.ts` until it didn't. The writing verbs shipped first,
  * so every later group seated itself against *their* module — which made one group's file the de
  * facto constitution and left `report` importing its own law secondhand through everyone else.
- * The table moved here so no group owns it, not even the one that wrote it first (#5296 is why the
- * numbers below are dense from `3`: they were aligned under `report`'s private band, and `27`/`28`
- * stay spoken for by that group to this day).
+ * The table moved here so no group owns it, not even the one that wrote it first. The numbers below
+ * are dense from `3` because they were aligned under `report`'s private band, and `27`/`28` stay
+ * spoken for by that group to this day.
  *
  * `0`, `1` and `127` are the interface convention's reserved codes (see `../verb.ts`) and are
  * deliberately **not** defined here — a registry of proven outcomes has nothing to say about a
@@ -39,8 +39,8 @@ export const LEAKED_PATH = 5;
 export const BARE_AT_PATH = 6;
 /**
  * Zero scope over a named target: the target is proven absent or closed, or there is nothing to
- * judge (ADR 0092). Groups whose reading widens this to any empty judged scope alias it locally
- * (`ZERO_SCOPE`); the seat is the base's either way.
+ * judge — a proven-empty scope is reported, never passed over silently. Groups whose reading widens
+ * this to any empty judged scope alias it locally (`ZERO_SCOPE`); the seat is the base's either way.
  */
 export const NO_TARGET = 7;
 /**
@@ -49,7 +49,7 @@ export const NO_TARGET = 7;
  *
  * A create or comment call that times out may or may not have landed. Seating that on `1` would
  * make "the write was refused" indistinguishable from "the binary is broken", which is the
- * verdict-versus-invocation collision the reserved range exists to prevent (#4208, #4219).
+ * verdict-versus-invocation collision the reserved range exists to prevent.
  */
 export const WRITE_UNKNOWN = 8;
 /** The write landed but the read-back does not match. The artifact exists and needs a human. */
@@ -59,9 +59,9 @@ export const CLASSIFIED = 10;
 /**
  * A precondition read failed, so nothing was written and no outcome is proven.
  *
- * Allocated its own code rather than folded into an existing one (#4752's class): the failed read
- * is what makes {@link NO_TARGET} and {@link CLASSIFIED} *proven*, so a failed read of it can be
- * neither. It is not {@link WRITE_UNKNOWN} — nothing was attempted — and not `1`, which would fuse
- * an unreachable backend with a bad flag.
+ * Allocated its own code rather than folded into an existing one: the failed read is what makes
+ * {@link NO_TARGET} and {@link CLASSIFIED} *proven*, so a failed read of it can be neither. It is
+ * not {@link WRITE_UNKNOWN} — nothing was attempted — and not `1`, which would fuse an unreachable
+ * backend with a bad flag.
  */
 export const PRECONDITION_UNKNOWN = 11;

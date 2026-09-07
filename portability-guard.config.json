@@ -76,24 +76,16 @@
 			"paths": ["claude-plugins/fabrika/skills/review-ui/contract.md"]
 		},
 		"plugin-governance": {
-			"ceiling": 25,
-			"why": "#8296 swept the prose; every one of the 25 left is a value rather than a sentence. 20 are stderr lines the shipped verbs print, pinned in the Errors tables — rewriting a pin first would make the contract quote a line no verb prints, so 16 shrink when packages/fabrika-cli/src/governance and packages/fabrika-cli/src/status are swept by #8309, and 4 when packages/fabrika-cli/src/review is swept by #8305. 3 are the `governance-digest` round-trip fixture rows copied from the wire registry, which move with packages/fabrika-cli/src/wire under #8307. 2 are the `settings-patch` marketplace source the bootstrap registry writes, a constant in packages/fabrika-cli/src/status that #8309 owns. So #8309 retires 18, #8305 4 and #8307 3.",
+			"ceiling": 5,
+			"why": "#8296 swept the prose and #8309 the 20 stderr pins — 16 whose source lives in packages/fabrika-cli/src/governance and packages/fabrika-cli/src/status, and 4 head-drift and range-flag refusals composed in packages/fabrika-cli/src/review, which #8305 had already swept in this base, so the pins were quoting lines no verb prints. Each of the 5 left is a value rather than a sentence. 3 are the `governance-digest` round-trip fixture rows copied from the wire registry, which move with packages/fabrika-cli/src/wire under #8307. 2 are the `settings-patch` marketplace source the bootstrap registry writes, a constant in packages/fabrika-cli/src/status that stays until #8395 puts the marketplace name and its source on config.",
 			"paths": [
 				"claude-plugins/fabrika/skills/governance",
 				"claude-plugins/fabrika/skills/front-door"
 			]
 		},
-		"plugin-planning": {
-			"ceiling": 21,
-			"why": "The prose is swept; every remaining hit is a value rather than a sentence. All 21 are stderr lines the shipped `ledger` and `plan` verbs print, quoted verbatim in the Errors tables and worked examples — each a copy of a string that lives in packages/fabrika-cli/src/ledger/ and packages/fabrika-cli/src/plan/, so it moves only when that string does. Rewriting the pin first would make the contract quote a line no verb prints. #8310, the CLI tail sweep, owns those two directories and pays this floor down with them.",
-			"paths": [
-				"claude-plugins/fabrika/skills/plan-epic",
-				"claude-plugins/fabrika/skills/check-epic-plan"
-			]
-		},
 		"plugin-discovery": {
-			"ceiling": 296,
-			"why": "The grilling, wayfinding, graduate and prototyping skills' text, cleared by #8298, the discovery sweep child.",
+			"ceiling": 24,
+			"why": "The prose is swept: no hit left is a sentence, and each of the 24 sits inside a string the shipped source owns, so rewriting the copy first would make the contract quote a line no verb prints. The 4 verbatim stderr pins this row carried in prototyping/contract.md — `spike open`'s artifact-kind refusal plus `spike capture`'s zero-recorded-runs (twice) and below-write refusals — are gone: #8310 rewrote those strings in packages/fabrika-cli/src/spike and mirrored each pin in the same commit. (The four grill/graduate stderr pins this row carried before #8308 landed on the epic went with it.) What is left is 24 worked-example lines whose `#<n>` is rendered from the example's own operand, either a refusal transcript (`grill open`, `grill read`, `map read`, `map ticket`, `graduate trail`/`read`/`emit`) or an artifact format sample copied from the module that defines it with that module's own synthetic numbers (the `map-ticket:` and `graduate-emitted:` markers, the spec footer, the map body's decision entries, `## Frontier` rows and ref-shape table). Their source is a `#${n}` template, not a reference, so no source sweep moves them; they leave only when the sample-number convention is settled, tracked on #8402 and #8351, which the epic tail must rule before this row can shrink further. The example numbers are deliberately high, well above any live issue range, which is the rule each contract's own self-check item 3 states; lowering them to a form this guard cannot see would falsify that sentence and the shipped strings both. The skills' own prose carries none, including the wrapped two-line citation this guard's line-at-a-time matcher cannot see.",
 			"paths": [
 				"claude-plugins/fabrika/skills/grilling",
 				"claude-plugins/fabrika/skills/wayfinding",
@@ -102,13 +94,13 @@
 			]
 		},
 		"plugin-operate": {
-			"ceiling": 288,
-			"why": "The operate and heal-ci skills' text, cleared by #8299, the operate sweep child.",
+			"ceiling": 6,
+			"why": "#8299 swept the prose of both skills: `operate/SKILL.md` is at zero and `heal-ci/SKILL.md` is too. All 6 left sit in `heal-ci/contract.md`'s worked-example transcripts and are values rather than sentences, in three classes. 2 are verbatim pins of strings a verb composes — `heal-ci diagnose: PR #<n> not found in <repo>.` from packages/fabrika-cli/src/heal-ci/diagnose-verb.ts and `heal-ci note: #<n> already carries a note at key …` from note-verb.ts — so rewriting the pin first would make the contract quote a line no verb prints. 2 are the `heal-ci: ROUTED — PR #<n> @ <sha> → <lane>` first line of a note body, which no verb composes: the operator authors it and `heal-ci note` relays it off stdin. Those two are ordinary worked-example ticket numbers, already lifted above every live range, and they stay `#`-prefixed because that is the form a note's first line takes. The last 2 are the placeholder `acme/repo` pull-request URLs those examples print. All three classes clear on #8350, the fixture-URL ticket that widens the guard's test-data carve-out past the `issue` matcher — the same child the `plugin-ship` row names for its identical six-plus-two.",
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
 			"ceiling": 11,
-			"why": "#8300 swept the prose of the build-ui, campaign, adr, glossary and taste-color skills; build-ui, glossary and taste-color reached zero and the 11 left are values rather than sentences. Each is the placeholder milestone or pull-request number a worked example echoes back out of a line the shipped verbs format with a literal `#` — `rowLine` and the table writer in packages/fabrika-cli/src/campaign/table.ts, the two `already holds` refusals in campaign/open-verb.ts and state-verb.ts, and `adr resolve`'s `PR #<n>` detail in packages/fabrika-cli/src/adr/resolve.ts. The example cannot drop the `#` without quoting a line no verb prints, so each is 9xxx, above any live range, and the row drops only when the guard stops reading a printed `#<n>` example as a ticket — the matcher gap #8418 tracks.",
+			"why": "#8300 swept the prose of the build-ui, campaign, adr, glossary and taste-color skills; build-ui, glossary and taste-color reached zero and the 11 left are values rather than sentences. This count is measured on the tree with #8310's CLI sweep merged in, and every stderr line these contracts pin was re-checked against that source, so no pin here quotes a string the shipped verbs no longer print. Each of the 11 is the placeholder milestone or pull-request number a worked example echoes back out of a line the shipped verbs format with a literal `#` — `rowLine` and the table writer in packages/fabrika-cli/src/campaign/table.ts, the two `already holds` refusals in campaign/open-verb.ts and state-verb.ts, and `adr resolve`'s `PR #<n>` detail in packages/fabrika-cli/src/adr/resolve.ts. The example cannot drop the `#` without quoting a line no verb prints, so each is 9xxx, above any live range, and the row drops only when the guard stops reading a printed `#<n>` example as a ticket — the matcher gap #8418 tracks.",
 			"paths": [
 				"claude-plugins/fabrika/skills/build-ui",
 				"claude-plugins/fabrika/skills/campaign",
@@ -118,8 +110,8 @@
 			]
 		},
 		"plugin-tail": {
-			"ceiling": 288,
-			"why": "Everything else the plugin ships — the guide, the README, the agents, the hook manifest and the remaining skills — cleared by #8301, the plugin tail sweep child.",
+			"ceiling": 6,
+			"why": "#8301 swept the guide, the README, the agents, the hook manifest and the remaining skills; the 6 left are values rather than sentences. 4 are worked-example lines in guide/getting-started.md whose `#<n>` is rendered from the example's own operand — `status open`'s readout row prints the same issue number twice in the shipped format's two columns, and `triage homes`'s campaigns line prints one milestone number per active campaign. 2 are verbatim pins of the `handoff capture` and `report note` not-found refusals, whose `#99999` is the operand the transcript above each one passes. The numbers are deliberately high, well above any live issue range; lowering them to a form this guard cannot see would make the example read as a live ticket. They leave when the sample-number convention is settled, tracked on #8402 and #8351.",
 			"paths": ["claude-plugins/fabrika"]
 		},
 		"cli-review": {
@@ -143,8 +135,8 @@
 			]
 		},
 		"cli-capture": {
-			"ceiling": 646,
-			"why": "The capture, governance, recipe, status and hook groups' source, cleared by #8309, the capture sweep child.",
+			"ceiling": 43,
+			"why": "#8309 swept the capture, governance, recipe, status and hook groups' prose to zero; 43 residues are values rather than sentences. 30 are `.decisions/` fixture paths in the governance test batteries — every one must sit under a shipped governed root, or the classification the assertion checks is a partition the verb never makes; that prefix is `SHIPPED_GOVERNED_ROOTS`/`SHIPPED_DECISIONS_DIR`, a compiled-in literal of the class #7478 moves onto config, the same edge cli-lane and cli-ship already wait on. 7 are the placeholder owner/repo issue and pull-request URLs the governance, recipe and status batteries assert a fetched artifact's html_url against, cleared by #8350, the fixture-URL ticket. 6 are the `settings-patch` marketplace source in status/bootstrap-verb.ts and the two assertions that read it back — fabrika's own publication address, compiled in with no key reaching it, which #8395 puts on config.",
 			"paths": [
 				"packages/fabrika-cli/src/capture",
 				"packages/fabrika-cli/src/governance",
@@ -154,8 +146,8 @@
 			]
 		},
 		"cli-tail": {
-			"ceiling": 664,
-			"why": "The remaining small groups and the top-level modules under src/, cleared by #8310, the CLI tail sweep child.",
+			"ceiling": 4,
+			"why": "#8310 swept the remaining small groups and the top-level modules under src/ to four residues, none of them prose. All four are citation URLs under test in packages/fabrika-cli/src/decision — three in rule-verb.unit.test.ts and one in ruling-verb.unit.test.ts. `parseCitation` and `RULING_URL_RE` pin the github.com host in their own regexes, so a citation on any other host exercises nothing and the assertion stops testing what it names. Same class as the two build/ rows already carved out for it; the host pin itself is the portability defect, parked behind #8359.",
 			"paths": ["packages/fabrika-cli/src"]
 		}
 	}

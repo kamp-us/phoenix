@@ -2,7 +2,7 @@
  * `glossary init` — create a register file that does not exist, so a fresh repo is not a dead end.
  *
  * Without it `bootstrap` is a state the skill can reach and never leave: `add` matches `--section`
- * against live headings, and a file that is not there has none (#4776).
+ * against live headings, and a file that is not there has none.
  *
  * The refusal on an existing register is `adr new`'s idiom reseated on this group's `12` — a register
  * is the one artefact whose accidental overwrite destroys the most work.

@@ -31,8 +31,7 @@ import {
  *
  * `report`'s own seat for a body whose sections do not hold up, and the same fact here: `triage
  * apply` already refuses `--ready-for agent` over such a body, and a flip written under the same
- * promise with none of the same proof manufactures a lane that parks at `build claim` exit 32
- * (#6734).
+ * promise with none of the same proof manufactures a lane that parks at `build claim` exit 32.
  */
 export const CRITERIA_REQUIRED = SHARED_BAD_SECTIONS;
 
@@ -46,9 +45,8 @@ export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
- * Proven: the invoking account may not rule a decision here — it is outside the
- * `@kamp-us/control-plane` roster resolved from CODEOWNERS at write time, or that roster names
- * nobody at all.
+ * Proven: the invoking account may not rule a decision here — it is outside the control-plane
+ * roster resolved from CODEOWNERS at write time, or that roster names nobody at all.
  *
  * Its own seat rather than `plan`'s `APPROVAL_UNAUTHORIZED` (24) even though the fact reads alike:
  * the two are proved by different verbs over different subjects, and a caller driving both in one

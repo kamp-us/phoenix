@@ -2,18 +2,18 @@
  * `recipe unpark` — clear one parked lane when the park's cause is a known recipe, and refuse
  * without touching anything when it is not.
  *
- * The order is the contract, and every step is somebody else's answer relayed (ADR 0228):
+ * The order is the contract, and every step is somebody else's answer relayed:
  *
  *   1. `lane status` folds the ledger — this verb never re-folds a log.
  *   2. {@link classifyPark} seats the leaf, and the cause the parking event named, against the
- *      recipe table — a `blocked` carrying no cause keys on nothing (#6480). **Novel refuses here**, before
+ *      recipe table — a `blocked` carrying no cause keys on nothing. **Novel refuses here**, before
  *      any read that could write and long before the append, which is what makes the novel exit a
  *      proven no-op rather than a claim about one.
- *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s ADR 0175
+ *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s own
  *      discharge table, never a second reading of §CP in this file.
  *   4. `lane transition … UNBLOCKED` records the clear.
  *   5. `lane status` is folded **again**, and the answer is emitted only once that re-fold shows the
- *      task out of the park (epic #5840's no-go: no recipe reports a mutation it did not read back).
+ *      task out of the park: no recipe reports a mutation it did not read back.
  *
  * Respawning whatever the lane parked out of is the operator's, not this verb's.
  */
@@ -75,7 +75,7 @@ type Clearance =
 			 * Waits the clear grants on the very `UNBLOCKED` that records it, or `null`.
 			 *
 			 * Only the queue-stall row grants: its park IS a spent wait budget, so a clear that restored
-			 * the state alone would hand the lane one conclusive read and re-park it (#6717). Every other
+			 * the state alone would hand the lane one conclusive read and re-park it. Every other
 			 * row parks for a reason that is not a budget, and granting there would inflate a budget
 			 * nobody spent.
 			 */
@@ -215,7 +215,7 @@ const clearCpApproval = (
 
 		// The lane's PR through the shared nominator (`../lane/nominate.ts`): a §CP park sits on the same
 		// PR `lane brief` dispatched a shipper against, and a `Part of #N` PR that this verb could not
-		// see is a park no recipe could ever clear (#6179).
+		// see is a park no recipe could ever clear.
 		const nominated = yield* nominatePulls(repo, issue);
 		if (nominated._tag === "Unreadable") {
 			return no(
@@ -311,19 +311,19 @@ const clearCpApproval = (
 	});
 
 /**
- * Read whether the #6395 park's cause is gone: no working tree of this clone holds the lane branch
- * the build must stand on.
+ * Read whether the worktree park's cause is gone: no working tree of this clone holds the lane
+ * branch the build must stand on.
  *
  * The read is `build branch --resume-lane`'s own, in both halves — {@link childLaneBranches} for
  * which branches were cut for the issue, {@link worktreeCheckouts} for which trees hold one — so the
- * clearance is the exact inverse of the refusal it clears rather than a second opinion about it
- * (ADR 0228). Every listed tree counts as a hold, a prunable record included: a checkout is blocked
- * on a stale registration too, so reading one as free would clear a park still standing.
+ * clearance is the exact inverse of the refusal it clears rather than a second opinion about it.
+ * Every listed tree counts as a hold, a prunable record included: a checkout is blocked on a stale
+ * registration too, so reading one as free would clear a park still standing.
  *
- * A clone carrying no branch for the issue clears nothing. A child's branch is never pushed
- * (ADR 0285), so it lives only in the clone that built it, and "no branch here" is far likelier to
- * mean this is the wrong clone than to mean the tree let go — a target this verb cannot read, never
- * a park it may clear.
+ * A clone carrying no branch for the issue clears nothing. A child's branch is never pushed, so it
+ * lives only in the clone that built it, and "no branch here" is far likelier to mean this is the
+ * wrong clone than to mean the tree let go — a target this verb cannot read, never a park it may
+ * clear.
  */
 const clearBranchFree = (
 	options: UnparkOptions,
@@ -457,22 +457,23 @@ const treesFreedOf = (
 	});
 
 /**
- * Read whether the #6770 park's cause is gone: the shell the provider killed left nothing behind
- * that would refuse the same brief being dispatched again.
+ * Read whether the spawn-dead park's cause is gone: the shell the provider killed left nothing
+ * behind that would refuse the same brief being dispatched again.
  *
  * It proves a dispatch is possible, never that the provider is back — no verb can spawn an agent, so
- * the operator's next dispatch is that test and a still-down provider re-parks the lane (ADR 0339).
- * The two halves are the residue ADR 0321 makes the driver's to clear: a build claim the dead shell
- * stranded, which is a hold until `build release` or a `build adopt` succession retracts it (ADR
- * 0295 — this verb evicts nothing from absence), and a working tree still holding its lane branch,
- * which the row's `build retire` remedy takes back where a license reaches it — and after the
- * release above, that is ADR 0342's unclaimed-lane arm rather than either board license.
+ * the operator's next dispatch is that test and a still-down provider re-parks the lane. The two
+ * halves are residue the driver session owns: a build claim the dead shell stranded, which is a hold
+ * until `build release` or a board-attested `build adopt` succession retracts it — this verb evicts
+ * nothing from absence — and a working tree still holding its lane branch, which the row's
+ * `build retire` remedy takes back where a license reaches it. After the release above the only
+ * license left is the unclaimed-lane one, which reads the tree for proof it carries nothing rather
+ * than leaning on a written board state.
  *
  * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
  * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut
  * a branch, so "no branch here" is their ordinary case rather than `branch-free`'s wrong clone. A
- * dead builder did cut one, and never pushed it (ADR 0285) — but it was cut in a worktree of this
- * clone, whose branch refs live in the shared common git dir, so {@link localBranches} lists it here
+ * dead builder did cut one, and never pushed it — but it was cut in a worktree of this clone, whose
+ * branch refs live in the shared common git dir, so {@link localBranches} lists it here
  * (`.patterns/worktree-agent-constraints.md`; the same sharing `build branch --resume-lane` reads a
  * missing branch as gone rather than elsewhere on). That containment holds only while the unpark runs
  * in the clone that spawned the shell — which is the clone the lane ledger lives in, and nothing
@@ -518,7 +519,7 @@ const clearSpawnClear = (
 			return no(
 				refuse(
 					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${claimants.holder.token} still claims #${issue}; release it, or run the ADR 0295 succession, then unpark again. Nothing was written.`,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${claimants.holder.token} still claims #${issue}; release it, or run the board-attested adopt succession, then unpark again. Nothing was written.`,
 					[claimed],
 				),
 			);
@@ -557,12 +558,12 @@ const clearSpawnClear = (
 	});
 
 /**
- * Read whether the #7217 park's cause is gone: the campaign homing this lane's milestone reads
- * `active` again.
+ * Read whether the campaign-paused park's cause is gone: the campaign homing this lane's milestone
+ * reads `active` again.
  *
  * Two reads that both already exist, composed rather than re-derived — the lane issue's `milestone`
  * off `../io/issues.ts`, and the `## Campaigns` row off `../campaign/table.ts`, which is the fence's
- * own parse and so cannot disagree with the permission `build claim` enforces (ADR 0304). The row is
+ * own parse and so cannot disagree with the permission `build claim` enforces. The row is
  * read at {@link BASE_REF} rather than in the working tree because a resume lands on the trunk and a
  * lane clone can be arbitrarily stale; the fetch is what makes that read current.
  *
@@ -658,16 +659,16 @@ const clearCampaignActive = (
 	});
 
 /**
- * Read whether the #6717 park's cause is gone: the merge queue has actually moved this PR.
+ * Read whether the queue-stall park's cause is gone: the merge queue has actually moved this PR.
  *
- * The read is `ship reconcile`'s answer relayed and never a second reading of the queue here (ADR
- * 0228), at one poll because a recipe pass is a snapshot — the dwelling is what the lane already
+ * The read is `ship reconcile`'s answer relayed and never a second reading of the queue here, at one
+ * poll because a recipe pass is a snapshot — the dwelling is what the lane already
  * did. Two of its four answers clear, and both are the queue having finished with the PR: `landed`
  * and `ejected`. `unresolved` is the queue still working, which is the park standing correctly, and
  * `parked` says the arm never entered a queue at all — a different fault from a slow queue, whose
  * remedy is `ship disarm --site post-enqueue` and so a human's.
  *
- * It is the one row whose clear also **grants**, and that is the whole shape the founder ruled: the
+ * It is the one row whose clear also **grants**, and that is the whole shape of the row: the
  * park IS a spent wait budget, so restoring the state alone would buy one conclusive read and
  * re-park the lane. The grant rides the same recorded `UNBLOCKED`, so there is no bare resume for
  * the fold's wait-axis refusal to catch and no second line anybody has to remember to write.

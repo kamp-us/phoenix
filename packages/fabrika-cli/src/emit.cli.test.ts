@@ -4,7 +4,7 @@
  *
  * Nothing in-process can catch this. The defect was `process.exit` running before the OS pipe had
  * drained, so it needs a real process, a real pipe, and an answer past the buffer — under those
- * three the pre-fix build returned 65,536 of 3,795,600 bytes on exit 0 (#6226). An assertion on the
+ * three the pre-fix build returned 65,536 of 3,795,600 bytes on exit 0. An assertion on the
  * *shape* of stdout passes against that bug; the assertions here are byte-exact.
  *
  * `wire emit` is the producer because its answer scales with stdin, it touches no network, and its

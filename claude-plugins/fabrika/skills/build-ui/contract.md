@@ -363,7 +363,7 @@ registry with zero rows is `4` (a law file that names no law is malformed, not m
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui law: design-prohibitions.json exists but does not satisfy the registry schema: <first violation> — refusing the whole file; half a law is not a law.` | 4 | refusal |
-| `ui law: no design manifest at design-system-manifest.md — run /fabrika.` | 12 | refusal |
+| `ui law: no design manifest at design-system-manifest.md — run /fabrika: front-door's bootstrap drafts one.` | 12 | refusal |
 | `ui law: the law is untyped — no design-prohibitions.json beside the manifest. The manifest's prose prohibitions are the law; note LAW-SOURCE: manifest-prose in the PR.` | 13 | refusal |
 | `ui law: cannot read design-prohibitions.json: <reason> — the law is UNKNOWN, never "untyped".` | 11 | refusal |
 
@@ -394,7 +394,7 @@ $ fabrika ui law
 **Invocation**
 
 ```
-fabrika ui render --out before --surface /feed --surface /feed/new [--first-render <surface>]…
+fabrika ui render --out before --surface /board --surface /board/new [--first-render <surface>]…
 ```
 
 **Inputs**
@@ -402,7 +402,7 @@ fabrika ui render --out before --surface /feed --surface /feed/new [--first-rend
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under the lane scratch dir (`build scratch`'s allocator) in `<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a bare route (`/feed`); zero surfaces is a usage error (`1`) — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a bare route (`/board`); zero surfaces is a usage error (`1`) — no tool guesses surfaces from a diff |
 | `--first-render` | string, repeatable | no | — | a listed surface that has no pre-change state; recorded as `firstRender: true`, exempted from before/after pairing |
 
 A surface id is a bare route in v1 of this grammar. A `:state` suffix is **reserved and refused
@@ -414,7 +414,7 @@ implementations guessing differently.
 
 ```
 {"set": "before", "captures": [
-  {"surface": "/feed", "path": "<abs>/before/feed.png", "width": 1280, "height": 2140,
+  {"surface": "/board", "path": "<abs>/before/board.png", "width": 1280, "height": 2140,
    "sha256": "…", "firstRender": false}
 ]}
 ```
@@ -483,8 +483,8 @@ covered nothing has proven nothing.
 **Example**
 
 ```
-$ fabrika ui render --out after --surface /feed
-{"set":"after","captures":[{"surface":"/feed","path":"/tmp/fabrika-build/s-9f2e/9312-c1a4d6f8/after/feed.png","width":1280,"height":2140,"sha256":"9c41…","firstRender":false}]}
+$ fabrika ui render --out after --surface /board
+{"set":"after","captures":[{"surface":"/board","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/board.png","width":1280,"height":2140,"sha256":"9c41…","firstRender":false}]}
 ```
 
 **Grounding**
@@ -507,7 +507,7 @@ $ fabrika ui render --out after --surface /feed
 **Invocation**
 
 ```
-fabrika ui golden --surface /feed --candidate <path>
+fabrika ui golden --surface /board --candidate <path>
 ```
 
 **Inputs**
@@ -534,7 +534,7 @@ decimals. `regions` is the bounding boxes of 8-connected components of differing
 closer than 16px merged, largest-area first, capped at 20 (the cap stated on stderr when hit).
 
 **Output** — machine. One JSON object. Unblessed (the common case — the corpus is empty today):
-`{"surface": "/feed", "blessed": false, "golden": null, "diff": null}` on exit 0 — **a missing
+`{"surface": "/board", "blessed": false, "golden": null, "diff": null}` on exit 0 — **a missing
 golden is a fact, not a failure**. Blessed without `--candidate`: `blessed: true` plus the
 resolved golden. With `--candidate`: the diff object too — **a signal to steer by, never a
 verdict**; no threshold lives in this verb and no PASS/FAIL token ever appears in its output.
@@ -563,18 +563,18 @@ fail-open this verb's `4`/`11` rows exist to refuse.
 **Examples**
 
 ```
-$ fabrika ui golden --surface /feed
-{"surface":"/feed","blessed":false,"golden":null,"diff":null}
+$ fabrika ui golden --surface /board
+{"surface":"/board","blessed":false,"golden":null,"diff":null}
 ```
 
 ```
-$ fabrika ui golden --surface /feed
-{"surface":"/feed","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":null}
+$ fabrika ui golden --surface /board
+{"surface":"/board","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":null}
 ```
 
 ```
-$ fabrika ui golden --surface /feed --candidate /tmp/fabrika-build/s-9f2e/9312-c1a4d6f8/after/feed.png
-{"surface":"/feed","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
+$ fabrika ui golden --surface /board --candidate /tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/board.png
+{"surface":"/board","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
 ```
 
 (The golden's `path` is the fetched bytes cached content-addressed under the OS temp root —
@@ -672,7 +672,7 @@ rather than refusing every time. PR open (`7`).
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui evidence: after-surface "<id>" has no before capture and no firstRender mark — an unexplained missing baseline is a hole in the evidence.` | 4 | refusal |
-| `ui evidence: upload failed for <n> of <m> captures (<first surface>: <reason>) — refusing to post partial evidence; a gallery missing its failures reads as a clean render nobody had.` | 17 | refusal |
+| `ui evidence: upload failed for <n> of <m> captures (<first surface>: <reason>) — refusing to post partial evidence; a gallery missing its failures lies by omission.` | 17 | refusal |
 | `ui evidence: the composed comment is a bare @ path reference — write the evidence, not a pointer to it.` | 6 | refusal |
 | `ui evidence: set "<set>" has no manifest.json — a set without its manifest is not a set; re-run ui render.` | 4 | refusal |
 | `ui evidence: this session does not hold the claim on #<n> (<detail>) — the lane is not yours.` | 18 | refusal |

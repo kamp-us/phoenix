@@ -1,10 +1,10 @@
 /**
  * The upload-response parser (pure) and the `uploadAsset` Effect over a stubbed
- * transport (off-network, ADR 0082). These pin the FALLBACK contract — the
+ * transport (off-network). These pin the FALLBACK contract — the
  * acceptance criterion that an upload failure degrades to `{hostedUrl: null,
  * uploadError}` (a diagnostic), never a silent drop and never a broken gate (the
  * undocumented `uploads.github.com/user-attachments/assets` endpoint may change
- * without notice — ADR 0165).
+ * without notice).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -19,15 +19,15 @@ const HOSTED = "https://github.com/user-attachments/assets/0a1b2c3d-4e5f-6789-ab
 describe("uploadEndpoint", () => {
 	const params = {
 		repositoryId: 1234177275,
-		fileName: "sozluk@desktop.png",
+		fileName: "catalog@desktop.png",
 		size: 67,
 		contentType: PNG_CONTENT_TYPE,
 	};
 
-	it("carries every parameter the live endpoint requires (#3738)", () => {
+	it("carries every parameter the live endpoint requires", () => {
 		const query = new URL(uploadEndpoint(params)).searchParams;
 		assert.strictEqual(query.get("repository_id"), "1234177275");
-		assert.strictEqual(query.get("name"), "sozluk@desktop.png");
+		assert.strictEqual(query.get("name"), "catalog@desktop.png");
 		assert.strictEqual(query.get("size"), "67");
 		assert.strictEqual(query.get("content_type"), "image/png");
 	});
@@ -46,8 +46,8 @@ describe("uploadEndpoint", () => {
 
 	it("percent-encodes a name so `@` survives the query string", () => {
 		const raw = uploadEndpoint(params);
-		assert.ok(raw.includes("name=sozluk%40desktop.png"), raw);
-		assert.strictEqual(new URL(raw).searchParams.get("name"), "sozluk@desktop.png");
+		assert.ok(raw.includes("name=catalog%40desktop.png"), raw);
+		assert.strictEqual(new URL(raw).searchParams.get("name"), "catalog@desktop.png");
 	});
 });
 
@@ -126,7 +126,7 @@ const runUpload = (layer: Layer.Layer<HttpClient.HttpClient>) =>
 			pngBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
 			repositoryId: 1234177275,
 			token: "unit-test-token",
-			fileName: "sozluk@desktop.png",
+			fileName: "catalog@desktop.png",
 		}).pipe(Effect.provide(layer)),
 	);
 
@@ -153,7 +153,7 @@ describe("uploadAsset — over a stubbed transport (never fails the effect)", ()
 /**
  * A transport that records the URL it was handed and answers 201. It is what lets
  * the request SHAPE — not just the response handling — be asserted, which is the
- * only place the #3738 regression lived.
+ * only place that regression lived.
  */
 const recordingTransport = (seen: {url?: string}): Layer.Layer<HttpClient.HttpClient> =>
 	Layer.succeed(HttpClient.HttpClient)(
@@ -168,7 +168,7 @@ const recordingTransport = (seen: {url?: string}): Layer.Layer<HttpClient.HttpCl
 		}),
 	);
 
-describe("uploadAsset — the request shape the live endpoint accepts (#3738)", () => {
+describe("uploadAsset — the request shape the live endpoint accepts", () => {
 	// The two surfaces the reported failure covered: the rooted `/` and the nested
 	// `/admin`. Both went out with no `name` param and both came back HTTP 400.
 	for (const [token, expectedName] of [

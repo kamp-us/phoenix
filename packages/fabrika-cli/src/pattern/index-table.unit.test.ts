@@ -62,12 +62,12 @@ describe("memberName", () => {
 		expect(memberName("cache-invalidation.md")).toBe("cache-invalidation.md");
 	});
 
-	// A target that resolves perfectly well — an ADR, a doc in a subdirectory — is still not a MEMBER
-	// of this corpus. The question is membership, not reachability, which is why this is not a link
-	// check and does not overlap the link gate.
+	// A target that resolves perfectly well — a doc in a sibling corpus, a doc in a subdirectory — is
+	// still not a MEMBER of this corpus. The question is membership, not reachability, which is why
+	// this is not a link check and does not overlap the link gate.
 	it("is null for anything carrying a directory component or a scheme", () => {
 		for (const target of [
-			"../.decisions/0001-x.md",
+			"../other-corpus/0001-x.md",
 			"sub/foo.md",
 			"https://example.com/a.md",
 			"",
@@ -150,7 +150,7 @@ describe("cellText", () => {
 	/**
 	 * `cellText` and `rowCells` are an exact inverse pair, and the backslash arm is what makes that
 	 * true: escaping only `|` would let a cell ending in `\` read as escaping the delimiter after
-	 * it, which is a value smuggling in a column separator (#5364). Every case here renders a
+	 * it, which is a value smuggling in a column separator. Every case here renders a
 	 * three-cell row that must still split into exactly three cells.
 	 */
 	it.each([

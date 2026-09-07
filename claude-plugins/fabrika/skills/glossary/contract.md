@@ -489,7 +489,7 @@ read* — never what a failed read prints.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary lookup: cannot read <path>: <reason> — every state is UNKNOWN, never "absent".` | 11 | refusal |
-| `glossary lookup: <path> has no parseable term table — membership is UNKNOWN, never "absent".` | 4 | refusal |
+| `glossary lookup: <path> has no parseable term table (<reason>) — membership is UNKNOWN, never "absent".` | 4 | refusal |
 | `glossary lookup: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
 | `glossary lookup: no term given.` | 1 | usage error |
 
@@ -868,7 +868,7 @@ expectation that those gates hold; it does not recompute their verdicts.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary check: cannot read <path>: <reason> — the outcome is UNKNOWN, never "clean".` | 11 | refusal |
-| `glossary check: <path> has no parseable term table — the outcome is UNKNOWN.` | 4 | refusal |
+| `glossary check: <path> has no parseable term table (<reason>) — the outcome is UNKNOWN.` | 4 | refusal |
 | `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register.` | 7 | refusal |
 | `glossary check: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
 

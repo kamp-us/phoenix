@@ -2,12 +2,12 @@
  * `ui golden` — resolve a surface's blessed golden and diff a candidate against it.
  *
  * **Signal, never verdict.** No threshold lives in this verb and no PASS/FAIL token is reachable from
- * it; the acceptance fork is `review-ui`'s (#4718). It reads the pointer and the bytes and writes
- * neither: blessing stays the founder gallery flow (ADR 0183 §5).
+ * it; the acceptance fork is `review-ui`'s. It reads the pointer and the bytes and writes neither:
+ * blessing a golden stays a human gallery flow.
  *
  * A missing golden is a **fact** (`blessed: false`, exit 0) — but only after a pointer read that
- * succeeded. The unreadable pointer resolving to an empty blessed set is #4501, and `4`/`11` are
- * where that fail-open goes to die.
+ * succeeded. An unreadable pointer resolving to an empty blessed set is the fail-open that the
+ * `4`/`11` seats exist to kill.
  *
  * The fetched bytes are cached content-addressed under the OS temp root, which makes the cache
  * lane-independent by construction: a content-addressed file is write-once, so concurrent lanes

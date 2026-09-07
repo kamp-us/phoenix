@@ -23,8 +23,8 @@ describe("the park table", () => {
 		for (const cause of named) expect(Object.hasOwn(PARK_CAUSES, cause)).toBe(true);
 	});
 
-	// ADR 0339: the pairing binds one direction only. Every row keys on a real cause (above), and a
-	// cause may stand with no row — it then names the park instead of clearing it.
+	// The pairing binds one direction only. Every row keys on a real cause (above), and a cause may
+	// stand with no row — it then names the park instead of clearing it.
 	it("lets a cause stand with no row, so the two tables need not be the same size", () => {
 		const covered = new Set(KNOWN_PARKS.flatMap((row) => (row.cause === null ? [] : [row.cause])));
 		const rowless = Object.keys(PARK_CAUSES).filter((cause) => !covered.has(cause));
@@ -48,7 +48,7 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("branch-free");
 	});
 
-	it("is Known for a BLOCKED whose cause is the campaign-paused shape (#7217)", () => {
+	it("is Known for a BLOCKED whose cause is the campaign-paused shape", () => {
 		const parked = classifyPark("blocked", "campaign-paused");
 
 		expect(parked._tag).toBe("Known");
@@ -57,7 +57,7 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
 	});
 
-	it("is Known for a BLOCKED whose cause is the spawn-dead shape (#6770)", () => {
+	it("is Known for a BLOCKED whose cause is the spawn-dead shape", () => {
 		const parked = classifyPark("blocked", "spawn-dead");
 
 		expect(parked._tag).toBe("Known");

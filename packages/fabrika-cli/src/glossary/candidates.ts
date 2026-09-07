@@ -3,7 +3,7 @@
  *
  * Two v1 scars are designed out here rather than inherited. Its tokenizer was `/\b[a-z][a-z-]+\b/g`,
  * which excludes uppercase and all non-ASCII, so every Turkish product noun the glossary exists for
- * was structurally invisible (#4481) — {@link tokenize} splits on Unicode letter classes instead.
+ * was structurally invisible — {@link tokenize} splits on Unicode letter classes instead.
  * And it suppressed a candidate when a declared term contained it **or** it contained a declared
  * term, which against a 226-row register inverts the stated recall bias to about 10% measured
  * precision — suppression here is equality on the normalized key, never containment in either

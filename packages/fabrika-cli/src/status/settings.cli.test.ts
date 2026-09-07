@@ -53,7 +53,7 @@ describe("fabrika status settings, end to end", {timeout: SUBPROCESS_TEST_TIMEOU
 		mkdirSync(at("declared"));
 		writeFileSync(
 			join(at("declared"), ".fabrika.jsonc"),
-			'{\n\t// this repo governs two roots\n\t"governedRoots": [".decisions/", ".fabrika.jsonc"]\n}\n',
+			'{\n\t// this repo governs two roots\n\t"governedRoots": ["docs/adr/", ".fabrika.jsonc"]\n}\n',
 		);
 		mkdirSync(at("unreadable"));
 		mkdirSync(join(at("unreadable"), ".fabrika.jsonc"));
@@ -78,7 +78,7 @@ describe("fabrika status settings, end to end", {timeout: SUBPROCESS_TEST_TIMEOU
 		expect(run.code).toBe(0);
 		expect(run.stdout.split("\n")[0]).toMatch(/^settings\tresolved\t\d+\t1\t0\t/);
 		expect(run.stdout).toContain(
-			'setting\tgovernedRoots\tdeclared\t[".decisions/",".fabrika.jsonc"]\t-\t',
+			'setting\tgovernedRoots\tdeclared\t["docs/adr/",".fabrika.jsonc"]\t-\t',
 		);
 	});
 

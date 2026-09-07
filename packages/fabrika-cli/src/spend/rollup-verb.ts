@@ -1,13 +1,13 @@
 /**
- * `spend rollup` — one command that answers what fabrika's runs cost, from persisted data (#5010).
+ * `spend rollup` — one command that answers what fabrika's runs cost, from persisted data.
  *
  * It reads the durable ledger and nothing else: no transcript is re-parsed, no process is spawned,
  * no operator supplies a path to a run. That is what makes it the epic's acceptance test — a number
  * a human or an agent can ask for on demand without slowing a lane.
  *
  * **It cannot gate.** No threshold flag, no budget option, and no exit code that varies with the
- * size of a total (epic #4779's no-gate ruling). The non-zero codes below are all about whether an
- * answer could be *produced*, never about how big it was.
+ * size of a total. The non-zero codes below are all about whether an answer could be *produced*,
+ * never about how big it was.
  *
  * The four refusals are the same discipline `spend read` draws, one level up: an absent ledger, an
  * unreadable one, one that holds no rows at all, and a window that selects none of the rows it does
@@ -40,10 +40,10 @@ const VERB = "fabrika spend rollup";
 /**
  * How many rows of each breakdown reach the answer channel before the rest become a count.
  *
- * The three breakdowns are evidence-arrays under ADR 0308 — they make the scalar totals auditable,
- * and no skill in `claude-plugins/fabrika/skills/` reads a row of any of them by name. Ten each
- * bounds the answer at thirty rows however long the ledger runs; `byDay` alone was unbounded in
- * time, and `bySkill`/`byStageArm` already ran to roughly the whole skill and stage-arm corpus.
+ * The three breakdowns are bounded evidence — they make the scalar totals auditable, and no skill
+ * in `claude-plugins/fabrika/skills/` reads a row of any of them by name. Ten each bounds the
+ * answer at thirty rows however long the ledger runs; `byDay` alone was unbounded in time, and
+ * `bySkill`/`byStageArm` already ran to roughly the whole skill and stage-arm corpus.
  */
 const EVIDENCE_CAP = 10;
 

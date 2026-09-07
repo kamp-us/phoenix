@@ -10,10 +10,10 @@
  * holder's claim.
  *
  * The run directory is derived from the **claim nonce** here and nowhere else, which is what makes two
- * parallel planning lanes of one session independent (#4516, #4544, #4500). That independence is why
- * the claim is proven against the `--token` this lane holds rather than against its session id: under
- * the session-only rule a lane that had *lost* the epic's claim still read the holder's marker as its
- * own, and derived the holder's run key from it, so both lanes wrote into one directory (#6060).
+ * parallel planning lanes of one session independent. That independence is why the claim is proven
+ * against the `--token` this lane holds rather than against its session id: under the session-only
+ * rule a lane that had *lost* the epic's claim still read the holder's marker as its own, and derived
+ * the holder's run key from it, so both lanes wrote into one directory.
  */
 
 import {Effect} from "effect";
@@ -108,7 +108,7 @@ export const openGround = (
 			);
 		}
 
-		// A succession keys the run on the ADOPT token's nonce (#7010): inheriting the dead lane's
+		// A succession keys the run on the ADOPT token's nonce: inheriting the dead lane's
 		// nonce is how both sides of one succession wrote one manifest. The adopt token is the
 		// successor's own and stable across its re-opens — a resume stays a resume.
 		const nonce = runKeyNonce(held.marker.token, held.adopt?.token ?? null);

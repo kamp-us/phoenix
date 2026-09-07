@@ -25,7 +25,7 @@ const CHILD: ChildRecord = {
 };
 
 describe("the run key", () => {
-	/** The key is the claim nonce, never the session: sibling subagents share the session id (#4500). */
+	/** The key is the claim nonce, never the session: sibling subagents share the session id. */
 	it("is the epic and the claim nonce", () => {
 		expect(runKey(4300, "c1a4d6f8")).toBe("4300-c1a4d6f8");
 		expect(runDir("/w/", "4300-c1a4d6f8")).toBe("/w/.fabrika-plan/4300-c1a4d6f8");

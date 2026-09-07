@@ -12,7 +12,7 @@
  *   both in one sweep must read one meaning for it.
  * - `20`–`23` are this group's own.
  *
- * **Why `20`/`21` overlapping `build`'s `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` is safe (#5107).** The
+ * **Why `20`/`21` overlapping `build`'s `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` is safe.** The
  * contract seated these when `20`+ was free; the scope-admission fence has since taken both, and both
  * are reachable from `fabrika build claim`, which is step 1 of the skill that drives these verbs. The
  * `15` import argued that one code must carry one meaning across a sweep, so the question is fair —
@@ -52,12 +52,11 @@ export const FLOOR_DEFECTIVE = 20;
 export const PLAN_MOVED = 21;
 /** Proven: at least one child is `unchanged` — the flip did not fully apply. */
 export const PARTIAL_FLIP = 22;
-/** Proven: a label the flip must write is absent from the repository's taxonomy (#4285). */
+/** Proven: a label the flip must write is absent from the repository's taxonomy. */
 export const LABEL_ABSENT = 23;
 /**
- * Proven: the invoking account may not approve this epic's plan — it is outside the
- * `@kamp-us/control-plane` roster resolved from CODEOWNERS at write time, or that roster names
- * nobody at all.
+ * Proven: the invoking account may not approve this epic's plan — it is outside the control-plane
+ * roster resolved from CODEOWNERS at write time, or that roster names nobody at all.
  *
  * Its own seat rather than `build`'s `GRANT_UNAUTHORIZED` (25), under the rule stated above: that
  * code proves an account may not clear a repair round on a PR, which is not this fact and which no
@@ -70,7 +69,7 @@ export const APPROVAL_UNAUTHORIZED = 24;
  *
  * Its own seat, refused **ahead of the floor**, and folded into nothing: a plan no human approved is
  * a different fact from a defective one, so neither {@link FLOOR_DEFECTIVE} nor {@link PLAN_MOVED}
- * may carry it (ADR 0289). `PLAN_MOVED` is the nearest miss and still the wrong answer — it proves a
+ * may carry it. `PLAN_MOVED` is the nearest miss and still the wrong answer — it proves a
  * *caller's* `--digest` went stale between one verb and the next, which a re-check fixes, where this
  * proves a *founder's* reading went stale, which only a re-approval fixes.
  *

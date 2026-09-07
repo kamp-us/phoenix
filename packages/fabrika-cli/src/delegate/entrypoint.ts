@@ -1,15 +1,17 @@
 /**
  * The invocation a spawned shell should run this CLI's verbs through — the value `lane brief` puts
- * in a brief's `fabrika:` field (#6012).
+ * in a brief's `fabrika:` field.
  *
- * The rules used to name phoenix's own `packages/fabrika-cli/src/bin.ts` as a literal, which is a
- * `MODULE_NOT_FOUND` in every repo that installs fabrika rather than developing it. What replaces it
- * is not one shape but a rule over two, and the discriminator is the one `delegate/root.ts` already
- * owns — is the running copy a checkout of this package's own repo, or an installed artifact?
+ * The rules used to name this package's own `packages/fabrika-cli/src/bin.ts` as a literal, which
+ * is a `MODULE_NOT_FOUND` in every repo that installs fabrika rather than developing it. What
+ * replaces it is not one shape but a rule over two, and the discriminator is the one
+ * `delegate/root.ts` already owns — is the running copy a checkout of this package's own repo, or an
+ * installed artifact?
  *
  * - **A checkout** answers repo-relative, because the shell stands in its own worktree of that same
  *   repo and must run *its* copy of the source. An absolute path would send it to the driver's
- *   checkout, which is the #5679 defect the binstub ban exists for, arriving by another door.
+ *   checkout, which is the cross-checkout invocation the binstub ban exists for, arriving by
+ *   another door.
  * - **An installed artifact** answers absolute, because a worktree cut from a repo carries no
  *   `node_modules` of its own and a repo-relative `node_modules/…` path would not exist there.
  */
@@ -25,7 +27,7 @@ const MODULE_DIR = fileURLToPath(new URL(".", import.meta.url));
 /**
  * Which of the two shapes the entrypoint takes, given where the running copy lives.
  *
- * Pure, so the rule is testable against a non-phoenix layout without an install on disk — which is
+ * Pure, so the rule is testable against a foreign layout without an install on disk — which is
  * the regression this whole module exists to keep out of a consuming repo's maiden run.
  */
 export const entrypointFor = (path: Path.Path, origin: SelfOrigin, binPath: string): string => {
@@ -74,7 +76,8 @@ export const resolveEntrypoint = (
 			};
 		}
 		// Never softened to `no-checkout`: an unreadable ancestor would answer with the driver's own
-		// absolute path, which is exactly the cross-checkout invocation #5679 bans, arriving silently.
+		// absolute path, which is exactly the cross-checkout invocation the binstub ban exists to stop,
+		// arriving silently.
 		const origin = yield* originOf(packageRoot).pipe(soften);
 		if (origin === undefined) {
 			return {

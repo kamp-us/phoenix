@@ -10,11 +10,11 @@ import type {CapturedSurface} from "./capture.ts";
 import {mergeRecord} from "./orchestrate.ts";
 
 const captured: CapturedSurface = {
-	surface: "/sozluk:empty",
-	route: "/sozluk",
+	surface: "/catalog:empty",
+	route: "/catalog",
 	state: "empty",
-	localPath: "/tmp/out/sozluk-empty@desktop.png",
-	fileName: "sozluk-empty@desktop.png",
+	localPath: "/tmp/out/catalog-empty@desktop.png",
+	fileName: "catalog-empty@desktop.png",
 	pngBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
 	pageErrors: [],
 };
@@ -24,17 +24,17 @@ describe("mergeRecord — localPath is always preserved", () => {
 		const url = "https://github.com/user-attachments/assets/abc";
 		const rec = mergeRecord(captured, {hostedUrl: url, uploadError: null});
 		assert.deepStrictEqual(rec, {
-			surface: "/sozluk:empty",
-			route: "/sozluk",
+			surface: "/catalog:empty",
+			route: "/catalog",
 			state: "empty",
-			localPath: "/tmp/out/sozluk-empty@desktop.png",
+			localPath: "/tmp/out/catalog-empty@desktop.png",
 			hostedUrl: url,
 			uploadError: null,
 			pageErrors: [],
 		});
 	});
 
-	it("carries the captured pageErrors through onto the record (#2594 crash signal)", () => {
+	it("carries the captured pageErrors through onto the record — the crash signal", () => {
 		const crashed: CapturedSurface = {
 			...captured,
 			pageErrors: [
@@ -50,7 +50,7 @@ describe("mergeRecord — localPath is always preserved", () => {
 	it("KEEPS localPath when the upload fell back (hostedUrl null, uploadError set)", () => {
 		const rec = mergeRecord(captured, {hostedUrl: null, uploadError: "HTTP 500: boom"});
 		// The correctness fix: the judged artifact survives an upload failure.
-		assert.strictEqual(rec.localPath, "/tmp/out/sozluk-empty@desktop.png");
+		assert.strictEqual(rec.localPath, "/tmp/out/catalog-empty@desktop.png");
 		assert.strictEqual(rec.hostedUrl, null);
 		assert.strictEqual(rec.uploadError, "HTTP 500: boom");
 	});

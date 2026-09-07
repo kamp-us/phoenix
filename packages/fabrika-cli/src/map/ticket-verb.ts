@@ -54,7 +54,7 @@ export interface TicketOptions {
 	 *
 	 * Injected rather than read from the environment, and injected rather than flagged: the contract's
 	 * input table for this verb declares no `--nonce`, so adding one would be a surface it does not
-	 * specify — see the spec-defect note on #5022. The production caller supplies four random bytes.
+	 * specify. The production caller supplies four random bytes.
 	 */
 	readonly nonce: () => string;
 }

@@ -1,7 +1,7 @@
 /**
  * Capture validation: whether a PNG a render produced is a record at all.
  *
- * A capture nobody can open is not evidence (#3925's class), so the check is on the bytes rather
+ * A capture nobody can open is not evidence, so the check is on the bytes rather
  * than on the render's exit status: zero bytes, an undecodable header, and a zero-area image are
  * three ways a "successful" screenshot arrives empty, and all three used to reach a gate as pixels.
  *

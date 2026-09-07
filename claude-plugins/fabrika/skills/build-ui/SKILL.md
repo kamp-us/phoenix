@@ -108,7 +108,7 @@ capture the **before** state of every surface you are about to change, while the
 it:
 
 ```bash
-fabrika ui render --out before --surface /feed --surface /feed/new
+fabrika ui render --out before --surface /board --surface /board/new
 ```
 
 You name the surfaces — bare routes; a `:state` suffix is reserved grammar and refused (exit
@@ -126,13 +126,13 @@ over the sanctioned scale, or a hand-rolled color function where a token exists 
 class every real design failure has shipped. Then the inner loop, per iteration:
 
 ```bash
-fabrika ui render --out after --surface /feed
+fabrika ui render --out after --surface /board
 ```
 
 **Look at the capture and judge composition** — balance, rhythm, alignment, hierarchy, whether
 the surface hangs together — **never pixel metrics by eye**; that is what the deterministic layer
 is for. Fix, re-render. Cap at ~3 iterations: past that the composition problem is structural, not
-polish. Anchor to a golden where one exists: `fabrika ui golden --surface /feed` answers whether
+polish. Anchor to a golden where one exists: `fabrika ui golden --surface /board` answers whether
 this surface is blessed; add `--candidate` with the capture's absolute path from the render
 answer to get the diff signal — a signal to steer by, never a verdict. An unblessed surface is a
 fact, and the pillars are then your only anchor.

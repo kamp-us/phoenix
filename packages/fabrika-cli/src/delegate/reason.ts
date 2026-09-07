@@ -3,7 +3,7 @@
  *
  * The loud branch's first line splices the repo root and the clause into one sentence
  * (`— ${repoRoot} ${reason}.`), so a clause carrying its own subject renders as two sentences
- * jammed together: `— /repo it has no local install.` (#6027). The rule that fixes it is that the
+ * jammed together: `— /repo it has no local install.` The rule that fixes it is that the
  * clause is a **predicate whose subject is the repo root**, never a standalone sentence.
  *
  * Grammar is not machine-checkable, so the brand does not verify the rule — it makes the rule

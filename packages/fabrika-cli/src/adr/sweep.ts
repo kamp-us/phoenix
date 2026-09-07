@@ -1,5 +1,5 @@
 /**
- * `adr sweep`'s ranking, pure and native to fabrika (ADR 0238).
+ * `adr sweep`'s ranking, pure and native to fabrika.
  *
  * It ranks the uncited live-accepted records whose decision domain the subject touches, by a
  * lexical/rarity score: a term shared with the subject is worth its inverse document frequency
@@ -8,7 +8,7 @@
  *
  * **All three outcomes exit 0 and all three are answers** — that is the whole point. v1's
  * `adr-sweep` exits 1 on the one case it was asked to produce, so a caller reads its informative
- * shortlist as a failed run; and it writes `--json` to stderr leaving stdout empty (#4723). Neither
+ * shortlist as a failed run; and it writes `--json` to stderr leaving stdout empty. Neither
  * scar is repeated here.
  *
  * None of the outcomes is a clearance, which is why `no-overlap` is a distinct token rather than an

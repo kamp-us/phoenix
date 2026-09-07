@@ -574,8 +574,8 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `status settings: the config surface registers zero keys — there is nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092).` | 7 | refusal |
-| ``status settings: the config surface registers no `surfaceDispositions` key, so there are no surfaces to expand (ADR 0092).`` | 7 | refusal |
+| `status settings: the config surface registers zero keys — there is nothing to resolve, and a readout over an empty surface is not an answer.` | 7 | refusal |
+| ``status settings: the config surface registers no `surfaceDispositions` key, so there are no surfaces to expand.`` | 7 | refusal |
 | `status settings: <n> key(s) resolve UNKNOWN (<keys>) — what this repo runs on is unread, never the shipped default.` | 11 | refusal |
 | `status settings: no .fabrika.jsonc — every key falls to its shipped default; <n> key(s), <d> declared, <u> unknown.` | 0 | notice |
 | `status settings: read .fabrika.jsonc; <n> key(s), <d> declared, <u> unknown.` | 0 | notice |
@@ -794,7 +794,7 @@ An implicitly-resolved roster holding zero skills is `menu<TAB>empty<TAB>0<TAB><
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `status menu: --skills-dir <path> is proven absent — refusing to answer (ADR 0092).` | 7 | refusal |
+| `status menu: --skills-dir <path> is proven absent — refusing to answer.` | 7 | refusal |
 | `status menu: cannot read <path>: <reason> — the roster is UNKNOWN, never empty.` | 11 | refusal |
 | `status menu: roster <path> (<tier>), <n> skills, <k> unreadable frontmatter.` | 0 | notice |
 
@@ -911,7 +911,7 @@ repository and the caller acts on it by bootstrapping one.
 | `status readout: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, GITHUB_REPOSITORY, or pass --repo.` | 1 | refusal |
 | `status readout: cannot fetch <repo>#<n>: <reason> — the digest is UNKNOWN, never absent.` | 11 | refusal |
 | `status readout: <repo>#<n> carries no readable updated_at — the digest's freshness is UNKNOWN.` | 11 | refusal |
-| `status readout: the governance-digest format is not registered — the digest is UNKNOWN, never absent (#5199).` | 11 | refusal |
+| `status readout: the governance-digest format is not registered — the digest is UNKNOWN, never absent.` | 11 | refusal |
 | `status readout: no artifact — $FABRIKA_GOVERNANCE_READOUT_ISSUE unset and no open issue in <repo> titled exactly "Governance readout". Run: fabrika status bootstrap readout-artifact` | 0 | notice |
 | `status readout: read <repo>#<n>, <k> comments scanned, digest <state>.` | 0 | notice |
 

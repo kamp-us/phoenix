@@ -14,7 +14,7 @@
  * The scan consumes `\|` and `\\` in a single left-to-right pass, which is what makes it the exact
  * inverse of {@link cellText}. Honouring only `\|` fuses a cell whose own text ends in a backslash
  * with the delimiter after it, so the value smuggles in a column separator the escape believed it
- * had neutralized (#5364).
+ * had neutralized.
  */
 export const rowCells = (line: string): ReadonlyArray<string> | null => {
 	let text = line.trim();

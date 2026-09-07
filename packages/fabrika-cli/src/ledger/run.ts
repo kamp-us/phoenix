@@ -2,9 +2,8 @@
  * The run directory: where a planning run keeps everything, so nothing survives only in a model's head.
  *
  * **The key is the claim nonce, never the session.** Every sibling subagent of one session shares
- * `CLAUDE_CODE_SESSION_ID` (measured, #4500), so a session-keyed namespace collapses exactly the
- * isolation two parallel planning lanes need (#4516, #4544). The shipped precedent is
- * `build/scratch-verb.ts`.
+ * `CLAUDE_CODE_SESSION_ID` (measured), so a session-keyed namespace collapses exactly the isolation
+ * two parallel planning lanes need. The shipped precedent is `build/scratch-verb.ts`.
  *
  * Four files, each named for what it holds, and between them they are the reason a compaction between
  * minting and splicing loses nothing: `run.json` (the run's identity, decided once by `ledger open`),
@@ -35,7 +34,7 @@ export const runKey = (epic: number, nonce: string): string => `${epic}-${nonce}
 /**
  * The nonce a ledger run keys on: through a succession, the ADOPT token's — never the dead lane's.
  *
- * Inheriting the dead marker's nonce is how both sides of one succession wrote one manifest (#7010).
+ * Inheriting the dead marker's nonce is how both sides of one succession wrote one manifest.
  * The adopt token is the successor's own, stable across its re-opens, so keying on it keeps a resume
  * a resume while giving the two sides of a succession separate manifests.
  */
