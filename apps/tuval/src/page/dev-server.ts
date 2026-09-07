@@ -16,7 +16,8 @@
  * to be told this one, and that is why this module takes the transport rather than its URL (#7560).
  */
 
-import {dirname} from "node:path";
+import {readFile} from "node:fs/promises";
+import {dirname, join} from "node:path";
 import {Effect, Schema} from "effect";
 import {featuresDefault, type TuvalFeatures} from "../features.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
@@ -210,6 +211,65 @@ export const servedDirectories = (
 ];
 
 /**
+ * The page's entry modules: the `src` of every root-relative `<script type="module">` in its
+ * `index.html`. Root-relative is the whole filter — an absolute URL is somebody else's server and a
+ * relative one is not a URL this server answers, so neither is a graph this server can crawl.
+ */
+export const pageEntryModules = (html: string): ReadonlyArray<string> => [
+	...new Set(
+		[...html.matchAll(/<script\b[^>]*>/gi)]
+			.filter(([tag]) => /\btype\s*=\s*["']module["']/i.test(tag))
+			.flatMap(([tag]) => {
+				const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+				return src === undefined || !src.startsWith("/") ? [] : [src];
+			}),
+	),
+];
+
+type ViteServer = Awaited<ReturnType<typeof import("vite").createServer>>;
+
+/**
+ * Long enough that a cold `pnpm install` prebundling the whole page is never cut short, short enough
+ * that a settle which is never coming does not wedge the boot: past it the URL is handed back
+ * unwarmed, which is exactly the behaviour that predates this warm.
+ */
+const WARM_TIMEOUT = "90 seconds";
+
+/**
+ * Crawl the page's static graph before the URL is handed back (#7939).
+ *
+ * Vite's dep optimizer settles on the first crawl of that graph, and until this ran, the first crawl
+ * was the browser's: the caller printed the URL the moment the server bound, so the founder's first
+ * load *was* the cold prebundle. A dep the scanner missed and the crawl then found re-bundles, and
+ * every in-flight request against the previous bundle is answered `504 (Outdated Optimize Dep)` —
+ * a blank page on the load the harness's stated bar is about. Warming here moves that whole settle
+ * in front of the printed URL, so the browser's first request meets a cache that is already built.
+ *
+ * `warmupRequest` handles its own errors and `waitForRequestsIdle` covers the static imports that
+ * request pulls in, which is the same graph the optimizer scans.
+ */
+const warmPageGraph = Effect.fn("Tuval.page.warm")(function* (server: ViteServer, root: string) {
+	const html = yield* attempt(() => readFile(join(root, "index.html"), "utf8")).pipe(
+		Effect.orElseSucceed(() => ""),
+	);
+	const entries = pageEntryModules(html);
+	if (entries.length === 0) return;
+	yield* attempt(async () => {
+		// `waitForRequestsIdle` tracks the crawl the *first* `transformRequest` starts, so the warm is
+		// started and not awaited: awaiting it first ends that crawl before the wait is armed, and the
+		// wait then answers "idle" about a graph nobody walked.
+		const warmed = Promise.all(entries.map((entry) => server.warmupRequest(entry)));
+		await server.waitForRequestsIdle();
+		await warmed;
+		// The crawl is what releases the optimizer's first run (`optimizeDeps.holdUntilCrawlEnd`), and
+		// that run is the prebundle — so the graph being walked is not yet the cache being built.
+		const optimizer = server.environments.client.depsOptimizer;
+		await optimizer?.scanProcessing;
+		await Promise.all((optimizer?.metadata.depInfoList ?? []).map((dep) => dep.processing));
+	}).pipe(Effect.timeout(WARM_TIMEOUT), Effect.ignore);
+});
+
+/**
  * The page's own resolver, told the one thing it cannot work out: which file each specifier the
  * loader module imports actually names. Only the loader module's imports are answered — the same
  * specifier written anywhere else in the app is nobody's business but Vite's.
@@ -370,5 +430,6 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 	// The browser's upgrade carries this server's origin, not the socket's, and a fence built from
 	// the socket's port alone refuses it (#7560). Done here so no caller can serve a page and forget.
 	options.transport.admitLoopbackPort(port);
+	yield* warmPageGraph(server, options.root);
 	return {url, port} satisfies PageServer;
 });

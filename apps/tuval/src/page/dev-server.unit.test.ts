@@ -17,6 +17,7 @@ import {
 	featuresSource,
 	moduleRenderersSource,
 	optimizedDepEntries,
+	pageEntryModules,
 	servedDirectories,
 } from "./dev-server.ts";
 
@@ -150,5 +151,40 @@ describe("what a resolved reference tells the page server", () => {
 			"/home/founder/.tuval",
 			"/home/founder/.tuval/node_modules/@acme/win",
 		]);
+	});
+});
+
+describe("the page's entry modules", () => {
+	it("names the src of a root-relative module script, which is the graph the warm crawls", () => {
+		expect(
+			pageEntryModules(
+				'<body><div id="tuval"></div><script type="module" src="/src/page/main.tsx"></script></body>',
+			),
+		).toEqual(["/src/page/main.tsx"]);
+	});
+
+	it("leaves a classic script alone — it pulls no module graph for the optimiser to settle", () => {
+		expect(pageEntryModules('<script src="/legacy.js"></script>')).toEqual([]);
+	});
+
+	it("leaves an absolute or relative src alone: neither is a URL this server answers", () => {
+		expect(
+			pageEntryModules(
+				'<script type="module" src="https://cdn.example/a.js"></script>' +
+					'<script type="module" src="./b.js"></script>',
+			),
+		).toEqual([]);
+	});
+
+	it("warms one entry once, however many scripts name it", () => {
+		expect(
+			pageEntryModules(
+				'<script type="module" src="/a.js"></script><script type="module" src="/a.js"></script>',
+			),
+		).toEqual(["/a.js"]);
+	});
+
+	it("has nothing to warm when the page carries no module script", () => {
+		expect(pageEntryModules("<html><body></body></html>")).toEqual([]);
 	});
 });
