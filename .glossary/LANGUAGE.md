@@ -517,7 +517,10 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   not an event kind, and it names no backend: the window learns "still growing" once and every
   agent program streams the same way ([#8142's
   ruling](https://github.com/kamp-us/phoenix/issues/8142), epic
-  [#8160](https://github.com/kamp-us/phoenix/issues/8160)). Source:
+  [#8160](https://github.com/kamp-us/phoenix/issues/8160)). Two kinds grow one — the assistant reply
+  and the thinking row, since a turn's reasoning streams before its answer does
+  ([#8288](https://github.com/kamp-us/phoenix/issues/8288)) — and every predicate that reads the
+  marker reads it through `in`, so a third costs no arm. Source:
   [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
 
 ### Tuval: thinking row, compaction marker, session row

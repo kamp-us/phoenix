@@ -8,6 +8,7 @@ import {pendingPermission} from "../../ai-agent-fixtures/permissions.ts";
 import {
 	assistantItem,
 	subagentSlot,
+	thinkingItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
@@ -188,6 +189,16 @@ describe("what is worth a checkpoint write", () => {
 		};
 		expect(checkpointWorthy(partial)).toBe(false);
 		expect(checkpointWorthy(base)).toBe(true);
+	});
+
+	// The gate reads the marker through `in`, so reasoning growing one costs it no arm (#8288).
+	it("refuses a state whose reasoning is still being written", () => {
+		const reasoning = {
+			...base,
+			transcript: {...base.transcript, items: [{...thinkingItem("k1"), partial: true}]},
+		};
+		expect(checkpointWorthy(reasoning)).toBe(false);
+		expect(checkpointWorthy({...reasoning, transcript: {...base.transcript}})).toBe(true);
 	});
 });
 

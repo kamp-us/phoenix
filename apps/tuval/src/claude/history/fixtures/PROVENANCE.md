@@ -206,12 +206,19 @@ so a worker's reply is forwarded whole rather than delta by delta and no run can
 case. `events.unit.test.ts` covers it by stamping that one field over the golden `streaming-turn`
 stream, and says so at the case.
 
-**A worker's reasoning in plain text.** Both captures agree and neither has one: `subagent-turn.json`
-carries two `thinking` blocks and the sidechain pair two more, every one with a real `signature` and
-an empty `thinking` string — the provider ships a worker's reasoning encrypted. Four `query()` runs
-at this pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s
-shape is not what a live worker yields today. `blocks.ts` reads the empty-with-signature shape as
-withheld, which is what the captures forced.
+**Reasoning in plain text off a stream.** Both captures agree and neither has one:
+`subagent-turn.json` carries two `thinking` blocks and the sidechain pair two more, every one with a
+real `signature` and an empty `thinking` string — the provider ships reasoning encrypted, and its
+two `thinking_delta` frames carry the empty string for the same reason. Four `query()` runs at this
+pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s shape is
+not what a live stream yields today. `blocks.ts` reads the empty-with-signature shape as withheld,
+which is what the captures forced.
+
+`subagent-turn.json` is still the only capture whose *stream* reasons, and it is what
+`events.unit.test.ts` folds for the withheld case. For the growing row (#8288) that file stamps
+plaintext over those two `thinking_delta` frames and the `thinking` block of the `assistant` frame
+that settles them, leaving every envelope, block boundary and arrival order the capture's — and says
+so at the case.
 
 **Two workers under one *parent* tool call.** Both captures spawn workers as siblings of each other.
 A `Task` call made *by* a worker — `spawn_depth` above 1 — is uncaptured, and nothing a prompt
