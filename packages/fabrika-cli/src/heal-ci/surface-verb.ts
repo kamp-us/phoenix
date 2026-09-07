@@ -2,8 +2,8 @@
  * `heal-ci surface` — declared required contexts against the runs that actually post at a head.
  *
  * **This verb changes nothing.** Arming, renaming and disarming a required context are repository
- * settings changes with a human's name on them, and #3377 is what arming one wrong costs: the entire
- * merge queue wedged. It diagnoses and stops.
+ * settings changes with a human's name on them, and arming one wrong costs the entire merge queue:
+ * it wedges. It diagnoses and stops.
  *
  * `extra` rows are reported, never judged — a gating run answering no requirement is normal, and
  * printing both sides is what lets a reader see which of the two mistakes they have.

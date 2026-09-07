@@ -6,9 +6,9 @@
  * half, and deliberately not the whole test.** Whether something is genuinely fog is a judgment the
  * skill carries; what a verb can prove is that the caller enumerated questions, that nobody has
  * charted or rejected this destination already. That is what makes a wrong classification catchable
- * at the point it is made rather than well-formed and wrong (#4227) — the claim is bound to an
- * enumerable artifact instead of to the caller's confidence. It is **not** a second answer to ADR
- * 0203's fog-versus-buildable discriminator, which is seated at intake and expected here.
+ * at the point it is made rather than well-formed and wrong — the claim is bound to an enumerable
+ * artifact instead of to the caller's confidence. It is **not** a second answer to the
+ * fog-versus-buildable discriminator, which is seated at intake and expected here.
  */
 
 import {rank, scoreTitle, TOKEN_FLOOR, tokenize} from "../report/dedup.ts";

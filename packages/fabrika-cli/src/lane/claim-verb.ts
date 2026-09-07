@@ -7,7 +7,7 @@
  * resolves it. A loser retracts its **own** marker and nothing else — never another lane's, which is
  * the one write this protocol must never make.
  *
- * **Ownership turns on the whole token, never on the session id alone** (#6060). A session is not a
+ * **Ownership turns on the whole token, never on the session id alone**. A session is not a
  * driver: one session routinely spawns several operators, and each mints its own token. Under the
  * session-only rule a sibling lane read the first lane's marker as its own, so `claim` answered `won`
  * carrying a token that owned nothing and `release` deleted the holder's marker — an unrecoverable
@@ -15,20 +15,20 @@
  * as a {@link Caller} carrying the lane's nonce, read off the `--token` this verb's own `claim`
  * handed back.
  *
- * **One driver leaves at most one marker on a thread**, the same fixed point `build claim` holds
- * (#5782, per lane since #6037). `claim` handed the token it already holds reads ownership before
+ * **One driver leaves at most one marker on a thread**, the same fixed point `build claim` holds,
+ * scoped per lane. `claim` handed the token it already holds reads ownership before
  * writing and answers `won` with that same marker, posting nothing; `release` sweeps every marker
  * carrying THIS lane's token rather than only the winner. Without both, N claims left N markers and
  * each release peeled one off a stack, and since nothing here expires a marker (`triage claim`'s TTL
  * has no counterpart in this namespace) the leftovers made the lane refuse on `31` until a human
  * deleted the comment.
  *
- * **No admission test runs here.** The fence decides what may start *building* (ADR 0245), and the
+ * **No admission test runs here.** The fence decides what may start *building*, and the
  * builder this driver spawns runs it on its own account; a second copy in the driver would refuse a
  * lane at a different moment than the shell it drives, for reasons the driver is type-blind to.
  *
- * **`adopt` is the third verb, and it is what a killed seat's successor runs** (ADR 0325, in parity
- * with ADR 0295's build-namespace succession): the successor states on the board that a seat is gone
+ * **`adopt` is the third verb, and it is what a killed seat's successor runs**, in parity
+ * with the build namespace's own succession: the successor states on the board that a seat is gone
  * and inherits its claim, so `release` then answers `Mine` and retracts the claim and the adopt
  * together. No TTL, no lease, no steal.
  */
@@ -134,10 +134,10 @@ const siblingNote = (verb: string, token: string): string =>
  *
  * Without it `lane claim` dead-ends on `31` for a seat `lane stale` is at the same moment naming as
  * one to re-spawn — the two verbs contradicting each other over one lane, with only a hand-composed
- * `--token` release in between (#6374).
+ * `--token` release in between.
  */
 const successionNote = (verb: string, holder: {readonly session: string}, lane: string): string =>
-	`${verb}: if that seat is gone, take the lane back through succession rather than a hand-composed token — fabrika lane adopt ${lane} --session ${holder.session} --reason "<why>", then fabrika lane release ${lane} --token <the token adopt printed> (ADR 0325).`;
+	`${verb}: if that seat is gone, take the lane back through succession rather than a hand-composed token — fabrika lane adopt ${lane} --session ${holder.session} --reason "<why>", then fabrika lane release ${lane} --token <the token adopt printed>.`;
 
 export const runLaneClaim = (
 	options: LaneClaimOptions,
@@ -149,9 +149,9 @@ export const runLaneClaim = (
 
 		// Already THIS DRIVER's: answer with the marker that owns it and write nothing. A second marker
 		// would leave `claim` printing one nonce while `release` deleted the earliest, so each release
-		// peeled one off a stack and the leftovers locked the lane out (#6087). Only a caller that
+		// peeled one off a stack and the leftovers locked the lane out. Only a caller that
 		// named its own token can be answered this way — a same-session marker under another nonce
-		// belongs to a sibling driver, and races below like any other (#6060).
+		// belongs to a sibling driver, and races below like any other.
 		if (options.token !== null) {
 			const holding = requireCallerToken(CLAIM, session, options.token, LANE_CLAIM);
 			if (holding._tag === "Refused") return holding.outcome;
@@ -215,7 +215,7 @@ export const runLaneClaim = (
 
 		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it. It resolves against the
 		// token this run just minted, so a sibling driver of the same session is a co-racer like any
-		// other rather than this run reading its neighbour's marker as its own (#6060).
+		// other rather than this run reading its neighbour's marker as its own.
 		const {ownership, unauthorized} = yield* resolveOwnership(
 			repo,
 			number,
@@ -232,7 +232,7 @@ export const runLaneClaim = (
 
 		// Lost, unreadable, or shadowed by an unauthorized-only thread: retract this run's OWN marker,
 		// nothing else. The UNKNOWN arm retracts too — its comment id is in hand and is provably this
-		// run's own write, and leaving it behind strands a marker no later run can resolve (#6000).
+		// run's own write, and leaving it behind strands a marker no later run can resolve.
 		const retracted = yield* deleteComment(repo, posted.value.id);
 		const trailer =
 			retracted._tag === "Failure"
@@ -260,7 +260,7 @@ export const runLaneClaim = (
 				)
 			: refuse(
 					CLAIM_NOT_MINE,
-					`${CLAIM}: this run's own marker is not authorized — its author holds no write permission, so it can never win (ADR 0055).`,
+					`${CLAIM}: this run's own marker is not authorized — its author holds no write permission, so it can never win.`,
 					[...notes, ...trailer],
 				);
 	});
@@ -322,9 +322,9 @@ export const runLaneRelease = (
 		}
 		// Every marker carrying THIS DRIVER's token, not only the winning one: a thread carrying
 		// duplicates — a write that landed after it reported UNKNOWN, then re-posted — would otherwise
-		// leave the leftovers behind for the next claim to lose to (#6087). The filter is the lane's
+		// leave the leftovers behind for the next claim to lose to. The filter is the lane's
 		// whole token, never its session: a sibling driver's marker is another driver's claim, and
-		// sweeping it is the one write this protocol must never make (#6060).
+		// sweeping it is the one write this protocol must never make.
 		const listed = yield* listComments(repo, number);
 		if (listed._tag === "Failure") {
 			return refuse(
@@ -395,7 +395,7 @@ export interface LaneAdoptOptions extends Omit<ProtocolOptions, "token"> {
 
 /**
  * `lane adopt` — the successor operator seat names a stranded seat on the board, so its lane claim
- * becomes releasable (ADR 0325, the lane-namespace half of ADR 0295).
+ * becomes releasable — the lane-namespace half of the build namespace's succession.
  *
  * **It admits this run's own session, and that is the difference from `build adopt`.** What dies in
  * this namespace is a *seat*, not a session: a killed operator seat's successor boots under the same
@@ -403,9 +403,9 @@ export interface LaneAdoptOptions extends Omit<ProtocolOptions, "token"> {
  * same-session-other-nonce — the shape `build adopt` refuses as already covered by plain release.
  * Here plain release does not cover it: `resolveOwnership` turns on the whole token, so the stranded
  * marker reads `Foreign` and the only way through was reading its token out of the comment thread by
- * hand (#6374). That hand-composed `--token` is what this verb exists to remove.
+ * hand. That hand-composed `--token` is what this verb exists to remove.
  *
- * The price is the one ADR 0295 already priced: an adopt proves nothing dead.
+ * The price is the one succession always carries: an adopt proves nothing dead.
  *
  * It writes one comment and nothing else. It takes no claim and evicts nobody: the release that
  * follows runs the ordinary ownership read, so an adopt posted below `write` decides nothing.

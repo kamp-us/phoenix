@@ -1,9 +1,9 @@
 /**
  * `build retire` — take back the checkout an orphaned build worktree is holding, where a license
- * reaches it: the board's two (ADR 0323), or, on a lane no claim marker holds any more, proof the
- * tree carries nothing (ADR 0342).
+ * reaches it: the board's two, or, on a lane no claim marker holds any more, proof the tree
+ * carries nothing.
  *
- * The residue this clears is #6610: a session dies mid-round, its worktree stays registered holding
+ * The residue this clears: a session dies mid-round, its worktree stays registered holding
  * the lane branch, and `build branch --resume-lane` then refuses on `11` rather than rename the
  * branch out from under a live checkout. Nothing inside the loop could clear it, so every such round
  * ended as a human park on a cleanup carrying no judgment.
@@ -17,19 +17,19 @@
  *   4. {@link classify} seats each subject. **Nothing is removed on a `Hold`**, and a read that
  *      failed refuses on `11` rather than resolve to either verdict. A subject the board licenses
  *      nothing about and no live claim holds comes back `Unclaimed`, and {@link residue} then reads
- *      what that one tree carries for ADR 0342's arm — only that one, so the two board licenses
+ *      what that one tree carries for the no-claim arm — only that one, so the two board licenses
  *      still ask git nothing about the tree.
- *   5. Each released tree is **salvaged then removed**, in ADR 0321's order and under its ban on
- *      `--force`: uncommitted work goes onto the tree's own branch first, so ignoring dirtiness
+ *   5. Each released tree is **salvaged then removed**, in that order and never with `--force`:
+ *      uncommitted work goes onto the tree's own branch first, so ignoring dirtiness
  *      costs nobody their only copy, and a removal that still refuses is reported for a human.
  *   6. Every removal is read back off a second `worktree list` — a removal this verb reports is one
  *      it proved, never one `git` exited 0 on.
  *
  * It removes the tree and leaves the branch: the repair lane the pin refused needs exactly that ref.
  *
- * **A worktree-isolated caller may run this**, which is what moved ADR 0321's obligation off the
+ * **A worktree-isolated caller may run this**, which is what moves the cleanup obligation off the
  * primary-checkout driver: the harness rule that refused a cross-worktree `git` reads the typed
- * command, so it binds a shell and not a verb's own child process (measured on #6610).
+ * command, so it binds a shell and not a verb's own child process.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -146,7 +146,7 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 			if (removed._tag === "Failure") {
 				return refuse(
 					WRITE_UNKNOWN,
-					`${VERB}: git refused to remove ${subject.path}: ${removed.reason} — ADR 0321 bans --force on every path, so this is an incident to file (/report), not an override. ${retired.length} tree(s) were retired before it.`,
+					`${VERB}: git refused to remove ${subject.path}: ${removed.reason} — --force is banned on every path, so this is an incident to file (/report), not an override. ${retired.length} tree(s) were retired before it.`,
 					[scope],
 				);
 			}
@@ -223,8 +223,8 @@ type Read =
  * What one unclaimed subject carries — read only for the subjects a board license does not cover.
  *
  * Reading it for every subject would price the two board licenses at two more failure modes each: a
- * closed ticket's tree would start refusing on `11` because a count could not be taken, and ADR 0323
- * rules the tree's contents out of that verdict entirely.
+ * closed ticket's tree would start refusing on `11` because a count could not be taken, and a board
+ * license rules the tree's contents out of that verdict entirely.
  */
 const residue = (subject: Subject): Effect.Effect<Read, never, Deps> =>
 	Effect.gen(function* () {
@@ -259,10 +259,10 @@ type Salvaged =
 	| {readonly _tag: "Salvaged"; readonly salvaged: boolean};
 
 /**
- * ADR 0321's first step: whatever the tree holds uncommitted goes onto its own branch before the
- * tree goes.
+ * The first step: whatever the tree holds uncommitted goes onto its own branch before the tree
+ * goes.
  *
- * This is what makes dirtiness a non-question rather than a tolerated risk (ADR 0323): the ruling
+ * This is what makes dirtiness a non-question rather than a tolerated risk: the ruling
  * that a dirty tree is still retired and the rule that a removal must not destroy a dying spawn's
  * only copy are the same act, in this order. A read that fails salvages nothing and removes nothing.
  */
@@ -288,7 +288,7 @@ const salvage = (subject: Subject): Effect.Effect<Salvaged, never, Deps> =>
 					_tag: "Refused" as const,
 					outcome: refuse(
 						WRITE_UNKNOWN,
-						`${VERB}: cannot salvage ${dirty.value} uncommitted path(s) in ${subject.path}: ${committed.reason} — the tree is left standing, because removing it would destroy the only copy (ADR 0321).`,
+						`${VERB}: cannot salvage ${dirty.value} uncommitted path(s) in ${subject.path}: ${committed.reason} — the tree is left standing, because removing it would destroy the only copy.`,
 					),
 				}
 			: {_tag: "Salvaged" as const, salvaged: true};

@@ -3,6 +3,7 @@ import {fileURLToPath} from "node:url";
 import react from "@vitejs/plugin-react";
 import {Effect} from "effect";
 import {defineConfig} from "vite";
+import {initialEffortProof} from "../../../claude/proof/initial-effort.ts";
 import {pagingReplay} from "../../../claude/proof/paging-replay.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -11,6 +12,24 @@ export default defineConfig({
 	root: here,
 	plugins: [
 		react(),
+		{
+			name: "initial-effort-proof",
+			configureServer(server) {
+				server.middlewares.use("/initial-effort.json", (_request, response) => {
+					Effect.runPromise(initialEffortProof()).then(
+						(proof) => {
+							response.setHeader("Content-Type", "application/json");
+							response.setHeader("Cache-Control", "no-store");
+							response.end(JSON.stringify(proof));
+						},
+						(error: unknown) => {
+							response.statusCode = 500;
+							response.end(String(error));
+						},
+					);
+				});
+			},
+		},
 		{
 			name: "chat-paging-replay",
 			configureServer(server) {

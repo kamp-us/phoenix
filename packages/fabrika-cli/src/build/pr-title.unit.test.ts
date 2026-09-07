@@ -19,7 +19,7 @@ describe("conventionalTitleOf", () => {
 		);
 	});
 
-	// #6754: the epic tail squashes to a subject on `main`, and a type the node strategy hides drops
+	// The epic tail squashes to a subject on `main`, and a type the node strategy hides drops
 	// the whole epic's changes from the release notes. These are the hidden types in the
 	// conventionalcommits preset's default `config.types`.
 	const HIDDEN_TYPES = ["chore", "docs", "style", "refactor", "test", "build", "ci"];
@@ -64,12 +64,12 @@ describe("conventionalTitleOf", () => {
 		expect(conventionalTitleOf("One retry cap: fold the three round budgets", ["type:bug"])).toBe(
 			"fix: One retry cap: fold the three round budgets",
 		);
-		expect(conventionalTitleOf("Sözlük: seed the first terms", ["type:feature"])).toBe(
-			"feat: Sözlük: seed the first terms",
+		expect(conventionalTitleOf("Sözcük: seed the first terms", ["type:feature"])).toBe(
+			"feat: Sözcük: seed the first terms",
 		);
 	});
 
-	// #5946: a subject with a literal tag poisons the Release PR body's changelog, and every later
+	// A subject with a literal tag poisons the Release PR body's changelog, and every later
 	// release-please run crashes parsing that body as HTML.
 	it("strips the brackets off an HTML-looking tag so the subject cannot open one", () => {
 		expect(

@@ -66,7 +66,7 @@ describe("readContainment", () => {
 		["flag", "flag"],
 		["exempt", "exempt"],
 		["none", "none"],
-		["flag (behind kampus-plan-gate)", "flag"],
+		["flag (behind the release gate)", "flag"],
 	])("reads the leading keyword of %s", (value, expected) => {
 		expect(readContainment(value, SHIPPED_CONTAINMENT_VOCABULARY)).toBe(expected);
 	});
@@ -112,7 +112,7 @@ describe("containmentGap", () => {
 		expect(containmentGap(vocabulary, FEATURE, null)).toBeNull();
 	});
 
-	it("reds a phoenix-legal value that a foreign vocabulary does not carry", () => {
+	it("reds a shipped-legal value that a foreign vocabulary does not carry", () => {
 		const foreign: ContainmentVocabulary = {types: ["type:feature"], values: ["unpublished"]};
 		expect(containmentGap(foreign, FEATURE, readContainment("flag", foreign))).toEqual({
 			type: "type:feature",

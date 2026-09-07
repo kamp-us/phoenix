@@ -1,11 +1,10 @@
 /**
  * `ledger edges` — write the epic's `## Dependencies` block into GitHub's native `blocked_by` graph.
  *
- * ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes that graph the one
- * carrier of blockedness, and both build gates read only it. A plan whose dependencies live in prose
- * alone therefore admits a child it has already declared blocked — epic #6595 let a child gated behind
- * an open, unruled decision through `build claim` on `scanned 0 blocked_by edges` (#6616). This verb
- * closes that gap by writing the edges the block owes.
+ * That graph is the one carrier of blockedness, and both build gates read only it. A plan whose
+ * dependencies live in prose alone therefore admits a child it has already declared blocked — an epic
+ * planned that way let a child gated behind an open, unruled decision through `build claim` on
+ * `scanned 0 blocked_by edges`. This verb closes that gap by writing the edges the block owes.
  *
  * **It reads the epic's own body, never this run's staged topology**, so it reconciles an epic planned
  * by an earlier run exactly as it reconciles one written a moment ago. The board is what the gates
@@ -109,7 +108,7 @@ export const runEdges = (
 		if (topology._tag === "Absent" || topology.edges.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: #${epic.number} declares no topology — refusing to answer over zero scope (ADR 0092).`,
+				`${VERB}: #${epic.number} declares no topology — refusing to answer over zero scope.`,
 				notes,
 			);
 		}

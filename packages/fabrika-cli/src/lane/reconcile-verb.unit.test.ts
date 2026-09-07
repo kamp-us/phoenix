@@ -11,13 +11,13 @@ import {DEFAULT_LANES_ROOT} from "./store.ts";
 const NOW = "2026-09-01T12:00:00.000Z";
 const at = (n: number): string => `2026-08-29T23:1${n}:00.000Z`;
 
-const SHIPPED_PR = "https://github.com/kamp-us/phoenix/pull/7328";
+const SHIPPED_PR = "https://forge.example/o/r/pull/7328";
 
 const line = (event: string, when: string, pr?: string): string =>
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: when, ...(pr === undefined ? {} : {pr})})}\n`;
 
 /**
- * The pre-0343 ledger #7433 reports: four events, the ship `DONE` naming the PR it shipped and
+ * The pre-guard ledger: four events, the ship `DONE` naming the PR it shipped and
  * carrying no `partial`.
  */
 const SHIPPED_LOG = `${line("WIP", at(0))}${line("DONE", at(1))}${line("PASS", at(2))}${line("DONE", at(3), SHIPPED_PR)}`;
@@ -41,8 +41,8 @@ interface CoderDocument {
 }
 
 /**
- * The committed template with ADR 0343's guard removed — the machine every lane on disk booted from
- * before that ADR shipped, and the reason a stale lane cannot judge its own merge.
+ * The committed template with the partial-merge guard removed — the machine every lane on disk
+ * booted from before that guard shipped, and the reason a stale lane cannot judge its own merge.
  */
 const preGuardWorkflow = (): string => {
 	const document: CoderDocument = JSON.parse(coderTemplateText());
@@ -141,10 +141,10 @@ describe("runReconcile", () => {
 	});
 
 	/**
-	 * Lane 7740's shape (#7457). Between ADR 0351 and the fix that read the closure off the named PR,
-	 * the ship stage wrote `partial: false` out of a nominator blind to a merged `Part of #N` — so
-	 * that `false` is the fallthrough, not an answer, and the sweep has to reach it. The correction
-	 * settles the line whichever way the board answers, so it is re-read at most once.
+	 * One lane's shape. Between the recorded-`false` rule and the fix that read the closure off the
+	 * named PR, the ship stage wrote `partial: false` out of a nominator blind to a merged
+	 * `Part of #N` — so that `false` is the fallthrough, not an answer, and the sweep has to reach
+	 * it. The correction settles the line whichever way the board answers, so it is re-read once.
 	 */
 	it("corrects a `partial: false` the ship stage wrote before it read the named PR", async () => {
 		const shipLine = `${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: at(3), partial: false, pr: SHIPPED_PR})}\n`;
@@ -238,7 +238,7 @@ describe("runReconcile", () => {
 
 	it("calls a lane no committed template grafts onto current, not unmigrated", async () => {
 		// An emitted epic machine has no template to be brought up to, and its tail declares no partial
-		// arm by design (ADR 0343) — neither is stale for want of one.
+		// arm by design — neither is stale for want of one.
 		const emitted: CoderDocument = JSON.parse(preGuardWorkflow());
 		emitted.id = "epic-7140";
 		const {outcome} = await sweep(

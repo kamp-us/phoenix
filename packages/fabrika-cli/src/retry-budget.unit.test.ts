@@ -1,5 +1,5 @@
 /**
- * The drift guard on the one retry budget (#5732).
+ * The drift guard on the one retry budget.
  *
  * `lane/templates/coder.workflow.json` is JSON and cannot import {@link RETRY_BUDGET}, so an edit to
  * the template is exactly how the number quietly grew a second value before. These assertions read

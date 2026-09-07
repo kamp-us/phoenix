@@ -53,7 +53,7 @@ export const description = (text: string): string => oneLine(text, 200);
  * Every other prose cell describes something the reader can go and look at, so a clamp costs them
  * the tail of a pointer. Here the note is the whole answer — it is the only place the registry says
  * what a surface is and which verb arm its disposition was read off — and a clamped note relays
- * half a sentence as if it were the fact (#6301).
+ * half a sentence as if it were the fact.
  */
 export const surfaceNote = (text: string): string => flatten(text);
 

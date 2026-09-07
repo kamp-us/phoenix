@@ -5,7 +5,7 @@
  * hand-edits is described in the one place its decoder already lives. This module joins the registry's
  * fragments into one draft-07 document an editor validates the file against — a red squiggle on a
  * misspelled key or a wrong-typed value, where the only feedback used to be a decode failure at
- * runtime (#6488).
+ * runtime.
  *
  * **A registered key with no fragment refuses the assembly whole.** A schema missing one key's
  * properties would green a typo in that key's subtree, which is the silent gap this schema exists to

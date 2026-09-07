@@ -1,9 +1,9 @@
 /**
- * `guard no-gh check` — no `gh` invocation is left under `packages/fabrika-cli/src/` (epic #6629).
+ * `guard no-gh check` — no `gh` invocation is left under `packages/fabrika-cli/src/`.
  *
  * The verb owns the scope walk and its fail-closed floors, the way `./skill-lint-verb.ts` does: a
  * scan whose root resolved elsewhere, matched no file, or skipped a whole group directory is a
- * ZERO_SCOPE red rather than a green over nothing (ADR 0092, #5004). The matchers stay pure in
+ * ZERO_SCOPE red rather than a green over nothing. The matchers stay pure in
  * `./no-gh.ts`.
  */
 
@@ -65,7 +65,7 @@ const groupDirs = (
  * Group directories that contributed no scanned file.
  *
  * A walk narrowed to one corner still reports green over the corners it never entered, and a green
- * from an empty corner reads exactly like a green from clean code (#5004).
+ * from an empty corner reads exactly like a green from clean code.
  */
 const uncovered = (
 	groups: ReadonlyArray<string>,
@@ -81,19 +81,19 @@ const judge = (
 		const expected = path.join(yield* realPath(root), SOURCE);
 		if (sourceReal !== expected) {
 			return zeroScope(
-				`${VERB}: the scan root ${SOURCE}/ resolves to ${sourceReal}, not ${expected} — the walk would scan another tree, or nothing. Fail-closed (ADR 0092).`,
+				`${VERB}: the scan root ${SOURCE}/ resolves to ${sourceReal}, not ${expected} — the walk would scan another tree, or nothing. Fail-closed.`,
 			);
 		}
 		const files = yield* walk(root, SOURCE);
 		if (files.length === 0) {
 			return zeroScope(
-				`${VERB}: the walk of ${SOURCE}/ matched ZERO .ts files — a guard that scanned nothing protects nothing. Fail-closed (ADR 0092).`,
+				`${VERB}: the walk of ${SOURCE}/ matched ZERO .ts files — a guard that scanned nothing protects nothing. Fail-closed.`,
 			);
 		}
 		const missing = uncovered(yield* groupDirs(root), files);
 		if (missing.length > 0) {
 			return zeroScope(
-				`${VERB}: these directories contributed ZERO scanned files, so the walk does not cover them: ${missing.join(", ")}. Fail-closed (ADR 0092; #5004).`,
+				`${VERB}: these directories contributed ZERO scanned files, so the walk does not cover them: ${missing.join(", ")}. Fail-closed.`,
 			);
 		}
 		const corpus: Array<ScanFile> = [];
@@ -103,7 +103,7 @@ const judge = (
 		const result = scanPackage(corpus);
 		if (isZeroScope(result)) {
 			return zeroScope(
-				`${VERB}: the scan saw zero of the ${files.length} file(s) walked — a check with no scope cannot go green. Fail-closed (ADR 0092).`,
+				`${VERB}: the scan saw zero of the ${files.length} file(s) walked — a check with no scope cannot go green. Fail-closed.`,
 			);
 		}
 		if (result.findings.length === 0) {
@@ -114,7 +114,7 @@ const judge = (
 		}
 		return violation(
 			[
-				`${VERB}: ${result.findings.length} \`gh\` invocation(s) under ${SOURCE}/ — the package must reach GitHub over HTTP, so that a verb runs where no \`gh\` is installed (epic #6629, ADR 0315):`,
+				`${VERB}: ${result.findings.length} \`gh\` invocation(s) under ${SOURCE}/ — the package must reach GitHub over HTTP, so that a verb runs where no \`gh\` is installed:`,
 				...result.findings.map((f) => `  ${f.file}:${f.line}: ${f.matched} — ${f.reason}`),
 			].join("\n"),
 			annotationsOrNone(() =>

@@ -59,11 +59,11 @@ const permission = (level: string): HttpReply => ({
 const NO_REVIEWS = [REVIEWS, reviewPage()] as const;
 
 /** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
-const ORDINARY = [FILES, served(files("apps/web/src/a.ts", "apps/web/src/b.ts"))] as const;
+const ORDINARY = [FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))] as const;
 /** A fabrika-tree diff: `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts")),
+	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {
@@ -197,7 +197,7 @@ describe("runGate", () => {
 		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
 	});
 
-	it("drops an unauthorized author's marker rather than counting it (ADR 0055)", async () => {
+	it("drops an unauthorized author's marker rather than counting it", async () => {
 		const out = await run([
 			[PULL, served(pull({comments: 1}))],
 			[COMMENTS, served(comments({id: 1, body: marker("review-code", "PASS", HEAD)}))],
@@ -228,7 +228,7 @@ describe("runGate", () => {
 		expect(out.stdout).toContain("ns\treview-code\tpass\treview-fold");
 	});
 
-	it("treats a §CP advisory carrying a [FAIL] row as fail and says so (ADR 0226)", async () => {
+	it("treats a §CP advisory carrying a [FAIL] row as fail and says so", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull({comments: 1}))],
@@ -244,7 +244,7 @@ describe("runGate", () => {
 			{cp: true},
 		);
 		expect(out.stdout).toContain("ns\treview-code\tfail\tadvisory");
-		expect(out.stderr.some((line) => line.includes("an invalid emission (ADR 0226)"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("an invalid emission"))).toBe(true);
 	});
 
 	it("refuses an off-vocabulary --require on 10", async () => {
@@ -298,9 +298,9 @@ describe("runGate", () => {
 		);
 	});
 
-	// ADR 0316. `review-ui` is the one namespace whose emit path cannot answer a PR that renders
-	// nothing — `render` refuses zero surfaces, `post` refuses without captures — so the class
-	// `ship scope` raises off a path test named a namespace nothing legal could fill (#6376).
+	// `review-ui` is the one namespace whose emit path cannot answer a PR that renders nothing —
+	// `render` refuses zero surfaces, `post` refuses without captures — so the class `ship scope`
+	// raises off a path test named a namespace nothing legal could fill.
 	it("resolves review-ui as routed from a head-bound routed-elsewhere record, and satisfies", async () => {
 		const out = await run(
 			[
@@ -341,7 +341,7 @@ describe("runGate", () => {
 		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
 	});
 
-	it("refuses a route from an author below write+ — the ADR 0055 ACL binds it as it binds a verdict", async () => {
+	it("refuses a route from an author below write+ — the ACL binds it as it binds a verdict", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull({comments: 1}))],
@@ -424,9 +424,9 @@ describe("runGate", () => {
 	});
 });
 
-// The #5036 unit: `--require` was caller-asserted end to end, so a fabrika-tree PR shipped with no
-// governance verdict simply by never passing the flag. The floor is what makes that unrepresentable.
-describe("runGate — the governance floor (#5036)", () => {
+// `--require` was caller-asserted end to end, so a governance-root PR shipped with no governance
+// verdict simply by never passing the flag. The floor is what makes that unrepresentable.
+describe("runGate — the governance floor", () => {
 	it("requires governance on a fabrika-tree diff the caller never asked to gate on it", async () => {
 		const out = await run(
 			[
@@ -525,7 +525,7 @@ describe("requiredWithFloor", () => {
 	it("leaves an ordinary diff's required set untouched", () => {
 		const result = requiredWithFloor(
 			["review-code"],
-			["apps/web/src/a.ts"],
+			["apps/site/src/a.ts"],
 			SHIPPED_GOVERNED_ROOTS,
 		);
 		expect(result.required).toEqual(["review-code"]);
@@ -534,7 +534,7 @@ describe("requiredWithFloor", () => {
 });
 
 /**
- * The content binding at the gate (ADR 0276) — the four readings of a verdict whose head has moved.
+ * The content binding at the gate — the four readings of a verdict whose head has moved.
  *
  * The cheap case to write would be "an identical digest passes". The three that pay for the change
  * are its neighbours, and each is asserted here against the SAME moved head, so nothing but the
@@ -545,7 +545,7 @@ describe("requiredWithFloor", () => {
  */
 describe("runGate — staleness is the content question", () => {
 	const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
-	/** Ahead of {@link BASE}, so the digest is proven to be taken over the branch point (#5770). */
+	/** Ahead of {@link BASE}, so the digest is proven to be taken over the branch point. */
 	const BASE_TIP = "5a4b3c2d1e0f98877665544332211000ffeeddcc";
 	/** The digest of RAW below, written out so the fixture cannot agree with the code by calling it. */
 	const DIGEST = "65ebe421b3c0";

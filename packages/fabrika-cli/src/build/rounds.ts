@@ -7,8 +7,8 @@
  *
  * The rule used to be a 120-second cluster over `created_at`, which counted gate latency as repair
  * effort: two gates grading one head 8 minutes apart read as two rounds, so a PR burned its cap at
- * twice the real rate and escalated with rounds left (#6137, seen on #6122). #4570's inclusive-gap
- * boundary belonged to that rule and now governs only the head-less fallback below.
+ * twice the real rate and escalated with rounds left. The inclusive-gap boundary belonged to that
+ * rule and now governs only the head-less fallback below.
  *
  * Heads are matched the way a verdict is bound to one — `sameHead`'s prefix rule in
  * `../wire/marker-line.ts` — so an abbreviated SHA and the full SHA it abbreviates are one round.
@@ -74,7 +74,7 @@ export const countRounds = (failed: ReadonlyArray<FailedHead>): number => {
  *
  * `build verdicts` and `build clear` judge the same budget, so both read the count through this
  * function rather than each folding the comments their own way. Two answers about one PR is how a
- * founder's cleared round gets stamped against a number the other reader does not hold (#6137).
+ * founder's cleared round gets stamped against a number the other reader does not hold.
  */
 export const roundsOn = (comments: ReadonlyArray<CommentRecord>): number =>
 	countRounds(

@@ -2,7 +2,7 @@
  * `docLeakExempt` — the docs whose subject IS path hygiene, as repo-relative path suffixes.
  *
  * `build check --surface prose` skips its leak scan on them. Repo policy, since those docs differ
- * repo by repo and fabrika installs into repos that are not phoenix (ADR 0273). The shipped default
+ * repo by repo and fabrika installs into repos it does not control. The shipped default
  * is the empty list — **nothing is exempt** — so a repo that declared none leaves the scanner at its
  * strictest rather than inheriting somebody else's carve-outs.
  */

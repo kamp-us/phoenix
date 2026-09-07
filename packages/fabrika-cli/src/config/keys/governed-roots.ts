@@ -1,15 +1,14 @@
 /**
  * `governedRoots` — the roots a diff derives the `governance` namespace over.
  *
- * The shipped default is phoenix's four roots plus `.fabrika.jsonc` itself: a diff that weakens the
- * config owes a governance verdict like any other governance-corpus change.
+ * The shipped default is four roots plus `.fabrika.jsonc` itself: a diff that weakens the config
+ * owes a governance verdict like any other governance-corpus change.
  *
  * **That self-inclusion is enforced at load, not by convention.** A config can edit its own
  * governed-path list, so a config whose roots do not cover `.fabrika.jsonc` could un-govern itself —
  * the one change nobody would ever be asked to justify. {@link governedRootsKey}'s `refuseLoad`
  * refuses the whole load in that case, naming the key — and a declared value that does not decode
- * at all refuses it too, since an unusable root list un-governs the config just as effectively
- * (#6314).
+ * at all refuses it too, since an unusable root list un-governs the config just as effectively.
  *
  * This module ships the key, its default and that refusal, and every path surface that derives the
  * namespace reads it from here through `config/paths.ts`'s `governedRootsOr` — `review scope`,
@@ -23,7 +22,7 @@ import type {Decoded, KeyGroup} from "../key-group.ts";
 export const GOVERNED_ROOTS = "governedRoots";
 
 /**
- * Phoenix's four roots, plus the config file — the one copy of the list.
+ * The four shipped roots, plus the config file — the one copy of the list.
  * `packages/fabrika-cli/src/review/classes.ts` re-exports this binding rather than holding a second
  * literal, so a caller with no config load in reach still lands on this value.
  */

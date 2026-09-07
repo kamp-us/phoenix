@@ -41,7 +41,7 @@ const REPO_META = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
 const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/pulls$/;
 const READ_BACK = /^GET \S+\/repos\/o\/r\/pulls\/4318$/;
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
@@ -140,14 +140,14 @@ describe("runPr — the write path", () => {
 			...LANE_OK,
 			[OPEN_PULLS, served([])],
 			[REPO_META, served({default_branch: "main"})],
-			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
+			[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
 			[READ_BACK, pull({body: BODY})],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
 			answer: "opened",
 			number: 4318,
-			url: "https://github.com/o/r/pull/4318",
+			url: "https://example.test/o/r/pull/4318",
 		});
 	});
 
@@ -156,7 +156,7 @@ describe("runPr — the write path", () => {
 			...LANE_OK,
 			[OPEN_PULLS, served([])],
 			[REPO_META, served({default_branch: "main"})],
-			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
+			[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
 			[READ_BACK, pull({body: BODY})],
 		]);
 		await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
@@ -167,7 +167,7 @@ describe("runPr — the write path", () => {
 	it("answers `existing` on exit 0 when this head already has an open PR — no duplicate", async () => {
 		const shell = fakeSeams([
 			...LANE_OK,
-			[OPEN_PULLS, served([{number: 4310, html_url: "https://github.com/o/r/pull/4310"}])],
+			[OPEN_PULLS, served([{number: 4310, html_url: "https://example.test/o/r/pull/4310"}])],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
 		expect(out.code).toBe(0);
@@ -191,7 +191,7 @@ describe("runPr — the write path", () => {
 			...LANE_OK,
 			[OPEN_PULLS, served([])],
 			[REPO_META, served({default_branch: "main"})],
-			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
+			[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
 			[READ_BACK, pull({body: "something else"})],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
@@ -203,7 +203,7 @@ describe("runPr — the write path", () => {
 			...LANE_OK,
 			[OPEN_PULLS, served([])],
 			[REPO_META, served({default_branch: "main"})],
-			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
+			[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
 			[READ_BACK, pull({body: `${BODY.replace(/\n/g, "\r\n")}\r\n\r\n`})],
 		]);
 		expect(out.code).toBe(0);
@@ -237,7 +237,7 @@ const head = (overrides: {ref?: string; state?: string; merged?: boolean} = {}):
 	),
 ];
 
-const PATCHED = served({number: 4318, html_url: "https://github.com/o/r/pull/4318"});
+const PATCHED = served({number: 4318, html_url: "https://example.test/o/r/pull/4318"});
 
 /** The lane reads `runPrBody` makes — `build pr`'s minus the served issue, which it never fetches. */
 const LANE_ONLY: ReadonlyArray<Scripted> = [
@@ -276,7 +276,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 		expect(JSON.parse(out.stdout)).toEqual({
 			answer: "updated",
 			number: 4318,
-			url: "https://github.com/o/r/pull/4318",
+			url: "https://example.test/o/r/pull/4318",
 		});
 		expect(shell.requests.some((line) => CREATE.test(line))).toBe(false);
 		expect(shell.calls.some((line) => line.startsWith("git push"))).toBe(false);

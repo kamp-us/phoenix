@@ -2,23 +2,24 @@
  * The floor: a total function from the ledger to a sorted defect list over a closed fourteen-type
  * enum. `plan check` is this function plus a fetch; nothing above it can change the answer.
  *
- * **`UNENFORCED_DEP` is the one defect about the *board* rather than the document.** ADR 0301 makes
- * the native `blocked_by` graph the only carrier of blockedness, so a plan whose dependency lives in
- * `## Dependencies` alone is a plan whose gates are blind — epic #6595 admitted a child gated behind
- * an open, unruled decision (#6616). This defect is what makes "floor clean" mean the graph agrees
- * with the prose; `ledger edges` is the write that clears it.
+ * **`UNENFORCED_DEP` is the one defect about the *board* rather than the document.** The native
+ * `blocked_by` graph is the only carrier of blockedness, so a plan whose dependency lives in
+ * `## Dependencies` alone is a plan whose gates are blind: an epic once admitted a child gated behind
+ * an open, unruled decision, because the prose said so and the graph did not. This defect is what
+ * makes "floor clean" mean the graph agrees with the prose; `ledger edges` is the write that clears
+ * it.
  *
  * **Fifteen names, fourteen defects.** `ZERO_SCOPE` is the fifteenth and is seated as exit `7`
  * rather than as defect zero: v1 made a childless epic defect #1 and early-returned, so the ledger
  * was never validated and the verdict reported exactly one thing wrong about a plan it had not read.
- * A refused scope is not a defect list of length one (ADR 0092).
+ * A refused scope is not a defect list of length one.
  *
  * **A class that cannot be derived is named, never dropped.** `MISSING_CONTAINMENT` rests on a
  * three-valued probe: `present` derives the class, `absent` derives it and evaluates it false, and
  * only `unknown` puts it in {@link Floor.skipped}. v1 fused `absent` and `unknown` through a stderr
  * substring match, so a transient probe failure silently switched the whole class off for a run.
  *
- * The priority set is exactly `{p0, p1, p2}` — `p3` was ruled *retired*, not widened (#4101, #2413).
+ * The priority set is exactly `{p0, p1, p2}` — `p3` was ruled *retired*, not widened.
  */
 
 import type {RequiredEdge} from "../build/dependencies.ts";
@@ -201,7 +202,7 @@ export interface FloorInput {
 	 *
 	 * Total over the dependents `required` names — the verb refuses on an unread list rather than
 	 * calling this, so a dependent absent from the map is read here as carrying no edges, which is the
-	 * fail-closed direction (ADR 0092).
+	 * fail-closed direction.
 	 */
 	readonly observed: ReadonlyMap<number, ReadonlySet<number>>;
 	/**

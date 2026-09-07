@@ -12,7 +12,7 @@ import {
 } from "./report.ts";
 
 /**
- * The rendered gate's three no-verdict terminals and the park cause each one reports with (#7423).
+ * The rendered gate's three no-verdict terminals and the park cause each one reports with.
  * Every one folds to `BLOCKED`, and until these causes existed none could name why — so a rendered
  * park read as the bare-`BLOCKED` Novel and cost a human `UNBLOCKED` by construction.
  */
@@ -66,7 +66,7 @@ describe("the shipper's routing arms are three answers, not one", () => {
 	});
 });
 
-describe("the shipper's two queue terminals are waits, not landings (ADR 0313)", () => {
+describe("the shipper's two queue terminals are waits, not landings", () => {
 	it("routes a still-queued-at-horizon shipper to WIP, so the lane waits instead of parking", () => {
 		expect(eventForToken("UNRESOLVED")).toEqual({
 			_tag: "Mapped",
@@ -130,7 +130,7 @@ describe("flattening the per-shell vocabularies", () => {
 describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 	// Parsing the skill rather than restating it is what makes a seventh terminal fail here instead
 	// of stranding the next lane that ends on it — three of these six named no event at all, so an
-	// unrenderable lane's report hit the refusal and the lane stayed `active` forever (#7403).
+	// unrenderable lane's report hit the refusal and the lane stayed `active` forever.
 	const SKILL = fileURLToPath(
 		new URL("../../../../claude-plugins/fabrika/skills/review-ui/SKILL.md", import.meta.url),
 	);
@@ -168,7 +168,7 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 		expect(eventForToken("ROUTED-ELSEWHERE")).toMatchObject({event: "BLOCKED"});
 	});
 
-	// The emitting half of #7423: a cause the skill never tells the gate to pass is a cause nobody
+	// The emitting half: a cause the skill never tells the gate to pass is a cause nobody
 	// names, so the rows would sit in code while every rendered park still landed bare.
 	it.each(RENDERED_PARKS)("pairs %s with the --cause token %s", (token, cause) => {
 		expect(section).toMatch(new RegExp(`${token}[\\s\\S]*?\`${cause}\``));
@@ -183,7 +183,7 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 	});
 });
 
-describe("the rendered gate's three parks name a cause instead of landing bare (#7423)", () => {
+describe("the rendered gate's three parks name a cause instead of landing bare", () => {
 	it.each(RENDERED_PARKS)("takes %s's cause on the BLOCKED it maps to", (token, cause) => {
 		const resolved = eventForToken(token);
 		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
@@ -197,7 +197,7 @@ describe("the rendered gate's three parks name a cause instead of landing bare (
 		expect(causeForEvent(cause, "DONE")).toMatchObject({_tag: "Rejected"});
 	});
 
-	// ADR 0339: a cause is payable on naming alone. No `KNOWN_PARKS` row covers any of the three, so
+	// A cause is payable on naming alone. No `KNOWN_PARKS` row covers any of the three, so
 	// the sweep still routes them to a human — it now says which gap it routed on.
 	it.each(RENDERED_PARKS)("is Novel naming %2$s, not the anonymous reason", (_token, cause) => {
 		const parked = classifyPark("blocked", cause);

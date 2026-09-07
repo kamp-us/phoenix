@@ -5,7 +5,7 @@
  * review, the pulls API for ship) and print different surrounding fields, so nothing but a test that
  * runs *both* catches them drifting. While only the ship side derived `ui`, a reviewer on a rendered
  * diff was told `review-code` was the whole bar, PASSed, and `ship gate` then refused a `review-ui`
- * namespace nobody had routed — one wasted ship dispatch and a park per PR (#6664).
+ * namespace nobody had routed — one wasted ship dispatch and a park per PR.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -25,10 +25,10 @@ import {runScope as runReviewScope} from "./scope-verb.ts";
 
 /** One mixed diff: a worker source file, a doc, and a rendered surface beside its own test. */
 const CHANGED = [
-	"apps/web/worker/cart.ts",
+	"apps/site/worker/cart.ts",
 	"README.md",
-	"apps/web/src/components/layout/Topbar.tsx",
-	"apps/web/src/components/layout/Topbar.test.tsx",
+	"apps/site/src/components/layout/Topbar.tsx",
+	"apps/site/src/components/layout/Topbar.test.tsx",
 ] as const;
 
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
@@ -103,7 +103,7 @@ describe("review scope and ship scope over one file list", () => {
 	});
 
 	it("routes nothing when the diff raises no ui class", async () => {
-		const review = await reviewScope("apps/web/worker/cart.ts");
+		const review = await reviewScope("apps/site/worker/cart.ts");
 
 		expect(review.stdout).not.toContain("routed\t");
 		expect(namespaceRows(review.stdout)).toEqual(["review-code"]);

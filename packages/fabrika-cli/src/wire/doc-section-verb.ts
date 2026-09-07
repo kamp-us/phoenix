@@ -3,7 +3,7 @@
  *
  * A pure lookup over stdin (or `--file`, lifted by the adapter into the same {@link StdinRead}
  * shape): no plugin-root discovery lands here, because the calling shell knows its own skill base
- * directory and pipes `<base>/contract.md` in (#5966). The refusals are the group's proven facts:
+ * directory and pipes `<base>/contract.md` in. The refusals are the group's proven facts:
  * absent and duplicated are distinct codes, and a document that could not be read is UNKNOWN,
  * never absent (`./codes.ts`).
  */

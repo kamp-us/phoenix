@@ -1,7 +1,7 @@
 /**
  * The matchers behind `guard no-gh check`: is there a `gh` invocation left in this package's source?
  *
- * Epic #6629 swapped every GitHub call in `packages/fabrika-cli/` off the `gh` binary and onto the
+ * Every GitHub call in `packages/fabrika-cli/` moved off the `gh` binary and onto the
  * fetch client in `../io/gh-api.ts`, so that a fabrika verb runs from a token alone — on a phone, on
  * a lean CI image, in a consumer repo. Nothing but this guard holds that: one `execFileSync("gh", …)`
  * puts the binary back on the request path and no test anywhere notices.
@@ -30,12 +30,11 @@ export interface ScanFile {
 
 export interface ScanResult {
 	readonly findings: ReadonlyArray<Finding>;
-	/** Every file path the scan looked at — its scope, so a green states what it rests on (ADR 0092). */
+	/** Every file path the scan looked at — its scope, so a green states what it rests on. */
 	readonly scanned: ReadonlyArray<string>;
 }
 
-const SPAWNED =
-	"a `gh` subprocess — this package speaks HTTP through `src/io/gh-api.ts` (ADR 0315)";
+const SPAWNED = "a `gh` subprocess — this package speaks HTTP through `src/io/gh-api.ts`";
 
 /**
  * `"gh"` / `'gh'` on its own: the binary named in argv position, whatever spawns it —
@@ -96,7 +95,7 @@ interface Sanctioned {
  * The one `gh` spawn this package keeps, named by file, by the declaration that holds it, and by the
  * exact text that matched — and spendable **once**.
  *
- * ADR 0315 rules the credential order `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token` — the last a
+ * The credential order is `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token` — the last a
  * developer-machine convenience resolved once, before any request, never on a request path.
  *
  * Keying on the matched text alone was a file-wide licence for the one spelling that matters: every
@@ -253,5 +252,5 @@ export const scanPackage = (files: ReadonlyArray<ScanFile>): ScanResult => ({
 	scanned: files.filter((f) => !isSelfExempt(f.file)).map((f) => f.file),
 });
 
-/** A scan that looked at nothing proves nothing — the fail-closed floor (ADR 0092). */
+/** A scan that looked at nothing proves nothing — the fail-closed floor. */
 export const isZeroScope = (result: ScanResult): boolean => result.scanned.length === 0;

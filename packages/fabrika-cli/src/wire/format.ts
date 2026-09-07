@@ -79,7 +79,7 @@ export interface WireRoundTripFixture {
  * A round-trip fixture only ever drives `read` over bytes this format's own `emit` produced, so a
  * reader and a writer that agree with each other and disagree with what a human writes round-trip
  * perfectly while dropping content. That is exactly how a wrapped acceptance criterion lost
- * everything past its first physical line and stayed green (#5572). This fixture is the artifact as
+ * everything past its first physical line and stayed green. This fixture is the artifact as
  * a person or another tool would author it, and `values` is what `read`'s answer must still carry.
  */
 export interface WireFoundFixture {
@@ -127,7 +127,7 @@ const WITNESSED: unique symbol = Symbol("wire brand witness");
  * Unforgeable on purpose. {@link WITNESSED} is a module-private `unique symbol`, so a hand-written
  * `{field: "sha"}` is not a witness and {@link brandWitnesses} is the only way to build one. Without
  * that, the per-field coverage that function enforces would be a convention a row could opt out of
- * by hand-rolling the array — and a guard a row can opt out of is the shape of defect #4969 is about.
+ * by hand-rolling the array, and a guard a row can opt out of guards nothing.
  */
 export interface WireBrandWitness {
 	readonly field: string;
@@ -181,12 +181,13 @@ type IsBlank<K extends string> = K extends ""
 /**
  * The fields of `V` whose type is a proper subtype of `string`.
  *
- * This is the binding the old `brandWitness<A>(field)` lacked (#4969): `A` was supplied at the call
- * site and appeared nowhere but in a guard on a plain `string` parameter, so it asserted only "the
- * type I named is not bare `string`" — true of any surviving brand anywhere in the module. Here the
- * brand is *derived from the field*, so naming one brand while witnessing another is not a mistake
- * to catch, it is unrepresentable; and a field name that is not a key of `V` is not in this union at
- * all. Weaken a brand to bare `string` and its key leaves the union, so the row stops compiling.
+ * This is the binding a `brandWitness<A>(field)` shape lacks: `A` would be supplied at the call
+ * site and appear nowhere but in a guard on a plain `string` parameter, so it would assert only
+ * "the type I named is not bare `string`" — true of any surviving brand anywhere in the module.
+ * Here the brand is *derived from the field*, so naming one brand while witnessing another is not
+ * a mistake to catch, it is unrepresentable; and a field name that is not a key of `V` is not in
+ * this union at all. Weaken a brand to bare `string` and its key leaves the union, so the row
+ * stops compiling.
  *
  * A blank or whitespace-only key is excluded too, so "a witness names no field" is unrepresentable
  * rather than merely unlikely — that half of the retired `brandsNamed` runtime law is carried here.
@@ -211,7 +212,7 @@ export type BrandedKeys<V> = {
  * branded field on the same format was caught by nothing.
  *
  * `never` when `V` has no branded field, which makes such a call unwritable rather than a row with
- * an empty `brands` — zero scope is a refusal (ADR 0092).
+ * an empty `brands` — zero scope is a refusal.
  */
 export type WireBrandWitnesses<V> = [BrandedKeys<V>] extends [never]
 	? never
@@ -220,7 +221,7 @@ export type WireBrandWitnesses<V> = [BrandedKeys<V>] extends [never]
 /**
  * Build a row's `brands` from its value type — the compile-time half of the conformance laws.
  *
- * **The residue, stated rather than implied (#4969).** The row still chooses which `V` to name, and
+ * **The residue, stated rather than implied.** The row still chooses which `V` to name, and
  * nothing binds that choice to the row's own `emit`/`read`: {@link WireFormat} is stated over bytes
  * so one array can hold formats whose values have nothing in common, and that erasure is what would
  * have to go to close the last gap. So this device enforces *field ↔ brand* agreement and per-field
@@ -238,7 +239,7 @@ export const brandWitnesses = <V>(
 	);
 	if (first === undefined) {
 		// Unreachable through the parameter type, which is `never` for a `V` with no branded field.
-		// A silently empty `brands` would be the zero-scope pass ADR 0092 forbids, so it throws.
+		// A silently empty `brands` would be a zero-scope pass, so it throws.
 		throw new Error("brandWitnesses was handed no branded field to witness");
 	}
 	return [first, ...rest];
@@ -260,7 +261,7 @@ export interface WireFormat {
 	 * The repo-relative path of the schema module that owns these bytes.
 	 *
 	 * Carried on the row so the index doc's owner-module link is rendered from the registry rather
-	 * than typed beside it — see `./index-doc.ts` (#4968).
+	 * than typed beside it — see `./index-doc.ts`.
 	 */
 	readonly module: string;
 	/** Who writes these bytes. */
@@ -273,6 +274,6 @@ export interface WireFormat {
 	readonly read: (artifact: string) => WireReadLines;
 	/** The samples `./conformance.ts` drives this row's laws from. Required — see {@link WireFixtures}. */
 	readonly fixtures: WireFixtures;
-	/** The brands this format's value is built from. Non-empty, so the check has scope (ADR 0092). */
+	/** The brands this format's value is built from. Non-empty, so the check has scope. */
 	readonly brands: NonEmptyReadonlyArray<WireBrandWitness>;
 }

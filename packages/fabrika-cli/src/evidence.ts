@@ -1,5 +1,5 @@
 /**
- * The two shapes an evidence-array collapses to before it reaches the answer channel (ADR 0308).
+ * The two shapes an evidence-array collapses to before it reaches the answer channel.
  *
  * A verb's output field is either an **answer-array** — a skill instructs its reader to iterate the
  * rows — or an **evidence-array**, cited only so a short or empty answer is auditable, with no skill

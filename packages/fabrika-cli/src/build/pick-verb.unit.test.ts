@@ -27,7 +27,7 @@ const bucket = (priority: string) =>
 const EMPTY = served([]);
 const TRIAGED = ["status:triaged", "ready-for:agent", "type:bug"];
 
-/** A report-shaped body — prose only, no contract anywhere. kamp-us/demlik#4's shape (#6025). */
+/** A report-shaped body — prose only, no contract anywhere. The shape a filed report arrives in. */
 const REPORT_BODY = "## Summary\n\nsomething is off.\n\n## Pointers\n\n- a file\n";
 
 const options = {
@@ -55,7 +55,7 @@ const run = (
 const pool = (out: {stdout: string}) =>
 	JSON.parse(out.stdout).pool as ReadonlyArray<{number: number}>;
 
-/** The reason histogram `excluded` collapses to (ADR 0308) — counts, never rows. */
+/** The reason histogram `excluded` collapses to — counts, never rows. */
 const excluded = (out: {stdout: string}) =>
 	JSON.parse(out.stdout).excluded as Readonly<Record<string, number>>;
 
@@ -88,7 +88,7 @@ describe("runPick", () => {
 
 	/**
 	 * The pool is where a contract-less issue is cheapest to catch: the alternative is `review
-	 * criteria` finding it after a branch, a build, a push, a PR and a CI run (#6025).
+	 * criteria` finding it after a branch, a build, a push, a PR and a CI run.
 	 */
 	it("excludes a candidate whose body carries no acceptance-criteria block, with its axis", async () => {
 		const out = await run([
@@ -135,7 +135,7 @@ describe("runPick", () => {
 
 	/**
 	 * The counts are printed so an operator can tell a working fence from a broken one, which they
-	 * cannot do if a shortened pool is attributed to an axis that did not refuse it (#6025).
+	 * cannot do if a shortened pool is attributed to an axis that did not refuse it.
 	 */
 	it("splits the excluded count by axis — the criteria axis is not the admission test's", async () => {
 		const out = await run([
@@ -155,7 +155,7 @@ describe("runPick", () => {
 	});
 
 	/**
-	 * The exemplar collapse of ADR 0308: `excluded` is evidence, so many rows print as counts, while
+	 * The exemplar collapse: `excluded` is evidence, so many rows print as counts, while
 	 * `pool` is the answer and is untouched. The measured board printed 266 rows carrying two reasons.
 	 */
 	it("collapses many exclusions to a reason histogram and leaves the pool whole", async () => {
@@ -404,9 +404,9 @@ describe("runPick", () => {
 });
 
 /**
- * The exclusion ADR 0301 gives the pool. The `status:blocked` label it replaces was dropped by
- * accident — the two-`status:`-label hygiene test excluded those issues with no reason printed, and
- * with the label retired that accident stops firing at all.
+ * The exclusion the `blocked_by` graph gives the pool. The `status:blocked` label it replaces was
+ * dropped by accident — the two-`status:`-label hygiene test excluded those issues with no reason
+ * printed, and with the label retired that accident stops firing at all.
  */
 describe("runPick — the blocked_by graph", () => {
 	const edges = (n: number) =>
@@ -457,7 +457,7 @@ describe("runPick — the blocked_by graph", () => {
 	/**
 	 * The pool used to answer the pre-discharge question while `build eligible` and `build claim`
 	 * answered the discharged one, so one edge got three answers and a buildable child read as
-	 * blocked to anyone browsing (#7223).
+	 * blocked to anyone browsing.
 	 */
 	describe("the assembly-branch discharge", () => {
 		const CHILD = 500;

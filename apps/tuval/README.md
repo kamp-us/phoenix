@@ -62,6 +62,15 @@ builder inspection. A bounded open request keeps the declared capture's network-
 the DOM assertions; a failed assertion raises a page error, never a success-shaped screenshot.
 The four routes are first-render proof scenarios, not new product routes.
 
+The same server's `/effort.html` is the fresh-Claude effort proof: its Node endpoint runs the
+real `ClaudeAiAgent` and core fold against the scripted SDK catalog/context response, then hands
+the emitted initial-open state to the actual `ChatWindow` through an in-memory window host.
+No model is configured, the active row is not first, and no prompt or selection precedes the
+render. `/effort-offered.html` also opens the actual effort menu without selecting an item.
+`/initial-effort.json` exposes the run timestamp, duration, events and recorded control calls.
+This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
+or model execution; the in-memory host records UI dispatches without executing them.
+
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
 Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
 (see "Your config"), registers their programs, launches the processes the graph plans, restores any

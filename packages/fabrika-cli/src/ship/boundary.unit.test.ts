@@ -29,7 +29,7 @@ describe("readBoundary", () => {
 		expect(out._tag === "Rows" && classify(out.rows, [".github/workflows/ci.yml"])).toBe("unknown");
 	});
 
-	it("refuses a failed read — never `not-control-plane`, the fail-open collapse ADR 0220 §4 bans", async () => {
+	it("refuses a failed read — never `not-control-plane`, the banned fail-open collapse", async () => {
 		const out = await read([[OWNERS, {status: 500, body: '{"message":"server error"}'}]]);
 		expect(out._tag).toBe("Unreadable");
 	});

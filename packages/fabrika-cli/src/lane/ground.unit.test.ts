@@ -8,8 +8,8 @@ import {deriveRepoRoot, onGround} from "./ground.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
 
-const REPO = "/work/phoenix";
-const DRIFTED = "/work/phoenix/scratchpad";
+const REPO = "/work/repo";
+const DRIFTED = "/work/repo/scratchpad";
 const REF = {root: DEFAULT_LANES_ROOT, lane: "42"};
 
 /** `lane status` behind the guard, exactly as the adapter composes it. */
@@ -69,7 +69,7 @@ describe("the ground under a lane verb's root", () => {
 	});
 });
 
-describe("deriveRepoRoot — the default root resolves off the owning repository (#5815)", () => {
+describe("deriveRepoRoot — the default root resolves off the owning repository", () => {
 	const PRIMARY = "/primary";
 	const WORKTREE = "/wt";
 	/** A primary checkout plus a linked worktree whose `.git` file and `commondir` point home. */

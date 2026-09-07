@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	classOf,
+	DECISIONS_ROOT,
 	SHIPPED_GOVERNED_ROOTS as GOVERNANCE_ROOTS,
 	issueRefOf,
 	issueRefsOf,
@@ -16,8 +17,8 @@ import {
 	touchesGovernanceRoot,
 } from "./classes.ts";
 
-/** Phoenix's own declared prefixes — two runnable apps, one of them served by two mounts. */
-const UI_PREFIXES = ["apps/web/src/", "apps/tuval/src/"];
+/** One repo's own declared prefixes — two runnable apps, one of them served by two mounts. */
+const UI_PREFIXES = ["apps/site/src/", "apps/desk/src/"];
 
 describe("classOf", () => {
 	it("puts every claude-plugins and .claude path in skill", () => {
@@ -33,7 +34,7 @@ describe("classOf", () => {
 	});
 
 	it("puts markdown outside claude-plugins in doc", () => {
-		expect(classOf(".decisions/0238-fabrika.md")).toBe("doc");
+		expect(classOf(`${DECISIONS_ROOT}fabrika.md`)).toBe("doc");
 		expect(classOf("README.md")).toBe("doc");
 		expect(classOf(".patterns/index.md")).toBe("doc");
 	});
@@ -112,29 +113,29 @@ describe("touchesGovernanceRoot", () => {
 	});
 
 	it("covers the decision corpus, which the harness flag deliberately does not", () => {
-		expect(touchesGovernanceRoot([".decisions/0238-fabrika.md"], GOVERNANCE_ROOTS)).toBe(true);
-		expect(partition([".decisions/0238-fabrika.md"]).harness).toBe(false);
+		expect(touchesGovernanceRoot([`${DECISIONS_ROOT}fabrika.md`], GOVERNANCE_ROOTS)).toBe(true);
+		expect(partition([`${DECISIONS_ROOT}fabrika.md`]).harness).toBe(false);
 	});
 });
 
 describe("isUiSurface", () => {
 	it("raises the ui class over EVERY declared prefix, not just the first app's", () => {
-		expect(isUiSurface("apps/tuval/src/ui/Chat.tsx", UI_PREFIXES)).toBe(true);
-		expect(isUiSurface("apps/web/src/App.tsx", UI_PREFIXES)).toBe(true);
+		expect(isUiSurface("apps/desk/src/ui/Chat.tsx", UI_PREFIXES)).toBe(true);
+		expect(isUiSurface("apps/site/src/App.tsx", UI_PREFIXES)).toBe(true);
 	});
 
 	it("keeps the test/spec exclusion — a rendered surface's own tests render nothing", () => {
-		expect(isUiSurface("apps/web/src/App.test.tsx", UI_PREFIXES)).toBe(false);
-		expect(isUiSurface("apps/tuval/src/ui/Chat.spec.tsx", UI_PREFIXES)).toBe(false);
+		expect(isUiSurface("apps/site/src/App.test.tsx", UI_PREFIXES)).toBe(false);
+		expect(isUiSurface("apps/desk/src/ui/Chat.spec.tsx", UI_PREFIXES)).toBe(false);
 	});
 
 	it("raises nothing on an empty prefix list — a repo declaring no surface has no rendered gate", () => {
-		expect(isUiSurface("apps/web/src/App.tsx", [])).toBe(false);
+		expect(isUiSurface("apps/site/src/App.tsx", [])).toBe(false);
 	});
 
-	it("derives the ui class off a Tuval-only path list, which a compiled-in prefix could not", () => {
+	it("derives the ui class off a Desk-only path list, which a compiled-in prefix could not", () => {
 		const result = partitionWithUi(
-			["apps/tuval/src/ui/Chat.tsx", "apps/tuval/src/ui/Chat.test.tsx"],
+			["apps/desk/src/ui/Chat.tsx", "apps/desk/src/ui/Chat.test.tsx"],
 			GOVERNANCE_ROOTS,
 			UI_PREFIXES,
 		);
@@ -145,12 +146,12 @@ describe("isUiSurface", () => {
 
 describe("shipNamespacesOf", () => {
 	// The one property that keeps this function from moving any existing PR's merge bar: for a diff
-	// under no governance root the answer is byte-identical to the class-only derivation (#5199).
+	// under no governance root the answer is byte-identical to the class-only derivation.
 	it("leaves a diff outside every governance root requiring exactly its classes", () => {
 		for (const files of [
 			["src/a.ts"],
 			["README.md", "src/a.ts"],
-			["apps/web/src/App.tsx", "apps/web/src/App.test.tsx"],
+			["apps/site/src/App.tsx", "apps/site/src/App.test.tsx"],
 			["skills/deploy-notes/SKILL.md"],
 		]) {
 			const result = partitionWithUi(files, GOVERNANCE_ROOTS, UI_PREFIXES);
@@ -164,7 +165,7 @@ describe("shipNamespacesOf", () => {
 			[
 				"claude-plugins/fabrika/skills/ship/contract.md",
 				"packages/fabrika-cli/src/ship/gate-verb.ts",
-				"apps/web/src/App.tsx",
+				"apps/site/src/App.tsx",
 			],
 			GOVERNANCE_ROOTS,
 			UI_PREFIXES,
@@ -179,7 +180,7 @@ describe("shipNamespacesOf", () => {
 
 	it("derives governance off a decision-corpus edit no class map marks", () => {
 		const result = partitionWithUi(
-			[".decisions/0244-corpus-review.md"],
+			[`${DECISIONS_ROOT}corpus-review.md`],
 			GOVERNANCE_ROOTS,
 			UI_PREFIXES,
 		);
@@ -188,7 +189,7 @@ describe("shipNamespacesOf", () => {
 
 	it("only ever emits namespaces ship gate admits", () => {
 		const result = partitionWithUi(
-			[".github/workflows/ci.yml", "apps/web/src/App.tsx"],
+			[".github/workflows/ci.yml", "apps/site/src/App.tsx"],
 			GOVERNANCE_ROOTS,
 			UI_PREFIXES,
 		);
@@ -213,7 +214,7 @@ describe("linkedIssueOf", () => {
 });
 
 describe("linkedIssuesOf", () => {
-	/** The #6797 shape: the epic's own reference is last among N+1, and a scalar reader lost it. */
+	/** The shape: the epic's own reference is last among N+1, and a scalar reader lost it. */
 	it("reports every closing reference an epic tail body carries, epic included", () => {
 		const tail = "Closes #6642. Closes #6643. Closes #6648. Closes #6629.";
 		expect(linkedIssuesOf(tail)).toEqual([6642, 6643, 6648, 6629]);

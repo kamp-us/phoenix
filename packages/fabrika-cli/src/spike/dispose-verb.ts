@@ -7,9 +7,9 @@
  * is `12` before any judgment is attempted, never a clean verdict over nothing.
  *
  * **The tree comparison runs first — before any state read and before any write.** That ordering is
- * what keeps a `17`, the refusal this verb most exists for, from destroying the leak it just found
- * (the #4111 shape). It does **not** make every non-zero exit write-free: `8`, `9` and `16` all sit
- * past the `--forfeit` write or past the removal.
+ * what keeps a `17`, the refusal this verb most exists for, from destroying the leak it just found.
+ * It does **not** make every non-zero exit write-free: `8`, `9` and `16` all sit past the
+ * `--forfeit` write or past the removal.
  *
  * **`--forfeit` relaxes neither `17` nor `21`.** Forfeiting is about the absence of a decision; those
  * two are about whether the throwaway stayed thrown away and whether the record is current, and they
@@ -221,7 +221,7 @@ const resolveIssueHalf = (input: {
 			workspace: input.workspace,
 		});
 		// The run table is masked at composition; what remains is the question the caller wrote at
-		// spike open, which is the only part a refusal here could ask anyone to change (#5553).
+		// spike open, which is the only part a refusal here could ask anyone to change.
 		const leaked = leakFree(VERB, "question, as it composes into the forfeit note", body);
 		if (leaked !== null) return refused({...leaked, stderr: [input.scope, ...leaked.stderr]});
 

@@ -6,8 +6,8 @@ import * as codes from "./codes.ts";
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
 
 /**
- * `spend` never collided with itself — its two verbs drew the same distinctions on two number lines
- * (#5294). These pin the property that made that luck rather than structure: one table, and the
+ * `spend` never collided with itself — its two verbs drew the same distinctions on two number
+ * lines. These pin the property that made that luck rather than structure: one table, and the
  * three zero-shaped states on three codes.
  */
 describe("the `spend` group allocates from one table", () => {
@@ -15,7 +15,7 @@ describe("the `spend` group allocates from one table", () => {
 		expect(verbLocalCodesIn(GROUP_DIR)).toEqual([]);
 	});
 
-	it("finds codes at all, so no assertion below passes over an empty table (ADR 0092)", () => {
+	it("finds codes at all, so no assertion below passes over an empty table", () => {
 		expect(allocatedCodes(codes).size).toBeGreaterThan(0);
 	});
 

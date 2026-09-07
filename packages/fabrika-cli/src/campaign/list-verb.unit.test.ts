@@ -84,9 +84,7 @@ describe("campaign list", () => {
 	it("refuses one unreadable row as the whole table on 12", async () => {
 		const outcome = await run(tree(TWO_ROWS.replace("| #42 |", "| (was #42) |")));
 		expect(outcome.code).toBe(12);
-		expect(outcome.stderr.at(-1)).toContain(
-			"the whole ## Campaigns table is unreadable (ADR 0304).",
-		);
+		expect(outcome.stderr.at(-1)).toContain("the whole ## Campaigns table is unreadable.");
 		expect(outcome.stdout).toBe("");
 	});
 

@@ -2,8 +2,8 @@
  * Recognise a **pre-marker** enrichment envelope, so a body written before the marker existed is
  * migrated rather than double-wrapped.
  *
- * **This module is one-time migration code and is meant to be deleted.** The founder ruling on #4866
- * makes the migration self-healing: a legacy body is recognised once, its preserved block is kept,
+ * **This module is one-time migration code and is meant to be deleted.** The migration is
+ * self-healing: a legacy body is recognised once, its preserved block is kept,
  * and the marker is stamped in passing — so every body this module can match converts on its next
  * enrichment and never returns here. The branch retires with v1-backlog absorption, and retiring it
  * is a delete of this file plus the `legacyPreserved` argument at `detect`'s two call sites. Nothing
@@ -59,7 +59,7 @@ export const legacyPreserved = (body: string): string | null => {
 		if (opener !== null) return lines.slice(opener).join("\n");
 	}
 
-	// v1 `--epic` mode: keyed on three anchors, position-independent (#4850's ruled option (a)).
+	// v1 `--epic` mode: keyed on three anchors, position-independent.
 	const briefAt = firstIndexOf(lines, SUMMARY_LINE.wrap);
 	const headerAt = firstIndexOf(lines, EPIC_HEADER);
 	// `briefAt > headerAt` carries "the brief is below the header" AND "both are present": a `-1`

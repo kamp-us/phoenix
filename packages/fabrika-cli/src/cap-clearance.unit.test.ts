@@ -47,9 +47,9 @@ describe("capReached", () => {
 	});
 
 	/**
-	 * The grant a founder stamps past the declared cap is the one #6137 found inert: with the cap
-	 * tallied as `CAP_ROUND + grants` it landed exactly ON the new cap and bought nothing, so #6122
-	 * sat with an honoured clearance and no round to build.
+	 * The grant a founder stamps past the declared cap used to be inert: with the cap tallied as
+	 * `CAP_ROUND + grants` it landed exactly ON the new cap and bought nothing, so the lane sat with
+	 * an honoured clearance and no round to build.
 	 */
 	it.each([
 		CAP_ROUND,
@@ -64,8 +64,8 @@ describe("capReached", () => {
 });
 
 /**
- * The two enforcement sites must spend one grant identically, which is the defect #5959 names: a
- * lane-driven repair froze while `build verdicts` said the budget remained. The lane's guard fires
+ * The two enforcement sites must spend one grant identically. When they did not, a lane-driven
+ * repair froze while `build verdicts` said the budget remained. The lane's guard fires
  * on the Nth FAIL when `retries` has reached `maxRetries`, and `retries` at that moment is the round
  * count minus one — so the two agree exactly when `effectiveBudget` and `effectiveCap` move together.
  */

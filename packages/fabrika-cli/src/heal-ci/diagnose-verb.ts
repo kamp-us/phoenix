@@ -56,7 +56,7 @@ import {compare, readDeclared} from "./surface.ts";
 
 const VERB = "heal-ci diagnose";
 
-/** The permission levels ADR 0055 counts as an authorized verdict author. */
+/** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 /**
@@ -64,7 +64,7 @@ const AUTHORIZED = new Set(["admin", "maintain", "write"]);
  *
  * Two carriers fill a namespace and this verb must read both, because it resolves the same question
  * `ship gate` does: a PR the gate calls satisfied must not classify here as `ungated` and get
- * re-dispatched to a review that cannot fill the namespace (#6376). `ROUTABLE` is imported from the
+ * re-dispatched to a review that cannot fill the namespace. `ROUTABLE` is imported from the
  * gate rather than restated, so the one-namespace fence has one home.
  */
 const claimOf = (
@@ -88,7 +88,7 @@ const claimOf = (
 	}
 	const route = readRoute(comment.body);
 	if (route._tag !== "Found" || route.value.namespace !== ROUTABLE) return null;
-	// Head-bound with no content binding, exactly as the gate binds it (ADR 0316): a push voids the
+	// Head-bound with no content binding, exactly as the gate binds it: a push voids the
 	// route, so the namespace re-opens rather than staying resolved across a rewrite.
 	return {
 		namespace: route.value.namespace,
@@ -287,7 +287,7 @@ export const diagnoseOne = (
 		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
 		if (stranded.length > 0) {
 			notices.push(
-				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
+				`${VERB}: stranded past the dwell: ${stranded.join(", ")} — the cancel-and-rerun lever is an operator's.`,
 			);
 		}
 

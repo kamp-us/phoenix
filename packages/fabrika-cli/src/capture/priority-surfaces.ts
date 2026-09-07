@@ -1,14 +1,13 @@
 /**
- * The pure priority-surface core (epic #2955 story 1, ADR 0183 §2/§5): the small,
- * founder-decided, ORDERED set of surfaces the candidate-render step shoots for the
- * one blessing session. The order is the founder's (#2944) — global shell + product
- * subnav, then sözlük term page, then pano feed — and is load-bearing: the blessing
- * gallery is presented in this order, so the list is ordered data, never an
- * incidental array.
+ * The pure priority-surface core: the small, ORDERED set of surfaces the
+ * candidate-render step shoots for the one blessing session — the global shell +
+ * product subnav, then a parameterized term page, then a feed. The order is
+ * load-bearing: the blessing gallery is presented in it, so the list is ordered data,
+ * never an incidental array.
  *
  * A surface's identity is the `<route>[:state]` capture spec keyed exactly the way
- * the golden pointer is (ADR 0183 §2: `surface-id -> { sha256, blessed-date,
- * intent }`), so a blessed candidate's surface-id IS the pointer key — no second
+ * the golden pointer is (`surface-id -> { sha256, blessed-date, intent }`), so a
+ * blessed candidate's surface-id IS the pointer key — no second
  * identity scheme. Route and state are carried as SEPARATE fields (not one
  * colon-joined string) because a route TEMPLATE also uses `:` for params
  * (`/sozluk/:slug`); keeping them apart makes param substitution unambiguous, and the
@@ -20,12 +19,12 @@
  */
 import {parseSurfaceSpec, type Surface} from "./plan.ts";
 
-/** A stable key for one priority surface — the founder's three deliberate screens. */
+/** A stable key for one priority surface — the three deliberate screens. */
 export type PrioritySurfaceKey = "global-shell-subnav" | "sozluk-term" | "pano-feed";
 
-/** One priority surface: its founder-order rank, its route (+ optional state), its bless intent. */
+/** One priority surface: its rank, its route (+ optional state), its bless intent. */
 export interface PrioritySurfaceSpec {
-	/** 1-based rank in the founder-decided blessing order (#2944). */
+	/** 1-based rank in the blessing order. */
 	readonly order: number;
 	readonly key: PrioritySurfaceKey;
 	/** Human label shown in the blessing gallery. */
@@ -43,11 +42,10 @@ export interface PrioritySurfaceSpec {
 }
 
 /**
- * The founder-decided priority set, in blessing order (#2944; the epic #2955 story-1
- * order). `/sozluk` is the shell + product-subnav chrome reference (the composition
- * the sozluk-subnav defect class, #2587/#2602/#2790, kept getting wrong); `/sozluk/:slug`
- * is the term page; `/pano` is the feed. The intents express the taste north star —
- * ekşi sözlük spirit in a Discord-grade modern/a11y body (map #2940).
+ * The priority set, in blessing order. The first route is the shell + product-subnav
+ * chrome reference — the composition a recurring shell/subnav defect class kept getting
+ * wrong; the second is the term page; the third is the feed. The intents carry the
+ * taste each golden is judged against.
  */
 export const PRIORITY_SURFACES: readonly PrioritySurfaceSpec[] = [
 	{
@@ -61,16 +59,16 @@ export const PRIORITY_SURFACES: readonly PrioritySurfaceSpec[] = [
 	{
 		order: 2,
 		key: "sozluk-term",
-		title: "Sözlük term page",
+		title: "Term page",
 		route: "/sozluk/:slug",
-		intent: "Sözlük term page — ekşi-spirit entry reading surface in a modern, a11y body.",
+		intent: "Term page — the single-entry reading surface, in a modern, a11y body.",
 	},
 	{
 		order: 3,
 		key: "pano-feed",
-		title: "Pano feed",
+		title: "Feed",
 		route: "/pano",
-		intent: "Pano feed — the link-aggregator feed composition reference.",
+		intent: "Feed — the link-aggregator feed composition reference.",
 	},
 ];
 
@@ -119,8 +117,8 @@ export const substituteRouteParams = (
 		.join("/");
 
 /**
- * Resolve the priority set into concrete capture surfaces, in founder order.
- * Substitutes each route's params (the sözlük term slug), assembles the `<route>[:state]`
+ * Resolve the priority set into concrete capture surfaces, in rank order.
+ * Substitutes each route's params (the term slug), assembles the `<route>[:state]`
  * surface-id, parses it into a {@link Surface}, and asserts the set is well-formed:
  * contiguous 1-based order and unique surface-ids (a duplicate would collide two
  * candidates onto one pointer key). Fail-closed — an ill-formed priority set is a
@@ -141,8 +139,8 @@ export const resolvePrioritySurfaces = (
 			);
 		}
 	});
-	// The sözlük term route names its param `:slug`; the priority-surface params supply
-	// it as `termSlug` (the one concrete datum the founder set needs).
+	// The term route names its param `:slug`; the priority-surface params supply
+	// it as `termSlug` (the one concrete datum the priority set needs).
 	const routeParams = {slug: params.termSlug};
 	const seen = new Set<string>();
 	return ordered.map((spec) => {

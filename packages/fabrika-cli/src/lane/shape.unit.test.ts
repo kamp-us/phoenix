@@ -1,4 +1,4 @@
-/** The machine-versus-board judgement — #7024's wrong-template lane, as a total function. */
+/** The machine-versus-board judgement — the wrong-template lane, as a total function. */
 import {describe, expect, it} from "vitest";
 import {judgeShape, originOf} from "./shape.ts";
 

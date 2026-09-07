@@ -1,19 +1,19 @@
 /**
- * `ship cp-approval` — the ADR 0175 cardinality discharge, transcribed.
+ * `ship cp-approval` — the §CP approval cardinality discharge, transcribed.
  *
- * Identical single-owner PRs merged in one run and were refused in another while this was judgment
- * (#2435). The case table ended that, and this verb **is** that table: roster cardinality in, one of
+ * Identical single-owner PRs merged in one run and were refused in another while this was judgment.
+ * The case table ended that, and this verb **is** that table: roster cardinality in, one of
  * `discharge` / `stop` / `n/a` out, every signal bound to `--sha`.
  *
  * The roster is the union of every owner the boundary's control-plane rows name — GitHub's own
  * any-listed-owner semantics. A team is expanded through the members endpoint; an individual
  * `@login` owner is already a roster entry and no roster is read for it, which is what lets a repo
- * with no org behind it discharge the gate at all (#6299).
+ * with no org behind it discharge the gate at all.
  *
  * The two collapses this verb refuses to make are the ones v1 shipped. A failed read is never
- * `stop` and never "awaiting approval" (#4223) — it is `11`. And head-binding is checked here,
- * always, rather than delegated to the ruleset's `dismiss_stale_reviews_on_push`: #3769 is a live
- * counterexample where a patch-changing push survived dismissal.
+ * `stop` and never "awaiting approval" — it is `11`. And head-binding is checked here, always,
+ * rather than delegated to the ruleset's `dismiss_stale_reviews_on_push`, which has been seen to
+ * leave a patch-changing push's approval undismissed.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -49,7 +49,7 @@ export interface CpApprovalOptions {
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-/** Latest-per-author, computed **after** the pages are joined — never per page (#725's class). */
+/** Latest-per-author, computed **after** the pages are joined — never per page. */
 export const latestPerAuthor = <A extends {login: string; submittedAt: string}>(
 	reviews: ReadonlyArray<A>,
 ): ReadonlyArray<A> => {
@@ -78,7 +78,7 @@ export const runCpApproval = (
 		const repo = resolved.repo;
 
 		const unreadable = (what: string, reason: string): string =>
-			`${VERB}: cannot read ${what}: ${reason} — the discharge is UNRESOLVED, not "awaiting approval" (#4223).`;
+			`${VERB}: cannot read ${what}: ${reason} — the discharge is UNRESOLVED, not "awaiting approval".`;
 		const unknownRead = (what: string, reason: string, extra: ReadonlyArray<string> = []) =>
 			refuse(PRECONDITION_UNKNOWN, unreadable(what, reason), extra);
 
@@ -113,7 +113,7 @@ export const runCpApproval = (
 		const behind = drift._tag === "Ok" ? drift.value : 0;
 		if (behind > 0) {
 			diagnostics.push(
-				`${VERB}: base-drift: head is ${behind} commits behind ${pull.baseRef} — rebase, re-gate and re-bank BEFORE soliciting an approval, or the rebase destroys it (#4477).`,
+				`${VERB}: base-drift: head is ${behind} commits behind ${pull.baseRef} — rebase, re-gate and re-bank BEFORE soliciting an approval, or the rebase destroys it.`,
 			);
 		}
 
@@ -130,7 +130,7 @@ export const runCpApproval = (
 		}
 
 		// An individual `@login` owner IS a roster entry, so it is added directly. Only a team needs
-		// the members endpoint — which a personal repo has no org to serve at all (#6299).
+		// the members endpoint — which a personal repo has no org to serve at all.
 		const roster = new Set<string>();
 		for (const owner of controlPlaneOwnersOf(rows)) {
 			const split = splitTeam(owner);
@@ -146,7 +146,7 @@ export const runCpApproval = (
 		}
 		diagnostics.push(scannedLine(VERB, roster.size, "control-plane owner"));
 		// An EMPTY roster is a fact — a proven stop. An UNREADABLE one refused above; the two never
-		// fold, which is exactly the collapse #4223 shipped.
+		// fold, and folding them is the collapse that reports a failed read as awaiting approval.
 		if (roster.size === 0) return emit("stop", "zero-owners", 0);
 
 		const soleOwner = roster.size === 1 ? ([...roster][0] ?? null) : null;

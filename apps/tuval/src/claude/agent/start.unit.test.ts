@@ -515,6 +515,7 @@ describe("setThinkingLevel", () => {
 	const EFFORT: ReadonlyArray<ModelInfo> = [
 		{
 			value: "opus",
+			resolvedModel: "claude-opus-5",
 			displayName: "Opus 5",
 			description: "the deep one",
 			supportsEffort: true,
@@ -522,6 +523,137 @@ describe("setThinkingLevel", () => {
 		},
 		{value: "haiku", displayName: "Haiku", description: "no effort axis"},
 	];
+
+	it.effect("discovers the running model without config or a first prompt (#8212)", () =>
+		on(
+			{
+				models: [...EFFORT].reverse(),
+				runningModel: "claude-opus-5",
+				opening: [message("init")],
+				deferOpening: true,
+			},
+			(agent, scripted) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+					assert.isUndefined(scripted.opened[0]?.record.options.model);
+					assert.deepStrictEqual(scripted.opened[0]?.record.prompts, []);
+					assert.deepStrictEqual(scripted.opened[0]?.record.contextReads, [{detail: "summary"}]);
+					assert.deepStrictEqual(scripted.opened[0]?.record.models, []);
+					assert.deepStrictEqual(events.find((event) => event.kind === "model")?.current, {
+						id: "opus",
+						name: "Opus 5",
+					});
+					assert.deepStrictEqual(
+						events.find((event) => event.kind === "thinking"),
+						{
+							kind: "thinking",
+							current: null,
+							available: ["low", "medium", "high", "xhigh", "max"],
+						},
+					);
+					yield* agent.setThinkingLevel("xhigh");
+					assert.deepStrictEqual(scripted.opened[0]?.record.efforts, ["xhigh"]);
+				}),
+		),
+	);
+
+	it.effect("updates offered levels after setModel from a null-model start (#8212)", () =>
+		on({models: EFFORT, runningModel: "unlisted-model"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const opening = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.strictEqual(opening.find((event) => event.kind === "model")?.current, null);
+				assert.deepStrictEqual(
+					opening.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: [],
+					},
+				);
+				yield* agent.setModel({id: "opus", name: "Opus 5"});
+				const changed = yield* Stream.runCollect(Stream.take(agent.events, 2));
+				assert.deepStrictEqual(changed.at(-1), {
+					kind: "thinking",
+					current: null,
+					available: ["low", "medium", "high", "xhigh", "max"],
+				});
+				assert.deepStrictEqual(scripted.opened[0]?.record.models, ["opus"]);
+			}),
+		),
+	);
+
+	it.effect("reads the runtime rather than assuming the configured model is active", () =>
+		on({models: EFFORT, model: "haiku", runningModel: "claude-opus-5"}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(events.find((event) => event.kind === "thinking")?.available, [
+					"low",
+					"medium",
+					"high",
+					"xhigh",
+					"max",
+				]);
+			}),
+		),
+	);
+
+	it.effect("does not turn a discovered default into an operator override on restart", () =>
+		on({models: EFFORT, runningModel: "claude-opus-5"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[1]?.record.models, []);
+				assert.deepStrictEqual(scripted.opened[1]?.record.contextReads, [{detail: "summary"}]);
+				yield* agent.setModel({id: "haiku", name: "Haiku"});
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[2]?.record.models, ["haiku"]);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: [],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("keeps start usable without guessing a default when discovery fails", () =>
+		on({models: EFFORT, contextFails: new Error("context unavailable")}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: [],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("matches a configured canonical id when runtime discovery is unavailable", () =>
+		on(
+			{models: EFFORT, model: "claude-opus-5", contextFails: new Error("context unavailable")},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+					assert.deepStrictEqual(events.find((event) => event.kind === "model")?.current, {
+						id: "opus",
+						name: "Opus 5",
+					});
+				}),
+		),
+	);
 
 	it.effect("announces the model row's own offered set on the open", () =>
 		on({models: EFFORT, model: "opus"}, (agent) =>

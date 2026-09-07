@@ -54,7 +54,7 @@ describe("deriveScope", () => {
 		expect(result.scanned).toBe(3);
 	});
 
-	it("orders the root histogram count-descending, not by the declared root order (ADR 0308)", () => {
+	it("orders the root histogram count-descending, not by the declared root order", () => {
 		const result = deriveScope(
 			changed(
 				["M", "claude-plugins/fabrika/skills/review/SKILL.md"],

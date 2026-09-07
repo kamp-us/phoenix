@@ -1,4 +1,4 @@
-/** Which of the two shapes a brief's `fabrika:` field takes, and why each is right (#6012). */
+/** Which of the two shapes a brief's `fabrika:` field takes, and why each is right. */
 import {NodeServices} from "@effect/platform-node";
 import {Effect, Path} from "effect";
 import {describe, expect, it} from "vitest";

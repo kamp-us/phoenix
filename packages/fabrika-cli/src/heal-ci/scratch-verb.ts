@@ -2,8 +2,8 @@
  * `heal-ci scratch` — the per-lane scratch path a healer writes its note bodies under.
  *
  * `<temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>`. Two healers running the same sweep derived
- * similar working filenames in one working directory and overwrote each other's note bodies mid-post
- * (#7209/#7210), which is the failure `build scratch` and `triage scratch` already exist to make
+ * similar working filenames in one working directory and overwrote each other's note bodies
+ * mid-post, which is the failure `build scratch` and `triage scratch` already exist to make
  * unconstructible.
  *
  * **The session id is this group's lane nonce, and the PR number is its lane.** The sibling

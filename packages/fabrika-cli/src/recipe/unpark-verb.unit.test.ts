@@ -56,7 +56,7 @@ const SECOND_PULL = /^GET .*\/repos\/o\/r\/pulls\/4322$/;
 const FILES = /^GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const COMPARE = /\/repos\/o\/r\/compare\//;
-const ROSTER = /orgs\/kamp-us\/teams\/control-plane\/members/;
+const ROSTER = /orgs\/acme\/teams\/control-plane\/members/;
 const REVIEWS = /\/repos\/o\/r\/pulls\/4321\/reviews/;
 const BRANCHES = /^git for-each-ref/;
 const TREES = /^git worktree list/;
@@ -117,7 +117,7 @@ const reviewPage = (
 /** A discharged §CP park's target half: the closing PR, its shape, its changed files. */
 const DISCHARGED: ReadonlyArray<Scripted> = [
 	[CLOSERS, reply(closingPulls(4321))],
-	[PULL, reply(pull({author: "usirin"}))],
+	[PULL, reply(pull({author: "owner"}))],
 	[FILES, CP_FILES],
 ];
 
@@ -125,8 +125,8 @@ const DISCHARGED: ReadonlyArray<Scripted> = [
 const DISCHARGED_HTTP: ReadonlyArray<Scripted> = [
 	[OWNERS, {status: 200, body: CODEOWNERS}],
 	[COMPARE, {status: 200, body: '{"behind_by":0}'}],
-	[ROSTER, members("usirin", "notusirin")],
-	[REVIEWS, reviewPage({login: "notusirin", state: "APPROVED", commit: HEAD})],
+	[ROSTER, members("owner", "reviewer")],
+	[REVIEWS, reviewPage({login: "reviewer", state: "APPROVED", commit: HEAD})],
 ];
 
 const lane = (log: string, extra: Parameters<typeof fakeFs>[0] = {}) =>
@@ -143,7 +143,7 @@ const otherPull = (number: number): HttpReply => ({
 		body: `Part of #${LANE}\n`,
 		changed_files: 1,
 		comments: 0,
-		user: {login: "usirin"},
+		user: {login: "owner"},
 		html_url: `https://github.com/o/r/pull/${number}`,
 	}),
 });
@@ -182,13 +182,13 @@ describe("recipe unpark — the known recipe clears", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("clears a §CP park whose PR only says `Part of #N` — the shared nominator's body half (#6179)", async () => {
+	it("clears a §CP park whose PR only says `Part of #N` — the shared nominator's body half", async () => {
 		const fs = lane(PARKED_AT_CP);
 
 		const out = await run(fs, [
 			[CLOSERS, reply(closingPulls())],
 			[SEARCH, reply(nominatedPulls(4321))],
-			[PULL, reply(pull({author: "usirin", body: `Part of #${LANE}\n`}))],
+			[PULL, reply(pull({author: "owner", body: `Part of #${LANE}\n`}))],
 			[FILES, CP_FILES],
 		]);
 
@@ -199,11 +199,11 @@ describe("recipe unpark — the known recipe clears", () => {
 	it("names the discharge mechanism it relayed rather than restating the §CP rule", async () => {
 		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
 
-		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:notusirin/);
+		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:reviewer/);
 	});
 });
 
-describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
+describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 	it("clears the worktree-holds-branch park once no working tree holds the branch", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -233,8 +233,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
 				[STATUS, okOut("")],
-				// Unbuilt commits on the branch: no board license covers this tree and ADR 0342's arm
-				// refuses one carrying work, so the park still holds.
+				// Unbuilt commits on the branch: no board license covers this tree, and the
+				// unclaimed-lane arm refuses one carrying work, so the park still holds.
 				[REVLIST, okOut("2\n")],
 			],
 			[
@@ -248,8 +248,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	// The routing half of #6610: the row names `fabrika build retire`, so a park whose only cause is a
-	// stale registration clears without a human running `git worktree remove` by hand.
+	// The row names `fabrika build retire`, so a park whose only cause is a stale registration clears
+	// without a human running `git worktree remove` by hand.
 	it("clears the park by retiring the holding tree when the board licenses it", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -276,7 +276,7 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	// #7027: the operator released the dead builder's claim first, which used to close this route.
+	// The operator releases the dead builder's claim first, which used to close this route.
 	it("clears the park on an OPEN issue when nothing claims the lane and the tree carries nothing", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -338,7 +338,7 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 	});
 });
 
-describe("recipe unpark — a spawn-dead park clears once the dead shell's residue is gone (#6770)", () => {
+describe("recipe unpark — a spawn-dead park clears once the dead shell's residue is gone", () => {
 	const claimComment = (author: string, token: string): HttpReply => ({
 		status: 200,
 		body: JSON.stringify([
@@ -455,8 +455,8 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	// ADR 0295: a claim leaves through a written release or an adopt succession, never through this
-	// verb inferring the claimant gone — so the residue read holds rather than clears.
+	// A claim leaves through a written release or a board-attested adopt succession, never through
+	// this verb inferring the claimant gone — so the residue read holds rather than clears.
 	it("is PARK_HOLDS while the dead shell's claim still stands, naming the token", async () => {
 		const fs = lane(PARKED_ON_SPAWN);
 
@@ -467,7 +467,7 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
 				[
 					LANE_COMMENTS,
-					claimComment("usirin", "build:dead-session:9f2cab41-1111-4222-8333-444455556666"),
+					claimComment("owner", "build:dead-session:9f2cab41-1111-4222-8333-444455556666"),
 				],
 				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
 			],
@@ -495,7 +495,7 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 	});
 });
 
-describe("recipe unpark — a queue stall clears when the queue moved, and grants (#6717)", () => {
+describe("recipe unpark — a queue stall clears when the queue moved, and grants", () => {
 	const RULES = /^GET \S+\/repos\/o\/r\/rules\/branches\/main$/;
 	const SUBJECTS = /^GET \S+\/repos\/o\/r\/commits\?sha=main/;
 	const TIMELINE = /^GET \S+\/repos\/o\/r\/issues\/4321\/timeline\?/;
@@ -585,7 +585,7 @@ describe("recipe unpark — a queue stall clears when the queue moved, and grant
 	});
 });
 
-describe("recipe unpark — a campaign-paused park clears on the row it parked on (#7217)", () => {
+describe("recipe unpark — a campaign-paused park clears on the row it parked on", () => {
 	/** The lane's issue as the clearance reads it: homed on the milestone a campaign row pins. */
 	const homed = (milestone: number | null): ReadonlyArray<Scripted> => [
 		[
@@ -728,7 +728,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 			[
 				[CLOSERS, reply(closingPulls(4321))],
 				[PULL, reply(pull())],
-				[FILES, reply(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, reply(files("src/app/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, {status: 200, body: CODEOWNERS}],
@@ -746,12 +746,12 @@ describe("recipe unpark — the refusals write nothing", () => {
 		const out = await run(fs, [
 			[CLOSERS, reply(closingPulls(4321))],
 			[SEARCH, reply(nominatedPulls(4322))],
-			[PULL, reply(pull({author: "usirin"}))],
+			[PULL, reply(pull({author: "owner"}))],
 			[SECOND_PULL, otherPull(4322)],
 		]);
 
 		expect(out.code).toBe(PARK_NOVEL);
-		expect(out.stderr.join("\n")).toMatch(/#4321, #4322/);
+		expect(out.stderr.join("\n")).toContain("#4321, #4322");
 		expect(fs.written.size).toBe(0);
 	});
 
@@ -762,13 +762,13 @@ describe("recipe unpark — the refusals write nothing", () => {
 			fs,
 			[
 				[CLOSERS, reply(closingPulls(4321))],
-				[PULL, reply(pull({author: "usirin"}))],
+				[PULL, reply(pull({author: "owner"}))],
 				[FILES, CP_FILES],
 			],
 			[
 				[OWNERS, {status: 200, body: CODEOWNERS}],
 				[COMPARE, {status: 200, body: '{"behind_by":0}'}],
-				[ROSTER, members("usirin", "notusirin")],
+				[ROSTER, members("owner", "reviewer")],
 				[REVIEWS, reviewPage()],
 			],
 		);

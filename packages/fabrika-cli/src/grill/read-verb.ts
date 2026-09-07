@@ -16,7 +16,7 @@
  * **Zero comments is a fact** — `empty`, the ordinary state of a session opened and not yet
  * grilled. A comment read that could not complete leaves every question's state UNKNOWN, never
  * `open`: an unpaginated read would silently drop the newest rounds and report a ruled question as
- * open, which is the fail-open direction (ADR 0092).
+ * open, which is the fail-open direction.
  *
  * **Where a later marker meets an earlier one on the same question, the later comment wins.** The
  * markers are a log, and the newest record of a question is what the session currently says about
@@ -156,7 +156,7 @@ export const runRead = (
 		// A drifted section is reported, not refused: the READ-NEVER-REFUSES-ON-CONTENT invariant above
 		// holds, and refusing here would let anyone with write access disable the verb by editing one
 		// heading. So the drift lands on stderr beside the unparsable rounds, and `ticket` is null with
-		// the reason visible — never null in silence, which is what `grill open` cannot afford (#5661).
+		// the reason visible — never null in silence, which is what `grill open` cannot afford.
 		const binding = readCameFrom(found.body);
 		const ticket = binding._tag === "Found" ? ticketOf(binding.value.binding) : null;
 		const bindingLine =
@@ -243,7 +243,7 @@ export const runRead = (
 				disregarded.push({
 					comment: marker.comment,
 					reason: "unattested",
-					detail: `the marker on ${row.id} carries no adjacent dated authorization — a bare stamp is void (#4938)`,
+					detail: `the marker on ${row.id} carries no adjacent dated authorization — a bare stamp is void`,
 				});
 				rows.set(row.id, {...row, state: "unattested"});
 				continue;

@@ -182,9 +182,8 @@ describe("runPost", () => {
 		expect(written(shell, PATCH)).toContain("the sweep that blocked");
 	});
 
-	// The head dimension of the upsert key. It shipped in v1 under #4007 and this tree did not carry
-	// it forward, so a re-gate after a repair PATCHed the prior head's verdict away and the record of
-	// what was true over that tree became unrecoverable (#5585).
+	// The head dimension of the upsert key. Without it a re-gate after a repair PATCHes the prior
+	// head's verdict away, and the record of what was true over that tree becomes unrecoverable.
 	it("leaves a prior head's verdict intact and appends at the new head", async () => {
 		const {seams, layer} = layerFor([
 			[PULL, served(pull())],
@@ -316,7 +315,7 @@ describe("runPost", () => {
 
 // The floor job runs on `pull_request` and reads comment state at its own start, so it always judges
 // a head that has no verdict yet and nothing re-fires it. The gate that just wrote the verdict is the
-// actor with no ordering problem — founder ruling, 2026-08-16 (#5585).
+// actor with no ordering problem.
 describe("runPost asserts the governance floor at the head it posted to", () => {
 	const landed = (...extra: ReadonlyArray<Scripted>): ReadonlyArray<Scripted> =>
 		governing(
@@ -331,7 +330,7 @@ describe("runPost asserts the governance floor at the head it posted to", () => 
 		{status: 200, body: runsAtHead(1, [{id: FLOOR, name: "governance-floor"}]).stdout},
 	];
 
-	/** The floor's check-run at the head, still pending — the state a re-fire is owed to (#6161). */
+	/** The floor's check-run at the head, still pending — the state a re-fire is owed to. */
 	const floorPending: Scripted = [
 		HEAD_CHECK_RUNS,
 		{

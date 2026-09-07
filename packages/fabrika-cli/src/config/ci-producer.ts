@@ -7,8 +7,7 @@
  * decided over a workflow count and the repo's `ci.noProducer`, with no verb's vocabulary in it.
  *
  * **The count is the whole evidence.** Workflow existence is sufficient and nothing inspects a
- * workflow's contents (#5603, R17.1) — so a caller hands in a number, and this module never opens a
- * file.
+ * workflow's contents — so a caller hands in a number, and this module never opens a file.
  *
  * **`Absent` and `OptedOut` stay apart from `Present`, and neither of them is green.** A repo whose
  * CI has not reported yet is pending; a repo that has no CI at all is a different fact, and folding
@@ -57,6 +56,6 @@ export const producerFor = (
 			}
 		: {
 				_tag: "Refused",
-				reason: `${verb}: ${repo} has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.`,
+				reason: `${verb}: ${repo} has zero workflows — no CI producer, so no head can be evidenced. A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.`,
 			};
 };

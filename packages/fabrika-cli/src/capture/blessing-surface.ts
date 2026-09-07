@@ -1,29 +1,30 @@
 /**
- * The blessing surface (epic #2955 stories 2/9, issue #2962, ADR 0183 §5): the
- * human-in-the-loop bless → commit path on top of the candidate set (#2961) and the
- * golden pointer (#2960). It renders the founder-facing GitHub gallery comment from a
- * candidate set, and folds the founder's per-surface approve/redline verdicts into a
- * golden-pointer move — blessing the approved candidates, leaving the redlined ones out.
+ * The blessing surface: the human-in-the-loop bless → commit path on top of the
+ * candidate set and the golden pointer. It renders the operator-facing GitHub gallery
+ * comment from a candidate set, and folds the operator's per-surface approve/redline
+ * verdicts into a golden-pointer move — blessing the approved candidates, leaving the
+ * redlined ones out.
  *
- * Load-bearing guard (ADR 0183 §5, "commit the EXACT approved bytes — no re-render"):
- * a bless is a POINTER MOVE, never a re-render. `applyBlessing` takes each blessed
- * surface's `sha256` ONLY from the candidate set the founder saw in the gallery — the
- * `BlessDecision` carries a verdict, never a sha — so the committed content-address is
- * provably the one the founder approved. depo's write-once immutability is then the
- * "explicit update, never silent overwrite" guarantee (story 9) for free.
+ * Load-bearing guard — commit the EXACT approved bytes, no re-render: a bless is a
+ * POINTER MOVE. `applyBlessing` takes each blessed surface's `sha256` ONLY from the
+ * candidate set the operator saw in the gallery — the `BlessDecision` carries a verdict,
+ * never a sha — so the committed content-address is provably the one the operator
+ * approved. The store's write-once immutability is then the "explicit update, never
+ * silent overwrite" guarantee for free.
  *
  * Pure + IO-free: gallery render, decision parse, and blessing fold are all
  * deterministic (unit-tested — same inputs → same output). The fs/pointer boundary is
- * `golden-fs.ts`; the depo boundary is `golden-store.ts`; this module touches neither.
+ * `golden-fs.ts`; the asset-store boundary is the consuming repo's; this module touches
+ * neither.
  */
 
 import type {CandidateScreen, CandidateSet} from "./candidate-set.ts";
 import {blessSurface, type GoldenPointer} from "./golden-pointer.ts";
 
-/** The founder's per-surface verdict: bless it into the golden set, or leave it out. */
+/** The operator's per-surface verdict: bless it into the golden set, or leave it out. */
 export type BlessVerdict = "approve" | "redline";
 
-/** One founder decision — which surface, and whether it is blessed. Carries NO sha. */
+/** One operator decision — which surface, and whether it is blessed. Carries NO sha. */
 export interface BlessDecision {
 	readonly surfaceId: string;
 	readonly verdict: BlessVerdict;
@@ -39,15 +40,15 @@ export interface BlessedSurface {
 export interface BlessingResult {
 	/** The golden pointer after moving each approved surface to its candidate sha. */
 	readonly pointer: GoldenPointer;
-	/** Surfaces blessed this session (approved), in candidate-set (founder) order. */
+	/** Surfaces blessed this session (approved), in candidate-set order. */
 	readonly blessed: readonly BlessedSurface[];
 	/** Surface-ids redlined this session (left out of the golden set), in order. */
 	readonly redlined: readonly string[];
 }
 
 /**
- * Render the founder-facing blessing gallery — the GitHub comment (ADR 0183 §5,
- * option a). One section per candidate in founder order, embedding the depo URL at
+ * Render the operator-facing blessing gallery — the GitHub comment. One section per
+ * candidate in set order, embedding the store URL at
  * full resolution, and a copy-paste decision template the operator marks and feeds
  * back to `applyBlessing` (via `parseBlessDecisions`). Deterministic: forced-flag
  * provenance is key-sorted so the same set always renders byte-identically.
@@ -79,7 +80,7 @@ export const renderBlessingGallery = (set: CandidateSet): string => {
 		"## Golden blessing gallery",
 		"",
 		`Preview: ${set.previewUrl} · viewport: \`${set.viewport}\` · forced flags: ${flags}`,
-		`${set.screens.length} candidate surface(s) staged for blessing (ADR 0183 §5).`,
+		`${set.screens.length} candidate surface(s) staged for blessing.`,
 		"",
 		"For each surface below, decide **approve** (bless into the golden set) or **redline** (leave it out). The blessed golden is committed at the exact `sha256` shown — no re-render between what you see and what is committed.",
 		"",
@@ -99,7 +100,7 @@ export const renderBlessingGallery = (set: CandidateSet): string => {
 const VERDICTS: Readonly<Record<string, BlessVerdict>> = {approve: "approve", redline: "redline"};
 
 /**
- * Parse a founder decisions block (the filled-in gallery template) into decisions.
+ * Parse a decisions block (the filled-in gallery template) into decisions.
  * Each meaningful line is `<surfaceId> <verdict>` (whitespace-separated); blank lines,
  * `#` comments, and ``` fence lines are ignored so the raw copied template block parses
  * as-is. A malformed line or an unrecognized verdict (e.g. the un-replaced
@@ -139,15 +140,15 @@ export interface ApplyBlessingInput {
 }
 
 /**
- * Fold the founder's verdicts into a golden-pointer move: bless (pointer-move) every
+ * Fold the operator's verdicts into a golden-pointer move: bless (pointer-move) every
  * approved surface to its candidate `sha256`, leave the redlined ones out, and return
  * the new pointer. Every candidate must carry exactly one decision — an unaddressed
  * candidate, a decision for a surface not in the set, and a duplicate decision all fail
  * closed, so a partial/ambiguous blessing can never be committed.
  *
  * The blessed `sha256` and `intent` come from the candidate SCREEN, never from the
- * decision — this is the ADR 0183 §5 no-re-render guard made structural: the pointer
- * can only move to a content-address the founder actually saw in the gallery. A
+ * decision — the no-re-render guard made structural: the pointer
+ * can only move to a content-address the operator actually saw in the gallery. A
  * re-bless is exactly the same fold over a non-empty `pointer` (a redlined surface's
  * existing golden is left untouched — a redline is "not re-blessed", not "removed").
  */

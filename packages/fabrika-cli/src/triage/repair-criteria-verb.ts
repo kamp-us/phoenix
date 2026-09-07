@@ -6,7 +6,8 @@
  * with no verdict at all. This verb is the one legal recovery, and it repairs exactly what
  * `./repair-criteria.ts` proves mechanical — everything else exits on the group's `14`.
  *
- * The sweep exists because the drift is a standing corpus, not one issue (#5744 measured 279): the
+ * The sweep exists because the drift is a standing corpus, not one issue — 279 bodies when it was
+ * measured: the
  * same plan runs per open issue, each repair is written and read back individually, and every issue
  * gets an outcome line — a sweep that only named what it changed would make "never looked" and
  * "looked and conforming" one claim.
@@ -48,7 +49,7 @@ export interface RepairCriteriaOptions {
 	 *
 	 * The sweep edits filed bodies in place, and GitHub keeps no issue-body history to recover from,
 	 * so the set it would touch has to be reviewable *up front* rather than reconstructed from the
-	 * outcome lines afterwards (#5981). Under it a repairable issue answers `would-repair` instead of
+	 * outcome lines afterwards. Under it a repairable issue answers `would-repair` instead of
 	 * `repaired`, and no re-read, no PATCH and no disclosure comment is issued.
 	 */
 	readonly dryRun: boolean;
@@ -90,7 +91,7 @@ interface RepairFailure {
  * The disclosure comment posts **after** the read-back, so a comment never claims an edit that did
  * not land, and its own failure is a refusal rather than a swallowed error: an in-place rewrite of a
  * filed body whose only record failed to post is exactly the untraceable edit the founder's ruling
- * conditioned this sweep on avoiding (#5981).
+ * conditioned this sweep on avoiding.
  */
 const writeRepair = (
 	repo: string,

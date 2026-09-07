@@ -32,10 +32,10 @@ describe("countRounds counts one round per graded head", () => {
 	});
 
 	/**
-	 * PR #6122's shape: two heads, two gates each, 8 and 4 minutes between the gates at one head.
-	 * The wall-clock rule read this as four rounds and spent the cap on gate latency (#6137).
+	 * The shape that broke the wall-clock rule: two heads, two gates each, 8 and 4 minutes between
+	 * the gates at one head. That rule read this as four rounds and spent the cap on gate latency.
 	 */
-	it("counts #6122's four markers over two heads as two rounds", () => {
+	it("counts four markers over two heads as two rounds", () => {
 		expect(
 			countRounds([
 				{sha: HEAD_A, createdAt: "2026-08-18T20:36:29Z"},

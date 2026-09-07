@@ -31,7 +31,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {laneScratchDir} from "./scratch-verb.ts";
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -51,7 +51,7 @@ const SCRATCH = laneScratchDir(TMP_ROOT, SESSION, 4312, NONCE);
 
 const MESSAGE = "fix(build): read the commit message back off the commit (#4312)\n";
 
-/** The message the #5484 incident's commit really carried — another lane's, two days stale. */
+/** The message the incident's commit really carried — another lane's, two days stale. */
 const BORROWED = "fix(report): state the guarantee the eval set actually delivers (#4789)\n";
 
 const LANE_OK: ReadonlyArray<Scripted> = [
@@ -91,7 +91,7 @@ const options = {
  *
  * `fakeSeams` hands back everything else this file needs but not what a child was piped, and the
  * message travelling on `git commit -F -`'s own stdin is exactly what one of these tests is about
- * (#5484) — so the two fakes are built side by side here rather than through it.
+ * — so the two fakes are built side by side here rather than through it.
  */
 const shellFor = (script: ReadonlyArray<Scripted>) => fakeSeams(script);
 
@@ -158,7 +158,7 @@ describe("runCommit — the carrying path", () => {
 		expect(out.stdout).toBe("");
 		expect(shell.calls.some((line) => COMMIT.test(line))).toBe(false);
 		// The advice names `build scratch`, which now requires --token: an executor running the
-		// string verbatim must not land on exit 1 (#6037).
+		// string verbatim must not land on exit 1.
 		expect(out.stderr.at(-1)).toContain(
 			'"fabrika build scratch 4312 --slug <leaf> --token <token>" prints',
 		);
@@ -186,7 +186,7 @@ describe("runCommit — the carrying path", () => {
 
 describe("runCommit — the message names only what this lane holds", () => {
 	// The incident's own shape: a well-formed conventional-commit message referencing a real issue
-	// this lane never touched (#5484).
+	// this lane never touched.
 	it("refuses on 4 a message naming an issue this lane holds no claim on, and commits nothing", async () => {
 		const shell = shellFor([...ready(), [COMMIT, okOut("")], [LOG, okOut(BORROWED)]]);
 		const out = await runWith(shell, {

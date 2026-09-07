@@ -21,14 +21,14 @@ describe("runLookup", () => {
 	});
 
 	// A parenthetical is a disambiguating qualifier, not an alias — the v1 split produced three
-	// false duplicates (#4206), so `tag` overlaps `Database (tag)` rather than equalling it.
+	// false duplicates, so `tag` overlaps `Database (tag)` rather than equalling it.
 	it("answers collision for a whole-word overlap, not declared", async () => {
 		const out = await run(populated(), {terms: ["tag"]});
 		expect(out.stdout).toBe("collision\tterms\tIndexing\tDatabase (tag)\n");
 	});
 
 	// The normalization folds a hyphen to a SPACE (contract §normalization step 3), which is what
-	// makes `front-door` and `front door` one key — the #4481 defect. It follows that `de-po`
+	// makes `front-door` and `front door` one key — the v1 defect. It follows that `de-po`
 	// normalizes to `de po`, which is NOT `depo`: the contract's own `de-po` → `depo` example is
 	// unreachable under the algorithm the same document fixes. Pinned in both directions so the
 	// divergence is a measured fact rather than a reading.

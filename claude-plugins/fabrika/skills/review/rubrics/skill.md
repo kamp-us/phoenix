@@ -43,8 +43,15 @@ and capability set — and its contract to `cli-interface-convention.md` Part 2'
 test. A restated sibling behavior (rather than an imported module or a cited section) is drift
 waiting to happen; name it.
 
-**Every contract read the diff instructs is a section read** (ADR
-[0296](../../../../../.decisions/0296-contracts-are-read-by-section.md)). Skill text and any
+**No step, rationale or exit-code note may point at something only this repo can resolve.** Run
+`fabrika guard portability-guard check` on any diff under `claude-plugins/fabrika/` or
+`packages/fabrika-cli/src/` and take a red as a finding: a skill installed elsewhere whose refusal
+rationale names a ticket the reader cannot open teaches nothing, and the fix is a self-contained
+sentence, not a shorter pointer. The guard's floor only shrinks, so a diff that lifts a ceiling to
+admit a new reference is the finding rather than the remedy.
+
+**Every contract read the diff instructs is a section read** — a contract is a reference the reader
+resolves one heading at a time, never a document loaded whole. Skill text and any
 spawn prompt in the diff point at
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`; text telling an agent to read,
 open, or load a `contract.md` whole is a finding, whatever the read's shape.

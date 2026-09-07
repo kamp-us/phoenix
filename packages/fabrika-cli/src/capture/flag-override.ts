@@ -1,18 +1,17 @@
 /**
- * Force a flag for a capture, so a dark-shipped surface paints the state the PR actually adds
- * (#7218, ADR 0336). Pure — no browser, no network; `capture.ts` seeds the cookie this builds and
+ * Force a flag for a capture, so a dark-shipped surface paints the state the PR actually adds.
+ * Pure — no browser, no network; `capture.ts` seeds the cookie this builds and
  * hands the probe's raw answer back to {@link readOverrideProof}.
  *
- * The mechanism is the worker's existing `phoenix_flag_overrides` cookie and nothing new. The wire
- * value is `encodeURIComponent(JSON.stringify({key: boolean}))`, which is exactly what
- * `apps/web/worker/features/flagship/dev-override.ts`'s `parseOverrideCookie` reads back, and the
- * gate that decides whether to honor it (`override-authz.ts`) is untouched: on a deployed stage it
- * answers `true` only for a request whose actor holds platform `Admin`. So a forced capture is an
- * authorized admin's capture or it is nothing.
+ * The mechanism is the app's existing flag-override cookie and nothing new. The wire
+ * value is `encodeURIComponent(JSON.stringify({key: boolean}))`, which is exactly what the
+ * worker's override-cookie parser reads back, and the gate that decides whether to honor it is
+ * untouched: on a deployed stage it answers `true` only for a request whose actor holds platform
+ * admin. So a forced capture is an authorized admin's capture or it is nothing.
  *
  * "Or it is nothing" is why the proof exists. A dropped cookie renders the flag-off page cleanly,
- * which is a valid PNG under the flag-on name — the #7051 class one layer over, and no byte check
- * can tell the two apart.
+ * which is a valid PNG under the flag-on name — the same shape as a dropped session cookie
+ * shooting the signed-out page under the signed-in name, and no byte check can tell the two apart.
  */
 import type {CaptureCookie} from "./capture.ts";
 
@@ -38,7 +37,7 @@ export type FlagOperandRead =
 
 /**
  * Bounded before the shape test so the linear scan below stays linear on any input, the same
- * clamp-then-match discipline `plan.ts`'s file-name sanitizer states (CodeQL alert #24).
+ * clamp-then-match discipline `plan.ts`'s file-name sanitizer states against ReDoS.
  */
 const MAX_KEY_LENGTH = 128;
 
@@ -101,16 +100,15 @@ export const overrideCookies = (
 
 /**
  * The preview endpoint that answers what a flag evaluated to for THIS context — the same seam the
- * SPA reads through, so its answer is the one the pixels were painted from
- * (`apps/web/worker/features/flagship/route.ts`, ADR 0179 AC2).
+ * SPA reads through, so its answer is the one the pixels were painted from.
  */
 export const FLAG_PROBE_PATH = "/api/flags/evaluate";
 
 /**
  * The probe body: every forced key asked for with the **opposite** value as its default. The route
- * resolves a key it cannot evaluate to the default it was asked with
- * (`flagship/evaluate-contract.ts`), so a dropped cookie answers `!forced` for every key and the
- * inertness is decidable from the body rather than inferred from a picture.
+ * resolves a key it cannot evaluate to the default it was asked with, so a dropped cookie answers
+ * `!forced` for every key and the inertness is decidable from the body rather than inferred from a
+ * picture.
  */
 export const flagProbeBody = (flags: ForcedFlags): string =>
 	JSON.stringify({

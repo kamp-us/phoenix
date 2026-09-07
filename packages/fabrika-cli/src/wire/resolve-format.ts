@@ -3,7 +3,7 @@
  *
  * Shared by the three verbs that take `--format` so an unregistered key refuses in one voice. The
  * refusal is {@link ZERO_SCOPE}, not a usage error: a verb asked to judge a format it does not have
- * judged nothing, and a check over nothing that exits 0 is the vacuous pass ADR 0092 forbids.
+ * judged nothing, and a check over nothing that exits 0 is a vacuous pass.
  */
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {ZERO_SCOPE} from "./codes.ts";

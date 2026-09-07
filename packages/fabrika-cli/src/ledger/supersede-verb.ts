@@ -4,9 +4,9 @@
  * Three legs in a fixed order — **comment, unlink, close** — then a re-read proving the child is
  * `closed` with `state_reason` `not_planned` and no longer a sub-issue. The order is load-bearing:
  * closing before unlinking leaves a closed issue still counted as a sub-issue, which the gate reads as
- * a child in scope that can never carry a live assignee (#5026 names that residue as undecided for
- * pre-existing children; this verb simply does not create more of it). The journal comment goes first
- * so the reason survives even if a later leg fails.
+ * a child in scope that can never carry a live assignee. What to do about that residue on children
+ * that already carry it is undecided; this verb simply does not create more of it. The journal
+ * comment goes first so the reason survives even if a later leg fails.
  *
  * The two refusals are the guard v1's equivalent had none of: it "closed exactly the numbers you name"
  * with no check at all. A child that is not this epic's is refused, and so is one **this run minted** —
