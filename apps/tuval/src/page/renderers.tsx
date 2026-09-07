@@ -37,6 +37,7 @@ import {
 	SESSION_LIST_WINDOW_REF,
 	type SessionListSource,
 	sessionListWindow,
+	type TranscriptSource,
 } from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
@@ -55,6 +56,14 @@ import {
 	sessionListCall,
 	settled,
 } from "./session-list.ts";
+import {
+	askedOlder,
+	landedPage,
+	noPages,
+	pagedAnswer,
+	readSessionTranscript,
+	sessionTranscriptCall,
+} from "./session-transcript.ts";
 
 /**
  * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
@@ -170,6 +179,69 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
 };
 
 /**
+ * One session's transcript, read from the kernel a page at a time. The first page leaves when the
+ * transcript mounts and every later one leaves when the operator asks for older history, each
+ * correlated on the `CallId` it minted (`./session-transcript.ts`) so a reply belonging to another
+ * call — the list's, the other window's, the page this one superseded — is never folded in.
+ *
+ * **The cursor is what a request is, and the attempt is what makes it a new one.** A page that
+ * lands moves the cursor; a page that fails does not, so asking again asks for the same page rather
+ * than skipping the history that did not arrive. Two consecutive requests can therefore carry the
+ * same cursor, which is why the attempt counter is in the dependencies: without it a retry would be
+ * an effect whose inputs did not change and no call would leave.
+ *
+ * **Nothing here outlives the session it was opened for.** The whole state is this hook's, the hook
+ * is mounted per selected session by the window (`../ai-agent/window/SessionListWindow.tsx`), and a
+ * reply that lands after the read it belongs to was superseded is dropped rather than folded.
+ */
+const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
+	const useSessionTranscript: TranscriptSource = (request, window) => {
+		const [paging, setPaging] = useState(noPages);
+		const [cursor, setCursor] = useState<string | null>(null);
+		const [attempt, setAttempt] = useState(0);
+
+		useEffect(() => {
+			if (request._tag !== "Read") return;
+			let current = true;
+			const spell = sessionTranscriptCall({...request.read, before: cursor}, window);
+			const fiber = Effect.runFork(
+				call(spell).pipe(
+					Effect.flatMap((reply) =>
+						Effect.sync(() => {
+							if (!current) return;
+							const landing = readSessionTranscript(spell, reply);
+							if (landing !== null) setPaging((held) => landedPage(held, cursor, landing));
+						}),
+					),
+					Effect.catchCause(() => Effect.void),
+				),
+			);
+			return () => {
+				current = false;
+				void Effect.runFork(Fiber.interrupt(fiber));
+			};
+		}, [call, request, window, cursor, attempt]);
+
+		const next = paging.next;
+		const olderOut = paging.older._tag === "Reading";
+		const older = useCallback(() => {
+			if (next === null || olderOut) return;
+			setPaging(askedOlder);
+			setCursor(next);
+			setAttempt((current) => current + 1);
+		}, [next, olderOut]);
+
+		const answer = request._tag === "Read" ? pagedAnswer(paging) : null;
+		// The affordance is offered only where there is a page to ask for, so the surface's own rule
+		// ("gone once there is nothing older") and this one cannot disagree about the end of history.
+		return answer !== null && answer._tag === "Read" && answer.page.next !== null
+			? {answer, onOlder: older}
+			: {answer};
+	};
+	return useSessionTranscript;
+};
+
+/**
  * What the two chat renderers are built at: the operator's own flags, read straight out of the
  * module the page server generated from the booted config (`./dev-server.ts`, #8439). It is a plain
  * import rather than a fetch or a prop, which is the whole point — the table below is built
@@ -203,7 +275,10 @@ export const pageRenderers = (call: SpellCaller): Readonly<Record<string, Readab
 	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
 	[SESSION_LIST_WINDOW_REF.ref]: readsState(
 		isSessionListState,
-		sessionListWindow({useAnswer: sessionListSource(call)}),
+		sessionListWindow({
+			useAnswer: sessionListSource(call),
+			useTranscript: sessionTranscriptSource(call),
+		}),
 	),
 });
 

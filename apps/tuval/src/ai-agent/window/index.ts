@@ -41,10 +41,7 @@ export {
 	SessionListWindow,
 	type SessionListWindowOptions,
 	sessionListWindow,
+	type TranscriptPaged,
 	type TranscriptSource,
 } from "./SessionListWindow.tsx";
-export {
-	type SessionTranscriptProps,
-	SessionTranscriptView,
-	type TranscriptAnswer,
-} from "./SessionTranscript.tsx";
+export {type SessionTranscriptProps, SessionTranscriptView} from "./SessionTranscript.tsx";

@@ -14,14 +14,16 @@
  * cannot tell the two apart learns nothing from either.
  *
  * **Older history is asked for, not fetched whole.** `onOlder` walks the port's own cursor one page
- * at a time; the button is gone once the answer says there is nothing older.
+ * at a time; the button is gone once the answer says there is nothing older. An older page that
+ * fails is said beside the history rather than in place of it, and the button stays — the cursor
+ * did not move, so pressing it again asks for the same page rather than skipping past it.
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider} from "@kampus/design";
 import type {ReactElement} from "react";
 import {useCallback, useMemo, useState} from "react";
+import type {OlderRead, TranscriptAnswer} from "../../page/session-transcript.ts";
 import {failureLine} from "../../palette/call.ts";
-import type {SpellFailure} from "../../protocol/messages.ts";
 import type {SessionRow} from "../../protocol/session-list.ts";
 import type {SessionTranscript} from "../../protocol/session-transcript.ts";
 import {composerBridge} from "../../shell/chat/composer-bridge.ts";
@@ -29,15 +31,13 @@ import {tuvalDesignTranslate} from "../../shell/chat/copy.ts";
 import {NO_FIRST_PROMPT} from "./rows.ts";
 import "./session-list-window.css";
 
-/** What a caller's read answered with. `null` is "the read is out", never "there is nothing". */
-export type TranscriptAnswer =
-	| {readonly _tag: "Read"; readonly page: SessionTranscript}
-	| {readonly _tag: "Refused"; readonly failure: SpellFailure};
-
 const COPY = {
 	reading: "Reading this session's transcript…",
 	empty: "This session holds no messages yet.",
 	older: "Load older messages",
+	olderReading: "Reading older messages…",
+	olderFailed: "The older messages could not be read, so this transcript stops here.",
+	olderRetry: "Try the older messages again",
 	back: "Back to the session list",
 	noFolder: "This session's store recorded no folder, so it cannot be opened.",
 } as const;
@@ -105,6 +105,8 @@ export function SessionTranscriptView({
 
 	const items = answer?._tag === "Read" ? answer.page.items : [];
 	const older = answer?._tag === "Read" ? answer.page.next : null;
+	const olderRead: OlderRead = answer?._tag === "Read" ? answer.older : {_tag: "Idle"};
+	const olderFailure = olderRead._tag === "Failed" ? olderRead.failure : null;
 	const refusal = answer !== null && answer._tag === "Refused" ? answer.failure : null;
 
 	const body: ReactElement =
@@ -137,9 +139,27 @@ export function SessionTranscriptView({
 				<h2>{session.firstPrompt ?? NO_FIRST_PROMPT}</h2>
 			</header>
 			{older === null || onOlder === undefined ? null : (
-				<Button type="button" variant="tertiary" size="sm" onClick={onOlder}>
-					{COPY.older}
-				</Button>
+				<div className="tuval-session-transcript-older">
+					<Button
+						type="button"
+						variant="tertiary"
+						size="sm"
+						disabled={olderRead._tag === "Reading"}
+						onClick={onOlder}
+					>
+						{olderFailure === null ? COPY.older : COPY.olderRetry}
+					</Button>
+					{olderRead._tag === "Reading" ? (
+						<p className="tuval-session-transcript-note" role="status">
+							{COPY.olderReading}
+						</p>
+					) : null}
+					{olderFailure === null ? null : (
+						<p className="tuval-session-transcript-refused" role="alert">
+							{`${COPY.olderFailed} ${failureLine(olderFailure)}`}
+						</p>
+					)}
+				</div>
 			)}
 			{body}
 			<DesignTranslationProvider translate={tuvalDesignTranslate}>
