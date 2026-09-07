@@ -7,13 +7,13 @@
  * checked-out branch, re-reads that number's claim, and requires this session to hold it under a token
  * whose UUID begins with the nonce.
  *
- * **There is no stamp file, and that absence is the design.** The stamp machinery is the accretion the
- * 2026-08-03 amendment on #4707 measured; worse, one stamp came to name eight trees at once (#4500).
+ * **There is no stamp file, and that absence is the design.** The stamp machinery is the accretion a
+ * 2026-08-03 amendment measured; worse, one stamp came to name eight trees at once.
  * A per-claim nonce in the branch name makes a duplicate lane unconstructible rather than detectable,
  * and leaves nothing to go stale.
  */
 
-/** The claim token shape, pinned: `build:<session-id>:<uuid>` (#4428). */
+/** The claim token shape, pinned: `build:<session-id>:<uuid>`. */
 export const TOKEN_PREFIX = "build";
 
 /** A UUID's first 8 hex characters — the nonce every lane branch carries. */
@@ -21,7 +21,7 @@ export const NONCE_LENGTH = 8;
 
 const TOKEN_RES = new Map<string, RegExp>();
 
-// Derived from the prefix rather than typed beside it, so a second claim namespace (`lane:`, #5761)
+// Derived from the prefix rather than typed beside it, so a second claim namespace (`lane:`)
 // cannot ship a token writer and a token reader that disagree.
 const tokenRe = (prefix: string): RegExp => {
 	const cached = TOKEN_RES.get(prefix);
@@ -59,7 +59,7 @@ export const composeToken = (
  * A slug the branch name may carry: kebab-case, ≤5 words, never flag-shaped.
  *
  * The leading-hyphen refusal is not stylistic — a slug that begins with `-` is read by the next tool
- * in the chain as a flag, which is how `--slug -rf` becomes an argument to something else (#4854).
+ * in the chain as a flag, which is how `--slug -rf` becomes an argument to something else.
  */
 export const isKebabSlug = (slug: string): boolean =>
 	/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.split("-").length <= 5;

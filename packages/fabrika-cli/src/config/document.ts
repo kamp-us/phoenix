@@ -9,7 +9,7 @@
 
 import {isRecord, parseJson} from "../io/json.ts";
 
-/** The file, at the repository root. Read at a base ref, never from the working tree (#981). */
+/** The file, at the repository root. Read at a base ref, never from the working tree. */
 export const CONFIG_PATH = ".fabrika.jsonc";
 
 /**

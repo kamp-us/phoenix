@@ -8,7 +8,7 @@ import {type NewOptions, runNew} from "./new-verb.ts";
 const options: NewOptions = {
 	id: "0240",
 	slug: "only-landed-adrs-may-be-cited",
-	dir: ".decisions",
+	dir: ".records",
 	status: "accepted",
 	date: "2026-08-01",
 	title: null,
@@ -24,28 +24,26 @@ describe("runNew", () => {
 		const fs = fakeFs({});
 		const out = await run(fs);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe(".decisions/0240-only-landed-adrs-may-be-cited.md\n");
-		expect(fs.written.get(".decisions/0240-only-landed-adrs-may-be-cited.md")).toContain(
-			"id: 0240",
-		);
+		expect(out.stdout).toBe(".records/0240-only-landed-adrs-may-be-cited.md\n");
+		expect(fs.written.get(".records/0240-only-landed-adrs-may-be-cited.md")).toContain("id: 0240");
 	});
 
 	it("--json carries path, id and slug", async () => {
 		const out = await run(fakeFs({}), {json: true});
 		expect(JSON.parse(out.stdout)).toEqual({
-			path: ".decisions/0240-only-landed-adrs-may-be-cited.md",
+			path: ".records/0240-only-landed-adrs-may-be-cited.md",
 			id: "0240",
 			slug: "only-landed-adrs-may-be-cited",
 		});
 	});
 
 	it("refuses to overwrite an existing record and writes nothing", async () => {
-		const fs = fakeFs({files: {".decisions/0126-ambient-adr-discovery.md": "existing"}});
+		const fs = fakeFs({files: {".records/0126-ambient-adr-discovery.md": "existing"}});
 		const out = await run(fs, {id: "0126", slug: "ambient-adr-discovery"});
 		expect(out.code).toBe(ALREADY_EXISTS);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"adr new: .decisions/0126-ambient-adr-discovery.md already exists — refusing to overwrite.",
+			"adr new: .records/0126-ambient-adr-discovery.md already exists — refusing to overwrite.",
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -63,7 +61,7 @@ describe("runNew", () => {
 	});
 
 	it("refuses — rather than reporting success — when the write itself fails", async () => {
-		const fs = fakeFs({unwritable: [".decisions/0240-only-landed-adrs-may-be-cited.md"]});
+		const fs = fakeFs({unwritable: [".records/0240-only-landed-adrs-may-be-cited.md"]});
 		const out = await run(fs);
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
@@ -71,7 +69,7 @@ describe("runNew", () => {
 	});
 
 	it("refuses an existence probe that FAILED, rather than reading it as 'absent' and writing", async () => {
-		const fs = fakeFs({unprobeable: [".decisions/0240-only-landed-adrs-may-be-cited.md"]});
+		const fs = fakeFs({unprobeable: [".records/0240-only-landed-adrs-may-be-cited.md"]});
 		const out = await run(fs);
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
@@ -81,7 +79,7 @@ describe("runNew", () => {
 	it("uses --title and --tags when given", async () => {
 		const fs = fakeFs({});
 		await run(fs, {title: "A real title", tags: "decisions,gates"});
-		const written = fs.written.get(".decisions/0240-only-landed-adrs-may-be-cited.md") ?? "";
+		const written = fs.written.get(".records/0240-only-landed-adrs-may-be-cited.md") ?? "";
 		expect(written).toContain("title: A real title");
 		expect(written).toContain("tags: [decisions, gates]");
 		expect(written).toContain("# 0240 — A real title");

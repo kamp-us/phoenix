@@ -16,7 +16,13 @@
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {boundToolOutput} from "../../ai-agent/history/index.ts";
-import type {CommandRef, ItemId, JsonValue, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {
+	CommandRef,
+	ItemId,
+	JsonValue,
+	SubagentSlot,
+	TranscriptItem,
+} from "../../ai-agent/ports/index.ts";
 import {
 	isRecord,
 	outputOf,
@@ -63,6 +69,13 @@ export interface PartialReply {
 	readonly id: string;
 	readonly text: string;
 	readonly at: number;
+	/**
+	 * The subagent-spawning call this reply is being written inside, held for the same reason `id`
+	 * is: `message_start` is where the stream says it, and every later frame of the turn carries
+	 * only its own per-delta envelope. Without it the upserts of a nested reply land untagged and
+	 * the settled row that replaces them changes parent as it settles.
+	 */
+	readonly parentId: string | null;
 }
 
 export interface Mapping {
@@ -78,6 +91,8 @@ export interface Mapping {
 	 * on the frame's own uuid and appended below whatever arrived in between (#8366).
 	 */
 	readonly settled: PartialReply | null;
+	/** Every subagent slot this stream has opened, by the spawning call's id. */
+	readonly subagents: ReadonlyMap<string, SubagentSlot>;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
 }
@@ -87,6 +102,7 @@ export const emptyMapping: Mapping = {
 	toolCalls: new Map(),
 	partial: null,
 	settled: null,
+	subagents: new Map(),
 	skipped: 0,
 };
 
@@ -122,6 +138,157 @@ const withoutCall = (
 	const next = new Map(calls);
 	next.delete(id);
 	return next;
+};
+
+/**
+ * The label a spawning call's own input gives its worker — `Task`/`Agent`'s `subagent_type`, which
+ * is the only field of the call that names what was spawned. A call whose input carries none is not
+ * read as a spawn here: the slot's fallback label is the tool's name, and that path opens from the
+ * nested frames instead (`slotFor`), never from a guess about which tools spawn workers.
+ */
+const spawnTypeOf = (input: JsonValue): string | null => {
+	if (!isRecord(input)) return null;
+	const type = input.subagent_type;
+	return typeof type === "string" && type.length > 0 ? type : null;
+};
+
+const counted = (value: unknown): number =>
+	typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
+/**
+ * What a worker has spent so far, read off one of its assistant frames.
+ *
+ * Every input field plus the output, because that is the running total the backend itself reports:
+ * in `subagent-turn.json` the worker's first turn adds to 18,934 against the 18,981 the
+ * `task_progress` frame beside it carries (`SDKTaskProgressMessage.usage.total_tokens`, `sdk.d.ts`
+ * 0.3.259), and its second to 25,229 against 25,508. Counting `input_tokens` alone would report 2
+ * for a turn that spent nineteen thousand.
+ *
+ * It is already cumulative — a turn's `cache_read_input_tokens` is the previous turn's cache — so
+ * the slot takes the highest frame rather than a sum, which in that same capture would report
+ * 88,326 for a worker that spent 25,508.
+ */
+const frameTokensOf = (body: unknown): number => {
+	if (!isRecord(body)) return 0;
+	const usage = body.usage;
+	if (!isRecord(usage)) return 0;
+	return (
+		counted(usage.input_tokens) +
+		counted(usage.cache_creation_input_tokens) +
+		counted(usage.cache_read_input_tokens) +
+		counted(usage.output_tokens)
+	);
+};
+
+/** The one line a slot shows for an item: its first non-empty line, or a tool row's name. */
+const lineOf = (one: TranscriptItem): string => {
+	const text = one.kind === "tool" ? one.name : one.text;
+	return (
+		text
+			.split("\n")
+			.find((line) => line.trim().length > 0)
+			?.trim() ?? ""
+	);
+};
+
+const openSlot = (id: string, type: string, at: number): SubagentSlot => ({
+	id: itemId(id),
+	type,
+	lastLine: "",
+	startedAt: at,
+	tokens: 0,
+	items: [],
+	status: "running",
+});
+
+interface SlotStep {
+	readonly subagents: ReadonlyMap<string, SubagentSlot>;
+	readonly events: ReadonlyArray<AgentEvent>;
+}
+
+/**
+ * The slot a nested item belongs to, opened from the spawning call when this is the first frame to
+ * name it. A parent this mapping never saw the call for has no slot and never gets one: the type
+ * and the start clock both live on that call, and inventing either would put a lie in the list.
+ */
+const slotFor = (mapping: Mapping, parentId: string): SubagentSlot | null => {
+	const open = mapping.subagents.get(parentId);
+	if (open !== undefined) return open;
+	const call = mapping.toolCalls.get(parentId);
+	return call === undefined ? null : openSlot(parentId, call.name, call.at);
+};
+
+/**
+ * The worker's rows keyed the way the transcript keys them: a row re-sent under an id the slot
+ * already holds replaces it in place, so a tool call that opens `running` and settles `ok` is one
+ * entry rather than two. `core/fold.ts` replaces a slot whole and folds nothing inside it, so a
+ * duplicate written here is a duplicate on state and in every view of the slot (#8403).
+ */
+const withItem = (
+	items: ReadonlyArray<TranscriptItem>,
+	one: TranscriptItem,
+): ReadonlyArray<TranscriptItem> => {
+	const at = items.findIndex((candidate) => candidate.id === one.id);
+	return at < 0
+		? [...items, one]
+		: items.map((candidate, index) => (index === at ? one : candidate));
+};
+
+/**
+ * Fold one frame's items, and what that frame spent, into the slots of the calls they ran inside.
+ *
+ * A finished slot is left exactly as it was (founder ruling Q2 on #8384: a finished subagent goes
+ * back to today's plain tool row, so nothing live moves for it again). Every touched slot is
+ * re-emitted whole, which is the contract `SubagentEvent` states: the fold replaces by id.
+ */
+const foldSlots = (
+	mapping: Mapping,
+	items: ReadonlyArray<TranscriptItem>,
+	frameParentId: string | null,
+	tokens: number,
+): SlotStep => {
+	const next = new Map(mapping.subagents);
+	const touched: Array<string> = [];
+	const touch = (parentId: string, grow: (slot: SubagentSlot) => SubagentSlot): void => {
+		const slot = next.get(parentId) ?? slotFor(mapping, parentId);
+		if (slot === null || slot.status === "finished") return;
+		next.set(parentId, grow(slot));
+		if (!touched.includes(parentId)) touched.push(parentId);
+	};
+	for (const one of items) {
+		if (one.parentId === undefined) continue;
+		const line = lineOf(one);
+		touch(one.parentId, (slot) => ({
+			...slot,
+			items: withItem(slot.items, one),
+			lastLine: line.length > 0 ? line : slot.lastLine,
+		}));
+	}
+	if (frameParentId !== null && tokens > 0) {
+		touch(frameParentId, (slot) => ({...slot, tokens: Math.max(slot.tokens, tokens)}));
+	}
+	const events = touched.flatMap((id): ReadonlyArray<AgentEvent> => {
+		const slot = next.get(id);
+		return slot === undefined ? [] : [{kind: "subagent", slot}];
+	});
+	return {subagents: next, events};
+};
+
+/**
+ * A streamed upsert of a nested reply moves the slot's line and nothing else — the row itself joins
+ * `slot.items` once, when the stream settles it. Appending each delta would put one copy of the
+ * growing reply in the slot per word.
+ */
+const slotLine = (mapping: Mapping, parentId: string | null, line: string): SlotStep => {
+	if (parentId === null || line.length === 0) return {subagents: mapping.subagents, events: []};
+	const slot = mapping.subagents.get(parentId) ?? slotFor(mapping, parentId);
+	if (slot === null || slot.status === "finished")
+		return {subagents: mapping.subagents, events: []};
+	const next = {...slot, lastLine: line};
+	return {
+		subagents: new Map(mapping.subagents).set(parentId, next),
+		events: [{kind: "subagent", slot: next}],
+	};
 };
 
 /** What a withheld reasoning block reads as. The row exists so the turn does not look empty. */
@@ -165,59 +332,75 @@ export const assistantEvents = (
 	const ends = interrupted || stopReasonOf(body) !== null;
 	const settles = open === null || ends;
 	const text = reply === null ? frameText : reply.text;
-	const events: AgentEvent[] = [];
+	// Read before anything is pushed: every item this frame emits carries the tag, not the tool rows
+	// alone. Reading it after the pushes is what left a subagent's reasoning and prose rendering as
+	// top-level rows of the agent's own turn (#8403).
+	const parentId = parentToolUseIdOf(message) ?? row?.parentId ?? null;
+	const tagged = parentId === null ? {} : {parentId: itemId(parentId)};
+	const emitted: Array<TranscriptItem> = [];
 	const thinking = thinkingOf(body);
 	if (thinking.length > 0) {
 		// Suffixed rather than the frame's own uuid, because one frame carrying both a thinking block
 		// and text is two rows, and two rows sharing an id would fold into one.
-		events.push(
-			item({
-				kind: "thinking",
-				id: itemId(`${id}:thinking`),
-				timestamp: at,
-				text: thinkingTextOf(thinking),
-			}),
-		);
+		emitted.push({
+			kind: "thinking",
+			id: itemId(`${id}:thinking`),
+			timestamp: at,
+			text: thinkingTextOf(thinking),
+			...tagged,
+		});
 	}
 	if (settles && (text.length > 0 || interrupted)) {
-		events.push(
-			item({
-				kind: "assistant",
-				id: itemId(id),
-				timestamp: at,
-				text,
-				...(interrupted ? {interrupted: true} : {}),
-			}),
-		);
+		emitted.push({
+			kind: "assistant",
+			id: itemId(id),
+			timestamp: at,
+			text,
+			...(interrupted ? {interrupted: true} : {}),
+			...tagged,
+		});
 	}
-	const parentId = parentToolUseIdOf(message);
+	const events: AgentEvent[] = emitted.map(item);
 	let toolCalls = mapping.toolCalls;
+	let subagents = mapping.subagents;
 	for (const use of toolUsesOf(body)) {
 		toolCalls = withCall(toolCalls, use.id, {name: use.name, input: use.input, at, parentId});
-		events.push(
-			item(
-				boundToolOutput(
-					{
-						kind: "tool",
-						id: itemId(use.id),
-						timestamp: at,
-						name: use.name,
-						input: use.input,
-						status: "running",
-						output: "",
-						...(parentId === null ? {} : {parentId: itemId(parentId)}),
-					},
-					options.toolResultLimit,
-				),
-			),
+		const toolRow = boundToolOutput(
+			{
+				kind: "tool",
+				id: itemId(use.id),
+				timestamp: at,
+				name: use.name,
+				input: use.input,
+				status: "running",
+				output: "",
+				...tagged,
+			},
+			options.toolResultLimit,
 		);
+		emitted.push(toolRow);
+		events.push(item(toolRow));
+		const spawnType = spawnTypeOf(use.input);
+		if (spawnType !== null) {
+			const slot = openSlot(use.id, spawnType, at);
+			subagents = new Map(subagents).set(use.id, slot);
+			events.push({kind: "subagent", slot});
+		}
 	}
+	const folded = foldSlots(
+		{...mapping, toolCalls, subagents},
+		emitted,
+		parentId,
+		frameTokensOf(body),
+	);
+	events.push(...folded.events);
 	// Only a frame of the open reply's own turn touches it. Any other assistant frame can arrive
 	// mid-stream — a subagent's does — and closing on that one would freeze the reply mid-word.
 	return {
 		mapping: {
 			...mapping,
 			toolCalls,
+			subagents: folded.subagents,
 			partial: open === null ? mapping.partial : ends ? null : reply,
 			// A row this frame leaves settled stays reachable, so a further frame of the same turn —
 			// a trailing content block — still lands on it rather than beside it.
@@ -297,24 +480,26 @@ export const partialReplyEvents = (
 		const id = isRecord(body) && typeof body.id === "string" ? body.id : "";
 		if (id.length === 0) return skipMessage(mapping);
 		const at = timestampOf(message, options.at);
-		return {mapping: {...mapping, partial: {id, text: "", at}}, events: []};
+		const parentId = parentToolUseIdOf(message);
+		return {mapping: {...mapping, partial: {id, text: "", at, parentId}}, events: []};
 	}
 	const open = mapping.partial;
 	if (open === null) return skipMessage(mapping);
+	const tagged = open.parentId === null ? {} : {parentId: itemId(open.parentId)};
 	if (event.type === "message_stop" || stopsStream(event)) {
+		if (open.text.length === 0)
+			return {mapping: {...mapping, partial: null, settled: open}, events: []};
+		const settledRow: TranscriptItem = {
+			kind: "assistant",
+			id: itemId(open.id),
+			timestamp: open.at,
+			text: open.text,
+			...tagged,
+		};
+		const folded = foldSlots(mapping, [settledRow], open.parentId, 0);
 		return {
-			mapping: {...mapping, partial: null, settled: open},
-			events:
-				open.text.length === 0
-					? []
-					: [
-							item({
-								kind: "assistant",
-								id: itemId(open.id),
-								timestamp: open.at,
-								text: open.text,
-							}),
-						],
+			mapping: {...mapping, partial: null, settled: open, subagents: folded.subagents},
+			events: [item(settledRow), ...folded.events],
 		};
 	}
 	if (event.type === "content_block_start") {
@@ -330,17 +515,18 @@ export const partialReplyEvents = (
 	const text = textDeltaOf(event);
 	if (text.length === 0) return skipMessage(mapping);
 	const partial = grown(open, text);
+	const upsert: TranscriptItem = {
+		kind: "assistant",
+		id: itemId(partial.id),
+		timestamp: partial.at,
+		text: partial.text,
+		partial: true,
+		...tagged,
+	};
+	const line = slotLine(mapping, partial.parentId, lineOf(upsert));
 	return {
-		mapping: {...mapping, partial},
-		events: [
-			item({
-				kind: "assistant",
-				id: itemId(partial.id),
-				timestamp: partial.at,
-				text: partial.text,
-				partial: true,
-			}),
-		],
+		mapping: {...mapping, partial, subagents: line.subagents},
+		events: [item(upsert), ...line.events],
 	};
 };
 
@@ -360,15 +546,29 @@ export const userEvents = (
 	const at = timestampOf(message, options.at);
 	const body = message.message;
 	const results = toolResultsOf(body);
+	const framedParentId = parentToolUseIdOf(message);
 	if (results.length === 0) {
 		const text = textOf(body);
 		if (text.length === 0) return skipMessage(mapping);
 		const id = typeof message.uuid === "string" ? message.uuid : `user-${at}`;
-		return {mapping, events: [item({kind: "user", id: itemId(id), timestamp: at, text})]};
+		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
+		// agent's own prose — seen live on #8400's desk run.
+		const prompt: TranscriptItem = {
+			kind: "user",
+			id: itemId(id),
+			timestamp: at,
+			text,
+			...(framedParentId === null ? {} : {parentId: itemId(framedParentId)}),
+		};
+		const folded = foldSlots(mapping, [prompt], framedParentId, 0);
+		return {
+			mapping: {...mapping, subagents: folded.subagents},
+			events: [item(prompt), ...folded.events],
+		};
 	}
-	const framedParentId = parentToolUseIdOf(message);
 	let toolCalls = mapping.toolCalls;
 	let skipped = mapping.skipped;
+	const settled: Array<TranscriptItem> = [];
 	const events: AgentEvent[] = [];
 	for (const result of results) {
 		const call = toolCalls.get(result.toolUseId);
@@ -381,25 +581,39 @@ export const userEvents = (
 		// settles — and this frame's own field is the fallback, so a result arriving on a subagent
 		// frame is still marked when the call it answers was opened without one.
 		const parentId = call.parentId ?? framedParentId;
-		events.push(
-			item(
-				boundToolOutput(
-					{
-						kind: "tool",
-						id: itemId(result.toolUseId),
-						timestamp: call.at,
-						name: call.name,
-						input: call.input,
-						status: result.failed ? "error" : "ok",
-						output: result.text.length > 0 ? result.text : outputOf(message.tool_use_result),
-						...(parentId === null ? {} : {parentId: itemId(parentId)}),
-					},
-					options.toolResultLimit,
-				),
-			),
+		const row = boundToolOutput(
+			{
+				kind: "tool",
+				id: itemId(result.toolUseId),
+				timestamp: call.at,
+				name: call.name,
+				input: call.input,
+				status: result.failed ? "error" : "ok",
+				output: result.text.length > 0 ? result.text : outputOf(message.tool_use_result),
+				...(parentId === null ? {} : {parentId: itemId(parentId)}),
+			},
+			options.toolResultLimit,
 		);
+		settled.push(row);
+		events.push(item(row));
 	}
-	return {mapping: {...mapping, toolCalls, skipped}, events};
+	const folded = foldSlots({...mapping, toolCalls}, settled, framedParentId, 0);
+	// A settling call is the one thing that ends its worker's slot, and it must be reported: the core
+	// settles a running slot at the turn's end as a backstop only, so a slot left running here is a
+	// state no checkpoint can be taken on (#8401).
+	let subagents = folded.subagents;
+	const ended: Array<AgentEvent> = [];
+	for (const one of settled) {
+		const slot = subagents.get(one.id);
+		if (slot === undefined || slot.status === "finished") continue;
+		const finished: SubagentSlot = {...slot, status: "finished"};
+		subagents = new Map(subagents).set(one.id, finished);
+		ended.push({kind: "subagent", slot: finished});
+	}
+	return {
+		mapping: {...mapping, toolCalls, subagents, skipped},
+		events: [...events, ...folded.events, ...ended],
+	};
 };
 
 const errorTextOf = (message: Record<string, unknown>): string => {
@@ -429,9 +643,9 @@ export const resultEvents = (
 ): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 	const failed = message.is_error === true || message.subtype !== "success";
 	if (failed) {
-		const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 		const subtype = typeof message.subtype === "string" ? message.subtype : "error";
 		return {
 			mapping,
@@ -451,6 +665,7 @@ export const resultEvents = (
 		events: [
 			{
 				kind: "usage",
+				turn: id,
 				model: mapping.model,
 				inputTokens: tokensOf(message.usage, "input_tokens"),
 				outputTokens: tokensOf(message.usage, "output_tokens"),
@@ -459,6 +674,13 @@ export const resultEvents = (
 		],
 	};
 };
+
+/**
+ * The turn id `init`'s announcement rides under. It is not a turn: `init` fires at the start of
+ * every turn and carries no spend, so one reserved key keeps the session's ledger from growing an
+ * empty entry per turn while the model it names still lands (`core/fold.ts`, `addUsage`).
+ */
+const MODEL_ANNOUNCEMENT = "claude:model-announcement";
 
 /**
  * `init` is where a session says which model it is, and the only place it ever says so.
@@ -473,7 +695,9 @@ export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 	const model = typeof message.model === "string" ? message.model : mapping.model;
 	return {
 		mapping: {...mapping, model},
-		events: [{kind: "usage", model, inputTokens: 0, outputTokens: 0, cost: 0}],
+		events: [
+			{kind: "usage", turn: MODEL_ANNOUNCEMENT, model, inputTokens: 0, outputTokens: 0, cost: 0},
+		],
 	};
 };
 

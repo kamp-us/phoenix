@@ -75,12 +75,12 @@ const judge = (
 		const scan = yield* scanWorkspaceMembers(root, [GLOB]);
 		if (undeclaredGlobs(scan.declared, [GLOB]).length > 0) {
 			return zeroScope(
-				`${VERB}: pnpm-workspace.yaml does not declare the \`${GLOB}\` member glob (found: ${scan.declared.join(", ") || "<none>"}) — the guard's scope assumption is broken, fail-closed (ADR 0092).`,
+				`${VERB}: pnpm-workspace.yaml does not declare the \`${GLOB}\` member glob (found: ${scan.declared.join(", ") || "<none>"}) — the guard's scope assumption is broken, fail-closed.`,
 			);
 		}
 		if (scan.members.length === 0) {
 			return zeroScope(
-				`${VERB}: scanned ZERO ${GLOB} workspace members (no directory with a package.json) — fail-closed (ADR 0092). Is the repo root correct, or did the workspace shape change?`,
+				`${VERB}: scanned ZERO ${GLOB} workspace members (no directory with a package.json) — fail-closed. Is the repo root correct, or did the workspace shape change?`,
 			);
 		}
 		const missing: Array<string> = [];

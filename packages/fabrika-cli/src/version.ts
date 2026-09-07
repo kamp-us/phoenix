@@ -1,4 +1,4 @@
 import pkg from "../package.json" with {type: "json"};
 
-// Derived, never declared — see #5714.
+// Derived from the manifest, never declared as a second literal that can drift from it.
 export const VERSION = pkg.version;

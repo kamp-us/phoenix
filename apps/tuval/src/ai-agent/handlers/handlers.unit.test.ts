@@ -253,6 +253,30 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	it.live(
+		"samples each page's tagged outcome after handler completion, even when values repeat",
+		() => {
+			const probe = probeOf();
+			return withKernel(plainReply, probe, (spawn) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).phase === "ready");
+					for (const before of [null, "unknown", "unknown", null]) {
+						const folded = yield* handle.dispatchFolded({type: "page", before, limit: 3});
+						assert.isTrue(isAiAgentSessionState(folded.summary.state));
+						if (!isAiAgentSessionState(folded.summary.state)) return;
+						const state = folded.summary.state;
+						assert.strictEqual(state.pageOutcome?.status, before === null ? "success" : "refused");
+						assert.isNotNull(state.lastPage);
+						if (before !== null) assert.strictEqual(state.failure?.reason, "unknown-cursor");
+					}
+					assert.strictEqual(sessionOf(handle).pageOutcome?.status, "success");
+					assert.strictEqual(sessionOf(handle).failure?.reason, "unknown-cursor");
+				}),
+			);
+		},
+	);
+
 	it.live("crosses a permission event out and an inbound answer back in", () => {
 		const probe = probeOf();
 		return withKernel(permissionTurn, probe, (spawn, log) =>

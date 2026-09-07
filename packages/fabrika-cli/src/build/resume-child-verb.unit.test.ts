@@ -1,5 +1,5 @@
 /**
- * The mechanized epic-child repair entry, EXECUTED (#7187).
+ * The mechanized epic-child repair entry, EXECUTED.
  *
  * The prose order this replaces already had a test, and that test parsed the order out of `SKILL.md`
  * — so it passed while a resumed builder read the corrected skill, ran the armed proof first anyway,
@@ -67,7 +67,7 @@ const WRITES = served({permission: "write"});
 const NO_CONTENT: HttpReply = {status: 204, body: ""};
 const MINE = marker("s-9f2e", LANE_UUID);
 const THEIRS = marker("s-77aa", "9d8c7b6a-5f4e-3d2c-1b0a-998877665544");
-const POSTED = served({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}, 201);
+const POSTED = served({id: 9001, html_url: "https://example.test/o/r/issues/4312#c"}, 201);
 const ECHO = served({body: MINE});
 
 const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name}));
@@ -168,7 +168,7 @@ describe("runResumeChild — the sequenced repair entry", () => {
 	});
 
 	/**
-	 * The inversion #7187 is: the armed proof ran first, refused the generic branch on `14`, and the
+	 * The inversion this pins: the armed proof ran first, refused the generic branch on `14`, and the
 	 * checkout that would have satisfied it never happened. Pinning the two indices is what makes that
 	 * order a property of the run rather than of a paragraph.
 	 */

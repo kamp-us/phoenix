@@ -163,11 +163,15 @@ describe("chat window boundary", () => {
 		expect(written.filter(([, tag]) => tag === undefined || !declared.has(tag))).toEqual([]);
 	});
 
-	it("every agent import is type-only, so no agent code reaches the browser bundle", () => {
+	it("agent runtime imports admit only the pure snapshot predicate, never a machine or service", () => {
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
 				.filter((line) => !/^import type\b/.test(line))
+				.filter(
+					(line) =>
+						line !== 'import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";',
+				)
 				.map((line) => `${name}: ${line.trim()}`),
 		);
 		expect(offenders).toEqual([]);

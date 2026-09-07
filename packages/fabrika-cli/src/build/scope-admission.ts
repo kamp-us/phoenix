@@ -1,19 +1,19 @@
 /**
  * The admission test both `build` seams run — **four named axes composed, never one widened term**
- * (`claude-plugins/fabrika/skills/build/contract.md`, the admission test; ADR 0245).
+ * (`claude-plugins/fabrika/skills/build/contract.md`, the admission test).
  *
  * - **Scope admission** is campaign membership and nothing else: is the issue's home pinned by a
  *   `## Campaigns` row whose state is `active`? It refuses on {@link OUT_OF_SCOPE}.
- * - **The audience axis** is who the work is for (`ready-for:agent`), a question older than the fence
- *   (#4780). This module *hosts* it; it does not redefine it. It refuses on {@link AUDIENCE_NOT_AGENT}.
+ * - **The audience axis** is who the work is for (`ready-for:agent`), a question older than the
+ *   fence. This module *hosts* it; it does not redefine it. It refuses on {@link AUDIENCE_NOT_AGENT}.
  * - **The type axis** is whether the deliverable is a pull request at all. It refuses on
  *   {@link TYPE_NOT_BUILDABLE}, and it lives here rather than in the pool because the pool is the
  *   browse path: a number handed straight to `claim` passes through no pool, so a type rule fenced
- *   only there is no fence (#5490).
+ *   only there is no fence.
  * - **The criteria axis** is whether the body carries a contract to build against. It refuses on
  *   {@link NO_ACCEPTANCE_CRITERIA}, and it is here for exactly the reason the type axis is: the pool
  *   held it privately, so `build issue <n>` built a no-AC issue the pool would have refused and the
- *   review gate was the first thing to catch it (#6554).
+ *   review gate was the first thing to catch it.
  *
  * They are siblings with different remedies — flip the campaign's state cell, re-label the audience,
  * take the work to the skill whose lane it is, or repair the issue body — so they stay separately
@@ -22,11 +22,11 @@
  * carries **every** axis verdict, so a caller can never lose one behind another.
  *
  * A claim's {@link ClaimPurpose} rides **beside** those axes: it decides which of them *bind* this
- * claim, and it never enters any axis's own reading (#5175).
+ * claim, and it never enters any axis's own reading.
  *
  * The core is pure and total, and this module is **imported** by the pool and claim seams rather than
- * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDispatch}
- * touches IO.
+ * invoked through a relaying verb — the wrapper shape is banned; this module derives the verdict, it
+ * does not relay one. Only {@link readDispatch} touches IO.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {CONFIG_PATH} from "../config/document.ts";
@@ -47,11 +47,12 @@ import {
 } from "./codes.ts";
 
 /**
- * The labels that are a home in their own right (ADR 0208), admitted on the scope axis whatever the
+ * The labels that are a home in their own right, admitted on the scope axis whatever the
  * declaration says.
  *
  * A standing lane is milestone-less **by design**, so a fence keyed on milestone-presence alone would
- * starve 199 open issues for a campaign's duration (#5088's measured count). The exemption is the
+ * starve every milestone-less issue for a campaign's duration — 199 of them, when it was last
+ * counted. The exemption is the
  * label match and nothing else: bare milestone-absence never confers it, and the set is closed — a
  * third lane is a founder ruling and a deliberate edit here, never a pattern match.
  */
@@ -67,7 +68,7 @@ export {READY_FOR_AGENT};
  * Triage routes such an issue to `ready-for:human` by default, which is the collision
  * {@link RepairClaim} answers: an ADR PR's repair lane would otherwise fail a fence it could not
  * pass. The default is not an exclusion — a decision issue carrying a founder ruling comment is
- * buildable as transcription, and triage may route that one to `ready-for:agent` instead (ADR 0300).
+ * buildable as transcription, and triage may route that one to `ready-for:agent` instead.
  * Which ones it does is triage's per-issue judgement; this axis reads the audience label it finds
  * and never infers one from the type, in either direction.
  */
@@ -83,8 +84,9 @@ export {EPIC_TYPE_LABEL};
  * The four types an agent build lane may take — the type axis's whole vocabulary, declared once.
  *
  * The pool used to own a private copy of this set, so the claim seam could not see it and a
- * directly-handed `type:decision` was admitted with no refusal at all (#5490). One declaration is
- * what makes the two seams unable to disagree, the same rule ADR 0245 states for the other axes.
+ * directly-handed `type:decision` was admitted with no refusal at all. One declaration is
+ * what makes the two seams unable to disagree, the same rule the admission test states for the
+ * other axes.
  */
 export const BUILDABLE_TYPE_LABELS = [
 	"type:feature",
@@ -101,7 +103,7 @@ const TYPE_PREFIX = "type:";
  * An issue carrying **no** `type:` label is `Buildable` here, which is deliberate and is not this
  * axis's judgement to make: it is the pool's long-standing reading, preserved so this axis changes
  * where the rule is enforced without changing what the rule says. The untyped hole is its own
- * defect on its own ticket (#5490's triage note).
+ * defect on its own ticket.
  */
 export type TypeAxis =
 	/** Every `type:` label carried is one of {@link BUILDABLE_TYPE_LABELS}, or none is carried. */
@@ -117,7 +119,7 @@ export const typeAxisOf = (issue: IssueFacts): TypeAxis => {
 };
 
 /**
- * Axis four — whether the issue carries a contract to build against (#6554).
+ * Axis four — whether the issue carries a contract to build against.
  *
  * It reads through the shared `wire/acceptance-criteria` read and keeps that read's three answers
  * apart: `Found` contracts, and `Absent` and `Malformed` are two different defects with two different
@@ -127,9 +129,8 @@ export const typeAxisOf = (issue: IssueFacts): TypeAxis => {
  *
  * The axis lived in the pool as a private constant, which is what made it no fence at all: a number
  * handed straight to `claim` passes through no pool, so `build issue <n>` built the same no-AC issue
- * the pool refused, and the review gate was the first thing to catch it (#6554, on #6462 → PR #6552).
- * That is the reasoning {@link typeAxisOf} already carries from #5490, and it moves the rule here
- * without changing what the rule says.
+ * the pool refused, and the review gate was the first thing to catch it. That is the reasoning
+ * {@link typeAxisOf} already carries, and it moves the rule here without changing what the rule says.
  */
 export type CriteriaAxis =
 	/** A readable `### Acceptance criteria` block — the lane has something to build against. */
@@ -163,8 +164,7 @@ export const criteriaAxisOf = (issue: IssueFacts): CriteriaAxis => {
  * A founder ruling recorded on the issue, named by the comment it lives in.
  *
  * It is what opens the type axis on a `type:decision`: once the choosing has happened on the board,
- * the deliverable is transcription and transcription is a pull request like any other (founder
- * ruling on [#5879](https://github.com/kamp-us/phoenix/issues/5879#issuecomment-5335398768)). The
+ * the deliverable is transcription and transcription is a pull request like any other. The
  * citation is the fence — an agent points at the comment or it refuses — so what this module can
  * check is the pointer's shape and its target, never whether the comment rules anything. Judging
  * that stays the reader's, and the arm is worth exactly as much as that honesty: it rules out a
@@ -248,7 +248,7 @@ export interface SubjectFacts {
  *
  * An issue is its own subject. A pull request is not: it carries no milestone and no `ready-for:`
  * label, so a fence reading the PR's own record refused **every** repair claim while any focus was
- * declared (#5562). A PR's lane serves a ticket, and that ticket's home is the campaign membership
+ * declared. A PR's lane serves a ticket, and that ticket's home is the campaign membership
  * the fence is actually asking about — so the PR resolves to it, through the same body reference
  * `review scope` reads (`issueRefsOf`), never a second parser. A repair caller may retain the served
  * issue explicitly; selecting that member here keeps admission independent of body order while an
@@ -282,7 +282,7 @@ export const homeOf = (issue: IssueFacts): string | null =>
  * The lifecycle cell of a `## Campaigns` row.
  *
  * `paused` is the campaign that is alive and not being executed: its milestone is open and no lane
- * opens against it (ADR 0304). It is what makes one cell able to answer "may a lane open here"
+ * opens against it. It is what makes one cell able to answer "may a lane open here"
  * without a second declaration surface stacked on top.
  */
 export const CAMPAIGN_STATES = ["active", "paused", "done"] as const;
@@ -295,7 +295,7 @@ export interface ActiveCampaign {
 }
 
 /**
- * What `## Campaigns` permits — the **set** of milestones its `active` rows pin (ADR 0304).
+ * What `## Campaigns` permits — the **set** of milestones its `active` rows pin.
  *
  * `None` is a **well-formed default**, not a refusal: an absent table, a table with no rows and a
  * table whose every row is `paused` or `done` are one answer — the fence is off, not closed — and a
@@ -318,7 +318,7 @@ export type ParsedDispatch = Exclude<Dispatch, {readonly _tag: "Malformed"}>;
 export const dispatchMilestones = (dispatch: ParsedDispatch): ReadonlyArray<number> =>
 	dispatch._tag === "Active" ? dispatch.campaigns.map((row) => row.milestone) : [];
 
-/** `milestone #46`, or `milestones #46, #47` — the phrase every focus-naming message shares. */
+/** `milestone #4`, or `milestones #4, #7` — the phrase every focus-naming message shares. */
 export const milestonePhrase = (milestones: ReadonlyArray<number>): string =>
 	`${milestones.length === 1 ? "milestone" : "milestones"} ${milestones
 		.map((milestone) => `#${milestone}`)
@@ -411,8 +411,8 @@ export interface CampaignRow {
  * Every declared campaign, or the reason the table cannot be read at all.
  *
  * One unreadable row makes the **whole** table malformed rather than degrading to the rows that did
- * parse (ADR 0298's rule, carried onto the surface that replaced it): a partial read reported as the
- * permission is a fence quietly wider or narrower than what was written.
+ * parse: a partial read reported as the permission is a fence quietly wider or narrower than what
+ * was written.
  *
  * An absent heading and a table with no rows are both `Rows` with an empty array — a fact about the
  * file, never a failed read. Which of those a caller calls `none` is the caller's question.
@@ -488,7 +488,7 @@ export type ScopeAxis =
 			readonly home: string | null;
 	  };
 
-/** Axis two — who the work is for. Older than the fence (#4780); hosted here, never redefined. */
+/** Axis two — who the work is for. Older than the fence; hosted here, never redefined. */
 export type AudienceAxis =
 	| {readonly _tag: "Agent"}
 	/** `label` is the `ready-for:` label carried, or `null` when the issue carries none. */
@@ -508,7 +508,7 @@ export const scopeAxisOf = (dispatch: ParsedDispatch, issue: IssueFacts): ScopeA
  *
  * The audience axis answers "should an agent pick this up to **build**", and an epic only earns
  * `ready-for:agent` *after* it has been planned and gated — so fencing the planner and the gate on it
- * is circular (founder ruling, #5175: 19 of 20 open epics carried no such label). Purpose is how a
+ * is circular: when this was ruled, 19 of 20 open epics carried no such label. Purpose is how a
  * claim says which question it is asking, and it is deliberately a third input rather than a widening
  * of either axis: {@link scopeAxisOf} and {@link audienceAxisOf} read an issue exactly as before, and
  * only {@link admissionOf}'s composition consults the purpose.
@@ -531,7 +531,7 @@ export const parseClaimPurpose = (value: string): ClaimPurpose | null =>
  * the PR exists, so "should an agent start this" is already answered. The word is therefore
  * **derived from the target**, never typed. A `--purpose repair` flag would be passable against a
  * bare issue, which is a state the seam would then have to refuse; deriving it means the only way to
- * be in repair is to name a PR (founder ruling on #5866, #5914).
+ * be in repair is to name a PR.
  */
 export type RepairClaim =
 	/** The target is an issue and judges itself — no PR is in flight. */
@@ -551,7 +551,7 @@ export const repairClaimOf = (pr: number, served: IssueFacts): RepairClaim =>
 		: {_tag: "OrdinaryRepair", pr};
 
 /**
- * Only a build-purpose claim is bound by the audience axis (#5175), and not even that one when it
+ * Only a build-purpose claim is bound by the audience axis, and not even that one when it
  * repairs an open PR whose served issue is a decision. Scope binds every purpose and every repair.
  *
  * The exemption is narrow on purpose, and it is read off the target being a PR rather than off the
@@ -568,7 +568,7 @@ export const audienceAxisBinds = (
 /**
  * The type axis binds a **fresh build** and nothing else.
  *
- * `plan` and `gate` claim epics by design — that is the whole reason those purposes exist (#5175) —
+ * `plan` and `gate` claim epics by design — that is the whole reason those purposes exist —
  * and a repair claim names a PR, whose existence already answers "should an agent produce a pull
  * request here". So the axis asks its question at the one moment the answer is still open: an issue
  * being picked up cold to build.
@@ -582,7 +582,7 @@ export const typeAxisBinds = (purpose: ClaimPurpose, repair: RepairClaim = NOT_R
  *
  * A `plan` or `gate` claim targets an epic, whose criteria arrive per child from the plan ledger and
  * never in its own body, so reading the block there would refuse exactly the claims that are supposed
- * to precede it (#6025). And a repair claim names a PR that already exists: refusing that would strand
+ * to precede it. And a repair claim names a PR that already exists: refusing that would strand
  * the branch, because repairing an issue body is not something a build lane may do from one.
  */
 export const criteriaAxisBinds = (
@@ -594,13 +594,13 @@ export const criteriaAxisBinds = (
  * Whether a cited ruling opens the type axis on this label.
  *
  * One label has an arm and the rest do not: a `type:decision` whose choice is already recorded is
- * transcription, which an agent may build (founder ruling on #5879, comment 5335398768). An epic's
+ * transcription, which an agent may build. An epic's
  * deliverable is a ledger no citation turns into a pull request, so it has no arm at all.
  */
 export const citationOpens = (label: string, citation: Citation): boolean =>
 	label === DECISION_TYPE_LABEL && citation._tag === "Cited";
 
-/** Absence is an unknown audience, never an agent audience (#4780). */
+/** Absence is an unknown audience, never an agent audience. */
 export const audienceAxisOf = (issue: IssueFacts): AudienceAxis =>
 	issue.labels.includes(READY_FOR_AGENT)
 		? {_tag: "Agent"}
@@ -687,8 +687,8 @@ export const noServedIssue = (
  * path rather than a preference. While an issue sits outside every active campaign, neither its type
  * nor its audience label is the thing to fix. Inside one, type outranks audience because a decision
  * or an epic reported as `audience-not-agent` sends an operator to re-label work that is not a build
- * lane's under any label — the misnaming #5490 was filed on. Every unreported axis is still on the
- * outcome.
+ * lane's under any label — the misnaming this order exists to prevent. Every unreported axis is
+ * still on the outcome.
  *
  * `purpose`, `repair` and `citation` decide only whether a refusal is *seated*; each axis's verdict
  * is read and reported either way, so a claim admitted over a non-agent audience still says so.
@@ -806,11 +806,11 @@ export const purposeScopeLine = (
 			? READY_FOR_AGENT
 			: (audience.label ?? `no ${READY_FOR_PREFIX} label`);
 	if (repair._tag === "DecisionRepair") {
-		return `${verb}: purpose: ${purpose} — repairing open PR #${repair.pr}, whose served issue is ${DECISION_TYPE_LABEL}: the audience axis does not bind (#5914); this issue carries ${carried}.`;
+		return `${verb}: purpose: ${purpose} — repairing open PR #${repair.pr}, whose served issue is ${DECISION_TYPE_LABEL}: the audience axis does not bind; this issue carries ${carried}.`;
 	}
 	return audienceAxisBinds(purpose)
 		? `${verb}: purpose: ${purpose} — the audience axis binds; this issue carries ${carried}.`
-		: `${verb}: purpose: ${purpose} — the audience axis does not bind a ${purpose} claim (#5175); this issue carries ${carried}.`;
+		: `${verb}: purpose: ${purpose} — the audience axis does not bind a ${purpose} claim; this issue carries ${carried}.`;
 };
 
 /**
@@ -863,7 +863,7 @@ export const dispatchReport = (
  * The seated refusal for a non-admitted outcome, or `null` when the issue is admitted.
  *
  * The seating lives here rather than at each seam so `20`, `21`, `4` and `11` cannot drift apart
- * between the pool and the claim path — the disagreement ADR 0245 calls worse than no fence at all.
+ * between the pool and the claim path — a disagreement between two seams is worse than no fence at all.
  */
 export const admissionRefusal = (verb: string, admission: Admission): VerbOutcome | null => {
 	switch (admission._tag) {

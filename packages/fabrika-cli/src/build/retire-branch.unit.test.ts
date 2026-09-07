@@ -42,7 +42,7 @@ describe("supersede", () => {
 	});
 });
 
-describe("a retired branch leaves the candidate set — the deadlock ADR 0324 clears", () => {
+describe("a retired branch leaves the candidate set — the deadlock this clears", () => {
 	const fact = (branch: string) => ({
 		branch,
 		base: "664eb9d",

@@ -2,7 +2,7 @@
  * `heal-ci sweep` — every open PR classified with its strand age, the scheduled surface.
  *
  * **This verb writes nothing.** It files no issue, assigns nobody and spawns nothing: a detector
- * converts a strand into claimable work and normal pull adopts it (ADR 0205, founder ruling #3532).
+ * converts a strand into claimable work and normal pull adopts it.
  *
  * A board report with an unnamed hole in it is the false completeness this verb exists to prevent,
  * so a single unclassifiable PR fails the whole sweep rather than being silently dropped, and a
@@ -10,7 +10,7 @@
  *
  * Each row is `pr\t<number>\t<token>\t<age>\t<head>\t<lane>`. The lane is `lane.ts`'s lookup off the
  * class, emitted here so the scheduled workflow relays the note's arrow instead of deriving one in
- * its `run:` block (ADR 0228) — it used to hardcode `nobody` on every row (#7209).
+ * its `run:` block, which must never derive a decision — it used to hardcode `nobody` on every row.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";

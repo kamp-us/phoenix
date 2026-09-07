@@ -1,6 +1,5 @@
 /**
- * The pure rule behind `guard fanout-guard check`, ported from the v1 CLI's
- * `fanout-guard.unit.test.ts` (ADR 0155, #1898, #2554): the three invariants, the fail-closed zero
+ * The pure rule behind `guard fanout-guard check`: the three invariants, the fail-closed zero
  * verdict, the report wording, and every source parse. No IO — that is `./fanout-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
@@ -37,7 +36,7 @@ const facts = (
 	featureTargets: FeatureTargets = new Map(),
 ): FanoutGuardFacts => ({discovered, manifest, featurePublishes, featureTargets});
 
-describe("judge — fail-closed on zero scope (ADR 0092)", () => {
+describe("judge — fail-closed on zero scope", () => {
 	it("FAILS with zero-scope when no mutations are discovered", () => {
 		const verdict = judge(facts([], [man("post.submit", true, ["posts"])], new Map()));
 		expect(verdict.pass).toBe(false);
@@ -204,13 +203,13 @@ describe("judge — topic aim (#2554): a fanned mutation must publish to its dec
 		).toEqual(["posts"]);
 	});
 
-	it("a delegated feature (report → pano/sözlük) reaches its declared topics through the closure", () => {
+	it("a delegated feature (report → pano/sozluk) reaches its declared topics through the closure", () => {
 		const verdict = judge(
 			facts(
 				[disc("report.resolve", "report")],
 				[man("report.resolve", true, ["Post", "Term.definitions"])],
 				new Map([["report", true]]),
-				// report/live.ts has no direct targets; the closure gave it pano ∪ sözlük
+				// report/live.ts has no direct targets; the closure gave it pano ∪ sozluk
 				targets([["report", ["posts", "Post.comments", "Post", "Comment", "Term.definitions"]]]),
 			),
 		);
@@ -391,7 +390,7 @@ describe("parseFeatureDelegations — the *Live( bindings a feature publishes th
 });
 
 describe("resolveReachableTargets — union direct targets with delegated ones, transitively", () => {
-	it("report inherits pano ∪ sözlük through delegation", () => {
+	it("report inherits pano ∪ sozluk through delegation", () => {
 		const direct = new Map<string, ReadonlySet<string>>([
 			["pano", new Set(["posts", "Post"])],
 			["sozluk", new Set(["Term.definitions", "Definition"])],

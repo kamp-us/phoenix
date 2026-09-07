@@ -58,7 +58,7 @@ onlyBuiltDependencies:
 		expect(parseCatalog("catalog:\n  - acme-queue\n")._tag).toBe("Unparseable");
 	});
 
-	// The three shapes of #5361: each one parses as YAML, none of them is read, and answering
+	// The three unreadable shapes: each one parses as YAML, none of them is read, and answering
 	// `catalog: null` or an empty-string pin would be a confident wrong answer rather than a refusal.
 	it("refuses an inline flow map rather than reading it as no catalog at all", () => {
 		expect(parseCatalog("catalog: {acme-queue: 4.2.0}\n")).toMatchObject({

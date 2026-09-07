@@ -158,9 +158,9 @@ describe("runCheck", () => {
 	});
 
 	/**
-	 * Epic #6595's shape, end to end: the ledger says #4302 requires #4301 and the graph carries
-	 * nothing. Before this defect the floor answered `clean` here, `plan flip` made #4302 pickable, and
-	 * `build claim` admitted it on `scanned 0 blocked_by edges` (#6616).
+	 * The whole shape, end to end: the ledger says the phase-2 child requires the phase-1 one and the
+	 * graph carries nothing. Before this defect the floor answered `clean` here, `plan flip` made the
+	 * phase-2 child pickable, and `build claim` admitted it on `scanned 0 blocked_by edges`.
 	 */
 	it("reds UNENFORCED_DEP when the graph does not carry a stated dependency", async () => {
 		const gated = epic({
@@ -225,8 +225,8 @@ describe("runCheck", () => {
 });
 
 /**
- * ADR 0289's fail-closed precondition. It sits **ahead of the floor**, so these cases are about what
- * the verb refuses to grade at all rather than about what it grades.
+ * The fail-closed approval precondition. It sits **ahead of the floor**, so these cases are about
+ * what the verb refuses to grade at all rather than about what it grades.
  */
 describe("the approval precondition", () => {
 	const unapproved = (script: ReadonlyArray<Scripted>, listed: HttpReply) =>
@@ -274,7 +274,7 @@ describe("the approval precondition", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "clean", defects: []});
 	});
 
-	/** #4223's collapse, on this side too: a roster nobody could read is UNKNOWN, never `absent`. */
+	/** The same collapse, on this side too: a roster nobody could read is UNKNOWN, never `absent`. */
 	it("refuses 11, not 25, when the roster cannot be read", async () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -294,7 +294,7 @@ describe("the approval precondition", () => {
 });
 
 /**
- * Story 1 and story 5 of #5631 together: the bare repo gets phoenix's behaviour off the shipped
+ * The two halves of vocabulary resolution together: a repo that declares none gets the shipped
  * vocabulary, and a repo that declares its own gets that one instead. Every other test in this file
  * is the bare-repo arm — none of them writes a config — so these two only have to move the config.
  */
@@ -302,7 +302,7 @@ describe("the containment vocabulary, resolved", () => {
 	const withConfig = async (config: string | {readonly unreadable: true}) =>
 		Effect.runPromise(Effect.provide(runCheck(options), await approvedLayer(CLEAN, config)));
 
-	it("reds a phoenix-legal marker a foreign vocabulary does not carry", async () => {
+	it("reds a marker the shipped vocabulary allows and a foreign one does not carry", async () => {
 		const out = await withConfig(
 			'{"containmentVocabulary": {"values": ["unpublished", "exempt"]}}',
 		);

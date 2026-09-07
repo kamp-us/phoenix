@@ -4,16 +4,16 @@
  * Three properties the repair loop rests on:
  *
  * - **A stale marker is visible AS stale, never dropped.** "The FAIL is old" and "there is no FAIL"
- *   are different facts, and folding them is how a FAIL'd PR reads as unreviewed (#4105).
+ *   are different facts, and folding them is how a FAIL'd PR reads as unreviewed.
  * - **Native reviews are their own row kind**, never coerced into markers. Whether a
- *   `CHANGES_REQUESTED` with no marker drives a repair is the open decision #4555; this verb reports
- *   the state honestly and pre-rules nothing.
+ *   `CHANGES_REQUESTED` with no marker drives a repair is still undecided; this verb reports the
+ *   state honestly and pre-rules nothing.
  * - **An unreadable page is `11`, never a shorter list.** `{"rows": []}` on exit 0 is a proven "no
- *   verdicts", readable against the scope line's counts (ADR 0092, #4208 / #4219).
+ *   verdicts", readable against the scope line's counts.
  *
  * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
  *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
- *   section tells a builder to trust stays the only budget number anyone reads (#5959).
+ *   section tells a builder to trust stays the only budget number anyone reads.
  *
  * Every row's `body` is the finding's full text through the content gate — the repair loop consumes
  * findings from here and never raw-fetches a comment, which is what keeps the one-door property over
@@ -40,7 +40,7 @@ import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
 
-/** ADR 0079's provenance tag on a reviewer-appended criterion: `<!-- ac:review pr:#<pr> round:<n> -->`. */
+/** The provenance tag on a reviewer-appended criterion: `<!-- ac:review pr:#<pr> round:<n> -->`. */
 const PROVENANCE_RE = /<!--\s*ac:review\s+pr:#(\d+)\s+round:(\d+)\s*-->/;
 
 export interface VerdictsOptions {
@@ -50,7 +50,7 @@ export interface VerdictsOptions {
 }
 
 export interface ChildVerdictsOptions {
-	/** The epic child issue whose range-scoped verdicts are folded — it opens no PR (ADR 0285). */
+	/** The epic child issue whose range-scoped verdicts are folded — it opens no PR. */
 	readonly issue: number;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -106,7 +106,7 @@ export const runVerdicts = (
 		}
 
 		// Latest marker per gate namespace. The round count is `roundsOn`'s, so this verb and `build
-		// clear` cannot disagree about how many rounds the PR has been through (#6137).
+		// clear` cannot disagree about how many rounds the PR has been through.
 		const latest = new Map<string, Row>();
 		for (const comment of listed.value) {
 			const parsed = readMarker(comment.body);
@@ -174,7 +174,7 @@ export const runVerdicts = (
  *
  * It exists because the repair route has to be walkable: `build claim --resume` refuses a fresh build
  * over a child's standing `FAIL`, and a lane sent to repair needs the findings through a verb rather
- * than a raw fetch (#6386). The rows carry the range each verdict was formed over instead of a head,
+ * than a raw fetch. The rows carry the range each verdict was formed over instead of a head,
  * and a round is one graded tip — the range analogue of one graded head, folded through the same
  * `countRounds`.
  *
@@ -265,9 +265,9 @@ type Frozen =
 /**
  * The reviewer-appended criteria on this PR's linked issue that landed at or past the freeze round.
  *
- * The provenance tag ADR 0079 requires is what makes them findable at all — the round is written into
- * the row, so the freeze is a property of the artifact rather than of a session's memory. A PR with no
- * closing keyword links no issue and freezes nothing, which is an answer.
+ * The provenance tag every such criterion carries is what makes them findable at all — the round is
+ * written into the row, so the freeze is a property of the artifact rather than of a session's
+ * memory. A PR with no closing keyword links no issue and freezes nothing, which is an answer.
  */
 const frozenCriteria = (
 	repo: string,

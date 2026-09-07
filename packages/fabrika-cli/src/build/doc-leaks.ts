@@ -3,7 +3,7 @@
  * as distinct from `report/leaks.ts`, which guards runtime issue bodies nothing else covers.
  *
  * The two surfaces want different answers, and `build check` used to ask the body scanner about a
- * file in a diff (#5687). Three divergences followed, all of them live:
+ * file in a diff. Three divergences followed, all of them live:
  *
  *  1. **Segment class.** The body scanner's path segment permits regex punctuation, so a bare home
  *     marker followed by an alternation bar inside a fenced code block parses as a path. Here a
@@ -14,10 +14,10 @@
  *  3. **Self-exemption.** A doc whose subject IS path hygiene must spell the shapes out. That set is
  *     repo policy, so it is read from `.fabrika.jsonc`, not compiled in here (see `repo-config.ts`).
  *
- * **Why the shapes are re-declared, and what keeps them honest.** phoenix's `leak-guard` owns the
- * authoritative gate, but ADR 0238 forbids a fabrika verb running v1 code and ADR 0273 makes
- * fabrika installable into a repo that has no v1 CLI at all, so neither side can derive the
- * shapes from the other. ADR 0251 rules what stands in for the import: the canonical bytes are
+ * **Why the shapes are re-declared, and what keeps them honest.** A host repo's own `leak-guard`
+ * may own the authoritative gate, but a fabrika verb may never shell out to the host repo's CLI,
+ * and fabrika installs into repos that ship no such CLI at all, so neither side can derive the
+ * shapes from the other. What stands in for the import: the canonical bytes are
  * committed as the golden fixture `__fixtures__/doc-leak-patterns.golden.json`, and each side pins
  * it in a test of its own — `doc-leak-patterns.golden.test.ts` here, and
  * `fabrika-doc-leak-conformance.test.ts` on the gate's side, which reads this fixture. Drift on

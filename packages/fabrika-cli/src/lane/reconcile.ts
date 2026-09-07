@@ -1,11 +1,11 @@
 /**
  * Which recorded line a lane's ledger got the merge closure wrong on, and the line that supersedes
- * it — the offline half of `lane reconcile` (ADR 0350).
+ * it — the offline half of `lane reconcile`.
  *
- * ADR 0343 taught the machine to send a merged `Part of #N` back to `queued`, but the routing fact
+ * The machine sends a merged `Part of #N` back to `queued`, but the routing fact
  * rides the recorded event as a `partial` payload, so a `DONE` written before that field existed
  * replays through the guard's fallthrough and still folds the lane to a terminal over an open,
- * buildable issue (#7433). The log is append-only and nothing may rewrite a recorded line, so the
+ * buildable issue. The log is append-only and nothing may rewrite a recorded line, so the
  * repair is a `CORRECTED` line naming the one it supersedes.
  *
  * Reads no disk and no board: it answers which line is *correctable*, and whether the board agrees
@@ -13,7 +13,7 @@
  *
  * A lane is nominated once. Whichever way the board answers, the verb appends the answer as a
  * correction, so the next sweep skips the line at either polarity and the population shrinks to the
- * lanes nobody has confirmed yet (ADR 0351).
+ * lanes nobody has confirmed yet.
  */
 import {applyCorrections, foldLog, type LogEntry} from "./fold.ts";
 import {bareEvent, CORRECTED_EVENT, type CompiledLane} from "./machine.ts";
@@ -34,7 +34,7 @@ export type Misroute =
 			 * merge it stands on, so what that merge closed is one read of one PR rather than a search
 			 * over an issue's candidates — and a merged `Part of #N` is invisible to both nomination
 			 * reads anyway, the closing edge carrying no `Part of` and the index searching open PRs
-			 * only (#7433).
+			 * only.
 			 */
 			readonly pr: string | null;
 	  }
@@ -49,8 +49,8 @@ const correctsKey = (task: string, at: string): string => `${task}\u0000${at}`;
  * Whether this line's routing payload is still open — it never carried one, or it carried a `false`
  * naming no evidence that no correction has settled yet.
  *
- * ADR 0351 (#7800) taught the ship stage to record `partial: false` on a closing merge so a sweep
- * would never buy that read twice. But until #7457 the answer came out of the nominator, which
+ * The ship stage records `partial: false` on a closing merge so a sweep
+ * would never buy that read twice. But that answer once came out of the nominator, which
  * cannot see the subject — a merged `Part of #N` is a node in neither half of the union — so a
  * `false` written before that fix is the fallthrough wearing an answer's clothes, and trusting it is
  * the permissive fold this whole module undoes.
@@ -83,7 +83,7 @@ const unanswered = (entry: LogEntry, corrected: ReadonlySet<string>): boolean =>
  *
  * The candidate is located off the compiled machine rather than off a state name: which state ships
  * and which event lands the merge is the document's call, so an epic tail's emitted region — which
- * declares no partial arm at all — nominates nothing here, exactly as ADR 0343 carves it out.
+ * declares no partial arm at all — nominates nothing here, exactly as the guard carves it out.
  */
 export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): Misroute => {
 	const resolved = applyCorrections(entries);
@@ -128,8 +128,8 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
  *
  * A `Settled` answer means two different things and only this tells them apart: every recorded line
  * that reached the guard carries its answer, or the machine has no guard for one to reach. The
- * second is every lane booted before ADR 0343 shipped — lanes 6980 and 7382 among them — and
- * reading it as settled is the same permissive fold on one level up (#7433).
+ * second is every lane booted before the partial-merge guard shipped, and
+ * reading it as settled is the same permissive fold on one level up.
  */
 export const declaresClosureGuard = (lane: CompiledLane): boolean =>
 	Object.values(lane.tasks).some((task) => task.partialStates.size > 0);
@@ -153,7 +153,7 @@ export type ClosureRead =
 	| {readonly _tag: "Read"; readonly closure: Closure; readonly landed: ReadonlyArray<number>}
 	/**
 	 * The board did not answer, or answered and proved nothing. Never read as `Closes` — that is the
-	 * permissive fold #7433 exists to undo.
+	 * permissive fold this module exists to undo.
 	 */
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
@@ -172,7 +172,7 @@ export type ClosureRead =
  * So the absence of a closure proof is `Unknown`, and only a merged pull request that really links
  * this issue reaches the judgement. Both verbs land on it: `lane prove`'s ship stage reaches
  * `traceClosure` through `./closure.ts` and this function, never directly, so no caller reads that
- * permissive default raw (#7457).
+ * permissive default raw.
  */
 export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): ClosureRead => {
 	const landed = landedFor(issue, facts);
@@ -195,7 +195,7 @@ export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): Cl
  * Both polarities are written, and the `false` one is the whole reason a sweep is affordable. A
  * proven-partial merge routes the lane round again; a proven-closing one changes nothing about where
  * the lane sits and is recorded anyway, so the confirmed read lives in the ledger and the next sweep
- * skips the lane instead of buying the same answer again (ADR 0351). The correction is the only
+ * skips the lane instead of buying the same answer again. The correction is the only
  * place that read can land — the ledger is the record, so there is no cache beside it.
  */
 export const correctionEntry = (

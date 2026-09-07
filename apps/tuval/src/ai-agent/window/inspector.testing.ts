@@ -8,7 +8,7 @@
  * fixture serves both backends' tests exactly as one renderer serves both rows.
  */
 
-import type {AiAgentSessionState, UsageTotals} from "../core/index.ts";
+import type {AiAgentSessionState, UsageLedger} from "../core/index.ts";
 import {initialState} from "../core/state.ts";
 
 export const CWD = "/tmp/project";
@@ -20,11 +20,9 @@ export const usageOf = (usage: {
 	readonly cost: number;
 	readonly input: number;
 	readonly output: number;
-}): UsageTotals => ({
+}): UsageLedger => ({
 	model: usage.model,
-	cost: usage.cost,
-	inputTokens: usage.input,
-	outputTokens: usage.output,
+	turns: {"turn-1": {cost: usage.cost, inputTokens: usage.input, outputTokens: usage.output}},
 });
 
 export const agentSessionState = (

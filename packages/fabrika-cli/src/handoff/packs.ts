@@ -18,14 +18,14 @@
  * recomputes can drift with nothing marking it.
  *
  * <!-- anchor: THE-AUTHOR-IS-RESOLVED-NOT-TRUSTED --> A pack's author is resolved against repository
- * permissions before the pack is honoured (ADR 0055). A comment carrying a well-formed marker is
- * still a comment anyone with a GitHub account can post, and its `## Next act` is a sentence a
- * successor reads and then acts on. A permission read that **fails** is UNKNOWN for the whole call,
- * never a grant.
+ * permissions before the pack is honoured. A comment carrying a well-formed marker is still a
+ * comment anyone with a GitHub account can post, and its `## Next act` is a sentence a successor
+ * reads and then acts on. A permission read that **fails** is UNKNOWN for the whole call, never a
+ * grant.
  *
  * **Zero packs is a fact; a comment read that could not complete is not.** Most issues carry no
  * pack, and that is the ordinary state — but a page that could not be fetched leaves the answer
- * UNKNOWN, never `none` (ADR 0092).
+ * UNKNOWN, never `none`.
  */
 
 import {Effect} from "effect";

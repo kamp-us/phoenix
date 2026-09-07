@@ -1,6 +1,6 @@
 # `/plan-epic` — derived CLI contract
 
-**Skill:** [`plan-epic`](SKILL.md) · **Authoring brief:** [#4712](https://github.com/kamp-us/phoenix/issues/4712) · **Date:** 2026-08-09
+**Skill:** [`plan-epic`](SKILL.md) · **Date:** 2026-08-09
 
 The verbs land in `packages/fabrika-cli/` under the **`ledger`** subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped groups, every leaf declared via
@@ -9,13 +9,14 @@ excess-operand guard, and `excess-operand.unit.test.ts` reds on it). The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
 spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** (ADR 0238). The v1 machinery
-named below — `claude-plugins/kampus-pipeline/skills/plan-epic/scripts/`, and under
-`packages/pipeline-cli/src/tools/`: `epic-lock/`, `epic-splice/`, `epic-ledger/`,
-`intake-compose/`, `intake-dedup/`, `scratchpad/`, `homing-guard/`, `reachability-guard/` — is
-prior art **read** for semantics and scars; none is invoked, wrapped, or deferred to. Every v1
-module name cited in this spec is **non-normative**: the behavior it informs is restated here in
-full, and an implementer needs none of those files to build these verbs.
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — a verb whose whole body
+relays another tool's answer is not a verb. The v1 machinery named below —
+`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/`, and under
+`packages/pipeline-cli/src/tools/`: `epic-lock/`, `epic-splice/`, `epic-ledger/`, `intake-compose/`,
+`intake-dedup/`, `scratchpad/`, `homing-guard/`, `reachability-guard/` — is prior art **read** for
+semantics and scars; none is invoked, wrapped, or deferred to. Every v1 module name cited in this
+spec is **non-normative**: the behavior it informs is restated here in full, and an implementer
+needs none of those files to build these verbs.
 
 **The group name.** `ledger` is this skill's, following the one-group-per-skill precedent
 (`build-ui` took `ui`, `check-epic-plan` took `plan`, each reusing
@@ -29,7 +30,7 @@ nothing shipped creates an issue with a full classification, links a sub-issue, 
 
 **One disambiguation, because the word is overloaded in this package.**
 `packages/fabrika-cli/src/lane/store.ts` calls its append-only `events.jsonl` a "ledger". That is
-the *run* ledger. This group's `ledger` is the **plan** — the noun the brief and
+the *run* ledger. This group's `ledger` is the **plan** — the noun this contract and
 [`check-epic-plan`](../check-epic-plan/SKILL.md) both use for an epic's decomposed task list. The
 two never meet: no verb here reads or writes a lane's run ledger.
 
@@ -40,14 +41,12 @@ its ground with `fabrika build tree`, releases with `fabrika build release`, and
 note with `fabrika build note`. The purpose is part of the reuse, not a detail of it: `build claim`'s
 audience axis asks whether an agent should pick the issue up to *build*, and an epic earns
 `ready-for:agent` only after this skill has planned it and the gate has passed it, so a `plan` claim
-is admitted without it (founder ruling,
-[#5175](https://github.com/kamp-us/phoenix/issues/5175)). The scope axis is unchanged by the purpose,
-so `20` stays reachable and `21` does not, and `--override` stays the exception it was.
+is admitted without it. The scope axis is unchanged by the purpose, so `20` stays reachable and
+`21` does not, and `--override` stays the exception it was.
 
 **The grilling session is the `grill` group's, reused the same way**
-([`grilling`'s contract](../grilling/contract.md)). ADR
-[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md) requires a grilling session
-on every epic, before the plan reaches the epic body; the skill's step 4 runs it with
+([`grilling`'s contract](../grilling/contract.md)). Every epic is grilled, with no size threshold
+and no opt-out, before the plan reaches the epic body; the skill's step 4 runs it with
 `fabrika grill open --ticket <epic>`, `grill round`, `grill answer` and `grill read`, between
 `ledger draft` and `ledger write` (before `ledger child`, so the `NEEDS-INPUT` exit really does mint
 nothing). **This adds no `ledger` verb, no plan section and no exit code**, and it is why: the
@@ -55,13 +54,13 @@ session issue, its round grammar, the `fact`/`decision` split enforced at `grill
 ACL-gated ruling and the closed-set frontier all already exist and are already tested. Deriving a
 second question-and-answer record here would put two records on one conversation.
 
-**The session is where the grill runs; the epic is where it is kept, and that placement is 0289's,
-not a preference.** That record says in so many words that "The questions and the answers are posted
-as comments on the epic issue, which is where anyone reading the epic later already looks." Reusing
+**The session is where the grill runs; the epic is where it is kept, and that placement is a
+governing rule, not a preference.** The questions and the answers are posted as comments on the epic
+issue, because that is where anyone reading the epic later already looks. Reusing
 the `grill` group puts the working thread on a session issue, so step 4 mirrors the settled grill
 back onto the epic through `build note` — question, kind, answer or ruling, and the session number.
 Stated here because the two are easy to confuse: the reuse is a mechanism choice this contract may
-make, while *where the record lands* is 0289's to decide, and a cross-link alone would have quietly
+make, while *where the record lands* is not, and a cross-link alone would have quietly
 moved it. Nothing is derived to enforce the mirror — see the paragraph below.
 
 **No `ledger` verb proves the grill happened**, and nothing here derives one. The ordering — a
@@ -69,7 +68,7 @@ session opened, a round posted, the frontier read, the grill mirrored, *then* `l
 convention the skill holds, stated at its `GRILL-IS-CONVENTION` anchor. A verb that read the session before splicing
 would be this group deriving a verdict about a `grill` artifact, which is the same second-answer
 defect that keeps the structural floor out of this group; it would also make an absent session a
-`ledger write` refusal, seating a code for a fact ADR 0289 gives to the founder's checkpoint.
+`ledger write` refusal, seating a code for a fact the founder's approval checkpoint owns.
 
 **No second lock is derived**, and v1's `epic-lock` is why: all five of its
 distinct outcomes collapse onto exit `1`
@@ -126,9 +125,8 @@ as the sibling contracts do):
   group derives no second verdict; `ledger draft`, `ledger child` and `ledger topology` each
   validate *the document they are composing* so a defect is caught at authoring time, which is a
   different question from grading a finished ledger.
-- **A `status:triaged` flip.** The gate's, unconditionally (#4693 AC4). No verb here writes it.
-- **A pickability predicate.** `build`'s picker question, open on
-  [#4920](https://github.com/kamp-us/phoenix/issues/4920).
+- **A `status:triaged` flip.** The gate's, unconditionally. No verb here writes it.
+- **A pickability predicate.** `build`'s picker question, and still open there.
 - **A reachability check.** `reachability-guard` answers a flag-graduation question at the
   `/release` seam; nothing in planning needs it, and its v1 shape is pinned to one app's paths.
 - **A convergence / re-plan loop.** v1 exported `runConvergenceLoop` and registered it as no
@@ -136,7 +134,7 @@ as the sibling contracts do):
   loops.
 - **A planning lock, a repo resolver, a scratch opener, a link confirmer.** All four exist in v1
   as scripts whose entire body relays an upstream answer (`resolve-repo.sh`, `scratch-open.sh`,
-  `epic-lock-release.sh`, `confirm-links.sh`). A relay-only verb is not a verb (ADR 0238).
+  `epic-lock-release.sh`, `confirm-links.sh`). A relay-only verb is not a verb.
 
 ## Verb inventory
 
@@ -172,7 +170,7 @@ gate's reader is authoritative and this composer is held to it by the imported m
 
 `plan-epic` appends its plan and dependency topology below.
 
-<!-- fabrika:enriched issue=4300 mode=wrap -->
+<!-- fabrika:enriched issue=3 mode=wrap -->
 <details>
 <summary>Original brief (verbatim)</summary>
 
@@ -186,22 +184,19 @@ gate's reader is authoritative and this composer is held to it by the imported m
 
 ## Dependencies
 
-- phase 1: #4301, #4302
-- phase 2: #4303
-- #4303 requires: #4301
+- phase 1: #4, #5
+- phase 2: #6
+- #6 requires: #4
 ```
 
 **The plan region is located by the enrichment marker, never by position.** Detection is the
 verb-written `<!-- fabrika:enriched issue=<N> mode=<rewrite|wrap> --> ` line, matched whole-line
 (`packages/fabrika-cli/src/triage/enrich.ts:41`), which is one mode-independent rule closing both
-the position axis ([#4850](https://github.com/kamp-us/phoenix/issues/4850)) and the mode axis
-([#4866](https://github.com/kamp-us/phoenix/issues/4866)). **This is the route taken on
-[#4896](https://github.com/kamp-us/phoenix/issues/4896)'s open fork, and the reason is that a
-sibling already shipped it**: with the marker doing the detecting, appending the plan below the
-brief envelope breaks no detector, so the wrap-last layout inversion, its three coupled changes
-and its legacy migration are all unnecessary. #4892's remedy (c) — making the `--epic` envelope
-independent of a splicer's anchor set — is thereby **moot**; that issue owns its own ADR write-up
-and this contract does not pre-empt it.
+the position axis and the mode axis at once. **The marker is what makes position free**: with it
+doing the detecting, appending the plan below the brief envelope breaks no detector, so a
+wrap-last layout inversion, its coupled changes and its legacy migration are all unnecessary.
+Making the `--epic` envelope independent of a splicer's anchor set is thereby **moot** as a
+remedy — the anchor set is no longer what locates the region.
 
 **Plan block — the closed section set.** `## Plan (plan-epic)` followed by exactly these `###`
 headings, each present exactly once, in this order:
@@ -235,32 +230,32 @@ between them; exactly one blank line before `### What to build` and before
 bullet**; criteria are `- [ ] ` checkbox rows; a single trailing newline.
 **`**Stories:**` carries bare integers only**, and the composer refuses a value that is not `none`
 or a comma-separated integer list. The refusal is worth having because **v1** harvested every digit
-run in the value, so `1, 3 (see #4021)` silently claimed a story 4021 no epic declared. The
-downstream gate does not repeat that: it reads a non-conforming value as *absent* and reports it in
-`detail`. Refusing at authoring time is what keeps the two from disagreeing. `**Containment:**`'s **leading keyword** is one the repo's `containmentVocabulary` declares,
-or the reserved `none` (phoenix's set is `flag` / `exempt`); a trailing
-parenthetical is preserved verbatim (`flag (default-off)` is the ordinary form), and the field is
-emitted **only** when the cycle-doc probe reads `present` — v1's documented spec template omitted
-the field entirely while its skill body required it, so an author following the template dropped
-it on every child and the tolerant read made "forgot" indistinguishable from "no cycle doc".
+run in the value, so a value carrying a parenthetical ticket reference silently claimed a story id
+no epic declared. The downstream gate does not repeat that: it reads a non-conforming value as
+*absent* and reports it in `detail`. Refusing at authoring time is what keeps the two from
+disagreeing. `**Containment:**`'s **leading keyword** is one the repo's `containmentVocabulary`
+declares, or the reserved `none`; a trailing parenthetical is preserved verbatim (`flag
+(default-off)` is the ordinary form), and the field is emitted **only** when the cycle-doc probe
+reads `present` — v1's documented spec template omitted the field entirely while its skill body
+required it, so an author following the template dropped it on every child and the tolerant read
+made "forgot" indistinguishable from "no cycle doc".
 
 **`## Dependencies` — the rendered block.** It is a picture of the plan's shape for a human reader
-and **nothing gates on it**: blockedness sits behind GitHub's native `blocked_by` edges alone
-(#5387, ADR 0301), and `build eligible` stopped parsing this block in #5913. Exactly the two line
-forms `readTopology` parses, and
-nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and members
-ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that declares
-a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column,
-no parenthesized clause and no `---` rule — `readTopology` breaks at the first heading of any level
-**or** the first thematic break (`packages/fabrika-cli/src/build/dependencies.ts`), so a `### Phase
-<n>` line would end the scan on the line after `## Dependencies` and the block would read back as
-zero edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one
-of whose children is orphaned. The thematic break is the same boundary an appended amendment's
-separator draws, which is why one below the block leaves the block itself intact (#5816). The block ends with a trailing blank line so a later heading stays
-separated. The illustrated block above is the round trip this grammar buys — pasted into
-`readTopology` it parses to the three edges it depicts (`phase 1: #4301, #4302`, `phase 2: #4303`,
-`#4303 requires: #4301`), never the empty set, which is what lets `ledger topology` stage instead of
-refusing on `24`.
+and **nothing gates on it**: blockedness sits behind GitHub's native `blocked_by` edges alone, and
+`build eligible` no longer parses this block at all. Exactly the two line forms `readTopology`
+parses, and nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and
+members ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that
+declares a prerequisite, ascending by subject. There is no `###` heading inside the section, no
+label column, no parenthesized clause and no `---` rule — `readTopology` breaks at the first heading
+of any level **or** the first thematic break (`packages/fabrika-cli/src/build/dependencies.ts`), so
+a `### Phase <n>` line would end the scan on the line after `## Dependencies` and the block would
+read back as zero edges: a well-formed, plausible, always-wrong answer the gate then reads as an
+epic every one of whose children is orphaned. The thematic break is the same boundary an appended
+amendment's separator draws, which is why one below the block leaves the block itself intact. The
+block ends with a trailing blank line so a later heading stays separated. The illustrated block
+above is the round trip this grammar buys — pasted into `readTopology` it parses to the three edges
+it depicts (`phase 1: #4, #5`, `phase 2: #6`, `#6 requires: #4`), never the empty set, which is what
+lets `ledger topology` stage instead of refusing on `24`.
 
 ## The body digest
 
@@ -292,7 +287,7 @@ excluding the very bytes being verified.
 **Normalizing before hashing is a scar fix, not tidiness.** v1's splice round-trip compared raw
 bytes while its only caller captured stdout through command substitution, which strips every
 trailing newline before the PATCH — so what GitHub stored was never what was emitted and the
-comparison was structurally unwinnable (#4599). Hashing the normalized form makes a trailing-
+comparison was structurally unwinnable. Hashing the normalized form makes a trailing-
 newline round trip a match instead of a false `21` on every clean run.
 
 ## Shared conventions
@@ -314,7 +309,7 @@ Every `ledger` verb obeys these; stated once.
 - **A flag whose absence must be a *semantic* refusal is optional at the parser and refused in the
   verb body.** A parser-required flag's absence is exit `1`, indistinguishable from a typo
   (`triage/command.ts:78-85` is the shipped precedent). `--ready-for` on `ledger child` is the one
-  case here: its absence is a decision nobody made (#4780), which must be provable as `10`, not
+  case here: its absence is a decision nobody made, which must be provable as `10`, not
   guessable as a typo. **This does not apply to `--body-digest`, `--child` or `--title`**, whose
   absence is an ordinary usage error with no semantic content — those stay parser-required, and
   their fail-open risk is a *wrong* value, which is `21` and `10` respectively, not a missing one.
@@ -324,10 +319,9 @@ Every `ledger` verb obeys these; stated once.
   writes, and swallowing that to `""` makes an unread pipe byte-identical to an empty one.
 - **The run directory is keyed on the claim nonce, never the session.** `runKey(epic, nonce)` →
   `<treeRoot>/.fabrika-plan/<epic>-<nonce>/`. Every sibling subagent of one session shares the
-  session id (measured, #4500; resolved per #6960's chain), so a session-keyed namespace collapses exactly the
-  isolation two parallel planning lanes need (#4516, #4544). Every file inside it is named for what
-  it holds — no fixed leaf shared across runs. The shipped precedents are
-  `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
+  session id, so a session-keyed namespace collapses exactly the isolation two parallel planning
+  lanes need. Every file inside it is named for what it holds — no fixed leaf shared across runs.
+  The shipped precedents are `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
   **It is kept out of git the way `ledger` already does it** — `ledger open` appends the literal line
   `.fabrika-plan/` to `.git/info/exclude` if absent (`ledger/run.ts:29`'s `EXCLUDE_ENTRY`, written by
   `ledger/open-verb.ts:251-258`).
@@ -357,7 +351,7 @@ Every `ledger` verb obeys these; stated once.
 - **Common inputs.** `--repo <owner/name>` (default: `resolveRepo`'s precedence — `--repo`,
   `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, then the `origin` remote) on every verb. That
   variable name is **inherited from the shipped `io/issues.ts`**, not minted here. GitHub access
-  per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql),
+  per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md),
   paginated in full — v1's idempotency read used `per_page=100` with no `--paginate`, so in any
   repo past a hundred open issues its duplicate check was mostly blind and failed by re-minting.
 - **Bounded fan-out, where there is any.** Two verbs fan out and both do so at concurrency **8**,
@@ -456,7 +450,7 @@ never `20` — "I could not tell" is not "it is stale", and it is certainly not 
 **`8` versus `9` versus `23`:** `8` is a write whose outcome is unknown; `9` is a write that landed
 and read back wrong; `23` is narrower and more useful than either — the create is **proven** and
 the *link* is unknown, so a named child exists unlinked. Fusing `23` into `8` would leave a
-successor unable to tell "something may exist" from "#4302 exists and needs linking", which are
+successor unable to tell "something may exist" from "#5 exists and needs linking", which are
 opposite repairs.
 
 ---
@@ -466,7 +460,7 @@ opposite repairs.
 **Invocation**
 
 ```
-fabrika ledger open 4300 --token <claim-token> [--repo <owner/name>]
+fabrika ledger open 3 --token <claim-token> [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -474,16 +468,16 @@ fabrika ledger open 4300 --token <claim-token> [--repo <owner/name>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic being planned |
-| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
 
 **Output** — machine. One JSON object:
 
 ```
-{"answer": "opened", "epic": 4300, "run": "4300-7f31a2", "mode": "fresh",
- "bodyDigest": "8f2c1a90b4d7", "dir": "/w/.fabrika-plan/4300-7f31a2",
+{"answer": "opened", "epic": 3, "run": "3-7f31a2", "mode": "fresh",
+ "bodyDigest": "8f2c1a90b4d7", "dir": "/w/.fabrika-plan/3-7f31a2",
  "children": [], "cycleDoc": "present",
- "candidates": {"outcome": "candidates", "items": [{"number": 4180, "title": "queue view for reports", "score": 3}]}}
+ "candidates": {"outcome": "candidates", "items": [{"number": 7, "title": "queue view for reports", "score": 3}]}}
 ```
 
 `mode` is closed: `fresh` (the body carries no `## Plan (plan-epic)` heading) or `re-plan`
@@ -517,8 +511,8 @@ refusal to notice.
 **Freshness.** The verb resolves `origin/main` and compares the tree's merge base. Provably
 behind is `20`. A fetch or rev-parse that fails is `11`. There is no third arm: this verb never
 answers "fresh" without having proven it, because the whole point is that v1 planned against
-stale checkouts and minted phantom children (#3330), and the repo has no post-merge sync with any
-call site (#4167) — so the tree is stale by default until shown otherwise.
+stale checkouts and minted phantom children, and no repo is guaranteed a post-merge sync at any
+call site — so the tree is stale by default until shown otherwise.
 
 **Exit status** (beyond the universal four)
 
@@ -539,7 +533,7 @@ call site (#4167) — so the tree is stale by default until shown otherwise.
 | `ledger open: #<n> is not a type:epic — refusing to plan it.` | 10 | refusal |
 | `ledger open: cannot read <what>: <reason> — the ground is UNKNOWN.` | 11 | refusal |
 | `ledger open: this lane does not hold #<n>'s claim.` | 15 | refusal |
-| `ledger open: base is <k> commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).` | 20 | refusal |
+| `ledger open: base is <k> commit(s) behind origin/main — a plan derived here is derived on stale ground.` | 20 | refusal |
 | `ledger open: #<n>'s body carries <k> "## Plan (plan-epic)" headings — the plan mode has no single meaning.` | 22 | refusal |
 
 **Scope** — one epic, its sub-issue children, the open backlog for the dedup rank, one repo-file
@@ -551,24 +545,24 @@ which is why `outcome: "none"` is an answer and only an unreachable index is `in
 **Examples**
 
 ```
-$ fabrika ledger open 4300 --token <claim-token>
-{"answer":"opened","epic":4300,"run":"4300-7f31a2","mode":"fresh","bodyDigest":"8f2c1a90b4d7","dir":"/w/.fabrika-plan/4300-7f31a2","children":[],"cycleDoc":"present","candidates":{"outcome":"none","items":[]}}
+$ fabrika ledger open 3 --token <claim-token>
+{"answer":"opened","epic":3,"run":"3-7f31a2","mode":"fresh","bodyDigest":"8f2c1a90b4d7","dir":"/w/.fabrika-plan/3-7f31a2","children":[],"cycleDoc":"present","candidates":{"outcome":"none","items":[]}}
 ```
 
 ```
-$ fabrika ledger open 4300 --token <claim-token>
-ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).
+$ fabrika ledger open 3 --token <claim-token>
+ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground.
 $ echo $?
 20
 ```
 
 **Grounding**
 
-- #3330 / #4167 — a stale checkout inflated a baseline and spawned phantom children; `main-sync
-  --post-merge` has no call site, so freshness is proven here rather than assumed.
-- #4934 — one tree per epic run; every subagent works in the tree the conductor is in.
-- #4516 / #4544 / #4500 — the run key is the claim nonce; sibling subagents share the session id,
-  so a session-keyed namespace is not a namespace.
+- A stale checkout once inflated a baseline and spawned phantom children, and no post-merge sync
+  runs on its own, so freshness is proven here rather than assumed.
+- One tree per epic run; every subagent works in the tree the conductor is in.
+- The run key is the claim nonce; sibling subagents share the session id, so a session-keyed
+  namespace is not a namespace.
 - v1 scar (`idempotency-sets.sh:27,33`) — `per_page=100` with no `--paginate` made the duplicate
   read blind past a hundred issues; this verb paginates in full and states its scope.
 - v1 scar (`intake-dedup/command.ts:55`) — the no-keywords refusal printed to stderr and exited
@@ -582,7 +576,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 --token <claim-token> <<'EOF'
+fabrika ledger draft 3 --body-digest 8f2c1a90b4d7 --token <claim-token> <<'EOF'
 ## Plan (plan-epic)
 
 ### Summary
@@ -596,12 +590,12 @@ EOF
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose plan is staged |
 | `--body-digest` | string, 12 lowercase hex | yes | — | the digest `ledger open` printed; the draft refuses if the epic body has moved since |
-| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
 | stdin | markdown | yes | — | the plan block, opening with `## Plan (plan-epic)` |
 
 **Output** — machine.
-`{"answer": "staged", "epic": 4300, "document": "plan", "sections": 10, "stories": [1,2,3], "bytes": 4187}`
+`{"answer": "staged", "epic": 3, "document": "plan", "sections": 10, "stories": [1,2,3], "bytes": 4187}`
 
 The verb checks the closed section set (each of the ten `###` headings present exactly once, in
 order), that the block opens with `## Plan (plan-epic)`, and that `### User stories` parses through
@@ -661,12 +655,12 @@ required, and an empty one is `3`.
 **Examples**
 
 ```
-$ fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
-{"answer":"staged","epic":4300,"document":"plan","sections":10,"stories":[1,2,3],"bytes":4187}
+$ fabrika ledger draft 3 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
+{"answer":"staged","epic":3,"document":"plan","sections":10,"stories":[1,2,3],"bytes":4187}
 ```
 
 ```
-$ fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
+$ fabrika ledger draft 3 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
 ledger draft: user stories are numbered 1, 2, 4 — a story list must run from 1 with no gaps or repeats.
 $ echo $?
 4
@@ -689,7 +683,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent [--assignee <login>] --milestone <title> [--label <name>]… --token <claim-token> <<'EOF'
+fabrika ledger child 3 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent [--assignee <login>] --milestone <title> [--label <name>]… --token <claim-token> <<'EOF'
 **Stories:** 1, 2
 **TDD:** yes
 **Containment:** flag (default-off)
@@ -712,16 +706,16 @@ EOF
 | `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
-| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; a call naming neither is refused on `10` before any read (#5969) |
+| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; a call naming neither is refused on `10` before any read |
 | `--label` | string, repeatable | no | none | any further label, applied in the same create call |
-| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 | stdin | markdown | yes | — | the child body's fields and sections |
 
 **Output** — machine, the **observed** result:
 
 ```
-{"answer": "minted", "epic": 4300, "child": 4301, "linked": true,
+{"answer": "minted", "epic": 3, "child": 4, "linked": true,
  "observed": {"labels": ["p1","ready-for:agent","status:planned","type:feature"], "assignees": [], "milestone": "fabrika campaign"},
  "stories": [1,2], "containment": "flag"}
 ```
@@ -735,14 +729,14 @@ applied by a follow-up PATCH — and a follow-up PATCH opens a window in which t
 reads as a permissive default rather than an unknown. v1's own sibling script knows the hazard by
 name and warns that patching a fresh child "reopens the label-less-orphan window".
 
-**A home is required and is never defaulted** (#5969): the call names an open milestone, or a
-`--label` from the claim fence's standing-lane set (`STANDING_LANE_LABELS`, ADR 0208) — a child
+**A home is required and is never defaulted**: the call names an open milestone, or a
+`--label` from the claim fence's standing-lane set (`STANDING_LANE_LABELS`) — a child
 carrying neither is what the fence refuses at exit `20`, so the refusal moves to the mint, where
 nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`, never
 re-listed here in code: two copies is how the two seams drift into disagreeing about what a home is.
 
-**`--ready-for` is required and has no default** (#4780): a child must never inherit its audience
-by omission. **`--ready-for human` requires `--assignee`** (#4693): the label is the routing
+**`--ready-for` is required and has no default**: a child must never inherit its audience
+by omission. **`--ready-for human` requires `--assignee`**: the label is the routing
 signal, born-assignment is the enforced hold, and neither substitutes for the other — a label
 without assignment has no teeth, an assignment without the label hides the intent from queries.
 This is not merely a convention: the gate's floor reds `HELD_CHILD_UNASSIGNED` over the **whole
@@ -761,7 +755,7 @@ link, deliberately** — see step 5.
    The gate's `MISSING_CONTAINMENT` derives from the same key, so admitting one here would author a
    defect the floor then reds.
 3. **Vocabulary precondition.** Confirm every label and the milestone exist in the repository.
-   `POST .../labels` **creates** an unknown label rather than rejecting it (#4285), and a closed
+   `POST .../labels` **creates** an unknown label rather than rejecting it, and a closed
    milestone is off-vocabulary; refuse on `10` rather than minting taxonomy.
 4. **Leak-scan** the composed body (`5` / `6`).
 5. **Create,** with every attribute, in one `POST /repos/{repo}/issues` — `title`, `body`,
@@ -822,11 +816,11 @@ link, deliberately** — see step 5.
 | `ledger child: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `ledger child: created #<c> and could not re-read it — the outcome is UNKNOWN.` | 8 | refusal |
 | `ledger child: created #<c> and it does not read back as sent — it needs a human eye.` | 9 | refusal |
-| `ledger child: --ready-for is required — a child must never inherit its audience by omission (#4780).` | 10 | refusal |
-| `ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).` | 10 | refusal |
-| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 10 | refusal |
+| `ledger child: --ready-for is required — a child must never inherit its audience by omission.` | 10 | refusal |
+| `ledger child: --ready-for human requires --assignee — a held child is born assigned.` | 10 | refusal |
+| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
-| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).` | 10 | refusal |
+| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
 | `ledger child: this lane does not hold #<n>'s claim.` | 15 | refusal |
@@ -840,32 +834,31 @@ scope is unreachable: the verb writes exactly one child or refuses.
 **Examples**
 
 ```
-$ fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" --token <claim-token> < child.md
-{"answer":"minted","epic":4300,"child":4301,"linked":true,"observed":{"labels":["p1","ready-for:agent","status:planned","type:feature"],"assignees":[],"milestone":"fabrika campaign"},"stories":[1,2],"containment":"flag"}
+$ fabrika ledger child 3 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" --token <claim-token> < child.md
+{"answer":"minted","epic":3,"child":4,"linked":true,"observed":{"labels":["p1","ready-for:agent","status:planned","type:feature"],"assignees":[],"milestone":"fabrika campaign"},"stories":[1,2],"containment":"flag"}
 ```
 
 ```
-$ fabrika ledger child 4300 --title "moderation queue triage rules" --type type:feature --priority p1 --ready-for human --token <claim-token> < child.md
-ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).
+$ fabrika ledger child 3 --title "moderation queue triage rules" --type type:feature --priority p1 --ready-for human --token <claim-token> < child.md
+ledger child: --ready-for human requires --assignee — a held child is born assigned.
 $ echo $?
 10
 ```
 
 **Grounding**
 
-- #4780 — every child carries exactly one `ready-for:` value, set explicitly at creation and never
+- Every child carries exactly one `ready-for:` value, set explicitly at creation and never
   inherited by omission.
-- #4693 (founder ruling, 2026-08-09) — COMPOSE: the label is the routing signal, born-assignment is
-  the enforced hold; neither substitutes for the other. The gate's `HELD_CHILD_UNASSIGNED` is the
-  enforcement, and it fails the whole epic.
+- The label is the routing signal and born-assignment is the enforced hold; neither substitutes for
+  the other. The gate's `HELD_CHILD_UNASSIGNED` is the enforcement, and it fails the whole epic.
 - v1 scar (`create-child.sh:48-55`) — three hardcoded `labels[]`, no pass-through, no milestone, so
   the create was not atomic over the child's birth attributes despite its own docblock's claim.
 - v1 scar (`amend-child-labels.sh:2-4,18-19`) — the amend endpoint is additive, so "adjust" could
   only add, and it force-re-added `status:planned` to a child the gate may already have flipped.
 - v1 scar (`link-child.sh:22-24`) — the link was reported from the POST response and verified
   nowhere; `confirm-links.sh` was a separate manual step whose only assertion was a comment.
-- #4285 — `POST .../labels` creates unknown labels; the vocabulary check is a precondition.
-- #4101 / #2413 — the priority set is `{p0,p1,p2}`; `p3` is retired, not admitted.
+- `POST .../labels` creates unknown labels; the vocabulary check is a precondition.
+- The priority set is `{p0,p1,p2}`; `p3` is retired, not admitted.
 
 ---
 
@@ -874,10 +867,10 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger topology 4300 --token <claim-token> <<'EOF'
-#4301 phase 1
-#4302 phase 1
-#4303 phase 2 requires #4301
+fabrika ledger topology 3 --token <claim-token> <<'EOF'
+#4 phase 1
+#5 phase 1
+#6 phase 2 requires #4
 EOF
 ```
 
@@ -886,27 +879,25 @@ EOF
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose topology is declared |
-| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
 | stdin | line grammar | yes | — | one line per child: `#<ref> phase <n> [requires #<a>[, #<b>]…]` |
 
 **Output** — machine.
 
 ```
-{"answer": "staged", "epic": 4300, "document": "topology", "phases": 2, "children": 3,
- "edges": {"rows": [["#4303","#4301"]], "more": 0}, "bytes": 214}
+{"answer": "staged", "epic": 3, "document": "topology", "phases": 2, "children": 3,
+ "edges": {"rows": [["#6","#4"]], "more": 0}, "bytes": 214}
 ```
 
 Lines are order-indifferent. **Every child in the run manifest appears exactly once — and the
 manifest is the epic's whole child set, retained children included**, which is what makes a
-`re-plan` placeable; a manifest
-child with no line is an unplaced child and a line naming a number that is not in the manifest is
-a dangling reference — both `24`. Edges are ordered `[dependent, prerequisite]`:
-`["#4303","#4301"]` reads *#4303 requires #4301*. `edges` is an evidence-array under ADR
-[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) — a validated echo of the
-caller's own stdin, one pair per declared `requires` — so it collapses to a cap-and-count: the
-first 5 pairs in `rows`, with `more` counting what followed (`0` when the array was whole); the
-rendered block still carries every edge.
+`re-plan` placeable; a manifest child with no line is an unplaced child and a line naming a number
+that is not in the manifest is a dangling reference — both `24`. Edges are ordered `[dependent,
+prerequisite]`: `["#6","#4"]` reads *#6 requires #4*. `edges` is a bounded evidence array — a
+validated echo of the caller's own stdin, one pair per declared `requires` — so it collapses to a
+cap-and-count: the first 5 pairs in `rows`, with `more` counting what followed (`0` when the array
+was whole); the rendered block still carries every edge.
 
 The verb renders the `## Dependencies` block into `<dir>/topology.md` and then **parses its own
 output back through the imported `readTopology`**, refusing on `24` if the round trip does not
@@ -916,7 +907,7 @@ of defect nobody notices until a build runs in the wrong order.
 
 **A cycle is `24`**, walked transitively and reported as the member set. **This verb cannot see a
 shared-file conflict** — whether two children in one phase write the same module is a judgment the
-skill carries (#3709), and the verb does not pretend otherwise.
+skill carries, and the verb does not pretend otherwise.
 
 **Exit status** (beyond the universal four)
 
@@ -942,7 +933,7 @@ skill carries (#3709), and the verb does not pretend otherwise.
 | `ledger topology: #<n> is declared <k> times — a child sits in exactly one phase.` | 24 | refusal |
 | `ledger topology: the rendered block does not parse back to the declared edges — refusing to stage it.` | 24 | refusal |
 | `ledger topology: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `ledger topology: the run manifest holds zero children — refusing to render a topology over zero scope (ADR 0092).` | 7 | refusal |
+| `ledger topology: the run manifest holds zero children — refusing to render a topology over zero scope.` | 7 | refusal |
 | `ledger topology: #<n> is not a type:epic — refusing to declare a topology for it.` | 10 | refusal |
 | `ledger topology: phase "<v>" is not a positive integer.` | 10 | refusal |
 | `ledger topology: cannot read <what>: <reason> — nothing was staged.` | 11 | refusal |
@@ -953,26 +944,28 @@ an empty manifest means the epic has no children at all — none retained by the
 would produce a `## Dependencies` block the gate reads as an epic every one of whose children is
 orphaned. It is `7` rather than `24` because nothing was validated — a refused scope is not an
 invalid topology, the same split `plan check` makes when it seats a childless epic on `7` instead
-of calling it defect number one (ADR 0092).
+of calling it defect number one — every guard fails closed on zero scope rather than reporting a
+clean run over nothing.
 
 **Examples**
 
 ```
-$ fabrika ledger topology 4300 --token <claim-token> < topo.txt
-{"answer":"staged","epic":4300,"document":"topology","phases":2,"children":3,"edges":{"rows":[["#4303","#4301"]],"more":0},"bytes":214}
+$ fabrika ledger topology 3 --token <claim-token> < topo.txt
+{"answer":"staged","epic":3,"document":"topology","phases":2,"children":3,"edges":{"rows":[["#6","#4"]],"more":0},"bytes":214}
 ```
 
 ```
-$ fabrika ledger topology 4300 --token <claim-token> < topo.txt
-ledger topology: child #4302 is placed in no phase.
+$ fabrika ledger topology 3 --token <claim-token> < topo.txt
+ledger topology: child #5 is placed in no phase.
 $ echo $?
 24
 ```
 
 **Grounding**
 
-- ADR 0092 — an empty manifest is a refused scope, never a rendered empty topology.
-- #3709 — two slices sharing a central file are not parallel; the verb cannot decide that and says
+- An empty manifest is a refused scope, never a rendered empty topology: a guard over zero scope
+  fails closed.
+- Two slices sharing a central file are not parallel; the verb cannot decide that and says
   so rather than implying its verdict is complete.
 - v1 had no round-trip check on the composed block at all; the first time anyone learned the
   topology parsed differently than intended was when the gate derived the wrong defects.
@@ -986,7 +979,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
+fabrika ledger write 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
 ```
 
 **Inputs**
@@ -995,13 +988,13 @@ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose body is written |
 | `--body-digest` | string, 12 lowercase hex | yes | — | the digest `ledger open` printed; the write refuses if the body has moved since |
-| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
 **Output** — machine.
 
 ```
-{"answer": "written", "epic": 4300, "mode": "fresh", "bodyDigest": "8f2c1a90b4d7",
+{"answer": "written", "epic": 3, "mode": "fresh", "bodyDigest": "8f2c1a90b4d7",
  "newDigest": "c41b7e0a91f6", "planBytes": 4187, "topologyBytes": 214, "verified": true}
 ```
 
@@ -1028,8 +1021,8 @@ Order of operations:
 4. **PATCH once**, then **re-read and compare**. The comparison is over the normalized body and it
    checks the *whole* result, not a re-extraction of the region — v1 truncated an epic body to
    end-of-file whenever a `## Dependencies` heading appeared inside the preserved brief, and its
-   round-trip check could not see it because both sides ran the same first-occurrence extractor
-   (#4879). A PATCH whose status is unreadable is `8`; a body that lands and does not match is `9`.
+   round-trip check could not see it because both sides ran the same first-occurrence extractor.
+   A PATCH whose status is unreadable is `8`; a body that lands and does not match is `9`.
 
 **The region is never cut to end-of-file.** v1's replace branch sliced from the `## Dependencies`
 heading to EOF on the assumption that dependencies are the last section, destroying anything a
@@ -1072,12 +1065,12 @@ staged documents are required and their absence is `25`.
 **Examples**
 
 ```
-$ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
-{"answer":"written","epic":4300,"mode":"fresh","bodyDigest":"8f2c1a90b4d7","newDigest":"c41b7e0a91f6","planBytes":4187,"topologyBytes":214,"verified":true}
+$ fabrika ledger write 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
+{"answer":"written","epic":3,"mode":"fresh","bodyDigest":"8f2c1a90b4d7","newDigest":"c41b7e0a91f6","planBytes":4187,"topologyBytes":214,"verified":true}
 ```
 
 ```
-$ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
+$ fabrika ledger write 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
 ledger write: topology.md was never staged in this run — stage it before writing.
 $ echo $?
 25
@@ -1085,9 +1078,9 @@ $ echo $?
 
 **Grounding**
 
-- #4866 / #4850 — detection is the whole-line enrichment marker, so position is not load-bearing
-  and the plan may sit below the brief envelope. This is #4896's route, taken.
-- #4879 — v1 truncated a body to EOF when a `## Dependencies` heading sat inside the preserved
+- Detection is the whole-line enrichment marker, so position is not load-bearing
+  and the plan may sit below the brief envelope.
+- v1 truncated a body to EOF when a `## Dependencies` heading sat inside the preserved
   brief, and the round-trip check reused the buggy extractor so it could not see it. The bounded
   region and the whole-body comparison answer both halves.
 - v1 scar (`splice-body.sh:174-175,185`) — the PATCH's exit status was never checked and the
@@ -1097,7 +1090,7 @@ $ echo $?
 - v1 scar (`splice-body.sh:101`) — a `for attempt in 1 2 3` loop whose every branch broke, so the
   second attempt was unreachable while the terminal message claimed "every attempt raced". This
   verb attempts once and says so.
-- #4599 — the caller's command substitution stripped trailing newlines before the PATCH, so a raw
+- The caller's command substitution stripped trailing newlines before the PATCH, so a raw
   byte comparison could never succeed; the digest and the comparison both normalize.
 
 ---
@@ -1113,16 +1106,15 @@ fabrika ledger edges <epic> --token <claim-token> [--repo owner/name]
 **Answer**
 
 ```json
-{"answer": "reconciled", "epic": 4300, "required": 3, "already": 1, "written": 2, "verified": true}
+{"answer": "reconciled", "epic": 3, "required": 3, "already": 1, "written": 2, "verified": true}
 ```
 
 **Why it exists.** The `## Dependencies` block is a **picture** of the dependency graph, never the
-graph. ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes GitHub's
-native `blocked_by` edges the one carrier of blockedness, and `build eligible` / `build claim` read
-only those. So a plan that stops at the picture admits a child it has itself declared blocked: epic
-#6595 stated in three places that #6598 waited on the open, unruled decision #6597, and `build claim`
-took it on `scanned 0 blocked_by edges`
-([#6616](https://github.com/kamp-us/phoenix/issues/6616)). This verb is the bridge.
+graph. GitHub's native `blocked_by` edges are the one carrier of blockedness, and `build eligible` /
+`build claim` read only those. So a plan that stops at the picture admits a child it has itself
+declared blocked: an epic once stated in three places that a child waited on an open, unruled
+decision, and `build claim` took that child on `scanned 0 blocked_by edges`. This verb is the
+bridge.
 
 Order of operations:
 
@@ -1170,7 +1162,7 @@ answers `written: 0`.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ledger edges: #<n>'s ## Dependencies block is unparseable at line <k>: <text>` | 4 | refusal |
-| `ledger edges: #<n> declares no topology — refusing to answer over zero scope (ADR 0092).` | 7 | refusal |
+| `ledger edges: #<n> declares no topology — refusing to answer over zero scope.` | 7 | refusal |
 | `ledger edges: <k> edge(s) were POSTed and cannot be confirmed — cannot read <what>: <reason>.` | 8 | refusal |
 | `ledger edges: <k> edge(s) do not read back on the graph — it needs a human eye.` | 9 | refusal |
 | `ledger edges: #<n> is not a type:epic — refusing to write edges for it.` | 10 | refusal |
@@ -1185,23 +1177,23 @@ a surprising scope is auditable without re-running.
 **Examples**
 
 ```
-$ fabrika ledger edges 4300 --token <claim-token>
+$ fabrika ledger edges 3 --token <claim-token>
 ledger edges: scanned 3 required edges.
-{"answer":"reconciled","epic":4300,"required":3,"already":1,"written":2,"verified":true}
+{"answer":"reconciled","epic":3,"required":3,"already":1,"written":2,"verified":true}
 ```
 
 ```
-$ fabrika ledger edges 4300 --token <claim-token>
-ledger edges: #4300 declares no topology — refusing to answer over zero scope (ADR 0092).
+$ fabrika ledger edges 3 --token <claim-token>
+ledger edges: #3 declares no topology — refusing to answer over zero scope.
 $ echo $?
 7
 ```
 
 **Grounding**
 
-- [#6616](https://github.com/kamp-us/phoenix/issues/6616) — the defect this verb answers, with the
-  epic #6595 / #6597 / #6598 reproduction.
-- ADR 0301 — the `blocked_by` graph is the carrier; the prose block is at most a picture of it.
+- The defect this verb answers: a prose-only dependency block let a build gate admit a child the
+  epic had itself declared blocked.
+- The `blocked_by` graph is the carrier; the prose block is at most a picture of it.
 - [`map ticket`](../../../../packages/fabrika-cli/src/map/ticket-verb.ts) — the shipped precedent for
   writing an edge on a resolved internal id, whose shape this verb follows rather than re-deriving.
 
@@ -1212,7 +1204,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice" --token <claim-token>
+fabrika ledger supersede 3 --child 8 --reason "folded into the loader slice" --token <claim-token>
 ```
 
 **Inputs**
@@ -1222,17 +1214,17 @@ fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slic
 | `<number>` | positional integer | yes | — | the parent epic |
 | `--child` | integer | yes | — | the child being retired |
 | `--reason` | string | yes | — | why it is retired; posted as the journal comment |
-| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
 **Output** — machine.
-`{"answer": "superseded", "epic": 4300, "child": 4288, "comment": 5230661234, "unlinked": true, "state": "closed"}`
+`{"answer": "superseded", "epic": 3, "child": 8, "comment": 5230661234, "unlinked": true, "state": "closed"}`
 
 Three legs in a fixed order — **comment, unlink, close** — then a re-read proving `state` is
 `closed` with `state_reason` `not_planned`. The order is load-bearing: closing before unlinking
 leaves a closed issue still counted as a sub-issue, which the gate reads as a child in scope that
-can never carry a live assignee (#5026 names this exact residue as undecided for pre-existing
-children; this verb simply does not create more of it).
+can never carry a live assignee. Whether that residue keeps a pre-existing child in floor scope is
+undecided; this verb simply does not create more of it.
 
 The three calls, so an implementer needs no other document:
 
@@ -1284,13 +1276,13 @@ unreachable: `--child` is required.
 **Examples**
 
 ```
-$ fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice" --token <claim-token>
-{"answer":"superseded","epic":4300,"child":4288,"comment":5230661234,"unlinked":true,"state":"closed"}
+$ fabrika ledger supersede 3 --child 8 --reason "folded into the loader slice" --token <claim-token>
+{"answer":"superseded","epic":3,"child":8,"comment":5230661234,"unlinked":true,"state":"closed"}
 ```
 
 ```
-$ fabrika ledger supersede 4300 --child 4301 --reason "no longer needed" --token <claim-token>
-ledger supersede: #4301 was minted by this run — refusing to supersede a child of the current plan.
+$ fabrika ledger supersede 3 --child 4 --reason "no longer needed" --token <claim-token>
+ledger supersede: #4 was minted by this run — refusing to supersede a child of the current plan.
 $ echo $?
 10
 ```
@@ -1302,7 +1294,7 @@ $ echo $?
   channel were two shapes on one stream.
 - v1 scar (`teardown-scratch-epic.sh:8-9`) — a destructive verb that "closes exactly the numbers
   you name" with no guard at all. The sub-issue check and the manifest check are that guard.
-- #5026 — whether pre-existing closed or unassigned held children stay in floor scope is undecided;
+- Whether pre-existing closed or unassigned held children stay in floor scope is undecided;
   this verb does not decide it and does not add to the residue.
 
 ---

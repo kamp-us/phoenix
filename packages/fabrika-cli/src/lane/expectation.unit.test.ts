@@ -91,7 +91,7 @@ describe("expectationReader names the parent an issue hangs under when nothing s
 
 	it("reads an edge whose number does not parse as a Child with no parent to name", async () => {
 		const read = await readAt([
-			[ISSUE, board({parent: {url: "https://github.com/o/r/issues/whatever"}})],
+			[ISSUE, board({parent: {url: "https://forge.example/o/r/issues/whatever"}})],
 			[SUBS, NO_CHILDREN],
 		]);
 

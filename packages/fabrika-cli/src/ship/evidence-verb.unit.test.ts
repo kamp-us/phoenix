@@ -171,7 +171,7 @@ describe("runEvidence", () => {
 		);
 	});
 
-	// #6759: a Release PR's head carries both the parked `pull_request` run and the dispatched one,
+	// A Release PR's head carries both the parked `pull_request` run and the dispatched one,
 	// and GitHub's return order for `runs?head_sha=` is undocumented. Taking the first match would
 	// read `absent` at a head whose bundle exists.
 	it("picks the run that ran over a parked one, whatever order GitHub lists them in", async () => {
@@ -199,7 +199,7 @@ describe("runEvidence", () => {
 		expect(out.stderr.some((line) => line.includes("parked at action_required"))).toBe(true);
 	});
 
-	// ADR 0308: `checks` is an evidence-array, so the manifest's rows collapse to a status tally. The
+	// `checks` is an evidence array, so the manifest's rows collapse to a status tally. The
 	// names behind a non-passing tally stay readable — the verb already lists them on stderr.
 	it("tallies the manifest's checks by status instead of printing a row per check", async () => {
 		const out = await run(
@@ -245,7 +245,7 @@ describe("runEvidence", () => {
 		expect(JSON.parse(out.stdout).checks).toEqual({pass: 2});
 	});
 
-	// #5563: the consumer read the bundle against GitHub's conclusion vocabulary, which the producer
+	// The consumer used to read the bundle against GitHub's conclusion vocabulary, which the producer
 	// never writes, so every real bundle read `failed` and no PR could ship on green evidence.
 	it("reports present for a manifest in the producer's own published shape", async () => {
 		const out = await run(

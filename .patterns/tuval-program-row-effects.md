@@ -243,6 +243,28 @@ answered. The fix is a Cmd whose handler reads the committed state and emits the
 scheduled by the same Msg that resumes. It is the one handler that reads `ProcessSelf.state()`
 rather than folding forward, and the reason is that there is no event to fold.
 
+## A request's completion versus retained public state
+
+A window that needs the outcome of **its own** dispatch reads `Delivered.view`, not changes to a
+retained field on `readProcess`. [`Processes.dispatchFolded`](../apps/tuval/src/process/Processes.ts)
+holds the external-dispatch semaphore through the actor's transitive `idle` and the state read;
+[`transport/server.ts`](../apps/tuval/src/shell/transport/server.ts) sends that sampled view back on
+the request's existing sequence. Broadcast snapshots can arrive independently and repeat old fields.
+
+The AI agent's page path uses a nullable, tagged `pageOutcome`: clear at request admission, then
+success with the page or refusal with the failure. `lastPage` and `failure` remain independently
+retained for their existing readers, so neither one alone says what this request did. No new sequence
+counter is needed: the dispatch reply already correlates the observation. The window keeps a local
+pending guard and rejects completions from a replaced session/connection; a missing completion view
+is an unconfirmed request, not a success. The outcome is defaulted for old checkpoints and dropped
+on restore. See [`ChatWindow.tsx`](../apps/tuval/src/shell/chat/ChatWindow.tsx), its codec-round-trip
+regressions, and the real-process tests in
+[`handlers.unit.test.ts`](../apps/tuval/src/ai-agent/handlers/handlers.unit.test.ts).
+
+This applies only to work completed by the dispatch's transitive handlers. A command that merely
+starts independent background work still needs that work's own correlated result; `idle` cannot
+prove the background work finished.
+
 ## A row that is also a backend: the layer, declared for enumeration
 
 An ai-agent row hands `aiAgentProgram` the `TuvalAiAgent` layer it runs on, and that helper stamps

@@ -4,9 +4,9 @@
  * Every one of them **verifies its own effect** rather than trusting a status line: the golden fetch
  * hands the bytes back for the caller to hash against the pointer, the store tier PUTs then GETs the
  * same content-addressed URL and hash-compares, and the attachment tier probes every returned URL
- * with a HEAD. That is the whole difference from the upstream capture-side upload, whose failures are
- * projected away by an error channel typed `never` (#3925): here a failed verification is a value the
- * verb refuses on.
+ * with a GET and compares the PNG bytes. That is the whole difference from the upstream
+ * capture-side upload, whose failures are projected away by an error channel typed `never`: here a
+ * failed verification is a value the verb refuses on.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -23,7 +23,7 @@ import {isRecord} from "../io/json.ts";
 import type {Upload, UploadLeg, UploadTarget} from "./evidence-verb.ts";
 import type {FetchLeg} from "./golden-verb.ts";
 import {legFailed} from "./leg-failed.ts";
-import {sha256Of} from "./png.ts";
+import {decodePng, sha256Of} from "./png.ts";
 import {goldenUrl} from "./pointer.ts";
 
 /** Settle a promise into its value or its failure, so no path here needs a `try`. */
@@ -83,11 +83,84 @@ export const storeUpload = (store: string, target: UploadTarget): Effect.Effect<
 		catch: legFailed,
 	}).pipe(Effect.catch((cause) => Effect.succeed<Upload>({_tag: "Failed", reason: cause.reason})));
 
+const verifyAttachment = async (
+	hostedUrl: string,
+	token: string,
+	target: UploadTarget,
+): Promise<Upload> => {
+	const attachment = URL.parse(hostedUrl);
+	if (
+		attachment === null ||
+		attachment.origin !== "https://github.com" ||
+		attachment.username !== "" ||
+		attachment.password !== "" ||
+		attachment.search !== "" ||
+		attachment.hash !== "" ||
+		!/^\/user-attachments\/assets\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(
+			attachment.pathname,
+		)
+	) {
+		return {_tag: "Failed", reason: "the upload returned no trusted GitHub attachment URL"};
+	}
+	let url: URL = attachment;
+	let authenticated = true;
+	for (let redirects = 0; redirects <= 20; redirects++) {
+		// Signed asset requests can be GET-only; never forward the GitHub token across origins.
+		const probe: Response | Error = await attempt(
+			fetch(url.href, {
+				method: "GET",
+				redirect: "manual",
+				headers: authenticated ? {authorization: `token ${token}`} : {},
+			}),
+		);
+		if (probe instanceof Error) {
+			return {_tag: "Failed", reason: "the hosted attachment GET failed"};
+		}
+		if ([301, 302, 303, 307, 308].includes(probe.status)) {
+			const location: string | null = probe.headers.get("location");
+			await attempt(probe.body?.cancel() ?? Promise.resolve());
+			const next: URL | null = location === null ? null : URL.parse(location, url);
+			if (
+				next === null ||
+				next.protocol !== "https:" ||
+				next.username !== "" ||
+				next.password !== "" ||
+				redirects === 20
+			) {
+				return {_tag: "Failed", reason: "the hosted attachment GET returned an invalid redirect"};
+			}
+			authenticated = authenticated && next.origin === attachment.origin;
+			url = next;
+			continue;
+		}
+		if (probe.status !== 200) {
+			await attempt(probe.body?.cancel() ?? Promise.resolve());
+			return {_tag: "Failed", reason: `the hosted attachment GET returned HTTP ${probe.status}`};
+		}
+		if (
+			probe.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== PNG_CONTENT_TYPE
+		) {
+			await attempt(probe.body?.cancel() ?? Promise.resolve());
+			return {_tag: "Failed", reason: "the hosted attachment GET did not serve image/png"};
+		}
+		const body = await attempt(probe.arrayBuffer());
+		if (body instanceof Error) {
+			return {_tag: "Failed", reason: "the hosted attachment GET body could not be read"};
+		}
+		const bytes = new Uint8Array(body);
+		if (sha256Of(bytes) !== target.sha256 || decodePng(bytes)._tag !== "Image") {
+			return {_tag: "Failed", reason: "the hosted attachment GET did not match the captured PNG"};
+		}
+		return {_tag: "Ok", url: hostedUrl};
+	}
+	return {_tag: "Failed", reason: "the hosted attachment GET exceeded the redirect limit"};
+};
+
 /**
- * Attachment tier: GitHub's user-attachment endpoint, then a HEAD probe of the returned URL.
+ * Attachment tier: GitHub's user-attachment endpoint, then a verified GET of the returned URL.
  *
- * Two facts stated rather than hidden. The endpoint is **undocumented** (ADR 0165's durability
- * caveat rides along — hosted copies are display-grade, the set manifest in the lane scratch is the
+ * Two facts stated rather than hidden. The endpoint is **undocumented** (so the durability caveat
+ * rides along — hosted copies are display-grade, and the set manifest in the lane scratch is the
  * durable record), and it is an upload API rather than an issues read/write, so it sits outside skill
  * conventions §11's REST-porcelain scope while every issue/PR read and write in `ui evidence` stays
  * inside it.
@@ -117,27 +190,24 @@ export const attachmentUpload =
 				if (response instanceof Error) {
 					return {
 						_tag: "Failed",
-						reason: `the user-attachments upload failed: ${response.message}`,
+						reason: "the user-attachments upload failed",
 					};
 				}
 				const body = await attempt(response.text());
-				const outcome: UploadOutcome = parseUploadResponse({
-					status: response.status,
-					body: body instanceof Error ? body.message : body,
-				});
+				if (body instanceof Error) {
+					return {_tag: "Failed", reason: "the user-attachments upload response could not be read"};
+				}
+				const outcome: UploadOutcome = parseUploadResponse({status: response.status, body});
 				const hostedUrl = outcome.hostedUrl;
 				if (hostedUrl === null) {
-					return {_tag: "Failed", reason: outcome.uploadError ?? "the upload returned no URL"};
+					return {
+						_tag: "Failed",
+						reason: `the user-attachments upload returned no trusted URL (HTTP ${response.status})`,
+					};
 				}
-				const probe = await attempt(fetch(hostedUrl, {method: "HEAD"}));
-				if (probe instanceof Error) {
-					return {_tag: "Failed", reason: `${hostedUrl}: HEAD failed: ${probe.message}`};
-				}
-				return probe.status === 200
-					? {_tag: "Ok", url: hostedUrl}
-					: {_tag: "Failed", reason: `${hostedUrl}: HEAD returned HTTP ${probe.status}`};
+				return verifyAttachment(hostedUrl, params.token, target);
 			},
-			catch: legFailed,
+			catch: () => legFailed("the attachment upload or verification failed"),
 		}).pipe(
 			Effect.catch((cause) => Effect.succeed<Upload>({_tag: "Failed", reason: cause.reason})),
 		);
@@ -157,7 +227,7 @@ type Credentialed<A> = Effect.Effect<
 
 /**
  * The attachment tier's two credentials, both off `../io/gh-api.ts` — the package's one token
- * resolution (ADR 0315) and one REST read, never a second auth path and never a `gh` subprocess on
+ * resolution and one REST read, never a second auth path and never a `gh` subprocess on
  * the request path.
  *
  * Resolved lazily, at the first upload, so a run that never reaches the attachment tier never asks

@@ -34,6 +34,7 @@ export type ChatRow =
 	| {readonly kind: "older"; readonly items: number}
 	/** A `page` request is out. */
 	| {readonly kind: "loading"}
+	| {readonly kind: "page-error"; readonly detail: string}
 	/**
 	 * A run of consecutive session notices as one row. A burst of hook frames landing mid-turn is a
 	 * row that grows rather than N rows that push everything the reader was looking at down the page.
@@ -62,6 +63,7 @@ export interface ChatRowsInput {
 	/** How many items the live-tail bound dropped, off `transcript.omitted`. */
 	readonly omitted: number;
 	readonly loading: boolean;
+	readonly pageError?: string | null;
 	readonly atOldest: boolean;
 	/** The ids of the group heads whose folded rows are showing, off this window's own view slot. */
 	readonly unfolded?: ReadonlySet<string>;
@@ -70,7 +72,7 @@ export interface ChatRowsInput {
 /**
  * A stable key per row, so the virtualizer's measurement cache survives a prepend. Item rows key on
  * the item's own id — which is stable across an update, since a tool result re-sends the same id
- * with a new status (ruling 1, #7570) — and the two head rows key on their kind, of which at most
+ * with a new status (ruling 1, #7570) — and the head rows key on their kind, of which at most
  * one is ever present.
  */
 export const rowKey = (row: ChatRow): string => {
@@ -140,16 +142,24 @@ export const mergeOlder = (
 	return fresh.length === 0 ? held : [...fresh, ...held];
 };
 
-/** The call a tool row ran inside, when the backend marked one. Nothing else nests. */
-const parentOf = (item: TranscriptItem): ItemId | undefined =>
-	item.kind === "tool" ? item.parentId : undefined;
+/**
+ * The ids a fold may hang under. A session notice is not one: it renders as part of a run, with no
+ * disclosure and no depth of its own, so a row naming one as its parent is an orphan rather than a
+ * row hidden behind a head that can never open.
+ */
+const foldHeads = (items: ReadonlyArray<TranscriptItem>): ReadonlySet<string> =>
+	new Set(items.flatMap((item) => (item.kind === "system" ? [] : [item.id])));
+
+/** The head this row hangs under: the call it ran inside, when that call is in this list too. */
+const headOf = (item: TranscriptItem, heads: ReadonlySet<string>): ItemId | undefined =>
+	item.parentId !== undefined && heads.has(item.parentId) ? item.parentId : undefined;
 
 /**
  * Append a session notice, joining the run already at the end of the list when there is one.
  *
- * Only `parentOf` decides nesting and only a tool row answers it, so a session notice is always a
- * root at depth zero heading no fold — which is what makes a plain "is the last row a run" test the
- * whole of adjacency, and what makes the dropped `depth`/`nestedIds` fields nothing lost.
+ * A notice heads no fold — `foldHeads` refuses it one — and its own depth is never drawn, which is
+ * what makes a plain "is the last row a run" test the whole of adjacency, and what makes the
+ * dropped `depth`/`nestedIds` fields nothing lost.
  */
 const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
 	const last = rows[rows.length - 1];
@@ -167,7 +177,7 @@ const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
  * collision is `unheld`'s — id, then text against a turn the tail still holds as `local` — so the
  * surviving row keeps the `local:` id it has had since the send and its `rowKey` does not move.
  *
- * A tool row naming a parent that is also in this list is **folded under it** (founder ruling,
+ * A row naming a parent that is also in this list is **folded under it** (founder ruling,
  * 2026-09-05): the group head carries the count and the folded rows appear only while it is
  * unfolded, which is what keeps a fifty-call subagent from flooding the window. A row whose parent
  * is not in the list — its group head is older than the pages walked back to — stays where it is,
@@ -185,23 +195,22 @@ const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
 export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	const items = [...unheld(input.tail, input.older), ...input.tail];
 	const unfolded = input.unfolded ?? new Set<string>();
-	const present = new Set(items.map((item) => item.id));
+	const heads = foldHeads(items);
 	const folded = new Map<string, Array<TranscriptItem>>();
 	for (const item of items) {
-		const parent = parentOf(item);
-		if (parent === undefined || !present.has(parent)) continue;
+		const parent = headOf(item, heads);
+		if (parent === undefined) continue;
 		const group = folded.get(parent);
 		if (group === undefined) folded.set(parent, [item]);
 		else group.push(item);
 	}
 	const rows: Array<ChatRow> = [];
 	if (!input.atOldest && items.length > 0) {
-		rows.push(input.loading ? {kind: "loading"} : {kind: "older", items: input.omitted});
+		if (input.loading) rows.push({kind: "loading"});
+		else if (input.pageError != null) rows.push({kind: "page-error", detail: input.pageError});
+		else rows.push({kind: "older", items: input.omitted});
 	}
-	const roots = items.filter((item) => {
-		const parent = parentOf(item);
-		return parent === undefined || !present.has(parent);
-	});
+	const roots = items.filter((item) => headOf(item, heads) === undefined);
 	const reachable = new Set<string>();
 	const mark = (item: TranscriptItem): void => {
 		if (reachable.has(item.id)) return;
@@ -228,7 +237,7 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 		if (!unfolded.has(item.id)) return;
 		for (const child of group) emit(child, depth + 1);
 	};
-	for (const item of roots) emit(item, parentOf(item) === undefined ? 0 : 1);
+	for (const item of roots) emit(item, item.parentId === undefined ? 0 : 1);
 	for (const item of items) {
 		if (!reachable.has(item.id)) emit(item, 1);
 	}

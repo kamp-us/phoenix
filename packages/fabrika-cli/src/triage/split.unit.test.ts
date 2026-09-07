@@ -42,11 +42,11 @@ describe("normalizeTitle", () => {
 	});
 
 	it("keeps Turkish letters instead of dropping them", () => {
-		expect(normalizeTitle("Sözlük tanımı")).toBe("sözlük tanımı");
+		expect(normalizeTitle("Kütüphane Tanımı")).toBe("kütüphane tanımı");
 	});
 
 	it("folds canonically-equivalent spellings of one title together", () => {
-		expect(normalizeTitle("Sözlük")).toBe(normalizeTitle("Sözlük".normalize("NFD")));
+		expect(normalizeTitle("Kütüphane")).toBe(normalizeTitle("Kütüphane".normalize("NFD")));
 	});
 });
 
@@ -100,7 +100,7 @@ describe("composeChildBody", () => {
 		);
 	});
 
-	it("carries the agent footer, without which the child could never be killed (ADR 0159)", () => {
+	it("carries the agent footer, without which the child could never be killed", () => {
 		expect(composeChildBody("x", 4312, footer)).toContain("Filed by an agent");
 	});
 

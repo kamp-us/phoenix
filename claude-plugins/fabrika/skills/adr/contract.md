@@ -1,41 +1,40 @@
 # `/adr` — derived CLI contract
 
-**Skill:** [`adr`](SKILL.md) · **Authoring brief:** [#4704](https://github.com/kamp-us/phoenix/issues/4704) · **Date:** 2026-08-01
+**Skill:** [`adr`](SKILL.md) · **Date:** 2026-08-01
 
-**The seed package.** These are fabrika's first derived verbs, so this spec is where the verb package
-lands — [#4648](https://github.com/kamp-us/phoenix/issues/4648) Resolved question 2 defers the
-decision to the first derived contract, which is this one. The package is `packages/fabrika-cli/`,
-its binary is `fabrika`, and this skill's verbs sit under an `adr` subcommand group. The
+**The seed package.** These are fabrika's first derived verbs, so this spec is where the verb
+package lands. The package is `packages/fabrika-cli/`, its binary is `fabrika`, and this skill's
+verbs sit under an `adr` subcommand group. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs all seven; where this spec
 and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** fabrika is self-contained
-by construction: every verb this skill needs is implemented in `packages/fabrika-cli/`, and no fence
-in `SKILL.md` invokes anything else. That is the [isolation rule](../../docs/cli-interface-convention.md);
+**`fabrika` calls the retired v1 pipeline CLI nowhere, and neither does the skill.** fabrika is
+self-contained by construction: every verb this skill needs is implemented in
+`packages/fabrika-cli/`, and no fence in `SKILL.md` invokes anything else. That is the [isolation rule](../../docs/cli-interface-convention.md);
 it is a hard constraint on every fabrika skill, not a preference of this one.
 
-The reason is the deletion test. A fabrika that calls `pipeline-cli` can never be the thing that
-replaces it — every call is a tether that keeps the old tree alive. Isolation costs a duplicated
+The reason is the deletion test. A fabrika that calls the tool it replaces can never be the thing
+that replaces it — every call is a tether that keeps the old tree alive. Isolation costs a duplicated
 ranking during the transition; a tether costs the ability to ever delete anything.
 
 **`adr classify` was considered and deliberately not derived.** The control-plane question is settled
 at the merge gate, and that gate is the authority. A fabrika copy of it could tell an author
 "ordinary" while the gate says "control-plane" — two answers to a merge-gating question, which is
 worse than either a tether or a drifted ranking. That reasoning holds under either model, and the two
-differ: v1's `cp-classify` classifies an ADR **by content** (its ADR-0164 probe, reached because no
-`.decisions/**` path matches its path pattern), while fabrika's ruled model is CODEOWNERS-only,
-three-valued, and has **no semantic detection**, so under it an ADR is not control plane — see
+differ: the retired v1 classifier read an ADR **by content**, reached because no decision-corpus path
+matched its path pattern, while fabrika's ruled model is CODEOWNERS-only, three-valued, and has **no
+semantic detection**, so under it an ADR is not control plane — see
 [§CP classification](../../docs/control-plane-classification.md). Either way the skill states the
 expectation, never rewords to dodge the gate, and leaves the verdict where it is enforced. The
-incidents behind it, #4386 and #3416, were the *gate* misclassifying, so an author-side predictor
-would not have caught them anyway.
+incidents behind it were the *gate* misclassifying, so an author-side predictor would not have caught
+them anyway.
 
 ## Verb inventory
 
 | Verb | Purpose | Split test |
 |---|---|---|
 | `adr next` | the next unused ADR id, against a fetched base ref unioned with open ADR PRs | fetch, parse ids, take the max, add one — no judgment anywhere in it |
-| `adr new` | scaffold `.decisions/NNNN-slug.md` from the canonical template | the file's *shape* is fixed text with substitutions; only its content is judgment |
+| `adr new` | scaffold `NNNN-slug.md` under the record directory from the canonical template | the file's *shape* is fixed text with substitutions; only its content is judgment |
 | `adr mint` | allocate the next id and scaffold its record in one invocation | both halves are already derived; fusing them removes a window rather than adding judgment |
 | `adr resolve` | resolve an id to its real filename and state against a fetched base ref | a lookup with a defined answer; whether the result may be cited stays in the skill |
 | `adr supersede` | rewrite an older ADR's `status:` line to `superseded by [NNNN](…)` | *deciding* to supersede is judgment; the one-line edit and its link are mechanical |
@@ -87,14 +86,14 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   `7` and `11` are the two seats this group shares with `report`'s table, code for code, so a caller
   driving both reads one meaning: the target is not there, and the read that would have proven it
   failed. **`5` is a vacated seat, never a free one** — it meant "the record directory was read and
-  is empty, refusing" until #5254 and #5297 made that state an answer, and a new meaning there would
+  is empty, refusing" until an empty corpus became an answer instead, and a new meaning there would
   hand a caller pinned to the old reading a wrong answer under a familiar number. The group's own
   band starts at `12`, which puts it out of reach.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
-- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**
+- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md)**
   — REST, paginated. The reason lives there, not here. What is local to this group: a pull request
-  that adds its `.decisions/` file past file #100 still claims its number (#725), so the paginate
+  that adds its record past the first page of its file list still claims that id, so the paginate
   half is load-bearing for `adr next`.
 
 ---
@@ -123,8 +122,8 @@ empty answer: see Scope.
 **The id is the maximum of the union, plus one — never the first free number in it.** A gap below
 the maximum is a number some pull request claimed and never merged, and re-issuing it points every
 citation of the abandoned ADR at a different decision. The worked example below is chosen to
-discriminate the two rules: `mergedMax 0236` with `inFlight [0237, 0239]` answers `0240`, where
-first-free would answer `0238`.
+discriminate the two rules: `mergedMax 9236` with `inFlight [9237, 9239]` answers `9240`, where
+first-free would answer `9238`.
 
 **Exit status**
 
@@ -150,9 +149,9 @@ first-free would answer `0238`.
 | `adr next: cannot resolve --repo from the origin remote: <reason> — the in-flight set is UNKNOWN.` | 21 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` **as of the fetched `--base`**, plus every open pull
-request in `--repo` that *adds* a `.decisions/NNNN-*.md` file. The scope line goes to stderr on every
-run, naming the base SHA, the record count and the in-flight count, so a caller can audit which half
-produced the answer.
+request in `--repo` that *adds* an `NNNN-*.md` file under that same directory. The scope line goes
+to stderr on every run, naming the base SHA, the record count and the in-flight count, so a caller
+can audit which half produced the answer.
 
 The two halves fail differently, and the difference is load-bearing:
 
@@ -160,7 +159,7 @@ The two halves fail differently, and the difference is load-bearing:
   the merged set is read as `git ls-tree <base-sha>:<dir>`, which fails outright when `<dir>` is not
   in the tree, so a listing that comes back empty is a directory that **exists and holds nothing** —
   a repo adopting fabrika on day one. Only a directory that could not be read is UNKNOWN, and that is
-  exit `11`. The two states never share a code (#5254).
+  exit `11`. The two states never share a code.
 - **An empty in-flight set is a fact — but only on exit 0.** No open ADR pull request is a normal
   state. An in-flight set that could not be read is exit `18` and prints nothing on stdout, because a
   caller that reads an empty set as "nothing reserved" silently falls back to the on-disk id, which
@@ -170,16 +169,16 @@ The two halves fail differently, and the difference is load-bearing:
 
 ```
 $ fabrika adr next
-0240
+9240
 ```
 
 ```
 $ fabrika adr next --json
-{"id":"0240","mergedMax":"0236","inFlight":["0237","0239"],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
+{"id":"9240","mergedMax":"9236","inFlight":["9237","9239"],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
 ```
 
-An adopting repo whose `.decisions/` exists and holds no records — the merged set is empty, no open
-pull request claims an id, so `max(∅ ∪ ∅) + 1` is the first id:
+An adopting repo whose record directory exists and holds no records — the merged set is empty, and
+no open pull request claims an id, so `max(∅ ∪ ∅) + 1` is the first id:
 
 ```
 $ fabrika adr next
@@ -187,37 +186,33 @@ $ fabrika adr next
 ```
 
 ```
-$ fabrika adr next --repo kamp-us/nonexistent
-adr next: cannot enumerate open pull requests in kamp-us/nonexistent: HTTP 404 — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
+$ fabrika adr next --repo o/nonexistent
+adr next: cannot enumerate open pull requests in o/nonexistent: HTTP 404 — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
 $ echo $?
 18
 ```
 
 **Grounding**
 
-- #3779 — two lanes both minted ADR 0198 and both PRs went green; 0114 and 0123 were the same
-  collision earlier. The fetched base ref closes the stale-local-tree half.
-- ADR 0074 — the in-flight reservation lock: an open PR adding `.decisions/NNNN-*.md` *is* the
-  reservation for `NNNN`. **This verb follows 0074's union and departs from its allocation rule.**
-  0074's Decision says "reserve the first integer free in the union"; every implementation since —
-  `decisions-index next` in code, help text and unit tests, and the v1 skill's own Step 1 — computes
-  `max(union) + 1`. This spec follows the implementations, because #4296 (a citation to an ADR that
-  never landed) postdates 0074 and makes re-issuing an abandoned number strictly worse than leaving
-  a gap. Measured 2026-08-01, the two rules are 75 apart: first-free answers `0163` — an id absent
-  from `main`, absent from every open pull request, and never added in any commit in history — while
-  `max(union) + 1` answers `0238`. **The divergence is real and needs an ADR that amends 0074 rather
-  than a spec that quietly outvotes it** — an implementer should not resolve this alone. Tracked on
-  #3779.
-- ADR 0092 — zero scope reds **for a gate**, whose empty scan means it checked nothing. An allocator
-  is not a gate, and 0092's own Consequences ask a legitimately-empty scope to be made explicit
-  rather than refused. A repo adopting fabrika has an empty `.decisions/` by definition, and refusing
-  there left its first ADR unmintable on the documented path (#5254, against the #4776 ruling that
-  working in a foreign repo is a release criterion).
+- **Two lanes minting one id, both pull requests green, is the collision this verb exists for.** It
+  has happened repeatedly, and fetching the base ref before reading it closes the stale-local-tree
+  half of it.
+- **The in-flight reservation lock.** An open pull request that *adds* an `NNNN-*.md` record **is**
+  the reservation for `NNNN`, so the in-flight set joins the merged one. The allocation over that
+  union is `max(union) + 1`, never the first integer free in it: a gap below the maximum is a number
+  some pull request claimed and abandoned, and re-issuing it silently points every citation of the
+  abandoned record at a different decision. A gap costs nothing; a reused id costs a citation its
+  meaning.
+- **Zero scope reds for a gate; an allocator is not a gate.** A gate's empty scan means it checked
+  nothing, so refusing is right there. A legitimately empty scope is a fact to make explicit instead,
+  and a repo adopting fabrika has an empty corpus by definition — refusing there leaves its first
+  record unmintable on the one documented path.
 - **The residual race is real and this verb does not close it.** Two authors between the same pair of
-  invocations still collide. CI's `decisions-index validate` job reds the second-to-merge PR in
-  CI, and the skill's step 6 re-check catches it for the caller's own id before the PR opens. A verb
-  that claimed to close it would be lying; state the residual in `--help`.
-- #4208 / #4219 — a proven refusal never shares an exit code with a failure to invoke.
+  invocations still collide. A repo's own duplicate-id check reds the second-to-merge pull request in
+  CI, and the skill's step 6 re-check catches it for the caller's own id before the pull request
+  opens. A verb that claimed to close it would be lying; state the residual in `--help`.
+- **A proven refusal never shares an exit code with a failure to invoke** — a caller cannot tell the
+  two apart from the status alone, and reads a crash as a verdict.
 
 ---
 
@@ -226,7 +221,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
+fabrika adr new 9240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
 ```
 
 **Inputs**
@@ -299,27 +294,30 @@ merge-time bookkeeping (`Closes #N`, blocks cleared, the vocabulary-impact outco
 **Scope** — not a judging verb. It writes exactly one file and never edits another. It does not check
 whether the id is claimed; that is `adr next`, `adr mint` and `adr resolve`.
 
-**Examples**
+**Examples** — every example that prints a record path shows a repo whose `decisionsDir` is
+`docs/decisions`, and with the key absent the same runs write under the shipped default instead. The
+exception is `adr sweep`'s two runs, which name a committed fixture corpus by `--dir` and carry that
+corpus's own ids.
 
 ```
-$ fabrika adr new 0240 only-landed-adrs-may-be-cited
-.decisions/0240-only-landed-adrs-may-be-cited.md
+$ fabrika adr new 9240 only-landed-adrs-may-be-cited
+docs/decisions/9240-only-landed-adrs-may-be-cited.md
 ```
 
 ```
-$ fabrika adr new 0126 ambient-adr-discovery
-adr new: .decisions/0126-ambient-adr-discovery.md already exists — refusing to overwrite.
+$ fabrika adr new 9126 one-record-per-decision
+adr new: docs/decisions/9126-one-record-per-decision.md already exists — refusing to overwrite.
 $ echo $?
 12
 ```
 
 **Grounding**
 
-- The template is the v1 skill's, trimmed. It lives here rather than in `SKILL.md` because a template
-  in two places is a template that drifts, and the skill's job is the judgment the template cannot
-  carry.
-- The `**What this decides:**` line is required on every ADR: the founder ratifies ADRs (ADR 0078)
-  and reads that line, not the dense agent-facing prose beneath it.
+- The template is the retired v1 skill's, trimmed. It lives here rather than in `SKILL.md` because a
+  template in two places is a template that drifts, and the skill's job is the judgment the template
+  cannot carry.
+- The `**What this decides:**` line is required on every record: the person who ratifies a decision
+  reads that line, not the dense agent-facing prose beneath it.
 
 ---
 
@@ -353,26 +351,26 @@ shared as code rather than restated, because two copies of the four UNKNOWN bran
 for one of them to become an answer.
 
 **Why it exists.** `adr next` then `adr new` leaves the author's whole drafting turn between reading
-an id and writing it, and an id read then is stale by the time it lands: that gap put ADR 0284 on two
-pull requests and cost a dismissed approval (#5841). **It is not a reservation and must never be
+an id and writing it, and an id read then is stale by the time it lands: that gap has put one id on
+two pull requests and cost a dismissed approval. **It is not a reservation and must never be
 described as one** — no id is visible to another lane until its pull request opens, so the
-mint-to-open window survives, and nothing downstream closes it: `decisions-index`'s `merge_group`
-run reads the batched ref and *reports* a duplicate there, but that job is not a
-branch-protection-required context, so the batch still merges and the lane that opened second
-renumbers on `main` afterwards ([#5869](https://github.com/kamp-us/phoenix/issues/5869)). `adr next`
+mint-to-open window survives, and nothing downstream closes it. A repo's own duplicate-id check
+reading the merge queue's batched ref *reports* a duplicate there, but a job that is not a
+branch-protection-required context does not hold the batch, so it merges and the lane that opened
+second renumbers on the default branch afterwards. `adr next`
 and `adr new` stay callable on their own for the cases that genuinely need the id before the file.
 
 **Examples**
 
 ```
 $ fabrika adr mint only-landed-adrs-may-be-cited
-adr mint: scanned .decisions at 49a2290…, 236 decision records; 3 id(s) in flight across the open pull requests of kamp-us/phoenix.
-.decisions/0240-only-landed-adrs-may-be-cited.md
+adr mint: scanned docs/decisions at 49a2290…, 236 decision records; 3 id(s) in flight across the open pull requests of o/r.
+docs/decisions/9240-only-landed-adrs-may-be-cited.md
 ```
 
 ```
 $ fabrika adr mint only-landed-adrs-may-be-cited
-adr mint: cannot enumerate open pull requests in kamp-us/phoenix: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
+adr mint: cannot enumerate open pull requests in o/r: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
 $ echo $?
 18
 ```
@@ -384,7 +382,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika adr resolve 0164 [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
+fabrika adr resolve 9164 [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
 ```
 
 One or more ids may be given; each produces one line, in argument order. One fetch serves them all.
@@ -409,14 +407,16 @@ One or more ids may be given; each produces one line, in argument order. One fet
 | `absent` | `-` | `-` |
 
 **`live` and `landed` split presence from authority, and the split is the point.** Presence alone is
-what a caller wrongly reads as "citable": 36 of the 233 records on `main` today are present and
-*not* live — 20 `superseded`, 9 `proposed`, 2 `superseded-in-part`, plus `retired`, `moot` and
-`reference`. A verb that answered `landed` for all 233 would license citing every one of them.
+what a caller wrongly reads as "citable": a corpus of any age carries a substantial minority of
+records that are present and *not* live — `superseded`, `proposed`, `superseded-in-part`, `retired`,
+`moot`, `reference`. A verb that answered `landed` for every present record would license citing
+every one of them.
 
 fabrika owns this predicate; it does not import one. The semantics: `accepted` is live, and so is
 `amended-in-part`, whose unamended remainder still stands. `proposed` is not yet live and
-`superseded` is no longer. v1's `isLiveAccepted` is a **reference for what the words mean**, never a
-dependency — read it to check the semantics agree, then implement fabrika's own.
+`superseded` is no longer. An existing liveness predicate elsewhere in a repo is a **reference for
+what the words mean**, never a dependency — read it to check the semantics agree, then implement
+fabrika's own.
 
 With `--json`, a **JSON array** — one object per id, in argument order, with keys `id`, `state`,
 `file`, `detail`, `baseRef`, `baseSha`. An array rather than JSON-lines, so a single id and many ids
@@ -455,30 +455,30 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 | `adr resolve: cannot resolve --repo from the origin remote: <reason> — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.` | 21 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` at the fetched `--base`, plus every open pull request
-in `--repo` that adds a `.decisions/NNNN-*.md` file. Zero records is a fact and answers `absent` for
-every id no open pull request holds, for the same reason it answers in `adr next`. The scope line
+in `--repo` that adds an `NNNN-*.md` file under that directory. Zero records is a fact and answers
+`absent` for every id no open pull request holds, for the same reason it answers in `adr next`. The scope line
 goes to stderr, naming the base SHA and both counts.
 
 **Examples**
 
 ```
-$ fabrika adr resolve 0164
-landed	0164-guard-relaxing-adr-cp-gate.md	proposed
+$ fabrika adr resolve 9164
+landed	9164-guard-relaxing-records-need-a-gate.md	proposed
 ```
 
 ```
-$ fabrika adr resolve 0023 0240
-live	0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)
+$ fabrika adr resolve 9023 9240
+live	9023-live-views-over-one-transport.md	amended-in-part by [9025](9025-split-the-connection-and-topic-roles.md)
 absent	-	-
 ```
 
 ```
-$ fabrika adr resolve 0239
-in-flight	0239-campaign-milestones-close-with-their-arc.md	PR #4711
+$ fabrika adr resolve 9239
+in-flight	9239-campaigns-close-with-their-arc.md	PR #9711
 ```
 
 ```
-$ fabrika adr resolve 0164 --base origin/nonexistent
+$ fabrika adr resolve 9164 --base origin/nonexistent
 adr resolve: cannot fetch origin/nonexistent: couldn't find remote ref — every state is UNKNOWN, never "absent".
 $ echo $?
 17
@@ -486,17 +486,17 @@ $ echo $?
 
 **Grounding**
 
-- #4296 — PR #4293 cited unlanded ADR 0219 and every gate passed on the dead citation. `in-flight` is
-  a distinct state precisely so a caller can refuse to cite it.
-- #4163 — a review gate declared a merged ADR nonexistent. A stale tree must exit `17`, never print
-  `absent`.
-- #4338 — a stale checkout applied a withdrawn ADR 86 minutes after the withdrawal landed. The
-  `detail` field carries the frontmatter `status:` verbatim, so a withdrawn or superseded ADR reads
-  as such at the moment of citation.
-- #1777 — a guessed slug is a dead link. A slug is not derivable from a title (0048 is
-  `ship-it-merge-actor`, not `single-merge-authority`), so this verb prints the real filename and the
-  caller uses it verbatim.
-- ADR 0092 — zero scope reds for a gate; see `adr next`'s Grounding for why this verb is not one.
+- **A citation to an unlanded record passes every gate.** A pull request has cited a record that
+  never merged, and nothing caught it, so `in-flight` is a distinct state precisely to let a caller
+  refuse to cite it.
+- **A stale tree must exit `17`, never print `absent`.** A review gate reading a stale checkout has
+  declared a merged record nonexistent; the fetch failing is UNKNOWN, not an answer.
+- **A withdrawn record must read as withdrawn at the moment of citation.** A stale checkout has
+  applied a record more than an hour after its withdrawal landed, so the `detail` field carries the
+  frontmatter `status:` verbatim rather than a derived summary.
+- **A guessed slug is a dead link.** A slug is not derivable from a title — the two diverge as soon
+  as anyone edits either — so this verb prints the real filename and the caller uses it verbatim.
+- **Zero scope reds for a gate; this verb is not one** — see `adr next`'s Grounding.
 
 ---
 
@@ -508,11 +508,11 @@ nothing else**.
 **Invocation**
 
 ```
-fabrika adr supersede 0126 --by 0240 [--dir <path>]
+fabrika adr supersede 9126 --by 9240 [--dir <path>]
 ```
 
 ```
-fabrika adr amend-in-part 0023 --by 0240 [--dir <path>]
+fabrika adr amend-in-part 9023 --by 9240 [--dir <path>]
 ```
 
 **Inputs**
@@ -532,8 +532,9 @@ The written value resolves `--by`'s slug **off disk**, never from its title:
 - `supersede` → `superseded by [NNNN](NNNN-slug.md)`, replacing whatever was there.
 - `amend-in-part` → `amended-in-part by [NNNN](NNNN-slug.md)`. When the target already carries an
   `amended-in-part by` list, the new link is **appended** to it, comma-separated, in id order; a
-  duplicate link is a no-op edit that still exits 0. ADR 0023 carries three such links today, and a
-  verb that overwrote instead of appending would silently drop two live relationships.
+  duplicate link is a no-op edit that still exits 0. A record amended by several later ones carries
+  one link per amender, and a verb that overwrote instead of appending would silently drop every
+  live relationship but the newest.
 
 **The one-line invariant, enforced in code.** The verb reads the file, rewrites exactly the
 `status:` line, and asserts before writing that the resulting text differs from the original on that
@@ -571,28 +572,28 @@ reads one more, the record for `--by`, to resolve its slug.
 **Examples**
 
 ```
-$ fabrika adr supersede 0126 --by 0240
-.decisions/0126-ambient-adr-discovery.md	superseded by [0240](0240-only-landed-adrs-may-be-cited.md)
+$ fabrika adr supersede 9126 --by 9240
+docs/decisions/9126-one-record-per-decision.md	superseded by [9240](9240-only-landed-adrs-may-be-cited.md)
 ```
 
 ```
-$ fabrika adr amend-in-part 0023 --by 0240
-.decisions/0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md), [0240](0240-only-landed-adrs-may-be-cited.md)
+$ fabrika adr amend-in-part 9023 --by 9240
+docs/decisions/9023-live-views-over-one-transport.md	amended-in-part by [9025](9025-split-the-connection-and-topic-roles.md), [9240](9240-only-landed-adrs-may-be-cited.md)
 ```
 
 ```
-$ fabrika adr supersede 0126 --by 9999
-adr supersede: no record for --by id 9999 under .decisions — refusing to write a dead link.
+$ fabrika adr supersede 9126 --by 9999
+adr supersede: no record for --by id 9999 under docs/decisions — refusing to write a dead link.
 $ echo $?
 13
 ```
 
 **Grounding**
 
-- #1777 — the recurring dead-link FAIL. Resolving `--by`'s slug off disk, and refusing when it has no
-  record, is why exit `13` exists.
-- ADR 0023's live status line — three appended `amended-in-part by` links prove the list is real and
-  the append is not hypothetical.
+- **The dead link is the recurring FAIL here.** Resolving `--by`'s slug off disk, and refusing when
+  it has no record, is why exit `13` exists.
+- **The append case is real, not hypothetical.** Records carrying several `amended-in-part by` links
+  at once are ordinary in a live corpus, so the list-append is the common path rather than an edge.
 - The immutability rule: never edit an accepted ADR's decision text; supersede it, or amend it in
   part on the status line alone. Exit `15` is that rule made mechanical rather than remembered.
 
@@ -606,7 +607,7 @@ Ranks the uncited live-accepted ADRs whose decision domain the subject touches. 
 **Invocation**
 
 ```
-fabrika adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
+fabrika adr sweep --new 9240 [--dir <path>] [--limit <n>] [--json]
 ```
 
 **Inputs**
@@ -669,9 +670,8 @@ compute the same number to the last printed digit; nothing below is left to judg
 **This ratifies the shipped function rather than replacing it.**
 [`packages/fabrika-cli/src/adr/sweep.ts`](../../../../packages/fabrika-cli/src/adr/sweep.ts) already
 computes exactly the above; the spec was unspecified and the implementation was not, so the
-implementation is what got written down (ADR
-[0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)). Where the two
-ever disagree, this section is the contract and the implementation is the bug.
+implementation is what got written down. Where the two ever disagree, this section is the contract
+and the implementation is the bug.
 
 **The three outcomes, disjoint by construction.**
 
@@ -689,8 +689,8 @@ On `shortlist`, one tab-separated line per entry follows — `<id>`, `<score>`, 
 The reason for a `no-overlap` or `indeterminate`, and the scope line, go to stderr.
 
 **All three outcomes are answers, and all three exit 0.** The outcome is this verb's own verdict, and
-a caller must never read its own shortlist as a failed run — which is precisely the mistake v1's
-`adr-sweep` makes by exiting `1` on the one case it was asked to produce.
+a caller must never read its own shortlist as a failed run — which is precisely the mistake the
+retired v1 sweep made by exiting `1` on the one case it was asked to produce.
 
 With `--json`, one object on stdout with keys `outcome` (the token), `entries` (an array of
 `{id, score, file, title}`, empty unless `outcome` is `shortlist`), `reason` (the string below, or
@@ -743,8 +743,8 @@ path to their draft.
 **Examples**
 
 A score is relative to the corpus it was computed against, so an example that prints one names a
-**committed** corpus rather than the live `.decisions/`, whose scores would be stale the next time a
-record lands (ADR [0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)).
+**committed** corpus rather than the repo's live one, whose scores would be stale the next time a
+record lands: a spec's example value is derivable or it is absent.
 Both examples run against fixtures in this skill's tree and reproduce byte for byte; the scope line
 each writes to stderr is not shown.
 
@@ -786,15 +786,12 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0092 — zero scope reds for a gate; see `adr next`'s Grounding for why this verb is not one.
-- v1's `adr-sweep` is worth reading before implementing this, for two scars it already carries: it
-  exits `1` whenever it *has* a shortlist (so a caller reads its informative case as a failure), and
-  its `--json` payload goes to stderr leaving stdout empty (#4723). fabrika repeats neither — all
-  three outcomes exit `0` here, and `--json` goes to stdout per rule 2. Read it as a list of mistakes
-  already made, not as an implementation to copy.
-- The ranking is a lexical/rarity score over decision-bearing text, capped at 8, excluding the
-  subject's own citations — written out step by step under **Ranking** above, because the earlier
-  one-line gloss printed example scores nobody could re-derive from it
-  ([#4735](https://github.com/kamp-us/phoenix/issues/4735)).
-- ADR [0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md) — an
-  example value is derivable or absent, and this verb's shipped ranking is ratified as the spec.
+- **Zero scope reds for a gate; this verb is not one** — see `adr next`'s Grounding.
+- **Two scars the retired v1 sweep carried, repeated here by neither.** It exited `1` whenever it
+  *had* a shortlist, so a caller read its informative case as a failure, and its `--json` payload
+  went to stderr leaving stdout empty. All three outcomes exit `0` here, and `--json` goes to stdout.
+- **The ranking is written out step by step under Ranking above** — a lexical/rarity score over
+  decision-bearing text, capped at 8, excluding the subject's own citations. A one-line gloss is not
+  enough: it printed example scores nobody could re-derive from it.
+- **An example value is derivable or it is absent**, and this verb's shipped ranking is ratified as
+  the spec rather than restated beside it.

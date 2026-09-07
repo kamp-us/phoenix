@@ -100,10 +100,10 @@ describe("each of the fourteen types fires on its own condition", () => {
 	});
 
 	/**
-	 * The pre-fix state, in one assertion: epic #6595's shape — a phase-2 child requiring an open
-	 * phase-1 decision — with the dependency in prose and nothing on the graph. Before `UNENFORCED_DEP`
-	 * this floor read `clean`, `plan flip` made the child pickable, and `build claim` admitted it on
-	 * `scanned 0 blocked_by edges` (#6616).
+	 * The pre-fix state, in one assertion: a phase-2 child requiring an open phase-1 decision, with the
+	 * dependency in prose and nothing on the graph. Before `UNENFORCED_DEP` this floor read `clean`,
+	 * `plan flip` made the child pickable, and `build claim` admitted it on
+	 * `scanned 0 blocked_by edges`.
 	 */
 	it("UNENFORCED_DEP when the prose names an edge the graph does not carry", () => {
 		const gated = {
@@ -187,7 +187,7 @@ describe("each of the fourteen types fires on its own condition", () => {
 		expect(found?.detail).toBe(detail);
 	});
 
-	/** `p3` was ruled retired, not widened (#4101, #2413) — it does not satisfy the priority slot. */
+	/** `p3` was ruled retired, not widened — it does not satisfy the priority slot. */
 	it("MISSING_LABEL does not admit p3 as a priority", () => {
 		expect(
 			types({children: [child({labels: ["p3", "status:planned", "type:feature"]})]}),

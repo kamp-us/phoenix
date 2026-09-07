@@ -26,7 +26,8 @@ const CREATE = /^POST .*\/repos\/o\/r\/issues\/4952\/comments$/;
 const READ_BACK = /^GET .*\/repos\/o\/r\/issues\/comments\/\d+$/;
 
 const URL = "https://github.com/o/r/issues/4952#issuecomment-5229900001";
-const ROWS = "row\t0240\ttension\tsits against ADR 0058\nrow\t0238\troutine\tno tension found\n";
+const ROWS =
+	"row\t0240\ttension\tsits against a landed record\nrow\t0238\troutine\tno tension found\n";
 
 /** A fixture's canned JSON, served as the 200 the REST read now parses. */
 const served = (result: ExecResult) => ({status: 200, body: result.stdout});
@@ -210,7 +211,7 @@ describe("runReadout", () => {
 
 	it("refuses a read-back whose rows came back in a DIFFERENT order — a digest is ranked", async () => {
 		const reversed = composed(
-			"row\t0238\troutine\tno tension found\nrow\t0240\ttension\tsits against ADR 0058\n",
+			"row\t0238\troutine\tno tension found\nrow\t0240\ttension\tsits against a landed record\n",
 		);
 		const out = await run(happy([CREATE, landed()], [READ_BACK, readBack(reversed)]));
 		expect(out.code).toBe(READBACK_MISMATCH);

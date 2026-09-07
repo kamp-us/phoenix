@@ -51,7 +51,7 @@ export const OFF_VOCABULARY = SHARED_CLASSIFIED;
  */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
-/** Proven: no design manifest at the convention path — the repo is un-bootstrapped (#4952). */
+/** Proven: no design manifest at the convention path — the repo is un-bootstrapped. */
 export const NO_MANIFEST = 12;
 /** Proven: the manifest exists but no typed prohibition registry does — the law is untyped. */
 export const UNTYPED_LAW = 13;

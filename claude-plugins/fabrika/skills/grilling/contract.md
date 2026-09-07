@@ -1,6 +1,6 @@
 # `/grilling` — derived CLI contract
 
-**Skill:** [`grilling`](SKILL.md) · **Authoring brief:** [#5019](https://github.com/kamp-us/phoenix/issues/5019) · **Date:** 2026-08-09
+**Skill:** [`grilling`](SKILL.md) · **Date:** 2026-08-09
 
 **Where these verbs land.** `packages/fabrika-cli/`, under a **`grill`** subcommand group registered
 in [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts). Each leaf is built with
@@ -9,12 +9,12 @@ so an undeclared operand is refused rather than ignored. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
 spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** No verb here invokes
-anything under `claude-plugins/kampus-pipeline/` or `packages/pipeline-cli/`, in a fence, behind a
-wrapper, or as a contract clause (ADR
-[0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every v1 module
-named in a **Grounding** block below is cited as a **scar to design out**, never as a dependency —
-those citations are non-normative and an implementer opens none of them to build this.
+**This group reimplements what it needs and calls the predecessor pipeline nowhere, and neither
+does the skill.** A reimplementation that shells out to the tooling it replaced keeps that tooling
+alive and inherits every scar with it, so no verb here invokes a v1 script or CLI, in a fence,
+behind a wrapper, or as a contract clause. Every v1 module named in a **Grounding** block below is
+cited as a **scar to design out**, never as a dependency — those citations are non-normative and an
+implementer opens none of them to build this.
 
 **The group name.** `grill`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
@@ -47,19 +47,19 @@ a transcription drifts and a pointer to code cannot:
 **Considered and deliberately not derived.**
 
 - **A `grill status` verb.** Its only behaviour would be relaying a summary `grill read` already
-  computes — a wrapper whose sole job is relaying an upstream answer, which ADR 0238 forbids. `grill
-  read` returns the per-question rows **and** the counts in one object instead.
+  computes, and a verb whose sole job is relaying another verb's answer earns no seat. `grill read`
+  returns the per-question rows **and** the counts in one object instead.
 - **A verb that decides whether a question is a fact or a decision.** That is the judgment the
   wrapper exists to carry (`SKILL.md` §2); a verb guessing it would be a stochastic answer wearing a
   deterministic exit code.
 - **A verb that edits or retracts a recorded ruling in place.** Retraction is a new round re-asking
   the question, declared with `grill round --supersedes`. An edit verb would let a wrong answer be
-  quietly overwritten, which #4227 forbids; superseding leaves both the old question and its
-  replacement on the record.
+  quietly overwritten, and a wrong recorded answer is retracted in the open or not at all;
+  superseding leaves both the old question and its replacement on the record.
 - **A merge-gating verdict.** `grilling` is deliberately absent from `SHIP_NAMESPACES`
   ([`src/review/classes.ts`](../../../../packages/fabrika-cli/src/review/classes.ts)), so no ruling
-  recorded here can block a merge. Widening that set would create the second human gate #4631 rules
-  out, and would change what every pull request's conjunction requires.
+  recorded here can block a merge. Widening that set would create the second human gate this layer
+  exists not to add, and would change what every pull request's conjunction requires.
 - **A second answer to control-plane membership, pitch approval, or triage classification.** Each is
   already enforced at its own gate. This group states expectations and computes none of them.
 
@@ -79,9 +79,9 @@ a transcription drifts and a pointer to code cannot:
 
 ```markdown
 ### 1 · decision
-Do vouched-in yazars inherit their kefil's moderation weight?
+Do vouched-in members inherit their voucher's moderation weight?
 
-**Recommended:** No — weight is earned per account, so a compromised kefil cannot mint authority.
+**Recommended:** No — weight is earned per account, so a compromised voucher cannot mint authority.
 
 **Trade-offs:** Slower trust accrual for genuinely vouched newcomers; simpler abuse story.
 ```
@@ -98,9 +98,8 @@ Do vouched-in yazars inherit their kefil's moderation weight?
   missing required field is `4`.
 
 **Why the recommendation is required rather than banned.** v1 banned it
-(`claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md:386` — *"does not pre-pick a default,
-phrase a recommendation as the decision"*). The founder's ruling on
-[#5017](https://github.com/kamp-us/phoenix/issues/5017#issuecomment-5229701965) requires one per
+(`wayfinder/SKILL.md:386` — *"does not pre-pick a default,
+phrase a recommendation as the decision"*). The founder's ruling on this skill requires one per
 question. Those conflict only while the recommendation and the ruling share a surface. Here they do
 not: a recommendation is agent-authored body text inside a question block and is never authority; a
 ruling is a marker in its own comment resolved against the ACL and an adjacent authorization. The
@@ -191,9 +190,9 @@ reds without:
    an `absent` sample, a **non-empty** `malformed[]` array with a `drift` label per entry, and a
    non-empty `brandWitnesses` set.
 
-**Stated, not yet enforced.** All of the above lands with the implementation
-([#5023](https://github.com/kamp-us/phoenix/issues/5023)). Until it does, nothing in the shipped
-package recognizes any of the three keys, and no claim on this page describes present behaviour.
+**Stated, not yet enforced.** All of the above lands with the implementation. Until it does,
+nothing in the shipped package recognizes any of the three keys, and no claim on this page describes
+present behaviour.
 
 ## The round digest, and its neutrality invariant
 
@@ -240,7 +239,7 @@ Every `grill` verb obeys these; stated once rather than repeated per block.
   erroring GitHub is `11` before any write and `8` after one.
 - **Common inputs.** `--repo <owner/name>` (default: resolved from the `origin` remote) on every
   verb. There is no `--json` flag: the answer channel is already one JSON object.
-- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**,
+- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md)**,
   paginated. The reason lives there. Local to this group: a session with more than one page of
   comments is ordinary after a few rounds, so an unpaginated comment read would report a ruled
   question as open — the fail-open direction.
@@ -349,7 +348,7 @@ exactly the drift the import exists to stop.
 **Invocation**
 
 ```
-fabrika grill open (--topic "sozluk moderation model" | --ticket <n>) [--repo <owner/name>]
+fabrika grill open (--topic "comment moderation model" | --ticket <n>) [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -372,7 +371,7 @@ writes, owned by
 [`packages/fabrika-cli/src/wire/came-from.ts`](../../../../packages/fabrika-cli/src/wire/came-from.ts)
 — and later runs match on *that*: the same ticket resumes the same session however either title was
 edited afterwards. Without it a caller can only key on a title it invented from the ticket, and one
-rename mints a duplicate session, splitting the record the map is waiting on (#5661). The ticket is
+rename mints a duplicate session, splitting the record the map is waiting on. The ticket is
 read for its title and its existence and for nothing else; **it is provenance, never instruction**,
 and a session carrying one is otherwise an ordinary session. With no `--ticket`, every byte of this
 verb's behaviour is what it was.
@@ -390,7 +389,7 @@ judgment living inside a verb, and it would make `16` fire on titles a human rea
 **Output** — machine. One JSON object; every key below is always present:
 
 ```json
-{"session":9412,"topic":"sozluk moderation model","ticket":null,"created":false,"url":"https://github.com/kamp-us/phoenix/issues/9412"}
+{"session":9412,"topic":"comment moderation model","ticket":null,"created":false,"url":"https://github.com/<owner>/<repo>/issues/9412"}
 ```
 
 | Key | Type | Meaning |
@@ -430,20 +429,20 @@ failed search as "none" opens a second session and splits the record.
 **Examples**
 
 ```
-$ fabrika grill open --topic "sozluk moderation model"
-{"session":9412,"topic":"sozluk moderation model","ticket":null,"created":true,"url":"https://github.com/kamp-us/phoenix/issues/9412"}
+$ fabrika grill open --topic "comment moderation model"
+{"session":9412,"topic":"comment moderation model","ticket":null,"created":true,"url":"https://github.com/<owner>/<repo>/issues/9412"}
 ```
 
 ```
-$ fabrika grill open --topic "sozluk moderation model"
-grill open: 2 open sessions match topic "sozluk moderation model": #9412, #9431 — refusing to guess which one is live.
+$ fabrika grill open --topic "comment moderation model"
+grill open: 2 open sessions match topic "comment moderation model": #9412, #9431 — refusing to guess which one is live.
 $ echo $?
 16
 ```
 
 **Grounding**
 
-- ADR 0092 — a search that could not complete never answers "none".
+- A search that could not complete never answers "none" — a gate over zero scope fails closed.
 - v1's `create-map.sh:24` prints its refusal prose on **stdout**, the same stream as the issue
   number, so a caller capturing `$(…)` without a status check binds a sentence and then interpolates
   it into `#$MAP`. Here every refusal is stderr-only and stdout is empty on any non-zero exit.
@@ -533,7 +532,7 @@ without this flag a session in which any question was ever re-worded could **nev
 and `graduate` would never see a clear frontier — a liveness bug a graded eval run found after three
 reviewers missed it. `--supersedes` makes the replacement explicit and auditable: the retired
 question stays visibly on the record as `superseded`, naming the round that replaced it, which is
-the #4227 requirement that a wrong recorded answer be retracted in the open rather than overwritten.
+the requirement that a wrong recorded answer be retracted in the open rather than overwritten.
 
 **Grounding**
 
@@ -545,8 +544,8 @@ the #4227 requirement that a wrong recorded answer be retracted in the open rath
   prose path that carries it.
 - v1's frontier-filing fence (`wayfinder/SKILL.md:245`) discards the child number entirely and
   checks no exit status, so the next step has no number to reference.
-- #4133 — briefs authored on a premise taken from the dispatcher rather than grounded at the source.
-  A `fact` question exists so the premise gets grounded before it is built on.
+- A brief authored on a premise taken from the dispatcher rather than grounded at the source rests
+  on an assumption nobody checked. A `fact` question grounds the premise first.
 
 ---
 
@@ -582,8 +581,8 @@ fabrika grill answer 9412 R2.1 --finding finding.md [--repo <owner/name>]
 | `recordedAs` | string | always the literal `agent` |
 
 `recordedAs` is present so a reader never infers authorship from the absence of a ruling marker —
-the inference [#4619](https://github.com/kamp-us/phoenix/issues/4619) proves unsafe. The comment
-carries a `grill-answered:` marker and never a `grill-ruled:` one.
+an inference that has already read an agent's filing as a human's. The comment carries a
+`grill-answered:` marker and never a `grill-ruled:` one.
 
 **Errors**
 
@@ -605,13 +604,13 @@ carries a `grill-answered:` marker and never a `grill-ruled:` one.
 **Grounding**
 
 - The kind guard is the mechanical half of the skill's division of labour. Recording an agent answer
-  against a `decision` question is exactly the failure #4110 and #3148 record — work proceeding past
-  a decision nobody made — so it is refused rather than warned about.
-- #5103's acceptance criterion requires the founder's recorded decisions to be separable from the
-  skill's own synthesis. A distinct marker format plus `recordedAs` is that separation, carried in
-  the artifact rather than in a convention a later reader has to know.
-- #4111 — agent self-reports were false twice and silently destroyed what they claimed to preserve.
-  The finding is recorded as the agent's, never as authority.
+  against a `decision` question is work proceeding past a decision nobody made, so it is refused
+  rather than warned about.
+- This skill's central acceptance criterion requires the founder's recorded decisions to be
+  separable from the skill's own synthesis. A distinct marker format plus `recordedAs` is that
+  separation, carried in the artifact rather than in a convention a later reader has to know.
+- An agent's self-report of its own work has been false and has silently destroyed what it
+  claimed to preserve. The finding is recorded as the agent's, never as authority.
 
 ---
 
@@ -650,7 +649,7 @@ fabrika grill rule 9412 R2.3 --authorization authorization.md [--repo <owner/nam
 | `resolvesTo` | string | always the literal `ruled` — the state `grill read` will report for this question, guaranteed because the verb digests the target round's **current** text, so clause 3 holds by construction at write time, and a retired target is refused at `18` |
 
 **Write ordering is an invariant, not an implementation detail.** The authorization comment lands
-first and the marker second, because a marker with no authorization beside it is void (#4938): an
+first and the marker second, because a marker with no authorization beside it is void: an
 interrupted run that wrote the marker first would leave a void ruling that a careless reader sees as
 present, while the reverse leaves an authorization quote with no marker, which resolves to nothing
 and harms no one. The implementation owes a test for the order.
@@ -668,7 +667,7 @@ and harms no one. The implementation owes a test for the order.
 | `grill rule: the invoking token resolves to <permission> on <repo>, below write — refusing to record a ruling.` | 12 | refusal |
 | `grill rule: <id> names no question on #<n>.` | 13 | refusal |
 | `grill rule: the round holding <id> could not be digested: <reason> — the binding is UNKNOWN. Nothing was posted.` | 14 | refusal |
-| `grill rule: --authorization <path> is empty — a ruling with no quoted authorization is void (#4938).` | 15 | refusal |
+| `grill rule: --authorization <path> is empty — a ruling with no quoted authorization is void.` | 15 | refusal |
 | `grill rule: --authorization <path> carries no ISO-8601 date — the authorization must be dated.` | 15 | refusal |
 | `grill rule: <id> is a fact question — establish it with grill answer; a fact is not the founder's to rule.` | 17 | refusal |
 | `grill rule: <id> was superseded by round <n> — a retired question cannot be ruled. Rule the question that replaced it.` | 18 | refusal |
@@ -701,24 +700,23 @@ $ fabrika grill rule 9412 R2.3 --authorization authorization.md
 
 ```
 $ fabrika grill rule 9412 R2.3 --authorization empty.md
-grill rule: --authorization empty.md is empty — a ruling with no quoted authorization is void (#4938).
+grill rule: --authorization empty.md is empty — a ruling with no quoted authorization is void.
 $ echo $?
 15
 ```
 
 **Grounding**
 
-- [#4938](https://github.com/kamp-us/phoenix/issues/4938) — the founder's ruled shape: a marker
-  counts **iff** an adjacent comment quotes his session authorization verbatim with its date; a bare
-  stamp is void. This verb is that ruling made mechanical.
-- [#4646](https://github.com/kamp-us/phoenix/issues/4646) — the worked precedent, where an
-  unverifiable relay hop parked a batch until the founder was asked directly, and the clearing
-  comment says outright that it was posted on his instruction rather than typed by him.
-- [#4441](https://github.com/kamp-us/phoenix/issues/4441) — **open**: a recorded ruling is
-  indistinguishable from a fabricated one at the point it is recorded, and today's practice is prose
-  self-attestation, which narrows nothing mechanically. This verb makes the authorization *required,
-  quoted and bound*, which is strictly better than prose and still **not** proof of what he said.
-  Nothing here closes #4441.
+- The founder's ruled shape: a marker counts **iff** an adjacent comment quotes his session
+  authorization verbatim with its date; a bare stamp is void. This verb is that ruling made
+  mechanical.
+- The worked precedent: an unverifiable relay hop parked a batch until the founder was asked
+  directly, and the clearing comment said outright that it had been posted on his instruction rather
+  than typed by him.
+- **Still open**: a recorded ruling is indistinguishable from a fabricated one at the point it is
+  recorded, and prose self-attestation narrows nothing mechanically. This verb makes the
+  authorization *required, quoted and bound*, which is strictly better than prose and still **not**
+  proof of what he said. Nothing here closes that gap.
 - v1's founder-answer seam specifies no format, no author check and no marker
   (`wayfinder/SKILL.md:419` — *"their call, in their own voice"*), so any comment by anyone reads as
   the ruling. That is the scar this verb and `grill read` exist to close.
@@ -745,7 +743,7 @@ fabrika grill read 9412 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
+{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
 ```
 
 **`ticket`** is the issue the session was opened on, read back from its body's `came-from` binding,
@@ -826,10 +824,10 @@ resolves by which clause missed, and there is no partial credit and no warning:
 The four clauses:
 
 1. the marker's author resolves to `admin`, `maintain` or `write` at
-   `repos/<repo>/collaborators/<login>/permission`, via the shipped `resolveOwnership`
-   (ADR [0055](../../../../.decisions/0055-acl-sourced-review-authz.md)) — **fail-closed**. A
-   permission read that *fails* is UNKNOWN rather than a demotion, so it is `11` for the whole run
-   rather than a silent `open` on that row;
+   `repos/<repo>/collaborators/<login>/permission`, via the shipped `resolveOwnership` — authority
+   is sourced from the repository's own ACL and nowhere else, **fail-closed**. A permission read
+   that *fails* is UNKNOWN rather than a demotion, so it is `11` for the whole run rather than a
+   silent `open` on that row;
 2. the question id names a question that exists in the round the digest identifies;
 3. the digest matches that round's **current** question text — a miss here is `stale`;
 4. an adjacent authorization comment exists and carries an ISO-8601 date.
@@ -837,17 +835,16 @@ The four clauses:
 <!-- anchor: NO-DIRECT-VS-RELAYED-SPLIT --> **Clause 4 admits no exception, and that is deliberate.**
 An earlier draft of this contract split `ruled-direct` (a bare marker, "authored directly") from
 `ruled-relayed` (a marker with authorization) and treated the bare one as the stronger. That was
-wrong twice over: *authored directly* is not a checkable property, because every agent writes
-to GitHub as the founder's account and the 2026-08-09 ruling on
-[#4619](https://github.com/kamp-us/phoenix/issues/4619#issuecomment-5230098869) settles that filings
-from that account read as agent-authored regardless of the footer; and #4938 declares a bare stamp
+wrong twice over: *authored directly* is not a checkable property, because every agent writes to
+GitHub as the founder's account and it is ruled that a filing from that account reads as
+agent-authored regardless of the footer; and the founder's ruled shape declares a bare stamp
 **void**. So a bare marker resolves to `unattested` — surfaced, never counted — whoever appears to
 have posted it.
 
 **What `ruled` proves, exactly.** That a `write+` account posted a marker binding this question's
 current text, with a dated authorization comment beside it. It does **not** prove the quoted
-authorization is a truthful record of what the founder said; nothing mechanical can, and #4441 is
-open on it. The `proof` field names the clauses that were checked rather than implying more.
+authorization is a truthful record of what the founder said; nothing mechanical can, and that gap
+is still open. The `proof` field names the clauses that were checked rather than implying more.
 
 **Errors**
 
@@ -868,13 +865,13 @@ pagination is load-bearing rather than hygiene.
 
 ```
 $ fabrika grill read 9412
-{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
+{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika grill read 9412 --repo kamp-us/nonexistent
+$ fabrika grill read 9412 --repo <owner>/nonexistent
 grill read: session #9412 does not exist, or is not a grilling session.
 $ echo $?
 7
@@ -896,11 +893,13 @@ $ echo $?
   it reads a broken map as fine. Here the split is carried in `disregarded` at exit `0`, which is
   readable without keying on status at all.
 - `DANGLING_FRONTIER_REF` self-disables on an empty sub-issue read (`validate.ts:130`) — the
-  zero-scope pass ADR 0092 forbids. Here a failed comment read is `11`, never an empty frontier.
-- #4153 — a gate decision reached by arguing from a decision record rather than by checking the
-  authority. This verb checks the authority; nothing on the page is a trust signal.
-- #4227 — a confident wrong assertion propagating downstream. `stale`, `unattested`, `superseded`
-  and `proof` exist so a reader downstream can see exactly how much a recorded answer is worth.
+  zero-scope pass a gate must fail closed on. Here a failed comment read is `11`, never an empty
+  frontier.
+- A gate decision reached by arguing from a written record rather than by checking the authority
+  proves nothing. This verb checks the authority; nothing on the page is a trust signal.
+- A confident wrong assertion propagates downstream unchallenged. `stale`, `unattested`,
+  `superseded` and `proof` exist so a reader downstream can see exactly how much a recorded answer
+  is worth.
 - **A graded eval run, not a reviewer, found that `stale` had no exit.** Three review passes cleared
   a design in which a re-worded question held the frontier forever, so `clear` was unreachable and
   `graduate` could never run on that session. `superseded` and `grill round --supersedes` are that
@@ -943,5 +942,6 @@ The five hand-checks those tests cannot perform:
 
 **No local scratch state, so the shared-state law has no surface here.** Every artifact this group
 touches lives on GitHub keyed by issue and comment id; no verb writes a temp directory, so the
-session-keyed collision recorded at #4516 cannot occur. Stated because an absent answer to that
-question reads as one nobody asked.
+session-keyed scratch collision — sibling lanes of one parent share a session id, so a
+session-keyed path is one namespace for several lanes — cannot occur. Stated because an absent
+answer to that question reads as one nobody asked.

@@ -1,5 +1,5 @@
 /**
- * The append lock's own contract at unit tier (#5994): a writer that finds the lock held refuses
+ * The append lock's own contract at unit tier: a writer that finds the lock held refuses
  * {@link CONCURRENT_WRITE} — distinguishable from an ordinary machine refusal — with the log left
  * byte-identical, while the uncontended path behaves exactly as it did before the lock existed.
  *
@@ -44,12 +44,12 @@ const run = (fs: ReturnType<typeof fakeFs>) =>
 
 const SHORT_LOCK_MS = "120";
 
-describe("lane append lock (#5994)", {timeout: 10_000}, () => {
+describe("lane append lock", {timeout: 10_000}, () => {
 	afterEach(() => {
-		delete process.env["FABRIKA_LANE_LOCK_BUDGET_MS"];
+		delete process.env.FABRIKA_LANE_LOCK_BUDGET_MS;
 	});
 	it("a writer that finds the lock held refuses CONCURRENT_WRITE and leaves the log untouched", async () => {
-		process.env["FABRIKA_LANE_LOCK_BUDGET_MS"] = SHORT_LOCK_MS;
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
 		const fs = freshLane({mkdirExisting: [LOCK]});
 
 		const out = await run(fs);
@@ -61,7 +61,7 @@ describe("lane append lock (#5994)", {timeout: 10_000}, () => {
 	});
 
 	it("the refusal is distinguishable from an ordinary machine refusal on the same event", async () => {
-		process.env["FABRIKA_LANE_LOCK_BUDGET_MS"] = SHORT_LOCK_MS;
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
 		const heldLock = freshLane({mkdirExisting: [LOCK]});
 		const machineRefusal = freshLane({
 			files: {

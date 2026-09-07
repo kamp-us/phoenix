@@ -4,7 +4,7 @@
  *
  * The path is keyed on the **nonce alone**: no session segment, no issue segment, no pid. Two
  * concurrent spikes carry different minted nonces and therefore different directories, which is the
- * whole of the collision answer (#4544, #4516, #3607, #5028).
+ * whole of the collision answer.
  *
  * **Both digests are defined byte-exactly here** because they are compared across runs and across
  * processes: `treeDigest` decides whether a throwaway stayed thrown away, and `evidenceDigest`
@@ -26,7 +26,7 @@ export const NONCE_RE = /^[0-9a-f]{8}$/;
 
 export const isNonce = (value: string): boolean => NONCE_RE.test(value);
 
-/** The two ruled artifact shapes (#5017). */
+/** The two ruled artifact shapes. */
 export const KINDS = ["logic", "ui"] as const;
 export type Kind = (typeof KINDS)[number];
 

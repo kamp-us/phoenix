@@ -107,7 +107,7 @@ describe("the roster row", () => {
 		expect(skill("build", "---\nname: build\ndescription: d\n---\n").invocationAxis).toBe("model");
 	});
 
-	/** A dropped row is a skill the reader will never know exists — the false absence of #4105. */
+	/** A dropped row is a skill the reader will never know exists — a false absence. */
 	it("emits a row saying so when the frontmatter cannot be parsed, rather than dropping it", () => {
 		const row = skill("broken", "# no frontmatter at all\n");
 		expect(parseFrontmatter("# no frontmatter at all\n")).toBeNull();
@@ -117,13 +117,13 @@ describe("the roster row", () => {
 });
 
 /**
- * The rung order, and the one rung that answers in the shape #5775 reported: the CLI running out of
- * a phoenix checkout while the cwd is a repo that carries no roster of its own.
+ * The rung order, and the one rung that answers when the CLI runs out of its own source checkout
+ * while the cwd is a repo that carries no roster of its own.
  */
 describe("the roster's resolution ladder", () => {
-	const CHECKOUT = "/home/dev/phoenix";
+	const CHECKOUT = "/home/dev/checkout";
 	const MODULE_DIR = `${CHECKOUT}/packages/fabrika-cli/src/status`;
-	const FOREIGN = "/home/dev/demlik";
+	const FOREIGN = "/home/dev/adopter";
 	const SKILL_TEXT = "---\nname: build\ndescription: d\n---\n";
 
 	const CACHE = "/home/dev/.claude/plugins/cache";
@@ -199,7 +199,7 @@ describe("the roster's resolution ladder", () => {
 	/**
 	 * The `plugin` rung's one live shape: a CLI vendored *inside* a plugin tree. Neither shape
 	 * fabrika itself ships in packages it that way, so this is the consumer case the rung is kept
-	 * for, constructed here rather than left as coverage nothing exercises (#6448).
+	 * for, constructed here rather than left as coverage nothing exercises.
 	 */
 	it("keeps a CLI bundled inside a plugin ahead of both implicit checkout rungs", async () => {
 		const installed = "/vendored/fabrika";
@@ -217,7 +217,7 @@ describe("the roster's resolution ladder", () => {
 
 	/**
 	 * The marketplace shape, where the CLI is a global npm package outside the plugin cache: no walk
-	 * from the module or the cwd can reach the roster, so the cache rung is the only answer (#6448).
+	 * from the module or the cwd can reach the roster, so the cache rung is the only answer.
 	 */
 	it("resolves the installed plugin out of Claude Code's cache when no walk can reach it", async () => {
 		const live = cached("602283e56c60", "fabrika");
@@ -249,9 +249,9 @@ describe("the roster's resolution ladder", () => {
 	});
 
 	/**
-	 * The cache sits below both walking rungs: a phoenix developer has an installed plugin *and* a
+	 * The cache sits below both walking rungs: a fabrika developer has an installed plugin *and* a
 	 * checkout, and reading the published roster there would render something the working tree does
-	 * not have — the dev shape #5775 was fixed to serve.
+	 * not have — the dev shape this ordering serves.
 	 */
 	it("keeps the CLI's own checkout ahead of the installed plugin's cache", async () => {
 		const resolved = await resolve(
@@ -317,8 +317,8 @@ describe("the roster's resolution ladder", () => {
 		expect(resolved?.path).toBe("/mine/skills");
 	});
 
-	/** The `menu` and `config` fields the front door exists to answer — the defect #6448 reported. */
-	it("renders the marketplace shape's roster rather than the unknown #6448 reported", async () => {
+	/** The `menu` and `config` fields the front door exists to answer. */
+	it("renders the marketplace shape's roster rather than an unknown", async () => {
 		const live = cached("602283e56c60", "fabrika");
 		const out = await read(
 			sources({pluginCache: CACHE}),
@@ -491,7 +491,7 @@ describe("status readout", () => {
 		expect(issueNumberOf("-3")).toBeNull();
 	});
 
-	/** An unbuilt decoder is a failed read, not a proven-empty artifact (#5199). */
+	/** An unbuilt decoder is a failed read, not a proven-empty artifact. */
 	it("refuses on 11 with the unregistered-format reason, and never reports `absent`", () => {
 		const out = runReadout({read: {_tag: "NoFormat"}, json: false});
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -523,7 +523,7 @@ describe("status bootstrap", () => {
 	/**
 	 * Buildability and disposition are separate axes over the same surface, so a surface can be
 	 * buildable here and carry any disposition there — but it cannot be buildable and carry none.
-	 * `roadmap-focus` shipped exactly that way and the gap reached a review round (#6301).
+	 * `roadmap-focus` shipped exactly that way and the gap reached a review round.
 	 */
 	it("names no surface the disposition registry has never heard of", () => {
 		const registered = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
@@ -624,7 +624,7 @@ describe("the .fabrika/ gitignore row", () => {
 });
 
 /**
- * #7008: the canonical operator-first section, appended under ADR 0334's append-if-absent arm. The
+ * The canonical operator-first section, appended once when its marker heading is absent. The
  * template is the single source — the drift it kills is one consumer repo's hand-edited section
  * moving on while another's stands still.
  */
@@ -691,7 +691,7 @@ describe("the CLAUDE.md work-flows-through-fabrika section", () => {
 });
 
 /**
- * #5778: `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
+ * `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
  * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
  * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
  * other file surface's bytes do not move.
@@ -770,7 +770,7 @@ describe("the settings-patch surface", () => {
 		expect(written.size).toBe(0);
 	});
 
-	/** Idempotency is absolute (ADR 0334): key-order differences are not a delta to rewrite. */
+	/** Idempotency is absolute: key-order differences are not a delta to rewrite. */
 	it("reads an adopted file as `exists`, whatever order its keys spell, and writes nothing", async () => {
 		const {outcome, written} = await bootstrapWith({
 			[SETTINGS]: JSON.stringify({
@@ -824,9 +824,9 @@ describe("the settings-patch surface", () => {
 
 /**
  * dep-pin is the JSON key-merge arm over `package.json`, with the version read live from the npm
- * registry (#7007): the pin is only ever as current as the registry's answer, so an unreachable or
+ * registry: the pin is only ever as current as the registry's answer, so an unreachable or
  * malformed answer refuses instead of pinning a guess. No package manager ever spawns and no
- * lockfile is read or written — the exact install command is printed instead (#6995 R1.3).
+ * lockfile is read or written — the exact install command is printed instead.
  */
 describe("the dep-pin surface", () => {
 	const MANIFEST = "/repo/package.json";
@@ -897,7 +897,7 @@ describe("the dep-pin surface", () => {
 		});
 	});
 
-	// The npm read carries the same client-side bound as every GitHub exchange (#7048's standard):
+	// The npm read carries the same client-side bound as every GitHub exchange:
 	// a stalled body stream — headers arrive, bytes never do — must become data, not a hung verb.
 	it("bounds a stalled npm registry body stream into the loud unreachable refusal", async () => {
 		const before = process.env.FABRIKA_NPM_HTTP_TIMEOUT_SECONDS;
@@ -942,7 +942,7 @@ describe("the dep-pin surface", () => {
 		);
 	});
 
-	/** Idempotency is absolute (ADR 0334): a manifest already at the current release writes nothing. */
+	/** Idempotency is absolute: a manifest already at the current release writes nothing. */
 	it("reports a present, current row as exists at exit 0 and writes nothing", async () => {
 		const {outcome, written} = await bootstrapWith({
 			[MANIFEST]: JSON.stringify({
@@ -955,7 +955,7 @@ describe("the dep-pin surface", () => {
 		expect(written.size).toBe(0);
 	});
 
-	// The no-package-manager law (#6995 R1.3): every shell call is a violation; the only request the
+	// The no-package-manager law: every shell call is a violation; the only request the
 	// verb may issue is the registry read; a lockfile in the tree must not even be touched.
 	it("spawns no package manager, touches no lockfile — the registry GET is its whole footprint", async () => {
 		const {written, seams} = await bootstrapWith({
@@ -1027,7 +1027,7 @@ describe("the dep-pin surface", () => {
 });
 
 /**
- * #5778: `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
+ * `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
  * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
  * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
  * other file surface's bytes do not move.
@@ -1058,8 +1058,8 @@ describe("the roadmap-focus row count", () => {
 		"",
 		"| Arc | Milestone | State |",
 		"|---|---|---|",
-		"| Geçit | #46 | active |",
-		"| Sözlük | #47 | next |",
+		"| Search | #46 | active |",
+		"| Editor | #47 | next |",
 		"",
 		"## Campaigns",
 		"",
@@ -1077,7 +1077,7 @@ describe("the roadmap-focus row count", () => {
 		"",
 		"| Arc | Milestone | State |",
 		"|---|---|---|",
-		"| Geçit | Sözlük — search and discovery | active |",
+		"| Search | Search and discovery | active |",
 		"",
 	].join("\n");
 
@@ -1106,7 +1106,7 @@ describe("the roadmap-focus row count", () => {
 		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
 	});
 
-	// #6296: bootstrap must scaffold where the READERS look. A repo declaring `roadmapFile` and
+	// Bootstrap must scaffold where the READERS look. A repo declaring `roadmapFile` and
 	// getting `ROADMAP.md` written ends up with two files, one of them inert and unremarked.
 	it("scaffolds at the path `roadmapFile` names", async () => {
 		const fs = fakeFs({
@@ -1145,7 +1145,7 @@ describe("the roadmap-focus row count", () => {
 });
 
 /**
- * #5776: the read-back re-scanned the eventually-consistent issues *list*, so a correct first
+ * The read-back re-scanned the eventually-consistent issues *list*, so a correct first
  * creation reported `READBACK_MISMATCH`. Every case here scripts that list to stay empty after the
  * write — the branch is proven only when the outcome no longer depends on it.
  */
@@ -1226,9 +1226,9 @@ describe("the readout-artifact read-back reads the created issue by number", () 
 });
 
 /**
- * #5772: the taxonomy carried five of the sixteen names the verbs write, so a bootstrapped repo hit
- * `#4285`'s correct refusal on the first `triage apply`. These bind the derivation, not the current
- * spelling — widen `TYPES` or `AUDIENCES` and a restated copy of this set fails here.
+ * The taxonomy once carried five of the sixteen names the verbs write, so a bootstrapped repo hit
+ * the correct missing-label refusal on the first `triage apply`. These bind the derivation, not the
+ * current spelling — widen `TYPES` or `AUDIENCES` and a restated copy of this set fails here.
  */
 describe("the bootstrap taxonomy is derived from the vocabularies the verbs write", () => {
 	const names = new Set(TAXONOMY.map((label) => label.name));
@@ -1289,9 +1289,9 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 	});
 
 	it("follows the board it is handed, never the shipped default", () => {
-		// #6451: published 0.3.0 restated five names while source derived sixteen, and every
+		// A published build once restated five names while source derived sixteen, and every
 		// assertion above still passed on the restatement because it happened to spell the default
-		// right. A board whose names phoenix does not use is what a restatement cannot fake.
+		// right. A board whose names the default set does not use is what a restatement cannot fake.
 		const declared: BoardVocabulary = {
 			statuses: {
 				needsTriage: "state:raw",
@@ -1346,7 +1346,7 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 		expect(menuField(resolvedRoster([]), AS_OF).state).toBe("empty");
 	});
 
-	// A surface registering zero keys is unread, not resolved: ADR 0092's zero-scope seat as a field.
+	// A surface registering zero keys is unread, not resolved — the zero-scope seat as a field.
 	it("renders a settings surface carrying no keys as `unknown`", () => {
 		expect(settingsField([], ".fabrika.jsonc", AS_OF).state).toBe("unknown");
 	});

@@ -39,8 +39,8 @@ export type Authored =
  * Resolve stdin into authored text, or the refusal that stops the verb.
  *
  * A **failed** read seats on `1` rather than on {@link EMPTY_STDIN}: an unread pipe is byte-identical
- * to an empty one only if the reader is willing to say so, and a verb that creates issues must not be
- * (#3924). A TTY with nothing piped never reached a read, but its correction is the same as an empty
+ * to an empty one only if the reader is willing to say so, and a verb that creates issues must not
+ * be. A TTY with nothing piped never reached a read, but its correction is the same as an empty
  * pipe's — send the body — so it joins the empty case.
  */
 export const readAuthored = (surface: AuthoredSurface, read: StdinRead): Authored => {

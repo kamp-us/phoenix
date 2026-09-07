@@ -4,15 +4,14 @@
  * This is the group's only irreversible act on a public board, which shapes every decision below:
  * no precondition resolves to a plausible value, and no write runs before all of them are proven.
  *
- * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 and #6070
- * rulings).** A filing with no agent signal — no footer *and* no operator author — is human-owned
- * and the verb refuses outright, *unless* `--duplicate-of` names a survivor: a fold moves the
- * content rather than discarding it, so #6070 licensed it whatever the provenance (ADR 0181's
- * 2026-08-21 amendment). An agent signal makes a filing *eligible*, not closeable — a human-invoked
- * `/report` emits the same footer, so `--confirm` is the confirmation step made
- * structural. That is why `--confirm` is optional at the parser and refused at the verb: a
- * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
- * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
+ * **Two guards, and they are different guards.** A filing with no agent signal — no footer *and*
+ * no operator author — is human-owned and the verb refuses outright, *unless* `--duplicate-of` names
+ * a survivor: a fold moves the content rather than discarding it, so it is licensed whatever the
+ * provenance. An agent signal makes a filing *eligible*, not closeable — a human-invoked `/report`
+ * emits the same footer, so `--confirm` is the confirmation step made structural. That is why
+ * `--confirm` is optional at the parser and refused at the verb: a parser-required flag's absence is
+ * a usage error, indistinguishable from a typo, while the confirmation is a decision whose absence
+ * must be a proven refusal a caller can read as one.
  *
  * **Write order is the auditability guarantee.** Fold the duplicate content, post the reason, write
  * the labels — every triage status stripped through `./facets.ts`'s reconcile, `closed-by-triage`
@@ -59,7 +58,7 @@ const SURFACE: AuthoredSurface = {
 
 export interface KillOptions {
 	readonly issue: number;
-	/** ADR 0159's confirmation. Absent ⇒ a proven refusal on `13`, never a usage error. */
+	/** The salvage confirmation. Absent ⇒ a proven refusal on `13`, never a usage error. */
 	readonly confirm: boolean;
 	readonly duplicateOf: number | null;
 	readonly repo: string | null;
@@ -166,7 +165,7 @@ export const runKill = (
 					: "is agent-filed and close-eligible";
 			return refuse(
 				UNCONFIRMED,
-				`triage kill: #${issue} ${standing}, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.`,
+				`triage kill: #${issue} ${standing}, but the confirmation is the guard — pass --confirm once salvage has genuinely been attempted.`,
 			);
 		}
 
@@ -251,7 +250,7 @@ export const runKill = (
 		// The strip rides in the label step rather than after the close, which is what keeps the write
 		// order's guarantee intact: a failure here leaves the issue OPEN, the recoverable direction.
 		// The removals are planned by the shared engine off `killedFacets`, so the kill exit and the
-		// two reconciling exits cannot disagree about which statuses a triage transition owns (#6710).
+		// two reconciling exits cannot disagree about which statuses a triage transition owns.
 		const facets = killedFacets();
 		const home = target.value.milestone;
 		const plan = planReconcile({labels: target.value.labels, milestone: home}, facets, home);

@@ -52,6 +52,7 @@ import {
 	ModelUnsupported,
 	ModeUnsupported,
 	type StartError,
+	type StartOptions,
 	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
@@ -93,6 +94,7 @@ import {
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
 import {claudeSessions} from "./sessions.ts";
+import {readSubagentTranscript} from "./sidechain-store.ts";
 import {exitDetail, type SubprocessWatch, watchSubprocess} from "./subprocess.ts";
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -198,9 +200,9 @@ const make = (
 		const session = yield* Ref.make<Session | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const mode = yield* Ref.make<Mode | null>(null);
-		// Two Refs for the same reason `mode` is one: a switch made before a session exists, or
-		// between sessions, has to survive to the next `start` and be re-announced there.
 		const model = yield* Ref.make<ModelRef | null>(null);
+		// Only an operator pick survives as an override; a discovered default is read afresh.
+		const pickedModel = yield* Ref.make<ModelRef | null>(null);
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
 		const commands = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
 		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
@@ -254,6 +256,20 @@ const make = (
 			);
 
 		const refOf = (row: ModelInfo): ModelRef => ({id: row.value, name: row.displayName});
+
+		const readRunningModel = (current: Session): Effect.Effect<string | undefined> =>
+			Effect.tryPromise({
+				try: () => current.handle.getContextUsage({detail: "summary"}),
+				catch: controlRefused,
+			}).pipe(
+				Effect.map((usage) => usage.model),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the running model could not be read: ${refusal.detail}`),
+						undefined,
+					),
+				),
+			);
 
 		/**
 		 * The levels one row offers, and the founder's ruling in one line (#8062): Claude's effort
@@ -525,11 +541,7 @@ const make = (
 			};
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (startOptions: {
-			readonly cwd: string;
-			readonly resume?: string;
-			readonly mode?: Mode;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (startOptions: StartOptions) {
 			const previous = yield* Ref.get(session);
 			// A second `start` is a reconnect, and it replaces the session whole: the previous
 			// subprocess is closed, its pump ended with it, and the old queue is shut so a
@@ -547,7 +559,8 @@ const make = (
 			const held = (yield* Ref.get(mode)) ?? startOptions.mode ?? null;
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const opened = yield* open(startOptions.cwd, startOptions.resume, held).pipe(
+			const resuming = startOptions.resume?.sessionId;
+			const opened = yield* open(startOptions.cwd, resuming, held).pipe(
 				Effect.tapError((_error: StartError) => emit(out, [{kind: "phase", phase: "gone"}])),
 			);
 
@@ -555,7 +568,7 @@ const make = (
 			// The keys belong to a session, not to the layer: a key is dropped when this *session* has
 			// seen it, so a new session admits one the previous session spent. Resuming the session the
 			// keys were recorded under is the one case that keeps them.
-			const continuing = previous !== null && startOptions.resume === previous.id;
+			const continuing = previous !== null && resuming === previous.id;
 			if (!continuing) yield* Ref.set(keys, new Set<string>());
 
 			// The layer's own narration of the open, which the handshake is: the core is already
@@ -580,11 +593,16 @@ const make = (
 			yield* Ref.set(models, offered);
 			const table = effortsOf(rows);
 			yield* Ref.set(efforts, table);
-			const spawned =
-				options.model === undefined
-					? null
-					: (offered.find((candidate) => candidate.id === options.model) ?? null);
-			const picked = yield* Ref.get(model);
+			const runningId = (yield* readRunningModel(opened.session)) ?? options.model;
+			// `resolvedModel` matches a canonical running id to its selectable alias (sdk.d.ts).
+			// Catalog order is not evidence that a row is active, even when it is named Default.
+			const runningRow =
+				runningId === undefined
+					? undefined
+					: (rows.find((row) => row.value === runningId) ??
+						rows.find((row) => row.resolvedModel === runningId));
+			const spawned = runningRow === undefined ? null : refOf(runningRow);
+			const picked = yield* Ref.get(pickedModel);
 			const opening =
 				picked === null || !offered.some((candidate) => sameModel(candidate, picked))
 					? spawned
@@ -724,7 +742,10 @@ const make = (
 			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
 			// as a mode set before the first session is.
 			const changed = current === null ? true : yield* applyModel(current, picked);
-			if (changed) yield* Ref.set(model, picked);
+			if (changed) {
+				yield* Ref.set(model, picked);
+				yield* Ref.set(pickedModel, picked);
+			}
 			const held = yield* Ref.get(model);
 			yield* publish([{kind: "model", current: held, available: offered}]);
 			// The offered levels are the model's, so a switch moves the picker's rows. A level the
@@ -780,6 +801,25 @@ const make = (
 		});
 
 		/**
+		 * One subagent this session spawned, as its own transcript and its type (#8404).
+		 *
+		 * `page`'s shape, on a different file: the live session names it, the store reads it, and
+		 * what comes back is the port's item union plus a plain type string. Nothing Claude-shaped
+		 * crosses out of here, which is what lets the subagent view render off it (#8406).
+		 *
+		 * Not `getSessionMessages`: at 0.3.259 it "returns Array of messages, or empty array if
+		 * session not found" (`sdk.d.ts`) and guards its session id as a UUID (`sdk.mjs`), so an
+		 * agent id gets the empty array rather than a refusal — see `sidechain-store.ts`.
+		 */
+		const subagentTranscript = Effect.fn("TuvalAiAgent.subagentTranscript")(function* (
+			agentId: string,
+		) {
+			const current = yield* Ref.get(session);
+			if (current === null) return yield* noSessionToPage();
+			return yield* readSubagentTranscript({cwd: current.cwd, id: current.id}, agentId, Date.now());
+		});
+
+		/**
 		 * Every Claude session on this machine, not this layer's own: the CLI's store is read off
 		 * disk, so this answers before `start` and on a layer that never opens a session.
 		 *
@@ -802,6 +842,7 @@ const make = (
 			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
+			subagentTranscript,
 			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};

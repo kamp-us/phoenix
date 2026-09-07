@@ -34,8 +34,8 @@ export type RecordApply =
  * Both halves of that string are proven here, before any caller writes bytes. The row removal must
  * still parse, **and** the composed decisions section must be the old entries plus exactly this one
  * that the parser reads back — the second half is the one `map record` shipped without, so a finding
- * whose text broke the entry grammar was caught only by the read-back, after the write had landed
- * (#5550). `map descope` fenced its composed section from the start; this is the same fence.
+ * whose text broke the entry grammar was caught only by the read-back, after the write had landed.
+ * `map descope` fenced its composed section from the start; this is the same fence.
  */
 export const applyRecord = (body: MapBody, ticket: number, entry: DecisionEntry): RecordApply => {
 	const withoutRow = spliceSection(

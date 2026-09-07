@@ -1,12 +1,12 @@
 /**
  * `uiSurfaces` and `uiCapture` — the runnable apps this repo renders, and how a capture is taken.
  *
- * One row per runnable app (ADR 0345). A row carries where the app's rendered source lives
+ * One row per runnable app. A row carries where the app's rendered source lives
  * (`prefix`), how to start it (`command`), what part of the surface namespace it owns (`mount`,
  * `basePath`) and how to tell it is up (`readyPath`). Two questions read this one list: which changed
  * paths raise the `ui` class (`review/classes.ts`'s `isUiSurface` over the prefixes), and which
- * server a surface is captured from (`ui render`). While the first was a compiled-in `apps/web/src/`
- * literal, a second runnable app's pixels passed every gate unrendered (#7369).
+ * server a surface is captured from (`ui render`). While the first was a compiled-in source-root
+ * literal, a second runnable app's pixels passed every gate unrendered.
  *
  * **The empty list is a declaration, not a silence.** It is also the shipped default, so a repo that
  * declares nothing raises no `ui` class and refuses `ui render` — each in one named sentence
@@ -14,7 +14,7 @@
  *
  * No row declares a port. A command carries `{{port}}` placeholders the render leg fills with freshly
  * allocated free ports at start, because a fixed port is not a per-worktree resource: two lanes
- * rendering at once would either collide or, worse, capture each other's tree (#7992).
+ * rendering at once would either collide or, worse, capture each other's tree.
  *
  * `uiCapture` is the list-level half — viewport, evidence store, storage state. `storageState` is the
  * one field naming a file rather than a value: a Playwright storage-state snapshot, so a repo whose
@@ -67,8 +67,8 @@ const VIOLATION = {
  * The three violations no per-field check can state, because each is a fact about the list rather
  * than about one value.
  *
- * A repeated `prefix` is deliberately absent: two apps legitimately serve one source root — phoenix's
- * `web` and `web-lab` both sit under `apps/web/src/`.
+ * A repeated `prefix` is deliberately absent: two apps legitimately serve one source root — an app
+ * and its component lab commonly sit under one prefix.
  */
 export const LIST_VIOLATION = {
 	noPort: (name: string) =>
@@ -269,7 +269,7 @@ const surfaceSchema: JsonSchema = {
 
 export const uiSurfacesKey: KeyGroup<ReadonlyArray<UiSurface>> = {
 	key: UI_SURFACES,
-	// Empty, and stated: a repo that declares nothing has no rendered gate rather than phoenix's.
+	// Empty, and stated: a repo that declares nothing has no rendered gate rather than someone else's.
 	shippedDefault: [],
 	decode: decodeSurfaces,
 	jsonSchema: {

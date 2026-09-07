@@ -82,7 +82,7 @@ describe("runCi", () => {
 	});
 
 	/**
-	 * ADR 0308: `checks` is an evidence-array collapsed to a status tally; what the rows were for
+	 * `checks` is an evidence-array collapsed to a status tally; what the rows were for
 	 * — naming the red and in-flight runs — moves to the notes channel.
 	 */
 	it("names the failing and still-running runs on stderr, never as answer rows", async () => {
@@ -132,7 +132,7 @@ describe("runCi", () => {
 		expect(out.stderr.at(-1)).toBe(`review ci: no commit ${OLD_HEAD} on PR #4321 in o/r.`);
 	});
 
-	it("refuses zero declared check runs on 7 — a vacuous green is the ADR 0092 fail-open", async () => {
+	it("refuses zero declared check runs on 7 — a vacuous green is the fail-open", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
@@ -153,7 +153,7 @@ describe("runCi", () => {
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: received 1 of 9 declared check runs at ${HEAD} — refusing the partial enumeration (#3999).`,
+			`review ci: received 1 of 9 declared check runs at ${HEAD} — refusing the partial enumeration.`,
 		);
 	});
 
@@ -180,7 +180,7 @@ describe("runCi", () => {
 });
 
 describe("the gate-coverage read", () => {
-	/** The live incident: a conflicted head where only CodeQL's default setup reported (#6522). */
+	/** The live incident: a conflicted head where only CodeQL's default setup reported. */
 	const CODEQL_ONLY = runs(4, [
 		{name: "CodeQL", status: "completed", conclusion: "success"},
 		{name: "Analyze (actions)", status: "completed", conclusion: "success"},
@@ -202,7 +202,7 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
+			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
 		);
 	});
 
@@ -264,7 +264,7 @@ describe("the gate-coverage read", () => {
 		expect(JSON.parse(out.stdout).gates).toEqual({declared: 2, covered: 2});
 	});
 
-	/** ADR 0308: `checks` is a status histogram under `--json`, never a row per run. */
+	/** `checks` is a status histogram under `--json`, never a row per run. */
 	it("collapses --json checks to a status tally beside the coverage", async () => {
 		const out = await run(
 			[
@@ -404,7 +404,7 @@ describe("the no-producer split", () => {
 });
 
 /**
- * The bounded wait of #7282: a `pending` is the ordinary state of a PR minutes after a push, and a
+ * The bounded wait: a `pending` is the ordinary state of a PR minutes after a push, and a
  * caller that cannot wait for it has only a park on a human to offer for a condition that clears
  * itself. The verb owns the loop so no skill ever sleeps (`docs/skill-conventions.md` §14).
  */
@@ -501,8 +501,8 @@ describe("the bounded --wait", () => {
 	});
 
 	/**
-	 * #7392: the floor check-run stays `in_progress` until a governance verdict binds at the head
-	 * (ADR 0318), and the shell running this wait is the shell that owes that verdict. A cadence no
+	 * The floor check-run stays `in_progress` until a governance verdict binds at the head,
+	 * and the shell running this wait is the shell that owes that verdict. A cadence no
 	 * test could sit through proves the answer comes on the first read.
 	 */
 	describe("a governance floor that is waiting on its own caller", () => {
@@ -564,7 +564,7 @@ describe("the bounded --wait", () => {
 		});
 
 		/**
-		 * #7441 is #7392's other half. On a repair round the verdict is bound to the previous head, so
+		 * The other half. On a repair round the verdict is bound to the previous head, so
 		 * the floor concludes `failure` rather than staying pending — the rollup is `red` and the verb
 		 * returns at once. That red belongs to the shell reading it, and a reviewer taking it as the
 		 * code class's execution evidence FAILs a PR over a floor it was about to clear.
@@ -634,7 +634,7 @@ describe("the bounded --wait", () => {
 			expect(out.stderr.join("\n")).not.toContain("yours to clear");
 		});
 
-		/** UNKNOWN never passes, so it is never the reader's to discount either (ADR 0092). */
+		/** UNKNOWN never passes, so it is never the reader's to discount either. */
 		it("stays a plain red when the floor could not be resolved at all", async () => {
 			const out = await run(
 				[

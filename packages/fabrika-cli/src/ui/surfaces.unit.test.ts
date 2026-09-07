@@ -15,7 +15,7 @@ const app = (overrides: Partial<UiSurface>): UiSurface => ({
 describe("appForSurface", () => {
 	const multi = [
 		app({name: "web", mount: "/"}),
-		app({name: "tuval-chat", mount: "/tuval/chat", basePath: "/"}),
+		app({name: "desk-chat", mount: "/desk/chat", basePath: "/"}),
 		app({name: "web-lab", mount: "/lab"}),
 	];
 	const named = (surface: string) => appForSurface(multi, surface)?.name ?? null;
@@ -26,15 +26,15 @@ describe("appForSurface", () => {
 		["/labs/x", "web"],
 		["/lab", "web-lab"],
 		["/lab/atolye/agent-chat-input", "web-lab"],
-		["/tuval/chat", "tuval-chat"],
-		["/tuval/chat/deep", "tuval-chat"],
-		["/tuval", "web"],
+		["/desk/chat", "desk-chat"],
+		["/desk/chat/deep", "desk-chat"],
+		["/desk", "web"],
 	])("resolves %s to the app with the longest claiming mount (%s)", (surface, name) => {
 		expect(named(surface)).toBe(name);
 	});
 
 	it("answers null when no mount claims the surface", () => {
-		expect(appForSurface([app({mount: "/tuval/chat"})], "/pano")).toBeNull();
+		expect(appForSurface([app({mount: "/desk/chat"})], "/pano")).toBeNull();
 	});
 });
 
@@ -42,11 +42,11 @@ describe("surfacePath and surfaceUrl", () => {
 	it.each([
 		["a catch-all mount is the identity", {mount: "/"}, "/lab/atolye/x", "/lab/atolye/x"],
 		["a mount with no basePath is the identity", {mount: "/lab"}, "/lab/atolye/x", "/lab/atolye/x"],
-		["a basePath rewrites the mount", {mount: "/tuval/chat", basePath: "/"}, "/tuval/chat", "/"],
+		["a basePath rewrites the mount", {mount: "/desk/chat", basePath: "/"}, "/desk/chat", "/"],
 		[
 			"a basePath rewrites the mount and keeps the remainder",
-			{mount: "/tuval/chat", basePath: "/"},
-			"/tuval/chat/deep",
+			{mount: "/desk/chat", basePath: "/"},
+			"/desk/chat/deep",
 			"/deep",
 		],
 		[
@@ -71,7 +71,7 @@ describe("surfaceSlug", () => {
 		["/", "root"],
 		["/pano", "pano"],
 		["/pano/yeni", "pano-yeni"],
-		["/tuval/chat", "tuval-chat"],
+		["/desk/chat", "desk-chat"],
 	])("slugs %s as %s", (route, slug) => {
 		expect(surfaceSlug(route)).toBe(slug);
 	});

@@ -31,16 +31,11 @@ const tool: TranscriptItem = {
 	status: "running",
 };
 
+const kinds: ReadonlyArray<TranscriptItem> = [user, assistant, system, tool, thinking, compaction];
+
 describe("transcript item union", () => {
 	it("admits all six kinds", () => {
-		expect([user, assistant, system, tool, thinking, compaction].map(isTranscriptItem)).toEqual([
-			true,
-			true,
-			true,
-			true,
-			true,
-			true,
-		]);
+		expect(kinds.map(isTranscriptItem)).toEqual(kinds.map(() => true));
 	});
 
 	it("admits an assistant turn the operator cut short", () => {
@@ -94,12 +89,22 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...tool, status: "pending"})).toBe(false);
 	});
 
-	it("takes a tool item with or without a parent, and refuses an empty parent id", () => {
-		expect(isTranscriptItem({...tool, parentId: "toolu_agent"})).toBe(true);
-		expect(isTranscriptItem({...tool, parentId: undefined})).toBe(true);
-		expect(isTranscriptItem({...tool, parentId: ""})).toBe(false);
-		expect(isTranscriptItem({...tool, parentId: 7})).toBe(false);
-		expect(isTranscriptItem({...tool, parentId: null})).toBe(false);
+	it("takes an item of any kind with or without a parent", () => {
+		expect(kinds.map((item) => isTranscriptItem({...item, parentId: "toolu_agent"}))).toEqual(
+			kinds.map(() => true),
+		);
+		expect(kinds.map((item) => isTranscriptItem({...item, parentId: undefined}))).toEqual(
+			kinds.map(() => true),
+		);
+	});
+
+	it("refuses a parent tag that is not an id, in every kind's arm", () => {
+		for (const parentId of ["", 7, null]) {
+			expect(
+				kinds.map((item) => isTranscriptItem({...item, parentId})),
+				String(parentId),
+			).toEqual(kinds.map(() => false));
+		}
 	});
 
 	it("refuses a tool result past the per-item byte bound, however it was built", () => {

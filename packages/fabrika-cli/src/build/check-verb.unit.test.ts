@@ -49,7 +49,7 @@ const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$
 /**
  * Anchored to the lane root, because that is what the pattern has to prove. An `ls-tree` pathspec
  * resolves against the process cwd, so a matcher that stops before `-C <root>` passes just as
- * happily on the cwd-relative shape that silently returns nothing (#5755 round 3).
+ * happily on the cwd-relative shape that silently returns nothing.
  */
 const LS_TREE = new RegExp(
 	`^git -C ${escapeRe(ROOT)} --literal-pathspecs ls-tree -r --name-only -z `,
@@ -61,9 +61,9 @@ const LINT = /^pnpm lint:worktree$/;
 const CONFIG_FILE = `${ROOT}/.fabrika.jsonc`;
 
 /**
- * The code validators these tests declare — phoenix's own pair, read off a config file the way any
+ * The code validators these tests declare — a sample pair, read off a config file the way any
  * repo's is. The CLI ships no pair to fall back on, so a code-surface test that declared nothing
- * would be exercising the "no validator is present" refusal rather than the runner (#6015).
+ * would be exercising the "no validator is present" refusal rather than the runner.
  */
 const CODE_CONFIG: Record<string, string> = {
 	[CONFIG_FILE]:
@@ -142,7 +142,7 @@ describe("surfaceMismatch — the anchor, not a second classifier", () => {
 		expect(surfaceMismatch("plan", ["a.ts"])).toContain("no markdown file");
 	});
 
-	// #5301: the anchor refuses an ABSENT class, never a present other one — the asymmetry that left a
+	// The anchor refuses an ABSENT class, never a present other one — the asymmetry that left a
 	// mixed diff's markdown with no surface to run under.
 	it("refuses --surface workflows over a diff with no workflow file", () => {
 		expect(surfaceMismatch("workflows", ["a.ts", "README.md"])).toContain("no workflows file");
@@ -189,10 +189,10 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 		const {workflows, unvalidatable} = classifyDiff([
 			".github/workflows/ci.yml",
 			".github/actions/setup/action.yml",
-			"apps/web/config.yml",
+			"src/app/config.yml",
 		]);
 		expect(workflows).toEqual([".github/workflows/ci.yml"]);
-		expect(unvalidatable).toEqual([".github/actions/setup/action.yml", "apps/web/config.yml"]);
+		expect(unvalidatable).toEqual([".github/actions/setup/action.yml", "src/app/config.yml"]);
 	});
 });
 
@@ -223,7 +223,7 @@ describe("runCheck", () => {
 	it("runs exactly the commands the repo declared, and reports what ran", async () => {
 		const shell = fakeSeams([
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[DIFF, okOut("src/app/App.tsx\n")],
 			[TYPECHECK, okOut("")],
 			[LINT, okOut("")],
 		]);
@@ -247,7 +247,7 @@ describe("runCheck", () => {
 	it("refuses red on 18, naming the runner that failed, with nothing on stdout", async () => {
 		const out = await run([
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[DIFF, okOut("src/app/App.tsx\n")],
 			[TYPECHECK, errOut("src/App.tsx(12,3): error TS2345")],
 		]);
 		expect(out.code).toBe(VALIDATION_RED);
@@ -257,16 +257,16 @@ describe("runCheck", () => {
 		);
 	});
 
-	it("refuses an empty diff on 7 — zero scope is never a vacuous green (ADR 0092)", async () => {
+	it("refuses an empty diff on 7 — zero scope is never a vacuous green", async () => {
 		const out = await run([...LANE_OK, [DIFF, okOut("")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"build check: this tree changes nothing against origin/main, tracked or untracked — nothing to validate (ADR 0092).",
+			"build check: this tree changes nothing against origin/main, tracked or untracked — nothing to validate.",
 		);
 	});
 
 	it("refuses --surface prose on 10 over a diff with no markdown at all", async () => {
-		const out = await run([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\nsrc/x.ts\n")]], {
+		const out = await run([...LANE_OK, [DIFF, okOut("src/app/App.tsx\nsrc/x.ts\n")]], {
 			surface: "prose",
 		});
 		expect(out.code).toBe(OFF_VOCABULARY);
@@ -315,7 +315,7 @@ describe("runCheck", () => {
 		const out = await run(
 			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
 			{surface: "prose"},
-			{"/repo/trees/lane-a/docs/guide.md": "run it from /Users/someone/phoenix\n"},
+			{"/repo/trees/lane-a/docs/guide.md": "run it from /Users/someone/repo\n"},
 		);
 		expect(out.code).toBe(VALIDATION_RED);
 		expect(out.stderr.some((line) => line.includes("machine-local path"))).toBe(true);
@@ -334,9 +334,9 @@ describe("runCheck", () => {
 		expect(JSON.parse(out.stdout).verdict).toBe("green");
 	});
 
-	// The #5229 regression: before the unvalidatable bucket existed, this diff shape returned
+	// The regression this pins: before the unvalidatable bucket existed, this diff shape returned
 	// {"verdict":"green","surface":"prose","ran":["markdown link + leak scan"]} having opened no file.
-	// It was a workflow-plus-shell diff then; the workflow half has validators of its own since #5991,
+	// It was a workflow-plus-shell diff then; the workflow half has validators of its own now,
 	// so the shape is now carried by two files that genuinely still have none.
 	const NO_SURFACE = okOut("migrations/0007.sql\nclaude-plugins/x/foo.sh\n");
 
@@ -386,7 +386,7 @@ describe("runCheck", () => {
 	it("discloses the unvalidated files on a partly-unvalidatable code green", async () => {
 		const out = await run([
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\nscripts/deploy.sh\n")],
+			[DIFF, okOut("src/app/App.tsx\nscripts/deploy.sh\n")],
 			[TYPECHECK, okOut("")],
 			[LINT, okOut("")],
 		]);
@@ -394,14 +394,14 @@ describe("runCheck", () => {
 		expect(JSON.parse(out.stdout).unvalidated).toEqual(["scripts/deploy.sh"]);
 	});
 
-	// The #5288 regression. README.md landed in the markdown bucket, so the green listed nothing — and
+	// The regression this pins. README.md landed in the markdown bucket, so the green listed nothing — and
 	// an empty `unvalidated` reads as "nothing uncovered" over a file no runner opened (`lint:worktree`
 	// filters `.md` out by extension).
 	it("names the markdown a --surface code green did not read", async () => {
 		const out = await run(
 			[
 				...LANE_OK,
-				[DIFF, okOut("apps/web/src/App.tsx\nREADME.md\n")],
+				[DIFF, okOut("src/app/App.tsx\nREADME.md\n")],
 				[TYPECHECK, okOut("")],
 				[LINT, okOut("")],
 			],
@@ -416,7 +416,7 @@ describe("runCheck", () => {
 	});
 
 	it("names the code a --surface plan green did not read — same rule, mirrored", async () => {
-		const shell = fakeSeams([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\nplans/epic.md\n")]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut("src/app/App.tsx\nplans/epic.md\n")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "plan"}),
@@ -429,22 +429,22 @@ describe("runCheck", () => {
 			),
 		);
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["src/app/App.tsx"]);
 		expect(shell.calls).not.toContain("pnpm typecheck --force");
 	});
 
 	// Disclosing is not validating: --surface code names the markdown it skipped and stays green over
-	// content the prose validators would red. Widening the surface to scan it is the fix #5288 declined.
+	// content the prose validators would red. Widening the surface to scan it is the fix that was declined.
 	it("discloses the skipped markdown without scanning it", async () => {
 		const out = await run(
 			[
 				...LANE_OK,
-				[DIFF, okOut("apps/web/src/App.tsx\ndocs/guide.md\n")],
+				[DIFF, okOut("src/app/App.tsx\ndocs/guide.md\n")],
 				[TYPECHECK, okOut("")],
 				[LINT, okOut("")],
 			],
 			{},
-			{"/repo/trees/lane-a/docs/guide.md": "run it from /Users/someone/phoenix\n"},
+			{"/repo/trees/lane-a/docs/guide.md": "run it from /Users/someone/repo\n"},
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).unvalidated).toEqual(["docs/guide.md"]);
@@ -486,9 +486,9 @@ describe("runCheck", () => {
 	});
 });
 
-// The #5687 divergence: `build check` asked `report/leaks.ts`'s ISSUE-BODY scanner about a file in a
-// diff, so it red on bytes v1's `leak-guard scan` — the gate it predicts — passes clean, and
-// the red was unclearable inside the lane that inherited it.
+// The divergence this pins: `build check` asked `report/leaks.ts`'s ISSUE-BODY scanner about a file
+// in a diff, so it red on bytes the committed-file gate it predicts passes clean, and the red was
+// unclearable inside the lane that inherited it.
 describe("the prose leak scan predicts the committed-file gate, not the body guard", () => {
 	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
 	const LEAKY = "the Lineage bullets name ~/code/github.com/o/r on purpose\n";
@@ -555,19 +555,19 @@ describe("the prose leak scan predicts the committed-file gate, not the body gua
 	});
 });
 
-// The #5301 regression, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
+// The regression this pins, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
 // shape, and it had no invocation that opened the markdown: `code` never reads it, `plan` runs the
 // grammar check, and `prose` refused on 10 because a code file was present. The leak scan and the
 // link resolver never ran over a mixed diff under any surface.
 describe("a mixed code+markdown diff — every surface has a runnable answer", () => {
-	const MIXED = okOut("apps/web/src/App.tsx\nREADME.md\n");
+	const MIXED = okOut("src/app/App.tsx\nREADME.md\n");
 
 	it("scans the markdown under --surface prose, reding on its machine-local path", async () => {
 		const out = await run(
 			[...LANE_OK, [DIFF, MIXED]],
 			{surface: "prose"},
 			{
-				"/repo/trees/lane-a/README.md": "run it from /Users/someone/phoenix\n",
+				"/repo/trees/lane-a/README.md": "run it from /Users/someone/repo\n",
 			},
 		);
 		expect(out.code).toBe(VALIDATION_RED);
@@ -586,7 +586,7 @@ describe("a mixed code+markdown diff — every surface has a runnable answer", (
 		expect(out.code).toBe(0);
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.ran).toEqual(["markdown link + leak scan"]);
-		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
 	});
 
 	it("runs the CI commands under --surface code, disclosing the markdown it did not read", async () => {
@@ -610,11 +610,11 @@ describe("a mixed code+markdown diff — every surface has a runnable answer", (
 		expect(out.code).toBe(0);
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
-		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
 	});
 });
 
-// #5304, hole 1. `catchTag("PlatformError")` caught every platform fault and `continue` skipped the
+// Hole 1. `catchTag("PlatformError")` caught every platform fault and `continue` skipped the
 // file, so a permission or IO fault left `unvalidated` empty over a file nothing opened.
 describe("a changed markdown file the verb cannot open", () => {
 	const GUIDE = "/repo/trees/lane-a/docs/guide.md";
@@ -649,7 +649,7 @@ describe("a changed markdown file the verb cannot open", () => {
 	});
 });
 
-// #5304, hole 2. `prose` and `plan` both claim the `markdown` class; the claim is only true while
+// Hole 2. `prose` and `plan` both claim the `markdown` class; the claim is only true while
 // both run every validator that class gets, so `plan` runs the leak scan and the link resolver on
 // top of the grammar rather than instead of it.
 describe("--surface plan covers the markdown class it claims", () => {
@@ -659,7 +659,7 @@ describe("--surface plan covers the markdown class it claims", () => {
 			{surface: "plan"},
 			{
 				"/repo/trees/lane-a/plans/epic.md":
-					"## Dependencies\n\n- phase 1: #12\n\nRun it from /Users/someone/phoenix\n",
+					"## Dependencies\n\n- phase 1: #12\n\nRun it from /Users/someone/repo\n",
 			},
 		);
 		expect(out.code).toBe(VALIDATION_RED);
@@ -692,7 +692,7 @@ describe("--surface plan covers the markdown class it claims", () => {
 	});
 });
 
-// #5823: `git diff` reports no untracked path, so a brand-new file reached neither the validated
+// `git diff` reports no untracked path, so a brand-new file reached neither the validated
 // set nor `unvalidated` — invisible instead of disclosed, under a green verdict. The lane order is
 // construct, check, then commit, so every new file is untracked exactly when the verb runs.
 describe("the enumeration unions the untracked files with the diff", () => {
@@ -700,7 +700,7 @@ describe("the enumeration unions the untracked files with the diff", () => {
 		const out = await run([
 			untracked("packages/fabrika-cli/src/build/pr-title.ts\n"),
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[DIFF, okOut("src/app/App.tsx\n")],
 			[TYPECHECK, okOut("")],
 			[LINT, okOut("")],
 		]);
@@ -713,7 +713,7 @@ describe("the enumeration unions the untracked files with the diff", () => {
 		const out = await run([
 			untracked("docs/new-guide.md\n"),
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[DIFF, okOut("src/app/App.tsx\n")],
 			[TYPECHECK, okOut("")],
 			[LINT, okOut("")],
 		]);
@@ -728,7 +728,7 @@ describe("the enumeration unions the untracked files with the diff", () => {
 			{surface: "prose"},
 			{
 				"/repo/trees/lane-a/docs/tracked.md": "fine\n",
-				"/repo/trees/lane-a/docs/new-guide.md": "run it from /Users/someone/phoenix\n",
+				"/repo/trees/lane-a/docs/new-guide.md": "run it from /Users/someone/repo\n",
 			},
 		);
 		expect(out.code).toBe(VALIDATION_RED);
@@ -737,7 +737,7 @@ describe("the enumeration unions the untracked files with the diff", () => {
 
 	it("validates an all-untracked tree instead of refusing it as empty", async () => {
 		const out = await run([
-			untracked("apps/web/src/New.tsx\n"),
+			untracked("src/app/New.tsx\n"),
 			...LANE_OK,
 			[DIFF, okOut("")],
 			[TYPECHECK, okOut("")],
@@ -770,9 +770,9 @@ describe("the enumeration unions the untracked files with the diff", () => {
 	// `lane.root`. Only the argv proves the two reads cover the same tree, so assert the argv.
 	it("reads the untracked list repo-wide and root-relative", async () => {
 		const shell = fakeSeams([
-			untracked("apps/web/src/New.tsx\n"),
+			untracked("src/app/New.tsx\n"),
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[DIFF, okOut("src/app/App.tsx\n")],
 			[TYPECHECK, okOut("")],
 			[LINT, okOut("")],
 		]);
@@ -790,15 +790,15 @@ describe("the enumeration unions the untracked files with the diff", () => {
 		const out = await run([
 			[UNTRACKED, errOut("fatal: not a git repository")],
 			...LANE_OK,
-			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[DIFF, okOut("src/app/App.tsx\n")],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the verdict is UNKNOWN, never green");
 	});
 });
 
-// #5639: the extractor read a markdown link written as an *example* as a live one, so the five docs
-// that state this repo's link convention could not pass the surface that reads them.
+// The extractor read a markdown link written as an *example* as a live one, so the very docs that
+// state a repo's link convention could not pass the surface that reads them.
 describe("linkTargets — an illustrated link is not a link", () => {
 	const TOOLS_MD_493 =
 		"`doc-links` validates markdown `[text](path)` links and *masks* code spans by construction.\n";
@@ -876,7 +876,7 @@ describe("the prose link check still reds a dead link", () => {
 	});
 });
 
-// #5755: the scan read the whole file, so a one-paragraph edit inherited every defect line already
+// The scan read the whole file, so a one-paragraph edit inherited every defect line already
 // in it. The blocked case was a doc whose subject IS path hygiene, spelling the leak shapes out.
 describe("the leak scan reds this diff's leaks, not the file's", () => {
 	const FILE = "docs/guide.md";
@@ -914,7 +914,7 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 		expect(out.stderr.some((line) => line.includes(`${FILE}:2`))).toBe(true);
 	});
 
-	// Round 3 of #5755: an `ls-tree` pathspec resolves against the process cwd, and
+	// Round 3 of the same fix: an `ls-tree` pathspec resolves against the process cwd, and
 	// `--literal-pathspecs` switches off the `:(top)` magic that would anchor it. From a
 	// subdirectory the roster came back empty at exit 0 — indistinguishable from "this diff created
 	// every one of them", which restored the exact false red this feature removes. Only the argv
@@ -990,7 +990,7 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 	});
 });
 
-// #5991: a workflows-only diff refused under every surface, so the repo's own gates were the one
+// A workflows-only diff refused under every surface, so the repo's own gates were the one
 // diff class a lane could not get an in-tree green on.
 describe("--surface workflows", () => {
 	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
@@ -1076,7 +1076,7 @@ describe("--surface workflows", () => {
 		);
 	});
 
-	it("names the gate workflow the repo declares, not phoenix's (#6026)", async () => {
+	it("names the gate workflow the repo declares, not another repo's", async () => {
 		const {out} = await workflows(
 			[[GUARD_LINE, okOut("")]],
 			{
@@ -1104,7 +1104,7 @@ describe("--surface workflows", () => {
 		expect(out.stderr.at(-1)).toContain("bare workflow filename");
 	});
 
-	// The finding on #6220's first round: `ran.length > 0` proves a validator ran, never that it
+	// The finding from an early round: `ran.length > 0` proves a validator ran, never that it
 	// opened the file the diff changed. Only actionlint takes the changed paths; a declared guard
 	// reads the fixed set it names, so coverage is per file or it is a claim about nothing.
 	it("names a changed workflow no validator that ran opens in `unvalidated`", async () => {
@@ -1169,7 +1169,7 @@ describe("--surface workflows", () => {
 	});
 
 	it("refuses on 10 over a diff with no workflow file", async () => {
-		const shell = fakeSeams([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\n")]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut("src/app/App.tsx\n")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "workflows"}),
@@ -1184,7 +1184,7 @@ describe("--surface workflows", () => {
 });
 
 describe("a mixed workflow-plus-code diff — each surface reads its own class and names the other", () => {
-	const MIXED = okOut(".github/workflows/ci.yml\napps/web/src/App.tsx\n");
+	const MIXED = okOut(".github/workflows/ci.yml\nsrc/app/App.tsx\n");
 	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
 
 	it("runs the CI commands under --surface code, disclosing the workflow it did not read", async () => {
@@ -1204,17 +1204,17 @@ describe("a mixed workflow-plus-code diff — each surface reads its own class a
 		expect(out.code).toBe(0);
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.ran).toEqual(["actionlint"]);
-		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
 		expect(shell.calls).toContain("actionlint .github/workflows/ci.yml");
 		expect(out.stderr.some((line) => line.includes("NOT covered by this verdict"))).toBe(true);
 	});
 });
 
-// #6297: the code surface's commands are the repo's declaration, and "no validator is present" is a
+// The code surface's commands are the repo's declaration, and "no validator is present" is a
 // third answer — not the `VALIDATION_RED` that says the code failed, and not a green either.
 describe("--surface code reads its validators from the config", () => {
 	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
-	const CODE = okOut("apps/web/src/App.tsx\n");
+	const CODE = okOut("src/app/App.tsx\n");
 
 	const codeRun = (
 		script: ReadonlyArray<Scripted>,
@@ -1241,8 +1241,8 @@ describe("--surface code reads its validators from the config", () => {
 		expect(calls).not.toContain("pnpm typecheck --force");
 	});
 
-	// The demlik reproduction on #6015: a repo that never declared these ran phoenix's script names
-	// and got a red, which says its code is broken. Nothing is compiled in for it to inherit.
+	// The adopting-repo reproduction: a repo that never declared these ran another repo's script
+	// names and got a red, which says its code is broken. Nothing is compiled in for it to inherit.
 	it("refuses UNKNOWN when the file declares no `codeValidators`", async () => {
 		const {out, calls} = await codeRun([], "{}");
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);

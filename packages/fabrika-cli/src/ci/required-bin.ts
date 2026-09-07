@@ -1,7 +1,7 @@
 /**
  * `ci-required` gate bin — the CI-callable IO shell over `./required.ts`'s pure `judge`
- * (issue #786, ADR 0092): read the declared gating jobs' `needs.*.result` + `*_required`
- * booleans from `process.env`, print the per-job verdicts (ADR 0092 §1 "emit what you scanned"),
+ * verdict: read the declared gating jobs' `needs.*.result` + `*_required`
+ * booleans from `process.env`, print the per-job verdicts so the log says what was scanned,
  * exit 0 on PASS / 1 on FAIL.
  *
  * **Not routed through `fabrika`'s bin, and that is the point.** The `ci-required` job runs

@@ -42,7 +42,7 @@ const cutMidReply: AiAgentSessionState = {
 	},
 	interrupted: null,
 	interruption: null,
-	usage: {model: "faux/faux-1", inputTokens: 10, outputTokens: 4, cost: 0},
+	usage: {model: "faux/faux-1", turns: {"item-1": {inputTokens: 10, outputTokens: 4, cost: 0}}},
 	permissions: {},
 	permissionsRaised: 0,
 	modes: {current: null, available: []},
@@ -53,6 +53,8 @@ const cutMidReply: AiAgentSessionState = {
 	sends: [{key: "send-0", state: "pending", turn: "unstarted"}],
 	queued: [],
 	lastPage: null,
+	pageOutcome: null,
+	subagents: {},
 	failure: null,
 };
 

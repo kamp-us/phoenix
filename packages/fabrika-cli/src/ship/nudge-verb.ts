@@ -2,8 +2,8 @@
  * `ship nudge` — the at-most-once dropped-trigger remedy.
  *
  * **The verb trusts nothing it was told.** It re-derives the zero-runs precondition itself, because
- * a mis-dispatched nudge once close→reopened a live green head and left a false comment on it
- * (#4816): the caller's `ship checks` output is routing, never authority. A state *proven otherwise*
+ * a mis-dispatched nudge once close→reopened a live green head and left a false comment on it:
+ * the caller's `ship checks` output is routing, never authority. A state *proven otherwise*
  * — runs exist, no workflows, PR not open — is `16`, refused without touching the PR.
  *
  * The head ref is untouched by construction: close/reopen preserves it, so SHA-bound verdicts
@@ -67,7 +67,7 @@ export const runNudge = (
 		const notInState = (why: string): VerbOutcome =>
 			refuse(
 				PROVEN_NOT_IN_STATE,
-				`${VERB}: #${pr} is not in the dropped-trigger state (${why}) — refusing to touch it (#4816).`,
+				`${VERB}: #${pr} is not in the dropped-trigger state (${why}) — refusing to touch it.`,
 			);
 
 		const target = yield* resolvePull(VERB, repo, pr, {

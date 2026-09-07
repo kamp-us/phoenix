@@ -26,6 +26,7 @@ import type {
 	ModelRef,
 	PermissionDecision,
 	PermissionRequest,
+	SubagentSlot,
 	ThinkingLevel,
 	TranscriptItem,
 } from "./ports/index.ts";
@@ -132,9 +133,32 @@ export interface FailureEvent {
 	readonly failure: AgentFailure;
 }
 
+/**
+ * One subagent's slot, whole, as its mapper last computed it. Same `slot.id` twice means the later
+ * one supersedes, exactly as `item` does — the id is the spawning call's, so a worker that writes a
+ * hundred lines is a hundred replacements of one row and never a hundred rows.
+ *
+ * It rides this stream rather than a channel of its own for the reason every other kind does: one
+ * subscription, one ordering (founder ruling 1, #7570). A second channel would let a worker's slot
+ * arrive before the tool call that spawned it.
+ */
+export interface SubagentEvent {
+	readonly kind: "subagent";
+	readonly slot: SubagentSlot;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
+	/**
+	 * Which turn this cost belongs to, under the reporting backend's own id for it.
+	 *
+	 * A report is not an increment. A resume re-reports turns the process has already folded — the
+	 * reconnect hands its own tail through as the fold's seed, and a row the restore marked
+	 * `interrupted` differs from the backend's copy by that marker alone (#8369) — so the core keys
+	 * the cost on this and the second report of one turn adds nothing.
+	 */
+	readonly turn: string;
 	readonly model: string;
 	readonly inputTokens: number;
 	readonly outputTokens: number;
@@ -151,4 +175,5 @@ export type AgentEvent =
 	| CommandsEvent
 	| ThinkingEvent
 	| UsageEvent
+	| SubagentEvent
 	| FailureEvent;

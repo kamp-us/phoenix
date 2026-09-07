@@ -10,11 +10,11 @@
  * status beside the claim rather than a hash standing in for them; the `evidenceDigest` is what
  * proves the table matches the log.
  *
- * **The body never carries a machine-local path**, which is the answer to #3086. The prose parts
- * never place one there; the run table is transcribed from argv a caller chose, so it is masked here
- * at composition — the workspace root by class as `<workspace>`, anything else by the leak scanner's
- * own class masks. The caller cannot edit an argv already on the log, so a refusal over it would have
- * no remedy (#5553).
+ * **The body never carries a machine-local path**, because a body is published where anyone can read
+ * it. The prose parts never place one there; the run table is transcribed from argv a caller chose,
+ * so it is masked here at composition — the workspace root by class as `<workspace>`, anything else
+ * by the leak scanner's own class masks. The caller cannot edit an argv already on the log, so a
+ * refusal over it would have no remedy.
  */
 
 import type {CommentRecord} from "../io/issues.ts";
@@ -131,7 +131,7 @@ export const WORKSPACE_MASK = "<workspace>";
  * machine-local path the argv carried masked by the leak scanner's own class masks.
  *
  * Masking here rather than refusing later is the whole fix: by the time a table exists the argv is
- * already on the log, so there is no input left for a caller to correct (#5553).
+ * already on the log, so there is no input left for a caller to correct.
  */
 export const maskedCommand = (command: ReadonlyArray<string>, workspace: string): string => {
 	const joined = command.join(" ");

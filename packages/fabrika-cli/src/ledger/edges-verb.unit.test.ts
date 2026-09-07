@@ -21,7 +21,7 @@ const WRITE = (issue: number) =>
 const ISSUE = (number: number) =>
 	new RegExp(`^GET https://api\\.github\\.com/repos/o/r/issues/${number}$`);
 
-/** Epic #6595's shape: #4302 sits in phase 2 behind #4301, and the graph carries nothing. */
+/** The gated shape: a child sits in phase 2 behind another, and the graph carries nothing. */
 const GATED = epic({
 	body: "## Dependencies\n\n- phase 1: #4301\n- phase 2: #4302\n- #4302 requires: #4301\n",
 });
@@ -76,7 +76,8 @@ describe("runEdges", () => {
 
 	/**
 	 * A `blocked_by` list may carry edges no ledger authored. Deleting one because this block does not
-	 * name it would unblock work on the strength of a document that was never the carrier (ADR 0301).
+	 * name it would unblock work on the strength of a document that was never the carrier — the
+	 * `blocked_by` graph is, and it alone.
 	 */
 	it("leaves an edge the block does not name alone", async () => {
 		const {outcome, requests} = await run([...ground(), [GRAPH(4302), blockers(4301, 9999)]]);

@@ -8,18 +8,18 @@
  *
  * Step 4 is this verb's reason to exist. The capture package's upload leg is `never`-typed by
  * contract — every transport failure degrades to `{hostedUrl: null, uploadError}` and no consumer
- * ever read `uploadError` — so a 100%-failed evidence channel decorated months of PASSes (#3925).
- * Here a failed upload or a failed verification is `17` and **nothing is posted**: ADR 0165's
- * judge-the-local-bytes still stands (the pixels you judged were local), but the *marker* does not
- * land over a broken evidence channel.
+ * ever read `uploadError` — so a 100%-failed evidence channel decorated months of PASSes.
+ * Here a failed upload or a failed verification is `17` and **nothing is posted**: the
+ * judge-the-local-bytes rule still stands (the pixels you judged were local), but the *marker*
+ * does not land over a broken evidence channel.
  *
  * There is no `--namespace`. This group emits `review-ui` and nothing else, so a
  * misdirected-namespace write is unrepresentable rather than refused.
  *
  * Step 7 **appends**: a matched comment keeps its prior verdict verbatim below
  * `../review/supersede.ts`'s fence and the fresh verdict takes the first line, because GitHub keeps
- * no comment-body history and a PATCH over a verdict is that verdict gone — on PR #7081 a FAIL
- * became a PASS with nothing left showing a gate had ever blocked (#7247). A post that would retire
+ * no comment-body history and a PATCH over a verdict is that verdict gone — a standing FAIL
+ * became a PASS with nothing left showing a gate had ever blocked. A post that would retire
  * a standing verdict of the opposite polarity at the same head is `18` until `--supersede` says so.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
@@ -145,8 +145,8 @@ const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
  * Whether a comment already holds this namespace's verdict **under this carrier** — the upsert key.
  *
  * Per carrier because the two anchor on different bytes: an advisory withholds the SHA from its
- * first line by design (ADR 0111), so a marker-only match never finds a prior advisory and every
- * §CP re-post would stack a second comment (#4992).
+ * first line by design, so a marker-only match never finds a prior advisory and every §CP re-post
+ * would stack a second comment.
  */
 const carriesNamespace = (body: string, carrier: Carrier): boolean => {
 	if (carrier === "advisory") return readAdvisory(body)?.namespace === NAMESPACE;
@@ -206,7 +206,7 @@ const mismatchOf = (
 
 /**
  * The evidence gallery: per shot, the **verified** hosted URL — never a local path. A set is a
- * surface × viewport cross-product (#7706), so the heading names both: two shots of one surface
+ * surface × viewport cross-product, so the heading names both: two shots of one surface
  * under one heading would read as a duplicate rather than as the two widths they are.
  */
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
@@ -230,7 +230,7 @@ const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string
  *
  * The read goes through the `uiCapture` key's own decode rather than a second parse of the same
  * bytes — a hand-rolled reader beside a schema is two answers to one question, and here they
- * disagreed about the store's shape (#7369, #8267). The four resolution arms are resolved directly
+ * disagreed about the store's shape. The four resolution arms are resolved directly
  * rather than through `readKey` because this verb owes `4` and `11` different seats, and `readKey`
  * collapses malformed and unreadable into one refusal.
  */
@@ -327,7 +327,7 @@ export const runPost = (
 		if (!prefixMatch(live, inspected)) {
 			return refuse(
 				STALE_TREE,
-				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live} (ADR 0058).`,
+				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live}.`,
 			);
 		}
 
@@ -407,12 +407,12 @@ export const runPost = (
 		if (failures.length > 0) {
 			return refuse(
 				UPLOAD_FAILED,
-				`${VERB}: upload failed for ${failures.length} of ${bytesByEntry.length} captures (${failures[0]}) — refusing to post a verdict over a broken evidence channel (#3925).`,
+				`${VERB}: upload failed for ${failures.length} of ${bytesByEntry.length} captures (${failures[0]}) — refusing to post a verdict over a broken evidence channel.`,
 				failures.map((failure) => `${VERB}: upload failed — ${failure}`),
 			);
 		}
 
-		// Step 5 — compose through the wire format, or through the ADR 0151 advisory shape.
+		// Step 5 — compose through the wire format, or through the advisory shape.
 		const firstLine =
 			carrier === "advisory"
 				? emitAdvisory(NAMESPACE, clause)
@@ -420,8 +420,8 @@ export const runPost = (
 						namespace: NAMESPACE,
 						polarity: polarity as Polarity,
 						sha: inspected,
-						// Head-bound only: this namespace attests deployed PIXELS, and ADR 0276's digest is
-						// taken over a diff, which a rendered preview is not a function of (#4808's class).
+						// Head-bound only: this namespace attests deployed PIXELS, and the content digest is
+						// taken over a diff, which a rendered preview is not a function of.
 						content: null,
 						clause,
 					});
@@ -441,7 +441,7 @@ export const runPost = (
 		const diagnostics = [scannedLine(VERB, comments.value.length, "comment")];
 		// The NEWEST match by write stamp, stated rather than left to the order the API returned: a
 		// body-only repair legitimately leaves two verdicts at one SHA, and editing the older one
-		// lands the verdict where nobody reads (#5048, and the recency rule #4881 records).
+		// lands the verdict where nobody reads, which the write-recency rule records.
 		const mine = comments.value
 			.filter((comment) => comment.author === me.value && carriesNamespace(comment.body, carrier))
 			.reduce<(typeof comments.value)[number] | undefined>((newest, comment) => {
@@ -456,7 +456,7 @@ export const runPost = (
 
 		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
 		// comment-body history, so a PATCH over it is the record gone. A polarity flip at the same head
-		// is the one case that also needs saying out loud: it is the flip the merge gate reads (#7247).
+		// is the one case that also needs saying out loud: it is the flip the merge gate reads.
 		const standing = mine === undefined ? null : standingPolarityAt(mine.body, carrier, inspected);
 		if (standing !== null && standing !== polarity && !options.supersede) {
 			return refuse(
@@ -489,7 +489,7 @@ export const runPost = (
 			);
 		}
 
-		// Step 8 — read it back from live state. The write call's own echo is not evidence (#3173).
+		// Step 8 — read it back from live state. The write call's own echo is not evidence.
 		const back = yield* getComment(repo, landed.id);
 		const mismatch =
 			back._tag === "Failure"

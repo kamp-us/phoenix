@@ -6,7 +6,7 @@
  * pipe — including the `x=$(fabrika …)` a caller writes without thinking of it as one — the write is
  * asynchronous, and `process.exit` tears the process down without draining what is still queued. So
  * exiting on the line after the write discarded every byte past the pipe buffer, silently and on
- * exit 0, exactly when the answer was long enough for a reader to need all of it (#6226).
+ * exit 0, exactly when the answer was long enough for a reader to need all of it.
  *
  * The exit is explicit on every code, 0 included, so the code a verb computed is the code the
  * process returns rather than whatever the runtime would have inferred. `process.exitCode` is set

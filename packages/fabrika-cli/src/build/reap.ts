@@ -8,7 +8,7 @@
  * uncommitted in it, no lock on it, and its HEAD already carried by the trunk.
  *
  * That is the opposite polarity from `./retire.ts`, and deliberately: a retirement is a *targeted*
- * act against one number the board has spoken about, so ADR 0323 rules dirtiness out of it. A reap
+ * act against one number the board has spoken about, so dirtiness is ruled out of it. A reap
  * is a *bulk* act over trees nobody named, so it has no board statement to lean on and reads
  * dirtiness as the strongest evidence it has that somebody is still using the tree.
  */
@@ -33,7 +33,7 @@ export const isAgentWorktree = (path: string): boolean => {
  * classify 52 of this clone's 74 agent trees as unjudgeable and reclaim none of them. A tree that
  * does hold a branch has that branch's tip as its HEAD, so the branch case is the same read.
  *
- * `Squashed` is the case that matters: a lane branch lands as one squash commit (ADR 0048), so its
+ * `Squashed` is the case that matters: a lane branch lands as one squash commit, so its
  * own commits are never ancestors of the trunk however completely their content merged.
  */
 export type Landing =

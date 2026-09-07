@@ -55,7 +55,7 @@ const lineEcho = (line: string): string =>
  * reader cannot comprehend — a flow map (`catalog: {…}`), a nested sub-map under a key, a
  * named-catalog `catalogs:` block — is UNKNOWN, **not** the degrade path: it is a map that is there
  * and was not read, so answering `unpinned` would be a confident wrong answer where the caller
- * deserves a refusal (#5361). The `7`/`11` split, applied to a file: a missing key is a verdict, a
+ * deserves a refusal. The `7`/`11` split, applied to a file: a missing key is a verdict, a
  * document this reader could not read is a verdict about nothing.
  */
 export const parseCatalog = (text: string): CatalogRead => {

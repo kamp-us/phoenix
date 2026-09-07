@@ -283,7 +283,7 @@ describe("runEnrich — legacy migration", () => {
 	});
 });
 
-describe("runEnrich — the composed body's criteria block must be one the wire reader accepts (#5565, ADR 0288)", () => {
+describe("runEnrich — the composed body's criteria block must be one the wire reader accepts", () => {
 	it("refuses a level-2 heading on 15, naming the level it read and the level expected", async () => {
 		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
@@ -469,7 +469,7 @@ describe("runEnrich — refusals", () => {
 	});
 });
 
-/** #5644: the claim protocol was advisory, and this is the verb that overwrote #5642's body. */
+/** The claim protocol was advisory, and this is the verb that overwrote a winner's body. */
 describe("runEnrich — the target guard", () => {
 	const MINE = "session-mine";
 	const THEIRS = "session-theirs";
@@ -545,9 +545,9 @@ describe("runEnrich — the target guard", () => {
 });
 
 /**
- * ADR 0301 makes the native `blocked_by` graph the one carrier of "do not start this yet", so a
- * rewrite stating an ordering the graph does not carry produces an issue `build pick` admits and no
- * lane can build — #6663 shipped exactly that. Founder ruling on #6728: fail-closed, no override.
+ * The native `blocked_by` graph is the one carrier of "do not start this yet", so a rewrite stating
+ * an ordering the graph does not carry produces an issue `build pick` admits and no lane can build.
+ * The gate is fail-closed, with no override.
  */
 describe("runEnrich — the stated-ordering gate", () => {
 	const EDGES = /GET .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
@@ -564,7 +564,7 @@ describe("runEnrich — the stated-ordering gate", () => {
 	 * read-back body would make every `code` assertion here a statement about the fixture.
 	 */
 	/**
-	 * Every number a stated ordering names is read, to settle issue-versus-PR (ADR 0301). The default
+	 * Every number a stated ordering names is read, to settle issue-versus-PR. The default
 	 * answers "an ordinary issue", so a case that is not about that distinction reads as it did before.
 	 */
 	const AS_ISSUE: Scripted = [
@@ -645,9 +645,9 @@ describe("runEnrich — the stated-ordering gate", () => {
 	});
 
 	/**
-	 * ADR 0301 names a blocking pull request by the issue its merge closes, so there is no edge to
-	 * wire and the refusal's own escape could not clear one — 5 of the 6 bodies this gate refused
-	 * across the 150 most recent issues named a PR (#6728 round 1).
+	 * A blocking pull request is named in the graph by the issue its merge closes, so there is no edge
+	 * to wire and the refusal's own escape could not clear one — 5 of the 6 bodies this gate refused
+	 * across 150 issues named a PR.
 	 */
 	describe("a reference that is a pull request", () => {
 		const REF = /GET .*\/repos\/o\/r\/issues\/4311$/;
@@ -664,10 +664,10 @@ describe("runEnrich — the stated-ordering gate", () => {
 			expect(outcome.stderr.join(" ")).toContain("the issue its merge closes");
 		});
 
-		/** #7223 verbatim: a wired prerequisite beside a courtesy link to the PR implementing it. */
+		/** Verbatim: a wired prerequisite beside a courtesy link to the PR implementing it. */
 		it("passes a wired issue named beside a PR link (#7223, verbatim)", async () => {
 			const line =
-				"Blocked on #7035 / [#4311](https://github.com/kamp-us/phoenix/pull/4311). The shared derivation this";
+				"Blocked on #7035 / [#4311](https://example.test/o/r/pull/4311). The shared derivation this";
 			const {outcome, patched} = await gate(
 				`## What to build\n\n${line}`,
 				[EDGES, edgeList(7035)],

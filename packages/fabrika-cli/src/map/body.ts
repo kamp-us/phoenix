@@ -100,8 +100,8 @@ export const normalizeSection = (text: string): string =>
  * Shared by `map record` and `map descope` rather than written twice: both take prose from a file
  * into a section whose grammar is one entry per bullet, so an unfolded multi-line input lands as
  * lines the parser reads as neither an entry nor a continuation. `map descope` folded and `map
- * record` did not, and the asymmetry corrupted a live map (#5550); one expression is what stops the
- * two drifting apart again.
+ * record` did not, and the asymmetry corrupted a live map; one expression is what stops the two
+ * drifting apart again.
  */
 export const foldEntryText = (text: string): string => text.trim().replace(/\s*\n\s*/g, " ");
 

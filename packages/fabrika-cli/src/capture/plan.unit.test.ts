@@ -1,7 +1,7 @@
 /**
  * The pure capture-plan core — surface-token parsing, preview-URL joining, and
- * the one-record-per-surface plan, asserted without a browser (ADR 0040
- * taxonomy: pure logic → unit).
+ * the one-record-per-surface plan, asserted without a browser — pure logic
+ * belongs to the unit tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -20,28 +20,28 @@ import {
 
 describe("parseSurfaceSpec", () => {
 	it("parses a bare route into route + null state", () => {
-		assert.deepStrictEqual(parseSurfaceSpec("/sozluk"), {
-			surface: "/sozluk",
-			route: "/sozluk",
+		assert.deepStrictEqual(parseSurfaceSpec("/catalog"), {
+			surface: "/catalog",
+			route: "/catalog",
 			state: null,
 		});
 	});
 
 	it("splits a route:state token on the first colon", () => {
-		assert.deepStrictEqual(parseSurfaceSpec("/sozluk:empty"), {
-			surface: "/sozluk:empty",
-			route: "/sozluk",
+		assert.deepStrictEqual(parseSurfaceSpec("/catalog:empty"), {
+			surface: "/catalog:empty",
+			route: "/catalog",
 			state: "empty",
 		});
 	});
 
 	it("keeps the raw token as the stable surface id", () => {
 		assert.strictEqual(
-			parseSurfaceSpec("/pano/abc:focus-visible").surface,
-			"/pano/abc:focus-visible",
+			parseSurfaceSpec("/feed/abc:focus-visible").surface,
+			"/feed/abc:focus-visible",
 		);
-		assert.strictEqual(parseSurfaceSpec("/pano/abc:focus-visible").route, "/pano/abc");
-		assert.strictEqual(parseSurfaceSpec("/pano/abc:focus-visible").state, "focus-visible");
+		assert.strictEqual(parseSurfaceSpec("/feed/abc:focus-visible").route, "/feed/abc");
+		assert.strictEqual(parseSurfaceSpec("/feed/abc:focus-visible").state, "focus-visible");
 	});
 
 	it("rejects an empty token and a stateless colon", () => {
@@ -53,15 +53,15 @@ describe("parseSurfaceSpec", () => {
 describe("joinPreviewUrl", () => {
 	it("joins a trailing-slash base with a bare route", () => {
 		assert.strictEqual(
-			joinPreviewUrl("https://pr-9.web.kamp.us/", "sozluk"),
-			"https://pr-9.web.kamp.us/sozluk",
+			joinPreviewUrl("https://pr-9.preview.example.com/", "catalog"),
+			"https://pr-9.preview.example.com/catalog",
 		);
 	});
 
 	it("joins a no-slash base with a leading-slash route (no double slash)", () => {
 		assert.strictEqual(
-			joinPreviewUrl("https://pr-9.web.kamp.us", "/sozluk"),
-			"https://pr-9.web.kamp.us/sozluk",
+			joinPreviewUrl("https://pr-9.preview.example.com", "/catalog"),
+			"https://pr-9.preview.example.com/catalog",
 		);
 	});
 
@@ -77,15 +77,15 @@ describe("joinPreviewUrl", () => {
 describe("surfaceFileName", () => {
 	it("derives a filesystem-safe PNG name from route + state + viewport", () => {
 		assert.strictEqual(
-			surfaceFileName({surface: "/sozluk", route: "/sozluk", state: null}, DESKTOP_VIEWPORT),
-			"sozluk@desktop.png",
+			surfaceFileName({surface: "/catalog", route: "/catalog", state: null}, DESKTOP_VIEWPORT),
+			"catalog@desktop.png",
 		);
 		assert.strictEqual(
 			surfaceFileName(
-				{surface: "/sozluk:empty", route: "/sozluk", state: "empty"},
+				{surface: "/catalog:empty", route: "/catalog", state: "empty"},
 				MOBILE_VIEWPORT,
 			),
-			"sozluk-empty@mobile.png",
+			"catalog-empty@mobile.png",
 		);
 	});
 
@@ -105,7 +105,7 @@ describe("surfaceFileName", () => {
 
 	it("sanitizes a pathological uncontrolled route in linear time (no ReDoS)", () => {
 		// A long run of non-alnum chars is exactly what made the old `/^-+|-+$/g`
-		// trailing-trim backtrack polynomially (CodeQL alert #24). Bounded + linear
+		// trailing-trim backtrack polynomially. Bounded + linear
 		// now: it returns promptly and still yields a dash-trimmed, alnum-only stem.
 		const evil = `/${"!".repeat(200_000)}x${"!".repeat(200_000)}`;
 		const started = Date.now();
@@ -120,8 +120,8 @@ describe("surfaceFileName", () => {
 
 describe("buildCapturePlan", () => {
 	const surfaces: readonly Surface[] = [
-		{surface: "/sozluk", route: "/sozluk", state: null},
-		{surface: "/sozluk:empty", route: "/sozluk", state: "empty"},
+		{surface: "/catalog", route: "/catalog", state: null},
+		{surface: "/catalog:empty", route: "/catalog", state: "empty"},
 	];
 
 	it("defaults to the desktop viewport", () => {
@@ -129,16 +129,16 @@ describe("buildCapturePlan", () => {
 	});
 
 	it("produces exactly one shot per surface at the plan's one viewport", () => {
-		const plan = buildCapturePlan("https://pr-9.web.kamp.us", surfaces);
+		const plan = buildCapturePlan("https://pr-9.preview.example.com", surfaces);
 		assert.strictEqual(plan.length, surfaces.length);
 	});
 
 	it("roots each shot URL at the preview base and carries the surface + file name", () => {
-		const plan = buildCapturePlan("https://pr-9.web.kamp.us", surfaces);
-		const empty = plan.find((s) => s.surface.surface === "/sozluk:empty");
-		assert.strictEqual(empty?.url, "https://pr-9.web.kamp.us/sozluk");
+		const plan = buildCapturePlan("https://pr-9.preview.example.com", surfaces);
+		const empty = plan.find((s) => s.surface.surface === "/catalog:empty");
+		assert.strictEqual(empty?.url, "https://pr-9.preview.example.com/catalog");
 		assert.strictEqual(empty?.surface.state, "empty");
-		assert.strictEqual(empty?.fileName, "sozluk-empty@desktop.png");
+		assert.strictEqual(empty?.fileName, "catalog-empty@desktop.png");
 	});
 
 	it("captures at the mobile viewport when asked", () => {
@@ -183,7 +183,7 @@ describe("the viewport vocabulary", () => {
 	});
 
 	it("gives the two viewports of one surface distinct file names", () => {
-		const surface: Surface = {surface: "/pano", route: "/pano", state: null};
+		const surface: Surface = {surface: "/feed", route: "/feed", state: null};
 		assert.notStrictEqual(
 			surfaceFileName(surface, DESKTOP_VIEWPORT),
 			surfaceFileName(surface, MOBILE_VIEWPORT),

@@ -1,8 +1,8 @@
 /**
  * The correction line: which recorded event it may supersede, and what the fold does with it.
  *
- * The ledger fixture is the shape #7433 reports — four events ending in the ship stage's `DONE`,
- * written before ADR 0343's `partial` field existed.
+ * The ledger fixture is the pre-guard shape — four events ending in the ship stage's `DONE`,
+ * written before the `partial` field existed.
  */
 import {describe, expect, it} from "vitest";
 import {coderWorkflow} from "./fixtures.test-support.ts";
@@ -45,8 +45,8 @@ const stateOf = (entries: ReadonlyArray<LogEntry>): string => {
 };
 
 describe("findMisroute", () => {
-	it("nominates the ship DONE a pre-0343 ledger recorded with no closure answer", () => {
-		const pr = "https://github.com/kamp-us/phoenix/pull/7328";
+	it("nominates the ship DONE a pre-guard ledger recorded with no closure answer", () => {
+		const pr = "https://forge.example/o/r/pull/7328";
 		const found = findMisroute(lane(), shipped({pr}));
 		expect(found).toEqual({
 			_tag: "Correctable",
@@ -67,10 +67,10 @@ describe("findMisroute", () => {
 	});
 
 	/**
-	 * The cases a recorded `false` splits into (#7457). Between ADR 0351 and that fix the ship stage
-	 * wrote `false` off a nominator that could not see a merged `Part of #N`, so such a line carries
-	 * the fallthrough rather than a read — and it is the `landed` evidence that tells the two apart,
-	 * never the line's timestamp. The correction, not the polarity it lands on, is what settles it.
+	 * The cases a recorded `false` splits into. Before the fix that read the closure off the named
+	 * PR, the ship stage wrote `false` off a nominator that could not see a merged `Part of #N`, so
+	 * such a line carries the fallthrough rather than a read — and it is the `landed` evidence that
+	 * tells the two apart, never the timestamp. The correction is what settles it.
 	 */
 	it("nominates a `partial: false` the ship stage wrote before closures were read off the PR", () => {
 		expect(findMisroute(lane(), shipped({partial: false}))._tag).toBe("Correctable");
@@ -218,13 +218,13 @@ describe("provenClosure", () => {
 
 describe("pullNumberIn", () => {
 	it("reads the number off the ref a lane event carries", () => {
-		expect(pullNumberIn("https://github.com/kamp-us/phoenix/pull/7328")).toBe(7328);
-		expect(pullNumberIn("https://github.com/kamp-us/phoenix/pull/7328#issuecomment-1")).toBe(7328);
+		expect(pullNumberIn("https://forge.example/o/r/pull/7328")).toBe(7328);
+		expect(pullNumberIn("https://forge.example/o/r/pull/7328#issuecomment-1")).toBe(7328);
 	});
 
 	it("reads a ref that names no PR as no evidence rather than as a number to guess at", () => {
 		expect(pullNumberIn(null)).toBeNull();
-		expect(pullNumberIn("https://github.com/kamp-us/phoenix/issues/7328")).toBeNull();
+		expect(pullNumberIn("https://forge.example/o/r/issues/7328")).toBeNull();
 		expect(pullNumberIn("pull/seven")).toBeNull();
 	});
 });

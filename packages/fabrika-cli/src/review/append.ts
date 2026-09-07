@@ -2,7 +2,7 @@
  * The append-only composition: where the new row goes, and the two guards that prove nothing else
  * moved.
  *
- * The guards are the fence, not a formality. ADR 0079's whole point is that a reviewer-authored
+ * The guards are the fence, not a formality. The whole point is that a reviewer-authored
  * criterion **adds** to the contract and never rewrites it — v1's `reviewer-append-ac.sh` was
  * mandated at four call sites and called at none, so the fence existed only as a description. Here
  * the composed body is checked twice before it is sent, and the two checks read it through
@@ -13,7 +13,7 @@
  */
 import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
 
-/** The provenance tag ADR 0079 requires — what makes a routed row auditable after the fact. */
+/** The provenance tag — what makes a routed row auditable after the fact. */
 export const provenanceTag = (pr: number, round: number): string =>
 	`<!-- ac:review pr:#${pr} round:${round} -->`;
 
@@ -33,7 +33,7 @@ export type Composition =
  * section carries checkboxes of its own, and appending to the wrong one puts the row outside the
  * block every future read parses. Taking the span rather than matching the criterion's text is what
  * makes a wrapped last criterion locatable at all: its text is the joined sentence, which appears on
- * no single line (#5716). Inserting after the span's last line — not its checkbox line — is what
+ * no single line. Inserting after the span's last line — not its checkbox line — is what
  * keeps the new row a sibling instead of one more continuation of the row above it.
  */
 export const insertAfterLastCriterion = (body: string, row: string): Composition => {

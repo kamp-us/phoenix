@@ -36,6 +36,7 @@ const idle: PiClientApi = {
 	connected: Effect.succeed(false),
 	createSession: () => Effect.die("listing must not open a session"),
 	attachSession: () => Effect.die("listing must not open a session"),
+	heldSnapshot: () => Effect.die("listing must not read a session's snapshot"),
 	prompt: () => Effect.die("listing must not prompt"),
 	abort: () => Effect.never,
 	setModel: () => Effect.die("listing must not switch models"),

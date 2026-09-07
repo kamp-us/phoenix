@@ -1,7 +1,7 @@
 /**
  * `ci changelog` — derive one Keep-a-Changelog release section from a gathered entries JSON.
  *
- * The operable surface of ADR 0069: `CHANGELOG.md` is a projection of the pipeline's closed-issue
+ * The rule it serves: `CHANGELOG.md` is a projection of the pipeline's closed-issue
  * and merged-PR metadata, not a hand-edited doc. `changelog.yml` gathers the range's entries with
  * `git log` + `gh` and hands them here on release.
  *

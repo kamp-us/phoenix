@@ -132,7 +132,7 @@ export type LedgerRead =
 			/**
 			 * The edges the topology requires on the board, carried beside the ledger rather than on it:
 			 * the digest is taken over the ledger, and this is a function of the topology already in it,
-			 * so folding it in would invalidate every standing approval to say nothing new (ADR 0289).
+			 * so folding it in would invalidate every standing approval to say nothing new.
 			 */
 			readonly required: ReadonlyArray<RequiredEdge>;
 	  };

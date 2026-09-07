@@ -146,11 +146,11 @@ export const runEnrich = (
 
 		const composed = composeBody({mode, issue, authored: authored.text, preserved});
 
-		// ADR 0288 §1: the read runs over the bytes about to be posted, not over stdin — an enclosing
+		// The read runs over the bytes about to be posted, not over stdin — an enclosing
 		// template can demote a heading that arrived conforming. It is scoped to the region above the
 		// marker, which `composeBody` guarantees is `composed`'s own prefix, because the preserved
 		// original below it is redacted rather than refused; a legacy `##` heading buried there would
-		// otherwise refuse every re-enrichment forever. `Absent` stays allowed (#5565).
+		// otherwise refuse every re-enrichment forever. `Absent` stays allowed.
 		const criteria = readCriteria(authoredRegion(mode, authored.text));
 		if (criteria._tag === "Malformed") {
 			return refuse(
@@ -159,8 +159,8 @@ export const runEnrich = (
 			);
 		}
 
-		// ADR 0301: the graph is the one carrier of "do not start this yet", so an ordering stated only
-		// in prose produces an issue `build pick` admits and no lane can build (#6663). The read is
+		// The graph is the one carrier of "do not start this yet", so an ordering stated only in prose
+		// produces an issue `build pick` admits and no lane can build. The read is
 		// deferred to here because it is only owed by a body that states one.
 		const orderings = statedOrderings(authoredRegion(mode, authored.text));
 		if (orderings.length > 0) {
@@ -176,10 +176,10 @@ export const runEnrich = (
 			}
 			const stated = unwiredReferences(orderings, live.value);
 
-			// ADR 0301 names a blocking pull request by the issue its merge closes, so a PR is an edge
-			// `--blocked-by` refuses to write, and reding on one would leave the reword escape alone on a
-			// body that is often already right — 5 of the 6 bodies this gate refused across the 150 most
-			// recent issues named a PR (#6728 round 1).
+			// A blocking pull request is named in the graph by the issue its merge closes, so a PR is an
+			// edge `--blocked-by` refuses to write, and reding on one would leave the reword escape alone
+			// on a body that is often already right — 5 of the 6 bodies this gate refused across 150
+			// issues named a PR.
 			const pulls = yield* pullRequestReferences(
 				repo,
 				stated.flatMap((ordering) => ordering.references),
@@ -199,7 +199,7 @@ export const runEnrich = (
 						.map((n) => `#${n}`)
 						.join(", ")} named by a stated ordering ${
 						pulls.value.length === 1 ? "is a pull request" : "are pull requests"
-					} — ADR 0301 names a blocking pull request by the issue its merge closes, so ${
+					} — a blocking pull request is named in the graph by the issue its merge closes, so ${
 						pulls.value.length === 1 ? "it is" : "they are"
 					} not read as a prerequisite.`,
 				);
@@ -215,7 +215,7 @@ export const runEnrich = (
 					.join(", ");
 				return refuse(
 					UNWIRED_ORDERING,
-					`triage enrich: ${surface.noun} states an ordering on ${numbers} that #${issue}'s live blocked_by graph carries no edge for (line ${lines}: "${unwired[0]?.text.trim()}"). ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence. There is no override: either wire the edge — ${wire} — and re-send, or reword the body so it states no ordering it does not own. Nothing was written.`,
+					`triage enrich: ${surface.noun} states an ordering on ${numbers} that #${issue}'s live blocked_by graph carries no edge for (line ${lines}: "${unwired[0]?.text.trim()}"). The graph is the one carrier, so a builder reads the edges and never this sentence. There is no override: either wire the edge — ${wire} — and re-send, or reword the body so it states no ordering it does not own. Nothing was written.`,
 					diagnostics,
 				);
 			}

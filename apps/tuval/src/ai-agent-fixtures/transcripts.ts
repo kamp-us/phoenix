@@ -13,6 +13,7 @@ import {
 	boundToolResult,
 	type CompactionItem,
 	ItemId,
+	type SubagentSlot,
 	type SystemItem,
 	type ThinkingItem,
 	type ToolItem,
@@ -81,6 +82,21 @@ export const compactionItem = (
 	id: ItemId.make(id),
 	timestamp,
 	text,
+});
+
+/** One subagent slot, running by default: the shape a mapper hands the core (#8401). */
+export const subagentSlot = (
+	id: string,
+	overrides: Partial<Omit<SubagentSlot, "id">> = {},
+): SubagentSlot => ({
+	id: ItemId.make(id),
+	type: "general-purpose",
+	lastLine: "reading the file",
+	startedAt: AT,
+	tokens: 1_200,
+	items: [],
+	status: "running",
+	...overrides,
 });
 
 /**

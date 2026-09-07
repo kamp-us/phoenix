@@ -45,7 +45,7 @@ describe("runCatalogGuard", () => {
 	it("passes when every dep across the root and its members is on catalog:/workspace:", async () => {
 		const outcome = await run(
 			repo(
-				{name: "phoenix", devDependencies: {turbo: "catalog:"}},
+				{name: "acme", devDependencies: {turbo: "catalog:"}},
 				{
 					a: {name: "@kampus/a", dependencies: {react: "catalog:", "@kampus/b": "workspace:*"}},
 				},
@@ -60,23 +60,23 @@ describe("runCatalogGuard", () => {
 
 	it("ignores dead-shell directories rather than redding on them", async () => {
 		const outcome = await run(
-			repo({name: "phoenix"}, {real: {dependencies: {react: "catalog:"}}, dead: null}),
+			repo({name: "acme"}, {real: {dependencies: {react: "catalog:"}}, dead: null}),
 		);
 		expect(outcome.code).toBe(0);
 	});
 
 	it("reds a member that pins a hardcoded version, with nothing on stdout", async () => {
-		const outcome = await run(repo({name: "phoenix"}, {a: {dependencies: {bar: "^1.2.3"}}}));
+		const outcome = await run(repo({name: "acme"}, {a: {dependencies: {bar: "^1.2.3"}}}));
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join("\n")).toContain("packages/a/package.json");
-		expect(outcome.stderr.join("\n")).toContain("#535");
+		expect(outcome.stderr.join("\n")).toContain("breaks frozen-lockfile CI");
 	});
 
 	it("reds the ROOT manifest too — the catalog rule governs it as well", async () => {
 		const outcome = await run(
 			repo(
-				{name: "phoenix", devDependencies: {turbo: "^2.0.0"}},
+				{name: "acme", devDependencies: {turbo: "^2.0.0"}},
 				{
 					a: {dependencies: {react: "catalog:"}},
 				},
@@ -95,14 +95,14 @@ describe("runCatalogGuard", () => {
 					env: {},
 					allowlist: [{name: "bar", reason: "unavoidable"}],
 				}),
-				fakeFs(repo({name: "phoenix"}, {a: {dependencies: {bar: "^1.2.3"}}})).layer,
+				fakeFs(repo({name: "acme"}, {a: {dependencies: {bar: "^1.2.3"}}})).layer,
 			),
 		);
 		expect(outcome.code).toBe(0);
 	});
 
 	it("annotates the offending dep line under Actions", async () => {
-		const outcome = await run(repo({name: "phoenix"}, {a: {dependencies: {bar: "^1.2.3"}}}), {
+		const outcome = await run(repo({name: "acme"}, {a: {dependencies: {bar: "^1.2.3"}}}), {
 			GITHUB_ACTIONS: "true",
 		});
 		expect(
@@ -111,11 +111,11 @@ describe("runCatalogGuard", () => {
 	});
 
 	it("emits no annotation off a runner", async () => {
-		const outcome = await run(repo({name: "phoenix"}, {a: {dependencies: {bar: "^1.2.3"}}}));
+		const outcome = await run(repo({name: "acme"}, {a: {dependencies: {bar: "^1.2.3"}}}));
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor: no manifest in scope means the guard proved nothing, so it reds.
+	// The fail-closed floor: no manifest in scope means the guard proved nothing, so it reds.
 	it("fails closed when zero manifests are in scope", async () => {
 		const outcome = await run(repo(null, {dead: null}));
 		expect(outcome.code).toBe(ZERO_SCOPE);
@@ -124,14 +124,14 @@ describe("runCatalogGuard", () => {
 
 	// Read fine, judged nothing: a manifest that will not parse is UNKNOWN, never clean.
 	it("answers UNKNOWN on a manifest that does not parse", async () => {
-		const outcome = await run(repo({name: "phoenix"}, {a: "{not json"}));
+		const outcome = await run(repo({name: "acme"}, {a: "{not json"}));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join("\n")).toContain("packages/a/package.json");
 	});
 
 	it("answers UNKNOWN when a manifest cannot be read", async () => {
-		const options = repo({name: "phoenix"}, {a: {dependencies: {react: "catalog:"}}});
+		const options = repo({name: "acme"}, {a: {dependencies: {react: "catalog:"}}});
 		const outcome = await run({...options, unreadable: [`${ROOT}/packages/a/package.json`]});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("UNKNOWN");

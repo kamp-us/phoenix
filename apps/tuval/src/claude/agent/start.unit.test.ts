@@ -203,6 +203,7 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 							{kind: "phase", phase: "prompting"},
 							{
 								kind: "usage",
+								turn: "claude:model-announcement",
 								model: "claude-fable-5-1",
 								inputTokens: 0,
 								outputTokens: 0,
@@ -233,7 +234,10 @@ describe("start on a resume", () => {
 	it.effect("passes the session id through and reads that session's store", () =>
 		on({rows: rows()}, (agent, scripted) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
 				assert.deepStrictEqual(scripted.reads, [{sessionId: TOOL_SESSION_ID, dir: CWD}]);
 				assert.strictEqual(scripted.opened[0]?.record.options.resume, TOOL_SESSION_ID);
 			}),
@@ -243,7 +247,12 @@ describe("start on a resume", () => {
 	it.effect("refuses a session the store does not hold as SessionNotFound", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				on({}, (agent) => agent.start({cwd: CWD, resume: "00000000-0000-4000-8000-00000000dead"})),
+				on({}, (agent) =>
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: "00000000-0000-4000-8000-00000000dead", holdsTranscript: false},
+					}),
+				),
 			);
 			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/StartError");
 			assert.strictEqual(failure(exit).reason, "session-not-found");
@@ -253,7 +262,12 @@ describe("start on a resume", () => {
 	it.effect("takes the session down rather than leaving it on starting", () =>
 		on({}, (agent) =>
 			Effect.gen(function* () {
-				yield* Effect.exit(agent.start({cwd: CWD, resume: "00000000-0000-4000-8000-00000000dead"}));
+				yield* Effect.exit(
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: "00000000-0000-4000-8000-00000000dead", holdsTranscript: false},
+					}),
+				);
 				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 2)), [
 					{kind: "phase", phase: "starting"},
 					{kind: "phase", phase: "gone"},
@@ -269,7 +283,10 @@ describe("start on a resume", () => {
 			{rows: rows().slice(0, 2)},
 			(agent) =>
 				Effect.gen(function* () {
-					yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+					yield* agent.start({
+						cwd: CWD,
+						resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+					});
 					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
 					assert.deepStrictEqual(events[START_EVENTS], {
 						kind: "permission-resolved",
@@ -283,7 +300,10 @@ describe("start on a resume", () => {
 	it.effect("emits no resolution when every stored call already settled", () =>
 		on({rows: rows(), opening: messages("tool-turn")}, (agent) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
 				assert.notStrictEqual(events[START_EVENTS]?.kind, "permission-resolved");
 			}),
@@ -495,6 +515,7 @@ describe("setThinkingLevel", () => {
 	const EFFORT: ReadonlyArray<ModelInfo> = [
 		{
 			value: "opus",
+			resolvedModel: "claude-opus-5",
 			displayName: "Opus 5",
 			description: "the deep one",
 			supportsEffort: true,
@@ -502,6 +523,137 @@ describe("setThinkingLevel", () => {
 		},
 		{value: "haiku", displayName: "Haiku", description: "no effort axis"},
 	];
+
+	it.effect("discovers the running model without config or a first prompt (#8212)", () =>
+		on(
+			{
+				models: [...EFFORT].reverse(),
+				runningModel: "claude-opus-5",
+				opening: [message("init")],
+				deferOpening: true,
+			},
+			(agent, scripted) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+					assert.isUndefined(scripted.opened[0]?.record.options.model);
+					assert.deepStrictEqual(scripted.opened[0]?.record.prompts, []);
+					assert.deepStrictEqual(scripted.opened[0]?.record.contextReads, [{detail: "summary"}]);
+					assert.deepStrictEqual(scripted.opened[0]?.record.models, []);
+					assert.deepStrictEqual(events.find((event) => event.kind === "model")?.current, {
+						id: "opus",
+						name: "Opus 5",
+					});
+					assert.deepStrictEqual(
+						events.find((event) => event.kind === "thinking"),
+						{
+							kind: "thinking",
+							current: null,
+							available: ["low", "medium", "high", "xhigh", "max"],
+						},
+					);
+					yield* agent.setThinkingLevel("xhigh");
+					assert.deepStrictEqual(scripted.opened[0]?.record.efforts, ["xhigh"]);
+				}),
+		),
+	);
+
+	it.effect("updates offered levels after setModel from a null-model start (#8212)", () =>
+		on({models: EFFORT, runningModel: "unlisted-model"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const opening = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.strictEqual(opening.find((event) => event.kind === "model")?.current, null);
+				assert.deepStrictEqual(
+					opening.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: [],
+					},
+				);
+				yield* agent.setModel({id: "opus", name: "Opus 5"});
+				const changed = yield* Stream.runCollect(Stream.take(agent.events, 2));
+				assert.deepStrictEqual(changed.at(-1), {
+					kind: "thinking",
+					current: null,
+					available: ["low", "medium", "high", "xhigh", "max"],
+				});
+				assert.deepStrictEqual(scripted.opened[0]?.record.models, ["opus"]);
+			}),
+		),
+	);
+
+	it.effect("reads the runtime rather than assuming the configured model is active", () =>
+		on({models: EFFORT, model: "haiku", runningModel: "claude-opus-5"}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(events.find((event) => event.kind === "thinking")?.available, [
+					"low",
+					"medium",
+					"high",
+					"xhigh",
+					"max",
+				]);
+			}),
+		),
+	);
+
+	it.effect("does not turn a discovered default into an operator override on restart", () =>
+		on({models: EFFORT, runningModel: "claude-opus-5"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[1]?.record.models, []);
+				assert.deepStrictEqual(scripted.opened[1]?.record.contextReads, [{detail: "summary"}]);
+				yield* agent.setModel({id: "haiku", name: "Haiku"});
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[2]?.record.models, ["haiku"]);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: [],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("keeps start usable without guessing a default when discovery fails", () =>
+		on({models: EFFORT, contextFails: new Error("context unavailable")}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: [],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("matches a configured canonical id when runtime discovery is unavailable", () =>
+		on(
+			{models: EFFORT, model: "claude-opus-5", contextFails: new Error("context unavailable")},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+					assert.deepStrictEqual(events.find((event) => event.kind === "model")?.current, {
+						id: "opus",
+						name: "Opus 5",
+					});
+				}),
+		),
+	);
 
 	it.effect("announces the model row's own offered set on the open", () =>
 		on({models: EFFORT, model: "opus"}, (agent) =>

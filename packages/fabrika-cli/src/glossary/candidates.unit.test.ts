@@ -4,9 +4,9 @@ import {compareBytes, phrasesOf, rankCandidates, survivesFilter, tokenize} from 
 const commit = (sha: string, subject: string, body = "") => ({sha, subject, body});
 
 describe("tokenize", () => {
-	// v1's tokenizer was `/\b[a-z][a-z-]+\b/g`, so every Turkish product noun was invisible (#4481).
+	// v1's tokenizer was `/\b[a-z][a-z-]+\b/g`, so every non-ASCII product noun was invisible.
 	it("keeps Unicode letters, so a Turkish noun is a token", () => {
-		expect(tokenize("sözlük ve geçit")).toEqual(["sözlük", "ve", "geçit"]);
+		expect(tokenize("çekirdek ve düğüm")).toEqual(["çekirdek", "ve", "düğüm"]);
 	});
 
 	it("keeps hyphens and underscores inside a token and splits on everything else", () => {
@@ -52,7 +52,7 @@ describe("rankCandidates", () => {
 
 	/**
 	 * The measured v1 defect: it suppressed a candidate when a declared term contained it **or** it
-	 * contained a declared term, which against a 226-row register left about 10% precision (#4481).
+	 * contained a declared term, which against a 226-row register left about 10% precision.
 	 * Suppression here is equality on the normalized key and nothing else.
 	 */
 	it("suppresses only an exact key match, never a containment in either direction", () => {

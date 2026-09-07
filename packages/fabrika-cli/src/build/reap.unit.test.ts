@@ -22,7 +22,7 @@ describe("isAgentWorktree", () => {
 
 	it("refuses the primary checkout and a sibling scratch checkout", () => {
 		expect(isAgentWorktree("/repo")).toBe(false);
-		expect(isAgentWorktree("/private/tmp/phoenix-7166-build")).toBe(false);
+		expect(isAgentWorktree("/private/tmp/repo-7166-build")).toBe(false);
 	});
 
 	it("refuses a worktrees sibling that is not an agent tree", () => {

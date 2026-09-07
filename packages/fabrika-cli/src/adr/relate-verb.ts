@@ -3,7 +3,7 @@
  *
  * Both rewrite the frontmatter `status:` line of the older record and nothing else. The written
  * value resolves `--by`'s slug **off disk**, and refuses when `--by` has no record, because a
- * guessed slug is the recurring dead-link failure (#1777).
+ * guessed slug is the recurring dead-link failure.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {readDir, readFile, writeFile} from "../io/fs.ts";

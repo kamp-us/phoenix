@@ -21,9 +21,22 @@ export type FixtureName =
 	| "resumed-init"
 	| "session-messages"
 	| "streaming-turn"
+	| "subagent-turn"
 	| "thinking-turn"
 	| "tool-turn"
 	| "unknown-message";
 
 export const loadFixture = (name: FixtureName): unknown =>
 	JSON.parse(readFileSync(join(import.meta.dirname, `${name}.json`), "utf8"));
+
+/** The captured subagent's id, which is also what names both of its files. */
+export const SIDECHAIN_AGENT_ID = "a1b2c3d4e5f60718a";
+
+/**
+ * The sidechain capture, as text. Not `loadFixture`'s shape: a `.jsonl` is not one JSON document,
+ * and the reader under test is the thing that decides what its lines are.
+ */
+export const loadSidechain = (): {readonly jsonl: string; readonly meta: string} => ({
+	jsonl: readFileSync(join(import.meta.dirname, `agent-${SIDECHAIN_AGENT_ID}.jsonl`), "utf8"),
+	meta: readFileSync(join(import.meta.dirname, `agent-${SIDECHAIN_AGENT_ID}.meta.json`), "utf8"),
+});

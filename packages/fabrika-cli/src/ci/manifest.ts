@@ -1,9 +1,9 @@
 /**
- * The ADR 0054 §2 run-evidence bundle manifest, as Effect Schema — the output
+ * The run-evidence bundle manifest, as Effect Schema — the output
  * shape this adapter emits, and the trust unit the `fabrika ship evidence` gate
  * consume (`bundle.commit == head SHA` + every check passed).
  *
- * The contract is defined by its *fields*, not its producer (ADR 0054 §2):
+ * The contract is defined by its *fields*, not its producer:
  * `commit`/`run`/`checks[]`/`tests`/`logs` are required, `coverage`/`media`/`lease`
  * optional. This module is the domain; `crabbox.ts` is the boundary that decodes
  * untrusted crabbox output into it, and `adapter.ts` is the pure transform that
@@ -11,7 +11,7 @@
  */
 import * as Schema from "effect/Schema";
 
-/** The manifest schema this package emits; bumped when the shape changes (ADR 0054, sibling #243). */
+/** The manifest schema this package emits; bumped when the shape changes. */
 export const SCHEMA_VERSION = 1;
 
 /** A gate step's outcome — derived from a crabbox command's `exitCode` (0 → `pass`). */
@@ -20,7 +20,7 @@ export type CheckStatus = (typeof CheckStatus)["Type"];
 
 /**
  * One gate step (`typecheck`, `lint`, a test suite, …) → its `status` plus a
- * pointer to its machine-readable result (ADR 0054 §2 `checks[]`). `exitCode`
+ * pointer to its machine-readable result (the manifest's `checks[]`). `exitCode`
  * is retained as the evidence the `status` was derived from; `resultRef` points
  * at the artifact (e.g. a JUnit path) when one exists.
  */
@@ -41,7 +41,7 @@ export const TestFailure = Schema.Struct({
 export type TestFailure = (typeof TestFailure)["Type"];
 
 /**
- * The folded JUnit summary (ADR 0054 §2 `tests`): totals + each failure's suite +
+ * The folded JUnit summary (the manifest's `tests`): totals + each failure's suite +
  * message. A run that produced no JUnit still carries a zeroed, present `tests`
  * (the adapter degrades, never crashes), so a consumer never has to branch on its
  * absence.
@@ -56,7 +56,7 @@ export const TestSummary = Schema.Struct({
 export type TestSummary = (typeof TestSummary)["Type"];
 
 /**
- * Producer + run metadata (ADR 0054 §2 `run`): producer id, optional run URL,
+ * Producer + run metadata (the manifest's `run`): producer id, optional run URL,
  * an ISO timestamp, and the environment/stage. Folded from the crabbox
  * run-summary's provider/lease/timing.
  */
@@ -68,7 +68,7 @@ export const RunMeta = Schema.Struct({
 });
 export type RunMeta = (typeof RunMeta)["Type"];
 
-/** A reference to captured stdout/stderr for the run (ADR 0054 §2 `logs`). */
+/** A reference to captured stdout/stderr for the run (the manifest's `logs`). */
 export const LogsRef = Schema.Struct({
 	ref: Schema.String,
 });
@@ -76,7 +76,7 @@ export type LogsRef = (typeof LogsRef)["Type"];
 
 /**
  * Optional provider/lease metadata, populated only when a remote producer
- * generated the bundle (ADR 0054 §2 `lease` / §5). crabbox is such a producer,
+ * generated the bundle (the manifest's `lease`). crabbox is such a producer,
  * so the adapter carries through the lease facts it emits.
  */
 export const LeaseMeta = Schema.Struct({
@@ -88,7 +88,7 @@ export const LeaseMeta = Schema.Struct({
 export type LeaseMeta = (typeof LeaseMeta)["Type"];
 
 /**
- * The full ADR 0054 §2 run-evidence manifest. `commit` is the binding key (the
+ * The full run-evidence manifest. `commit` is the binding key (the
  * head SHA the run executed against — `fabrika ship evidence` asserts `commit == head SHA`);
  * `checks[]` carries the per-step pass/fail the gate folds; `tests`/`logs`/`run`
  * are the structured evidence a reviewer reads instead of scraping logs.

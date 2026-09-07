@@ -1,5 +1,5 @@
 /**
- * `report dedup`'s tokenizer and ranking, pure and native to fabrika (ADR 0238).
+ * `report dedup`'s tokenizer and ranking, pure and native to fabrika.
  *
  * **All three outcomes are answers and all three exit 0.** `none` is a printed token rather than
  * empty stdout, because empty stdout is byte-identical to a verb that never ran — which is exactly
@@ -25,12 +25,12 @@ export const MAX_TOKENS = 12;
  *
  * Ranking and search pull opposite ways: `scoreTitle` counts how many query tokens a title carries,
  * so more is sharper, while GitHub AND-joins the free-text terms, so every added token narrows the
- * result set. One list served both jobs until #7213, and at twelve AND-joined terms the search half
+ * result set. One list served both jobs once, and at twelve AND-joined terms the search half
  * returned zero rows on essentially every real call — a `none` resting on one source.
  *
- * Four is measured, not guessed. Replaying #7213's reported query against `kamp-us/phoenix` on
- * 2026-08-28: 3 tokens → 17 hits, 4 → 5 hits with the missed issue #7051 ranked first, 5 → 1 hit
- * and #7051 gone. The collapse lands between 4 and 5, so 4 is the widest slice that still
+ * Four is measured, not guessed. Replaying a reported twelve-term query against a live repository
+ * on 2026-08-28: 3 tokens → 17 hits, 4 → 5 hits with the missed issue ranked first, 5 → 1 hit and
+ * that issue gone. The collapse lands between 4 and 5, so 4 is the widest slice that still
  * discriminates.
  */
 export const SEARCH_TOKENS = 4;
@@ -71,9 +71,9 @@ const STOPWORDS = new Set(
  * Lowercase, split on any run of non-letter non-number characters over the **full Unicode letter
  * class**, drop short tokens and stopwords, dedupe first-seen.
  *
- * The Unicode split is #3255: an ASCII-only tokenizer shreds a Turkish stem into sub-threshold
- * fragments and drops it, so the search half silently runs on fewer keywords than the caller
- * supplied.
+ * The split is Unicode-wide because an ASCII-only tokenizer shreds a non-ASCII stem into
+ * sub-threshold fragments and drops it, so the search half silently runs on fewer keywords than the
+ * caller supplied.
  */
 export const tokenize = (text: string, cap = MAX_TOKENS): ReadonlyArray<string> => {
 	const out: string[] = [];

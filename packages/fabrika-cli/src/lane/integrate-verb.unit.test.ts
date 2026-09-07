@@ -23,8 +23,8 @@ import {runIntegrate} from "./integrate-verb.ts";
 const ROOT = ".fabrika/lanes";
 const EPIC = 7140;
 const BRANCH = `epic/${EPIC}`;
-const CHILD = "build/7162-tuval-bootstrap-5558c9a2";
-const MAIN = "/checkout/phoenix";
+const CHILD = "build/7162-app-bootstrap-5558c9a2";
+const MAIN = "/checkout/repo";
 const SEAT = `${MAIN}/.claude/worktrees/epic-${EPIC}`;
 const BEFORE = "aaaa111";
 const AFTER = "bbbb222";
@@ -181,17 +181,17 @@ describe("runIntegrate", () => {
 		expect(calls).toContain(`git -C ${SEAT} reset --hard ORIG_HEAD`);
 	});
 
-	it("merges nothing into a seat that was already dirty — that dirt is not the child's (#7244)", async () => {
+	it("merges nothing into a seat that was already dirty — that dirt is not the child's", async () => {
 		const {outcome, calls} = await run([
 			[LIST, SEATED],
 			[BRANCHES, HAS_CHILD],
 			[HEAD, okOut(BEFORE)],
-			[STATUS, okOut(" M pnpm-lock.yaml\n M packages/tuval/package.json\n")],
+			[STATUS, okOut(" M pnpm-lock.yaml\n M packages/app/package.json\n")],
 		]);
 
 		expect(outcome.code).toBe(ASSEMBLY_DIRTY);
 		expect(outcome.stderr.join("\n")).toContain("pnpm-lock.yaml");
-		expect(outcome.stderr.join("\n")).toContain("packages/tuval/package.json");
+		expect(outcome.stderr.join("\n")).toContain("packages/app/package.json");
 		expect(calls.some((line) => line.includes(" merge "))).toBe(false);
 		expect(calls).not.toContain(INSTALL);
 		expect(calls).not.toContain(TYPECHECK);
@@ -233,7 +233,7 @@ describe("runIntegrate", () => {
 	it("aborts a conflicting merge and reconciles nothing — there is no merged tree to judge", async () => {
 		const {outcome, calls} = await run([
 			...upToMerge(),
-			[MERGE, errOut("CONFLICT (content): Merge conflict in packages/tuval/package.json")],
+			[MERGE, errOut("CONFLICT (content): Merge conflict in packages/app/package.json")],
 			[ABORT, okOut("")],
 			[HEAD, okOut(BEFORE)],
 		]);
@@ -330,7 +330,7 @@ describe("runIntegrate", () => {
 		expect(calls.some((line) => line.includes(" merge "))).toBe(false);
 	});
 
-	it("refuses the main working tree standing on the assembly branch (#6163)", async () => {
+	it("refuses the main working tree standing on the assembly branch", async () => {
 		const {outcome, calls} = await run([[LIST, CONSCRIPTED]]);
 
 		expect(outcome.code).toBe(PRIMARY_CHECKOUT);

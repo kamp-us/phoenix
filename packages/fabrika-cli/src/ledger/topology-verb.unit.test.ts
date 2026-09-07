@@ -88,8 +88,8 @@ describe("runTopology", () => {
 	});
 
 	/**
-	 * `edges` is an evidence-array under ADR 0308 — a validated echo of the caller's own stdin — so
-	 * it caps at 5 pairs and counts the rest; the rendered block still carries every edge.
+	 * `edges` is an evidence array — a validated echo of the caller's own stdin — so it caps at 5
+	 * pairs and counts the rest; the rendered block still carries every edge.
 	 */
 	it("caps the echoed edges and counts the remainder", async () => {
 		const seven = [record(4301)];
@@ -165,12 +165,12 @@ describe("runTopology", () => {
 		expect(outcome.code).toBe(0);
 	});
 
-	/** ADR 0092: an empty manifest is a refused scope, never a rendered empty topology. */
+	/** An empty manifest is a refused scope, never a rendered empty topology. */
 	it("reds on zero scope rather than rendering a topology over no children", async () => {
 		const {outcome, written} = await run("#4301 phase 1\n", files());
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger topology: the run manifest holds zero children — refusing to render a topology over zero scope (ADR 0092).",
+			"ledger topology: the run manifest holds zero children — refusing to render a topology over zero scope.",
 		);
 		expect(written.size).toBe(0);
 	});

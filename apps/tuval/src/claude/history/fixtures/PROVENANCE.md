@@ -16,10 +16,10 @@ The rows below describe the `query()` captures; the last three fixtures have the
 
 | | |
 |---|---|
-| Captured | 2026-09-04, and `streaming-turn.json` on 2026-09-06 |
+| Captured | 2026-09-04; `streaming-turn.json` on 2026-09-06; `subagent-turn.json` on 2026-09-07 |
 | SDK | `@anthropic-ai/claude-agent-sdk` **0.3.259** (the `pnpm-workspace.yaml` catalog pin) |
 | CLI | `claude_code_version` **2.1.259**, as reported by the `init` frame itself |
-| Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json`, which is `claude-opus-5` |
+| Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json` and `subagent-turn.json`, which are `claude-opus-5` |
 
 `streaming-turn.json` is the one capture taken with `includePartialMessages` on, and it is what
 proves that turning the flag on costs the finished transcript nothing. It has to be its own run:
@@ -45,6 +45,7 @@ in order.
 | `session-messages.json` | `getSessionMessages(<the tool-turn session id>, {includeSystemMessages: true})` |
 | `unknown-message.json` | a `rate_limit_event` frame from the plain run — a real member of `SDKMessage` |
 | `streaming-turn.json` | one prompt with `includePartialMessages: true`, captured 2026-09-06 — the whole `stream_event` run of one turn, `message_start` through `message_stop` (#8172) |
+| `subagent-turn.json` | one prompt asking for a single `Task` spawn, run with `forwardSubagentText: true` and `includePartialMessages: true` on `claude-opus-5` with `thinking: {type: "enabled", budgetTokens: 8000}`, captured 2026-09-07 — the whole 74-frame run of a turn that spawns one worker (#8403) |
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |
@@ -88,6 +89,41 @@ Sanitization is the same as everywhere else here: uuids, `msg_*` and `req_*` ids
 consistently, the thinking block's signature replaced with a short placeholder, and every CLI-only
 field naming a machine or a checkout dropped rather than rewritten.
 
+## The sidechain capture
+
+`agent-a1b2c3d4e5f60718a.jsonl` and `agent-a1b2c3d4e5f60718a.meta.json` are one subagent's own
+transcript, the pair `readSidechain` reads. They came off an operator's own CLI store — the same
+source and the same founder ruling as the three excerpted fixtures above
+([#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806)) — because no
+`query()` run writes a sidechain file: the Agent tool has to spawn, and the file is the CLI's, not
+the SDK's.
+
+| | |
+|---|---|
+| Captured | 2026-09-07, from a session written by CLI **2.1.217** |
+| Layout | `<projects>/<slug>/<sessionId>/subagents/agent-<id>.jsonl` beside `agent-<id>.meta.json` |
+| Subagent | `agentType: "probe-plugin:probe-grep"`, `spawnDepth: 1` |
+| Rows | 7: the operator's prompt, two thinking frames, two text frames, a `tool_use` and its `tool_result` |
+
+Unlike the three above, **this pair is not re-keyed** — it is the CLI's own on-disk form, verbatim,
+because that form is exactly what the reader under test takes. The re-key to the SDK's
+`SessionMessage` is `sidechain.ts`'s job and is what the test exercises, so re-keying the fixture
+would test nothing.
+
+The whole meta file is golden: `{"agentType","description","toolUseId","spawnDepth"}`, which is
+where a subagent's type is authoritative and where the spawning call's id lives. Sanitization is
+the same as everywhere else here — every uuid, `msg_*`, `req_*` and `toolu_*` id substituted
+consistently, the two thinking blocks' signatures replaced with a short placeholder, and the `cwd`
+on every row rewritten to `/tmp/tuval-capture`. Nothing else was touched: `isSidechain`, `agentId`,
+`parentUuid`, `attributionAgent`, the `usage` blocks and the tool error text are verbatim.
+
+The capture's two thinking blocks carry a signature and an empty `thinking` string. That is the real
+payload, not a trim, and it is what a worker's reasoning looks like at this pin — `subagent-turn.json`
+carries the same shape off the live stream. `blocks.ts` reads it as withheld, so each one is a
+thinking item whose text says the provider withheld it. A `thinking` block with *plaintext* over a
+sidechain file is still uncovered here and rides
+[#8038](https://github.com/kamp-us/phoenix/issues/8038)'s live capture with the rest.
+
 ## What was sanitized, and what is golden
 
 For the `query()` captures, the **key set and the field shapes are the golden part** and are
@@ -109,11 +145,27 @@ any operator path returns and if the fixture set loses a member.
 
 ## What is not captured
 
-**A subagent's frames.** Every capture here is a top-level run, so `parent_tool_use_id` is `null` on
-all of them. `events.unit.test.ts` covers the non-null case by stamping that one field over the
-golden `tool-turn` stream, which is a derived shape and says so at the case. Forcing a real one needs
-a run that spawns the Agent tool, so it is an operator act like every other capture below —
-[#8038](https://github.com/kamp-us/phoenix/issues/8038) tracks taking it.
+**A subagent's streamed reply.** The live-stream gap this section used to name is closed from both
+ends now: `subagent-turn.json` is the SDK's stream — a worker's `user`, `assistant` (prose and
+reasoning) and tool frames all arrive parent-tagged on the parent session — and the sidechain pair
+above is the CLI's on-disk half of the same conversation. What does *not* arrive is a nested
+`stream_event`: every one of the 74 frames carries `parent_tool_use_id: null` on the streaming half,
+so a worker's reply is forwarded whole rather than delta by delta and no run can force the streamed
+case. `events.unit.test.ts` covers it by stamping that one field over the golden `streaming-turn`
+stream, and says so at the case.
+
+**A worker's reasoning in plain text.** Both captures agree and neither has one: `subagent-turn.json`
+carries two `thinking` blocks and the sidechain pair two more, every one with a real `signature` and
+an empty `thinking` string — the provider ships a worker's reasoning encrypted. Four `query()` runs
+at this pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s
+shape is not what a live worker yields today. `blocks.ts` reads the empty-with-signature shape as
+withheld, which is what the captures forced.
+
+**A run with `forwardSubagentText` off.** `subagent-turn.json` sets it, because the SDK forwards only
+a worker's `tool_use`/`tool_result` blocks by default — "enough for a heartbeat counter"
+(`sdk.d.ts`, `Options.forwardSubagentText`). Tuval's own option builder does not set it yet
+([#8427](https://github.com/kamp-us/phoenix/issues/8427)), so a live desk sees fewer nested frames
+than this fixture holds.
 
 **A `redacted_thinking` block.** No local session log carries one, and nothing a run controls decides
 whether the provider withholds a turn's reasoning. `events.unit.test.ts` covers it by swapping that

@@ -4,7 +4,7 @@
  * One question asked twice. Without `--exit` the answer is which recipe verb the state applies and
  * what that verb is pointed at; with `--exit` it is the single machine event that run's outcome
  * records. Both halves come off [`drive.ts`](./drive.ts)'s tables, so `operate`'s chore drive relays
- * an answer this package owns instead of carrying a routing table in prose (ADR 0228) — a prose copy
+ * an answer this package owns instead of carrying a routing table in prose — a prose copy
  * of an exit table is a copy that drifts from the exits the moment either verb grows a code.
  */
 import {Effect} from "effect";

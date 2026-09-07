@@ -89,7 +89,8 @@ export interface FooterFields {
  * The footer, joined with ` · ` over the **present fields only** — a dropped field takes its
  * separator with it. There is no placeholder, no `unknown`, and no dangling label.
  *
- * `Filed by an agent` is never omitted: it is ADR 0159's never-auto-close signal, and GitHub
+ * `Filed by an agent` is never omitted: it is what stops an agent-filed issue from being
+ * auto-closed, and GitHub
  * authorship cannot serve it because every pipeline-filed issue goes through one shared login.
  * Privacy is this verb's precondition, not the caller's — no email, no author name, no path.
  */

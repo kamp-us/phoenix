@@ -112,6 +112,7 @@ const randomMsg = (
 					sessionId: "session-1",
 					event: {
 						kind: "usage",
+						turn: `turn-${random.int(1_000)}`,
 						model: "claude-opus-5",
 						inputTokens: random.int(500),
 						outputTokens: random.int(500),

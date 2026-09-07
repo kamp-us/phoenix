@@ -4,13 +4,13 @@
  * "Some rows parsed" is never an answer: a generator holding half the law believes it holds the law,
  * so one bad row refuses the file. Zero rows refuses too — a registry a repo committed asserts a
  * typed law, and an empty one is a drafting defect to surface rather than a fact to pass through
- * (ADR 0092's shape at document scale).
+ * (the fail-closed-on-zero-scope shape, at document scale).
  *
- * The registry is normative and founder-ratified (the ADR 0194 firewall): nothing in this package
- * writes it.
+ * The registry is normative and founder-ratified, behind a firewall: nothing in this package writes
+ * it, because a checker that authors its own law checks nothing.
  */
 
-/** One prohibition — exactly the seven fields the #4891 ruling pins. */
+/** One prohibition — exactly these seven fields, all required. */
 export interface LawRow {
 	readonly id: string;
 	readonly pillar: string;

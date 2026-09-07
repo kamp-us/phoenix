@@ -117,7 +117,7 @@ describe("read — Absent", () => {
 });
 
 /**
- * The plan gate's namespace, widened additively (#5107).
+ * The plan gate's namespace, widened additively.
  *
  * The pair below is the point: `read` gates on the namespace **prefix** before `NAMESPACE` is ever
  * tested, so widening only the regex leaves the format able to emit a marker it can never read back.
@@ -153,7 +153,7 @@ describe("read — the check-epic-plan namespace", () => {
 });
 
 /**
- * The governance namespace, widened additively (#5199).
+ * The governance namespace, widened additively.
  *
  * `ship scope` already derives `governance` as a required namespace, so a format that cannot carry
  * it leaves every governance-root PR permanently `blocked` at `ship gate` with no second door. The
@@ -382,7 +382,7 @@ describe("the type forbids the values a lenient reader would invent", () => {
 });
 
 /**
- * The content binding (ADR 0276) — the field, and the four gates that decide what a moved head
+ * The content binding — the field, and the four gates that decide what a moved head
  * survives.
  *
  * Every case below is written from the direction that costs something. The gate that matters is not

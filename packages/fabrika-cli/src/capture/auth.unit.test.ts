@@ -18,7 +18,7 @@ import {
 
 const SECRET = "a-preview-better-auth-secret";
 const TOKEN = "t".repeat(32);
-const PREVIEW = "https://phoenix-pr-42.kampusinfra.workers.dev";
+const PREVIEW = "https://app-pr-42.example.workers.dev";
 
 const verify = async (signed: string): Promise<boolean> => {
 	const decoded = decodeURIComponent(signed);
@@ -97,8 +97,8 @@ describe("readIdentity", () => {
 
 	/**
 	 * A tier with no token of its own is a tier `preview-seed test-account` did not seed on this
-	 * preview. Reading it as satisfied by the yazar's token is the exact fallback #7398 exists to
-	 * refuse — the shot would come back clean as the audience the surface said it was not.
+	 * preview. Reading it as satisfied by another tier's token is the exact fallback this refuses —
+	 * the shot would come back clean as the audience the surface said it was not.
 	 */
 	it("names the çaylak token when a çaylak surface is asked for and only the yazar's is set", () => {
 		expect(
@@ -145,7 +145,7 @@ describe("readSessionProof", () => {
 
 	/**
 	 * A signed-in answer carrying no tier is UNKNOWN, not "the default tier": guessing here would
-	 * hand the caller a tier fact nobody read, which is the shape #7398 was filed about.
+	 * hand the caller a tier fact nobody read.
 	 */
 	it("reads a tier-less user as unreadable, never as a tier", () => {
 		expect(readSessionProof(200, JSON.stringify({user: {id: "u1"}}))).toEqual({

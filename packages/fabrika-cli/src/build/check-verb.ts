@@ -2,10 +2,10 @@
  * `build check` — this surface's validators, run **in this tree**.
  *
  * The tree binding is the design, not an option. A green borrowed from another checkout returned
- * another tree's answer three times in one session (#4106) and recurred on the review side (#4887).
+ * another tree's answer three times in one session, and the same thing recurred on the review side.
  * Whether a validator reads a build cache is the repo's own declaration, not this verb's: a
- * content-addressed cache keyed on the inputs answers for this tree too, and phoenix stopped paying
- * to re-derive what such a key already holds (#8275). And the command set is the repo's declaration
+ * content-addressed cache keyed on the inputs answers for this tree too, so a repo may stop paying
+ * to re-derive what such a key already holds. And the command set is the repo's declaration
  * read by the verb, not the agent's memory: v1 mandated the exact CI commands in prose with nothing
  * enforcing it (`SKILL.md:895-935`).
  *
@@ -18,13 +18,13 @@
  * provably contradicts.
  *
  * **Green means "the validators ran and passed", never "I could not tell."** See {@link classifyDiff}
- * for the unvalidatable file class that keeps that distinction representable (#5229), and
- * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288),
- * and {@link readMarkdown} for the file the verb could not open (#5304).
+ * for the unvalidatable file class that keeps that distinction representable, and
+ * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports, and
+ * {@link readMarkdown} for the file the verb could not open.
  *
  * **A prose red must be this diff's.** The leak scan is baselined against the merge base, so a file
  * that merely enters a diff no longer hands its author every defect line it already carried; the
- * shape and its deliberate limits live in `prose-baseline.ts` (#5755).
+ * shape and its deliberate limits live in `prose-baseline.ts`.
  */
 import {Effect, FileSystem} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -77,7 +77,7 @@ const ACTIONLINT = "actionlint";
 
 /**
  * The name of the workflow whose job supersedes this verb on workflow syntax, as the repo declares
- * it under `ci.gateWorkflow` — phoenix's `ci.yml` when it declares nothing (#6026, #6298).
+ * it under `ci.gateWorkflow` — the shipped `ci.yml` default when it declares nothing.
  *
  * A name, never an inspection: nothing here opens the file or matches a job inside it.
  */
@@ -98,16 +98,16 @@ export interface CheckOptions {
  * That last bucket is the point. Filtering with the extension patterns and reading nothing off what
  * fell out of all of them made "matched none" an absence, and an absence cannot be refused: a
  * `.yml`/`.sh` diff produced an empty markdown list, zero validator iterations and a green that had
- * opened no file (#5229). Named, it is a state the verb can act on.
+ * opened no file. Named, it is a state the verb can act on.
  *
- * `workflows` was carved out of it later (#5991): the files under `.github/workflows/` are where the
+ * `workflows` was carved out of it later: the files under `.github/workflows/` are where the
  * repo's own gates live, they *do* have validators, and leaving them unvalidatable left a
  * workflows-only lane with no invocation that could go green at all.
  *
  * `unvalidatable` is a property of the **tree** — no surface covers these files. Whether *this* run
  * covered a file is a narrower question, and {@link notCoveredBy} is the one that answers it; the two
  * were the same word once, which is how a markdown file could sit outside a `--surface code` green's
- * disclosure while the field's own documentation said it listed everything the verdict missed (#5288).
+ * disclosure while the field's own documentation said it listed everything the verdict missed.
  */
 export interface DiffClasses {
 	readonly code: ReadonlyArray<string>;
@@ -118,7 +118,7 @@ export interface DiffClasses {
 
 /**
  * Workflow YAML is its own class, not a widening of `code`: `pnpm typecheck` does not read it, and a
- * class is only sound while every validator its surface claims actually opens it (#5229, #5991).
+ * class is only sound while every validator its surface claims actually opens it.
  */
 const classOf = (file: string): keyof DiffClasses => {
 	if (WORKFLOW_RE.test(file)) return "workflows";
@@ -142,7 +142,7 @@ export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
  * resolver over every markdown file whatever the surface, and adds {@link PLAN_GRAMMAR} on top.
  * `plan` used to run the grammar *instead*, so a ledger greened with `unvalidated: []` while the
  * leak scan had never opened it — a disclosure true at the file-open level and false at the
- * validator level (#5304).
+ * validator level.
  */
 const COVERS: Record<Surface, ReadonlyArray<keyof DiffClasses>> = {
 	code: ["code"],
@@ -163,7 +163,7 @@ const PLAN_GRAMMAR = "## Dependencies grammar";
  * code` ran typecheck and `lint:worktree` over a `["a.ts", "README.md"]` diff, neither of which reads
  * markdown (`lint:worktree` filters `.md` out by extension), and greened with an empty disclosure —
  * which affirmatively reads as "nothing uncovered". `--surface plan` did the same to code files.
- * Reporting coverage per surface answers both with one rule instead of two (#5288).
+ * Reporting coverage per surface answers both with one rule instead of two.
  *
  * Disclosing is deliberately not validating: running the markdown validators under `--surface code`
  * would make the surface guess at file classes, which the anchor exists to refuse.
@@ -200,7 +200,7 @@ export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null =
  * *presence* of a code file instead, and that asymmetry left the repo's most common diff shape — one
  * `.ts` plus one `.md` — with no invocation that opened the markdown at all: `code` never reads it,
  * `plan` runs the wrong validator, and `prose` refused on `10`. The leak scan and the link resolver
- * simply did not run (#5301). The presence of another class is not a contradiction; it is what
+ * simply did not run. The presence of another class is not a contradiction; it is what
  * `unvalidated` discloses.
  */
 export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>): string | null => {
@@ -217,12 +217,12 @@ export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>):
  * which this verb used to call. That scanner guards runtime issue bodies, an ungated surface, and
  * it is deliberately stricter than the repo's committed-file gate on three axes; asking it about a
  * file in a diff made this predictor red on bytes CI passes clean, and the red was unclearable in
- * the lane that inherited it (#5687). See `doc-leaks.ts` for the three divergences.
+ * the lane that inherited it. See `doc-leaks.ts` for the three divergences.
  *
  * `baseText` is the file as of the merge base, or `null` for a file this diff creates. Subtracting
  * the base's own leaks is what stops a one-paragraph edit inheriting every defect line already in
- * the file — see `prose-baseline.ts` for why the shape is a baseline, the same one #4250 reached in
- * `cli-invocation-guard`, and for why only the leak scan is baselined (#5755).
+ * the file — see `prose-baseline.ts` for why the shape is a baseline, the same one
+ * `cli-invocation-guard` reached, and for why only the leak scan is baselined.
  */
 const leakDefects = (
 	file: string,
@@ -286,7 +286,7 @@ const maskSpans = (text: string): string => {
 
 /**
  * Blank out fenced blocks and code spans, so a markdown link written as an *illustration* is not
- * extracted as a live one (#5639). The docs that state this repo's link convention are precisely
+ * extracted as a live one. The docs that state this repo's link convention are precisely
  * the docs that spell a link out as an example, and they were the ones this predictor red.
  *
  * Masked bytes become spaces rather than being dropped: the link pattern cannot cross whitespace,
@@ -329,9 +329,9 @@ const maskCode = (text: string): string => {
  * same rule, so there is no second reference check to drift from this one.
  *
  * The extractor stays a regex over masked text rather than moving to a markdown parser: fabrika is
- * installed into repos it does not control (ADR 0273) on four runtime dependencies, and code-span
- * plus fenced-block masking is the one property #2308 bought by retiring the CI gate's in-house
- * extractor. Reference-style and HTML links stay out of scope here, as they always were.
+ * installed into repos it does not control on four runtime dependencies, and code-span plus
+ * fenced-block masking is the one property retiring the CI gate's in-house extractor bought.
+ * Reference-style and HTML links stay out of scope here, as they always were.
  */
 export const linkTargets = (text: string): ReadonlyArray<string> => {
 	const targets: string[] = [];
@@ -392,7 +392,7 @@ type MarkdownRead =
  * execute, so it proves nothing and must refuse — the same 404-vs-5xx split `codes.ts` states for
  * {@link ZERO_SCOPE} against {@link PRECONDITION_UNKNOWN}. One `catchTag("PlatformError")` fused
  * them and skipped both, so a permission or IO fault dropped a file out of validation while
- * `unvalidated` stayed empty (#5304).
+ * `unvalidated` stayed empty.
  *
  * `reason._tag === "NotFound"` is the proof, not a guess: `@effect/platform-node-shared`'s
  * `handleErrnoException` maps `ENOENT` to `NotFound` and `EACCES` to `PermissionDenied`, and
@@ -510,9 +510,9 @@ const readCodeScope = (root: string): Effect.Effect<CodeScope, never, FileSystem
 
 /**
  * The `code` surface: the validators the repo **declares**, run in this tree with whatever flags it
- * wrote. There is no shipped pair to fall back on — phoenix declares its own.
+ * wrote. There is no shipped pair to fall back on — every repo declares its own.
  *
- * The three outcomes stay apart, and keeping them apart is the whole point (#6015, #6297). A
+ * The three outcomes stay apart, and keeping them apart is the whole point. A
  * validator that ran and failed is `VALIDATION_RED`. A validator that could not be spawned proves
  * nothing about the code and refuses UNKNOWN naming it. A repo with no list at all — declared
  * empty, or never declared — has nothing to run, which is neither a red nor a green: reporting "no
@@ -616,7 +616,7 @@ const readValidatorScope = (
  * declared workflow commands. A green requires that at least one changed workflow was actually
  * opened, which is not the same as at least one validator having run.
  *
- * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
+ * `actionlint` is not a repo dependency anywhere — CI typically installs a pinned tarball at job
  * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
  * present and **disclosed** when absent, which is the "degrade, stated" answer `SKILL.md`'s
  * missing-surface table gives for an absent superseding authority: the gate workflow's `actionlint` job still
@@ -628,7 +628,7 @@ const readValidatorScope = (
  * So a changed workflow file counts as opened only when `actionlint` ran over it or a passing
  * declared validator names it; every other changed workflow is reported in `unvalidated`, and a run
  * that opened **none** of them refuses UNKNOWN — that green would be the unread-tree green the
- * named file class was introduced to make refusable (#5229, #5991).
+ * named file class was introduced to make refusable.
  */
 const runWorkflowSurface = (
 	fs: FileSystem.FileSystem,
@@ -787,7 +787,7 @@ export const runCheck = (
 		if (files.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: this tree changes nothing against ${base}, tracked or untracked — nothing to validate (ADR 0092).`,
+				`${VERB}: this tree changes nothing against ${base}, tracked or untracked — nothing to validate.`,
 				scope,
 			);
 		}
@@ -804,9 +804,9 @@ export const runCheck = (
 			return refuse(OFF_VOCABULARY, `${VERB}: ${mismatch} — the surface is provably wrong.`, scope);
 		}
 		const {markdown} = classifyDiff(files);
-		// A partial green has to carry what it skipped, on both channels: #5187 greened over 25 workflow
-		// files whose `ran` line was true and misleading at once (#5229), and a `--surface code` green
-		// then did the same to markdown while reporting an empty list (#5288).
+		// A partial green has to carry what it skipped, on both channels: a run once greened over 25
+		// workflow files whose `ran` line was true and misleading at once, and a `--surface code` green
+		// then did the same to markdown while reporting an empty list.
 		const unvalidated = notCoveredBy(surface as Surface, files);
 		const noted =
 			unvalidated.length === 0

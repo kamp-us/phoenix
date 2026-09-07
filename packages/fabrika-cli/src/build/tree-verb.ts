@@ -5,8 +5,8 @@
  * `--require-clean` open (`13`), and a checked-out branch carrying this claim's nonce (`14`). A fresh
  * proof binds one issue branch to that issue's claim. A repair proof additionally binds the resumed
  * branch to the named PR, that PR's winning claim, and the explicitly requested issue in its live
- * body's served-issue set (#7183, #7309).
- * Both are location-neutral — where the lane runs is the operator's call, not fabrika's (#5386). It
+ * body's served-issue set.
+ * Both are location-neutral — where the lane runs is the operator's call, not fabrika's. It
  * reads and never repairs: no clean, no create, no remove.
  *
  * The skill re-runs this before every git mutation because the shell's cwd resets between calls, so a
@@ -54,7 +54,7 @@ export const runTree = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 
 		// The checked-out branch's nonce IS this lane's identity here, so the claim read asks "does the
-		// winning marker belong to my lane" instead of "to my session" (#6037).
+		// winning marker belong to my lane" instead of "to my session".
 		const branch = yield* currentBranch;
 		const lane = branch === null ? null : parseLaneBranch(branch);
 		if (lane === null) {

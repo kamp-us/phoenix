@@ -5,7 +5,7 @@
  * `0`, `1`, `126` and `127` are reserved by the interface convention (see `../verb.ts` and the
  * bootstrap failure in `../bin.ts`); everything else here is `3` and up, the band a verb owns for
  * outcomes it PROVED. `2` is allocated by nothing anywhere in fabrika — it is the harness's block
- * code on `PreToolUse` (`../hook/harness-exit.ts`, #5423).
+ * code on `PreToolUse` (`../hook/harness-exit.ts`).
  *
  * **The alignment with `report` is deliberate, code-for-code, and re-exported rather than
  * re-typed.** Where this table overlaps `report`'s writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
@@ -52,7 +52,8 @@ export const LEAKED_PATH = SHARED_LEAKED_PATH;
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue
- * **proven absent (404)** or closed — a fail-closed refusal (ADR 0092).
+ * **proven absent (404)** or closed — a fail-closed refusal, because a proven negative over
+ * nothing read is no answer at all.
  *
  * *Proven* is the operative word. A 404 is a fact about the repository; an unreachable GitHub is not
  * a fact about anything, and lands on {@link PRECONDITION_UNKNOWN} instead.
@@ -63,7 +64,7 @@ export const ZERO_SCOPE = SHARED_NO_TARGET;
  *
  * A create or PATCH that times out may or may not have landed. Seating that on `1` would make
  * "GitHub refused the write" indistinguishable from "the binary is broken", which is the
- * verdict-versus-invocation collision the reserved range exists to prevent (#4208, #4219). Each
+ * verdict-versus-invocation collision the reserved range exists to prevent. Each
  * message carries its recovery instruction, because a blind retry is how one split becomes two
  * children.
  */
@@ -86,18 +87,19 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * Refused: the issue is human-filed and this is not a `--duplicate-of` fold.
  *
- * The fold is the one exception (#6070's ruling, ADR 0181's 2026-08-21 amendment): it moves the
- * content into a survivor rather than discarding it, so provenance does not gate it. Every other
- * close of a human filing still refuses here.
+ * The fold is the one exception, ruled on 2026-08-21: it moves the content into a survivor rather
+ * than discarding it, so provenance does not gate it. Every other close of a human filing still
+ * refuses here.
  *
  * `12`, not `11`, because `11` already means `PRECONDITION_UNKNOWN` in the shipped `report` table
- * this group aligns to. Issue #4831's acceptance criteria state `11`/`12` for this pair; the merged
- * contract's `12`/`13` wins, and the divergence is disclosed rather than silently resolved. That
+ * this group aligns to. The specifying issue's acceptance criteria stated `11`/`12` for this pair;
+ * the merged contract's `12`/`13` wins, and the divergence is disclosed rather than silently
+ * resolved. That
  * clearance is now checked both ways — `../exit-code-alignment.ts` reds if either table moves into
  * the other's seat.
  */
 export const HUMAN_FILED = 12;
-/** Refused: close-eligible, but the kill is unconfirmed (ADR 0159). */
+/** Refused: close-eligible, but the kill is unconfirmed. */
 export const UNCONFIRMED = 13;
 /**
  * Refused: the acceptance-criteria block is drifted in a way no mechanical repair covers.
@@ -115,7 +117,7 @@ export const UNREPAIRABLE = 14;
  *
  * Every downstream consumer (`build issue`, `review criteria`) reads the block through
  * `../wire/acceptance-criteria.ts` and rejects exactly what it rejects, so writing it to a body only
- * defers the refusal to a lane that cannot fix it (#5565, ADR 0288). `Absent` stays allowed: an
+ * defers the refusal to a lane that cannot fix it. `Absent` stays allowed: an
  * issue with no criteria block is a fact, not a defect, and this code never turns enrich into
  * "every issue must have criteria".
  *
@@ -131,7 +133,7 @@ export const MALFORMED_CRITERIA = 15;
  * `ready-for:agent` is the promise that a builder can pick the issue up cold, and the criteria block
  * is what the promise is made of — so the stamp asserts it at the cheapest door there is. Without
  * this seat the contract is first read at `review criteria`, once a branch, a build, a push, a PR
- * and a CI run have already been spent on an issue that never carried one (#6025).
+ * and a CI run have already been spent on an issue that never carried one.
  *
  * Its own code rather than {@link MALFORMED_CRITERIA}'s: that one is `enrich`'s answer about a body
  * it composed and has not written yet, and it allows `Absent` deliberately. This one is `apply`'s
@@ -143,7 +145,7 @@ export const CRITERIA_REQUIRED = 16;
  *
  * The claim protocol was advisory at exactly the point it needed to bite — `triage claim` resolved
  * the race and no verb after it re-read the answer, so a session that read `lost` could still
- * overwrite the winner's authored body (#5644, on #5642). Every mutating verb now re-reads it, and
+ * overwrite the winner's authored body. Every mutating verb now re-reads it, and
  * this is what they refuse on.
  *
  * Its own seat rather than {@link ZERO_SCOPE}'s: a closed target and a contested one need opposite
@@ -163,7 +165,7 @@ export const CLAIMED_ELSEWHERE = 17;
  * The load-time check that reaches triage is the containment invariant
  * (`../config/containment.ts`): a facet is delete authority, so a config declaring a value its facet
  * does not own — or an enumerated facet owning a label no value produces — reconciles an issue into
- * a shape nobody asked for. #4285 is the incident, and it printed a success line while it happened.
+ * a shape nobody asked for — and the run that did it printed a success line while it happened.
  *
  * Its own seat rather than {@link OFF_VOCABULARY}'s: that one is a bad *argument*, fixed by re-running
  * the verb with another value, and this one is a bad *repository*, fixed by editing a file — a caller
@@ -186,10 +188,10 @@ export const CLAIM_NOT_HELD = 19;
 /**
  * Refused: the body being written states an ordering the live `blocked_by` graph carries no edge for.
  *
- * ADR 0301 makes the graph the one carrier of "do not start this yet", so prose stating an ordering
- * the graph does not carry produces an issue `build pick` admits and no lane can build — #6663
- * shipped exactly that and cost a claim, a read pass and a back-off. The founder ruling on #6728
- * makes `enrich` fail-closed over it, on the `fanout-guard` / `catalog-guard` idiom.
+ * The graph is the one carrier of "do not start this yet", so prose stating an ordering the graph
+ * does not carry produces an issue `build pick` admits and no lane can build — an issue that
+ * shipped exactly that cost a claim, a read pass and a back-off. `enrich` is fail-closed over it,
+ * on the `fanout-guard` / `catalog-guard` idiom.
  *
  * **There is no override flag**, and the two escapes are on the refusal line: wire the edge with
  * `triage apply <n> --blocked-by <m>`, or reword the body so it states no ordering it does not own.
@@ -200,7 +202,7 @@ export const CLAIM_NOT_HELD = 19;
  */
 export const UNWIRED_ORDERING = 20;
 /**
- * Refused: a `--blocked-by` target is a **pull request**, and ADR 0301 says to name an issue instead.
+ * Refused: a `--blocked-by` target is a **pull request**, where an issue belongs instead.
  *
  * "a blocking pull request is named in the graph by the issue its merge closes" — so the edge the
  * caller wants exists, addressed by another number. The remedy is a different argument, which is why
@@ -256,7 +258,7 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	},
 	{
 		code: UNCONFIRMED,
-		meaning: "refused: close-eligible, but the kill is unconfirmed (ADR 0159)",
+		meaning: "refused: close-eligible, but the kill is unconfirmed",
 	},
 	{
 		code: UNREPAIRABLE,
@@ -294,7 +296,7 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: PULL_REQUEST_TARGET,
 		meaning:
-			"refused: a --blocked-by target is a pull request — ADR 0301 names a blocking PR by the issue its merge closes",
+			"refused: a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

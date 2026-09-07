@@ -2,19 +2,19 @@
  * `review ci` — the live check-run rollup at a head, fail-closed on incomplete enumeration.
  *
  * v1's CI-at-head read was dispatch-prompt-dependent: a gate ruled on a live RED check as a prose
- * question because one sentence was omitted (#4552). This verb is that read made structural, and its
- * refusals are what keep it honest — zero declared runs is a vacuous green (ADR 0092), an
- * enumeration short of `total_count` is never read as "no red checks" (#3999), and a complete
- * enumeration that no gate of this repo produced is not green either (#6522, `gate-coverage.ts`).
+ * question because one sentence was omitted. This verb is that read made structural, and its
+ * refusals are what keep it honest — zero declared runs is a vacuous green, an enumeration short
+ * of `total_count` is never read as "no red checks", and a complete enumeration that no gate of
+ * this repo produced is not green either (`gate-coverage.ts`).
  *
- * `checks` is a status tally, not a row per run: it is an evidence-array under ADR 0308 — the review
+ * `checks` is a status tally, not a row per run: it is an evidence-array — the review
  * skill acts on `rollup` and no skill iterates the rows — and a repo with 34 workflows paid ~20 rows
  * of it on every read. What the rows were *for*, naming the red and still-running checks, moves to
  * the notes channel below, the same split `ship checks` landed on.
  *
  * `--wait` is the bounded in-verb wait a reviewer spawned minutes after a push needs: a `pending`
  * there is the ordinary state of a healthy PR, and a caller that cannot wait for it has only a park
- * on a human to offer for a condition that clears itself (#7282). The verb owns the loop so no skill
+ * on a human to offer for a condition that clears itself. The verb owns the loop so no skill
  * ever sleeps — `claude-plugins/fabrika/docs/skill-conventions.md` §14 — and it loops on `pending`
  * alone: every refusal and the `no-producer` answer are states no amount of waiting changes, so they
  * return on the first read rather than burning the budget. The governance floor is such a state on
@@ -50,7 +50,7 @@ const VERB = "review ci";
  * `governance-owed` and `governance-stale` are the two the caller can clear itself — see
  * {@link governanceOwed} and {@link governanceStale}. Each is its own word rather than a faster
  * `budget-exhausted` or a plain `settled`, because they route differently from both: a stuck queue
- * is a human's, while a verdict the reader still owes is the reader's (#7392, #7441).
+ * is a human's, while a verdict the reader still owes is the reader's.
  */
 export type Settle =
 	| "settled"
@@ -123,7 +123,7 @@ const noProducerAnswer = (
 		: answer([`ci\t${sha}\t${NO_PRODUCER}`, "run\t0"].join("\n"), diagnostics);
 
 /**
- * The check runs a reader still needs by name, on the notes channel (ADR 0308).
+ * The check runs a reader still needs by name, on the notes channel.
  *
  * The rows the tally replaces existed so "a red or still-running check is in the gate's context by
  * name, not as a rollup boolean" — that sentence is about the red and the in-flight runs, and every
@@ -235,7 +235,7 @@ export const runCi = (
 				return done(
 					refuse(
 						ZERO_SCOPE,
-						`${VERB}: zero check runs declared at ${sha} — refusing to report green over an empty enumeration (ADR 0092).`,
+						`${VERB}: zero check runs declared at ${sha} — refusing to report green over an empty enumeration.`,
 						notes,
 					),
 				);
@@ -244,7 +244,7 @@ export const runCi = (
 				return done(
 					refuse(
 						INCOMPLETE_SCAN,
-						`${VERB}: received ${runs.length} of ${declared} declared check runs at ${sha} — refusing the partial enumeration (#3999).`,
+						`${VERB}: received ${runs.length} of ${declared} declared check runs at ${sha} — refusing the partial enumeration.`,
 						notes,
 					),
 				);
@@ -275,7 +275,7 @@ export const runCi = (
 				staleGovernance = governanceStale(runs, atHead.value.runs);
 				if (staleGovernance) {
 					notes.push(
-						`${VERB}: the only failing check at ${sha} is "${CHECK_RUN_NAME}", and the governance verdict behind it is bound to another head (ADR 0318). This red is yours to clear: fire the governance skill, then re-read.`,
+						`${VERB}: the only failing check at ${sha} is "${CHECK_RUN_NAME}", and the governance verdict behind it is bound to another head. This red is yours to clear: fire the governance skill, then re-read.`,
 					);
 				}
 			}
@@ -310,7 +310,7 @@ export const runCi = (
 					return done(
 						refuse(
 							NO_GATE_COVERAGE,
-							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
+							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
 							notes,
 						),
 					);
@@ -328,7 +328,7 @@ export const runCi = (
 				owedGovernance = governanceOwed(runs, atHead.value.runs);
 				if (owedGovernance) {
 					notes.push(
-						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head (ADR 0318), which no wait produces. Fire the governance skill, then re-read.`,
+						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head, which no wait produces. Fire the governance skill, then re-read.`,
 					);
 				}
 			}

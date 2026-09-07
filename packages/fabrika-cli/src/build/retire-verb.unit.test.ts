@@ -70,7 +70,7 @@ const run = (script: ReadonlyArray<Scripted>) => {
 	}));
 };
 
-/** The board with one authorized claim marker on #4312 and no adopt — the ordinary live lane. */
+/** The board with one authorized claim marker on the served issue and no adopt — the live lane. */
 const CLAIMED: ReadonlyArray<Scripted> = [
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
 	[PERM, WRITE],
@@ -98,7 +98,7 @@ describe("runRetire — the terminal-ticket license", () => {
 		expect(calls).toContain(`git worktree remove ${ORPHAN}`);
 	});
 
-	it("removes WITHOUT --force on any path — ADR 0321 bans it for every tree", async () => {
+	it("removes WITHOUT --force on any path — it is banned for every tree", async () => {
 		const {calls} = await run([
 			[PRUNE, okOut("")],
 			[once(TREES), trees({path: ORPHAN, branch: BRANCH})],
@@ -167,7 +167,7 @@ describe("runRetire — the adopted-session license", () => {
 		expect(JSON.parse(out.stdout).retired).toMatchObject([{license: "session-adopted"}]);
 	});
 
-	it("counts no adopt from an account below write — content is not authority (ADR 0055)", async () => {
+	it("counts no adopt from an account below write — content is not authority", async () => {
 		const {out, calls} = await run([
 			[PRUNE, okOut("")],
 			[TREES, trees({path: ORPHAN, branch: BRANCH})],
@@ -336,7 +336,7 @@ describe("runRetire — what it refuses to touch", () => {
 	});
 });
 
-describe("runRetire — ADR 0321's salvage runs before the tree goes", () => {
+describe("runRetire — the salvage runs before the tree goes", () => {
 	it("commits a dirty tree's work onto its own branch, then removes it", async () => {
 		const {out, calls} = await run([
 			[PRUNE, okOut("")],
@@ -416,7 +416,7 @@ describe("runRetire — the removal is proven, never reported", () => {
 
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toMatch(/ADR 0321 bans --force/);
+		expect(out.stderr.join("\n")).toMatch(/--force is banned on every path/);
 	});
 
 	it("is READBACK_MISMATCH when git exits 0 and the registration survives", async () => {

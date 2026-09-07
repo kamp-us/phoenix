@@ -1,7 +1,7 @@
 /**
  * The scripted board both `decision` verb tests drive against.
  *
- * One issue (#4300), one control-plane roster, one cited ruling comment. Each helper takes what the
+ * One issue, one control-plane roster, one cited ruling comment. Each helper takes what the
  * case under test varies and holds everything else fixed, so a test reads as the one fact it pins.
  */
 
@@ -27,7 +27,7 @@ export const env = {CLAUDE_PIPELINE_REPO: REPO, GITHUB_TOKEN: "ghp_scripted"} as
 >;
 export const NOW = () => new Date("2026-08-20T05:11:02.500Z");
 
-/** The reads this group makes over the fetch client, matched on `METHOD url` (ADR 0315). */
+/** The reads this group makes over the fetch client, matched on `METHOD url`. */
 const API = "https:\\/\\/api\\.github\\.com";
 export const ISSUE_READ = new RegExp(`^GET ${API}\\/repos\\/${REPO}\\/issues\\/${ISSUE}$`);
 export const COMMENTS = new RegExp(
@@ -36,7 +36,7 @@ export const COMMENTS = new RegExp(
 export const VIEWER = new RegExp(`^GET ${API}\\/user$`);
 export const TRUNK = new RegExp(`^GET ${API}\\/repos\\/${REPO}$`);
 export const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
-export const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`);
+export const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/o\\/teams\\/control-plane\\/members`);
 export const LABELS = new RegExp(`^GET ${API}\\/repos\\/${REPO}\\/labels\\?`);
 export const POST = new RegExp(`^POST ${API}\\/repos\\/${REPO}\\/issues\\/${ISSUE}\\/comments$`);
 export const GET_MARKER = new RegExp(
@@ -83,7 +83,7 @@ export const RULING_ONLY = comments([RULING_COMMENT, RULER, "Take the second for
 export const acl: ReadonlyArray<readonly [RegExp, HttpReply]> = [
 	[VIEWER, served({login: RULER})],
 	[TRUNK, served({default_branch: "main"})],
-	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
+	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"}],
 	[MEMBERS, served([{login: RULER}, {login: "cansirin"}])],
 ];
 
