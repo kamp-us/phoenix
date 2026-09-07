@@ -12,7 +12,7 @@ import type {SpellBridgeApi} from "../../commands/bridge/index.ts";
 import type {SpellPath, Scope as SpellScope} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
 import type {CommandRef, Mode, ModelRef, ThinkingLevel, TranscriptItem} from "../ports/index.ts";
-import type {ListError, TransportError} from "./errors.ts";
+import type {ListError, StartError, TransportError} from "./errors.ts";
 import type {SessionSummary} from "./sessions.ts";
 
 /** One spell a turn calls: the path and the args, exactly as they cross the wire. */
@@ -109,6 +109,15 @@ export interface AgentScript {
 	readonly thinking: ScriptedThinking;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
+	/**
+	 * When set, `start` fails with this instead of opening the session, and it keeps failing for
+	 * the life of the layer.
+	 *
+	 * A script that refuses every open is how a test proves a call reached no session: the store
+	 * reads — `listSessions` and `sessionTranscript` — answer off this script either way, so one
+	 * that answers under a refusing `start` is one that never went near the transport (#8233).
+	 */
+	readonly startRefusal?: StartError;
 	/**
 	 * Which turn a *resumed* session's next prompt replays. A resumed session is one an earlier run
 	 * already spent turns on, and this layer's turn cursor lives in the build it hands back, so a

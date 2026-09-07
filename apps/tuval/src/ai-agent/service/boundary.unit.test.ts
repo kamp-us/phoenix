@@ -27,6 +27,7 @@ import type {
 	PromptError,
 	StartError,
 	ThinkingUnsupported,
+	TranscriptError,
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
@@ -35,20 +36,22 @@ import type {
 	StartedSession,
 	StartOptions,
 	TranscriptPage,
+	TranscriptQuery,
 	TuvalAiAgentApi,
 } from "./TuvalAiAgent.ts";
 
 /**
- * The founder's seven grew to eight on #7981, to nine on #8060, to ten on #8062 and to eleven on
- * #8097. The first three are one act: he wants the agent's model, its slash commands and its
- * thinking level reachable from the chat composer, and a picker over a generic window has to reach
- * them through the generic interface — so `setModel`, `commands` and `setThinkingLevel` are those
- * three members. #8097's eleventh is the other: every session on his machine listed from one
- * program whatever backend started it, which is `listSessions`. Both pins below count eleven, so
+ * The founder's seven grew to eight on #7981, to nine on #8060, to ten on #8062, to eleven on
+ * #8097 and to twelve on #8233. The first three are one act: he wants the agent's model, its slash
+ * commands and its thinking level reachable from the chat composer, and a picker over a generic
+ * window has to reach them through the generic interface — so `setModel`, `commands` and
+ * `setThinkingLevel` are those three members. The last two are the store's own pair: every session
+ * on his machine listed from one program whatever backend started it (`listSessions`), and one of
+ * those sessions read without opening it (`sessionTranscript`). Both pins below count twelve, so
  * each growth reads as the deliberate act it was rather than as drift.
  */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the seven, #7981's, #8060's, #8062's and #8097's, at their declared types", () => {
+	it("carries the seven and the five that followed, at their declared types", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -74,6 +77,9 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
 		>();
+		expectTypeOf<TuvalAiAgentApi["sessionTranscript"]>().toEqualTypeOf<
+			(query: TranscriptQuery) => Effect.Effect<TranscriptPage, TranscriptError>
+		>();
 		expectTypeOf<TuvalAiAgentApi["listSessions"]>().toEqualTypeOf<
 			Effect.Effect<ReadonlyArray<SessionSummary>, ListError>
 		>();
@@ -82,7 +88,7 @@ describe("the TuvalAiAgent surface", () => {
 		>();
 	});
 
-	it("has exactly those eleven members and no twelfth", () => {
+	it("has exactly those twelve members and no thirteenth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
 			| "start"
 			| "prompt"
@@ -93,6 +99,7 @@ describe("the TuvalAiAgent surface", () => {
 			| "commands"
 			| "setThinkingLevel"
 			| "page"
+			| "sessionTranscript"
 			| "listSessions"
 			| "events"
 		>();

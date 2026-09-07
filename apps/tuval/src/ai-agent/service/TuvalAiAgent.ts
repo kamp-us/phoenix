@@ -33,6 +33,7 @@ import type {
 	PromptError,
 	StartError,
 	ThinkingUnsupported,
+	TranscriptError,
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
@@ -102,6 +103,18 @@ export interface TranscriptPage {
 	readonly hasMore: boolean;
 }
 
+/**
+ * Which stored session to read a page of, and how far back. `before` and `limit` are `page`'s own
+ * two arguments; `sessionId` and `cwd` stand where an open session would have carried them.
+ */
+export interface TranscriptQuery {
+	readonly sessionId: string;
+	readonly cwd: string;
+	/** The oldest item the caller already holds, or `null` for the newest end of the transcript. */
+	readonly before: string | null;
+	readonly limit: number;
+}
+
 export interface TuvalAiAgentApi {
 	readonly start: (options: StartOptions) => Effect.Effect<StartedSession, StartError>;
 	/**
@@ -150,8 +163,35 @@ export interface TuvalAiAgentApi {
 	/**
 	 * History is backend-owned (ruling 5): this reads the backend's own store through the
 	 * transport. Tuval keeps no second copy beyond the live tail the core holds.
+	 *
+	 * The live session's read, so it needs one open. `sessionTranscript` below is the same page off
+	 * the same store with no session open, and it is what a read-only surface calls.
 	 */
 	readonly page: (before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>;
+	/**
+	 * One page of a *stored* session's history — `page`'s answer without `page`'s open session
+	 * (founder ruling, 2026-09-07,
+	 * https://github.com/kamp-us/phoenix/issues/8233#issuecomment-5567691729).
+	 *
+	 * A read of the store rather than of a session, exactly as `listSessions` is, so it answers
+	 * before `start` and on a layer that never starts one. That is the point: showing a session an
+	 * operator is only skimming used to go through `start({cwd, resume})`, which opens the
+	 * backend's own session and, on Pi, folds a whole replay into events nobody drains.
+	 *
+	 * **What the read-only promise covers.** Building the layer stays the layer's business — a
+	 * backend whose transport comes up with its build (`../../pi/ai-agent/PiAiAgent.ts`) still
+	 * stands it up here, exactly as it does for `listSessions`. What no longer happens is the
+	 * backend *session*: nothing attaches, nothing resumes, and no transcript is built for output
+	 * this read discards.
+	 *
+	 * A backend that could not look fails rather than answering an empty page, and a store that
+	 * does not hold the session fails differently again. Those are two of `TranscriptError`'s three
+	 * reasons; an empty `items` is the third answer — "this session is empty" — and none of the
+	 * three may be spelled as another.
+	 */
+	readonly sessionTranscript: (
+		query: TranscriptQuery,
+	) => Effect.Effect<TranscriptPage, TranscriptError>;
 	/**
 	 * Every session this backend's store holds, newest first — the tenth member (#8097).
 	 *

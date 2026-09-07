@@ -57,7 +57,7 @@ describe("the layer's type", () => {
 		expectTypeOf(composed).toEqualTypeOf<Layer.Layer<TuvalAiAgent, never, SpellBridge>>();
 	});
 
-	it("implements exactly the ten generic members, and no eleventh", () => {
+	it("implements exactly the twelve generic members, and no thirteenth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
 			| "start"
 			| "prompt"
@@ -68,6 +68,7 @@ describe("the layer's type", () => {
 			| "commands"
 			| "setThinkingLevel"
 			| "page"
+			| "sessionTranscript"
 			| "listSessions"
 			| "events"
 		>();
