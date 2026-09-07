@@ -20,6 +20,7 @@ export type FixtureName =
 	| "permission-denied"
 	| "resumed-init"
 	| "session-messages"
+	| "streaming-turn"
 	| "thinking-turn"
 	| "tool-turn"
 	| "unknown-message";

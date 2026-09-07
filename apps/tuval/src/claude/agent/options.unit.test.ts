@@ -5,7 +5,14 @@
 
 import {describe, expect, it} from "vitest";
 import {Mode} from "../../ai-agent/ports/index.ts";
-import {advertisedModes, type ClaudeAiAgentOptions, openingMode, sessionEnv} from "./options.ts";
+import {
+	advertisedModes,
+	type ClaudeAiAgentOptions,
+	openingMode,
+	queryOptionsOf,
+	type ServerBinding,
+	sessionEnv,
+} from "./options.ts";
 import {exitDetail} from "./subprocess.ts";
 
 const row = (over: Partial<ClaudeAiAgentOptions> = {}): ClaudeAiAgentOptions => ({
@@ -59,6 +66,32 @@ describe("the mode a session opens on", () => {
 		expect(
 			openingMode(row({permissionMode: Mode.make("plan")}), Mode.make("bypassPermissions")),
 		).toBe("plan");
+	});
+});
+
+describe("the Options one query opens on", () => {
+	const server: ServerBinding = {
+		server: {type: "stdio", command: "tuval"},
+		wireNames: ["mcp__tuval__spawn"],
+	};
+
+	const opened = (over: Partial<ClaudeAiAgentOptions> = {}) =>
+		queryOptionsOf(row(over), {
+			cwd: "/tmp/tuval",
+			session: {kind: "fresh", sessionId: "s"},
+			server,
+			canUseTool: async () => ({behavior: "deny", message: "no"}),
+			env: {},
+		});
+
+	// Default-off is the containment: with the flag off the SDK emits no `SDKPartialAssistantMessage`
+	// at all, so a reply reaches the transcript whole (#8172).
+	it("asks for no partial messages when the row did not turn them on", () => {
+		expect(opened().includePartialMessages).toBe(false);
+	});
+
+	it("asks for them when the row did", () => {
+		expect(opened({streamPartialReplies: true}).includePartialMessages).toBe(true);
 	});
 });
 

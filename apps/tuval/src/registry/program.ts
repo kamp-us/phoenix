@@ -212,6 +212,16 @@ export interface Program<
 	 * whatever loads, which is every program with no parse of its own.
 	 */
 	readonly restorable?: (raw: unknown) => boolean;
+	/**
+	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
+	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
+	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
+	 * (`src/host/actor.ts`, #8170). A state this refuses is one no restore ever reads back, which
+	 * is why the skipped write is not owed: a half-written reply must never come back as the reply.
+	 *
+	 * A row that omits it checkpoints every state, which is every program with nothing in flight.
+	 */
+	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	/**
 	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only

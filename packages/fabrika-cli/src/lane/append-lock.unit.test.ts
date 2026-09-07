@@ -46,10 +46,10 @@ const SHORT_LOCK_MS = "120";
 
 describe("lane append lock", {timeout: 10_000}, () => {
 	afterEach(() => {
-		delete process.env["FABRIKA_LANE_LOCK_BUDGET_MS"];
+		delete process.env.FABRIKA_LANE_LOCK_BUDGET_MS;
 	});
 	it("a writer that finds the lock held refuses CONCURRENT_WRITE and leaves the log untouched", async () => {
-		process.env["FABRIKA_LANE_LOCK_BUDGET_MS"] = SHORT_LOCK_MS;
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
 		const fs = freshLane({mkdirExisting: [LOCK]});
 
 		const out = await run(fs);
@@ -61,7 +61,7 @@ describe("lane append lock", {timeout: 10_000}, () => {
 	});
 
 	it("the refusal is distinguishable from an ordinary machine refusal on the same event", async () => {
-		process.env["FABRIKA_LANE_LOCK_BUDGET_MS"] = SHORT_LOCK_MS;
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
 		const heldLock = freshLane({mkdirExisting: [LOCK]});
 		const machineRefusal = freshLane({
 			files: {

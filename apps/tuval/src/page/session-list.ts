@@ -2,9 +2,10 @@
  * The page's half of the session list: build the call, read the reply, hand the rows on.
  *
  * The page asks for the list the only way it may ask for anything — a `SpellCall`, correlated on
- * its own `CallId` (`../protocol/messages.ts`, ADR 0348 R1.3). No frame is added to
- * `../shell/transport/wire.ts` for it: the kernel's other lists reach a page as push-on-change
- * frames because the kernel already holds them, and this one is a disk walk answered on demand.
+ * its own `CallId` (`../protocol/messages.ts`, ADR 0348 R1.3), carried by the transport's one spell
+ * frame pair. No frame of its own is added for it: the kernel's other lists reach a page as
+ * push-on-change frames because the kernel already holds them, and this one is a disk walk answered
+ * on demand.
  *
  * `readSessionList` is where a reply becomes rows. It reads the correlation first, because a reply
  * carrying another call's id is not this call's answer and folding it in would show one window
@@ -21,7 +22,7 @@ import {CallId} from "../protocol/ids.ts";
 import type {SpellFailure, SpellReply} from "../protocol/messages.ts";
 import {PROTOCOL_VERSION, SpellCall} from "../protocol/messages.ts";
 import type {SessionRow, UnreadableBackend} from "../protocol/session-list.ts";
-import {SESSION_LIST_PATH, SessionList} from "../protocol/session-list.ts";
+import {SESSION_LIST_CALL_PATH, SessionList} from "../protocol/session-list.ts";
 
 /** The rows a window is handed, and the backends that could not be read beside them. */
 export interface ListedSessions {
@@ -48,7 +49,7 @@ export const sessionListCall = (window?: WindowId): SpellCall =>
 		type: "spell.call",
 		version: PROTOCOL_VERSION,
 		id: CallId.make(crypto.randomUUID()),
-		path: [...SESSION_LIST_PATH],
+		path: [...SESSION_LIST_CALL_PATH],
 		args: {},
 		...(window === undefined ? {} : {window}),
 	});

@@ -3,9 +3,9 @@
  * renders nothing.
  *
  * `ship scope` raises the `ui` class off a path test, and a path test cannot see whether pixels
- * moved. So a PR whose only change under the UI source root is a docblock requires a `review-ui`
- * verdict that this group structurally cannot produce — `render` refuses zero surfaces, `post`
- * requires a capture set — and `ship gate` blocks on the absence forever. This verb records the
+ * moved. So a PR whose only change under a declared `uiSurfaces` prefix is a docblock requires a
+ * `review-ui` verdict that this group structurally cannot produce — `render` refuses zero surfaces,
+ * `post` requires a capture set — and `ship gate` blocks on the absence forever. This verb records the
  * missing half instead of manufacturing the verdict: an attested, head-bound "nothing here
  * renders", which `ship gate` resolves as `routed`.
  *
@@ -17,9 +17,10 @@
  *
  * The one mechanical precondition is that the PR actually raises the class: routing a namespace the
  * diff never derived resolves nothing and leaves a record claiming a question nobody asked.
- * Deriving it re-uses `review/classes.ts`'s own `isUiSurface` rather than a second predicate — the
- * refusal must bind the exact rule that raised the class, or the two drift and this verb refuses on
- * a PR the gate is meanwhile blocking.
+ * Deriving it re-uses `review/classes.ts`'s own `isUiSurface`, over the same declared `uiSurfaces`
+ * prefixes the gate raised the class from, rather than a second predicate — the refusal must bind
+ * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
+ * meanwhile blocking.
  *
  * Whether the diff renders anything is the *skill's* judgment over `review diff`'s refusal-guarded
  * bytes, and it stays there. No verb decides it: that was a rejected candidate, because a
@@ -67,6 +68,8 @@ export interface RouteOptions {
 	readonly sha: string;
 	/** The one-line why, carried on the record's first line. */
 	readonly clause: string;
+	/** This repo's `uiSurfaces` prefixes, resolved by the caller off the tree it stands in. */
+	readonly uiPrefixes: ReadonlyArray<string>;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
@@ -133,7 +136,7 @@ export const runRoute = (
 		const listed = yield* listPullFiles(repo, pr);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const declared = target.pull.changedFiles;
-		const ui = listed.value.filter(isUiSurface);
+		const ui = listed.value.filter((file) => isUiSurface(file, options.uiPrefixes));
 		const diagnostics = [
 			scannedLine(
 				VERB,

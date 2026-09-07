@@ -49,7 +49,7 @@ import {
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
 import {noteSend, settledBy, settlePending} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
-import {type AiAgentSessionState, initialState, lastAssistantId} from "./state.ts";
+import {type AiAgentSessionState, initialState, lastAssistantId, settleTurn} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
 	/** The working directory a fresh session starts in. */
@@ -93,7 +93,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			interrupted: null,
 			interruption: null,
 			transcript: foldItem(state.transcript, promptItem(prompt), limits),
-			sends: noteSend(state.sends, {key: prompt.key, state: "pending"}),
+			sends: noteSend(state.sends, {key: prompt.key, state: "pending", turn: "unstarted"}),
 			failure: null,
 		},
 		[{type: "aiAgent.prompt", text: prompt.text, key: prompt.key}],
@@ -437,13 +437,17 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 
 			failed: (state, msg) => {
 				const phase = phaseAfterFailure(state, msg.failure);
+				// The turn is over however the failure reached the machine, so a partial the stream
+				// left in the tail — and any subagent under that turn — settles here too
+				// (`./state.ts`, `settleTurn`).
+				const turn = settleTurn(state);
 				return settleQueue([
 					{
-						...state,
+						...turn,
 						phase,
-						interruption: interruptionAfter(state, phase),
+						interruption: interruptionAfter(turn, phase),
 						failure: msg.failure,
-						sends: settlePending(state.sends, msg.failure),
+						sends: settlePending(turn.sends, msg.failure),
 					},
 					noCmds,
 				]);

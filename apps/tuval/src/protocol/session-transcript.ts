@@ -64,6 +64,7 @@ export const UserItem = Schema.Struct({
 	timestamp: Timestamp,
 	text: Schema.String,
 	local: Schema.optionalKey(Schema.Boolean),
+	parentId: Schema.optionalKey(ItemId),
 });
 
 export const AssistantItem = Schema.Struct({
@@ -72,6 +73,7 @@ export const AssistantItem = Schema.Struct({
 	timestamp: Timestamp,
 	text: Schema.String,
 	interrupted: Schema.optionalKey(Schema.Boolean),
+	parentId: Schema.optionalKey(ItemId),
 });
 
 export const ToolItem = Schema.Struct({
@@ -90,6 +92,7 @@ export const ThinkingItem = Schema.Struct({
 	id: ItemId,
 	timestamp: Timestamp,
 	text: Schema.String,
+	parentId: Schema.optionalKey(ItemId),
 });
 
 export const CompactionItem = Schema.Struct({
@@ -97,6 +100,7 @@ export const CompactionItem = Schema.Struct({
 	id: ItemId,
 	timestamp: Timestamp,
 	text: Schema.String,
+	parentId: Schema.optionalKey(ItemId),
 });
 
 export const SystemItem = Schema.Struct({
@@ -105,6 +109,7 @@ export const SystemItem = Schema.Struct({
 	timestamp: Timestamp,
 	text: Schema.String,
 	detail: Schema.optionalKey(Schema.String),
+	parentId: Schema.optionalKey(ItemId),
 });
 
 export const TranscriptItem = Schema.Union([

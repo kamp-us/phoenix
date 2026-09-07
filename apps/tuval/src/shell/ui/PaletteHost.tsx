@@ -7,33 +7,30 @@
  * the command line accepts and a binding can name (ADR 0348, `.patterns/tuval-spells.md`). There is
  * no second command mechanism here, and no second dispatch.
  *
- * **The reply is synthesised on the page, not awaited from the kernel.** The page-to-kernel spell
- * transport is a sibling ticket; until it lands, a call is decoded against the row's real `params`
- * and its Msg dispatched, which is exactly what `readCommandLine` does with a typed line. That
- * makes the refusals real — a bad argument is the row's own schema refusing it — and leaves the
- * palette's own contract (`onCall` out, `reply` in) untouched when the transport arrives.
+ * **The reply is the kernel's** (#8161). A call goes down this page's socket and the executor's
+ * answer is what the palette renders, so a bad argument is refused by the row's own schema in the
+ * kernel and a run is the kernel's dispatch — there is no second decode and no second refusal shape
+ * living here. The kernel registers a shell row's spells under `[shell, ...path]`
+ * (`../commands/spells.ts`), which is the one translation this module makes; a path the shell table
+ * does not hold is not a path the kernel holds either, and that is the one refusal still written
+ * here.
  */
 
-import {Result, Schema} from "effect";
+import {Effect, Schema} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useMemo, useState} from "react";
 import {buildSpellIndex} from "../../commands/parse/spell-index.ts";
 import {Palette} from "../../palette/index.ts";
 import type {LayoutNode} from "../../protocol/desk.ts";
-import {type CallId, WindowId} from "../../protocol/ids.ts";
-import {firstSchemaIssue} from "../../protocol/issue.ts";
-import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
-import {
-	PROTOCOL_VERSION,
-	Snapshot,
-	SpellReplyError,
-	SpellReplyOk,
-} from "../../protocol/messages.ts";
+import {WindowId} from "../../protocol/ids.ts";
+import type {SpellReply} from "../../protocol/messages.ts";
+import {PROTOCOL_VERSION, Snapshot, SpellCall, SpellReplyError} from "../../protocol/messages.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import {commandFor, shellCommands} from "../commands/table.ts";
-import type {ShellMsg, ShellState} from "../core/index.ts";
+import type {ShellState} from "../core/index.ts";
 import {activeWorkspace} from "../core/index.ts";
 import type {LayoutNode as ShellLayoutNode} from "../layout/index.ts";
+import {type PageAttachment, SHELL_PROGRAM_ID} from "../transport/browser.ts";
 
 /** Every shell row as the wire describes a spell. Built once: the table is a module constant. */
 const descriptions: RegistryDescription = shellCommands.map((command) => ({
@@ -97,54 +94,57 @@ const asSnapshot = (state: ShellState): Snapshot => {
 const collectWindows = (node: ShellLayoutNode): ReadonlyArray<string> =>
 	node.tag === "window" ? [node.id] : node.children.flatMap(collectWindows);
 
-const refusal = (id: CallId, message: string, path: SpellCall["path"]): SpellReply =>
+const refusal = (call: SpellCall, tag: string, message: string): SpellReply =>
 	new SpellReplyError({
 		type: "spell.reply",
 		version: PROTOCOL_VERSION,
-		id,
+		id: call.id,
 		ok: false,
-		error: {tag: "tuval/BadArgs", message, path},
+		error: {tag, message, path: call.path},
 	});
+
+/** The same call, addressed as the kernel registers it: a shell row's spells sit under its program id. */
+const onTheRegistry = (call: SpellCall): SpellCall =>
+	new SpellCall({...call, path: [SHELL_PROGRAM_ID, ...call.path]});
 
 export interface PaletteHostProps {
 	readonly state: ShellState;
-	readonly dispatch: (msg: ShellMsg) => void;
+	/**
+	 * This page's socket. A surface with no socket behind it — a fixture, a story — passes none, and
+	 * every call is refused rather than answered by a reply the page made up.
+	 */
+	readonly call?: PageAttachment["call"];
 	/** The window focused when the palette opened — the call's scope, never the layout's. */
 	readonly window: WindowId | undefined;
 	readonly onClose: () => void;
 }
 
-export function PaletteHost({state, dispatch, window, onClose}: PaletteHostProps): ReactElement {
+export function PaletteHost({state, call, window, onClose}: PaletteHostProps): ReactElement {
 	const [reply, setReply] = useState<SpellReply | null>(null);
 	const snapshot = useMemo(() => asSnapshot(state), [state]);
 
 	const onCall = useCallback(
-		(call: SpellCall) => {
-			const command = commandFor(call.path.join(":"));
-			if (command === undefined) {
-				setReply(refusal(call.id, "this desk registers no spell at that path", call.path));
+		(spell: SpellCall) => {
+			if (commandFor(spell.path.join(":")) === undefined) {
+				setReply(refusal(spell, "tuval/UnknownSpell", "this desk registers no spell at that path"));
 				return;
 			}
-			const decoded = Schema.decodeUnknownResult(command.params)(call.args);
-			if (Result.isFailure(decoded)) {
-				const {expected, at} = firstSchemaIssue(decoded.failure);
-				setReply(
-					refusal(call.id, `${at === "" ? "the argument" : at} should be ${expected}`, call.path),
-				);
+			if (call === undefined) {
+				setReply(refusal(spell, "tuval/NoKernel", "this surface has no kernel to call"));
 				return;
 			}
-			dispatch(command.toMsg(decoded.success));
-			setReply(
-				new SpellReplyOk({
-					type: "spell.reply",
-					version: PROTOCOL_VERSION,
-					id: call.id,
-					ok: true,
-					result: {},
-				}),
+			Effect.runFork(
+				call(onTheRegistry(spell)).pipe(
+					Effect.flatMap((answer) => Effect.sync(() => setReply(answer))),
+					Effect.catchCause(() =>
+						Effect.sync(() =>
+							setReply(refusal(spell, "tuval/SocketGone", "the desk lost its link to the kernel")),
+						),
+					),
+				),
 			);
 		},
-		[dispatch],
+		[call],
 	);
 
 	return (

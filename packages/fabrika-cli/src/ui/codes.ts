@@ -72,5 +72,5 @@ export const UPLOAD_FAILED = 17;
  * group's seat allocation to the other's.
  */
 export const LANE_NOT_MINE = 18;
-/** Proven: no render harness is declared — the repo cannot be rendered headlessly. */
-export const NO_HARNESS = 19;
+/** Proven: `.fabrika.jsonc` declares no `uiSurfaces` row — the repo cannot be rendered headlessly. */
+export const NO_UI_SURFACE = 19;

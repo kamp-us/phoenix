@@ -98,7 +98,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
 | `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
-| `build check` | this surface's validators, run here with the build cache bypassed |
+| `build check` | this surface's validators, run in this tree |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
 | `build verdicts` | the latest gate verdict per namespace at a PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
@@ -1165,8 +1165,8 @@ ui evidence --pr 4318 --before before --after after   # upload, verify, post, re
 un-bootstrapped · `13` the manifest exists and no typed prohibition registry does — the law is
 untyped · `14` a surface rendered with an uncaught page error · `15` a surface is unreachable ·
 `16` a capture was produced and is invalid · `17` an evidence upload failed, nothing posted · `18`
-this session does not hold the claim the checked-out lane branch names · `19` no render harness is
-declared. `3` is a deliberate gap.
+this session does not hold the claim the checked-out lane branch names · `19` `.fabrika.jsonc`
+declares no `uiSurfaces` row. `3` is a deliberate gap.
 
 Four things are load-bearing:
 
@@ -1174,9 +1174,10 @@ Four things are load-bearing:
   score, or any judgement over pixels — the rendered-surface verdict is `review-ui`'s gate. `ui
   golden` measures; it never decides.
 - **Everything the group reads is a convention path in the repo it runs in** —
-  `design-system-manifest.md`, `design-prohibitions.json`, `design-harness.json`,
-  `packages/design-capture/golden-pointer.json` — never a hardcoded URL. That is what makes the
-  group portable.
+  `design-system-manifest.md`, `design-prohibitions.json`,
+  `packages/design-capture/golden-pointer.json` — or, for the surfaces themselves, the `uiSurfaces`
+  and `uiCapture` keys of `.fabrika.jsonc`; never a hardcoded URL. That is what makes the group
+  portable.
 - **The headless browser is provisioned by installing the package.** `postinstall` runs
   [`scripts/provision-browser.mjs`](../scripts/provision-browser.mjs), so no operator ever runs a
   browser-install step by hand. It is best-effort and never fails the install; it skips when the
@@ -1185,11 +1186,13 @@ Four things are load-bearing:
   **carrying the exact remediation command**.
 - **Absence is answered three ways, never one.** `12`, `13` and `11` are different facts, and the
   skill's prose fallback is legal only in the middle case.
-- **The harness declares apps, not one server.** `design-harness.json` lists every runnable app the
-  repo renders from, each owning a `mount` in the surface namespace; `ui render` sends a surface to
+- **The declaration is a list of apps, not one server.** `uiSurfaces` lists every runnable app the
+  repo renders from, each owning a `prefix` (the source root that raises the `ui` class) and a
+  `mount` in the surface namespace; `ui render` sends a surface to
   the app whose mount is its longest match, starts only the apps some surface resolves to, and
   allocates each app's port at start rather than reading a declared one — so two worktrees can render
-  concurrently and neither can capture the other's tree. A surface outside every mount is `10`.
+  concurrently and neither can capture the other's tree. A surface outside every mount is `10`, and
+  an empty list is `19` — stated, never a silent no-op (#7369).
 
 `ui render` and `ui evidence` both guard the lane precondition; `ui manifest`, `ui law` and `ui
 golden` are pure reads and take none. Evidence is all-or-nothing: one failed upload or verification

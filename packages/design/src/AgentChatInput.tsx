@@ -937,9 +937,12 @@ export function AgentChatInput({
 	);
 	const selectedModel = selectedModelValue(state) ?? modelItems[0]?.value;
 	const stateThinking = thinkingLevelValue(state?.thinkingLevel);
-	const selectedThinking =
-		stateThinking && stateThinking !== "off" ? stateThinking : (thinkingLevels[0] ?? "minimal");
+	const selectedThinking = stateThinking !== "off" ? stateThinking : undefined;
 	const settingsDisabled = disabled || settingsChanging || connection !== "ready";
+	const thinkingDisabled =
+		settingsDisabled ||
+		thinkingItems.length === 0 ||
+		(thinkingItems.length === 1 && selectedThinking !== undefined);
 	const focusedDelivery =
 		connection === "working" ? (delivery === "prompt" ? "follow_up" : delivery) : "prompt";
 	const focusedMenuItems: MenuItem[] = [
@@ -1134,7 +1137,7 @@ export function AgentChatInput({
 											items={focusedThinkingItems}
 											value={selectedThinking}
 											onValueChange={(value) => void changeThinkingLevel(value)}
-											disabled={settingsDisabled || focusedThinkingItems.length < 2}
+											disabled={thinkingDisabled}
 										/>
 									</>
 								) : (
@@ -1166,11 +1169,12 @@ export function AgentChatInput({
 													</span>
 												}
 												items={thinkingItems}
-												value={[selectedThinking]}
+												value={selectedThinking ? [selectedThinking] : []}
+												placeholder={t("admin.agent.picker.none")}
 												onValueChange={(values) => void changeThinkingLevel(values[0])}
 												placement="top-start"
 												size="sm"
-												disabled={settingsDisabled || thinkingItems.length < 2}
+												disabled={thinkingDisabled}
 											/>
 										</div>
 										<div className="kp-agent-chat__setting">

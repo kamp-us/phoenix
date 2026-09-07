@@ -1,9 +1,11 @@
 /**
- * `build check` — this surface's validators, run in this tree, with the build cache **bypassed**.
+ * `build check` — this surface's validators, run **in this tree**.
  *
- * The bypass is the design, not an option. A cache hit from another checkout returned another tree's
- * green three times in one session, and the same thing recurred on the review side; re-running is
- * cheaper than trusting a key that has already lied. And the command set is the repo's declaration
+ * The tree binding is the design, not an option. A green borrowed from another checkout returned
+ * another tree's answer three times in one session, and the same thing recurred on the review side.
+ * Whether a validator reads a build cache is the repo's own declaration, not this verb's: a
+ * content-addressed cache keyed on the inputs answers for this tree too, so a repo may stop paying
+ * to re-derive what such a key already holds. And the command set is the repo's declaration
  * read by the verb, not the agent's memory: v1 mandated the exact CI commands in prose with nothing
  * enforcing it (`SKILL.md:895-935`).
  *
@@ -507,8 +509,8 @@ const readCodeScope = (root: string): Effect.Effect<CodeScope, never, FileSystem
 	});
 
 /**
- * The `code` surface: the validators the repo **declares**, run in this tree with its own
- * cache-bypass flags. There is no shipped pair to fall back on — each repo declares its own.
+ * The `code` surface: the validators the repo **declares**, run in this tree with whatever flags it
+ * wrote. There is no shipped pair to fall back on — every repo declares its own.
  *
  * The three outcomes stay apart, and keeping them apart is the whole point. A
  * validator that ran and failed is `VALIDATION_RED`. A validator that could not be spawned proves

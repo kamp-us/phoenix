@@ -509,6 +509,17 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
   [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
 
+### Tuval: partial (a transcript item)
+
+- **partial** — a transcript item still being written, marked `partial` on the item itself. The
+  backend re-upserts the same `ItemId` as the text grows and leaves the marker off the last upsert,
+  so **absent means final** and one field carries the whole distinction. It is not an item kind and
+  not an event kind, and it names no backend: the window learns "still growing" once and every
+  agent program streams the same way ([#8142's
+  ruling](https://github.com/kamp-us/phoenix/issues/8142), epic
+  [#8160](https://github.com/kamp-us/phoenix/issues/8160)). Source:
+  [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+
 ### Tuval: thinking row, compaction marker, session row
 
 Three of the six rows a Tuval chat window renders, minted by epic

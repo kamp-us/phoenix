@@ -5,6 +5,7 @@ import {
 	SHIPPED_GOVERNED_ROOTS as GOVERNANCE_ROOTS,
 	issueRefOf,
 	issueRefsOf,
+	isUiSurface,
 	linkedIssueOf,
 	linkedIssuesOf,
 	namespacesOf,
@@ -15,6 +16,9 @@ import {
 	shipNamespacesOf,
 	touchesGovernanceRoot,
 } from "./classes.ts";
+
+/** One repo's own declared prefixes — two runnable apps, one of them served by two mounts. */
+const UI_PREFIXES = ["apps/site/src/", "apps/desk/src/"];
 
 describe("classOf", () => {
 	it("puts every claude-plugins and .claude path in skill", () => {
@@ -114,6 +118,32 @@ describe("touchesGovernanceRoot", () => {
 	});
 });
 
+describe("isUiSurface", () => {
+	it("raises the ui class over EVERY declared prefix, not just the first app's", () => {
+		expect(isUiSurface("apps/desk/src/ui/Chat.tsx", UI_PREFIXES)).toBe(true);
+		expect(isUiSurface("apps/site/src/App.tsx", UI_PREFIXES)).toBe(true);
+	});
+
+	it("keeps the test/spec exclusion — a rendered surface's own tests render nothing", () => {
+		expect(isUiSurface("apps/site/src/App.test.tsx", UI_PREFIXES)).toBe(false);
+		expect(isUiSurface("apps/desk/src/ui/Chat.spec.tsx", UI_PREFIXES)).toBe(false);
+	});
+
+	it("raises nothing on an empty prefix list — a repo declaring no surface has no rendered gate", () => {
+		expect(isUiSurface("apps/site/src/App.tsx", [])).toBe(false);
+	});
+
+	it("derives the ui class off a Desk-only path list, which a compiled-in prefix could not", () => {
+		const result = partitionWithUi(
+			["apps/desk/src/ui/Chat.tsx", "apps/desk/src/ui/Chat.test.tsx"],
+			GOVERNANCE_ROOTS,
+			UI_PREFIXES,
+		);
+		expect(shipNamespacesOf(result)).toEqual(["review-code", "review-ui"]);
+		expect(result.classes).toContainEqual({name: "ui", files: 1});
+	});
+});
+
 describe("shipNamespacesOf", () => {
 	// The one property that keeps this function from moving any existing PR's merge bar: for a diff
 	// under no governance root the answer is byte-identical to the class-only derivation.
@@ -121,10 +151,10 @@ describe("shipNamespacesOf", () => {
 		for (const files of [
 			["src/a.ts"],
 			["README.md", "src/a.ts"],
-			["apps/web/src/App.tsx", "apps/web/src/App.test.tsx"],
+			["apps/site/src/App.tsx", "apps/site/src/App.test.tsx"],
 			["skills/deploy-notes/SKILL.md"],
 		]) {
-			const result = partitionWithUi(files, GOVERNANCE_ROOTS);
+			const result = partitionWithUi(files, GOVERNANCE_ROOTS, UI_PREFIXES);
 			expect(result.governance).toBe(false);
 			expect(shipNamespacesOf(result)).toEqual(result.classes.map((c) => `review-${c.name}`));
 		}
@@ -135,9 +165,10 @@ describe("shipNamespacesOf", () => {
 			[
 				"claude-plugins/fabrika/skills/ship/contract.md",
 				"packages/fabrika-cli/src/ship/gate-verb.ts",
-				"apps/web/src/App.tsx",
+				"apps/site/src/App.tsx",
 			],
 			GOVERNANCE_ROOTS,
+			UI_PREFIXES,
 		);
 		expect(shipNamespacesOf(result)).toEqual([
 			"review-code",
@@ -148,14 +179,19 @@ describe("shipNamespacesOf", () => {
 	});
 
 	it("derives governance off a decision-corpus edit no class map marks", () => {
-		const result = partitionWithUi([`${DECISIONS_ROOT}corpus-review.md`], GOVERNANCE_ROOTS);
+		const result = partitionWithUi(
+			[`${DECISIONS_ROOT}corpus-review.md`],
+			GOVERNANCE_ROOTS,
+			UI_PREFIXES,
+		);
 		expect(shipNamespacesOf(result)).toEqual(["review-doc", "governance"]);
 	});
 
 	it("only ever emits namespaces ship gate admits", () => {
 		const result = partitionWithUi(
-			[".github/workflows/ci.yml", "apps/web/src/App.tsx"],
+			[".github/workflows/ci.yml", "apps/site/src/App.tsx"],
 			GOVERNANCE_ROOTS,
+			UI_PREFIXES,
 		);
 		for (const namespace of shipNamespacesOf(result)) {
 			expect(SHIP_NAMESPACES).toContain(namespace);

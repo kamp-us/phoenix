@@ -80,7 +80,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
 | `build commit` | create this lane's commit from an authored message, and prove the commit carries it | a prescribed carrying path, a claim test over the numbers named, and a read-back — no judgment; *authoring* the message stays in the skill |
-| `build check` | run this surface's validators in this tree, cache-bypassed; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
+| `build check` | run this surface's validators in this tree; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
 | `build push` | publish the branch and independently confirm the remote ref moved | push + `ls-remote` read-back, three proven outcomes |
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
 | `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
@@ -1893,12 +1893,13 @@ the file-open level. Two facts hold that promise up:
 
 Per surface:
 
-- **code** — every command the repo declares under `.fabrika.jsonc`'s `codeValidators`, executed in
-  this tree **with the build cache bypassed**. The cache bypass is the design — a cache hit from
-  another checkout returned another tree's green three times in one session and recurred on
-  the review side — but the flag expressing it is the repo's, since a task runner's `--force` is a
-  hard error to a bare compiler invocation. Nothing is compiled in for a repo to inherit: every
-  repo declares its own pair in its own `.fabrika.jsonc`. A
+- **code** — every command the repo declares under `.fabrika.jsonc`'s `codeValidators`, executed
+  **in this tree**. The tree binding is the design — a green borrowed from another checkout was
+  another tree's answer three times in one session, and the same thing recurred on the review side
+  — but what a validator does about a build cache is the repo's own declaration, since a task
+  runner's flags are a hard error to a bare compiler invocation. Nothing is compiled in for a repo
+  to inherit: every repo declares its own pair in its own `.fabrika.jsonc`, and a repo whose cache
+  is content-addressed may read it rather than re-derive what its key already holds. A
   repo with no list — declared empty, or never declared at all — has nothing to run, which refuses
   `11`, UNKNOWN naming which of the two it was — never green, and never the `VALIDATION_RED` that
   says the code failed.
@@ -2085,7 +2086,7 @@ surface that ran, so a file another surface would have read counts as uncovered 
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4","ran":["pnpm typecheck --force","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck:affected","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
 
 `ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two
@@ -2093,7 +2094,8 @@ above are an example of what a repo declares, not a contract.
 
 **Grounding**
 
-- The cross-tree cache false green; cache bypass is the design, not an option.
+- The cross-tree false green; running in this tree is the design, not an option. What a validator
+  does about a build cache is the repo's declaration.
 - Two extension patterns and no third class: a workflow-only diff greened under `--surface
   prose` having opened no file, and refused under `--surface code` with a message pointing at the
   branch that greened. `22` and `unvalidated` are the two halves of that fix.

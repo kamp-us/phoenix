@@ -119,6 +119,7 @@ const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 			connected: Effect.succeed(true),
 			createSession: () => Effect.succeed(SESSION),
 			attachSession: () => Effect.succeed(SESSION),
+			heldSnapshot: () => Effect.succeed(snapshotOf([], "idle", 0)),
 			prompt: (_sessionId, text) =>
 				Effect.gen(function* () {
 					sends.push(text);

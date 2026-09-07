@@ -25,9 +25,12 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {exists, readFile} from "../io/fs.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {UI_CAPTURE, uiCaptureKey} from "../config/keys/ui-surfaces.ts";
+import {resolve} from "../config/load.ts";
+import {loadRepoConfig} from "../config/working-root.ts";
+import {readFile} from "../io/fs.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
-import {isRecord, parseJson} from "../io/json.ts";
 import {patchComment, viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -118,10 +121,10 @@ export interface PostOptions {
 	/** The OS temp root the set path hangs off — the same port `render` takes. */
 	readonly tmpRoot: string;
 	/**
-	 * Where the tier-choice document is read from: the **reviewer's own checked-out tree**, never
-	 * the PR head, which this skill never checks out.
+	 * Where the tier choice is read from: the **reviewer's own checked-out tree**, never the PR head,
+	 * which this skill never checks out.
 	 */
-	readonly harnessPath: string;
+	readonly cwd: string;
 	readonly upload: UploadLeg;
 	/** The explicit acknowledgement that this verdict retires a standing one of the other polarity. */
 	readonly supersede: boolean;
@@ -219,11 +222,17 @@ const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string
 		.replace(/\n+$/, "");
 
 /**
- * Which evidence tier this repo declares, read whole (`4` on a document that does not satisfy its
+ * Which evidence tier this repo declares, read whole (`4` on a value that does not satisfy its
  * schema) — the `ui evidence` whole-file rule.
  *
- * An absent `design-harness.json` is the **attachment tier**, a first-class state and not a defect:
- * a repo that declares no store hosts its evidence on GitHub.
+ * An undeclared `uiCapture.evidenceStore` is the **attachment tier**, a first-class state and not a
+ * defect: a repo that declares no store hosts its evidence on GitHub.
+ *
+ * The read goes through the `uiCapture` key's own decode rather than a second parse of the same
+ * bytes — a hand-rolled reader beside a schema is two answers to one question, and here they
+ * disagreed about the store's shape. The four resolution arms are resolved directly
+ * rather than through `readKey` because this verb owes `4` and `11` different seats, and `readKey`
+ * collapses malformed and unreadable into one refusal.
  */
 type TierChoice =
 	| {readonly _tag: "Attachment"}
@@ -232,28 +241,20 @@ type TierChoice =
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
 const readTierChoice = (
-	path: string,
+	cwd: string,
 ): Effect.Effect<TierChoice, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const present = yield* Effect.result(exists(path));
-		if (Result.isFailure(present)) {
-			return {_tag: "Unreadable" as const, reason: present.failure.reason};
+		const resolved = resolve(yield* loadRepoConfig(cwd), uiCaptureKey);
+		if (resolved._tag === "Unknown") {
+			return {_tag: "Unreadable" as const, reason: resolved.reason};
 		}
-		if (!present.success) return {_tag: "Attachment" as const};
-		const text = yield* Effect.result(readFile(path));
-		if (Result.isFailure(text)) {
-			return {_tag: "Unreadable" as const, reason: text.failure.reason};
+		if (resolved._tag === "Malformed") {
+			return {_tag: "Malformed" as const, reason: resolved.reason};
 		}
-		const parsed = parseJson(text.success);
-		if (!isRecord(parsed)) {
-			return {_tag: "Malformed" as const, reason: "not a JSON object"};
-		}
-		const store = parsed.evidenceStore;
-		if (store === undefined) return {_tag: "Attachment" as const};
-		if (!isRecord(store) || typeof store.kind !== "string") {
-			return {_tag: "Malformed" as const, reason: "evidenceStore declares no string kind"};
-		}
-		return {_tag: "DeclaredStore" as const, kind: store.kind};
+		const store = resolved.value.evidenceStore;
+		return store === null
+			? {_tag: "Attachment" as const}
+			: {_tag: "DeclaredStore" as const, kind: store};
 	});
 
 export const runPost = (
@@ -376,20 +377,20 @@ export const runPost = (
 		}
 
 		// Step 4 — the tier choice, then verify-upload every capture BEFORE anything posts.
-		const tier = yield* readTierChoice(options.harnessPath);
+		const tier = yield* readTierChoice(options.cwd);
 		if (tier._tag === "Malformed") {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: design-harness.json exists but does not satisfy its schema: ${tier.reason} — the tier choice is unmakeable.`,
+				`${VERB}: ${CONFIG_PATH} declares a \`${UI_CAPTURE}\` that does not satisfy its schema: ${tier.reason} — the tier choice is unmakeable.`,
 			);
 		}
 		if (tier._tag === "Unreadable") {
-			return unreadable("design-harness.json", pr, tier.reason);
+			return unreadable(CONFIG_PATH, pr, tier.reason);
 		}
 		if (tier._tag === "DeclaredStore") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: design-harness.json declares the "${tier.kind}" evidence store, and this delivery layer wires no store leg for it — the upload target's state is UNKNOWN; nothing was uploaded or posted.`,
+				`${VERB}: ${CONFIG_PATH} declares the "${tier.kind}" evidence store, and this delivery layer wires no store leg for it — the upload target's state is UNKNOWN; nothing was uploaded or posted.`,
 			);
 		}
 		const hosted: Array<readonly [CaptureEntry, string]> = [];

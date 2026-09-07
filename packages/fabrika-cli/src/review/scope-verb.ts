@@ -34,7 +34,7 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -87,6 +87,13 @@ export const runScope = (
 		);
 		if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			"which paths raise the ui class is UNKNOWN and this partition would carry an answer nobody derived.",
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -115,6 +122,9 @@ export const runScope = (
 			boundLine(VERB, head),
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared by GitHub`),
 			`${VERB}: governance derived over ${roots.roots.length} root(s) — ${roots.note}.`,
+			surfaces.prefixes.length === 0
+				? noUiSurfaces(VERB)
+				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
 		];
 		if (files.length !== pull.changedFiles) {
 			diagnostics.push(
@@ -130,7 +140,7 @@ export const runScope = (
 		}
 
 		const flags = partition(files);
-		const result = partitionWithUi(files, roots.roots);
+		const result = partitionWithUi(files, roots.roots, surfaces.prefixes);
 		const namespaces = shipNamespacesOf(result);
 		const routed = routedNamespacesOf(namespaces);
 		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";

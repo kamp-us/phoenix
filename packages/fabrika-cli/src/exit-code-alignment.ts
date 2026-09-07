@@ -80,7 +80,7 @@ export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SEC
  *
  * The name differs because the meaning is the base's read widened, not renamed: `report file`'s `4`
  * is a body section that is missing or out of order, and `review-ui` seats the same fact about a
- * whole derived document — a capture set's `manifest.json`, or `design-harness.json` at the
+ * whole derived document — a capture set's `manifest.json`, or the declared `uiCapture` at the
  * tier-choice read. Naming the pair is the claim a bare number cannot make.
  */
 export const REVIEW_UI_SEATS: SharedSeats = {...SHARED_SEATS, MALFORMED_DOCUMENT: "BAD_SECTIONS"};

@@ -14,12 +14,10 @@ import {act, fireEvent, render, screen, within} from "@testing-library/react";
 import axe from "axe-core";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
-import {useState} from "react";
 import {describe, expect, it} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId, type RendererRef} from "../../registry/program.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
-import {applyMsg} from "../core/index.ts";
 import type {DeskEmptyReason} from "../desk/index.ts";
 import {inspectorRenderer, statusRenderer} from "../desk/index.ts";
 import type {PrefixTable} from "../keys/index.ts";
@@ -32,6 +30,7 @@ import {noDeskTables} from "./desk-snapshot.ts";
 import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 import type {MountResolver} from "./mount.ts";
+import {useTestKernel} from "./press.testing.ts";
 
 installDomShims();
 
@@ -106,13 +105,13 @@ function Harness({
 	resolveMount = boundEverywhere,
 	onReady,
 }: HarnessProps): ReactElement {
-	const [state, setState] = useState(initial);
-	const dispatch = (msg: ShellMsg): void => setState((current) => applyMsg(table, current, msg)[0]);
-	onReady?.(dispatch);
+	const kernel = useTestKernel(table, initial);
+	onReady?.(kernel.dispatch);
 	return (
 		<Desk
-			state={state}
-			dispatch={dispatch}
+			state={kernel.state}
+			dispatch={kernel.dispatch}
+			press={kernel.press}
 			resolveMount={resolveMount}
 			table={table}
 			deskTables={deskTables}

@@ -197,9 +197,13 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 						yield* agent.start({cwd: CWD});
 						yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
 						yield* agent.prompt("hello");
-						assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 1)), [
+						// The send's own `prompting` leads the turn (#8107); the init frame's model
+						// line is the next thing out.
+						assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 2)), [
+							{kind: "phase", phase: "prompting"},
 							{
 								kind: "usage",
+								turn: "claude:model-announcement",
 								model: "claude-fable-5-1",
 								inputTokens: 0,
 								outputTokens: 0,
@@ -230,7 +234,10 @@ describe("start on a resume", () => {
 	it.effect("passes the session id through and reads that session's store", () =>
 		on({rows: rows()}, (agent, scripted) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
 				assert.deepStrictEqual(scripted.reads, [{sessionId: TOOL_SESSION_ID, dir: CWD}]);
 				assert.strictEqual(scripted.opened[0]?.record.options.resume, TOOL_SESSION_ID);
 			}),
@@ -240,7 +247,12 @@ describe("start on a resume", () => {
 	it.effect("refuses a session the store does not hold as SessionNotFound", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				on({}, (agent) => agent.start({cwd: CWD, resume: "00000000-0000-4000-8000-00000000dead"})),
+				on({}, (agent) =>
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: "00000000-0000-4000-8000-00000000dead", holdsTranscript: false},
+					}),
+				),
 			);
 			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/StartError");
 			assert.strictEqual(failure(exit).reason, "session-not-found");
@@ -250,7 +262,12 @@ describe("start on a resume", () => {
 	it.effect("takes the session down rather than leaving it on starting", () =>
 		on({}, (agent) =>
 			Effect.gen(function* () {
-				yield* Effect.exit(agent.start({cwd: CWD, resume: "00000000-0000-4000-8000-00000000dead"}));
+				yield* Effect.exit(
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: "00000000-0000-4000-8000-00000000dead", holdsTranscript: false},
+					}),
+				);
 				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 2)), [
 					{kind: "phase", phase: "starting"},
 					{kind: "phase", phase: "gone"},
@@ -266,7 +283,10 @@ describe("start on a resume", () => {
 			{rows: rows().slice(0, 2)},
 			(agent) =>
 				Effect.gen(function* () {
-					yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+					yield* agent.start({
+						cwd: CWD,
+						resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+					});
 					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
 					assert.deepStrictEqual(events[START_EVENTS], {
 						kind: "permission-resolved",
@@ -280,7 +300,10 @@ describe("start on a resume", () => {
 	it.effect("emits no resolution when every stored call already settled", () =>
 		on({rows: rows(), opening: messages("tool-turn")}, (agent) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
 				assert.notStrictEqual(events[START_EVENTS]?.kind, "permission-resolved");
 			}),

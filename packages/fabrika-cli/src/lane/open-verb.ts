@@ -21,11 +21,16 @@
  * lane already held the same number as a task — two ledgers over one piece of work, reconciled by
  * nothing. That refusal is {@link LANE_IS_CHILD} and names the parent's lane as the one to
  * drive. Epic wins the precedence, so a sub-epic still routes to `lane emit`.
+ *
+ * The repo's declared `laneConcurrencyCap` is the last gate before the write, and an issue lane's
+ * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
+import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_IS_CHILD, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
+import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import {placementRefusal} from "./refusals.ts";
 import {type LaneRef, placeMachine} from "./store.ts";
@@ -39,6 +44,13 @@ export interface OpenOptions<R = never> extends LaneRef {
 	readonly issue: number | null;
 	/** The board reader, or `null` for the offline boot a caller gets by passing none. */
 	readonly expectation: ExpectationReader<R> | null;
+	/**
+	 * The repo's declared `laneConcurrencyCap`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * Read for every boot and applied to an issue lane only: the cap counts the issue lanes under
+	 * this root, and a chore lane lives under a root of its own that nothing here counts.
+	 */
+	readonly cap: Read<number | null>;
 }
 
 export const runOpen = <R = never>(
@@ -82,6 +94,12 @@ export const runOpen = <R = never>(
 						: `${VERB}: #${issue} hangs under #${parent}, whose lane already carries it as a task — drive that lane (\`fabrika lane status ${parent}\`), never a second ledger for the child. Nothing was written.`,
 				);
 			}
+		}
+		// Last, so a permanent defect — the wrong template for this issue, a child that gets no lane —
+		// is named ahead of a cap that will clear on its own the moment a seat frees.
+		if (issue !== null) {
+			const capped = yield* capRefusal(VERB, options.cap, options.root);
+			if (capped !== null) return capped;
 		}
 		const placed = yield* placeMachine(options, template.success);
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);

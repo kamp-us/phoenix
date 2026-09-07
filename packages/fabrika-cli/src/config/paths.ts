@@ -13,10 +13,17 @@ import {
 	cycleDocKey,
 	DECISIONS_DIR,
 	decisionsDirKey,
-	designHarnessKey,
 	type PathValue,
 	roadmapFileKey,
 } from "./keys/paths.ts";
+import {
+	NO_UI_SURFACES,
+	prefixesOf,
+	type UiCapture,
+	type UiSurface,
+	uiCaptureKey,
+	uiSurfacesKey,
+} from "./keys/ui-surfaces.ts";
 import {type Read, readKey} from "./read-key.ts";
 
 export type {Read};
@@ -174,16 +181,73 @@ export const cycleDocOr = (
 ): Effect.Effect<PathOr, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.map(readCycleDoc(cwd), (read) => pathOr(verb, consequence, read));
 
-/** The design harness's path, or the refusal its readers print. */
-export const designHarnessOr = (
+/** The runnable apps this repo renders. */
+export const readUiSurfaces = (
+	cwd: string,
+): Effect.Effect<Read<ReadonlyArray<UiSurface>>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, uiSurfacesKey);
+
+/** How a capture of one of those surfaces is taken. */
+export const readUiCapture = (
+	cwd: string,
+): Effect.Effect<Read<UiCapture>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, uiCaptureKey);
+
+/**
+ * The declared UI surfaces, or the one refusal sentence every reader of them prints.
+ *
+ * The single reader every `ui`-class derivation goes through — the two scope verbs, `heal-ci
+ * diagnose`, both `lane prove` sites and `review-ui route` — so the prefixes that raise the class and
+ * the apps `ui render` boots can never be two different lists. `prefixes` rides beside the
+ * rows because a class derivation asks for exactly that, and deriving it at each call site is the
+ * second copy this key exists to remove.
+ */
+export type UiSurfacesRead =
+	| {
+			readonly _tag: "Surfaces";
+			readonly surfaces: ReadonlyArray<UiSurface>;
+			readonly prefixes: ReadonlyArray<string>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+export const uiSurfacesOr = (
 	verb: string,
 	cwd: string,
 	consequence: string,
-): Effect.Effect<PathOr, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.map(readDesignHarness(cwd), (read) => pathOr(verb, consequence, read));
+): Effect.Effect<UiSurfacesRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readUiSurfaces(cwd), (read) =>
+		read._tag === "Value"
+			? {
+					_tag: "Surfaces" as const,
+					surfaces: read.value,
+					prefixes: prefixesOf(read.value),
+					note: read.note,
+				}
+			: {
+					_tag: "Refused" as const,
+					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+				},
+	);
 
-/** The headless-render harness config. */
-export const readDesignHarness = (
+export type UiCaptureRead =
+	| {readonly _tag: "Capture"; readonly capture: UiCapture; readonly note: string}
+	| {readonly _tag: "Refused"; readonly message: string};
+
+/** The capture settings, or the refusal its readers print. */
+export const uiCaptureOr = (
+	verb: string,
 	cwd: string,
-): Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path> =>
-	readKey(cwd, designHarnessKey);
+	consequence: string,
+): Effect.Effect<UiCaptureRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readUiCapture(cwd), (read) =>
+		read._tag === "Value"
+			? {_tag: "Capture" as const, capture: read.value, note: read.note}
+			: {
+					_tag: "Refused" as const,
+					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+				},
+	);
+
+/** The one sentence a verb prints when the declared list is empty — stated, never silent. */
+export const noUiSurfaces = (verb: string): string => `${verb}: ${NO_UI_SURFACES}.`;

@@ -52,7 +52,15 @@ const setManifest = (set: string, rows: ReadonlyArray<{surface: string; firstRen
 		})),
 	});
 
+/** The lane root `git rev-parse` answers with, where the config the surfaces are read from lives. */
+const LANE_ROOT = "/repo/trees/lane-a";
+
 const files = (): Record<string, Uint8Array | string> => ({
+	[`${LANE_ROOT}/.fabrika.jsonc`]: JSON.stringify({
+		uiSurfaces: [
+			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+		],
+	}),
 	[`${SCRATCH}/before/manifest.json`]: setManifest("before", [{surface: "/board"}]),
 	[`${SCRATCH}/before/board.png`]: PNG,
 	[`${SCRATCH}/after/manifest.json`]: setManifest("after", [{surface: "/board"}]),

@@ -32,7 +32,7 @@ import {
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /**
  * A required file this group derives from is absent, does not parse, or violates its schema — a
- * capture set's `manifest.json`, or `design-harness.json` at the tier-choice read.
+ * capture set's `manifest.json`, or the declared `uiCapture` at the tier-choice read.
  *
  * The base's section seat, widened to the whole-file rule the `ui` group states: a document read
  * for a decision is read whole, and a half-read one decides nothing.

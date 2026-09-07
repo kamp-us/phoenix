@@ -491,11 +491,9 @@ const check = leafCommand(
 		yield* emit(yield* runCheck({surface, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
-	Command.withShortDescription(
-		"Run this surface's validators here, with the build cache bypassed.",
-	),
+	Command.withShortDescription("Run this surface's validators in this tree."),
 	Command.withDescription(
-		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
+		'Run this surface\'s validators IN THIS TREE — a green borrowed from another checkout has been another tree\'s answer. Whether a validator reads a build cache is the repo\'s own declaration, not this verb\'s. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
 	),
 );
 

@@ -30,7 +30,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
@@ -279,6 +279,18 @@ const prove = (
 			]);
 		}
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.",
+		);
+		if (surfaces._tag === "Refused") {
+			if (!park) return refuse(LANE_UNREADABLE, surfaces.message);
+			return uncontradicted(event, taskId, issue, null, [
+				`${VERB}: the declared UI surfaces did not read, so the derived namespace set is UNKNOWN and nothing could contradict the park — it stands.`,
+			]);
+		}
+
 		if (claim._tag === "RangeVerdict") {
 			return yield* proveRangeVerdicts(
 				repo,
@@ -287,6 +299,7 @@ const prove = (
 				taskId,
 				event,
 				governed.roots,
+				surfaces.prefixes,
 				claim.defers,
 			);
 		}
@@ -368,6 +381,7 @@ const prove = (
 				event,
 				diagnostics,
 				governed.roots,
+				surfaces.prefixes,
 			);
 		}
 		return yield* proveVerdicts(
@@ -378,6 +392,7 @@ const prove = (
 			event,
 			diagnostics,
 			governed.roots,
+			surfaces.prefixes,
 			claim.defers,
 		);
 	});
@@ -594,6 +609,7 @@ const readNamespaceRows = (
 	pr: number,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<HeadRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -610,7 +626,7 @@ const readNamespaceRows = (
 		if (files._tag === "Failure") {
 			return {_tag: "Unread" as const, what: `the changed files of #${pr}`, reason: files.reason};
 		}
-		const derived = shipNamespacesOf(partitionWithUi(files.value, roots));
+		const derived = shipNamespacesOf(partitionWithUi(files.value, roots, uiPrefixes));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
 
@@ -794,10 +810,11 @@ const proveVerdicts = (
 	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, defers);
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, defers);
 		if (read._tag === "Unread") return {...unreadable(read.what, read.reason), deferred: []};
 		if (read._tag === "Gone") {
 			return {...seat({_tag: "Absent", what: read.what}, diagnostics), deferred: []};
@@ -852,9 +869,10 @@ const proveParkUncontradicted = (
 	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, []);
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, []);
 		if (read._tag !== "Rows") {
 			return uncontradicted(event, taskId, issue, pr, [
 				...diagnostics,
@@ -976,6 +994,7 @@ const proveRangeVerdicts = (
 	taskId: string,
 	event: string,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -987,7 +1006,7 @@ const proveRangeVerdicts = (
 		if (content._tag === "Failure") {
 			return {...unreadable(`the content ${range} changes`, content.reason), deferred: []};
 		}
-		const derived = shipNamespacesOf(partitionWithUi(content.value.paths, roots));
+		const derived = shipNamespacesOf(partitionWithUi(content.value.paths, roots, uiPrefixes));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
 

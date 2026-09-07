@@ -6,6 +6,7 @@ import {
 	type HttpReply,
 	linkNext,
 	type Scripted,
+	uiConfigured,
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
@@ -141,10 +142,10 @@ describe("runDiagnose answers", () => {
 	// gate calls satisfied must not classify `ungated` here, or the healer dispatches it back to a
 	// review whose namespace no sanctioned path can fill — the loop the route exists to close.
 	it("counts a head-bound routed-elsewhere record as a filled review-ui namespace", async () => {
-		const out = await run(
+		const out = await runWith(
 			script([
 				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
-				[FILES, reply(files("apps/web/src/flags/shell-keys.ts"))],
+				[FILES, reply(files("apps/site/src/flags/shell-keys.ts"))],
 				[
 					COMMENTS,
 					reply(
@@ -158,6 +159,7 @@ describe("runDiagnose answers", () => {
 					),
 				],
 			]),
+			uiConfigured,
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("gates\tsatisfied\t2/2");
@@ -165,10 +167,10 @@ describe("runDiagnose answers", () => {
 	});
 
 	it("re-opens the namespace when the route binds a head that has moved", async () => {
-		const out = await run(
+		const out = await runWith(
 			script([
 				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
-				[FILES, reply(files("apps/web/src/flags/shell-keys.ts"))],
+				[FILES, reply(files("apps/site/src/flags/shell-keys.ts"))],
 				[
 					COMMENTS,
 					reply(
@@ -182,6 +184,7 @@ describe("runDiagnose answers", () => {
 					),
 				],
 			]),
+			uiConfigured,
 		);
 		expect(out.stdout).toContain("gates\tblocked\t1/2");
 	});

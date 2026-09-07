@@ -11,10 +11,9 @@ import {
 import {fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {
-	BAD_SECTIONS,
 	CAPTURE_INVALID,
 	LANE_NOT_MINE,
-	NO_HARNESS,
+	NO_UI_SURFACE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	RENDER_CRASHED,
@@ -24,7 +23,7 @@ import {encodePng, type FakeBytesFsOptions, fakeBytesFs, solid} from "./fakes.te
 import {type BrowseLeg, type HarnessLeg, runRender, type ShotOutcome} from "./render-verb.ts";
 
 const ROOT = "/repo/trees/lane-a";
-const HARNESS = `${ROOT}/design-harness.json`;
+const CONFIG = `${ROOT}/.fabrika.jsonc`;
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 const SET_DIR = `/tmp/fabrika-build/s-9f2e/4312-${NONCE}/after`;
 
@@ -87,21 +86,28 @@ const run = (
 		),
 	);
 
-const WEB = {name: "web", mount: "/", command: "pnpm dev --port {{port}}"};
+const WEB = {
+	name: "web",
+	prefix: "apps/site/src/",
+	mount: "/",
+	command: "pnpm dev --port {{port}}",
+};
 const DESK = {
 	name: "desk-chat",
+	prefix: "apps/desk/src/",
 	mount: "/desk/chat",
 	basePath: "/",
 	command: "pnpm proof:chat --port {{port}}",
 };
-const harnessFile = JSON.stringify({apps: [WEB]});
-const twoApps = JSON.stringify({apps: [WEB, DESK]});
+const config = (surfaces: ReadonlyArray<unknown>, capture?: Record<string, unknown>) =>
+	JSON.stringify(
+		capture === undefined ? {uiSurfaces: surfaces} : {uiSurfaces: surfaces, uiCapture: capture},
+	);
+const harnessFile = config([WEB]);
+const twoApps = config([WEB, DESK]);
 const SESSION = `${ROOT}/.fabrika/design-session.json`;
-const withSession = JSON.stringify({
-	apps: [WEB],
-	storageState: ".fabrika/design-session.json",
-});
-const captured = {files: {[HARNESS]: harnessFile, [`${SET_DIR}/board.png`]: PNG}};
+const withSession = config([WEB], {storageState: ".fabrika/design-session.json"});
+const captured = {files: {[CONFIG]: harnessFile, [`${SET_DIR}/board.png`]: PNG}};
 
 describe("runRender operands", () => {
 	it("refuses zero surfaces on 1 — no tool guesses surfaces from a diff", async () => {
@@ -178,7 +184,7 @@ describe("runRender", () => {
 
 	it("refuses an invalid capture on 16 — evidence nobody can open is not evidence", async () => {
 		const outcome = await run(LANE_OK, {
-			files: {[HARNESS]: harnessFile, [`${SET_DIR}/board.png`]: new Uint8Array(0)},
+			files: {[CONFIG]: harnessFile, [`${SET_DIR}/board.png`]: new Uint8Array(0)},
 		});
 		expect(outcome.code).toBe(CAPTURE_INVALID);
 		expect(outcome.stderr.join("\n")).toContain("captured invalid bytes (zero bytes)");
@@ -187,7 +193,7 @@ describe("runRender", () => {
 	it("reports the SMALLEST applicable code when outcomes mix, and enumerates every surface", async () => {
 		const outcome = await run(
 			LANE_OK,
-			{files: {[HARNESS]: harnessFile, [`${SET_DIR}/board.png`]: PNG}},
+			{files: {[CONFIG]: harnessFile, [`${SET_DIR}/board.png`]: PNG}},
 			{
 				surfaces: ["/board", "/terms", "/new"],
 				browse: browsing((url) =>
@@ -241,19 +247,25 @@ describe("runRender", () => {
 		expect(outcome.stderr.at(-1)).toContain('surface "/board" is UNKNOWN');
 	});
 
-	it("refuses a missing harness declaration on 19", async () => {
+	it("refuses a repo declaring no uiSurfaces row on 19, saying so", async () => {
 		const outcome = await run(LANE_OK, {files: {}});
-		expect(outcome.code).toBe(NO_HARNESS);
+		expect(outcome.code).toBe(NO_UI_SURFACE);
+		expect(outcome.stderr.at(-1)).toContain("declares no `uiSurfaces` rows");
 	});
 
-	it("refuses a harness that violates its schema on 4", async () => {
-		const outcome = await run(LANE_OK, {files: {[HARNESS]: "{}"}});
-		expect(outcome.code).toBe(BAD_SECTIONS);
+	it("refuses a declared empty list on 19 too — an empty list is never read as silence", async () => {
+		const outcome = await run(LANE_OK, {files: {[CONFIG]: config([])}});
+		expect(outcome.code).toBe(NO_UI_SURFACE);
 	});
 
-	it("refuses on 11 when the harness declares a storageState no file backs", async () => {
+	it("refuses a uiSurfaces value that violates its schema on 11", async () => {
+		const outcome = await run(LANE_OK, {files: {[CONFIG]: JSON.stringify({uiSurfaces: [{}]})}});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	it("refuses on 11 when uiCapture declares a storageState no file backs", async () => {
 		const outcome = await run(LANE_OK, {
-			files: {...captured.files, [HARNESS]: withSession},
+			files: {...captured.files, [CONFIG]: withSession},
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("would capture the login page");
@@ -263,7 +275,7 @@ describe("runRender", () => {
 		const seen: Array<string | null> = [];
 		const outcome = await run(
 			LANE_OK,
-			{files: {...captured.files, [HARNESS]: withSession, [SESSION]: PNG}},
+			{files: {...captured.files, [CONFIG]: withSession, [SESSION]: PNG}},
 			{
 				browse: (request) => {
 					seen.push(request.storageState);
@@ -310,7 +322,7 @@ describe("runRender", () => {
 describe("runRender across apps", () => {
 	const bothCaptured = {
 		files: {
-			[HARNESS]: twoApps,
+			[CONFIG]: twoApps,
 			[`${SET_DIR}/board.png`]: PNG,
 			[`${SET_DIR}/desk-chat.png`]: PNG,
 		},
@@ -345,14 +357,14 @@ describe("runRender across apps", () => {
 	it("refuses on 10 a surface no declared mount claims, naming the mounts", async () => {
 		const outcome = await run(
 			LANE_OK,
-			{files: {[HARNESS]: JSON.stringify({apps: [DESK]})}},
+			{files: {[CONFIG]: config([DESK])}},
 			{
 				surfaces: ["/board"],
 			},
 		);
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toContain(
-			'--surface "/board" falls outside every mount design-harness.json declares (/desk/chat)',
+			'--surface "/board" falls outside every mount `uiSurfaces` declares (/desk/chat)',
 		);
 	});
 });

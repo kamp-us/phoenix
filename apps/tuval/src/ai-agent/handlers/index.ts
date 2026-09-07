@@ -39,6 +39,7 @@ import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/inde
 import {SessionOpening} from "../opening.ts";
 import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
+	type ResumeTarget,
 	type StartOptions,
 	type TranscriptPage,
 	TransportError,
@@ -143,7 +144,7 @@ export const aiAgentHandlers = <RIn = never>(
 	 */
 	const open = (
 		cwd: string,
-		resume: string | null,
+		resume: ResumeTarget | null,
 		mode: Mode | null,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
@@ -196,9 +197,34 @@ export const aiAgentHandlers = <RIn = never>(
 					: [{type: "start", cwd: opening.value.cwd, resume: opening.value.resume} as const],
 			),
 
-		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume, cmd.mode),
+		"aiAgent.start": (cmd) =>
+			open(
+				cmd.cwd,
+				cmd.resume === null ? null : {sessionId: cmd.resume, holdsTranscript: false},
+				cmd.mode,
+			),
 
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode),
+		// The one resume whose window already holds the transcript: a reconnect stands a new
+		// transport under the state this process came back with, so the layer owes it no replay
+		// (#8369). A `start` carrying a resume is the picker opening a session on a fresh process,
+		// which holds nothing and needs one.
+		//
+		// What it does owe is everything the session finished while the socket was down, so the
+		// restored tail itself rides with the flag. The layer reads both facts off it: where
+		// "already on screen" stops, and what each of those rows looked like when this process last
+		// saw it — a row that moved while the transport was gone is not one the operator has read.
+		"aiAgent.reconnect": (cmd) =>
+			Effect.flatMap(readSession, (state) =>
+				open(
+					cmd.cwd,
+					{
+						sessionId: cmd.sessionId,
+						holdsTranscript: true,
+						held: state?.transcript.items ?? [],
+					},
+					cmd.mode,
+				),
+			),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending

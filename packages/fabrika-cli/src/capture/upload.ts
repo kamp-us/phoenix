@@ -155,8 +155,8 @@ export interface UploadAssetOptions {
  * Impure: POST the PNG bytes to the undocumented user-attachments endpoint and
  * classify the response. Error channel is `never` — any HttpClient failure
  * (network, non-2xx, body-read) is caught and degraded to `{hostedUrl: null,
- * uploadError}`, matching the display-only, out-of-decision-path contract of ADR
- * 0165.
+ * uploadError}`, matching the display-only, out-of-decision-path contract this repo's own
+ * decision corpus sets for it.
  */
 export const uploadAsset = (
 	opts: UploadAssetOptions,

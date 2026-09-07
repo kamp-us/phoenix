@@ -10,7 +10,8 @@
  * `mapping` is the whole memory this mapping needs. A `tool_result` block names only the id of the
  * call it answers, so the tool's name and input have to survive from the `tool_use` that opened it,
  * and a `result` message reports cost without naming a model, so the model has to survive from
- * `init`.
+ * `init`. A streamed reply is the third: its deltas each carry a fresh uuid, so the turn's stable id
+ * and the text so far have to survive from the `message_start` that opened it.
  */
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
@@ -44,16 +45,50 @@ export interface ToolCall {
 	readonly parentId: string | null;
 }
 
+/**
+ * The reply a `stream_event` run is still writing.
+ *
+ * `id` is the `msg_*` the wrapped `message_start` announced, and it is the only id on this path
+ * that survives a whole turn: `SDKPartialAssistantMessage.uuid` is the *frame's*, fresh per delta
+ * (`sdk.d.ts`), so keying a partial on it would append a row per delta. Every `assistant` frame of
+ * the turn carries the same `message.id`, which is what lets their text land on this row instead of
+ * beside it — and there is one such frame *per completed content block*, not one per turn
+ * (`sdk.d.ts`, `SDKAssistantMessage`), so a thinking block's frame arrives before the answer has
+ * streamed a word. The reply therefore outlives them all and closes on the end of the stream.
+ *
+ * `at` is the turn's own clock, held so the row does not jump when it settles — the same reason
+ * `ToolCall` holds one.
+ */
+export interface PartialReply {
+	readonly id: string;
+	readonly text: string;
+	readonly at: number;
+}
+
 export interface Mapping {
 	/** The model `init` named, which is the only place a Claude session says it. */
 	readonly model: string;
 	/** Open tool calls by `tool_use` block id. */
 	readonly toolCalls: ReadonlyMap<string, ToolCall>;
+	/** The reply the deltas are growing, or `null` when no turn is streaming. */
+	readonly partial: PartialReply | null;
+	/**
+	 * The reply whose stream has closed, kept so a frame still naming that `msg_*` finds its row.
+	 * Dropping the id at the close is what let a late frame mint a second copy of one answer, keyed
+	 * on the frame's own uuid and appended below whatever arrived in between (#8366).
+	 */
+	readonly settled: PartialReply | null;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
 }
 
-export const emptyMapping: Mapping = {model: "", toolCalls: new Map(), skipped: 0};
+export const emptyMapping: Mapping = {
+	model: "",
+	toolCalls: new Map(),
+	partial: null,
+	settled: null,
+	skipped: 0,
+};
 
 export interface MappingOptions {
 	/** Epoch milliseconds for any message carrying no timestamp of its own. */
@@ -101,6 +136,12 @@ const thinkingTextOf = (parts: ReadonlyArray<ThinkingPart>): string =>
  * `aborted` is the SDK's mark for a message the stream cut mid-word, so it is the transcript's
  * `interrupted` — and an aborted frame with no text still earns its item, because the operator
  * needs to see that the turn was cut rather than nothing at all.
+ *
+ * While a reply of this same turn is streaming, the frame delivers one completed content block and
+ * nothing more: it feeds its text into the open reply and emits no row of its own, because the
+ * deltas are already drawing that row and the stream's own end is what settles it. A frame is the
+ * whole turn — and so emits the row — only when nothing is streaming, when it carries a real
+ * `stop_reason`, or when it was aborted.
  */
 export const assistantEvents = (
 	message: unknown,
@@ -108,11 +149,22 @@ export const assistantEvents = (
 	options: MappingOptions,
 ): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
-	const at = timestampOf(message, options.at);
 	const body = message.message;
-	const text = textOf(body);
+	const frameText = textOf(body);
 	const interrupted = message.aborted === true;
-	const id = typeof message.uuid === "string" ? message.uuid : `assistant-${at}`;
+	// The deltas of this same reply, when the run streamed them: this frame's `message.id` is the
+	// `msg_*` the `message_start` announced, so the row lands on the partials rather than beside
+	// them, at the clock they were written under. The stream having already closed changes nothing
+	// about where the frame belongs, so a match against the settled reply routes it the same way.
+	const open = replyOf(body, mapping.partial);
+	const closed = open === null ? replyOf(body, mapping.settled) : null;
+	const row = open ?? closed;
+	const at = row === null ? timestampOf(message, options.at) : row.at;
+	const id = row?.id ?? (typeof message.uuid === "string" ? message.uuid : `assistant-${at}`);
+	const reply = row === null ? null : grown(row, addedTextOf(row.text, frameText));
+	const ends = interrupted || stopReasonOf(body) !== null;
+	const settles = open === null || ends;
+	const text = reply === null ? frameText : reply.text;
 	const events: AgentEvent[] = [];
 	const thinking = thinkingOf(body);
 	if (thinking.length > 0) {
@@ -127,7 +179,7 @@ export const assistantEvents = (
 			}),
 		);
 	}
-	if (text.length > 0 || interrupted) {
+	if (settles && (text.length > 0 || interrupted)) {
 		events.push(
 			item({
 				kind: "assistant",
@@ -160,7 +212,136 @@ export const assistantEvents = (
 			),
 		);
 	}
-	return {mapping: {...mapping, toolCalls}, events};
+	// Only a frame of the open reply's own turn touches it. Any other assistant frame can arrive
+	// mid-stream — a subagent's does — and closing on that one would freeze the reply mid-word.
+	return {
+		mapping: {
+			...mapping,
+			toolCalls,
+			partial: open === null ? mapping.partial : ends ? null : reply,
+			// A row this frame leaves settled stays reachable, so a further frame of the same turn —
+			// a trailing content block — still lands on it rather than beside it.
+			settled: reply === null || (open !== null && !ends) ? mapping.settled : reply,
+		},
+		events,
+	};
+};
+
+/** The reply this frame belongs to, or `null` when it is not a frame of that reply's turn. */
+const replyOf = (body: unknown, reply: PartialReply | null): PartialReply | null => {
+	if (reply === null || !isRecord(body)) return null;
+	return body.id === reply.id ? reply : null;
+};
+
+/**
+ * The turn's stop reason, which a per-block frame of a streamed reply never carries: on those
+ * "message.stop_reason is null … the turn's stop reason and total usage arrive on the result
+ * message" (`sdk.d.ts` 0.3.259, `SDKAssistantMessage`). So a real one marks the whole message.
+ */
+const stopReasonOf = (body: unknown): string | null => {
+	if (!isRecord(body)) return null;
+	return typeof body.stop_reason === "string" ? body.stop_reason : null;
+};
+
+/**
+ * What a frame's text adds to the reply the deltas are growing — usually nothing, because those
+ * deltas already wrote this block. It matters for a block whose deltas never reached this mapping
+ * (a reader that joined mid-turn, a delta kind this mapping drops): the frame is then the only
+ * place that text exists, and it joins on a newline the way `textOf` joins a body's blocks.
+ */
+const addedTextOf = (sofar: string, frameText: string): string => {
+	if (frameText.length === 0 || sofar.endsWith(frameText)) return "";
+	return sofar.length === 0 ? frameText : `\n${frameText}`;
+};
+
+const textDeltaOf = (event: Record<string, unknown>): string => {
+	const delta = event.delta;
+	if (!isRecord(delta) || delta.type !== "text_delta") return "";
+	return typeof delta.text === "string" ? delta.text : "";
+};
+
+/** The `message_delta` that announces the turn's stop reason, which ends the stream with it. */
+const stopsStream = (event: Record<string, unknown>): boolean =>
+	event.type === "message_delta" && stopReasonOf(event.delta) !== null;
+
+const grown = (open: PartialReply, text: string): PartialReply => ({
+	...open,
+	text: open.text + text,
+});
+
+/**
+ * One streaming frame of the reply being written, as a re-upsert of the one assistant row.
+ *
+ * The turn's `message_start` is what opens the row's identity, and nothing else can: every other
+ * frame here carries only its own per-delta `uuid`. So a delta arriving with no open reply is
+ * counted rather than given an id of its own — that happens to a reader that joined the stream
+ * mid-turn, and inventing a key for it would put a second row on screen for one answer.
+ *
+ * A `thinking_delta` is not assistant text. The reasoning a turn streams is the `thinking` item
+ * kind's, never folded into the reply, so it leaves this row where it was.
+ *
+ * The end of the stream is what settles the row: `message_stop`, or the `message_delta` carrying
+ * the turn's `stop_reason`. Nothing earlier can, because the turn emits one `assistant` frame per
+ * completed content block and the first of those can be a thinking block.
+ */
+export const partialReplyEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const event = message.event;
+	if (!isRecord(event)) return skipMessage(mapping);
+	if (event.type === "message_start") {
+		const body = event.message;
+		const id = isRecord(body) && typeof body.id === "string" ? body.id : "";
+		if (id.length === 0) return skipMessage(mapping);
+		const at = timestampOf(message, options.at);
+		return {mapping: {...mapping, partial: {id, text: "", at}}, events: []};
+	}
+	const open = mapping.partial;
+	if (open === null) return skipMessage(mapping);
+	if (event.type === "message_stop" || stopsStream(event)) {
+		return {
+			mapping: {...mapping, partial: null, settled: open},
+			events:
+				open.text.length === 0
+					? []
+					: [
+							item({
+								kind: "assistant",
+								id: itemId(open.id),
+								timestamp: open.at,
+								text: open.text,
+							}),
+						],
+		};
+	}
+	if (event.type === "content_block_start") {
+		const block = event.content_block;
+		if (!isRecord(block) || block.type !== "text") return skipMessage(mapping);
+		// `textOf` joins a body's text blocks on a newline, so the growing row joins them the same
+		// way: without this the last upsert would reflow text the operator was already reading.
+		const lead = open.text.length === 0 ? "" : "\n";
+		const opening = typeof block.text === "string" ? block.text : "";
+		return {mapping: {...mapping, partial: grown(open, lead + opening)}, events: []};
+	}
+	if (event.type !== "content_block_delta") return skipMessage(mapping);
+	const text = textDeltaOf(event);
+	if (text.length === 0) return skipMessage(mapping);
+	const partial = grown(open, text);
+	return {
+		mapping: {...mapping, partial},
+		events: [
+			item({
+				kind: "assistant",
+				id: itemId(partial.id),
+				timestamp: partial.at,
+				text: partial.text,
+				partial: true,
+			}),
+		],
+	};
 };
 
 /**
@@ -248,9 +429,9 @@ export const resultEvents = (
 ): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 	const failed = message.is_error === true || message.subtype !== "success";
 	if (failed) {
-		const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 		const subtype = typeof message.subtype === "string" ? message.subtype : "error";
 		return {
 			mapping,
@@ -270,6 +451,7 @@ export const resultEvents = (
 		events: [
 			{
 				kind: "usage",
+				turn: id,
 				model: mapping.model,
 				inputTokens: tokensOf(message.usage, "input_tokens"),
 				outputTokens: tokensOf(message.usage, "output_tokens"),
@@ -278,6 +460,13 @@ export const resultEvents = (
 		],
 	};
 };
+
+/**
+ * The turn id `init`'s announcement rides under. It is not a turn: `init` fires at the start of
+ * every turn and carries no spend, so one reserved key keeps the session's ledger from growing an
+ * empty entry per turn while the model it names still lands (`core/fold.ts`, `addUsage`).
+ */
+const MODEL_ANNOUNCEMENT = "claude:model-announcement";
 
 /**
  * `init` is where a session says which model it is, and the only place it ever says so.
@@ -292,7 +481,9 @@ export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 	const model = typeof message.model === "string" ? message.model : mapping.model;
 	return {
 		mapping: {...mapping, model},
-		events: [{kind: "usage", model, inputTokens: 0, outputTokens: 0, cost: 0}],
+		events: [
+			{kind: "usage", turn: MODEL_ANNOUNCEMENT, model, inputTokens: 0, outputTokens: 0, cost: 0},
+		],
 	};
 };
 

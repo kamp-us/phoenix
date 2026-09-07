@@ -25,8 +25,9 @@
  * `body.includes("Filed by an agent")` — do not "fix" the two back into agreement.** That check is
  * correct there: it is a read-back over a body the same process just composed, so nothing else can
  * be in it. Here the body is foreign, and a bare substring fails **open toward `agent`** — an issue
- * that merely quotes the phrase (a bug report about the footer, a pasted body, a discussion of ADR
- * 0159) would answer `agent`, which is the close-eligible direction. Anchoring makes the failure
+ * that merely quotes the phrase (a bug report about the footer, a pasted body, a discussion of
+ * the footer's own decision record) would answer `agent`, which is the close-eligible direction.
+ * Anchoring makes the failure
  * land on `human`, the protected one.
  *
  * An empty body has no footer, so it answers `false`. An *unreadable* body never reaches here: that

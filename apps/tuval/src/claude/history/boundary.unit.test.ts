@@ -71,6 +71,7 @@ describe("the Claude history mapping is pure", () => {
 			"permission-denied",
 			"resumed-init",
 			"session-messages",
+			"streaming-turn",
 			"thinking-turn",
 			"tool-turn",
 			"unknown-message",

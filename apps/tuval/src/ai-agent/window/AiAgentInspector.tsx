@@ -25,7 +25,7 @@ import {useEffect, useState} from "react";
 import type {AnyInspectorRenderer} from "../../shell/desk/index.ts";
 import {inspectorRenderer} from "../../shell/desk/index.ts";
 import type {AnyWindowHost} from "../../shell/window/index.ts";
-import type {AiAgentSessionState} from "../core/index.ts";
+import {type AiAgentSessionState, usageTotals} from "../core/index.ts";
 import {isAiAgentSessionState} from "../core/snapshot.ts";
 import "./ai-agent-inspector.css";
 
@@ -49,13 +49,16 @@ const NO_SESSION_YET = "no session yet";
 /** The rows this panel shows, in the order it shows them. */
 const inspectorRows = (
 	state: AiAgentSessionState,
-): ReadonlyArray<readonly [label: string, value: string, className?: string]> => [
-	["Cost", money.format(state.usage.cost)],
-	["Input tokens", tokens.format(state.usage.inputTokens)],
-	["Output tokens", tokens.format(state.usage.outputTokens)],
-	["Session", state.sessionId ?? NO_SESSION_YET, "tuval-agent-inspector-wrap"],
-	["Directory", state.cwd, "tuval-agent-inspector-wrap"],
-];
+): ReadonlyArray<readonly [label: string, value: string, className?: string]> => {
+	const usage = usageTotals(state.usage);
+	return [
+		["Cost", money.format(usage.cost)],
+		["Input tokens", tokens.format(usage.inputTokens)],
+		["Output tokens", tokens.format(usage.outputTokens)],
+		["Session", state.sessionId ?? NO_SESSION_YET, "tuval-agent-inspector-wrap"],
+		["Directory", state.cwd, "tuval-agent-inspector-wrap"],
+	];
+};
 
 function AiAgentInspectorPanel({state}: {readonly state: AiAgentSessionState}): ReactElement {
 	return (

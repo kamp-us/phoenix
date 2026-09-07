@@ -4,7 +4,7 @@
  * `{type: string}` messages and `unknown` state; the program's own module knows the real shapes.
  */
 
-import {type Effect, type Option, Schema, type Scope} from "effect";
+import {type Effect, type Exit, type Option, Schema, type Scope} from "effect";
 import type {DispatchError} from "../host/actor.ts";
 import type {PortSchema, ProgramId} from "../registry/program.ts";
 import type {HandlerFailed} from "./errors.ts";
@@ -27,6 +27,17 @@ export interface StateSummary {
 	readonly revision: number;
 	/** The machine's current state — plain data by Demlik's invariant 1, never an Effect value. */
 	readonly state: unknown;
+}
+
+/**
+ * One dispatch and what it left behind: how the Msg itself settled, and the summary read inside the
+ * same critical section the fold ran in. The two travel together because a summary read *after* the
+ * fold is a later Msg's state under concurrency, and an acknowledgement built from it answers about
+ * somebody else's Msg (#8274).
+ */
+export interface Folded {
+	readonly settled: Exit.Exit<void, DispatchError<HandlerFailed>>;
+	readonly summary: StateSummary;
 }
 
 /** One change to the table: a row arrived, left, or its state summary moved. `row` reads live. */
@@ -55,6 +66,12 @@ export interface ProcessHandle {
 	readonly scope: Scope.Scope;
 	/** Apply `msg`, then wait for every transitive follow-up. Refused loudly once the process stopped. */
 	readonly dispatch: (msg: Message) => Effect.Effect<void, DispatchError<HandlerFailed>>;
+	/**
+	 * The same fold, answering with the state it left behind rather than with the error channel. A
+	 * caller that must tell what *its own* Msg did — an acknowledgement carrying a press's answer —
+	 * takes this one, because the summary here cannot be a later fold's (#8274).
+	 */
+	readonly dispatchFolded: (msg: Message) => Effect.Effect<Folded>;
 	readonly getState: () => unknown;
 	/** Close the scope: descendants first, then the actor's drain, Sub disposers and finalizers. Idempotent. */
 	readonly stop: Effect.Effect<void>;

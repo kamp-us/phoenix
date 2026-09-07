@@ -48,7 +48,7 @@ import {
 } from "./errors.ts";
 import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "./script.ts";
 import {newestFirst} from "./sessions.ts";
-import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
+import {type StartOptions, TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 interface ScriptState {
 	readonly started: boolean;
@@ -159,11 +159,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			}
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (options: {
-			readonly cwd: string;
-			readonly resume?: string;
-			readonly mode?: Mode;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (options: StartOptions) {
 			const current = yield* Ref.get(state);
 			if (!current.live) {
 				return yield* new StartError({
@@ -172,15 +168,16 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 					detail: "the scripted transport is down and nothing reconnects it",
 				});
 			}
-			if (options.resume !== undefined && options.resume !== script.sessionId) {
+			const resuming = options.resume?.sessionId;
+			if (resuming !== undefined && resuming !== script.sessionId) {
 				return yield* new StartError({
 					reason: "session-not-found",
 					cwd: options.cwd,
-					detail: `the script holds session ${script.sessionId}, not ${options.resume}`,
+					detail: `the script holds session ${script.sessionId}, not ${resuming}`,
 				});
 			}
 			yield* emit([{kind: "phase", phase: "starting"}]);
-			if (options.resume !== undefined) {
+			if (resuming !== undefined) {
 				yield* emit(script.history.map((item) => ({kind: "item", item}) as const));
 				const resumed = script.resumed ?? [];
 				yield* emit(resumed);
@@ -208,7 +205,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 				...previous,
 				started: true,
 				mode: openedOn,
-				...(options.resume === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
+				...(resuming === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
 			}));
 			return {sessionId: script.sessionId};
 		});
