@@ -276,6 +276,7 @@ describe("usage", () => {
 		expect(events.filter((event) => event.kind === "usage")).toEqual([
 			{
 				kind: "usage",
+				turn: "agy:usage:0",
 				model: "agy/gemini-3.8-flash-low",
 				inputTokens: 4481,
 				outputTokens: 110,
@@ -285,13 +286,15 @@ describe("usage", () => {
 	});
 
 	// `result.usage` is the turn's total, not another increment, and the core sums every usage
-	// event it is handed (`ai-agent/core/fold.ts`'s `addUsage`). The cases below pin the residual
+	// event it is handed under a key it has not seen (`ai-agent/core/fold.ts`'s `addUsage`), which
+	// is why each report carries its own ordinal key (`AgyTurn.usageReports`). The cases below pin the residual
 	// against agy's own captured numbers rather than against the arithmetic that produced it.
 	it("reports result.usage as a residual, so the captured turn totals agy's own numbers", () => {
 		const {events} = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
 		expect(events.filter((event) => event.kind === "usage")).toEqual([
 			{
 				kind: "usage",
+				turn: "agy:usage:0",
 				model: "agy/gemini-3.8-flash-low",
 				inputTokens: 4481,
 				outputTokens: 110,
@@ -299,6 +302,7 @@ describe("usage", () => {
 			},
 			{
 				kind: "usage",
+				turn: "agy:usage:1",
 				model: "agy/gemini-3.8-flash-low",
 				inputTokens: 20963 - 4481,
 				outputTokens: 151 - 110,

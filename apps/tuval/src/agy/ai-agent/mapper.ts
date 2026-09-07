@@ -56,7 +56,20 @@ interface ReportedUsage {
 
 const nothingReported: ReportedUsage = {inputTokens: 0, outputTokens: 0};
 
+/** The ledger key one usage report is folded under; see `AgyTurn.usageReports`. */
+const usageKey = (report: number): string => `agy:usage:${report}`;
+
 export interface AgyTurn {
+	/**
+	 * How many usage reports this session has already handed the core — the ordinal each one is
+	 * keyed by. It is session-monotonic and never resets with the turn, because the core keys a cost
+	 * on `UsageEvent.turn` and keeps the *first* report under a key it has seen (`../../ai-agent/core/fold.ts`).
+	 * agy reports usage as increments *within* a turn (steps, then the residual at `result`) and
+	 * never restates one, so keying every report on the turn itself would drop every increment after
+	 * the first. Keyed per report, the ledger sums them and the dedupe is the no-op it should be for
+	 * a backend that never re-reports.
+	 */
+	readonly usageReports: number;
 	/** `agy/<model>` once `init` names one, else the bare binary — agy omits `init.model` on a default run. */
 	readonly model: string;
 	/** The item this turn's reply streams into, minted at its first `agent_response` delta. */
@@ -69,6 +82,7 @@ export interface AgyTurn {
 
 export const idleTurn: AgyTurn = {
 	model: "agy",
+	usageReports: 0,
 	responseId: null,
 	responseText: "",
 	minted: 0,
@@ -89,11 +103,16 @@ const systemEvent = (id: string, timestamp: number, text: string): AgentEvent =>
  * agy reports no cost anywhere on the stream, so `cost` is `0` rather than a guess, and
  * `thinking_tokens` / `cache_read_tokens` have no port field and are left on the wire.
  */
-const usageEvent = (model: string, usage: AgyUsage | undefined): UsageEvent | null =>
+const usageEvent = (
+	model: string,
+	report: number,
+	usage: AgyUsage | undefined,
+): UsageEvent | null =>
 	usage === undefined
 		? null
 		: {
 				kind: "usage",
+				turn: usageKey(report),
 				model,
 				inputTokens: usage.input_tokens,
 				outputTokens: usage.output_tokens,
@@ -107,6 +126,7 @@ const usageEvent = (model: string, usage: AgyUsage | undefined): UsageEvent | nu
  */
 const residualUsageEvent = (
 	model: string,
+	report: number,
 	reported: ReportedUsage,
 	usage: AgyUsage | undefined,
 ): UsageEvent | null => {
@@ -115,7 +135,7 @@ const residualUsageEvent = (
 	const outputTokens = Math.max(0, usage.output_tokens - reported.outputTokens);
 	return inputTokens === 0 && outputTokens === 0
 		? null
-		: {kind: "usage", model, inputTokens, outputTokens, cost: 0};
+		: {kind: "usage", turn: usageKey(report), model, inputTokens, outputTokens, cost: 0};
 };
 
 const subagentInput = (info: AgySubagentInfo): JsonValue => ({
@@ -206,11 +226,12 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 			events.push(systemEvent(key, timestamp, unrecognisedText(step)));
 	}
 
-	const usage = usageEvent(next.model, step.usage);
+	const usage = usageEvent(next.model, next.usageReports, step.usage);
 	if (usage !== null) {
 		events.push(usage);
 		next = {
 			...next,
+			usageReports: next.usageReports + 1,
 			reported: {
 				inputTokens: next.reported.inputTokens + usage.inputTokens,
 				outputTokens: next.reported.outputTokens + usage.outputTokens,
@@ -241,7 +262,12 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 		minted += 1;
 	}
 
-	const usage = residualUsageEvent(previous.model, previous.reported, result.usage);
+	const usage = residualUsageEvent(
+		previous.model,
+		previous.usageReports,
+		previous.reported,
+		result.usage,
+	);
 	if (usage !== null) events.push(usage);
 
 	// Fail closed: only `SUCCESS` is a success, so a status this pin has not seen surfaces as a
@@ -258,7 +284,14 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 
 	return {
 		events,
-		next: {...previous, responseId: null, responseText: "", minted, reported: nothingReported},
+		next: {
+			...previous,
+			responseId: null,
+			responseText: "",
+			minted,
+			usageReports: previous.usageReports + (usage === null ? 0 : 1),
+			reported: nothingReported,
+		},
 	};
 };
 

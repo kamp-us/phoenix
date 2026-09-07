@@ -58,7 +58,9 @@ import {
 import {
 	type AgentEvent,
 	ModelUnsupported,
+	ListError,
 	ModeUnsupported,
+	type ResumeTarget,
 	type StartError,
 	ThinkingUnsupported,
 	type TransportError,
@@ -401,9 +403,15 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				yield* announce(reopened);
 			});
 
+		/**
+		 * `resume.holdsTranscript` is read for nothing here, and that is honest rather than an
+		 * omission: a resumed agy session replays no transcript at all — the CLI reopens the
+		 * conversation by id and this layer emits only the retry hint — so there is no replay for a
+		 * caller's held tail to suppress.
+		 */
 		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: {
 			readonly cwd: string;
-			readonly resume?: string;
+			readonly resume?: ResumeTarget;
 		}) {
 			const previous = yield* Ref.get(session);
 			if (previous !== null) yield* teardown(previous.child);
@@ -415,7 +423,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			yield* emit(into, [{kind: "phase", phase: "starting"}]);
 
 			const next = yield* Ref.get(settings);
-			const opened = yield* openSession(next, options_.cwd, options_.resume).pipe(
+			const opened = yield* openSession(next, options_.cwd, options_.resume?.sessionId).pipe(
 				// One stream carries everything (ruling 1, #7570), so a failed start owes it a
 				// terminal phase: without this every subscriber sits on `starting` for the life of
 				// the layer.
@@ -565,6 +573,18 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			commands,
 			setThinkingLevel,
 			page,
+			/**
+			 * `unsupported` rather than `[]`, which is the distinction the reason exists for
+			 * (`../../ai-agent/service/errors.ts`): agy's conversation store is not readable from
+			 * here at this pin — nothing in `agy`'s headless surface enumerates conversations — so
+			 * this backend has not looked, and must not tell the operator he has no agy sessions.
+			 */
+			listSessions: Effect.fail(
+				new ListError({
+					reason: "unsupported",
+					detail: "the agy CLI offers no way to enumerate its conversations",
+				}),
+			).pipe(Effect.withSpan("TuvalAiAgent.listSessions")),
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};
 	});
