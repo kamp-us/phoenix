@@ -1,6 +1,6 @@
 # `/handoff` — derived CLI contract
 
-**Skill:** [`handoff`](SKILL.md) · **Authoring brief:** [#5021](https://github.com/kamp-us/phoenix/issues/5021) · **Date:** 2026-08-09
+**Skill:** [`handoff`](SKILL.md) · **Date:** 2026-08-09
 
 **Where these verbs land.** `packages/fabrika-cli/`, under a **`handoff`** subcommand group
 registered in [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts). Each leaf is
@@ -12,10 +12,10 @@ spec and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** No verb here invokes
 anything under `claude-plugins/kampus-pipeline/` or `packages/pipeline-cli/`, in a fence, behind a
-wrapper, or as a contract clause (ADR
-[0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every v1 module
-named in a **Grounding** block below is cited as a **scar to design out**, never as a dependency —
-those citations are non-normative and an implementer opens none of them to build this.
+wrapper, or as a contract clause — fabrika reimplements what it needs rather than shelling out to
+its predecessor, so no clause here can break when a tool this package does not own changes. Every v1
+module named in a **Grounding** block below is cited as a **scar to design out**, never as a
+dependency — those citations are non-normative and an implementer opens none of them to build this.
 
 **The group name.** `handoff`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
@@ -29,8 +29,8 @@ obvious short alternative `pack` was rejected as ambiguous with packaging.
 **illustrative placeholders conforming to the stated grammars**, not values recoverable from
 anything. Digests are different and are held to a higher bar: the digest computation is specified
 completely in *The ground state* below, and the worked example there prints its **exact pre-image**
-so a reader can compute the digest and check it rather than trusting a literal (ADR
-[0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)). Every **packed**
+so a reader can compute the digest and check it rather than trusting a literal: a spec's example
+value is derivable from the spec or it is absent. Every **packed**
 digest printed below is that computed value. The one **live** digest — in `read`'s drift example,
 where the live ground state is deliberately not printed in full — is a placeholder, marked as one
 there.
@@ -94,8 +94,8 @@ authors its own marker grammar and keys on a run nonce.
 - **A `handoff drift` verb.** An earlier draft had one, reading a pack and comparing it against
   live. Folded into `handoff read`, because separating them makes the dangerous call the *easy* one:
   a caller who runs `read` and skips `drift` holds a pack that reads current while being stale,
-  which is the #3330 class this group is largely built against. One verb answering both questions
-  makes "read without checking drift" unrepresentable rather than merely discouraged.
+  which is the stale-baseline class this group is largely built against. One verb answering both
+  questions makes "read without checking drift" unrepresentable rather than merely discouraged.
 - **A verb that decides whether a session is worth handing off.** That judgment is the wrapper's
   ([`SKILL.md`](SKILL.md) §1). A verb guessing it would be a stochastic answer wearing a
   deterministic exit code.
@@ -108,9 +108,9 @@ authors its own marker grammar and keys on a run nonce.
   nothing (`SKILL.md` §CAP). A push verb here would put the widest capability in the group in
   service of its narrowest need.
 - **A verb that files anything.** `handoff` creates no work. If the session's observation is *new
-  work someone should do*, the model fires the `report` Skill and this group is not involved (#4636,
-  #4640). A filing verb here would rebuild the self-filing side door the quintet exists to close,
-  under a new name.
+  work someone should do*, the model fires the `report` Skill and this group is not involved. A
+  filing verb here would rebuild the self-filing side door the quintet exists to close, under a new
+  name.
 - **A verb that closes, labels, or retires a pack.** A later `handoff take` supersedes an earlier
   pack by ordering — `read` resolves the **latest** sealed pack — so a retirement verb would add a
   second, drift-prone way to express what ordering already expresses. This group applies no label of
@@ -138,7 +138,7 @@ One comment. The marker line, then the asserted half, then the proven half — i
 nothing else:
 
 ```markdown
-<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=f9d0814b89b4 -->
+<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=1239cccb6237 -->
 
 ## Intent
 Make the fanout guard classify a mutation that writes through a helper.
@@ -155,7 +155,7 @@ Whether one level is enough. I did not survey how deep the real call chains go.
 
 ## Ground state — proven
 ```json
-{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"f9d0814b89b4"}
+{"issue":9412,"repo":"acme/storefront","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"fanout-guard-widen","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/fanout-guard-widen","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":9413,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"1239cccb6237"}
 ```
 ```
 
@@ -177,14 +177,14 @@ it is the skill's ([`SKILL.md`](SKILL.md) step 3), not restated here.
 
 **The caller supplies only the four asserted sections on stdin.** `handoff take` appends the proven
 half itself, from its own fresh capture — a caller-supplied ground state would be exactly the
-premise-inheritance (#4133) the two-half split exists to prevent.
+premise inheritance the two-half split exists to prevent.
 
 ## The pack marker, and its wire format
 
 One line, the first line of the comment:
 
 ```
-<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=f9d0814b89b4 -->
+<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=1239cccb6237 -->
 ```
 
 and the claim, the first line of its own separate comment:
@@ -246,8 +246,8 @@ undigested ones (`capturedAt`, `groundDigest`). Every field's derivation:
 failed".** A git or board read that fails is `11` for the whole verb — the ground is UNKNOWN and no
 object is emitted. The single `unknown` in the table, `git.reachable`, is a **fact** about a
 repository with no configured upstream, not a failure; `aheadBy` and `behindBy` are `null` in the
-same case for the same reason. Conflating the two is how a guard vouches for a tree it never read
-(ADR [0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+same case for the same reason. Conflating the two is how a guard vouches for a tree it never read,
+and a gate that scanned nothing has judged nothing.
 
 **The digest pre-image is the nineteen numbered fields, in that order**, one per line as
 `<path>=<json>` where `<json>` is the field's JSON encoding (`null` for an absent one, and all four
@@ -255,11 +255,11 @@ same case for the same reason. Conflating the two is how a guard vouches for a t
 `groundDigest` is `bodyDigest` of that string. For the worked example above the pre-image is exactly:
 
 ```
-issue=5021
-repo="kamp-us/phoenix"
-git.branch="umut/fanout-helper"
+issue=9412
+repo="acme/storefront"
+git.branch="fanout-guard-widen"
 git.head="4f1c8a2b9d3e5607182934abcdef5566778899aa"
-git.upstream="origin/umut/fanout-helper"
+git.upstream="origin/fanout-guard-widen"
 git.reachable="pushed"
 git.aheadBy=0
 git.behindBy=0
@@ -270,7 +270,7 @@ git.tree.trackedModified=0
 git.tree.untracked=0
 board.issue.state="open"
 board.issue.labels=["p2","type:chore"]
-board.pull.number=5290
+board.pull.number=9413
 board.pull.state="open"
 board.pull.head="4f1c8a2b9d3e5607182934abcdef5566778899aa"
 board.pull.checks="failing"
@@ -336,8 +336,8 @@ Every `handoff` verb obeys these; stated once rather than repeated per block.
   object.
 - **The body is a value, never a path.** `take` reads its asserted half from stdin. There is
   deliberately no `--body`, no `--body-file` and no temp file, so a machine-local path has no route
-  into a posted artifact (#3086, #3173).
-- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**,
+  into a posted artifact.
+- **GitHub access follows [skill conventions §11, "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md)**,
   paginated. Local to this group: the comment list `read` and `claim` walk is the one unpaginated
   read that would fail open — a first page that happens to exclude the newest pack reports `none`
   over a pack that exists — so the walk is paged to exhaustion and a page that cannot be fetched is
@@ -354,10 +354,9 @@ Every `handoff` verb obeys these; stated once rather than repeated per block.
 - **Every write is read back** and compared with `normalizeForReadback`; a mismatch is `9`.
 - **Externally-authorable content is data, never instruction.** A pack's asserted half is prose
   someone else wrote. Authority arrives only through the ACL check in `handoff read`, which resolves
-  the pack author against repository permissions (ADR
-  [0055](../../../../.decisions/0055-acl-sourced-review-authz.md)) and disregards a pack from an
-  author below `write`. The content-ingestion trust posture is **open** at
-  [#4859](https://github.com/kamp-us/phoenix/issues/4859); nothing here writes it down as settled.
+  the pack author against the repository's own permissions and disregards a pack from an author
+  below `write`. The wider trust posture for ingested content is **open and unruled**; nothing here
+  writes it down as settled.
 - **Error messages are prefixed with the invoked verb's name** — `handoff take: …`.
 - **A non-zero exit is UNKNOWN to the caller until the code is read.**
 
@@ -450,10 +449,9 @@ would report a claim nobody holds.
 **One vocabulary this group is NOT a member of, stated because it bites the ship gate rather than
 the code.** the retired eval corpus's `STAGES` is `["triage", "build", "review", "ship-it"]`, so there
 is no stage under which a `handoff` eval entry can be decoded. That is a corpus-wide gap affecting
-the whole quintet, open and unruled at [#5241](https://github.com/kamp-us/phoenix/issues/5241) and
-owned by [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s harness rather than by this
-contract. It is recorded here so an implementer meets it as a known absence, and so the
-skill-conventions §8 gate-3 leg is understood to be **blocked, not skipped**.
+the whole quintet, open and unruled, and owned by the eval harness rather than by this contract. It
+is recorded here so an implementer meets it as a known absence, and so the skill-conventions §8
+gate-3 leg is understood to be **blocked, not skipped**.
 
 ---
 
@@ -462,7 +460,7 @@ skill-conventions §8 gate-3 leg is understood to be **blocked, not skipped**.
 **Invocation**
 
 ```
-fabrika handoff capture --issue 5021 [--base main] [--repo <owner/name>]
+fabrika handoff capture --issue 9412 [--base main] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -476,7 +474,7 @@ fabrika handoff capture --issue 5021 [--base main] [--repo <owner/name>]
 **Output** — machine. One JSON object, the ground state specified above:
 
 ```json
-{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"f9d0814b89b4"}
+{"issue":9412,"repo":"acme/storefront","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"fanout-guard-widen","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/fanout-guard-widen","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":9413,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"1239cccb6237"}
 ```
 
 **There is no empty answer.** A repository always has a git state and an issue always has a state,
@@ -507,32 +505,32 @@ safe for a successor to re-run against a pack it has not yet decided to trust.
 **Scope** — the local git repository at the working directory's root, and the issue plus any pull
 request on `git.branch` and that request's check runs, paginated. The scope line on stderr names the
 branch, the base and the pull request number or `none`. **A git read that fails is `11`, never a
-clean tree** — reporting `clean` over a failed `git status` is the zero-scope pass ADR 0092 forbids,
-and here it would license a pack asserting reachable work that is not reachable.
+clean tree** — reporting `clean` over a failed `git status` is the zero-scope pass a fail-closed
+gate forbids, and here it would license a pack asserting reachable work that is not reachable.
 
 **Examples**
 
 ```
-$ fabrika handoff capture --issue 5021
-{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"f9d0814b89b4"}
+$ fabrika handoff capture --issue 9412
+{"issue":9412,"repo":"acme/storefront","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"fanout-guard-widen","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/fanout-guard-widen","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":9413,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"1239cccb6237"}
 $ echo $?
 0
 ```
 
 ```
 $ fabrika handoff capture --issue 99999
-handoff capture: #99999 does not exist in kamp-us/phoenix.
+handoff capture: #99999 does not exist in acme/storefront.
 $ echo $?
 7
 ```
 
 **Grounding**
 
-- #3330 — a pipeline baseline scan ran against a stale local checkout and spawned phantom no-op
-  children. The whole reason a pack carries a derived ground state rather than a session's belief
-  about it, and the reason `reachable` is computed rather than assumed.
-- ADR 0092 — a failed `git status` is `11`, never `clean`. A guard that vouches for a tree it could
-  not read is the zero-scope pass.
+- A baseline scan run against a stale local checkout spawns phantom no-op children. That is the
+  whole reason a pack carries a derived ground state rather than a session's belief about it, and
+  the reason `reachable` is computed rather than assumed.
+- A failed `git status` is `11`, never `clean`. A guard that vouches for a tree it could not read is
+  the zero-scope pass.
 - v1 `wayfinder` has **no** equivalent: its cross-run story is *"the next WORK run resumes **cold**
   from the map's updated state"* (`wayfinder/SKILL.md:346`), so a run interrupted mid-investigation
   loses everything and the next one redoes it. This verb is what "not cold" is made of.
@@ -544,7 +542,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika handoff take --issue 5021 --nonce 7f3a9c21 [--base main] [--declare-unreachable] [--repo <owner/name>]
+fabrika handoff take --issue 9412 --nonce 7f3a9c21 [--base main] [--declare-unreachable] [--repo <owner/name>]
 ```
 
 Reads the four asserted sections from stdin.
@@ -562,7 +560,7 @@ Reads the four asserted sections from stdin.
 **Output** — machine. One JSON object:
 
 ```json
-{"issue":5021,"packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"f9d0814b89b4","reachable":"pushed","supersedes":null}
+{"issue":9412,"packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"1239cccb6237","reachable":"pushed","supersedes":null}
 ```
 
 <!-- anchor: PACK-IS-A-TOKEN-PACKCOMMENT-IS-AN-ID --> **One key, one meaning, group-wide.** `pack` is only ever `read`'s three-value state token and
@@ -604,7 +602,7 @@ pack rather than inferring an empty field.
 <!-- anchor: UNREACHABLE-WORK-IS-REFUSED --> **Why unreachability refuses rather than warns.** A
 successor is a fresh session in a different checkout: an unpushed commit and a modified tracked file are
 both literally invisible to it. A pack whose `## Next act` points at work in that state is
-confidently wrong in the way #3330 is confidently wrong — a plausible record resting on state only
+confidently wrong the way a stale baseline is — a plausible record resting on state only
 the writing machine can see. **The remedy is the caller's, outside this group**, which commits and
 pushes nothing; the refusal names it. `--declare-unreachable` exists for the genuine case where the
 diff is disposable, and it does not silence the fact: the proven half records `reachable` and the
@@ -656,14 +654,14 @@ and `supersedes` is never guessed.
 **Examples**
 
 ```
-$ printf '## Intent\nWiden the fanout guard.\n\n## Established\nThe guard reads one file only; a failing case is committed.\n\n## Next act\nFollow one level of local helper call, then re-run the case.\n\n## Unsure\nWhether one level is enough.\n' | fabrika handoff take --issue 5021 --nonce 7f3a9c21
-{"issue":5021,"packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"f9d0814b89b4","reachable":"pushed","supersedes":null}
+$ printf '## Intent\nWiden the fanout guard.\n\n## Established\nThe guard reads one file only; a failing case is committed.\n\n## Next act\nFollow one level of local helper call, then re-run the case.\n\n## Unsure\nWhether one level is enough.\n' | fabrika handoff take --issue 9412 --nonce 7f3a9c21
+{"issue":9412,"packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"1239cccb6237","reachable":"pushed","supersedes":null}
 $ echo $?
 0
 ```
 
 ```
-$ printf '## Intent\nWiden the fanout guard.\n\n## Established\nA failing case is written.\n\n## Next act\nFollow one level of helper call.\n\n## Unsure\nHow deep the chains go.\n' | fabrika handoff take --issue 5021 --nonce 7f3a9c21
+$ printf '## Intent\nWiden the fanout guard.\n\n## Established\nA failing case is written.\n\n## Next act\nFollow one level of helper call.\n\n## Unsure\nHow deep the chains go.\n' | fabrika handoff take --issue 9412 --nonce 7f3a9c21
 handoff take: 2 commit(s) are not pushed and 1 tracked file(s) are modified — a successor cannot see either. Commit and push outside this skill and re-run, or re-run with --declare-unreachable to record the loss.
 $ echo $?
 12
@@ -671,13 +669,13 @@ $ echo $?
 
 **Grounding**
 
-- #3086 / #3173 — a machine-local path reached a posted artifact because the body was passed as a
-  file reference. The body is a value here, and there is no flag that would take a path.
-- #4133 / #4227 — a composed document inheriting its premise from the dispatcher, and a well-formed
-  wrong classification propagating unchallenged. The two-half split is the structural answer: the
+- A machine-local path reaches a posted artifact whenever the body may be passed as a file
+  reference. The body is a value here, and there is no flag that would take a path.
+- A composed document inherits its premise from its dispatcher, and a well-formed wrong
+  classification then propagates unchallenged. The two-half split is the structural answer: the
   caller cannot supply the proven half, and the asserted half is labelled as assertion.
-- #4285 — an unvalidated value applied as a literal and reported as success. The nonce grammar and
-  the closed section set are validated before the write, not after.
+- An unvalidated value applied as a literal and reported as success is a write nobody checked. The
+  nonce grammar and the closed section set are validated before the write, not after.
 - The retired `slice-handoff`'s closed section set — an artifact whose section set is open can steer
   its receiver past the artifact.
 - v1's `add-frontier-ticket.sh` prints a refusal with bare `echo` to **stdout**, the channel carrying
@@ -691,7 +689,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika handoff read --issue 5021 [--base main] [--repo <owner/name>]
+fabrika handoff read --issue 9412 [--base main] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -705,13 +703,13 @@ fabrika handoff read --issue 5021 [--base main] [--repo <owner/name>]
 **Output** — machine. One JSON object. A `sealed` pack whose ground has moved:
 
 ```json
-{"issue":5021,"pack":"sealed","packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"usirin","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"f9d0814b89b4"},"drift":{"packedBranch":"resolves","state":"moved","fields":[{"field":"git.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.checks","packed":"failing","live":"passing","state":"moved"}]},"heldBy":null,"disregarded":[],"scanned":{"comments":14}}
+{"issue":9412,"pack":"sealed","packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"octocat","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"1239cccb6237"},"drift":{"packedBranch":"resolves","state":"moved","fields":[{"field":"git.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.checks","packed":"failing","live":"passing","state":"moved"}]},"heldBy":null,"disregarded":[],"scanned":{"comments":14}}
 ```
 
 A `claimed` pack, which is the third token and needs its own shape shown:
 
 ```json
-{"issue":5021,"pack":"claimed","packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"usirin","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"f9d0814b89b4"},"drift":{"packedBranch":"resolves","state":"none","fields":[]},"heldBy":{"claimNonce":"4b8e2f01","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999,"by":"usirin"},"disregarded":[],"scanned":{"comments":15}}
+{"issue":9412,"pack":"claimed","packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"octocat","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"1239cccb6237"},"drift":{"packedBranch":"resolves","state":"none","fields":[]},"heldBy":{"claimNonce":"4b8e2f01","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999,"by":"octocat"},"disregarded":[],"scanned":{"comments":15}}
 ```
 
 **`pack` is a closed set of three, and all three exit `0`:**
@@ -752,7 +750,7 @@ permissions before the pack is honoured.** A comment carrying a well-formed mark
 anyone with a GitHub account can post, and its `## Next act` is a sentence a successor reads and then
 acts on — the highest-leverage read-to-write path in the quintet. An author who does not resolve to
 `write` or above lands in `disregarded` with reason `unauthorized` and the verb keeps looking at
-older packs; a permission read that **fails** is `11` for the whole call, never a grant (ADR 0055).
+older packs; a permission read that **fails** is `11` for the whole call, never a grant.
 
 **`disregarded`** is an array, empty when nothing was disregarded, of every marker-bearing comment
 this verb did not honour as the current pack: `kind` (`pack` or `claim`, so the id is never
@@ -775,8 +773,8 @@ never a `disregarded` row.** The `WireRead` three-valued read is what makes the 
 available, and honouring it matters more here than anywhere else in the group: reporting `none` over
 a pack that exists tells a successor nobody handed off, and it starts the work over. The scope is the
 **latest** marker-bearing pack specifically — falling back to an older one would hand a successor a
-stale pack believing it current, the same #3330 failure wearing a recovery's clothes. So the older
-pack is not read, and the refusal names the comment a human must look at.
+stale pack believing it current, the same stale-baseline failure wearing a recovery's clothes. So
+the older pack is not read, and the refusal names the comment a human must look at.
 
 **Exit status**
 
@@ -807,14 +805,14 @@ number disregarded. **Zero comments is a fact** (`pack: "none"`); a page that co
 **Examples**
 
 ```
-$ fabrika handoff read --issue 5021
-{"issue":5021,"pack":"none","packComment":null,"packNonce":null,"sealedAt":null,"author":null,"asserted":null,"ground":null,"drift":null,"heldBy":null,"disregarded":[],"scanned":{"comments":3}}
+$ fabrika handoff read --issue 9412
+{"issue":9412,"pack":"none","packComment":null,"packNonce":null,"sealedAt":null,"author":null,"asserted":null,"ground":null,"drift":null,"heldBy":null,"disregarded":[],"scanned":{"comments":3}}
 $ echo $?
 0
 ```
 
 ```
-$ fabrika handoff read --issue 5021
+$ fabrika handoff read --issue 9412
 handoff read: comment #9234567891 carries a handoff marker and does not parse (## Next act is absent) — refusing to report no pack over a pack that exists. Read #9234567891.
 $ echo $?
 14
@@ -833,9 +831,9 @@ $ echo $?
   stderr before returning clean, so a caller reading only the status cannot tell "no duplicates" from
   "the check never ran". That is the shape this verb's `pack` token exists to avoid: the answer is a
   word on stdout, not an inference from an exit code.
-- ADR 0055 — authority arrives through an ACL-checked verb, never from the presence of a marker.
-- #4133 / #4227 — the `asserted` object is returned under a key that names it as assertion, so a
-  consumer cannot mistake it for a derived fact.
+- Authority arrives through an ACL-checked verb, never from the presence of a marker.
+- The `asserted` object is returned under a key that names it as assertion, so a consumer cannot
+  mistake it for a derived fact.
 
 ---
 
@@ -844,7 +842,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika handoff claim --issue 5021 --nonce 4b8e2f01 [--repo <owner/name>]
+fabrika handoff claim --issue 9412 --nonce 4b8e2f01 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -858,7 +856,7 @@ fabrika handoff claim --issue 5021 --nonce 4b8e2f01 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"issue":5021,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
+{"issue":9412,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
 ```
 
 `claim` is a closed set of two: `held` (this nonce now holds it) and `resumed` (this nonce already
@@ -867,9 +865,9 @@ claim).
 
 <!-- anchor: CLAIM-KEY-IS-THE-RUN-NONCE --> **The claim key is the caller's run nonce, never a
 session id and never a process id.** The session id (`FABRIKA_SESSION_ID`, else
-`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION` — #6960) is **pane-constant, not
-per-run** (#5028), and sibling subagents of one parent share it (#4516), so two successors booted from one
-parent would key onto one namespace and each would classify the other's claim as its own. The nonce
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`) is **pane-constant, not per-run**, and
+sibling subagents of one parent share it, so two successors booted from one parent would key onto
+one namespace and each would classify the other's claim as its own. The nonce
 is authored once per run by the caller and passed explicitly, which is also what keeps it out of
 session memory: no verb here reads any session variable for any purpose.
 
@@ -915,8 +913,8 @@ claim.
 **Examples**
 
 ```
-$ fabrika handoff claim --issue 5021 --nonce 4b8e2f01
-{"issue":5021,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
+$ fabrika handoff claim --issue 9412 --nonce 4b8e2f01
+{"issue":9412,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
 $ echo $?
 0
 ```
@@ -925,8 +923,8 @@ Re-running the identical command is not an error — the same nonce resumes its 
 nothing:
 
 ```
-$ fabrika handoff claim --issue 5021 --nonce 4b8e2f01
-{"issue":5021,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"resumed","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
+$ fabrika handoff claim --issue 9412 --nonce 4b8e2f01
+{"issue":9412,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"resumed","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
 $ echo $?
 0
 ```
@@ -934,7 +932,7 @@ $ echo $?
 A *different* run is refused:
 
 ```
-$ fabrika handoff claim --issue 5021 --nonce 9c14aa02
+$ fabrika handoff claim --issue 9412 --nonce 9c14aa02
 handoff claim: pack #9234567891 is held by 4b8e2f01 since 2026-08-09T19:02:11Z — refusing to open a second claim on one pack.
 $ echo $?
 15
@@ -942,17 +940,17 @@ $ echo $?
 
 **Grounding**
 
-- #5283 — a retiring crew seat wrote a successor checkpoint with no findable home; a booting seat
-  spent ten minutes on transcript archaeology and two recovered findings fired within the hour. The
-  motivating incident: the claim is what tells a third seat that a second is already on it.
-- #4516 / #5028 — a scratch namespace keyed on a session id collides across sibling lanes, and
-  `(session, pid)` is pane-constant rather than per-run.
+- A retiring seat once wrote a successor checkpoint with no findable home; the booting seat spent
+  ten minutes on transcript archaeology and two recovered findings fired within the hour. The
+  motivating case: the claim is what tells a third seat that a second is already on it.
+- A scratch namespace keyed on a session id collides across sibling lanes, and `(session, pid)` is
+  pane-constant rather than per-run.
 - `epic-lock`'s scars, designed out: it never reads back the presence stamp it writes
   (`epic-lock/github.ts:131`), so an abandoned lock wedges the issue forever, and it collapses
   several distinct refusals onto one exit code. Here the write is read back (`9`), and `13`, `14`,
   `15` and `11` are four seats with four remedies.
-- #4060 — a classifier that read zero files under parallel invocation and defaulted to a plausible
-  answer. A claim that cannot prove the pack is free refuses.
+- A classifier that reads zero files under parallel invocation and defaults to a plausible answer
+  is the shape to avoid. A claim that cannot prove the pack is free refuses.
 
 ---
 
@@ -984,7 +982,7 @@ $ echo $?
    universal seats are reachable from all four and are named once here instead of in every row: `1`
    for a usage error or a verb that failed to run, `126` for an implementation that could not be
    resolved, `127` for a verb that never ran. The walk was re-run against the shipped verbs
-   ([`src/handoff/`](../../../../packages/fabrika-cli/src/handoff/), #5025), so the codes below are
+   in [`src/handoff/`](../../../../packages/fabrika-cli/src/handoff/), so the codes below are
    the ones the group actually seats rather than the ones this spec once intended.
 
    - **`capture`.** The ground derived is `0` — `git.upstream: null`, `git.reachable: "unknown"` and

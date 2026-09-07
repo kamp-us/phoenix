@@ -1,6 +1,6 @@
 # `/write-pattern` — derived CLI contract
 
-**Skill:** [`write-pattern`](SKILL.md) · **Authoring brief:** [#4710](https://github.com/kamp-us/phoenix/issues/4710) · **Date:** 2026-08-10
+**Skill:** [`write-pattern`](SKILL.md) · **Date:** 2026-08-10
 
 The verbs sit under a `pattern` subcommand group in `packages/fabrika-cli/`, whose binary is
 `fabrika`. The group name was verified free against
@@ -11,10 +11,11 @@ sentence. The [CLI interface convention](../../docs/cli-interface-convention.md)
 where this spec and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** Every verb below is
-implemented in `packages/fabrika-cli/`, and no fence in `SKILL.md` invokes anything else
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). v1's `canon`
-skill and the four tools its brief names were read for their semantics and their scars — several are
-designed out below — and none is called. The reason is the deletion test: a fabrika that calls v1 can
+implemented in `packages/fabrika-cli/`, and no fence in `SKILL.md` invokes anything else — fabrika
+reimplements what it needs rather than shelling out to its predecessor, so no clause here can break
+when a tool this package does not own changes. v1's `canon` skill and the four tools it shipped
+with were read for their semantics and their scars — several are designed out below — and none is
+called. The reason is the deletion test: a fabrika that calls v1 can
 never be the thing that replaces it.
 
 ## Three questions deliberately not derived
@@ -24,8 +25,9 @@ merge-gating question is strictly worse than computing none, which is the test t
 pilot's `adr classify`.
 
 **Markdown link resolution — the `doc-links` job owns it.** It walks every git-tracked `*.md`
-repo-wide through `lychee --offline`, fails closed on zero scope (ADR 0092), and runs on both
-`pull_request` and `push: main` so a break is charged to the commit that caused it
+repo-wide through `lychee --offline`, fails closed on zero scope — a gate that scanned nothing has
+judged nothing — and runs on both `pull_request` and `push: main` so a break is charged to the
+commit that caused it
 ([`.github/workflows/doc-links.yml`](../../../../.github/workflows/doc-links.yml)). A pattern doc is
 inside that scope already.
 
@@ -89,7 +91,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   the second field of the first line; `register` emits one line and leads with its outcome. `corpus`,
   `drift` and `anchor` each answer with one token from a closed set. A caller must never read its own
   informative answer as a failed run — which is exactly the mistake v1's `adr-sweep` makes by exiting
-  `1` on the one case it was asked to produce (#4723).
+  `1` on the one case it was asked to produce.
 - **Two different reads, deliberately.** `corpus`, `drift` and `anchor` read the corpus **at a
   resolved `--base`**, because the question they answer is what this repository already holds.
   `new` and `register` write the **working tree**. A doc created by `new` is therefore invisible to
@@ -167,7 +169,7 @@ oversight:
 | `4` `BAD_SECTIONS` | no verb here validates a document's heading grammar — see *Considered and not derived* |
 | `5` `LEAKED_PATH` | the leak gate is the authority over `.patterns/`; this group computes no second verdict |
 | `6` `BARE_AT_PATH` | follows from `3` — nothing here composes a body from authored input |
-| `7` `ZERO_SCOPE` | **the important one.** No verb here judges over a corpus, so none has a vacuous pass to prevent. An empty or absent `.patterns/` is a *fact* this group reports at exit `0`, and refusing there would leave a repo adopting fabrika unable to write its first pattern doc on the documented path — the first-run dead-end the portability rules forbid, and the same correction #5254 applied to `adr next`. Where a question genuinely cannot be answered, the group says so in **vocabulary** — `unanchored`, `unknown` — never by falling silent. |
+| `7` `ZERO_SCOPE` | **the important one.** No verb here judges over a corpus, so none has a vacuous pass to prevent. An empty or absent `.patterns/` is a *fact* this group reports at exit `0`, and refusing there would leave a repo adopting fabrika unable to write its first pattern doc on the documented path — the first-run dead-end the portability rules forbid, and the same correction `adr next` took when its own empty corpus refused. Where a question genuinely cannot be answered, the group says so in **vocabulary** — `unanchored`, `unknown` — never by falling silent. |
 
 **Private codes are group-local.** `12`–`17` mean what this table says within `pattern` and carry no
 cross-group obligation; `review` seats `12` as `STALE_HEAD` and `build` retired its own `12`,
@@ -291,8 +293,8 @@ that existed could not demonstrate the outcome that fires when one does not.
 
 `doc` lines carry a commit sha and an author date, which are a function of a repository's history
 rather than of this spec, so **no example prints them** — an example value that looks verifiable and
-is not is worse than no example (ADR 0247). The grammar above is the contract; the two derivable
-outcomes are shown byte for byte.
+is not is worse than no example. The grammar above is the contract; the two derivable outcomes are
+shown byte for byte.
 
 **Grounding**
 
@@ -302,9 +304,9 @@ outcomes are shown byte for byte.
 - `decisions-index next` computes `max + 1` over its entry set with no proof that the set came from a
   real corpus, so a mis-rooted run answers `0001` and invites an author to overwrite the first
   record. This verb proves the directory by the read itself.
-- #5254 — an empty corpus is a fact for a verb that supplies, not a refusal. ADR 0092's zero-scope red
-  binds a **gate**, whose empty scan means it checked nothing; it does not bind a verb whose whole
-  answer is what the library holds.
+- An empty corpus is a fact for a verb that supplies, not a refusal. The zero-scope red binds a
+  **gate**, whose empty scan means it checked nothing; it does not bind a verb whose whole answer is
+  what the library holds.
 - front-door's disposition parser — parse by cell position, never scan a region and infer position.
   The unregistered/`unknown` split is the same lesson as its `unprobeable` presence state: a state
   that cannot be determined gets its own name rather than being rendered as the negative.
@@ -363,8 +365,8 @@ resolution alone. It is counted, named on stderr, and excluded from steps 6 and 
 
 **`unanchored` is not a clearance.** It says the doc cites nothing this verb can follow, so drift here
 is **unanswerable** — read the source by hand. Reporting it as `current` would be a clean pass over
-nothing, which is the shape ADR 0092 exists to forbid; the group expresses that in vocabulary rather
-than in an exit code, because a verb that refused would break the pipe its answer crosses.
+nothing, the shape a zero-scope rule forbids; the group expresses that in vocabulary rather than in
+an exit code, because a verb that refused would break the pipe its answer crosses.
 
 **Output** — machine channel.
 
@@ -436,8 +438,8 @@ $ echo $?
 
 The `drifted` and `current` outcomes print a commit sha, an author date and commit counts — all
 functions of a repository's history rather than of this spec — so **no example prints them**, and the
-line grammar above is the contract for those two (ADR 0247). `baseSha` is shown as `<sha>` for the
-same reason; every other field in the JSON example is derivable from the fixture.
+line grammar above is the contract for those two. `baseSha` is shown as `<sha>` for the same reason;
+every other field in the JSON example is derivable from the fixture.
 
 **Grounding**
 
@@ -445,17 +447,17 @@ same reason; every other field in the JSON example is derivable from the fixture
   `git log -1` against the **local** `HEAD` rather than a fetched base ref; it takes the source
   directories as **caller-supplied arguments**, so the answer is only as good as the caller's memory
   of what the doc describes; its `git diff` exits `0` with empty output on a pathspec that matched
-  nothing, so zero scope reads as a clean answer (ADR 0092); and its clean case prints **empty
-  stdout**, byte-identical to a verb that never ran.
+  nothing, so zero scope reads as a clean answer; and its clean case prints **empty stdout**,
+  byte-identical to a verb that never ran.
 - `pointer-guard`'s `.patterns/**` exclusion — the false-positive class that makes step 4's partition
   necessary rather than fussy, quoted at the head of this spec.
-- #2627 — `.patterns/` has **no drift mechanism today**, and the anchor model (a prose line, new
-  frontmatter, or a per-pattern-kind split) is an **open, unruled decision** on a control-plane
-  surface. This verb answers only the question it can answer from what the corpus already carries:
-  git history over the paths a doc itself cites. It settles nothing about #2627 and must not be read
-  as having done so.
-- #4723 — a verb that exits non-zero on its own informative case makes a caller read a useful answer
-  as a failure. All four outcomes here exit `0`.
+- `.patterns/` has **no drift mechanism today**, and the anchor model (a prose line, new frontmatter,
+  or a per-pattern-kind split) is an **open, unruled decision** on a control-plane surface. This verb
+  answers only the question it can answer from what the corpus already carries: the commit history
+  over the paths a doc itself cites. It settles that open question in no direction and must not be
+  read as having done so.
+- A verb that exits non-zero on its own informative case makes a caller read a useful answer as a
+  failure. All four outcomes here exit `0`.
 
 ---
 
@@ -515,7 +517,7 @@ fabrika pattern anchor worker-queue-retry [--dir <path>] [--manifest <path>] [--
    from a real read by parse success alone. Answering anyway produced two confident wrong answers:
    the flow map and `catalogs:` both read as *no catalog at all* (`unpinned` for every declaration),
    and the sub-map pinned its key to the empty string, which compares unequal to every declared
-   version and reported `moved` against a pin nobody wrote (#5361). All three refuse instead.
+   version and reported `moved` against a pin nobody wrote. All three refuse instead.
 4. **Compare.** `<version>` against the pinned value, **byte for byte**, with no semver
    interpretation. A doc's anchor records the version its author actually read; accepting a range
    would silently bless a version nobody checked, which is the whole failure the line exists to catch.
@@ -632,8 +634,8 @@ $ fabrika pattern anchor worker-queue-retry --json --dir packages/fabrika-cli/te
 
 - The declaration grammar is the one **the corpus already carries** — a minority of the docs, in
   exactly this shape; count them at read time rather than trusting a number written here. This verb reads what is there; it does not propose frontmatter or any other anchor model,
-  because that choice is #2627's and is unruled.
-- #2627 — the anchor model is an open control-plane decision. Matching the existing prose line is the
+  because that choice belongs to the open anchor-model decision and is unruled.
+- The anchor model is an open control-plane decision. Matching the existing prose line is the
   conservative floor: it is falsifiable today and it commits nothing.
 - The byte-for-byte comparison is deliberate. Every dependency in this repo is pinned to one exact
   version through the workspace catalog, so a range comparison would have nothing to buy and a real
@@ -901,8 +903,8 @@ $ echo $?
   content is not yours must prove it touched only what it claimed.
 - The read-back is the `report` group's `9`: a write that landed and does not match is an artifact
   that exists and needs a human, and it is neither a success nor a failed write.
-- #1777 — a row pointing at a file that does not exist is a dead link that a link gate will red later
-  and a reader will hit sooner. Exit `12` is why the target is proven first.
+- A row pointing at a file that does not exist is a dead link that a link gate will red later and a
+  reader will hit sooner. Exit `12` is why the target is proven first.
 
 ---
 
@@ -916,8 +918,8 @@ against the shipped code rather than assumed:
   or the review class names — and it should not become one. Widening those to admit an authoring
   skill would let it emit a verdict about work it performed.
 - A `.patterns/*.md` diff classifies as the **doc** surface, so a pull request from this skill gates
-  on the doc review namespace. `.patterns/` is **not** a governance root, unlike `.decisions/`, so a
-  pattern-doc pull request does not carry the governance namespace an ADR does.
+  on the doc review namespace. `.patterns/` is **not** a governed root, unlike the decision corpus,
+  so a pattern-doc pull request does not carry the governance namespace an ADR does.
 - The two questions this contract deliberately does not answer are answered for a `.patterns/` diff
   by the repo's own link and leak gates, named at the head of this spec. No verb here re-answers them
   and this skill invokes nothing to do so.
