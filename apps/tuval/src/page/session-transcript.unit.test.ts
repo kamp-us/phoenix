@@ -11,8 +11,12 @@ import {describe, expect, it} from "vitest";
 import {CallId} from "../protocol/ids.ts";
 import type {SpellFailure, SpellReply} from "../protocol/messages.ts";
 import {PROTOCOL_VERSION, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
+import {SESSION_LIST_PROGRAM} from "../protocol/session-list.ts";
 import type {SessionTranscript, TranscriptItemWire} from "../protocol/session-transcript.ts";
-import {SESSION_TRANSCRIPT_PATH} from "../protocol/session-transcript.ts";
+import {
+	SESSION_TRANSCRIPT_CALL_PATH,
+	SESSION_TRANSCRIPT_PATH,
+} from "../protocol/session-transcript.ts";
 import type {TranscriptPaging} from "./session-transcript.ts";
 import {
 	askedOlder,
@@ -71,10 +75,19 @@ const ids = (paging: TranscriptPaging): ReadonlyArray<string> =>
 	paging.items.map((held) => held.id);
 
 describe("the call", () => {
+	it("addresses the call where the registry holds the spell", () => {
+		const call = sessionTranscriptCall(READ);
+
+		// The row's own path is `session.transcript`; the registry keys it under the program id, and
+		// a call carrying the bare path reaches no spell at all (#8238).
+		expect([...call.path]).toEqual([...SESSION_TRANSCRIPT_CALL_PATH]);
+		expect([...call.path].slice(1)).toEqual([...SESSION_TRANSCRIPT_PATH]);
+		expect(call.path[0]).toBe(SESSION_LIST_PROGRAM);
+	});
+
 	it("carries the session's whole address plus the cursor and the bound", () => {
 		const call = sessionTranscriptCall({...READ, before: "m-9", limit: 50});
 
-		expect(call.path).toEqual([...SESSION_TRANSCRIPT_PATH]);
 		expect(call.args).toEqual({
 			programId: "claude-session",
 			sessionId: "c-1",

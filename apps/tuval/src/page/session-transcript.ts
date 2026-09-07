@@ -24,7 +24,7 @@ import {CallId} from "../protocol/ids.ts";
 import type {SpellFailure, SpellReply} from "../protocol/messages.ts";
 import {PROTOCOL_VERSION, SpellCall} from "../protocol/messages.ts";
 import type {SessionTranscriptRequest, TranscriptItemWire} from "../protocol/session-transcript.ts";
-import {SESSION_TRANSCRIPT_PATH, SessionTranscript} from "../protocol/session-transcript.ts";
+import {SESSION_TRANSCRIPT_CALL_PATH, SessionTranscript} from "../protocol/session-transcript.ts";
 
 /** One page landed and decoded: the items it carried and the cursor for the page older than it. */
 export interface PagedTranscript {
@@ -41,9 +41,12 @@ export interface RefusedTranscript {
 export type TranscriptLanding = PagedTranscript | RefusedTranscript;
 
 /**
- * One page call. The id is minted here and the caller hands it back to `readSessionTranscript`,
- * which is the whole of the correlation. `window` rides along when the call came from one, exactly
- * as the list's does, so the kernel resolves the scope and the page names no process.
+ * One page call, addressed where the registry holds the spell: the row's program id followed by the
+ * spell's own path, which is `SESSION_TRANSCRIPT_CALL_PATH`. The bare `session.transcript` reaches
+ * nothing and the kernel answers `UnknownSpell` (#8238). The id is minted here and the caller hands
+ * it back to `readSessionTranscript`, which is the whole of the correlation. `window` rides along
+ * when the call came from one, exactly as the list's does, so the kernel resolves the scope and the
+ * page names no process.
  */
 export const sessionTranscriptCall = (
 	request: SessionTranscriptRequest,
@@ -53,7 +56,7 @@ export const sessionTranscriptCall = (
 		type: "spell.call",
 		version: PROTOCOL_VERSION,
 		id: CallId.make(crypto.randomUUID()),
-		path: [...SESSION_TRANSCRIPT_PATH],
+		path: [...SESSION_TRANSCRIPT_CALL_PATH],
 		args: {
 			programId: request.programId,
 			sessionId: request.sessionId,

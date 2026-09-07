@@ -709,6 +709,17 @@ a refusal when the result does not decode, and the value otherwise. The `null` i
 arm: a page holds several calls open on one socket, so "not my reply" has to stay distinguishable
 from "mine, and it is empty" — collapsing them shows one window another's answer.
 
+**The address is the program-prefixed one, and `protocol/` spells both.** The registry keys a row's
+spell under `[programId, ...path]` ([`commands/registry.ts`](../apps/tuval/src/commands/registry.ts)),
+so a call carrying the spell's bare path reaches nothing and the kernel answers `UnknownSpell`. Each
+protocol module therefore exports the row's own path *and* the whole call path
+(`SESSION_LIST_PATH` / `SESSION_LIST_CALL_PATH`,
+`SESSION_TRANSCRIPT_PATH` / `SESSION_TRANSCRIPT_CALL_PATH`), and the page sends the second. **A
+scripted socket in a test is a registry, not a router with a default arm**: it answers the addresses
+the kernel really registers and refuses everything else the way the kernel does. A fixture that parks
+any unrecognised path passes a mis-addressed call, which is how #8238's bare `session.transcript`
+cleared a whole rendered suite and failed on a real desk.
+
 **A hook the renderer calls, bound at the table.** The window declares a source type
 (`SessionListSource`, `TranscriptSource`) and takes it as an option; the default asks nobody, so a
 fixture or a socket-less surface renders the same waiting path a real one does.

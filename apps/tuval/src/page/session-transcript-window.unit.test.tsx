@@ -23,25 +23,36 @@ import {SESSION_LIST_STATE} from "../ai-agent/renderer-ref.ts";
 import {claudeSession} from "../ai-agent/window/fixtures.ts";
 import {SESSION_LIST_WINDOW_REF} from "../ai-agent/window/index.ts";
 import {ProcessId} from "../process/process.ts";
+import type {SpellPath} from "../protocol/ids.ts";
 import {CallId} from "../protocol/ids.ts";
-import type {SpellCall, SpellFailure, SpellReply} from "../protocol/messages.ts";
-import {PROTOCOL_VERSION, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
+import type {SpellFailure, SpellReply} from "../protocol/messages.ts";
+import {PROTOCOL_VERSION, SpellCall, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
 import {SESSION_LIST_CALL_PATH} from "../protocol/session-list.ts";
 import type {SessionTranscript, TranscriptItemWire} from "../protocol/session-transcript.ts";
-import {SESSION_TRANSCRIPT_PATH} from "../protocol/session-transcript.ts";
+import {
+	SESSION_TRANSCRIPT_CALL_PATH,
+	SESSION_TRANSCRIPT_PATH,
+} from "../protocol/session-transcript.ts";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
 import type {ProcessView, WindowHost} from "../shell/window/index.ts";
 import {delivered, WindowId} from "../shell/window/index.ts";
 import type {SpellCaller} from "./renderers.tsx";
 import {pageRenderers} from "./renderers.tsx";
+import {sessionTranscriptCall} from "./session-transcript.ts";
 
 installDomShims();
 
 /**
- * The scripted socket. `session.list` answers at once — this file is not about the list — and every
- * `session.transcript` call is parked, so a test decides when a page lands and whether it lands at
- * all. Parking is what makes the two cases that matter reachable: an older read that is still out,
- * and a reply that arrives after the read it belongs to was left behind.
+ * The scripted socket, and it is a **registry** rather than a router with a default arm: it answers
+ * only the two addresses the kernel really registers, and refuses anything else the way the kernel
+ * does. That is what makes a mis-addressed call fail here — the first cut of this file parked every
+ * non-list path, so the page sending the bare `session.transcript` instead of the program-prefixed
+ * one passed every assertion below and failed on a real desk (#8238).
+ *
+ * `session.list` answers at once — this file is not about the list — and a transcript call is
+ * parked, so a test decides when a page lands and whether it lands at all. Parking is what makes the
+ * two cases that matter reachable: an older read that is still out, and a reply that arrives after
+ * the read it belongs to was left behind.
  */
 interface Parked {
 	readonly spell: SpellCall;
@@ -71,13 +82,25 @@ const refusal = (id: string, error: SpellFailure): SpellReply =>
 const NOT_FOUND: SpellFailure = {
 	tag: "tuval/TranscriptError",
 	message: 'no session "c-1" is stored for this working directory',
-	path: [...SESSION_TRANSCRIPT_PATH],
+	path: [...SESSION_TRANSCRIPT_CALL_PATH],
 };
+
+/** The kernel's own refusal for a path nothing is registered at (`../commands/errors.ts`). */
+const unknownSpell = (path: SpellPath): SpellFailure => ({
+	tag: "tuval/commands/UnknownSpell",
+	message: `no spell is registered at path "${path.join(" ")}"`,
+	path,
+});
 
 const call: SpellCaller = (spell) =>
 	Effect.callback<SpellReply, Socket.SocketError>((resume) => {
-		if (spell.path.join(".") === SESSION_LIST_CALL_PATH.join(".")) {
+		const address = spell.path.join(".");
+		if (address === SESSION_LIST_CALL_PATH.join(".")) {
 			resume(Effect.succeed(ok(spell.id, {sessions: [claudeSession], unreadable: []})));
+			return;
+		}
+		if (address !== SESSION_TRANSCRIPT_CALL_PATH.join(".")) {
+			resume(Effect.succeed(refusal(spell.id, unknownSpell(spell.path))));
 			return;
 		}
 		parked.push({spell, answer: (reply) => resume(Effect.succeed(reply))});
@@ -161,12 +184,34 @@ beforeEach(() => {
 	parked = [];
 });
 
+describe("the scripted socket", () => {
+	it("refuses an unregistered path instead of parking it, so a mis-addressed call cannot pass", async () => {
+		const bare = sessionTranscriptCall({
+			programId: claudeSession.programId,
+			sessionId: claudeSession.sessionId,
+			cwd: claudeSession.folder ?? "",
+			before: null,
+			limit: 50,
+		});
+		const misaddressed = new SpellCall({...bare, path: [...SESSION_TRANSCRIPT_PATH]});
+
+		const reply = await Effect.runPromise(call(misaddressed));
+
+		expect(parked).toHaveLength(0);
+		expect(reply.ok).toBe(false);
+		expect(reply.ok === false && reply.error.tag).toBe("tuval/commands/UnknownSpell");
+	});
+});
+
 describe("picking a row", () => {
 	it("sends that row's whole address, the newest end of the transcript, and one bounded page", async () => {
 		await openSession();
 
 		expect(parked).toHaveLength(1);
-		expect(parked[0]?.spell.path).toEqual([...SESSION_TRANSCRIPT_PATH]);
+		// The program-prefixed address, because that is where the registry holds the spell; the bare
+		// `session.transcript` is refused by the socket above and reaches nothing (#8238).
+		expect([...(parked[0]?.spell.path ?? [])]).toEqual([...SESSION_TRANSCRIPT_CALL_PATH]);
+		expect([...(parked[0]?.spell.path ?? [])].slice(1)).toEqual([...SESSION_TRANSCRIPT_PATH]);
 		expect(parked[0]?.spell.args).toEqual({
 			programId: claudeSession.programId,
 			sessionId: claudeSession.sessionId,
@@ -360,7 +405,7 @@ describe("the read-only contract", () => {
 		await answer(1, (id) => ok(id, pageOf(1, 50, null)));
 
 		expect(new Set(parked.map((sent) => sent.spell.path.join(".")))).toEqual(
-			new Set(["session.transcript"]),
+			new Set([SESSION_TRANSCRIPT_CALL_PATH.join(".")]),
 		);
 	});
 });
