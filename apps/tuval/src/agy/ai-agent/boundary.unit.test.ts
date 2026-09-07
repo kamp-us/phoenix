@@ -58,6 +58,7 @@ const members: ReadonlyArray<keyof TuvalAiAgentApi> = [
 	"commands",
 	"setThinkingLevel",
 	"page",
+	"sessionTranscript",
 	"listSessions",
 	"events",
 ];

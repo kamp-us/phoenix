@@ -55,11 +55,20 @@ export const TRANSCRIPT_FULL_FILE = "transcript_full.jsonl";
 export const CLIPPED_MARK = "\n\n[agy clipped this field; transcript_full.jsonl is not on disk]";
 
 /**
+ * Where agy keeps one conversation. Its presence is the whole evidence that the store holds the
+ * conversation at all: the log files under it are written as the turns run, so their absence means
+ * an empty conversation and never a missing one (`sessionTranscript` in `AgyAiAgent.ts` turns on
+ * exactly that distinction).
+ */
+export const conversationDir = (home: string, conversationId: string): string =>
+	`${home}/.gemini/antigravity-cli/brain/${conversationId}`;
+
+/**
  * Where agy keeps one conversation's logs. `home` is the caller's runtime `$HOME` — `homedir()` at
  * the call site, never a constant — so nothing machine-local is written into this repo.
  */
 export const transcriptLogDir = (home: string, conversationId: string): string =>
-	`${home}/.gemini/antigravity-cli/brain/${conversationId}/.system_generated/logs`;
+	`${conversationDir(home, conversationId)}/.system_generated/logs`;
 
 export interface TranscriptSource {
 	readonly home: string;

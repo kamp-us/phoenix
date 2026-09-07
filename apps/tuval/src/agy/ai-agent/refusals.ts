@@ -6,7 +6,13 @@
  * reaches a caller of `TuvalAiAgent`.
  */
 
-import {PageError, PromptError, StartError, TransportError} from "../../ai-agent/service/index.ts";
+import {
+	PageError,
+	PromptError,
+	StartError,
+	TranscriptError,
+	TransportError,
+} from "../../ai-agent/service/index.ts";
 
 /** A platform fault or a refusal, as the one sentence an error's `detail` carries. */
 export const detailOf = (cause: unknown): string =>
@@ -62,3 +68,25 @@ export const historyUnreadable = (detail: string): PageError =>
 
 export const unknownCursor = (detail: string): PageError =>
 	new PageError({reason: "unknown-cursor", detail});
+
+/**
+ * The three ways a *stored* conversation's transcript does not come back (#8233).
+ *
+ * `transcriptSessionMissing` is the one `historyUnreadable` above cannot say. `page` reads the log
+ * of the conversation this layer already has open, so nothing on disk there is an empty history;
+ * the store read is handed an id from outside, and a conversation directory that is nowhere is the
+ * ordinary answer that the conversation is gone — which a caller must be able to tell from a store
+ * it could not look in.
+ */
+export const transcriptSessionMissing = (sessionId: string): TranscriptError =>
+	new TranscriptError({
+		reason: "session-not-found",
+		sessionId,
+		detail: "agy's brain directory holds no conversation with this id",
+	});
+
+export const transcriptUnreadable = (sessionId: string, cause: unknown): TranscriptError =>
+	new TranscriptError({reason: "store-unreadable", sessionId, detail: detailOf(cause)});
+
+export const transcriptUnknownCursor = (sessionId: string, reason: string): TranscriptError =>
+	new TranscriptError({reason: "unknown-cursor", sessionId, detail: reason});

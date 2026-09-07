@@ -9,7 +9,7 @@
  * own. `start` is the handler's call, not the layer's, so restore is "rebuild the layer, then
  * `start({cwd, resume: conversationId})`".
  *
- * **Three of the ten members are respawns, because agy has no mid-session switch.** It refuses one
+ * **Three of the eleven members are respawns, because agy has no mid-session switch.** It refuses one
  * verbatim — `/model is answered by the CLI itself and is unavailable with --input-format
  * stream-json; run it as its own --print invocation` — and `/effort` behaves the same. So
  * `setModel`, `setMode` and `setThinkingLevel` each take the child down and launch a new one with
@@ -63,6 +63,7 @@ import {
 	type ResumeTarget,
 	type StartError,
 	ThinkingUnsupported,
+	type TranscriptQuery,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -88,9 +89,12 @@ import {
 	processGone,
 	resumeFailed,
 	startFailed,
+	transcriptSessionMissing,
+	transcriptUnknownCursor,
+	transcriptUnreadable,
 	unknownCursor,
 } from "./refusals.ts";
-import {readTranscriptPage} from "./transcript.ts";
+import {conversationDir, readTranscriptPage} from "./transcript.ts";
 import {decodeLine} from "./wire.ts";
 
 /**
@@ -564,6 +568,45 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
 
+		/**
+		 * `page`'s answer with no session open (#8233) — and on this backend that is the whole of the
+		 * difference, because agy's history is a plaintext log under `$HOME` keyed by conversation
+		 * id, so reading it needs no child and no transport at all.
+		 *
+		 * `query.cwd` is unused, and that is a fact about agy's store rather than an omission: a
+		 * conversation lives under its id in one brain directory whatever directory it was run from,
+		 * so the cwd would narrow nothing.
+		 *
+		 * The conversation directory's presence is what separates the three answers. A directory
+		 * that is there with no log yet is an empty conversation — a page — because agy writes the
+		 * log as the turns run; a directory that is nowhere is a conversation this store does not
+		 * hold; and a `$HOME` that would not answer at all is neither, and must not be spelled as
+		 * either (`../../ai-agent/service/errors.ts`).
+		 */
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			const held = yield* filesystem
+				.exists(conversationDir(home, query.sessionId))
+				.pipe(Effect.mapError((cause) => transcriptUnreadable(query.sessionId, cause)));
+			if (!held) return yield* Effect.fail(transcriptSessionMissing(query.sessionId));
+			const planned = yield* readTranscriptPage(
+				{home, conversationId: query.sessionId},
+				{before: query.before, limit: query.limit},
+			).pipe(Effect.provideService(FileSystem.FileSystem, filesystem));
+			if (isRefusal(planned)) {
+				if (planned.reason === "limit-not-positive") {
+					return yield* Effect.die(
+						new Error(
+							`sessionTranscript was asked for ${query.limit} items; the port declares limit > 0`,
+						),
+					);
+				}
+				return yield* transcriptUnknownCursor(query.sessionId, planned.reason);
+			}
+			return {items: planned.items, hasMore: planned.next !== null};
+		});
+
 		return {
 			start,
 			prompt,
@@ -581,6 +624,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			commands,
 			setThinkingLevel,
 			page,
+			sessionTranscript,
 			/**
 			 * `unsupported` rather than `[]`, which is the distinction the reason exists for
 			 * (`../../ai-agent/service/errors.ts`): agy's conversation store is not readable from
