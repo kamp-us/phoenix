@@ -101,8 +101,8 @@
 			]
 		},
 		"plugin-discovery": {
-			"ceiling": 300,
-			"why": "The grilling, wayfinding, graduate and prototyping skills' text, cleared by #8298, the discovery sweep child.",
+			"ceiling": 8,
+			"why": "The prose is swept; all 8 that remain are verbatim pins of stderr lines the shipped verbs print, quoted in the Errors tables and echoed in the worked examples. Rewriting a pin first would make the contract quote a line no verb prints, so each moves only when its source string does. 2 in grilling/contract.md are `grill rule`'s empty-authorization refusal, and 2 in graduate/contract.md are `graduate emit`'s missing-intake-label and classifying-title refusals — all four live in packages/fabrika-cli/src/grill and packages/fabrika-cli/src/graduate, which #8308 owns. The other 4, in prototyping/contract.md, are `spike open`'s artifact-kind refusal and `spike capture`'s zero-recorded-runs and below-write refusals, whose strings live in packages/fabrika-cli/src/spike, which #8310 owns. So #8308 retires 4 and #8310 retires 4. The skills' own prose carries none, including the wrapped two-line citation this guard's line-at-a-time matcher cannot see.",
 			"paths": [
 				"claude-plugins/fabrika/skills/grilling",
 				"claude-plugins/fabrika/skills/wayfinding",

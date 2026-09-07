@@ -111,7 +111,7 @@ elsewhere and stopped.
 ## 2 — Read the map before you write to it
 
 ```bash
-fabrika map read 9140
+fabrika map read 4
 ```
 
 The parser, and the only thing that may tell you what the frontier holds. It prints the
@@ -138,7 +138,7 @@ rather than re-reading between each.
 ## 3 — Lay the frontier out as blocking edges
 
 ```bash
-fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?" --blocks 9143
+fabrika map ticket 4 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?" --blocks 7
 ```
 
 One call per open question. The verb files the ticket, links it as a native sub-issue, sets the
@@ -155,8 +155,8 @@ map at all.
 **The edges are map topology and real blockedness both.** A native `blocked_by` edge gates pipeline
 eligibility whoever wrote it, so a destination stays unpickable until its frontier tickets close —
 `build claim`, `build pick` and `build eligible` all read this graph. That gating is intended, not a
-side effect: ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md), ruled for
-map edges at [#6271](https://github.com/kamp-us/phoenix/issues/6271#issuecomment-5362260727).
+side effect: the native dependency graph is the one carrier of blockedness, and a map edge is a
+real edge on it like any other.
 
 **Done when** every open question you named is a ticket, and `map read` shows the frontier you
 intended.
@@ -167,7 +167,7 @@ The delta that makes charting one session's work rather than one ticket per sess
 per **answerable** ticket now, instead of leaving each to a later run.
 
 ```bash
-fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21
+fabrika map lane 4 --ticket 7 --nonce 7f3a9c21
 ```
 
 **A `decision` ticket cannot be laned.** `map lane` and `map finding` refuse one, naming `map fork`
@@ -186,7 +186,7 @@ human-readable label like `run-1` is refused rather than quietly shared with the
 Each lane closes with an outcome from a closed set:
 
 ```bash
-fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome no-evidence
+fabrika map finding 4 --ticket 7 --nonce 7f3a9c21 --outcome no-evidence
 ```
 
 <!-- anchor: NOTHING-IS-NOT-EMPTY --> **Three answers an absence would collapse into one.**
@@ -221,15 +221,15 @@ needs. Do not reimplement any of that here, and never write an answer onto the m
 number you invent or relay by hand: `grill open --ticket <t>` binds the session to the ticket and
 prints the session, and running it again on the same ticket resumes that same session rather than
 minting a second one. That is the only mechanism carrying a ticket into a session — a topic composed
-from the ticket's title binds nothing, and the map never learns where the ruling went (#5661).
+from the ticket's title binds nothing, and the map never learns where the ruling went.
 
 ```bash
-fabrika grill open --ticket 9144 --repo kamp-us/phoenix   # → {"session":9301,…}
-fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
+fabrika grill open --ticket 6 --repo <owner/name>   # → {"session":8,…}
+fabrika map fork 4 --digest a1b2c3d4e5f6 --ticket 6 --session 8
 ```
 
-The same pair closes the loop in step 6: `grill read 9301` reports each question's id and state, and
-`map record --ruled-on 9301 --question-id R1.2` cites the one that reads `ruled`. Nobody carries a
+The same pair closes the loop in step 6: `grill read 8` reports each question's id and state, and
+`map record --ruled-on 8 --question-id R1.2` cites the one that reads `ruled`. Nobody carries a
 number between sessions by hand — a ticket resolves to its session, and the session names its
 questions.
 
@@ -241,7 +241,7 @@ same way and prints the spike number `--spike` takes.
 
 ```bash
 fabrika spike open --question "…" --kind logic --ticket 9147   # → the spike number
-fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310
+fabrika map fork 4 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310
 ```
 
 The ticket's kind decides which flag is admitted, so a mis-sorted question is refused rather than
@@ -263,7 +263,7 @@ map, or the run ends naming what he owes.
 ## 6 — Summarize a cleared ticket back to the map
 
 ```bash
-fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md
+fabrika map record 4 --digest a1b2c3d4e5f6 --ticket 7 --finding finding.md
 ```
 
 One verb moves the whole lockstep: the answer lands under the decisions section and the ticket's row
@@ -280,7 +280,7 @@ the sibling established; you never restate it in your own voice.
 ## 7 — Record what was decided against
 
 ```bash
-fabrika map descope 9140 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md
+fabrika map descope 4 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md
 ```
 
 The out-of-scope section is **append-only and never graduates**. Every other section empties as the

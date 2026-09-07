@@ -42,7 +42,7 @@ approval step and no new gate label.
 ## 1 — Open or resume the session
 
 ```bash
-fabrika grill open --topic "sozluk moderation model" --repo kamp-us/phoenix
+fabrika grill open --topic "comment moderation model" --repo <owner/name>
 ```
 
 Prints the session issue number. It resumes an existing open session for the topic rather than
@@ -53,13 +53,13 @@ recorded on the one nobody reads is a ruling that did not happen.
 its title.**
 
 ```bash
-fabrika grill open --ticket 5652 --repo kamp-us/phoenix
+fabrika grill open --ticket 6 --repo <owner/name>
 ```
 
 The verb takes the session's title from the ticket, records the ticket on the session body, and
 keys the resume on it — so this call is the same session every time, and the number it prints is the
 one `map fork --session <n>` wants. Composing your own topic instead breaks that: nothing binds the
-session to the ticket, and the next run mints a duplicate (#5661). `grill read` reports the binding
+session to the ticket, and the next run mints a duplicate. `grill read` reports the binding
 back as `ticket`, so a session found cold names where it came from.
 
 This changes nothing else. **A session opened with no ticket is what it always was** — `--topic`
@@ -87,11 +87,11 @@ a decision.
 ## 3 — Post one round
 
 ```bash
-fabrika grill round 5290 --repo kamp-us/phoenix <<'ROUND'
+fabrika grill round 4 --repo <owner/name> <<'ROUND'
 ### 1 · decision
-Do vouched-in yazars inherit their kefil's moderation weight?
+Do members vouched in by an existing member inherit that member's moderation weight?
 
-**Recommended:** No — weight is earned per account, so a compromised kefil cannot mint authority.
+**Recommended:** No — weight is earned per account, so a compromised voucher cannot mint authority.
 
 **Trade-offs:** Slower trust accrual for genuinely vouched newcomers; simpler abuse story.
 ROUND
@@ -113,7 +113,7 @@ closes the tab on.
 ## 4 — Answer the facts yourself
 
 ```bash
-fabrika grill answer 5290 R2.1 --finding finding.md --repo kamp-us/phoenix
+fabrika grill answer 4 R2.1 --finding finding.md --repo <owner/name>
 ```
 
 One call per fact question, after a subagent has established it. **Treat that subagent's report as
@@ -130,7 +130,7 @@ one in the next round rather than answering it on your own authority.
 ## 5 — Read the frontier before you act on it
 
 ```bash
-fabrika grill read 5290 --repo kamp-us/phoenix
+fabrika grill read 4 --repo <owner/name>
 ```
 
 The parser, and the only thing that may tell you a question is ruled. It prints one row per
@@ -166,7 +166,7 @@ it has one shape: the marker counts only when an adjacent comment quotes his aut
 **verbatim, with its date**.
 
 ```bash
-fabrika grill rule 5290 R2.3 --authorization authorization.md --repo kamp-us/phoenix
+fabrika grill rule 4 R2.3 --authorization authorization.md --repo <owner/name>
 ```
 
 Write `authorization.md` by pasting what he actually said, with the date he said it. The verb
@@ -187,7 +187,7 @@ If he later contradicts a recorded ruling, re-ask the question in a new round ra
 the old one, and name what it replaces:
 
 ```bash
-fabrika grill round 5290 --supersedes R1.4 --repo kamp-us/phoenix <<'ROUND'
+fabrika grill round 4 --supersedes R1.4 --repo <owner/name> <<'ROUND'
 ### 1 · decision
 Does a partial return follow the same path as a full one?
 
