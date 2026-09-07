@@ -16,7 +16,7 @@ The rows below describe the `query()` captures; the last three fixtures have the
 
 | | |
 |---|---|
-| Captured | 2026-09-04; `streaming-turn.json` on 2026-09-06; `subagent-turn.json` on 2026-09-07 |
+| Captured | 2026-09-04; `streaming-turn.json` on 2026-09-06; `subagent-turn.json` and `two-subagent-turn.json` on 2026-09-07 |
 | SDK | `@anthropic-ai/claude-agent-sdk` **0.3.259** (the `pnpm-workspace.yaml` catalog pin) |
 | CLI | `claude_code_version` **2.1.259**, as reported by the `init` frame itself |
 | Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json` and `subagent-turn.json`, which are `claude-opus-5` |
@@ -46,9 +46,29 @@ in order.
 | `unknown-message.json` | a `rate_limit_event` frame from the plain run — a real member of `SDKMessage` |
 | `streaming-turn.json` | one prompt with `includePartialMessages: true`, captured 2026-09-06 — the whole `stream_event` run of one turn, `message_start` through `message_stop` (#8172) |
 | `subagent-turn.json` | one prompt asking for a single `Task` spawn, run with `forwardSubagentText: true` and `includePartialMessages: true` on `claude-opus-5` with `thinking: {type: "enabled", budgetTokens: 8000}`, captured 2026-09-07 — the whole 74-frame run of a turn that spawns one worker (#8403) |
+| `two-subagent-turn.json` | the same options on `claude-fable-5-1`, with a prompt asking for **two** `Explore` workers in parallel over two files in the throwaway cwd, captured 2026-09-07 — the whole 59-frame run, and the one capture where two workers overlap (#8408) |
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |
+
+### The two-worker capture
+
+`two-subagent-turn.json` is the capture `subagent-turn.json` could not be: **two workers running at
+once**, which is the whole subject of the running list. The frames say so on their own — both
+`Agent` calls are made and both raise `system`/`task_started` before either worker's
+`tool_result` arrives, and the two results land four frames apart, so there is a stretch where one
+worker finishes while the other is still writing. The run's own `result` frame agrees:
+`subagent_stats` reads `{"spawned": 2, "completed": 2, "by_type": {"Explore": 2}}`.
+
+That gap between the two endings is what `../../proof/subagent-vertical.integration.test.ts` replays
+a frame at a time: it is the only moment at which a worker can finish while an operator is inside
+its view (founder ruling Q9 on #8384).
+
+The run was driven exactly as the first table's rows were — `query()` from a throwaway cwd holding
+two one-line files, every message the iterator yielded written in order — and sanitized the same
+way. Two shapes of the operator's machine needed substituting beyond the usual list, because this
+capture carries them where the others do not: the CLI's slug-encoded project key (a temp path with
+the separators rewritten) and a path cut mid-token inside a streamed `input_json_delta`.
 
 ## The three excerpted from a CLI session transcript
 
@@ -160,6 +180,10 @@ an empty `thinking` string — the provider ships a worker's reasoning encrypted
 at this pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s
 shape is not what a live worker yields today. `blocks.ts` reads the empty-with-signature shape as
 withheld, which is what the captures forced.
+
+**Two workers under one *parent* tool call.** Both captures spawn workers as siblings of each other.
+A `Task` call made *by* a worker — `spawn_depth` above 1 — is uncaptured, and nothing a prompt
+controls decides whether a worker delegates further.
 
 **A run with `forwardSubagentText` off.** `subagent-turn.json` sets it, because the SDK forwards only
 a worker's `tool_use`/`tool_result` blocks by default — "enough for a heartbeat counter"

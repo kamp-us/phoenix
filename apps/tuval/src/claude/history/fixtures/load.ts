@@ -24,6 +24,7 @@ export type FixtureName =
 	| "subagent-turn"
 	| "thinking-turn"
 	| "tool-turn"
+	| "two-subagent-turn"
 	| "unknown-message";
 
 export const loadFixture = (name: FixtureName): unknown =>

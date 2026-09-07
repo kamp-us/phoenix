@@ -77,6 +77,7 @@ describe("the Claude history mapping is pure", () => {
 			"subagent-turn",
 			"thinking-turn",
 			"tool-turn",
+			"two-subagent-turn",
 			"unknown-message",
 		]);
 	});
