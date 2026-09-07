@@ -72,7 +72,7 @@ const KERNEL =
 	"Tuval's kernel is a registry of programs and a table of running processes; a process has typed ports, an in-port you write to and an out-port you read from.";
 
 const SPAWN_DESCRIPTION = `Start a new process of a program the registry knows, as a child of your own process. ${KERNEL} Answers with the new process's id.`;
-const SEND_DESCRIPTION = `Write one payload to a named in-port of a process you spawned. ${KERNEL} The port decides what it takes, and a payload it refuses is an error naming what the port takes. A port whose protocol runs both ways takes one direction per end, so a reply written to the end that takes requests is refused here rather than delivered.`;
+const SEND_DESCRIPTION = `Write one payload to a named in-port of a process you spawned. ${KERNEL} The port decides what it takes, and a payload it refuses is an error naming what the port takes. A port whose protocol runs both ways takes one direction per end, so a reply written to the end that takes requests is refused here rather than delivered. The reply also carries \`evicted\`: how many queued payloads the port discarded unread to make room for this one, which is non-zero only on a port that keeps the latest rather than blocking.`;
 const READ_DESCRIPTION = `Read the current value of a named out-port of a process you spawned. ${KERNEL} A port that has said nothing yet answers empty rather than making you wait.`;
 
 const text = (value: unknown): CallToolResult => ({
@@ -105,8 +105,8 @@ export const tuvalToolServer = (
 		spawn: (args: {readonly program: string}) =>
 			answer(run, bridge.spawn(ProgramId.make(args.program)), (process) => text({process})),
 		send: (args: {readonly process: string; readonly port: string; readonly payload: unknown}) =>
-			answer(run, bridge.send(ProcessId.make(args.process), args.port, args.payload), (delivered) =>
-				text({delivered}),
+			answer(run, bridge.send(ProcessId.make(args.process), args.port, args.payload), (sent) =>
+				text(sent),
 			),
 		read: (args: {readonly process: string; readonly port: string}) =>
 			answer(run, bridge.read(ProcessId.make(args.process), args.port), (held) =>

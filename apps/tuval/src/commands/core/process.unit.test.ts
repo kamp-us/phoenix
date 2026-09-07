@@ -22,7 +22,7 @@ import {ProcessTable} from "../../process/ProcessTable.ts";
 import {ProcessId} from "../../process/process.ts";
 import {CallId} from "../../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../../protocol/messages.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
+import {type AnyProgram, type PortBound, type Program, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {SpellExecutor} from "../executor.ts";
 import {SpellRegistry} from "../registry.ts";
@@ -40,7 +40,7 @@ type Say = {readonly type: "say"; readonly word: string};
 const echoId = ProgramId.make("echo");
 
 /** The fixture the demo pair does not offer: one program with both an in-port and an out-port. */
-const echoProgram = (): AnyProgram =>
+const echoProgram = (bound: PortBound = {capacity: 4, overflow: "suspend"}): AnyProgram =>
 	({
 		id: echoId,
 		core: defineMachine<EchoState, EchoMsg, Say, never, unknown>({
@@ -58,7 +58,7 @@ const echoProgram = (): AnyProgram =>
 				kind: WORD_KIND,
 				direction: "in",
 				accepts: isWord,
-				bound: {capacity: 4, overflow: "suspend"},
+				bound,
 			},
 			echoed: {kind: WORD_KIND, direction: "out", accepts: isWord},
 		},
@@ -88,6 +88,19 @@ const echoProgram = (): AnyProgram =>
 		PayloadRejected | PortNotWired,
 		ProcessPorts
 	>;
+
+/**
+ * `echo` under one named overflow at capacity 1: the three bounds side by side, so a proof over an
+ * eviction and a proof that the other two never evict read the same fixture (#7971).
+ */
+const boundedEchoId = (overflow: PortBound["overflow"]): ProgramId =>
+	ProgramId.make(`echo-${overflow}`);
+
+const boundedEchoProgram = (overflow: PortBound["overflow"]): AnyProgram => {
+	const base = echoProgram({capacity: 1, overflow});
+	const id = boundedEchoId(overflow);
+	return {...base, id, identity: {...base.identity, program: id, digest: `sha256:${id}`}};
+};
 
 const deafId = ProgramId.make("deaf");
 
@@ -120,6 +133,9 @@ const rows: ReadonlyArray<AnyProgram> = [
 	logProgram({write: () => Effect.void}),
 	echoProgram(),
 	deafProgram(),
+	boundedEchoProgram("sliding"),
+	boundedEchoProgram("dropping"),
+	boundedEchoProgram("suspend"),
 ];
 
 const kernel = SpawnedProcesses.layer({readTimeout: "1 second"}).pipe(
@@ -203,7 +219,7 @@ describe("the process spells", () => {
 			const sent = succeeded(
 				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "hi"}),
 			);
-			assert.deepStrictEqual(sent, {delivered: true});
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 0});
 
 			const read = succeeded(
 				yield* invoke(["process", "read"], {process: spawned, port: "echoed"}),
@@ -323,7 +339,64 @@ describe("the process spells", () => {
 			for (const payload of ["one", "two", "three"]) {
 				assert.deepStrictEqual(
 					succeeded(yield* invoke(["process", "send"], {process: spawned, port: "words", payload})),
-					{delivered: true},
+					{delivered: true, evicted: 0},
+				);
+			}
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a sliding in-port that displaced nothing reports no eviction", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("sliding"));
+
+			const sent = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "one"}),
+			);
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 0});
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a sliding in-port at capacity reports the payload it took off to make room", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("sliding"));
+
+			// The port holds one, and the pump's take is released on a scheduled task rather than
+			// inside the offer — so the second send lands on a full queue, which slides "one" out.
+			yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "one"});
+			const sent = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "two"}),
+			);
+			assert.deepStrictEqual(sent, {delivered: true, evicted: 1});
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a dropping in-port at capacity refuses the payload and evicts nothing", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("dropping"));
+
+			const first = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "one"}),
+			);
+			const second = succeeded(
+				yield* invoke(["process", "send"], {process: spawned, port: "words", payload: "two"}),
+			);
+			assert.deepStrictEqual(first, {delivered: true, evicted: 0});
+			assert.deepStrictEqual(second, {delivered: false, evicted: 0});
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a suspending in-port waits for room and evicts nothing", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* spawnThrough(boundedEchoId("suspend"));
+
+			for (const payload of ["one", "two"]) {
+				assert.deepStrictEqual(
+					succeeded(yield* invoke(["process", "send"], {process: spawned, port: "words", payload})),
+					{delivered: true, evicted: 0},
 				);
 			}
 		}).pipe(Effect.provide(app)),
