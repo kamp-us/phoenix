@@ -35,7 +35,10 @@ export interface SpawnOptions {
 	/** Restore's: the id the process was checkpointed under. A fresh spawn mints its own. */
 	readonly id?: ProcessId;
 	/**
-	 * Provided to this process's handlers: the services its program's `R` names, per process.
+	 * Exactly what this process's handlers resolve: the services its program's `R` names, per
+	 * process. Not a floor — a handler is sealed to this set, so a service the fiber that
+	 * dispatched holds and this set does not is not resolvable inside the handler (#7972). A
+	 * spawner that wants to pass its own context on says so, the way `shell/picker/open.ts` does.
 	 * Never optional — a spawner with nothing to give says so with `Context.empty()`. Omission
 	 * used to be silent, and `restore` took it, so a restored process's first handler died on a
 	 * missing service one boot later (#7789).
@@ -113,6 +116,40 @@ type ErasedDefinition = ActorDefinition<
 	ErasedSubscribe
 >;
 
+/**
+ * Every key effect keeps its own runtime under is namespaced `effect/…` — the clock, the scheduler
+ * and its yield knobs, the loggers and log level, the tracer and its parent span, and `Scope`
+ * (rc.112: `Context.Reference("effect/Clock")` and friends in `src/internal/effect.ts`,
+ * `src/Scheduler.ts`, `src/Tracer.ts`, `src/Scope.ts`). Tuval's own services are namespaced
+ * `tuval/…` by `Context.Service`, so the prefix is the line between "what a spawner grants" and
+ * "how the fiber runs".
+ */
+const EFFECT_RUNTIME_PREFIX = "effect/";
+
+/**
+ * The seal: a handler resolves exactly the set its spawn was given, never that set merged over
+ * whatever the fiber that dispatched happened to carry (#7972). `Effect.provideContext` is
+ * `updateContext(self, Context.merge(context))` (rc.112, `src/internal/effect.ts:2197`), which
+ * makes the spawn set a floor; `Effect.updateContext` sets the fiber context outright at the same
+ * seam and restores it on exit (rc.112, `src/internal/effect.ts:2073`).
+ *
+ * effect's own runtime rides through, because `FiberImpl.setContext` re-derives the scheduler,
+ * clock, log level, stack frame, tracer and parent span from the context on every replace (rc.112,
+ * `src/internal/effect.ts:709`): dropping those would silently reset a handler's clock and logger
+ * to the process defaults, and would take a sub handler's `Scope` — the one the host forks for it
+ * (`../host/actor.ts`) — with them. Everything the runtime does not own is the spawn set's alone.
+ */
+const sealed =
+	(services: Context.Context<never>) =>
+	<A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+		Effect.updateContext(self, (ambient: Context.Context<R>) => {
+			const runtime = new Map<string, unknown>();
+			for (const [key, value] of ambient.mapUnsafe) {
+				if (key.startsWith(EFFECT_RUNTIME_PREFIX)) runtime.set(key, value);
+			}
+			return Context.merge(Context.makeUnsafe<R>(runtime), services);
+		});
+
 const toDefinition = (
 	program: AnyProgram,
 	store: Store<unknown>,
@@ -132,7 +169,7 @@ const toDefinition = (
 				Effect.mapError(
 					(cause) => new HandlerFailed({programId: program.id, cmdType: cmd.type, cause}),
 				),
-				Effect.provideContext(services),
+				sealed(services),
 			);
 	}
 	// Kept for the erasure, not for `subFailure` — the row's own type carries the policy now
@@ -159,7 +196,7 @@ const toDefinition = (
 				Effect.mapError(
 					(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
 				),
-				Effect.provideContext(services),
+				sealed(services),
 			);
 	}
 	return {
@@ -209,13 +246,17 @@ function makeServices() {
 			// Read late on purpose: the definition that closes over this is built before the actor
 			// exists, and a handler only ever calls it once the actor is running.
 			let readState: () => unknown = () => undefined;
-			// What handlers actually get: the spawner's context plus this process's own `ProcessSelf`.
-			// Never `options.services` directly — spawn is the one place `ProcessSelf` is provided, so
-			// no caller and no `restore` has to know it exists (#7603).
-			const handlerServices = Context.add(options.services, ProcessSelf, {
-				scope,
-				state: () => readState(),
-			});
+			// What handlers actually get, and under the seal it is all they get: the spawner's set
+			// plus this process's own `ProcessSelf`. Never `options.services` directly — spawn is the
+			// one place `ProcessSelf` is provided, so no caller and no `restore` has to know it
+			// exists (#7603). The spawner's `Scope` is dropped on the way in: a spawner that passes
+			// its whole context on carries one, and the seal would let it beat the Scope the host
+			// forks for a sub handler. A handler that wants this process's own reads `ProcessSelf`.
+			const handlerServices = Context.add(
+				Context.omit(Scope.Scope)(options.services),
+				ProcessSelf,
+				{scope, state: () => readState()},
+			);
 
 			yield* Scope.addFinalizer(
 				scope,

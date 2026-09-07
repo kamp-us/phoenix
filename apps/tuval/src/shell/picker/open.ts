@@ -9,12 +9,14 @@
  * handle and no throw to catch.
  */
 
+import {randomUUID} from "node:crypto";
 import {Context, Effect} from "effect";
 import {SessionOpening} from "../../ai-agent/opening.ts";
-import {ProcessPorts} from "../../ports/ProcessPorts.ts";
+import {NodeId} from "../../ports/graph.ts";
+import {ProcessPorts, unwired} from "../../ports/ProcessPorts.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
-import type {ProcessId} from "../../process/process.ts";
+import {ProcessId} from "../../process/process.ts";
 import {type AnyProgram, type ProgramId, takesForwardedKeys} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import type {ShellMsg} from "../core/machine.ts";
@@ -76,26 +78,34 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	if (row._tag === "Failure") return refuse(windowId, options, unknownProgram(programId));
 	if (!showsInAWindow(row.success)) return refuse(windowId, options, programHeadless(programId));
 
-	// A picker-opened program may require kernel services, and this is where they arrive: the shell
-	// process's own context is the kernel one `launch` handed it (`src/boot.ts`), so the child gets
-	// the same. `Effect.context()` reads the running fiber's whole services map (`effect` rc.112,
-	// `internal/effect.ts`), which is why nothing here has to name what it passes on.
+	// A picker-opened program may require kernel services, and this is where they arrive: this
+	// handler is sealed to the shell process's own spawn set, which is the kernel one `launch`
+	// handed it (`src/boot.ts`), so `Effect.context()` reads exactly that and the child gets the
+	// same. Passing the context on is the whole grant — a handler resolves its spawn set and
+	// nothing else (#7972), so what is dropped here is dropped for good.
 	//
 	// `ProcessPorts` is the one thing dropped rather than passed: a port binding emits from *this*
-	// node, so handing it down would send the child's payloads out of the shell's own ports. Removing
-	// it leaves the child with none, where restore overrides the inherited one with an un-wired
-	// `ProcessPorts` of its own (`src/durability/restore.ts`).
+	// node, so handing it down would send the child's payloads out of the shell's own ports. The
+	// child gets one of its own below.
 	const inherited = Context.omit(ProcessPorts)(yield* Effect.context());
+	// Minted here rather than by `Processes.spawn` — same value, one call earlier — because the
+	// ports below have to know which process they emit from.
+	const id = ProcessId.make(randomUUID());
+	// The child's own ports, put back after the omit above, the way `restore` puts one back
+	// (`src/durability/restore.ts`). `unwired` because the graph owns no route to a picker-opened
+	// process: an emit fails `PortNotWired` naming this child, where before the handler seal (#7972)
+	// a row declaring `ProcessPorts` silently emitted out of the shell's.
+	const opened = Context.add(inherited, ProcessPorts, unwired(NodeId.make(id)));
 	// The one thing added rather than inherited. An open carrying a session is the first send on a
 	// row the operator picked out of the session list, and the child has to come up resuming that
 	// session instead of booting a second one beside it (epic #8070, ruling 2). The agent row's
 	// `aiAgent.boot` handler is the only reader (`../../ai-agent/handlers/index.ts`).
 	const services =
 		session === undefined
-			? inherited
-			: Context.add(inherited, SessionOpening, {cwd: session.cwd, resume: session.resume});
+			? opened
+			: Context.add(opened, SessionOpening, {cwd: session.cwd, resume: session.resume});
 	const spawned = yield* Effect.result(
-		processes.spawn(programId, {parent: options.shellProcessId, services}),
+		processes.spawn(programId, {id, parent: options.shellProcessId, services}),
 	);
 	return spawned._tag === "Failure"
 		? refuse(windowId, options, spawnFailed(programId, spawned.failure.message))

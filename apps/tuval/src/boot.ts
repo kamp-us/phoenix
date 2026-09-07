@@ -136,15 +136,21 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	// layer inside the merge above would be asking for itself.
 	const listing = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
 	const kernel = Context.add(listing, AiAgentTranscripts, aiAgentTranscriptsKernel(listing));
+	// The kernel reaches a process's handlers on one route only, the `services` argument: a handler
+	// is sealed to its spawn set, so the ambient a spawner is called under can no longer stand in
+	// for a `services` that forgot something (#7972). What each spawner is *called* under is
+	// therefore its own `R` and nothing more — the four services `launch` and `restore` name for
+	// themselves, not the kernel a second time.
+	const spawnerNeeds = Context.pick(Checkpoints, Processes, ProcessTable, Registry)(kernel);
 	// The kernel rides into every launched process's handlers: the shell row's Cmds spawn programs
 	// and read the process table, and a program row declares exactly those needs as its `R`.
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
-		Effect.provideContext(kernel),
+		Effect.provideContext(spawnerNeeds),
 	);
 	// The same kernel a launched process gets, so a row's `R` is satisfied whichever spawner brings
 	// it up (#7951). What still differs is the ports: the graph does not own a restored process, so
 	// restore builds it an un-wired `ProcessPorts` of its own (#7789).
-	const restored = yield* restore(kernel).pipe(Effect.provideContext(kernel));
+	const restored = yield* restore(kernel).pipe(Effect.provideContext(spawnerNeeds));
 	return {kernel, launched, restored} satisfies Started;
 });
 

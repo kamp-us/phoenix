@@ -20,7 +20,8 @@ import {dispatchResume} from "./resume.ts";
  * An entry already live — a planned process the launcher spawned back at its own id
  * (`src/launch/`) — is already restored, so it is left alone.
  *
- * `services` is the caller's ambient context for every process this brings back; each spawn also
+ * `services` is the whole set every process this brings back will resolve — a handler is sealed to
+ * its spawn set, so nothing reaches it off the fiber this call runs on (#7972). Each spawn also
  * gets a `ProcessPorts` of its own. What the graph does not own has no route to bind, so those
  * ports are `unwired`: the process comes back either way, and an emit fails `PortNotWired` at the
  * first call rather than dropping the payload (#7789).
