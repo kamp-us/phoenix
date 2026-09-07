@@ -74,7 +74,7 @@ describe("statedOrderings — what counts as a statement", () => {
  * orderings, quotes the incident's sentence, and lists the slice set — while owning no prerequisite
  * itself. Every line here is verbatim from that body.
  */
-describe("the self-check on the issue that specified this gate", () => {
+describe("the self-check on #6728", () => {
 	it("finds no stated ordering in the issue that specified this gate", () => {
 		const authored = [
 			"prose instead. That is how 6661 → 6662 → 6663 shipped as a sentence.",
@@ -97,7 +97,7 @@ describe("the self-check on the issue that specified this gate", () => {
  * verbatim from the bodies the gate's first scan found across 150 issues.
  */
 describe("statedOrderings — a phrase in somebody else's voice", () => {
-	it("skips a third-person report of another issue's prerequisite, verbatim", () => {
+	it("skips a third-person report of another issue's prerequisite (#7238, verbatim)", () => {
 		const authored = [
 			"Not folded into #7223: its",
 			"criteria are scoped to `pick-verb.ts`'s gate and it is already blocked on #7035, so folding a",

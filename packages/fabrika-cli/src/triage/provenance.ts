@@ -1,12 +1,11 @@
 /**
  * The filing-provenance predicate: was this issue reported by an agent, or typed by a human?
  *
- * **Two agent signals, not one.** The report footer is the signal because every filing
- * showed the same shared account, so authorship carried no information. The founder's 2026-08-09
- * A later narrowing: a filing authored by an account in the **configured operator set** is
- * agent-reported whether or not the footer is present, because footer-absence there is the emitter
- * gap in the emitter rather than evidence of a human author. Footer-absence from any *other* author
- * is still human-owned.
+ * **Two agent signals, not one.** The report footer is the signal because every filing showed the
+ * same shared account, so authorship carried no information. A later ruling, on 2026-08-09, narrows
+ * that: a filing authored by an account in the **configured operator set** is agent-reported
+ * whether or not the footer is present, because footer-absence there is a gap in the emitter rather
+ * than evidence of a human author. Footer-absence from any *other* author is still human-owned.
  *
  * **This file is the group's single definition of that predicate.** `triage kill` re-runs the test
  * itself rather than trusting a caller to have run `triage provenance` first, which makes the guard

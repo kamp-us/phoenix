@@ -20,7 +20,7 @@ describe("tokenize", () => {
 		]);
 	});
 
-	it("splits over the full Unicode letter class, so a Turkish stem survives", () => {
+	it("splits over the full Unicode letter class, so a Turkish stem survives (#3255)", () => {
 		expect(tokenize("kütüphane tanımı düzenleyici odağı kaybediyor")).toEqual([
 			"kütüphane",
 			"tanımı",

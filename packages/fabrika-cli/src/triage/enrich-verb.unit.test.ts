@@ -665,7 +665,7 @@ describe("runEnrich — the stated-ordering gate", () => {
 		});
 
 		/** Verbatim: a wired prerequisite beside a courtesy link to the PR implementing it. */
-		it("passes a wired issue named beside a PR link, verbatim", async () => {
+		it("passes a wired issue named beside a PR link (#7223, verbatim)", async () => {
 			const line =
 				"Blocked on #7035 / [#4311](https://example.test/o/r/pull/4311). The shared derivation this";
 			const {outcome, patched} = await gate(

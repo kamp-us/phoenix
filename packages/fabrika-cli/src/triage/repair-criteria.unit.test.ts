@@ -289,7 +289,7 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 	});
 });
 
-describe("planRepair — the ordered-item conversion", () => {
+describe("planRepair — the ordered-item conversion (#5981)", () => {
 	// The live shape on the board: a level-3 heading over a numbered list, wrapped, which the reader
 	// answers `Malformed` on because an ordered marker can carry no checkbox at all.
 	const ordered =
