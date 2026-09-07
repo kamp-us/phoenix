@@ -82,7 +82,8 @@ export const CORRECTED_EVENT = "CORRECTED";
  * clearance they move the task — into {@link BOARD_TERMINALS}' final for the event.
  *
  * Neither is an operator event: {@link OPERATOR_EVENTS} still holds six, and `lane transition`
- * refuses both. See ADR 0365.
+ * refuses both, so the operator's vocabulary is closed exactly as it was and a `DONE`'s proof
+ * semantics are untouched.
  */
 export const CANCELLED_EVENT = "CANCELLED";
 

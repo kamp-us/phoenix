@@ -488,7 +488,8 @@ than end a lane another session is driving.
 The lane then folds to `board:cancelled` or `board:landed`, neither of which is `complete` or
 `tripped`, so it stops holding a seat against `laneConcurrencyCap` and never appears in a stale sweep
 again. Neither event is an operator event — `lane transition` refuses both — so `DONE`'s own proof
-semantics are untouched (ADR 0365).
+semantics are untouched, and a lane whose own flow really does reach its ship stage still folds to
+`shipped` through the machine it always did.
 
 The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
 because staleness was the only wrongness it could see and a coder-template lane booted on an epic

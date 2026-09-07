@@ -25,8 +25,9 @@
  * load, the fold, and whether this lane already carries a terminal — so a lane with nothing to settle
  * costs no board read, and the pull requests are read only on the arm that needs them.
  *
- * `DONE`'s own proof semantics are untouched: this appends neither `DONE` nor any operator event.
- * See ADR 0365.
+ * `DONE`'s own proof semantics are untouched: this appends neither `DONE` nor any operator event, so
+ * a lane whose own flow really does reach its ship stage still folds through the machine it always
+ * did, and a terminal recorded here says by name that the pipeline did not drive it.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

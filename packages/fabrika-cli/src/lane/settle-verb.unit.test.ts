@@ -61,7 +61,7 @@ const pull = (over: Partial<NominatedPull> = {}): NominatedPull => ({
 	merged: true,
 	linkedIssues: [ISSUE],
 	linkKind: "fixes",
-	htmlUrl: `https://github.com/kamp-us/phoenix/pull/6874`,
+	htmlUrl: "https://example.test/o/r/pull/6874",
 	...over,
 });
 
