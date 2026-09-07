@@ -202,6 +202,14 @@ program-blind: a process's state still crosses as `unknown`.
   grammar shows no desk rather than inventing one. `Duration` does not survive JSON, so the frame
   carries `repeatTimeoutMs` and `toWirePrefixTable`/`fromWirePrefixTable` convert.
 
+- **The grammar has one namer, and it is the shell row.** `shellProgram` resolves its `table` option
+  against `defaultPrefixTable` and publishes the answer on the row it returns; `shellPrefixTable`
+  reads it back off a config's rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
+  hands that value to `serveDesk`. Before this the bin named the default itself, so a config that
+  passed `shellProgram` a table put the kernel on its grammar and every page on the default, with
+  nothing failing (#7890). A new caller that needs the grammar reads it off the row the same way —
+  it never reaches for `defaultPrefixTable`, which is why the single namer holds.
+
 - The kernel decides what is in the catalog, and it decides with `showsInAWindow`
   (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
   never crosses, so `WireProgram.renderer` is required and a page cannot be offered a program it
