@@ -736,15 +736,19 @@ describe("toAgentEvents over a captured subagent turn", () => {
 		expect(tokens).toEqual([...tokens].sort((a, b) => a - b));
 	});
 
-	it("admits every item kind the worker produced, in arrival order", () => {
-		expect(slots.at(-1)?.items.map((one) => one.kind)).toEqual([
+	it("admits every item kind the worker produced, in arrival order, one entry each", () => {
+		const held = slots.at(-1)?.items ?? [];
+		expect(held.map((one) => one.kind)).toEqual([
 			"user",
 			"assistant",
-			"tool",
 			"tool",
 			"thinking",
 			"assistant",
 		]);
+		// The worker's one call opens `running` and settles `ok` under one id; the slot holds the
+		// settled row where the running one was, exactly as the transcript does.
+		expect(new Set(held.map((one) => one.id)).size).toBe(held.length);
+		expect(held.flatMap((one) => (one.kind === "tool" ? [one.status] : []))).toEqual(["ok"]);
 	});
 
 	it("marks the slot finished when the spawning call settles, and moves nothing after (Q2)", () => {

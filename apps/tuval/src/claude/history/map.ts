@@ -219,6 +219,22 @@ const slotFor = (mapping: Mapping, parentId: string): SubagentSlot | null => {
 };
 
 /**
+ * The worker's rows keyed the way the transcript keys them: a row re-sent under an id the slot
+ * already holds replaces it in place, so a tool call that opens `running` and settles `ok` is one
+ * entry rather than two. `core/fold.ts` replaces a slot whole and folds nothing inside it, so a
+ * duplicate written here is a duplicate on state and in every view of the slot (#8403).
+ */
+const withItem = (
+	items: ReadonlyArray<TranscriptItem>,
+	one: TranscriptItem,
+): ReadonlyArray<TranscriptItem> => {
+	const at = items.findIndex((candidate) => candidate.id === one.id);
+	return at < 0
+		? [...items, one]
+		: items.map((candidate, index) => (index === at ? one : candidate));
+};
+
+/**
  * Fold one frame's items, and what that frame spent, into the slots of the calls they ran inside.
  *
  * A finished slot is left exactly as it was (founder ruling Q2 on #8384: a finished subagent goes
@@ -244,7 +260,7 @@ const foldSlots = (
 		const line = lineOf(one);
 		touch(one.parentId, (slot) => ({
 			...slot,
-			items: [...slot.items, one],
+			items: withItem(slot.items, one),
 			lastLine: line.length > 0 ? line : slot.lastLine,
 		}));
 	}
