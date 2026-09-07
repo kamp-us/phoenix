@@ -227,7 +227,7 @@ describe("a subagent's rows in the agent window", () => {
 	it("fold exactly as they do at main with the flag off, and no list is drawn", async () => {
 		const {rendered} = await openWindow(
 			state(),
-			{},
+			{subagentList: false},
 			{
 				...initialChatView,
 				atOldest: true,

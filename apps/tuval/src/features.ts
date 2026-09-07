@@ -19,7 +19,9 @@ export interface TuvalFeatures {
 }
 
 /**
- * Every flag off. A user-facing change ships dark behind a default-off flag
- * (`product-development-cycle.md`), so this is what a config that declares no `features` means.
+ * What a config that declares no `features` block means. A user-facing change ships dark behind a
+ * default-off flag (`product-development-cycle.md`) and is flipped on here once it has had its
+ * runbook pass, so a flag's entry moves from `false` to `true` in this record and nowhere else. A
+ * layer that states a flag still wins over it, in either direction (`./config.ts`'s merge).
  */
-export const featuresOff: TuvalFeatures = {subagentList: false};
+export const featuresDefault: TuvalFeatures = {subagentList: true};
