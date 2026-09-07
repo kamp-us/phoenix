@@ -1,16 +1,19 @@
 /**
  * Where a subagent's transcript lives on disk, and the read that gets it.
  *
- * `getSessionMessages` cannot serve this. At `@anthropic-ai/claude-agent-sdk@0.3.259` the session
- * reader "returns undefined if the session file is not found, is a sidechain session, or cannot be
- * read" (`sdk.d.ts`, `getSessionInfo`), which is also what makes a subagent unresumable as a
- * session of its own — so it is read off its own file and driven through its parent (#8384, Q6).
+ * `getSessionMessages` cannot serve this. At `@anthropic-ai/claude-agent-sdk@0.3.259` it takes a
+ * session id and "returns Array of messages, or empty array if session not found" (`sdk.d.ts`) —
+ * and its implementation opens on a UUID guard that answers `[]` outright (`sdk.mjs`). A
+ * subagent's agent id is not a UUID and its rows are not at the session path, so the call answers
+ * the empty array twice over: an undifferentiated empty, not a refusal. The SDK's own
+ * `getSubagentMessages` is declined for the same reason, and it is the whole reason — every
+ * failure path in its implementation answers `[]` too (a missing directory, an unreadable file and
+ * an absent agent all return the empty array), so a caller cannot tell a subagent that said
+ * nothing from a read that never happened.
  *
- * The SDK's `getSubagentMessages` was the other candidate and is declined: every failure path in
- * its implementation answers `[]` (`sdk.mjs` at the pin — a missing directory, an unreadable file
- * and an absent agent all return the empty array), so its caller cannot tell a subagent that said
- * nothing from a read that never happened. Keeping those apart is the point of this read, so the
- * file is opened here and each failure comes back as its own refusal.
+ * Keeping those apart is the point of this read, so the file is opened here and each failure comes
+ * back as its own refusal. A subagent is not resumable as a session of its own either, which is
+ * the other half of #8384's Q6: it is read off its own file and driven through its parent.
  */
 
 import {homedir} from "node:os";

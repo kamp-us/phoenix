@@ -787,9 +787,9 @@ const make = (
 		 * what comes back is the port's item union plus a plain type string. Nothing Claude-shaped
 		 * crosses out of here, which is what lets the subagent view render off it (#8406).
 		 *
-		 * Not `getSessionMessages`: at 0.3.259 the session reader "returns undefined if the session
-		 * file is not found, is a sidechain session, or cannot be read" (`sdk.d.ts`), so it answers
-		 * nothing for every subagent id there is.
+		 * Not `getSessionMessages`: at 0.3.259 it "returns Array of messages, or empty array if
+		 * session not found" (`sdk.d.ts`) and guards its session id as a UUID (`sdk.mjs`), so an
+		 * agent id gets the empty array rather than a refusal — see `sidechain-store.ts`.
 		 */
 		const subagentTranscript = Effect.fn("TuvalAiAgent.subagentTranscript")(function* (
 			agentId: string,
