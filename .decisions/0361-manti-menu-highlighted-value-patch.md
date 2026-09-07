@@ -62,9 +62,19 @@ when the menu opens and mirrors the machine afterwards. Seeding is required rath
 Zag clears the highlight on the machine's `closed` entry, so `defaultHighlightedValue` alone would
 work for the first open and no other.
 
+The patch is held the way every maintained patch here is held, in the two layers
+[`.patterns/dependency-patch-behavior-pins.md`](../.patterns/dependency-patch-behavior-pins.md)
+defines and `fabrika guard patch-guard check` fails closed on: the version-keyed
+`patchedDependencies` entry, which is pnpm's own loud-fail on version drift, and a behavior pin —
+a test that reds if the patched behaviour regresses, self-registering with a
+`// @patch-pin: @manti-ui/react@0.9.0` marker. `chat-picker-opens-on-checked-row.unit.test.tsx`
+carries that marker and is that pin.
+
 **Binding constraints.**
 
-- Re-key this patch on the next `@manti-ui/react` bump, and drop it once a release ships the props.
+- Re-key this patch on the next `@manti-ui/react` bump — both layers, the
+  `patchedDependencies` key and the `@patch-pin` marker — and drop it once a release ships the
+  props.
 - The rejected DOM route stays rejected: `SettingMenu` never reaches into the portaled panel by
   Zag's private id template, and never scrolls a row the machine does not also have highlighted.
 - Manti's surface coming up short a third time is when driving `@zag-js/menu` directly from
@@ -77,15 +87,15 @@ The picker opens where the user is, and the first arrow key moves from there —
 the panel and the screen reader cannot disagree. Every Manti `Menu` in the repo gains the props,
 not just this one.
 
-The cost is a fourth patched dependency and one more thing a pin bump re-litigates. It is bounded:
+The cost is a fifth patched dependency and one more thing a pin bump re-litigates. It is bounded:
 the patch adds a passthrough and changes no default, so an upstream release that ships the same
 props retires it with no consumer change. Until then `packages/design` resolves a patched copy of
 `@manti-ui/react`, which is visible in the lockfile and in the diff.
 
-Nothing pins the patch by machine beyond
-`apps/tuval/src/shell/chat/chat-picker-opens-on-checked-row.unit.test.tsx`, which fails on all three
-assertions with the props unwired — an unpatched or badly re-keyed copy reds there rather than
-shipping a picker that silently reverted to row 1.
+What pins it is `apps/tuval/src/shell/chat/chat-picker-opens-on-checked-row.unit.test.tsx`, which
+fails on all three assertions with the props unwired — an unpatched or badly re-keyed copy reds
+there rather than shipping a picker that silently reverted to row 1. The next person to bump the pin
+finds it through the marker rather than by accident.
 
 ## Records
 

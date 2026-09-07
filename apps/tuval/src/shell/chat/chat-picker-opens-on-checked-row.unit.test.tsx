@@ -16,7 +16,12 @@
  * publishing it as the panel's `aria-activedescendant` and the row's `data-highlighted`. So the
  * assertions are over the highlight, which is also what the second one is about on its own terms:
  * the arrow key has to move from the row the user is on.
+ *
+ * It doubles as the behavior pin for the `@manti-ui/react` patch, which is what forwards
+ * `highlightedValue` into the machine at all: unpatched, the highlight stays null and every
+ * assertion below reds (`.patterns/dependency-patch-behavior-pins.md`, ADR 0361).
  */
+// @patch-pin: @manti-ui/react@0.9.0
 
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
