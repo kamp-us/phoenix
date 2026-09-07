@@ -1,5 +1,5 @@
 /**
- * A foreign board vocabulary, proven at the three verbs that write it (#6294).
+ * A foreign board vocabulary, proven at the three verbs that write it.
  *
  * Kept apart from `apply-verb.unit.test.ts` and `park-verb.unit.test.ts` because the claim under
  * test is not either verb's own logic but the one thing they share: what they reconcile against is
@@ -128,7 +128,7 @@ describe("triage apply under a declared board vocabulary", () => {
 
 	/** The lanes are an open set now, so this decode is the only thing standing between a typo'd
 	 * `--lane` and a label the lane facet has no authority to remove. */
-	it("refuses a lane off the declared set — including the one phoenix ships", async () => {
+	it("refuses a lane off the declared set — including one the shipped default carries", async () => {
 		const shell = guardedShell(script());
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -216,15 +216,15 @@ describe("status bootstrap under a declared board vocabulary", () => {
 		expect(wrote).not.toContain("type:bug");
 	});
 
-	it("creates phoenix's taxonomy for a repo that declared nothing", async () => {
+	it("creates the shipped taxonomy for a repo that declared nothing", async () => {
 		const wrote = created(await run(null));
 		expect(wrote).toContain("status:needs-triage");
 		expect(wrote).toContain("type:bug");
 	});
 
 	// The fail-open this pins is a write, not a readout: an unlocated root reads no file, resolves
-	// the shipped taxonomy and mints it into a repo that may have declared another (#4285's
-	// mechanism, arriving from the other direction).
+	// the shipped taxonomy and mints it into a repo that may have declared another — the containment
+	// break, arriving from the other direction.
 	it("writes nothing when the config could not be read", async () => {
 		const shell = guardedShell([
 			[LIST, {status: 200, body: "[]"}],

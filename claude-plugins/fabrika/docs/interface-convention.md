@@ -4,29 +4,23 @@ The discipline every fabrika verb owes its caller: what `--help` discloses, what
 carry, which exit codes mean what, when a verb refuses to answer, how a verb is invoked, and what
 it may call. Verb implementers build against this page and reviewers hold verbs to it.
 
-Every rule cites the ruling or finding it came from. The *why* lives where the citation points —
-an [ADR](../../../.decisions/) or the cited issue — and is not re-argued here. This page was split
-from a page that also held the contract-spec format ([#7021](https://github.com/kamp-us/phoenix/issues/7021));
-that second subject is now its own reference: [the contract-spec format](contract-spec-format.md).
+Every rule states the failure it prevents. This page was split from one that also held the
+contract-spec format; that second subject is now its own reference:
+[the contract-spec format](contract-spec-format.md).
 
-Context, as pointers rather than paragraphs: fabrika pushes deterministic work maximally into CLI
-verbs and keeps judgment in the thin skill wrapper
-([#4631](https://github.com/kamp-us/phoenix/issues/4631)); an authoring session derives which verbs
-its skill needs and writes the spec the CLI implements
-([#4638](https://github.com/kamp-us/phoenix/issues/4638)) — that spec's format is
-[contract-spec-format.md](contract-spec-format.md); the retired v1 pipeline is a frozen comparison
-baseline, never a source to port from
-([ADR 0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)).
+The two premises behind all six rules: fabrika pushes deterministic work maximally into CLI verbs
+and keeps judgment in the thin skill wrapper, and an authoring session derives which verbs its skill
+needs and writes the spec the CLI implements — that spec's format is
+[contract-spec-format.md](contract-spec-format.md).
 
-Six rules follow. Each states what a verb owes its caller and cites the ruling or finding it comes
-from.
+Six rules follow. Each states what a verb owes its caller, and the failure that follows from
+skipping it.
 
 ## 1. `--help` is the interface — an agent discovers a verb at runtime, never by reading its source
 
-Source: the founder given on map [#4631](https://github.com/kamp-us/phoenix/issues/4631) (runtime
-discoverability is first-class), sharpened by the [#4635](https://github.com/kamp-us/phoenix/issues/4635)
-survey of the v1 CLI, which found root help listing every tool with a purpose and a citation while
-per-tool help documented subcommands and exit codes inline.
+Runtime discoverability is first-class: an agent that has to read a verb's source to call it is
+reading text nothing keeps true. Root help lists every group with a purpose; per-verb help documents
+subcommands and exit codes inline.
 
 - Every verb, every subcommand, and every flag carries a description. A flag with no description is
   an undocumented input.
@@ -41,9 +35,9 @@ per-tool help documented subcommands and exit codes inline.
     registered leaf by `short-description.unit.test.ts`.
   - the **long** description (`Command.withDescription`) is the verb-level contract below.
 
-  Reusing the long form as the list row is the defect this split fixes — `fabrika ship --help` once
-  emitted thousand-character unwrapped rows no reader could parse
-  ([#5208](https://github.com/kamp-us/phoenix/issues/5208)). `withShortDescription` **adds** a field
+  Reusing the long form as the list row is the defect this split fixes: a group whose verbs each
+  contributed a thousand-character unwrapped row emitted a list no reader could parse.
+  `withShortDescription` **adds** a field
   and the renderer falls back to `description` when it is absent, so nothing is truncated and the
   contract below is untouched.
 - `--help` states, for the verb: what it answers, its output **shape** (rule 2), its exit codes
@@ -52,9 +46,7 @@ per-tool help documented subcommands and exit codes inline.
   once they are separate strings.
 - The index of verbs is **derived from the registry**, never hand-maintained: it reads name +
   description off the same `Command` objects the router dispatches on, so a new verb appears
-  automatically and a verb shipped without a description is mechanically detectable. v1's
-  `pipeline-cli commands compact` was the working precedent
-  (`packages/pipeline-cli/src/tools/commands/commands.ts`, deleted with v1). A parallel
+  automatically and a verb shipped without a description is mechanically detectable. A parallel
   hand-written list rots; that is the defect the derived index replaced.
 - **A `--help` that resolves is proof the path exists — up to the last node that takes subcommands.**
   `fabrika <unknown> …` is refused before the CLI runner sees it: the reason on stderr, nothing on
@@ -62,14 +54,13 @@ per-tool help documented subcommands and exit codes inline.
   however many invalid tokens follow. It has to be a fabrika-side guard because the runner answers
   the probe otherwise — `effect`'s `Command.runWith` processes action flags before it inspects parse
   errors, and `--help` is an action flag, so it printed the deepest valid prefix's help and exited
-  `0` while discarding the whole invalid tail ([#4822](https://github.com/kamp-us/phoenix/issues/4822)).
+  `0` while discarding the whole invalid tail.
 - **An operand a leaf verb never declared is refused too**, at the argument layer rather than the
   path layer. Every leaf declares a hidden trailing catch-all, so the parser hands the verb whatever
   its own arguments left, and the verb refuses on stderr with exit `1` (rule 3's usage-error code)
   instead of binding none of them and answering anyway. `fabrika adr next bogus` refuses;
   `fabrika adr resolve 0164 0023` still absorbs both ids, because a variadic argument consumes its
-  operands before the catch-all sees them
-  ([#4828](https://github.com/kamp-us/phoenix/issues/4828)).
+  operands before the catch-all sees them.
 - **The residual caveat: a global flag placed *before* the group name ends the path guard's walk.**
   `fabrika --log-level info triage --help` exits `0` with root help even though `triage` names no
   group. The walk stops at the first `-`-prefixed token because a later bare token may be that
@@ -82,10 +73,9 @@ per-tool help documented subcommands and exit codes inline.
 
 ## 2. Results by value on stdout; the shape is documented, not guessed
 
-Source: the [#4635](https://github.com/kamp-us/phoenix/issues/4635) finding that the convention
-existed de facto but uncodified across the v1 tools. The rule is the CLI statement of
-[`.patterns/skill-script-io-contract.md`](../../../.patterns/skill-script-io-contract.md), which
-binds the shell half of the same pipeline.
+Stdout and stderr are two channels because a caller reads one of them by machine. A tool that mixes
+progress into the answer forces every caller to filter, and every filter is a place the contract
+drifts.
 
 - **Stdout is the answer. Everything else is stderr.** Progress, warnings, refusal reasons and scope
   statements are diagnostics.
@@ -100,9 +90,8 @@ binds the shell half of the same pipeline.
 
 ## 3. The exit status is the answer; empty stdout never is
 
-Source: [`.patterns/skill-script-io-contract.md`](../../../.patterns/skill-script-io-contract.md)'s
-exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
-`packages/pipeline-cli/src/exit-codes.ts` (#4208, #4219 — both since deleted with v1).
+The whole taxonomy rests on one separation: a verdict a verb proved must never share a code with a
+failure to invoke it, or a caller reading `$?` cannot tell them apart.
 
 - **`0` means "I produced the answer on stdout". Any non-zero means "I could not produce one"** —
   UNKNOWN, never the permissive reading. A caller reads the status before the bytes.
@@ -111,8 +100,7 @@ exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
   after the write discards whatever is still queued, silently and on exit `0`. Every group adapter
   emits through the one shared helper,
   [`emit.ts`](../../../packages/fabrika-cli/src/emit.ts), which exits from the write callback
-  instead; a group that hand-rolls its own truncates its long answers again
-  ([#6226](https://github.com/kamp-us/phoenix/issues/6226)).
+  instead; a group that hand-rolls its own truncates its long answers again.
 - **A verdict a verb proved must never share an exit code with a failure to invoke.** `1` is what
   the Effect CLI returns for a usage error and what a failed module load returns; `127` is the
   shell's missing-binary code. A proven verdict seated on either is unreadable as proof, because
@@ -130,16 +118,15 @@ exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
   `126` is the seat between the two invocation failures: `127` is the shell reporting that nothing
   ran, `1` is a verb reporting that it ran and the caller asked wrongly, and between them sits the
   case where `fabrika` itself started but could not reach a working set of verbs — seating that on
-  `1` would make it indistinguishable from a typo in a flag
-  ([#4666](https://github.com/kamp-us/phoenix/issues/4666)). `126` is the shell's own *found but not
+  `1` would make it indistinguishable from a typo in a flag. `126` is the shell's own *found but not
   executable*, so the two invocation failures read as one band.
 - **`2` is allocated by nothing, in any group, and that is a hard rule rather than a free slot.** On
   a `PreToolUse` hook, exit `2` is the *one* code the harness reads as "block the tool call", so an
-  exit code seated there denies a tool call as a side effect of its status, whatever the verb meant —
-  the inverse of the fail-open polarity ADR
-  [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md) rules for a hook whose verb
-  cannot run ([#5423](https://github.com/kamp-us/phoenix/issues/5423)). The full harness contract,
-  and why it is `PreToolUse`-only, is in [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract--exit-2-blocks-and-only-on-pretooluse).
+  exit code seated there denies a tool call as a side effect of its status, whatever the verb meant
+  — the inverse of the fail-open polarity ruled for a hook whose verb cannot run: a verb that never
+  ran produced no evidence, so it may never deny. The full harness contract, and why it is
+  `PreToolUse`-only, is in
+  [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract--exit-2-blocks-and-only-on-pretooluse).
   The rule is checked as data: `packages/fabrika-cli/src/exit-code-alignment.unit.test.ts` reds if
   any group's table allocates it.
 - **The `3`+ band is scoped to the verb group that seats it. A code above the reserved band means one
@@ -147,8 +134,7 @@ exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
   both correct, and a group picks by whether its verbs share refusal meanings:
 
   - **Per verb, no shared table** — the `3`+ row above read literally. Permitted; today shipped
-    nowhere, which is what the shape costs when a group's verbs *do* share refusal meanings
-    (#5294, [#5296](https://github.com/kamp-us/phoenix/issues/5296)).
+    nowhere, which is what the shape costs when a group's verbs *do* share refusal meanings.
   - **Per group, one shared table** — `report`, `triage`, `review`, `adr`, `spend` and `wire` each
     ship a `<group>/codes.ts` that every verb in the group allocates from, so a code means one thing
     across the group whichever verb produced it. That is a **tightening** a group chooses, not a
@@ -190,7 +176,8 @@ exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
 
 ## 4. Fail closed on missing scope or state
 
-Source: [ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md).
+A gate that scanned nothing has judged nothing, and the two are indistinguishable in its output
+unless it refuses.
 
 - A verb that **judges** states the scope its verdict rests on, on its own answer channel, and
   **reds on zero scope**. "I scanned nothing and found no violations" is a pass a guard must never
@@ -204,8 +191,8 @@ Source: [ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md).
 
 ## 5. Every documented invocation is a plain literal command string
 
-Source: [#4641](https://github.com/kamp-us/phoenix/issues/4641), closed with the mechanism
-understood, and [ADR 0232](../../../.decisions/0232-agents-execute-skill-scripts-never-source-them.md).
+An agent executes a command; it never sources one, because a sourced script rewrites the caller's
+own shell out from under it. And a variable-rooted invocation is refused outright:
 
 The harness's isolation verifier is a **syntactic check on the command string**: it does not consult
 process env and does not touch the filesystem — `$USER` and `$PWD` are refused while genuinely set,
@@ -222,9 +209,8 @@ of any kind can make a variable-rooted invocation usable at an agent's top-level
   literal end to end.
 - **The literal is `fabrika`.** Every fence in every fabrika skill writes
   `fabrika <group> <verb> …` and nothing else. The command and the package are deliberately
-  **different names** — `fabrika` is the `bin` *key* of the `@kampus/fabrika-cli` package, which
-  keeps its name on npm and its directory at `packages/fabrika-cli/`
-  ([#4784](https://github.com/kamp-us/phoenix/issues/4784)). [Delivery](#delivery--one-name-two-installs)
+  **different names** — `fabrika` is the `bin` *key* of the CLI package, which keeps its own name on
+  the registry and its own directory in the repo. [Delivery](#delivery--one-name-two-installs)
   below is how the command comes to resolve.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
@@ -235,16 +221,15 @@ of any kind can make a variable-rooted invocation usable at an agent's top-level
 <a id="delivery--one-name-two-installs"></a>
 ### Delivery — one name, two installs, both of them real
 
-`fabrika` is delivered as a **global install** of `@kampus/fabrika-cli`. On startup the binary
-finds the **repo root** above the working directory, asks Node's own resolver what copy that root
-installed, and hands the invocation to it — the shape turbo ships, reimplemented in fabrika's own
-TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)). The property that buys is a
-**repo-pinned version**: a repo carrying `@kampus/fabrika-cli` in its `devDependencies` gets that
-version from a bare fence, whatever each machine's global happens to be.
+`fabrika` is delivered as a **global install** of the CLI package. On startup the binary finds the
+**repo root** above the working directory, asks Node's own resolver what copy that root installed,
+and hands the invocation to it — the shape turbo ships, reimplemented in fabrika's own TypeScript.
+The property that buys is a **repo-pinned version**: a repo carrying the package in its
+`devDependencies` gets that version from a bare fence, whatever each machine's global happens to be.
 
 Both installs are real installed packages, and neither is chosen by testing whether a file exists
-and guessing that it will run — tiers that can be quietly wrong are the defect
-([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
+and guessing that it will run. Tiers that can only be right or loudly absent are fine; tiers that
+can be quietly wrong are the defect.
 
 The branch that makes that concrete is the degenerate one. **A repo root that pins the package but
 has not installed it, or whose install is corrupt, runs the global and says so loudly** — naming the
@@ -264,35 +249,28 @@ own cwd is set to the repo root.
 
 ## 6. fabrika calls nothing outside fabrika
 
-Source: founder ruling, in-session 2026-08-01, on the wave-0 pilot's derived contract
-([#4704](https://github.com/kamp-us/phoenix/issues/4704) / [#4724](https://github.com/kamp-us/phoenix/pull/4724)).
-The why — duplication keeps v1 deletable; a call is a tether — is
-[ADR 0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)'s, pointed at rather
-than re-derived.
+Duplication keeps the tool fabrika replaces deletable; a call is a tether that keeps it alive.
 
-**No fabrika skill and no fabrika verb invokes `pipeline-cli`, or anything else under
-`claude-plugins/kampus-pipeline/`.** Every deterministic step a skill needs is implemented in
-fabrika's own verb package. Where v1 already solved the same problem, read its source at a pinned
+**No fabrika skill and no fabrika verb invokes a predecessor tool, or anything else outside the
+plugin and its verb package.** Every deterministic step a skill needs is implemented in fabrika's
+own verb package. Where a predecessor already solved the same problem, read its source at a pinned
 commit to learn the semantics and the scars, then implement fabrika's own.
 
-Two consequences, both ruled on the pilot:
+Two consequences:
 
-- **This supersedes "fabrika may call `pipeline-cli` but never grows into it."** Wrapper verbs whose
-  only job was relaying an upstream answer rebuild `pipeline-cli` by accretion — the outcome the
-  superseded posture existed to prevent.
-- **Not every v1 call becomes a fabrika verb; some become nothing.** Where the thing being computed
-  is already *enforced* elsewhere — a CI gate, a merge check — fabrika does not compute a second
-  answer to it. Ask whether the skill needs the answer, or only needs to expect it.
+- **A relay is not an exception.** Wrapper verbs whose only job is passing an upstream answer
+  through rebuild the predecessor by accretion — the outcome the rule exists to prevent.
+- **Not every predecessor call becomes a fabrika verb; some become nothing.** Where the thing being
+  computed is already *enforced* elsewhere — a CI gate, a merge check — fabrika does not compute a
+  second answer to it. Ask whether the skill needs the answer, or only needs to expect it.
 
 An authoring brief's "assumable verbs" field is therefore a list of **prior art to read**, not a
 list of things to call.
 
 ## Enforcement
 
-There is no mechanical conformance guard yet, and that absence is deliberate: a repo-wide guard
-over zero verbs has zero scope and reds on itself
-([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Enforcement lives as
-per-verb tests in each verb package (first shipped with the wave-0 pilot,
-[#4650](https://github.com/kamp-us/phoenix/issues/4650)), plus the data checks named above
-(`exit-code-alignment.unit.test.ts`, `short-description.unit.test.ts`). Until a repo-wide guard
-exists, this page is what a reviewer holds a verb to.
+There is no mechanical conformance guard yet, and that absence is deliberate: a repo-wide guard over
+zero verbs has zero scope and reds on itself, per rule 4. Enforcement lives as per-verb tests in
+each verb package, plus the data checks named above (`exit-code-alignment.unit.test.ts`,
+`short-description.unit.test.ts`). Until a repo-wide guard exists, this page is what a reviewer
+holds a verb to.

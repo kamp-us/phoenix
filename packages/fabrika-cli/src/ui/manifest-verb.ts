@@ -3,7 +3,7 @@
  *
  * The manifest is the one surface whose absence refuses, and it refuses on `12` rather than the
  * generic zero-scope `7`: an un-bootstrapped repo is a *routable* state with a named next step
- * (front-door's bootstrap, #4952), not an absence to report. Everything else reports `null`, because
+ * (front-door's bootstrap), not an absence to report. Everything else reports `null`, because
  * "this repo ships no inventory" is a fact a skill acts on.
  *
  * A probe that could not be *performed* is `11`. Presence is UNKNOWN, never "absent" — `node:fs`'s
@@ -63,7 +63,7 @@ const unreadable = (found: Probe & {_tag: "Unknown"}, verb: string): VerbOutcome
 		`${verb}: cannot probe ${found.relative}: ${found.reason} — presence is UNKNOWN, never "absent".`,
 	);
 
-export const MISSING_MANIFEST = `${VERB}: no design manifest at ${MANIFEST_PATH} — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages (#4952). Never improvise a design language.`;
+export const MISSING_MANIFEST = `${VERB}: no design manifest at ${MANIFEST_PATH} — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.`;
 
 export const runManifest = (): Effect.Effect<
 	VerbOutcome,

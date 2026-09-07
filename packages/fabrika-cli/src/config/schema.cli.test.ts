@@ -3,7 +3,7 @@
  *
  * A reconcile verb nobody invokes reds only when a person happens to run it, and the stale document
  * it fails to catch ships `"additionalProperties": false` — so an adopter's editor reds a key that is
- * in fact valid (#6488). This test is that invocation: the `packages unit tests` CI job runs it on
+ * in fact valid. This test is that invocation: the `packages unit tests` CI job runs it on
  * every PR that touches the registry or the committed file, and a stale file fails the job.
  *
  * It runs the real verb in a subprocess against this checkout, because the answer only exists at the

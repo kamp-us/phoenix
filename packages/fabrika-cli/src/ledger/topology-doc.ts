@@ -59,7 +59,7 @@ export const parseLine = (text: string, index: number): LineParse => {
 	};
 };
 
-/** `[dependent, prerequisite]` — `["#4303","#4301"]` reads *#4303 requires #4301*. */
+/** `[dependent, prerequisite]` — the first entry requires the second. */
 export type Edge = readonly [string, string];
 
 const ascending = (values: ReadonlyArray<number>): ReadonlyArray<number> =>

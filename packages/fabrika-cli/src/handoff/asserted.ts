@@ -12,8 +12,9 @@
  * `Unsure` as certainty.
  *
  * The caller supplies only these four. The proven half is appended by the verb from its own fresh
- * capture, because a caller-supplied ground state would be exactly the premise-inheritance (#4133)
- * the two-half split exists to prevent.
+ * capture, because a caller-supplied ground state would be exactly the premise-inheritance the
+ * two-half split exists to prevent: a brief written on what the dispatcher said rather than on what
+ * the ground says.
  */
 
 import {ASSERTED_SECTIONS} from "../wire/handoff-pack.ts";

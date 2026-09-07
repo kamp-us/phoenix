@@ -4,6 +4,7 @@
  * no model-specific type. `boundary.unit.test.ts` holds that closure.
  */
 
+export {type PageCursor, pageCursor} from "./cursor.ts";
 export {
 	type CursorPosition,
 	groupBytes,

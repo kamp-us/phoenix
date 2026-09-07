@@ -279,7 +279,7 @@ export const searchOpenIssues = (
  *
  * The sibling of {@link searchOpenIssues}, kept separate rather than parameterised because the two
  * answer different questions and the wrong one is silently plausible: an open-only scan reports a
- * question that was charted and closed as new, which is #4154/#4148's scar. A caller asking "has
+ * question that was charted and closed as new. A caller asking "has
  * anyone answered this already?" needs the closed half; one asking "is there an open duplicate?" does
  * not.
  */
@@ -326,7 +326,7 @@ export interface IssueRecord {
 	 *
 	 * `repos/<repo>/issues/<n>` answers for both, and the only thing that tells them apart is the
 	 * `pull_request` key. A caller that cannot see the difference reads a PR's empty milestone as an
-	 * unhomed issue's (#5562).
+	 * unhomed issue's.
 	 */
 	readonly isPullRequest: boolean;
 	/**
@@ -522,7 +522,7 @@ export const getCommentRecord = (repo: string, id: number): Shell<Attempt<Commen
 				}
 				// An unreadable author is a failed read, never a blank one: a blank login would
 				// downstream as AUTHOR_UNDECLARED (16) — a proven negative about a person GitHub
-				// never named. Callers seat this arm on their read-failure exit instead (#6983).
+				// never named. Callers seat this arm on their read-failure exit instead.
 				const user = body.user;
 				if (!isRecord(user) || typeof user.login !== "string") {
 					return fail("GitHub answered 200 but the comment carries no readable author login");
@@ -624,8 +624,8 @@ export interface CommentRecord {
 	/**
 	 * When the body was last written.
 	 *
-	 * Ordering a verdict sweep by `createdAt` is #4200: a FAIL upserted into an older comment after
-	 * a PASS must win, and only the write stamp says so.
+	 * Ordering a verdict sweep by `createdAt` reads the wrong stamp: a FAIL upserted into an older
+	 * comment after a PASS must win, and only the write stamp says so.
 	 */
 	readonly updatedAt: string;
 	readonly body: string;
@@ -636,7 +636,7 @@ export interface CommentRecord {
  *
  * A read that could not be proven whole is a failure: the claim resolver reads its markers through
  * this call, and a short comment list would let an unreadable marker set refuse as a *proven* loss —
- * retracting a marker that had in fact won (#5127).
+ * retracting a marker that had in fact won.
  */
 export const listComments = (
 	repo: string,

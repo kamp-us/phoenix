@@ -59,7 +59,7 @@ import {
 	type ChatRow,
 	chatRows,
 	mergeOlder,
-	oldestLoadedId,
+	olderPageRequest,
 	type RowItem,
 	rowIndexOfItem,
 	rowKey,
@@ -566,13 +566,13 @@ function ChatWindow({
 
 	const requestOlder = useCallback(() => {
 		if (pageRequestRef.current !== null || view.atOldest || rows.length === 0) return;
-		const before = oldestLoadedId(rows);
-		if (before === null) return;
-		const request = {};
+		const request = olderPageRequest(rows);
+		if (request === null) return;
+		const {before, anchor} = request;
 		const sessionId = state?.sessionId;
 		const connection = state?.connection;
 		pageRequestRef.current = request;
-		anchorRef.current = before;
+		anchorRef.current = anchor;
 		setPageError(null);
 		setLoading(true);
 		commit((current) => (current.pinned ? {...current, pinned: false} : current));

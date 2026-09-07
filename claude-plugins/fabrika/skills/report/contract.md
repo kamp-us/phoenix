@@ -1,18 +1,18 @@
 # `/report` — derived CLI contract
 
-**Skill:** [`report`](SKILL.md) · **Authoring brief:** [#4705](https://github.com/kamp-us/phoenix/issues/4705) · **Date:** 2026-08-01
+**Skill:** [`report`](SKILL.md) · **Date:** 2026-08-01
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `report`
-subcommand — the package the [`/adr` contract](../adr/contract.md) mints and
-[#4725](https://github.com/kamp-us/phoenix/issues/4725) builds. The
+subcommand — the package the [`/adr` contract](../adr/contract.md) mints. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs all three; where this
 spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every verb
-below is implemented from scratch here. v1's tools were read for their semantics and their scars —
-each Grounding section names what the corresponding v1 tool gets wrong and what this spec does
-instead — but no clause defers to one, and none is invoked.
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — fabrika reimplements what
+it needs rather than shelling out to its predecessor, so no clause here can break when a tool this
+package does not own changes. Every verb below is implemented from scratch here. v1's tools were
+read for their semantics and their scars — each Grounding section names what the corresponding v1
+tool gets wrong and what this spec does instead — but no clause defers to one, and none is
+invoked.
 
 **The bare binary name resolves, and this spec assumes it.** The skill's fences invoke `fabrika` as
 a plain literal name, which is what the harness's isolation verifier requires — that check is
@@ -20,25 +20,17 @@ a plain literal name, which is what the harness's isolation verifier requires �
 [`packages/fabrika-cli/docs/packaging.md`](../../../../packages/fabrika-cli/docs/packaging.md)
 documents under *Which copy serves an invocation*: one global install whose binary finds the repo root above the working
 directory, asks Node's resolver what copy that root installed, and hands the invocation to it —
-including from a git worktree, which resolves to that worktree's own copy.
-[#4650](https://github.com/kamp-us/phoenix/issues/4650) landed that mechanism. What an eval run
-still must not do is grade "the verb is not available yet" as though it were the skill's own
-behaviour: an exit 127 means the verb never ran, so it is a broken install to fix, never a verdict.
+including from a git worktree, which resolves to that worktree's own copy. What an eval run still
+must not do is grade "the verb is not available yet" as though it were the skill's own behaviour: an
+exit 127 means the verb never ran, so it is a broken install to fix, never a verdict.
 
-**One skill named `report` existed** at `claude-plugins/kampus-pipeline/skills/report/` until the
-v1 plugin's retirement (ADR 0303, #5937), model-invoked with an overlapping trigger list. This
-paragraph used to say the collision was "dormant only by configuration" because
-`.claude/settings.json` had `"kampus-pipeline@kampus": false`.
-**That was wrong twice over, and [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
-settled it.** `.claude/skills` was a symlink into the v1 tree, so v1's skills loaded as
-*project-level* skills and the toggle never reached them — both sets were live in one roster. But
-they never shared a name: the loader namespaces plugin skills, so the bare `report` was always v1's
-and this one is reached as `fabrika:report`. What actually overlapped was the **description**, which
-is what a model invokes off. So this skill's description is deliberately differentiated (it names
-the guarded posting path and the three dedup outcomes, which v1's could not), its eval set is what
-establishes the differentiation works (ADR 0249), and retiring v1 was exactly the one cutover edit
-that dropped the whole v1 roster at once (#5937) — the collision is history now, the differentiated
-description stays.
+**A second skill named `report` cannot shadow this one; a second *description* can.** The loader
+namespaces plugin skills, so a bare `report` in another roster is that roster's and this one
+is reached as `fabrika:report`. What overlaps between two rosters is the **description**, which is
+what a model invokes off — and a per-plugin toggle does not settle it, because a skills directory
+symlinked into another tree loads as a project-level skill the toggle never reaches. So this
+skill's description is deliberately differentiated: it names the guarded posting path and the three
+dedup outcomes, and its eval set is what establishes that the differentiation works.
 
 ## Verb inventory
 
@@ -60,14 +52,15 @@ corpus-wide work filed separately, and these live here until it does.)
   so the composed body exists only inside the process that posts it.
 - **A label-vocabulary preflight verb.** Its answer is needed in exactly one place, inside
   `report file`, so it is a precondition rather than a verb; minting it would be a wrapper whose
-  only behaviour is relaying an upstream answer, which ADR 0238 bans.
+  only behaviour is relaying an upstream answer, which this group does not mint.
 - **A standalone redactor verb.** Same test: a transform with one caller is that caller's
   precondition. It is the `--redact` flag on the three writing verbs.
 
 **The residual this accepts.** Because there is no preview verb, a refusal costs the caller the
-whole heredoc again — and re-sending under refusal pressure is exactly the condition that produced
-#3945. This spec judges that cost worth paying (a preview verb reintroduces the leak surface
-outright, while a re-send is only pressure), and pays it down where it can: every refusal names one
+whole heredoc again — and re-sending under refusal pressure is exactly the condition that funnels a
+caller into the leak-prone form. This spec judges that cost worth paying (a preview verb
+reintroduces the leak surface outright, while a re-send is only pressure), and pays it down where it
+can: every refusal names one
 correctable thing, so the second attempt is a correction rather than a rewrite. The residual is
 real and this contract does not close it.
 
@@ -90,7 +83,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   run. `127` = the verb never ran. `3` and up are each verb's own proven outcomes.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
-- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**
+- **GitHub access follows [skill conventions §11, "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md)**
   — REST, paginated, reads and writes alike. The reason lives there, not here.
 
 ### The shared exit taxonomy for the writing verbs
@@ -115,8 +108,8 @@ compacting the range — a gap is cheaper than a collision.
 
 **`5` and `6` are separate because their fixes are opposite.** The obvious caller loop on a
 path refusal is *re-run with `--redact`*; on a body that **is** a path, `--redact` is a no-op and
-that loop never terminates. Fusing them would make the one incident this verb exists for (#3086)
-the one a caller cannot get out of.
+that loop never terminates. Fusing them would make the leaked-path case this verb exists for the
+one a caller cannot get out of.
 
 **`8` is the dangerous one and it is deliberately not `1`.** A create or comment call that times out
 or 5xxs may or may not have landed, and the caller has no way to tell from here. Seating it on `1`
@@ -237,7 +230,7 @@ remainder is deduped in first-seen order and capped at 12.
 **Ranking and search get different lists.** Scoring counts how many query tokens a title carries, so
 more tokens sharpen it; GitHub AND-joins its search terms, so every added token narrows the result
 set toward zero. Ranking therefore gets all 12, while the search query gets only the **leading 4** —
-measured against `kamp-us/phoenix` on 2026-08-28, where the collapse lands between 4 and 5 terms. The
+measured against a live board on 2026-08-28, where the collapse lands between 4 and 5 terms. The
 distinctiveness floor is evaluated against the ranking list, so narrowing the search send never
 pushes a usable query into `indeterminate`.
 
@@ -259,7 +252,7 @@ server-side on title *or* body, so it is kept regardless.
 
 `27` and `28` sit above the writing verbs' `3`-`11` band because they are this group's codes too, and
 a code means one thing per group: `3` is an empty stdin and `4` is a bad section set, whichever verb
-produced them ([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
+produced them.
 
 **When both reads fail, exit `27`.** The queue is the load-bearing half — it is the one that catches
 an issue filed seconds ago — so its failure is the one reported, and the stderr line names both
@@ -295,12 +288,12 @@ truncated.
 ```
 $ fabrika report dedup --query "retry helper swallows the abort reason in the http worker"
 candidates
-4312	both	4	Abort reason lost when the worker retry helper re-wraps the request
-4088	search	2	http worker retries do not propagate cancellation
+9412	both	4	Abort reason lost when the worker retry helper re-wraps the request
+9413	search	2	http worker retries do not propagate cancellation
 ```
 
 ```
-$ fabrika report dedup --query "sozluk definition editor loses focus after an entry is saved"
+$ fabrika report dedup --query "checkout address form loses focus after a field is saved"
 none
 ```
 
@@ -313,12 +306,12 @@ $ echo $?
 
 ```
 $ fabrika report dedup --query "retry helper abort reason" --json
-{"outcome":"candidates","candidates":[{"number":4312,"source":"both","score":4,"title":"Abort reason lost when the worker retry helper re-wraps the request"}],"reason":null,"tokens":["retry","helper","abort","reason"],"searchTokens":["retry","helper","abort","reason"],"truncated":false,"queueCount":31,"searchCount":6}
+{"outcome":"candidates","candidates":[{"number":9412,"source":"both","score":4,"title":"Abort reason lost when the worker retry helper re-wraps the request"}],"reason":null,"tokens":["retry","helper","abort","reason"],"searchTokens":["retry","helper","abort","reason"],"truncated":false,"queueCount":31,"searchCount":6}
 ```
 
 ```
-$ fabrika report dedup --query "retry helper abort reason" --repo kamp-us/nonexistent
-report dedup: cannot read the label set of kamp-us/nonexistent: HTTP 404 — whether the status:needs-triage queue exists is UNKNOWN, and so is the outcome.
+$ fabrika report dedup --query "retry helper abort reason" --repo acme/nonexistent
+report dedup: cannot read the label set of acme/nonexistent: HTTP 404 — whether the status:needs-triage queue exists is UNKNOWN, and so is the outcome.
 $ echo $?
 27
 ```
@@ -328,7 +321,7 @@ the queue message needs a repo whose labels *did* read.
 
 **Grounding**
 
-- ADR 0181 — this check is **advisory, not an oracle**. It never gates a filing, which is why every
+- This check is **advisory, not an oracle**. It never gates a filing, which is why every
   outcome exits 0: a duplicate is cheap for triage to close, and a lost observation is gone. The
   skill files on ambiguity.
 - v1's `intake-dedup check` prints one line per candidate and nothing else, so **its stdout is empty
@@ -338,11 +331,11 @@ the queue message needs a repo whose labels *did* read.
   `no usable keywords — nothing to check` to stderr. A degenerate non-check then reads to a caller
   exactly like a clean one. `indeterminate` is that case promoted to an answer, and the
   two-token floor extends it to the single-generic-term case v1 reports as a clean run.
-- #3255 — an ASCII-only tokenizer shredded a Turkish stem into sub-threshold fragments and dropped
-  it, so the search half silently ran on fewer keywords than the caller supplied. The Unicode split,
-  the two-language stoplist and the stem-prefix relaxation are all that incident.
-- #4208 / #4219 — a proven outcome never shares an exit code with a failure to invoke, which is why
-  an unreadable source is 3 or 4 and never a printed `none`.
+- An ASCII-only tokenizer shreds a non-ASCII stem into sub-threshold fragments and drops it, so the
+  search half silently runs on fewer keywords than the caller supplied. The Unicode split, the
+  two-language stoplist and the stem-prefix relaxation all answer that.
+- A proven outcome never shares an exit code with a failure to invoke, which is why an unreadable
+  source is 3 or 4 and never a printed `none`.
 - v1's `--exclude` flag is **not** carried here. It exists for the triage seam, where the issue being
   deduped already exists and must not flag itself; this skill's dedup runs before its issue exists,
   so the flag would have zero callers.
@@ -399,7 +392,7 @@ sources, and what happens when each is unset:
 | Field | Source | When unset |
 |---|---|---|
 | `Filed by an agent` | literal | always present — it is the signal, never omitted |
-| `session \`<id>\`` | `$FABRIKA_SESSION_ID`, else `$CLAUDE_CODE_SESSION_ID`, else `$PI_SUBAGENT_PARENT_SESSION` ([#6960](https://github.com/kamp-us/phoenix/issues/6960)) | omitted |
+| `session \`<id>\`` | `$FABRIKA_SESSION_ID`, else `$CLAUDE_CODE_SESSION_ID`, else `$PI_SUBAGENT_PARENT_SESSION` | omitted |
 | `model \`<name>\`` | `$ANTHROPIC_MODEL`, else `$CLAUDE_MODEL` | omitted |
 | `branch \`<ref>\`` | `git rev-parse --abbrev-ref HEAD` | omitted when it fails, or returns `HEAD` (detached) |
 | timestamp | current UTC time, `%Y-%m-%dT%H:%M:%SZ` | always present |
@@ -432,7 +425,7 @@ is indistinguishable from a triaged one downstream:
 - **The title may not lead with a classification prefix.** The refusal needs *both* conditions: the
   leading token has a `WORD:` or `[WORD]` shape, **and** that word resolves to the repo's type or
   priority vocabulary. Both together, so `BUG: fix aborts` refuses while `Bug reports from the
-  sozluk form are lost` files cleanly — the shape alone would reject a legitimate title whose first
+  checkout form are lost` files cleanly — the shape alone would reject a legitimate title whose first
   word happens to be a vocabulary term.
 
 The vocabulary is **derived from the target repo's label set**, which this verb already reads for
@@ -443,8 +436,8 @@ belongs here.
 **Output** — one **tab-separated** line: `<number>`, `<url>`. The number is bare, with no `#` sigil
 and no prose prefix, so `cut -f1` yields something a caller can interpolate without stripping
 anything. With `--json`, one object with keys `number`, `url`, `label`, `redactions` (a per-class
-tally under ADR [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) — one
-`<class>: <count>` entry per leak class masked, `{}` when none; each hit's own
+tally, bounded so the output cannot grow with the input — one `<class>: <count>` entry per leak
+class masked, `{}` when none; each hit's own
 `line <n>, <class>` note is on the notes channel) and `bodyBytes`.
 
 **Exit status** — allocated from the shared table above. This verb can return `0`, `1`, `3`, `4`,
@@ -509,17 +502,17 @@ Every cancellation reads as a timeout, so time is spent chasing latency on calls
 abandoned. Might also be why the flake only shows under load.
 
 ## Pointers
-apps/web/worker/http/interrupt-on-abort.ts
+src/http/interrupt-on-abort.ts
 
 ## Suggested next step (non-binding)
 Maybe carry the signal's `reason` onto the interruption.
 EOF
-4732	https://github.com/kamp-us/phoenix/issues/4732
+9414	https://github.com/<owner>/<repo>/issues/9414
 ```
 
 ```
 $ fabrika report file --title "Aborted requests surface as plain timeouts" --json < body.md
-{"number":4732,"url":"https://github.com/kamp-us/phoenix/issues/4732","label":"status:needs-triage","redactions":{},"bodyBytes":812}
+{"number":9414,"url":"https://github.com/<owner>/<repo>/issues/9414","label":"status:needs-triage","redactions":{},"bodyBytes":812}
 ```
 
 ```
@@ -540,7 +533,7 @@ $ echo $?
 ```
 $ fabrika report file --title "PR body shipped a literal body-file reference" --redact < incident.md
 report file: redacted 1 machine-local path — line 12, temp root
-4733	https://github.com/kamp-us/phoenix/issues/4733
+9415	https://github.com/<owner>/<repo>/issues/9415
 ```
 
 ```
@@ -551,35 +544,35 @@ $ echo $?
 ```
 
 ```
-$ fabrika report file --title "Aborted requests surface as plain timeouts" --repo kamp-us/fresh-adopter < body.md
-report file: kamp-us/fresh-adopter has no "status:needs-triage" label — the issue would be filed outside the intake queue. Create the label, then re-run.
+$ fabrika report file --title "Aborted requests surface as plain timeouts" --repo acme/fresh-adopter < body.md
+report file: acme/fresh-adopter has no "status:needs-triage" label — the issue would be filed outside the intake queue. Create the label, then re-run.
 $ echo $?
 7
 ```
 
 **Grounding**
 
-- **#3086** — a PR body shipped a literal, unexpanded body-file reference: the machine-local path
-  landed in a public artifact and the description was empty, so the leak and the missing body were
-  one mistake. Exit 6 is that exact byte pattern, refused separately from exit 5 because its fix is
-  to send the body rather than to mask a placeholder.
-- **#3173** — a raw file-referencing post produced the same literal path *and* a self-reported PASS
-  over a body that never landed. Both halves are answered here: the predicate refuses the body, and
-  the read-back refuses the false success. v1 already has this read-back discipline and applies it
-  to verdict posts, while its intake create decodes the create call's own response and never
-  re-reads the issue — so a create that lands without its label reports success. That asymmetry is
-  the scar; exit 9 is it designed out.
-- **#3945** — a blocked posting command was retried through the file-referencing form the contract
-  forbids, so a permission refusal funnelled an agent into the leak-prone shape. The verb's half of
-  the fix is that its refusals name one correctable thing each; the skill carries the other half,
-  because no verb can stop a caller from abandoning it.
-- **#3924** — a stdin read that swallows a transient failure to empty makes an unread pipe
-  byte-identical to an empty one, and twelve v1 tools decide over no evidence on exactly that. Exit
-  3 is the empty-but-read case and exit 1 the failed read; they are never the same answer.
-- **#2002** — the body never becomes a named path, so two concurrent runs have no shared file to
-  interleave and no variable to reuse stale. The hazard has no surface rather than a warning against
-  it, which is why there is no `--body-file` flag to add later.
-- **ADR 0159** — the `Filed by an agent` marker is the never-auto-close signal. GitHub authorship
+- **The leaked path.** A pull-request body once shipped a literal, unexpanded body-file reference:
+  the machine-local path landed in a public artifact and the description was empty, so the leak and
+  the missing body were one mistake. Exit 6 is that exact byte pattern, refused separately from
+  exit 5 because its fix is to send the body rather than to mask a placeholder.
+- **The unverified post.** A raw file-referencing post produces the same literal path *and* a
+  self-reported PASS over a body that never landed. Both halves are answered here: the predicate
+  refuses the body, and the read-back refuses the false success. A create that decodes only the
+  create call's own response, and never re-reads the issue, reports success on a create that landed
+  without its label; exit 9 is that designed out.
+- **The refusal funnel.** A blocked posting command retried through the file-referencing form this
+  contract forbids is how a permission refusal funnels an agent into the leak-prone shape. The
+  verb's half of the fix is that its refusals name one correctable thing each; the skill carries the
+  other half, because no verb can stop a caller from abandoning it.
+- **The swallowed read.** A stdin read that swallows a transient failure to empty makes an unread
+  pipe byte-identical to an empty one, and a tool that decides over no evidence does it on exactly
+  that. Exit 3 is the empty-but-read case and exit 1 the failed read; they are never the same
+  answer.
+- **The shared temp file.** The body never becomes a named path, so two concurrent runs have no
+  shared file to interleave and no variable to reuse stale. The hazard has no surface rather than a
+  warning against it, which is why there is no `--body-file` flag to add later.
+- **The never-auto-close marker.** `Filed by an agent` is that signal. GitHub authorship
   cannot serve it: every pipeline-filed issue goes through one shared login, so authorship reads the
   same for a hand-typed issue and an agent-filed one. That is why the marker is the one footer field
   that is never dropped.
@@ -611,12 +604,13 @@ $ echo $?
 Adds a note to an existing issue over the same guarded path. **This verb exists because the skill
 tells its caller to comment on a duplicate rather than file a twin** — and a skill that says that
 without providing a guarded path sends the caller to a hand-rolled posting call, which is the exact
-call #3945 and #3173 each made. Both of those incidents were comment posts, not issue creates.
+call the leaked-path and unverified-post cases each made. Both were comment posts, not issue
+creates.
 
 **Invocation**
 
 ```
-fabrika report note --issue 4312 [--redact] [--repo <owner/name>] [--json]
+fabrika report note --issue 9412 [--redact] [--repo <owner/name>] [--json]
 ```
 
 The note arrives on **stdin** as markdown.
@@ -666,25 +660,26 @@ stderr names the byte count read and the target issue.
 
 **The read-back applies here too**, on the same normalized comparison as `report file` and for the
 same stated reason. After posting, the verb re-fetches the comment and asserts its body matches what
-was sent. #3173 is precisely a posted comment whose landed body was not what the poster believed it
-had sent, reported upward as a success — so a post that is not verified is not finished.
+was sent. The failure this answers is precisely a posted comment whose landed body was not what the
+poster believed it had sent, reported upward as a success — so a post that is not verified is not
+finished.
 
 **Examples**
 
 ```
-$ fabrika report note --issue 4312 <<'EOF'
+$ fabrika report note --issue 9412 <<'EOF'
 Also reproduces on the streaming path, not just the buffered one — same discarded `cause`.
 EOF
-5154891644	https://github.com/kamp-us/phoenix/issues/4312#issuecomment-5154891644
+5154891644	https://github.com/<owner>/<repo>/issues/9412#issuecomment-5154891644
 ```
 
 ```
-$ fabrika report note --issue 4312 --json < note.md
-{"id":5154891644,"url":"https://github.com/kamp-us/phoenix/issues/4312#issuecomment-5154891644","issue":4312,"redactions":{},"bodyBytes":94}
+$ fabrika report note --issue 9412 --json < note.md
+{"id":5154891644,"url":"https://github.com/<owner>/<repo>/issues/9412#issuecomment-5154891644","issue":9412,"redactions":{},"bodyBytes":94}
 ```
 
 ```
-$ printf '' | fabrika report note --issue 4312
+$ printf '' | fabrika report note --issue 9412
 report note: stdin was read and held 0 bytes — refusing to post an empty note.
 $ echo $?
 3
@@ -692,19 +687,19 @@ $ echo $?
 
 ```
 $ fabrika report note --issue 99999 < note.md
-report note: kamp-us/phoenix has no issue #99999.
+report note: acme/storefront has no issue #99999.
 $ echo $?
 7
 ```
 
 **Grounding**
 
-- **#3945 and #3173 were both comment posts.** A guarded issue-create path with an unguarded
-  comment path leaves the seam where both incidents actually happened wide open, which is this
+- **Both leaks were comment posts, not issue creates.** A guarded issue-create path with an
+  unguarded comment path leaves the seam where they actually happened wide open, which is this
   verb's whole reason to exist.
-- **#3173's read-back half** applies identically to a note: a landed body that is not what was sent,
+- **The read-back half** applies identically to a note: a landed body that is not what was sent,
   reported as a success, is the failure mode. Exit 9 is that made mechanical.
-- **#3924** — the same stdin distinction as `report file`: a failed read and an empty pipe are
+- **The stdin distinction** is the same as `report file`'s: a failed read and an empty pipe are
   different answers with different exit codes.
 - v1's `tracker create-comment` prints `tracker: commented on #<n> (ref <id>).` — prose on a machine
   channel, the same scar as its create sibling, and the reason this line is tab-separated with a
@@ -717,15 +712,15 @@ $ echo $?
 Appends a section to an existing issue's **body**, under a separator and a dated heading this verb
 composes. **It exists because there was no public verb for that operation, and the hand-rolled call
 that filled the gap posts a path.** `gh api -X PATCH -f body=@file` takes its value as a raw string,
-so the literal `@/path/to/file` becomes the whole body and the write returns success — #6708 and
-#6736 on 2026-08-21, both self-caught inside a minute. The plumbing was already in the package; what
-was missing was a reachable seat for it, since `triage enrich` is stage-scoped and cannot serve an
+so the literal `@/path/to/file` becomes the whole body and the write returns success — twice on one
+day, both self-caught inside a minute. The plumbing was already in the package; what was missing
+was a reachable seat for it, since `triage enrich` is stage-scoped and cannot serve an
 append to an already-triaged issue.
 
 **Invocation**
 
 ```
-fabrika report amend --issue 4312 [--redact] [--repo <owner/name>] [--json]
+fabrika report amend --issue 9412 [--redact] [--repo <owner/name>] [--json]
 ```
 
 The amendment arrives on **stdin** as markdown.
@@ -800,8 +795,9 @@ the scan runs. The scope line on stderr names the bytes read and the size of the
 
 **The read-back proves both halves.** After the PATCH the verb re-reads the issue body and asserts
 the appended section is present **and** the prior body survived, on the same normalized comparison
-`report file` uses. The write's own echo is not evidence — that is #3173's lesson — and a landed
-body missing the prior text is a replacement wearing an append's shape, with no history to recover
+`report file` uses. The write's own echo is not evidence — a write that echoes what it sent proves
+only what it sent — and a landed body missing the prior text is a replacement wearing an append's
+shape, with no history to recover
 it from. A read-back that could not be **performed** — the issue answers 404 after the write, or the
 re-read fails — is reported through that same one message, as `the read-back itself failed:
 <reason>` or `the issue is not readable after the write` in the `<what differs>` clause, exactly as
@@ -811,19 +807,19 @@ has proven what is in it.
 **Examples**
 
 ```
-$ fabrika report amend --issue 4312 <<'EOF'
-The fanout classifier landed in #6629; this issue's `Pointers` section predates it.
+$ fabrika report amend --issue 9412 <<'EOF'
+The fanout classifier landed last week; this issue's `Pointers` section predates it.
 EOF
-4312	https://github.com/kamp-us/phoenix/issues/4312
+9412	https://github.com/<owner>/<repo>/issues/9412
 ```
 
 ```
-$ fabrika report amend --issue 4312 --json < correction.md
-{"issue":4312,"url":"https://github.com/kamp-us/phoenix/issues/4312","redactions":[],"appendedBytes":112,"bodyBytes":1904}
+$ fabrika report amend --issue 9412 --json < correction.md
+{"issue":9412,"url":"https://github.com/<owner>/<repo>/issues/9412","redactions":[],"appendedBytes":112,"bodyBytes":1904}
 ```
 
 ```
-$ printf '' | fabrika report amend --issue 4312
+$ printf '' | fabrika report amend --issue 9412
 report amend: stdin was read and held 0 bytes — refusing to append an empty amendment.
 $ echo $?
 3
@@ -831,13 +827,13 @@ $ echo $?
 
 **Grounding**
 
-- **#6708 and #6736** are the two live hits: `-f` posts its value as a raw string, so `body=@file`
-  ships the literal path. Both bodies were briefly destroyed and both were repaired fix-forward.
+- **The two incidents** are the reason this verb exists: `-f` posts its value as a raw string, so
+  `body=@file` ships the literal path. Both bodies were briefly destroyed and both were repaired
+  fix-forward.
 - **`restWrite`** ([`packages/fabrika-cli/src/io/gh-api.ts`](../../../../packages/fabrika-cli/src/io/gh-api.ts))
   sends the body as JSON on the wire, so no `-f`/`-F` argv shape exists inside the CLI at all. This
   verb is how a caller reaches that path instead of rebuilding the argv one.
-- **#4683** filed the same hazard and was killed because its deliverable hung off retired
-  `pipeline-cli` surfaces. That kill carved out old-pipeline work fabrika lacks the capability for,
-  which is this.
-- **#3086** is the earlier PR-description instance of the same byte pattern, now covered by
-  `build pr-body`. Exit 6 is the shape both share.
+- **An earlier ticket for the same hazard** was killed because its deliverable hung off retired
+  predecessor surfaces; the hazard outlived the ticket, which is why it is answered here.
+- **The pull-request-description instance** of the same byte pattern is covered by `build pr-body`.
+  Exit 6 is the shape both share.

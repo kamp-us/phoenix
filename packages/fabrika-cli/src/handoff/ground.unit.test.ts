@@ -21,10 +21,10 @@ import {
 	resolveBranch,
 } from "./ground.ts";
 
-/** The contract's worked example, transcribed so the pre-image below is a comparison, not a claim. */
+/** A pack shaped like the contract's worked example, so the pre-image below compares, not claims. */
 const WORKED = {
 	issue: 5021,
-	repo: "kamp-us/phoenix",
+	repo: "o/r",
 	git: {
 		branch: "umut/fanout-helper",
 		head: "4f1c8a2b9d3e5607182934abcdef5566778899aa",
@@ -56,7 +56,7 @@ describe("the digest pre-image", () => {
 		expect(preImage(WORKED)).toBe(
 			[
 				"issue=5021",
-				'repo="kamp-us/phoenix"',
+				'repo="o/r"',
 				'git.branch="umut/fanout-helper"',
 				'git.head="4f1c8a2b9d3e5607182934abcdef5566778899aa"',
 				'git.upstream="origin/umut/fanout-helper"',

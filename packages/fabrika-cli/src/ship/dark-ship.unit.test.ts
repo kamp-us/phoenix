@@ -22,9 +22,9 @@ const ADDING_DIFF = `diff --git a/${FLAG_REGISTRY} b/${FLAG_REGISTRY}
 +	FlagshipFlag("sozluk-new-thing", {defaultVariation: "off"}),
 `;
 
-const UNRELATED_DIFF = `diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
---- a/apps/web/src/App.tsx
-+++ b/apps/web/src/App.tsx
+const UNRELATED_DIFF = `diff --git a/apps/site/src/App.tsx b/apps/site/src/App.tsx
+--- a/apps/site/src/App.tsx
++++ b/apps/site/src/App.tsx
 @@ -1,1 +1,2 @@
 +const a = 1;
 `;

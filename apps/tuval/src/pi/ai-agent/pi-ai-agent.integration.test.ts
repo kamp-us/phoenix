@@ -15,7 +15,8 @@ import type {ByteTransport, ByteTransportFactory} from "@earendil-works/pi-clien
 import {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Queue, Redacted, Stream} from "effect";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {pageCursor} from "../../ai-agent/history/cursor.ts";
+import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
 	StartError,
@@ -237,6 +238,31 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				yield* agent.prompt("third question");
 				yield* turnsRan(faux, 3);
 
+				const live = items(yield* drain(agent));
+				const local: TranscriptItem = {
+					kind: "user",
+					id: ItemId.make("local:third-send"),
+					text: "third question",
+					timestamp: Date.now(),
+					local: true,
+				};
+				for (const kind of ["user", "assistant"] as const) {
+					const row = live.findLast((item) => item.kind === kind);
+					assert.isDefined(row, `the real host emitted a live ${kind}`);
+					if (row === undefined) return;
+					assert.match(row.id, /^item-\d+$/, "cursor comes from the live host, never page(null)");
+					const cursor = pageCursor([local, row], local.id);
+					assert.strictEqual(cursor.kind, "page");
+					if (cursor.kind !== "page") return;
+					const initial = yield* agent.page(cursor.before, 2);
+					assert.deepStrictEqual(
+						initial.items.map((item) => (item.kind === "user" ? item.text : item.kind)),
+						["second question", "assistant"],
+						`a local oldest row followed by a live ${kind} loads the older exchange`,
+					);
+					assert.strictEqual(local.id, "local:third-send");
+				}
+
 				const newest = yield* agent.page(null, 2);
 				assert.isTrue(newest.hasMore, "three exchanges do not fit in a two-item page");
 				assert.deepStrictEqual(
@@ -254,6 +280,16 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					older.items.map((item) => (item.kind === "user" ? item.text : item.kind)),
 					["second question", "assistant"],
 					"the next page walks older, still oldest-first",
+				);
+
+				const reply = newest.items.find((item) => item.kind === "assistant");
+				assert.isDefined(reply);
+				if (reply === undefined) return;
+				const fromReply = yield* agent.page(reply.id, 2);
+				assert.deepStrictEqual(
+					fromReply,
+					older,
+					"a local prompt's stored reply selects the same exchange boundary",
 				);
 
 				const oldest = yield* agent.page(older.items[0]?.id ?? null, 2);

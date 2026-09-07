@@ -104,7 +104,7 @@ describe("fabrika pattern, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, (
 					"new",
 					"react-flow-shape",
 					"--decision",
-					"https://github.com/kamp-us/phoenix/issues/7197",
+					"https://forge.example/acme/repo/issues/1",
 					"--source-repo",
 					upstream,
 					"--source-package",

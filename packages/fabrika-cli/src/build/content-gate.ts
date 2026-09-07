@@ -4,7 +4,7 @@
  * Issue bodies, comment bodies, PR bodies, review findings — anything a party other than this process
  * wrote — is gated here before it reaches stdout. **Today the gate is provenance-stamping
  * pass-through: it changes no byte.** That is deliberate, not unfinished. The trust posture is an open
- * founder decision (#4859), and this module exists so that ruling lands as one module change covering
+ * founder decision, and this module exists so that ruling lands as one module change covering
  * every verb at once, instead of an edit to five verbs that ships four of them.
  *
  * **TOCTOU is handled by construction, not by a cache invalidation rule.** No verb holds gated content
@@ -30,7 +30,7 @@ export type ContentOrigin =
 /** Externally-authored text with its provenance attached. The `text` is what reaches stdout. */
 export interface Gated {
 	readonly origin: ContentOrigin;
-	/** What the bytes describe — `#4312`, `comment 512001` — so a refusal could name it. */
+	/** What the bytes describe — an issue number, `comment 512001` — so a refusal could name it. */
 	readonly locator: string;
 	readonly text: string;
 }

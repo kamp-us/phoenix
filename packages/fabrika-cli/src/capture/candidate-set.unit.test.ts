@@ -1,8 +1,8 @@
 /**
- * The candidate-set assembly + (de)serialize core (issue #2961 AC 2/3): the set is
- * assembled in founder order with the exact depo sha256 per surface (ADR 0183 §5's
- * no-re-render anchor), serialized deterministically, and round-trips through parse;
- * a partial/mismatched render fails closed.
+ * The candidate-set assembly + (de)serialize core: the set is assembled in priority
+ * order with the exact stored sha256 per surface (the no-re-render anchor), serialized
+ * deterministically, and round-trips through parse; a partial/mismatched render fails
+ * closed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -28,7 +28,7 @@ const surfaces: readonly ResolvedPrioritySurface[] = [
 	{
 		order: 2,
 		key: "pano-feed",
-		title: "Pano feed",
+		title: "Feed",
 		intent: "feed",
 		surface: parseSurfaceSpec("/pano"),
 	},
@@ -38,21 +38,21 @@ const rendered: readonly RenderedCandidate[] = [
 	{
 		surfaceId: "/pano",
 		sha256: SHA_B,
-		url: `https://depo.kamp.us/${SHA_B}.png`,
+		url: `https://assets.example.com/${SHA_B}.png`,
 		fileName: "pano@desktop.png",
 		localPath: "/out/pano@desktop.png",
 	},
 	{
 		surfaceId: "/sozluk",
 		sha256: SHA_A,
-		url: `https://depo.kamp.us/${SHA_A}.png`,
+		url: `https://assets.example.com/${SHA_A}.png`,
 		fileName: "sozluk@desktop.png",
 		localPath: "/out/sozluk@desktop.png",
 	},
 ];
 
 describe("assembleCandidateSet", () => {
-	it("joins by surface-id and preserves founder order (not render order)", () => {
+	it("joins by surface-id and preserves priority order (not render order)", () => {
 		const set = assembleCandidateSet({
 			previewUrl: "https://pr-1.workers.dev",
 			viewport: "desktop",
@@ -69,7 +69,7 @@ describe("assembleCandidateSet", () => {
 		);
 	});
 
-	it("carries the bless intent + full-res depo url per candidate", () => {
+	it("carries the bless intent + full-res store url per candidate", () => {
 		const set = assembleCandidateSet({
 			previewUrl: "https://pr-1.workers.dev",
 			viewport: "desktop",
@@ -78,7 +78,7 @@ describe("assembleCandidateSet", () => {
 			rendered,
 		});
 		assert.strictEqual(set.screens[0]?.intent, "shell");
-		assert.strictEqual(set.screens[0]?.url, `https://depo.kamp.us/${SHA_A}.png`);
+		assert.strictEqual(set.screens[0]?.url, `https://assets.example.com/${SHA_A}.png`);
 	});
 
 	it("fails closed when a priority surface has no rendered candidate", () => {
@@ -130,7 +130,7 @@ describe("serializeCandidateSet / parseCandidateSet", () => {
 	const set = assembleCandidateSet({
 		previewUrl: "https://pr-1.workers.dev",
 		viewport: "desktop",
-		forcedFlags: {"golden-screens": true, "pano-draft": false},
+		forcedFlags: {"golden-screens": true, "zeta-draft": false},
 		surfaces,
 		rendered,
 	});
@@ -143,7 +143,7 @@ describe("serializeCandidateSet / parseCandidateSet", () => {
 		const text = serializeCandidateSet(set);
 		assert.strictEqual(serializeCandidateSet(set), text);
 		assert.isTrue(text.endsWith("\n"));
-		assert.isBelow(text.indexOf("golden-screens"), text.indexOf("pano-draft"));
+		assert.isBelow(text.indexOf("golden-screens"), text.indexOf("zeta-draft"));
 	});
 
 	it("parse fails closed on a malformed screen", () => {

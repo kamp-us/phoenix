@@ -164,7 +164,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 describe("the CI rollup's gate-coverage refusal", () => {
 	const CI_YML = ".github/workflows/ci.yml";
 	const CODEQL = "dynamic/github-code-scanning/codeql";
-	/** The #6522 head: a complete, all-passed enumeration that no gate of this repo produced. */
+	/** The head: a complete, all-passed enumeration that no gate of this repo produced. */
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull())],
 		[RUNS, served(checkRuns(1, [{name: "CodeQL", status: "completed", conclusion: "success"}]))],
@@ -206,7 +206,7 @@ describe("the three-outcome binding", () => {
 		expect(out.stdout).toContain("\tstale\t");
 	});
 
-	it("MUTANT: folding Stale into Current makes a stale PASS read as a CURRENT one (ADR 0058)", async () => {
+	it("MUTANT: folding Stale into Current makes a stale PASS read as a CURRENT one", async () => {
 		await mutate<typeof import("../wire/verdict-marker.ts")>(
 			"../wire/verdict-marker.ts",
 			(actual) => ({
@@ -228,7 +228,7 @@ describe("the three-outcome binding", () => {
 
 describe("the diff completeness proof", () => {
 	// The range carries seven files; the served diff carries two. Both counts are git's, over the
-	// same range — anything but a refusal judges 2/7 (#5139).
+	// same range — anything but a refusal judges 2/7.
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 7}))],
 		...binding(),
@@ -253,7 +253,7 @@ describe("the diff completeness proof", () => {
 });
 
 /**
- * The provenance binding (#5117) — the guard whose absence is invisible from inside.
+ * The provenance binding — the guard whose absence is invisible from inside.
  *
  * A drifted read does not error and does not look short: the served artifact is well-formed, the
  * completeness proof passes, and the verdict carries a SHA. The mutants below restore exactly the
@@ -325,7 +325,7 @@ describe("the commit binding on the read verbs", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({head: HEAD, namespaces: ["review-doc"]});
 	});
 
-	// #5122's half: the same unbound read, at the two seams #5117 left behind. Both mutants die
+	// The other half: the same unbound read, at the two seams the binding left behind. Both mutants die
 	// fail-OPEN — a checked-clean disclosure and a posted verdict, each at exit 0.
 	const SUPPRESSING_DIFF = `diff --git a/src/cart.ts b/src/cart.ts
 --- a/src/cart.ts
@@ -337,7 +337,7 @@ diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
 @@ -1,1 +1,2 @@
- # phoenix
+ # demo
 +a line
 `;
 
@@ -616,7 +616,7 @@ nothing yet.
 
 describe("the empty-read refusal on the changed-file list", () => {
 	// git reports no paths while GitHub declares nine: the emptiness refuses, the disagreement does
-	// not (#5154).
+	// not.
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 9}))],
 		...binding(),

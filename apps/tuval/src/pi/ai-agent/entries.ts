@@ -22,10 +22,12 @@
  * on, so a session file a newer Pi wrote still opens.
  */
 
-import type {
-	CustomMessageEntry,
-	SessionEntry,
-	SessionMessageEntry,
+import {
+	buildContextEntries,
+	type CustomMessageEntry,
+	type SessionEntry,
+	type SessionMessageEntry,
+	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type {TranscriptItem as PiTranscriptItem} from "@earendil-works/pi-protocol";
 import type {SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
@@ -105,6 +107,27 @@ const noticeItemOf = (entry: SessionEntry): TranscriptItem | null => {
 		default:
 			return null;
 	}
+};
+
+/**
+ * Live positions count context messages, not disk entries. Pi 0.84.3's `buildSessionContext`
+ * composes these two exports, including compacted summaries and invisible custom messages.
+ * Stored entry ids remain unchanged; only the page planner consumes these aliases.
+ */
+export const pageCursorAliases = (
+	entries: ReadonlyArray<SessionEntry>,
+): ReadonlyMap<string, string> => {
+	const aliases = new Map<string, string>();
+	let index = 0;
+	for (const entry of buildContextEntries([...entries])) {
+		const messages = sessionEntryToContextMessages(entry);
+		if (entry.type === "message" && messages.length === 1) {
+			aliases.set(`item-${index}`, entry.id);
+			aliases.set(thinkingId(`item-${index}`), thinkingId(entry.id));
+		}
+		index += messages.length;
+	}
+	return aliases;
 };
 
 export const pageItems = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<TranscriptItem> => {

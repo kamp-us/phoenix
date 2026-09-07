@@ -7,11 +7,11 @@
  * is the point — a body that would be refused should be refused before a PR exists to carry it.
  *
  * An already-open PR for this head branch is an **answer**, not an error: a create whose outcome could
- * not be proven (`8`) is re-run, and the re-run must not open a second PR (#4544's class).
+ * not be proven (`8`) is re-run, and the re-run must not open a second PR.
  *
  * Both verbs live in one module because they must guard identically. `build pr-body` exists so a FAIL
  * whose whole fix is a body edit — the recurring one is a `## Deviations` section the review gate reads
- * as malformed — has a route that runs the guards, instead of a raw `gh` call that runs none (#5618).
+ * as malformed — has a route that runs the guards, instead of a raw `gh` call that runs none.
  * It reorders one step and nothing else: it cannot name the served issue until it has read the PR, so
  * the two issue-dependent guards (`4`, and the closing-keyword half of it) sit after that read — still
  * before any write, which is the invariant the ordering is for.

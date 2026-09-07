@@ -60,7 +60,7 @@ export interface KeyGroup<A> {
 	/**
 	 * The JSON Schema fragment describing a declared value's shape, single-sourced beside this
 	 * key's {@link KeyGroup.decode}. `config schema` assembles the registry's fragments into the
-	 * one document an editor validates `.fabrika.jsonc` against (#6488).
+	 * one document an editor validates `.fabrika.jsonc` against.
 	 *
 	 * Optional on the type, required in practice: the assembler refuses a registry with any key
 	 * missing a fragment, so the emitted schema can never silently green a typo under a key it

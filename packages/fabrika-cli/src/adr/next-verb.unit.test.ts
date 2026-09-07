@@ -16,7 +16,7 @@ const base = (overrides: ReadonlyArray<Scripted> = []) =>
 	fakeSeams([
 		...overrides,
 		[/^git remote$/, okOut("origin\n")],
-		[/^git remote get-url origin$/, okOut("git@github.com:kamp-us/phoenix.git\n")],
+		[/^git remote get-url origin$/, okOut("git@github.com:o/r.git\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[/^git ls-tree/, okOut(tree("0234-a.md", "0235-b.md", "0236-c.md"))],
@@ -29,18 +29,18 @@ const base = (overrides: ReadonlyArray<Scripted> = []) =>
 			{
 				status: 200,
 				body: JSON.stringify([
-					{status: "added", filename: ".decisions/0237-x.md"},
+					{status: "added", filename: ".records/0237-x.md"},
 					{status: "modified", filename: "README.md"},
 				]),
 			},
 		],
 		[
 			/pulls\/12\/files/,
-			{status: 200, body: JSON.stringify([{status: "added", filename: ".decisions/0239-y.md"}])},
+			{status: 200, body: JSON.stringify([{status: "added", filename: ".records/0239-y.md"}])},
 		],
 	]);
 
-const options = {dir: ".decisions", base: "origin/main", repo: null, json: false};
+const options = {dir: ".records", base: "origin/main", repo: null, json: false};
 
 const run = (overrides: ReadonlyArray<Scripted> = [], opts: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runNext({...options, ...opts}), base(overrides).layer));
@@ -101,9 +101,9 @@ describe("runNext", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	// A fresh adopter's `.decisions/` is empty by definition, and `git ls-tree <sha>:<dir>` fails
+	// A fresh adopter's record directory is empty by definition, and `git ls-tree <sha>:<dir>` fails
 	// outright on a directory that is not in the tree — so an empty listing PROVES an existing,
-	// empty directory and mints `0001` (#5254).
+	// empty directory and mints `0001`.
 	it("answers 0001 on a readable-but-empty --dir, with no open PR claiming an id", async () => {
 		const out = await run([
 			[/^git ls-tree/, okOut("")],
@@ -121,14 +121,14 @@ describe("runNext", () => {
 	});
 
 	// An unreadable directory is a PROVEN refusal, so it may not share `1` with a verb that failed
-	// to run (#4208, #4219, #4736), and it must stay distinct from the empty directory that answers.
+	// to run, and it must stay distinct from the empty directory that answers.
 	it("refuses an unreadable --dir on its own proven code, not on 1", async () => {
 		const out = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
 		expect(out.code).toBe(DIR_UNREADABLE);
 		expect(out.code).not.toBe(1);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			'adr next: cannot read .decisions at origin/main: fatal: not a tree object — the merged set is UNKNOWN, never "0 records".',
+			'adr next: cannot read .records at origin/main: fatal: not a tree object — the merged set is UNKNOWN, never "0 records".',
 		);
 	});
 

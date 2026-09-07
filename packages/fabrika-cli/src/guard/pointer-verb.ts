@@ -1,12 +1,11 @@
 /**
- * `guard pointer-guard check` — every backticked repo path in a tracked `CLAUDE.md` resolves
- * (#988), ported off v1's `pointer-guard check` (epic #5720).
+ * `guard pointer-guard check` — every backticked repo path in a tracked `CLAUDE.md` resolves.
  *
  * Scope is the git-tracked `CLAUDE.md` set: `node_modules` docs and untracked scratch files are out,
- * and a renamed target reds the moment a referencing CLAUDE.md is committed. `.decisions/` and
- * `.patterns/` are deliberately not scanned — the first is the history surface, where an ADR
- * legitimately names code that has since moved, and the second cites external dependency trees that
- * resolution alone cannot tell from a deleted in-repo path.
+ * and a renamed target reds the moment a referencing CLAUDE.md is committed. Decision-history and
+ * pattern docs are deliberately not scanned — history legitimately names code that has since moved,
+ * and pattern docs cite external dependency trees that resolution alone cannot tell from a deleted
+ * in-repo path.
  *
  * **`git ls-files` is proven before any `check-ignore` runs.** A failed subprocess reads as "not
  * ignored" at that seam, so a `git` that cannot run at all would turn every pointer stale and
@@ -77,7 +76,7 @@ const judge = (root: string): Scan<GuardVerdict> =>
 		}
 		if (files.length === 0) {
 			return zeroScope(
-				`${VERB}: scanned ZERO git-tracked ${DOC} files — fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: scanned ZERO git-tracked ${DOC} files — fail-closed, like every guard here. Is the repo root correct?`,
 			);
 		}
 		const stale: Array<StalePointer> = [];
@@ -107,7 +106,7 @@ const judge = (root: string): Scan<GuardVerdict> =>
 						"error",
 						s.file,
 						s.line,
-						`\`${s.path}\` does not resolve on disk — a backticked repo pointer that rots sends every reader to a path that is not there (#988). Fix: point at its current location, or restore the file.`,
+						`\`${s.path}\` does not resolve on disk — a backticked repo pointer that rots sends every reader to a path that is not there. Fix: point at its current location, or restore the file.`,
 					),
 				),
 			),

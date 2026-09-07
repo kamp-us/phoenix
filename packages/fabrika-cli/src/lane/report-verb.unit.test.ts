@@ -79,7 +79,7 @@ const run = (
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
 					classes: extra.classes ?? [],
-					repo: "kamp-us/phoenix",
+					repo: "o/r",
 					cwd: "/repo",
 					env: {},
 				},
@@ -135,8 +135,8 @@ describe("lane report — every shell terminal token maps to one operator event"
 describe("lane report — refs on the event line", () => {
 	it("records --pr and --comment on the appended line, and the line survives a history read", async () => {
 		const fs = laneAt(LOG_AT.build);
-		const pr = "https://github.com/kamp-us/phoenix/pull/9001";
-		const comment = "https://github.com/kamp-us/phoenix/issues/42#issuecomment-1";
+		const pr = "https://forge.example/o/r/pull/9001";
+		const comment = "https://forge.example/o/r/issues/42#issuecomment-1";
 
 		const out = await run(fs, "SHIPPED-PR", {pr, comment});
 		expect(out.code).toBe(0);
@@ -219,7 +219,7 @@ describe("lane report — the append is proof-gated", () => {
 				task: "issue",
 				classes: null,
 				pr: null,
-				repo: "kamp-us/phoenix",
+				repo: "o/r",
 				cwd: "/repo",
 				env: {},
 			},
@@ -228,13 +228,12 @@ describe("lane report — the append is proof-gated", () => {
 
 	/**
 	 * The ship stage's closure is read off the PR the terminal names, so the ref has to reach the
-	 * prover and not only the line it lands on — nominating for it cannot see a merged `Part of #N`
-	 * (#7457).
+	 * prover and not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
 	 */
 	it("hands the prover the same --pr ref the event line records", async () => {
 		const fs = laneAt(LOG_AT.build);
 		const prover = fakeProver();
-		const pr = "https://github.com/kamp-us/phoenix/pull/7806";
+		const pr = "https://forge.example/o/r/pull/7806";
 
 		const out = await run(fs, "SHIPPED-PR", {prover, pr});
 		expect(out.code).toBe(0);
@@ -244,7 +243,7 @@ describe("lane report — the append is proof-gated", () => {
 
 	/**
 	 * The classes go to the prover as well as to the log, because they pick the arm the event takes
-	 * and the arm picks which cell owes the routed namespace (#6664). A prover asked without them
+	 * and the arm picks which cell owes the routed namespace. A prover asked without them
 	 * would answer about a different transition than the one being appended.
 	 */
 	it("hands the prover the same classes the append carries", async () => {
@@ -291,7 +290,7 @@ describe("lane report — the append is proof-gated", () => {
 	});
 });
 
-describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
+describe("lane report — the park cause a BLOCKED carries", () => {
 	it("records a known cause on the event line, where the fold reads it back", async () => {
 		const fs = laneAt(LOG_AT.build);
 
@@ -348,7 +347,7 @@ describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
 /**
  * A `PASS` proven over a set short one namespace is a different fact from one proven over the whole
  * set, and only the event line can carry the difference — an epic child hands `review-ui` to its
- * epic's tail, and a bare `PASS` says nothing about the verdict still owed there (#7041).
+ * epic's tail, and a bare `PASS` says nothing about the verdict still owed there.
  */
 describe("lane report — the deferral a proven PASS discloses", () => {
 	it("records what the prover deferred on the event line and on stdout", async () => {
@@ -377,8 +376,8 @@ describe("lane report — the deferral a proven PASS discloses", () => {
 });
 
 /**
- * The #7382 shape: a merged `Part of #N` PR drove its lane to `complete` exactly as a closing merge
- * did, because nothing between the nominator and the ledger carried the difference (ADR 0343).
+ * A merged `Part of #N` PR used to drive its lane to `complete` exactly as a closing merge
+ * did, because nothing between the nominator and the ledger carried the difference.
  */
 describe("lane report — the partial merge a shipped lane discloses", () => {
 	it("records the prover's partial and lands the lane back in `queued`", async () => {
@@ -393,7 +392,7 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 	});
 
 	/**
-	 * The evidence rides the line beside the polarity (#7457), and it is what a later sweep reads to
+	 * The evidence rides the line beside the polarity, and it is what a later sweep reads to
 	 * tell this `false` from the one the old nominator fell through to — a distinction no timestamp
 	 * on the line can make.
 	 */
@@ -426,7 +425,7 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 });
 
 /**
- * Lane 5661 replayed (#6112). The run's inputs are the ones that lane had: a criteria heading it
+ * That lane replayed. The run's inputs are the ones it had: a criteria heading it
  * could not read, and then three FAIL verdicts current at the head. What changed is where the
  * terminal is picked — at the end of the run, once, off everything it reached — so the ledger ends
  * on the failed review the verdicts say, and on the repair round the retry budget pays for rather
@@ -444,7 +443,7 @@ describe("lane report — a reviewer's terminal is the one its run reached", () 
 	it("records the FAIL, and the lane folds into the repair round rather than a human's park", async () => {
 		const fs = laneAt(LOG_AT.review);
 
-		const out = await run(fs, "FAIL", {pr: "https://github.com/kamp-us/phoenix/pull/6108"});
+		const out = await run(fs, "FAIL", {pr: "https://forge.example/o/r/pull/6108"});
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({

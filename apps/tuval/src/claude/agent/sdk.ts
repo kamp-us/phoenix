@@ -17,6 +17,7 @@ import type {
 	ModelInfo,
 	Options,
 	PermissionMode,
+	SDKControlGetContextUsageResponse,
 	SDKMessage,
 	SDKSessionInfo,
 	SDKUserMessage,
@@ -67,6 +68,13 @@ export interface AgentSession extends AsyncGenerator<SDKMessage, void> {
 	 */
 	applyFlagSettings(settings: {effortLevel: EffortLevel | null}): Promise<void>;
 	supportedModels(): Promise<ReadonlyArray<ModelInfo>>;
+	/**
+	 * `sdk.d.ts` at 0.3.259: summary uses local estimates, not token-count API calls. Its
+	 * `model` is the main-loop model, available before the first turn (unlike `system/init`).
+	 */
+	getContextUsage(options: {
+		detail: "summary";
+	}): Promise<Pick<SDKControlGetContextUsageResponse, "model">>;
 	/**
 	 * The session's slash commands, declared beside `supportedModels` and read the same way — once
 	 * per open. The pin's `sdk.d.ts` documents it as tracking the latest `commands_changed` push, so

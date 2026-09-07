@@ -11,9 +11,9 @@ import {
 	scanFile,
 } from "./skill-lint.ts";
 
-// The #1766 trigger, verbatim shape: an unquoted `description:` whose prose carries a
+// The recurring trigger, verbatim shape: an unquoted `description:` whose prose carries a
 // mid-sentence colon-space (`ritual: pre-flight`) — strict YAML reparses it as a nested
-// mapping (the same break GitHub's renderer surfaces on release/SKILL.md, shipper.md).
+// mapping (the same break GitHub's renderer surfaces).
 const BROKEN_FRONTMATTER = [
 	"---",
 	"name: release",
@@ -33,7 +33,7 @@ const QUOTED_FRONTMATTER = [
 	"# release",
 ].join("\n");
 
-// The `>-` folded block scalar form (the release/SKILL.md #1769 fix shape) — also valid.
+// The `>-` folded block scalar form (the other durable fix shape) — also valid.
 const FOLDED_FRONTMATTER = [
 	"---",
 	"name: release",
@@ -74,7 +74,7 @@ describe("scanFile — flags GraphQL-path gh calls", () => {
 		assert.strictEqual(scanFile("s/SKILL.md", "the project board is classic").length, 0);
 	});
 
-	it("self-exempts the ADR-0158 sanctioned read PER SCRIPT, not the scripts/ directory", () => {
+	it("self-exempts the sanctioned GraphQL read PER SCRIPT, not the scripts/ directory", () => {
 		assert.isTrue(isSelfExempt("skills/review-code/scripts/unresolved-threads-read.sh"));
 		assert.isFalse(isSelfExempt("skills/review-code/scripts/pr-diff.sh"));
 		assert.isAbove(
@@ -144,7 +144,7 @@ describe("lintCorpus — scope + findings", () => {
 	});
 });
 
-describe("isZeroScope — fail-closed on zero scope (ADR 0092)", () => {
+describe("isZeroScope — fail-closed on zero scope", () => {
 	it("reports zero scope when nothing was scanned (empty corpus)", () => {
 		assert.isTrue(isZeroScope(lintCorpus([])));
 	});
@@ -176,9 +176,9 @@ describe("isFrontmatterScoped — SKILL.md and agents/*.md carry frontmatter", (
 	});
 });
 
-describe("checkFrontmatter — the #1766 gate (red-then-green)", () => {
+describe("checkFrontmatter — the strict-YAML gate (red-then-green)", () => {
 	// RED: the exact recurring defect — an unquoted description with a mid-sentence
-	// colon-space fails the strict-YAML parse (#1281 shipper.md, #1769 release/SKILL.md).
+	// colon-space fails the strict-YAML parse.
 	it("FAILS an unquoted `description:` with a mid-sentence colon-space", () => {
 		const finding = checkFrontmatter("skills/release/SKILL.md", BROKEN_FRONTMATTER);
 		assert.isNotNull(finding);
@@ -191,7 +191,7 @@ describe("checkFrontmatter — the #1766 gate (red-then-green)", () => {
 		assert.isNull(checkFrontmatter("skills/release/SKILL.md", QUOTED_FRONTMATTER));
 	});
 
-	// GREEN: the `>-` folded block scalar (the release/SKILL.md #1769 fix shape) parses clean.
+	// GREEN: the `>-` folded block scalar parses clean.
 	it("PASSES a `>-` folded block-scalar `description:`", () => {
 		assert.isNull(checkFrontmatter("skills/release/SKILL.md", FOLDED_FRONTMATTER));
 	});
@@ -209,7 +209,7 @@ describe("checkFrontmatter — the #1766 gate (red-then-green)", () => {
 	});
 });
 
-describe("lintCorpus — frontmatter findings + scope (ADR 0092)", () => {
+describe("lintCorpus — frontmatter findings + scope", () => {
 	it("reports a broken-frontmatter file as a frontmatterFinding", () => {
 		const result = lintCorpus([{file: "skills/release/SKILL.md", content: BROKEN_FRONTMATTER}]);
 		assert.strictEqual(result.frontmatterFindings.length, 1);
@@ -237,11 +237,11 @@ describe("lintCorpus — frontmatter findings + scope (ADR 0092)", () => {
 	});
 });
 
-// #4213 — the bare-`git push` check. The corpus must be able to *talk about* a bare push
+// The bare-`git push` check. The corpus must be able to *talk about* a bare push
 // (it has to, to explain why it is forbidden) while the runnable form is impossible to ship.
 const fenced = (...body: ReadonlyArray<string>) => ["```bash", ...body, "```"].join("\n");
 
-describe("scanBarePush — executable `git push` only (#4213)", () => {
+describe("scanBarePush — executable `git push` only", () => {
 	it("flags a bare `git push` inside a fenced shell block", () => {
 		const f = scanBarePush("skills/x/SKILL.md", fenced('git push -u origin "$BRANCH"'));
 		assert.strictEqual(f.length, 1);
@@ -295,14 +295,14 @@ describe("scanBarePush — executable `git push` only (#4213)", () => {
 		assert.strictEqual(scanBarePush("src/thing.ts", "git push origin main").length, 0);
 	});
 
-	// #4217 — the pattern itself must not be wedgeable. This gate runs on every
+	// The pattern itself must not be wedgeable. This gate runs on every
 	// `pull_request` over a corpus anyone can add a line to, and a hung job presents as
 	// *running*, not failed, so a crafted line that never reaches `push` must still return.
 	// Both shapes below hung for 60+ SECONDS on real, shipped-at-the-time patterns; the 1 s
 	// bound is a ~60x margin over the fixed pattern's sub-millisecond time, so it pins the
 	// linearity without flaking on a loaded CI box. Deleting these is how the ambiguity
 	// silently comes back.
-	describe("is not exponentially backtrackable (#4217)", () => {
+	describe("is not exponentially backtrackable", () => {
 		const boundedScan = (line: string) => {
 			const t0 = performance.now();
 			const findings = scanBarePush("skills/x/SKILL.md", fenced(line));
@@ -349,7 +349,7 @@ describe("scanBarePush — executable `git push` only (#4213)", () => {
 	});
 });
 
-describe("lintCorpus — bare-push findings + scope (ADR 0092)", () => {
+describe("lintCorpus — bare-push findings + scope", () => {
 	it("does NOT exempt write-code, the very file that owns both push sites", () => {
 		const result = lintCorpus([
 			{file: "skills/write-code/SKILL.md", content: fenced('git push -u origin "$BRANCH"')},
@@ -366,7 +366,7 @@ describe("lintCorpus — bare-push findings + scope (ADR 0092)", () => {
 	});
 });
 
-describe("scanFencePortability — the #4605 consumer-break gate", () => {
+describe("scanFencePortability — the consumer-break gate", () => {
 	it("reds on a repo-relative ./claude-plugins/ script path in a fence", () => {
 		const f = scanFencePortability(
 			"skills/write-code/SKILL.md",
@@ -434,7 +434,7 @@ describe("scanFencePortability — the #4605 consumer-break gate", () => {
 	});
 });
 
-describe("lintCorpus — portability findings + scope (ADR 0092)", () => {
+describe("lintCorpus — portability findings + scope", () => {
 	it("does NOT exempt write-code, the file that owns the most fences", () => {
 		const result = lintCorpus([
 			{

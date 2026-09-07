@@ -1,0 +1,45 @@
+name: portability-guard
+
+# CI gate: nothing under claude-plugins/fabrika/ or packages/fabrika-cli/src/ may carry a
+# reference that only resolves in this repository. fabrika installs into repositories that
+# are not phoenix, and every issue number, ADR number, .decisions/ link or product name
+# left in a skill or a docblock is a pointer an adopter cannot follow. Nothing else catches
+# one, and every lane that edits a skill adds more — which is how it reached two thousand
+# lines unnoticed (#8281). Whole-tree, so it runs on `push: main` too
+# (.patterns/repo-wide-gates-run-on-main.md), and it fails closed if it scans zero files
+# (ADR 0092).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check fabrika's shipped text carries no repo-bound reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a reference
+      # was found, a ceiling was exceeded or a floor row sits above its count; 7 zero scope
+      # or an unusable allow-list (fail-closed, ADR 0092); 11 a read failed so the verdict is
+      # UNKNOWN. The report is on stderr, with ::error annotations beside it. The allow-list
+      # is portability-guard.config.json — `unmigrated` is the sweep floor and only shrinks.
+      - name: Check fabrika's shipped text carries no repo-bound reference
+        run: node packages/fabrika-cli/src/bin.ts guard portability-guard check

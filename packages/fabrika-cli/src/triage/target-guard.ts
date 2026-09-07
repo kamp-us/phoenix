@@ -5,7 +5,7 @@
  * `triage claim` resolved the race correctly and nothing after it read the answer back, so the
  * protocol held only as long as prose discipline did. On 2026-08-15 it did not: a session that had
  * read `lost` ran `triage enrich` anyway and replaced the winner's authored body four minutes after
- * that session had closed the issue (#5644, on #5642). Both facts were sitting on the issue and
+ * that session had closed the issue. Both facts were sitting on the issue and
  * neither was read.
  *
  * **Holding no marker passes.** The check is "does a live marker name somebody else", not "do I hold
@@ -13,10 +13,10 @@
  * every existing caller. The consequence is that this guard narrows the window rather than closing
  * it — two unclaimed sessions still race — which is `triage claim`'s job, not this one's.
  *
- * **Foreignness is the session+lane pair, never the session alone (#6303).** A `--token` names which
- * lane of the session is asking, and a same-session marker under a different nonce is somebody
- * else's — the identity `triage claim` already resolves on (#6132) and the `build` namespace resolves
- * ownership against (#6037), now read on this side of the claim too.
+ * **Foreignness is the session+lane pair, never the session alone.** A `--token` names which lane
+ * of the session is asking, and a same-session marker under a different nonce is somebody else's —
+ * the identity `triage claim` already resolves on and the `build` namespace resolves ownership
+ * against, now read on this side of the claim too.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -49,7 +49,7 @@ import {CLAIMED_ELSEWHERE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
  * fail-closed on exactly that ambiguity: it passes its session's markers while they all name one
  * lane, and once two lanes of its session hold live markers every one of them is foreign, because
  * the caller has no way to say which is its own. That keeps the uncontested call sites working and
- * refuses precisely the sibling race #6303 is about.
+ * refuses precisely the sibling race two lanes of one session run.
  */
 export const foreignMarkers = ({
 	markers,
@@ -138,7 +138,7 @@ const heldElsewhere = (issue: number, holder: Marker, caller: Caller): string =>
 		return `#${issue} is claimed by session ${named} — refusing to mutate another session's issue. ${run}`;
 	}
 	if (caller._tag === "Lane") {
-		return `#${issue} is claimed by lane ${holder.lane ?? "(pre-#6132, session-only)"} of this session, not by this lane (${caller.nonce}) — refusing to mutate a sibling lane's issue. ${run}`;
+		return `#${issue} is claimed by lane ${holder.lane ?? "(session-only)"} of this session, not by this lane (${caller.nonce}) — refusing to mutate a sibling lane's issue. ${run}`;
 	}
 	return `#${issue} carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the \`--token\` \`fabrika triage claim ${issue}\` handed this lane.`;
 };

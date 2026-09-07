@@ -1,9 +1,9 @@
 /**
- * The candidate-render orchestration (issue #2961 AC 1/2): drive the injected
- * capture + depo-store legs over the founder priority set and fold the results into a
- * candidate set — no browser, no depo. Proves the surfaces are shot in founder order
- * over the flag-forced preview, each candidate's emitted sha256 IS the stored one
- * (the ADR 0183 §5 no-re-render anchor), and the forced-flag state is recorded.
+ * The candidate-render orchestration: drive the injected capture + store legs over the
+ * priority set and fold the results into a candidate set — no browser, no store. Proves
+ * the surfaces are shot in priority order over the flag-forced preview, each candidate's
+ * emitted sha256 IS the stored one (the no-re-render anchor), and the forced-flag state
+ * is recorded.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -39,14 +39,17 @@ const fakeCapture = (): {leg: CaptureLeg; calls: {shots: readonly Shot[]}[]} => 
 	return {leg, calls};
 };
 
-/** A fake depo store leg: content-address is a deterministic 64-hex from the first byte. */
+/** A fake store leg: content-address is a deterministic 64-hex from the first byte. */
 const fakeStore = (): StoreLeg => (pngBytes) => {
 	const stem = String(pngBytes[0] ?? 0).padStart(64, "0");
-	return Effect.succeed<StoredGolden>({sha256: stem, url: `https://depo.kamp.us/${stem}.png`});
+	return Effect.succeed<StoredGolden>({
+		sha256: stem,
+		url: `https://assets.example.com/${stem}.png`,
+	});
 };
 
 describe("renderCandidateSet", () => {
-	it("renders the priority surfaces over the preview in founder order and stores each", async () => {
+	it("renders the priority surfaces over the preview in priority order and stores each", async () => {
 		const {leg, calls} = fakeCapture();
 		const set = await Effect.runPromise(
 			renderCandidateSet(
@@ -59,7 +62,7 @@ describe("renderCandidateSet", () => {
 				{capture: leg, store: fakeStore()},
 			),
 		);
-		// shot over the preview, in founder order
+		// shot over the preview, in priority order
 		assert.deepStrictEqual(
 			calls[0]?.shots.map((s) => s.url),
 			[
@@ -78,7 +81,7 @@ describe("renderCandidateSet", () => {
 		);
 	});
 
-	it("emits the EXACT stored sha256 per candidate (the no-re-render anchor, ADR 0183 §5)", async () => {
+	it("emits the EXACT stored sha256 per candidate — the no-re-render anchor", async () => {
 		const {leg} = fakeCapture();
 		const set = await Effect.runPromise(
 			renderCandidateSet(
@@ -92,7 +95,7 @@ describe("renderCandidateSet", () => {
 			[String(1).padStart(64, "0"), String(2).padStart(64, "0"), String(3).padStart(64, "0")],
 		);
 		for (const s of set.screens) {
-			assert.strictEqual(s.url, `https://depo.kamp.us/${s.sha256}.png`);
+			assert.strictEqual(s.url, `https://assets.example.com/${s.sha256}.png`);
 		}
 	});
 

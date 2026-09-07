@@ -9,7 +9,7 @@
  * <!-- anchor: NEVER-PASS-ON-A-FAILED-READ --> **An empty read that cannot be proven empty is
  * UNKNOWN.** v1's dangling-reference check disabled itself whenever the sub-issue read came back
  * empty (`if (subIssues.length > 0)`), so a rate-limited call silently removed the check rather than
- * refusing — the zero-scope pass ADR 0092 forbids. Here zero children is a **fact** only when the
+ * refusing, which is a pass over a scope nothing read. Here zero children is a **fact** only when the
  * platform proved it with `200 []`; every other outcome is {@link FrontierRead.Unknown}.
  */
 
@@ -33,7 +33,7 @@ import {
 /** The label a map is found by. `map open` applies it on mint; nothing else touches it. */
 export const MAP_LABEL = "wayfinding:map";
 
-/** The permissions that authorize a marker — the ADR 0055 `write+` set. */
+/** The permissions that authorize a marker — the `write+` set. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 export type MapRead =
@@ -167,7 +167,7 @@ export const scanTicketMarkers = (
  * `— ruled on #<session> R<round>.<n>`, and the session alone does NOT identify it: one grilling
  * session answers several questions, so every decision ticket forked to that session matches a
  * session-only test. The match key is therefore the whole citation this run carries — session and
- * question id — or recording the second such ticket would find the first ticket's entry (#5637).
+ * question id — or recording the second such ticket would find the first ticket's entry.
  */
 export const decisionRecorded = (
 	body: MapBody,
@@ -254,7 +254,7 @@ const resolveChild = (
 		// with the same question resumes rather than duplicating.
 		if (reaching === undefined) return {_tag: "Skip" as const};
 
-		// Content is not authority (ADR 0055): every marker this walk reads must come from a `write+`
+		// Content is not authority: every marker this walk reads must come from a `write+`
 		// author, so a thread anyone can comment on cannot hand itself a lane or retire a ticket. A
 		// permission read that FAILS is UNKNOWN for the whole run, never a demotion — v1 demoted an
 		// authorized author on a transient read failure, which hands the lane to a later claimant on a

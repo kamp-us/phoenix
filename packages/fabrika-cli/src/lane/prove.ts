@@ -4,7 +4,7 @@
  * The retired epic conductor moved on the git graph rather than on its own report. A lane operator
  * owns no branch, so the artifact a lane event claims is one it cannot author: for a single-issue
  * lane and for an epic run's tail, an open PR tracing to the task's issue and a verdict at that PR's
- * head; for an epic run's *child*, which never opens a PR at all (ADR 0285), the commits its range
+ * head; for an epic run's *child*, which never opens a PR at all, the commits its range
  * adds and a range-bound verdict on the child issue. Everything here is the pure half — facts in,
  * one verdict out — so the whole table is testable without a network and without a checkout.
  *
@@ -49,10 +49,10 @@ export const REVIEW_STATE = "review";
  * Splitting the two cells is what makes the machine's `review → review:ui` arm walkable. That arm is
  * taken on the `PASS` out of {@link REVIEW_STATE}, so proving that `PASS` against `review-ui` asked
  * a lane to hold a verdict only the cell it had not reached yet could produce — every rendered-surface
- * lane deadlocked at exit 23 and needed a hand-spawned reviewer to get out (#6664, #6793). Each cell
+ * lane deadlocked at exit 23 and needed a hand-spawned reviewer to get out. Each cell
  * now proves what it owes: `review` the namespaces it can reach **when this arm is the one it is
  * taking**, `review:ui` all of them. A lane that is not taking it holds the whole set at `review`,
- * so the deferral can never outlive the routing that earns it (ADR 0320).
+ * so the deferral can never outlive the routing that earns it.
  *
  * An epic child is the one role this state name does not reach at all — its region has no such cell
  * to route to and no verb can post the namespace at its scope, so its deferral is unconditional and
@@ -61,7 +61,7 @@ export const REVIEW_STATE = "review";
 export const REVIEW_UI_STATE = "review:ui";
 
 /**
- * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters (ADR 0313).
+ * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters.
  *
  * A `DONE` out of either claims no artifact ({@link claimOf} answers `None` for both), and that is
  * unchanged: what the merge closed is a *routing* question, not a proof, so `./closure.ts` reads it
@@ -138,17 +138,17 @@ export type Claim =
  * and so walks straight to `ship`, defers nothing and stands on the whole derived set.
  *
  * **A child's `PASS` defers the routed set unconditionally, and `next` decides nothing there.** A
- * child opens no PR (ADR 0285) and every verb that may post a {@link ROUTED_NAMESPACES} verdict
- * resolves live PR state, so that namespace is unpostable at child scope by construction — the same
- * closed circle #6664 closed for the single lane, met at the other seam: requiring it of a child
- * demanded a verdict no cell of that child's region and no verb of this CLI could ever produce, and
- * every ui-bearing child deadlocked at exit 23 with no legal exit (#7041). The cell that owes it is
- * the epic's tail, and the bar moves there rather than down: one epic run is one branch and one PR
- * (ADR 0285), so every rendered file a child's range added is in the tail PR's own diff, where the
- * tail's `PASS` derives it, defers nothing and stands on the whole set at a head a preview exists
- * for. A child whose range renders nothing never derives the namespace at all, so the subtraction
- * takes nothing off its bar and its proof is byte-for-byte what it was. See ADR 0340 for why this
- * one deferral is a constant where ADR 0320 rules every other one derived from the machine.
+ * child opens no PR and every verb that may post a {@link ROUTED_NAMESPACES} verdict resolves live
+ * PR state, so that namespace is unpostable at child scope by construction — the same closed circle
+ * already closed for the single lane, met at the other seam: requiring it of a child demanded a
+ * verdict no cell of that child's region and no verb of this CLI could ever produce, and every
+ * ui-bearing child deadlocked at exit 23 with no legal exit. The cell that owes it is the epic's
+ * tail, and the bar moves there rather than down: one epic run is one branch and one PR, so every
+ * rendered file a child's range added is in the tail PR's own diff, where the tail's `PASS` derives
+ * it, defers nothing and stands on the whole set at a head a preview exists for. A child whose
+ * range renders nothing never derives the namespace at all, so the subtraction takes nothing off
+ * its bar and its proof is byte-for-byte what it was. This one deferral is a constant where every
+ * other one is derived from the machine.
  */
 export const claimOf = (
 	event: string,
@@ -170,7 +170,7 @@ export const claimOf = (
 	if (event === "PASS" && leaf === REVIEW_UI_STATE && !child) {
 		return {_tag: "HeadVerdicts", defers: []};
 	}
-	// A child's park has no PR to read, and its range verdicts are the other arm's read (#6112).
+	// A child's park has no PR to read, and its range verdicts are the other arm's read.
 	if (event === "BLOCKED" && (leaf === REVIEW_STATE || leaf === REVIEW_UI_STATE) && !child) {
 		return {_tag: "ParkUncontradicted"};
 	}
@@ -264,7 +264,7 @@ export type RangeTrace =
  *
  * The one exception is supersession, and it is derived rather than guessed: a repair round is a new
  * claim, so it is a new nonce, so it is a new branch name (`../build/lane.ts`), and the machine
- * budgets for repair rounds — every one of them used to wedge the lane at the ambiguous arm (#6049).
+ * budgets for repair rounds — every one of them used to wedge the lane at the ambiguous arm.
  * When exactly one candidate's history contains every other candidate's tip, that candidate is the
  * later round of the same work and it is the range. A genuine fork — no candidate containing all the
  * others, or two of them containing each other — stays `Many`.
@@ -314,19 +314,19 @@ export interface PullFact {
 	readonly open: boolean;
 	/**
 	 * Whether it merged. Not derivable from {@link open}: a merged PR and a rejected one both read
-	 * closed, and the one park whose clearing case is a *landed* PR has to tell them apart (#6717).
+	 * closed, and the one park whose clearing case is a *landed* PR has to tell them apart.
 	 */
 	readonly merged: boolean;
 	/**
 	 * **Every** issue the body links, through the closing keywords or `Part of` — never the search
 	 * term. Plural because an epic tail links one issue per landed child plus the epic itself, and a
-	 * scalar field there can only ever report one of them (#6797).
+	 * scalar field there can only ever report one of them.
 	 */
 	readonly linkedIssues: ReadonlyArray<number>;
 	/**
 	 * Which kind of reference {@link linkedIssues} came off — a closing keyword, or the explicit
 	 * non-closing `Part of #N`. Only the closing kind discharges the issue on merge, so it is the one
-	 * fact that tells a ship's `DONE` whether the lane it folds is finished (#7382).
+	 * fact that tells a ship's `DONE` whether the lane it folds is finished.
 	 */
 	readonly linkKind: IssueRefs["kind"];
 }
@@ -345,7 +345,7 @@ export type PullTrace =
  *
  * `None` carries its own reason for the same purpose `traceRange`'s does: "nothing was nominated"
  * and "candidates were read and every one linked elsewhere" have different remedies, and a refusal
- * saying the first of a board that shows the second is false of the board (#6797).
+ * saying the first of a board that shows the second is false of the board.
  */
 export const tracePulls = (
 	issue: number,
@@ -456,10 +456,10 @@ export interface VerdictFact {
 	/**
 	 * `ROUTED` is a `routed-elsewhere` record rather than a verdict, so it borrows neither
 	 * polarity — folding it into `PASS` would ship "I judged nothing" as "I judged it and it
-	 * passed" (ADR 0316).
+	 * passed".
 	 */
 	readonly polarity: "PASS" | "FAIL" | "ROUTED";
-	/** Whether the claim still binds this head — head equality, or the content it bound (ADR 0276). */
+	/** Whether the claim still binds this head — head equality, or the content it bound. */
 	readonly binding: "current" | "stale" | "unknown";
 	readonly commentId: number;
 }
@@ -514,7 +514,7 @@ export type Proof =
  * `routed` satisfies beside `pass`, and for `ship gate`'s reason (`../ship/gate-verb.ts`): the
  * question is whether every required namespace has answered, and "this diff is not mine to judge"
  * is an answer — the one `review-ui`'s evidence-required emit path cannot give for a diff that
- * renders nothing (ADR 0316). Without it a lane that ships clean stalls here forever, because no
+ * renders nothing. Without it a lane that ships clean stalls here forever, because no
  * further work can fill the namespace.
  */
 export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: string): Proof => {
@@ -540,7 +540,7 @@ export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: strin
 
 /**
  * Fold the namespace rows into the one verdict a reviewer's **park** earns — one `FAIL` refuses it,
- * everything else lets it through (ADR 0329, #6112).
+ * everything else lets it through.
  *
  * A park says "this run reached no verdict", and only one row can say otherwise: a `FAIL` that still
  * binds. An `absent` or `stale` row cannot, because that is the very state a run parks in the middle

@@ -11,7 +11,7 @@ import {type HttpReply, okOut} from "../fakes.test-support.ts";
  * The credential a ported test hands its verb.
  *
  * `resolveToken` reads the env before it reaches for `gh auth token`, so naming one here keeps a
- * test about some other axis from having to script a spawn it does not care about (ADR 0315).
+ * test about some other axis from having to script a spawn it does not care about.
  */
 export const GH_TOKEN_ENV = {GITHUB_TOKEN: "ghp_scripted"} as const;
 
@@ -46,13 +46,22 @@ export const PRIOR_HEADS = [
 /** What `git rev-parse` names for a checkout: its git dir, then its tree root. */
 export const GIT_DIRS = okOut(["/repo/trees/lane-a/.git", "/repo/trees/lane-a"].join("\n"));
 
+/**
+ * The issue the served pull request closes.
+ *
+ * Named rather than repeated, because {@link pullPayload}'s body has to state the same number for the
+ * link to parse — two literals a future edit could move apart is a fixture that scripts a PR serving
+ * an issue nobody filed.
+ */
+export const SERVED_ISSUE = 4312;
+
 export const issuePayload = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-	number: 4312,
+	number: SERVED_ISSUE,
 	title: "Editor loses focus after save",
 	body: CRITERIA_BODY,
 	state: "open",
 	labels: [{name: "type:bug"}, {name: "p1"}, {name: "status:triaged"}],
-	html_url: "https://github.com/o/r/issues/4312",
+	html_url: `https://example.test/o/r/issues/${SERVED_ISSUE}`,
 	milestone: null,
 	state_reason: null,
 	...overrides,
@@ -65,7 +74,7 @@ export const pullPayload = (overrides: Record<string, unknown> = {}): Record<str
 	number: 4318,
 	state: "open",
 	head: {sha: HEAD, ref: "build/4312-editor-focus-loss-c1a4d6f8"},
-	body: "Fixes #4312\n\n## Deviations\nNone.\n",
+	body: `Fixes #${SERVED_ISSUE}\n\n## Deviations\nNone.\n`,
 	changed_files: 3,
 	comments: 0,
 	merged: false,
@@ -124,7 +133,7 @@ export const blockedBy = (...blockers: ReadonlyArray<number>): HttpReply =>
  * A body carrying the conforming block — what a triaged, agent-ready issue looks like.
  *
  * Both {@link issue} and {@link candidates} default to it, because the admission test's criteria axis
- * reads the body at the pool AND at the claim seam (#6554): a fixture omitting the block is refused,
+ * reads the body at the pool AND at the claim seam: a fixture omitting the block is refused,
  * so every caller not testing that axis would otherwise have to restate it.
  */
 export const CRITERIA_BODY =
@@ -177,7 +186,7 @@ export const campaignsTable = (milestones: number | ReadonlyArray<number>): stri
 export const marker = (session: string, uuid: string): string =>
 	`build-claim: build:${session}:${uuid} · 2026-08-09T00:00:00Z`;
 
-/** The succession marker a successor session posts over a dead one's claim (ADR 0295). */
+/** The succession marker a successor session posts over a dead one's claim. */
 export const adoptMarker = (
 	adopted: string,
 	session: string,
@@ -192,17 +201,17 @@ export const NONCE = "c1a4d6f8";
 /** The token the fixture lane holds — what it passes as `--token`. */
 export const LANE_TOKEN = `build:s-9f2e:${LANE_UUID}`;
 
-/** A second lane of the SAME session `s-9f2e` — the two-lanes-one-session shape (#6037). */
+/** A second lane of the SAME session `s-9f2e` — the two-lanes-one-session shape. */
 export const SIBLING_UUID = "7bab0955-616f-4a6a-af6e-71c34b7c68c7";
 export const SIBLING_NONCE = "7bab0955";
 export const SIBLING_TOKEN = `build:s-9f2e:${SIBLING_UUID}`;
 
-/** The presumed-dead session whose claim a successor adopted — the resume-fence shape (#7010). */
+/** The presumed-dead session whose claim a successor adopted — the resume-fence shape. */
 export const GONE_UUID = "9f3c7a21-5d44-4e08-b1c2-77aa0f3e91d0";
 export const GONE_NONCE = "9f3c7a21";
 export const GONE_TOKEN = `build:s-gone:${GONE_UUID}`;
 
-/** The session that adopted the gone lane's claim (ADR 0295). */
+/** The session that adopted the gone lane's claim. */
 export const HEIR_UUID = "b2ee7f04-8a19-4d57-93ba-1c5d92e6f7a8";
 export const HEIR_NONCE = "b2ee7f04";
 export const HEIR_TOKEN = `build:s-heir:${HEIR_UUID}`;

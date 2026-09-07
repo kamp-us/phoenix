@@ -69,7 +69,7 @@ describe("judge", () => {
 describe("renderReport", () => {
 	it("names the flake the api-mode red reopens", () => {
 		const report = renderReport(judge(ci(dorny("          filters: 'a: x'"))));
-		expect(report).toContain("#3244");
+		expect(report).toContain("transient API-HTML blip");
 		expect(report).toContain("token: ''");
 	});
 

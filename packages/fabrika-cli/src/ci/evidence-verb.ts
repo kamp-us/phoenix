@@ -1,11 +1,11 @@
 /**
- * `ci evidence` — map one crabbox run to the ADR 0054 §2 run-evidence manifest.
+ * `ci evidence` — map one crabbox run to the run-evidence manifest.
  *
  * The producer half of the evidence seam: `run-evidence.yml` runs this on every PR head and
  * publishes the result as the `run-evidence` artifact, which `fabrika ship evidence` then reads
  * back and binds to the head SHA. The manifest never lands half-formed — a malformed input or an
  * unresolvable commit refuses with nothing written, because a commit-blank manifest would unbind
- * the evidence from the commit the gate keys on (ADR 0054 §1).
+ * the evidence from the commit the gate keys on.
  *
  * The commit is stamped from `--commit` when the caller knows the head (on `pull_request` that is
  * the head SHA, NOT `github.sha`'s synthetic merge commit), else resolved from `HEAD` here.
@@ -63,7 +63,7 @@ const stampedCommit = (
 			return yield* Effect.fail(
 				refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: ${resolved.reason} — \`commit\` is the binding key the gate asserts against, so a blank one is never stamped (ADR 0054 §1).`,
+					`${VERB}: ${resolved.reason} — \`commit\` is the binding key the gate asserts against, so a blank one is never stamped.`,
 				),
 			);
 		}

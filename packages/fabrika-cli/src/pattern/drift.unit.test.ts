@@ -49,7 +49,7 @@ describe("driftOutcome", () => {
 	});
 
 	// `unanchored` is NOT a clearance. Reporting it as `current` would be a clean pass over nothing,
-	// which is the shape ADR 0092 exists to forbid.
+	// the one shape a fail-closed gate must never produce.
 	it("is `unanchored`, never `current`, when nothing was followed", () => {
 		expect(driftOutcome({inRepo: 0, moved: 0})).toBe("unanchored");
 	});

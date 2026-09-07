@@ -8,7 +8,7 @@
  * the read-back contradicts it, the read that would have proven any of that failed. `12`+ is this
  * group's own band.
  *
- * **The known/novel split is an exit code, never prose** (#5847). A recipe either matched and its
+ * **The known/novel split is an exit code, never prose.** A recipe either matched and its
  * fixed fix applied, or it did not match and nothing was touched — and those two are different
  * numbers, because the caller routes autonomously on the first and to a human on the second.
  */
@@ -52,8 +52,8 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * The park's cause is outside the known-recipe set. **Nothing was mutated** — the verb refuses
  * before it would touch the log, which is what makes the novel exit a proven no-op rather than a
- * claim about one. This is the seat the founder's grill answer sits on (epic #5840): known clears
- * autonomously, novel routes to a human, and the split lives here rather than in operator prose.
+ * claim about one. This is the seat the known/novel split sits on: known clears autonomously, novel
+ * routes to a human, and the split lives here rather than in operator prose.
  */
 export const PARK_NOVEL = 12;
 

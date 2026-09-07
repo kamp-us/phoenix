@@ -13,7 +13,7 @@
  * which the pnpm-generated global `fabrika` shim exports as an absolute chain rooted at the checkout
  * it was installed from. So the walk fails in a repo with no install and the fallback answers
  * anyway — with the global's own copy, which `resolve` then reads as "the repo-local install is this
- * copy" (#5768). {@link isInsideRepo} is the containment rule that closes it: an install the probe
+ * copy". {@link isInsideRepo} is the containment rule that closes it: an install the probe
  * cannot place under `repoRoot` is not that repo's install, whatever Node found.
  *
  * The probe is total over three outcomes and **none of them is a throw**: found, absent, or corrupt.
@@ -31,7 +31,7 @@ import {type RepoPredicate, repoPredicate} from "./reason.ts";
  * The npm name the probe resolves, and the bin key inside that package's manifest.
  *
  * They differ on purpose: resolution is by **package** name, while the command a caller types — and
- * therefore the manifest's `bin` key — is `fabrika` (#4784).
+ * therefore the manifest's `bin` key — is `fabrika`.
  */
 export const PACKAGE_NAME = "@kampus/fabrika-cli";
 export const BIN_NAME = "fabrika";

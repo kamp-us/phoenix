@@ -2,7 +2,7 @@
  * Resolving a surface id onto the declared app that serves it, and onto that app's own URL.
  *
  * The declaration itself is the `uiSurfaces` key (`../config/keys/ui-surfaces.ts`); this module is
- * the arithmetic over it. A repo has more than one runnable app (phoenix has two under ADR 0345), so
+ * the arithmetic over it. A repo may have more than one runnable app, so
  * a surface resolves to the app whose `mount` is its longest match, never onto one shared base URL.
  * Readiness is per app, so a surface served by a worker-free app goes green the moment that app
  * answers.

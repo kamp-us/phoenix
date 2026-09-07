@@ -200,9 +200,9 @@ const make = (
 		const session = yield* Ref.make<Session | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const mode = yield* Ref.make<Mode | null>(null);
-		// Two Refs for the same reason `mode` is one: a switch made before a session exists, or
-		// between sessions, has to survive to the next `start` and be re-announced there.
 		const model = yield* Ref.make<ModelRef | null>(null);
+		// Only an operator pick survives as an override; a discovered default is read afresh.
+		const pickedModel = yield* Ref.make<ModelRef | null>(null);
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
 		const commands = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
 		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
@@ -256,6 +256,20 @@ const make = (
 			);
 
 		const refOf = (row: ModelInfo): ModelRef => ({id: row.value, name: row.displayName});
+
+		const readRunningModel = (current: Session): Effect.Effect<string | undefined> =>
+			Effect.tryPromise({
+				try: () => current.handle.getContextUsage({detail: "summary"}),
+				catch: controlRefused,
+			}).pipe(
+				Effect.map((usage) => usage.model),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the running model could not be read: ${refusal.detail}`),
+						undefined,
+					),
+				),
+			);
 
 		/**
 		 * The levels one row offers, and the founder's ruling in one line (#8062): Claude's effort
@@ -579,11 +593,16 @@ const make = (
 			yield* Ref.set(models, offered);
 			const table = effortsOf(rows);
 			yield* Ref.set(efforts, table);
-			const spawned =
-				options.model === undefined
-					? null
-					: (offered.find((candidate) => candidate.id === options.model) ?? null);
-			const picked = yield* Ref.get(model);
+			const runningId = (yield* readRunningModel(opened.session)) ?? options.model;
+			// `resolvedModel` matches a canonical running id to its selectable alias (sdk.d.ts).
+			// Catalog order is not evidence that a row is active, even when it is named Default.
+			const runningRow =
+				runningId === undefined
+					? undefined
+					: (rows.find((row) => row.value === runningId) ??
+						rows.find((row) => row.resolvedModel === runningId));
+			const spawned = runningRow === undefined ? null : refOf(runningRow);
+			const picked = yield* Ref.get(pickedModel);
 			const opening =
 				picked === null || !offered.some((candidate) => sameModel(candidate, picked))
 					? spawned
@@ -723,7 +742,10 @@ const make = (
 			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
 			// as a mode set before the first session is.
 			const changed = current === null ? true : yield* applyModel(current, picked);
-			if (changed) yield* Ref.set(model, picked);
+			if (changed) {
+				yield* Ref.set(model, picked);
+				yield* Ref.set(pickedModel, picked);
+			}
 			const held = yield* Ref.get(model);
 			yield* publish([{kind: "model", current: held, available: offered}]);
 			// The offered levels are the model's, so a switch moves the picker's rows. A level the
@@ -763,8 +785,13 @@ const make = (
 				try: () => sdk.getSessionMessages(current.id, {dir: current.cwd}),
 				catch: storeUnreadable,
 			});
-			const {items} = toHistoryItems(rows, {at: Date.now()});
-			const planned = planTranscriptPage(items, {before, limit});
+			const {items, cursorAliases} = toHistoryItems(rows, {at: Date.now()});
+			const planned = planTranscriptPage(items, {
+				before,
+				cursorAliases,
+				limit,
+				cursorBoundary: "containing-group",
+			});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
 					// The port declares `limit > 0`; a caller that broke it has a bug this interface

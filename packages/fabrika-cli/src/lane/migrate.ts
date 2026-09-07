@@ -5,8 +5,8 @@
  * refuses to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane
  * already on disk. That is safe while an edit touches the *template* only. It stops being safe the
  * moment a token→event map in code changes with it: `report.ts` is code, so a remap lands on every
- * booted lane at once and asks their frozen machines for a cell they do not have (ADR 0313, and the
- * `QUEUED`→`WIP` remap that named this).
+ * booted lane at once and asks their frozen machines for a cell they do not have — the
+ * `QUEUED`→`WIP` remap that named this.
  *
  * The fold is what makes a swap provable rather than hoped: state is `events.jsonl` replayed from
  * scratch every run, with no snapshot anywhere. So a replacement is safe exactly when the existing
@@ -33,9 +33,9 @@ import type {CompiledLane, TaskState} from "./machine.ts";
  * them to the template's own numbers — a silent loss no fold could catch, because the log still
  * replays. So the swap replaces the states and keeps the context.
  *
- * A founder's cleared round is *not* among the things being kept here, and deliberately: since
- * ADR 0312 a grant is a `CLEARED` line in `events.jsonl`, never a context field, so it survives the
- * swap for free — the log is what the new machine replays.
+ * A founder's cleared round is *not* among the things being kept here, and deliberately: a grant is
+ * a `CLEARED` line in `events.jsonl`, never a context field, so it survives the swap for free — the
+ * log is what the new machine replays.
  *
  * `Foreign` is the other half of the same care: a lane whose machine was *generated* rather than
  * booted (`lane emit`'s per-epic document) has no committed template to be brought up to, so it is

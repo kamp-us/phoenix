@@ -1,20 +1,19 @@
 /**
  * Whether an epic child already carries a reviewed build — the fact the claim path could not see.
  *
- * An epic child opens no pull request (ADR 0285), so its review lands as range-bound comments on the
- * child issue itself (ADR 0276) — the one surface neither `build eligible` (which reads the
- * `blocked_by` graph) nor `build claim` (which reads claim markers) ever looked at. A child whose
- * newest verdict was `FAIL` therefore passed both gates and was handed to a fresh lane as ordinary
- * work, which built a second, independent implementation of a criterion the FAIL already named
- * (#6386, reproduced on #6296 and #6298).
+ * An epic child opens no pull request, so its review lands as range-bound comments on the child
+ * issue itself — the one surface neither `build eligible` (which reads the `blocked_by` graph) nor
+ * `build claim` (which reads claim markers) ever looked at. A child whose newest verdict was `FAIL`
+ * therefore passed both gates and was handed to a fresh lane as ordinary work, which built a second,
+ * independent implementation of a criterion the FAIL already named.
  *
  * The fold is `lane prove`'s, deliberately: newest write stamp wins per namespace, so a `FAIL`
- * upserted after a `PASS` still wins (#4200). What it does **not** do is ask whether the claim still
- * binds. That question needs the range's content digest, which needs the child's branch in this tree
+ * upserted after a `PASS` still wins. What it does **not** do is ask whether the claim still binds.
+ * That question needs the range's content digest, which needs the child's branch in this tree
  * (`../lane/range.ts`), and a claim has no tree yet — but more than that, staleness is the wrong
  * question here. "Does this verdict still bind" is what a repair lane asks before it re-reviews;
  * "has this child been built and reviewed at all" is what a *fresh* claim asks, and a stale `FAIL`
- * answers that one yes — so does a `PASS`, which is why the fresh claim refuses on either (#6715).
+ * answers that one yes — so does a `PASS`, which is why the fresh claim refuses on either.
  *
  * A comment reaching for the range format and missing it is reported separately, never dropped and
  * never folded into `standing`: a verdict posted in a broken format is the one failure that would
@@ -75,7 +74,7 @@ export const readRangeVerdicts = (comments: ReadonlyArray<CommentRecord>): Range
 
 /**
  * The standing verdicts that have a repair lane behind them. A fresh claim refuses on any standing
- * verdict (#6715), so this narrowing picks the route out, not the refusal.
+ * verdict, so this narrowing picks the route out, not the refusal.
  */
 export const failing = (read: RangeVerdictRead): ReadonlyArray<RangeVerdict> =>
 	read.standing.filter((verdict) => verdict.polarity === "FAIL");

@@ -1,13 +1,12 @@
 /**
- * `guard publish-isolation-guard check` — every published package installs from a clean registry
- * (ADR 0201 §3, #3802), ported off v1's `publish-isolation-guard check` (epic #5720).
+ * `guard publish-isolation-guard check` — every published package installs from a clean registry.
  *
  * The verb is the IO boundary: derive the published set from `publish.yml`, read the workspace
  * members behind it, hand the manifests to the pure rule in `./publish-isolation.ts`, seat the
  * answer on the group's exit taxonomy.
  *
  * **v1's single non-zero exit splits into three seats here.** A missing publish.yml, a prefix that
- * maps to no member, and a zero-prefix workflow are all broken scope (`7`, ADR 0092); an unreadable
+ * maps to no member, and a zero-prefix workflow are all broken scope (`7`); an unreadable
  * or unparseable manifest is UNKNOWN (`11`); only a real linked private dep is the violation (`12`).
  * All three stay red, so the gate's strictness is unchanged.
  */
@@ -97,7 +96,7 @@ const judgeRoot = (
 		const workflow = path.join(root, PUBLISH_WORKFLOW);
 		if (!(yield* exists(workflow))) {
 			return zeroScope(
-				`${VERB}: ${root}/${PUBLISH_WORKFLOW} does not exist — the published set is derived from it, so the guard has no scope at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${root}/${PUBLISH_WORKFLOW} does not exist — the published set is derived from it, so the guard has no scope at all, fail-closed. Is the repo root correct?`,
 			);
 		}
 		const prefixes = parsePublishedTagPrefixes(yield* readFile(workflow));
@@ -112,7 +111,7 @@ const judgeRoot = (
 		const {published, unmatchedPrefixes} = resolvePublished(prefixes, members);
 		if (unmatchedPrefixes.length > 0) {
 			return zeroScope(
-				`${VERB}: publish.yml release-tag prefix(es) [${unmatchedPrefixes.join(", ")}] map to no workspace member — the guard's scope assumption is broken, fail-closed (ADR 0092). The tag grammar and the package's unscoped name have drifted; re-sync publish.yml's \`<name>-v<version>\` grammar with the package name.`,
+				`${VERB}: publish.yml release-tag prefix(es) [${unmatchedPrefixes.join(", ")}] map to no workspace member — the guard's scope assumption is broken, fail-closed. The tag grammar and the package's unscoped name have drifted; re-sync publish.yml's \`<name>-v<version>\` grammar with the package name.`,
 			);
 		}
 		const verdict = judge(published);

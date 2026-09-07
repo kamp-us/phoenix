@@ -8,23 +8,23 @@
  * index can only fail to add a candidate, never hide the closing one.
  *
  * Both reads only nominate; the body's links decide, through `issueRefsOf` and the set membership
- * `tracePulls` applies (#6797). A candidate outside the caller's `PullScope`, or one that only
+ * `tracePulls` applies. A candidate outside the caller's `PullScope`, or one that only
  * mentions the number in prose, drops out there rather than counting — so unioning in the looser read
  * widens candidates without widening what counts.
  *
  * `issueRefsOf` answers with a *kind* beside the numbers, and this module carries it rather than
  * dropping it: a merged PR that closed its issue and one that carried `Part of #N` are the same
  * merge to every reader that keeps only the numbers, which is how a partial ship folded its lane to
- * a terminal over an issue still open and still buildable (#7382). `traceClosure` in `./prove.ts`
+ * a terminal over an issue still open and still buildable. `traceClosure` in `./prove.ts`
  * is the one reader of that field, and every *nominated* fact carries it from here so the question
  * keeps one nominator. One other path feeds that reader, and it nominates nothing: `./closure.ts`
  * builds the field off the single PR a recorded ship line names, because a merged `Part of #N` is
- * invisible to both reads above and that is the case the read exists for (#7457).
+ * invisible to both reads above and that is the case the read exists for.
  *
  * **Why it is shared rather than copied.** `lane prove` unioned both reads while `lane brief` read
  * the edge alone, so a `Part of #N` PR proved a `DONE`, folded the lane to `review`, and then had no
  * reviewer dispatchable against it — a park no event could clear, because the divergence was a
- * property of the artifact and restoring the state restored the wall (#6179). Two verbs answering
+ * property of the artifact and restoring the state restored the wall. Two verbs answering
  * one question have to answer it from one nominator.
  */
 import {Effect} from "effect";
@@ -51,7 +51,7 @@ export const nominationScope = (issue: number, scope: PullScope = "open"): strin
  * Nominate this issue's pull requests. `scope` widens the closing edge alone, and deliberately: the
  * search half is the `Part of #N` reader and GitHub's index has no merged-PR question to ask that
  * the edge does not answer better, so widening it would add stale candidates without adding the one
- * candidate a wider caller is after — the merged PR that closed the issue (#6717).
+ * candidate a wider caller is after — the merged PR that closed the issue.
  */
 export const nominatePulls = (
 	repo: string,

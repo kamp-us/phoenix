@@ -1,6 +1,6 @@
 /**
- * `ci annotate`, ported from v1's `tsc-annotate map` (#6099) — the two contracts that
- * matter: the log always goes through, and annotations only appear where they render.
+ * `ci annotate` — the two contracts that matter: the log always goes through, and
+ * annotations only appear where they render.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -42,7 +42,7 @@ const run = async (
 				write: (line) => written.push(line),
 				warn: (line) => warned.push(line),
 			}),
-			fakeFs(repo(options.members ?? {web: "@kampus/web"})).layer,
+			fakeFs(repo(options.members ?? {site: "@example/site"})).layer,
 		),
 	);
 	return {written, warned};
@@ -51,10 +51,12 @@ const run = async (
 describe("runAnnotate", () => {
 	it("maps a turbo-grouped diagnostic onto a repo-relative ::error command", async () => {
 		const {written} = await run(
-			["@kampus/web:typecheck", "src/App.tsx(12,5): error TS2322: Type 'x' is not 'y'."].join("\n"),
+			["@example/site:typecheck", "src/App.tsx(12,5): error TS2322: Type 'x' is not 'y'."].join(
+				"\n",
+			),
 		);
 		expect(written).toEqual([
-			"::error file=packages/web/src/App.tsx,line=12,col=5::TS2322: Type 'x' is not 'y'.",
+			"::error file=packages/site/src/App.tsx,line=12,col=5::TS2322: Type 'x' is not 'y'.",
 		]);
 	});
 

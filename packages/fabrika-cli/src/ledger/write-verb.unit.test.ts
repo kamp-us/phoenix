@@ -155,7 +155,7 @@ describe("runWrite", () => {
 		expect(outcome.stdout).toBe("");
 	});
 
-	/** The comparison is over the WHOLE normalized body, not a re-extraction of the region (#4879). */
+	/** The comparison is over the WHOLE normalized body, not a re-extraction of the region. */
 	it("refuses a body that landed and does not read back as composed", async () => {
 		const {outcome} = await run([
 			[once(EPIC_READ), epic()],

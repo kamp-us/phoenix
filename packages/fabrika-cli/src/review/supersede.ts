@@ -2,10 +2,10 @@
  * The superseding envelope — the bytes a verdict re-post puts between the fresh verdict and the one
  * it replaces.
  *
- * GitHub keeps no comment-body history, so a verdict PATCHed over is a verdict gone. On PR #7081 a
+ * GitHub keeps no comment-body history, so a verdict PATCHed over is a verdict gone. A standing
  * FAIL became a PASS at an unchanged head and nothing anywhere recorded that a gate had ever
- * blocked (#7247). Every re-post is therefore an append, which is the ruling `../report/amend.ts`
- * already carries for issue bodies (#6708 / #6736).
+ * blocked. Every re-post is therefore an append, which is the ruling `../report/amend.ts`
+ * already carries for issue bodies.
  *
  * The fresh verdict goes **on top**, not at the bottom. The marker is the comment's first non-blank
  * line (`../wire/marker-line.ts`), so putting the newest verdict there is what makes every reader —

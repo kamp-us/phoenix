@@ -2,7 +2,7 @@
  * The Node-resolver boundary for the delegation.
  *
  * **No `effect` import here on purpose.** `createRequire(…).resolve` reports "not installed" by
- * *throwing*, and the repo bans a native `try/catch` inside Effect control flow (#2736) — so this is
+ * *throwing*, and a native `try/catch` inside Effect control flow is banned here — so this is
  * the boundary half, mirroring [`../io/json.ts`](../io/json.ts), and [`local.ts`](./local.ts) is the
  * Effect seam that wraps it. Every outcome leaves as a value; nothing propagates as a throw except a
  * fault this module genuinely cannot classify.

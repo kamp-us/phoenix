@@ -2,8 +2,8 @@
  * The freshness proof: how far this tree's HEAD sits behind `origin/main`.
  *
  * **The tree is stale by default until shown otherwise.** v1 planned against stale checkouts and
- * minted phantom children (#3330), and the repo has no post-merge sync with any call site (#4167) — so
- * there is no third arm here. A probe that *fails* is a failed read (`11`), never `20`: "I could not
+ * minted phantom children, and nothing syncs the tree after a merge at any call site — so there is
+ * no third arm here. A probe that *fails* is a failed read (`11`), never `20`: "I could not
  * tell" is not "it is stale", and it is certainly not "it is fresh".
  *
  * The base is fetched before it is read, through the shipped `fetchAndResolve` — reading a stale local

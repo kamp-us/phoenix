@@ -1,7 +1,7 @@
 /**
  * The batch verb's whole job is to put ONE named row on a ref, so the battery pins the two things a
  * frozen merge queue would turn on: the row carries the name a branch protection matches, and no
- * request to any pull-request surface is made on the way — a batch ref has none to read (#6968).
+ * request to any pull-request surface is made on the way — a batch ref has none to read.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";

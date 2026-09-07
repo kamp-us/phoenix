@@ -2,7 +2,7 @@
  * The pure deterministic-diff core: determinism (same inputs → same result),
  * masking (dynamic regions excluded — the diff-time flake canon), magnitude, and
  * region clustering. No PNG codec, no network — operates on decoded RGBA rasters
- * (ADR 0040 taxonomy: pure logic → unit; the AC's determinism + masking checks).
+ * — pure logic belongs to the unit tier (the AC's determinism + masking checks).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {diffRasters, type RasterImage} from "./golden-diff.ts";

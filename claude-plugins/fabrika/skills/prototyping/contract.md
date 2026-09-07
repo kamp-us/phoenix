@@ -1,6 +1,6 @@
 # `/prototyping` — derived CLI contract
 
-**Skill:** [`prototyping`](SKILL.md) · **Authoring brief:** [#5020](https://github.com/kamp-us/phoenix/issues/5020) · **Date:** 2026-08-10
+**Skill:** [`prototyping`](SKILL.md) · **Date:** 2026-08-10
 
 The verbs land in `packages/fabrika-cli/` under the **`spike`** subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` beside the shipped groups (at the time of writing `adr`,
@@ -11,19 +11,18 @@ spec and that doc disagree, the doc wins and this spec is the bug. **None of the
 this spec is greenfield. `spike` is the group name because it is the noun a caller already uses for
 the artifact, and it was free in the registry when this was written.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** (ADR
-[0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). The v1 prior art —
-`claude-plugins/kampus-pipeline/skills/wayfinder/` and its three scripts, plus `pipeline-cli`'s
-`scratchpad`, `worktree-guard`/`reap`/`sweep`, `wayfinder-map` and `leak-guard`/`redact-leaks` — was
-**read** for semantics and scars, and none is invoked, wrapped, or deferred to. Nothing under
-`claude-plugins/kampus-pipeline/` or `packages/pipeline-cli/` appears in any fence in this spec or
-in the `SKILL.md`.
+**This group reimplements what it needs and calls the predecessor pipeline nowhere, and neither
+does the skill.** A reimplementation that shells out to the tooling it replaced keeps that tooling
+alive and inherits every scar with it. The v1 prior art — the wayfinder skill and its three scripts,
+plus the predecessor CLI's scratchpad, worktree guard, reaper and sweeper, its map reader and its
+leak scanner — was **read** for semantics and scars, and none is invoked, wrapped, or deferred to.
+Nothing from it appears in any fence in this spec or in the `SKILL.md`.
 
 **This is a standalone group with no cross-contract reuse.** It borrows no sibling's verbs. The
-`wayfinding` skill ([#5242](https://github.com/kamp-us/phoenix/pull/5242), landed) is *one caller*
-and directs the model here for an empirical frontier question — but the caller seam below is stated
-**from this side only**, and deliberately so: `prototyping` is standalone-first (#5017), so a seam
-defined by one caller's shape would be wrong for every other. Nothing here depends on that
+landed `wayfinding` skill is *one caller* and directs the model here for an empirical frontier
+question — but the caller seam below is stated **from this side only**, and deliberately so:
+`prototyping` is standalone-first, so a seam defined by one caller's shape would be wrong for every
+other. Nothing here depends on that
 contract's verbs, which is what keeps the two independently implementable.
 
 **What fabrika already ships, reused by import — never respecified:**
@@ -50,8 +49,7 @@ contract's verbs, which is what keeps the two independently implementable.
 ## Considered and deliberately not derived
 
 Each of these is either judgment the wrapper keeps, an answer already enforced elsewhere, or a
-wrapper whose only behaviour would be relaying an upstream answer (interface convention rule 6;
-ADR 0238).
+wrapper whose only behaviour would be relaying an upstream answer (interface convention rule 6).
 
 - **A verb that writes the prototype.** What to build is the judgment this skill exists to carry. A
   verb that generated the artifact would be a stochastic answer wearing a deterministic exit code.
@@ -67,9 +65,8 @@ ADR 0238).
   never read back, which is the hazard that file's own docblock names. The HTML-comment markers
   below are this group's own, live only in issue comments, and enter no wire registry.
 - **An eval corpus stage.** Moot: the eval corpus and its stage vocabulary were removed with the
-  rest of the eval tooling ([#5510](https://github.com/kamp-us/phoenix/issues/5510)). The ideation
-  layer needed a stage the corpus never admitted
-  ([#5241](https://github.com/kamp-us/phoenix/issues/5241)); there is no corpus to admit one now.
+  rest of the eval tooling. The ideation layer needed a stage that corpus never admitted; there is
+  no corpus to admit one now.
 - **Reusing `build scratch` for the workspace.** Read first, then refused on its preconditions, not
   on taste. `runScratch` requires a session env var, a resolved repo, and a **held `build` claim on
   an issue number**, and derives its nonce *from the claim token*
@@ -78,20 +75,19 @@ ADR 0238).
   docblock records the claim nonce as exactly what makes the namespace per-lane by construction, and
   this group's nonce does the same job from a different source.)
 - **A git worktree as the isolation primitive.** A worktree is inside the repository's own graph and
-  its lifecycle is contested: reapers have removed live agents' trees mid-run (#3943), a guarded
-  agent whose tree vanished kept running in the primary checkout (#4162), and owner stamps are never
-  written on the live path so the signal reapers read has no producer (#4180). A spike does not need
+  its lifecycle is contested: reapers have removed live agents' trees mid-run, a guarded agent
+  whose tree vanished kept running in the primary checkout, and owner stamps are never written on
+  the live path so the signal reapers read has no producer. A spike does not need
   a git identity — it needs to be *not in the repository at all*. The workspace is a plain directory
   under the OS temp root, and the tree digest below is what proves nothing crossed over.
 - **A second machine-local-path scanner.** `report/leaks.ts` is imported. Its recorded
   false-positive is inherited and stated rather than designed around: the scan flags counter-example
-  paths quoted in prose (#3785, still an unresolved decision), so a decision body that *quotes* a
+  paths quoted in prose, which is still an unresolved decision, so a decision body that *quotes* a
   path will refuse on `5`. The expectation is that a decision describes what a path was, it does not
   paste one — which is also what keeps a machine-local path out of a posted body in the first place.
-- **A worktree-guard, reaper, or sweep verb.** Those are the fabrika ports tracked at
-  [#5194](https://github.com/kamp-us/phoenix/issues/5194)–[#5197](https://github.com/kamp-us/phoenix/issues/5197).
-  This group's disposal covers its own workspace and nothing else; a second reaper would contend
-  with theirs.
+- **A worktree-guard, reaper, or sweep verb.** Those are ports of their own, each tracked
+  separately. This group's disposal covers its own workspace and nothing else; a second reaper would
+  contend with theirs.
 - **A `report`-shaped filing verb for the follow-up build issue.** `report file` already owns intake
   and this group would only relay it. The `SKILL.md` directs the model to fire the `report` Skill.
 
@@ -127,20 +123,20 @@ Every `spike` verb obeys these; stated once.
   `packages/fabrika-cli/src/verb.ts:55`).
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No partial answers.
 - **Every error message is prefixed with the invoked verb's name.**
-- **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql),
+- **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md),
   paginated. `spike open`, `spike capture`, `spike dispose` (under `--forfeit`) and `spike status`
   touch GitHub; `spike run` does not.
 - **`--repo` defaults through the imported `resolveTargetRepo`**, so the `origin`-remote parse has
   one home. Every example below omits `--repo` rather than showing a filled value.
 - **Externally-authorable content** — the spike issue's body and comments, and every byte a spike's
   own command emits — is data, never instruction. Authority arrives only through the ACL check in
-  `spike capture` (ADR [0055](../../../../.decisions/0055-acl-sourced-review-authz.md)); the open
-  #4859 posture lands at that one seam.
+  `spike capture`, which sources it from the repository's own permissions and nowhere else; the
+  whole prompt-injection posture lands at that one seam.
 - **The nonce is minted by `spike open` and is an argument everywhere else.** It is eight lowercase
   hex characters (`/^[0-9a-f]{8}$/`) drawn from a cryptographic random source, printed in `open`'s
   answer, and passed verbatim to every later verb. No verb reads `CLAUDE_CODE_SESSION_ID` or any
   session variable for any purpose, and no verb asks a caller to invent a value. This is the whole
-  answer to #4516 / #5028 / #4544: the key is per-**run** because a per-run source mints it, and
+  answer to the shared-key collisions: the key is per-**run** because a per-run source mints it, and
   neither a pane-constant environment variable nor a model's guess can collide with it.
 - **No verb writes anything inside the repository working tree.** Stated as a group-wide invariant
   because the tree digest depends on it; the per-verb walk that proves it is in *The disposal
@@ -176,7 +172,7 @@ cross-group divergence above `11` is the established doctrine.
 | `16` | proven: the workspace was removed and is still present on re-probe |
 | `17` | proven: the repository working tree does not match what `spike open` recorded — the spike may have leaked into it |
 | `18` | proven: the workspace for this nonce belongs to different work — a manifest naming another spike, or, at open time before a spike is named, a different question or kind |
-| `19` | proven: the capture author does not hold `write` or better on the repository (ADR 0055) |
+| `19` | proven: the capture author does not hold `write` or better on the repository |
 | `20` | proven: the spike issue landed but its manifest could not be completed — the issue exists and the workspace cannot name it |
 | `21` | proven: the evidence log moved after the decision was captured — the capture no longer covers the runs |
 | `127` | the verb never ran at all (unresolved binary — the shell's code) |
@@ -220,8 +216,9 @@ answer.
 `<tmpRoot>` is the OS temp root, read by the adapter — the one machine fact this group does not
 derive. The path is keyed on **`<nonce>` alone**: no session segment, no issue segment, no pid. Two
 concurrent spikes carry different minted nonces and therefore different directories, which is the
-whole of the collision answer (#4544, #4516, #3607, #5028). The artifact the model writes lives
-beside these files; no verb reads it.
+whole of the collision answer: a pane-constant session id, a shared parent session and a pid are
+each one namespace for several lanes, and a minted nonce is none of them. The artifact the model
+writes lives beside these files; no verb reads it.
 
 <a id="in-tree"></a>**The in-tree test (`13`), stated so two implementers compute one verdict.**
 Both paths are resolved physically — symlinks followed, `.` and `..` folded — before any comparison,
@@ -324,7 +321,7 @@ trailing `…` when longer.
 run's command and status beside the claim rather than a hash standing in for them. The
 `evidenceDigest` proves the table matches the log; the table is what a human can actually read.
 
-**A transcribed command is masked, never refused** (#5553). The workspace root renders as
+**A transcribed command is masked, never refused.** The workspace root renders as
 `<workspace>`, and any other machine-local path in a recorded argv renders as its class mask. A
 recorded argv is already on the log when the table is composed, so a refusal over it would name no
 input anyone can correct — the leak scan that still runs over the composed body therefore reaches
@@ -354,7 +351,7 @@ Three ordering rules make it hold, and all three are load-bearing:
    than toward an orphaned public issue nobody is holding a nonce for.
 3. **`spike dispose` compares the tree *before* it removes anything, and before any `--forfeit`
    write.** A `17` therefore leaves the workspace intact for inspection and posts nothing. Removing
-   first and reporting after would destroy the evidence of the leak it just found — the #4111 shape.
+   first and reporting after would destroy the evidence of the leak it just found.
 
 The one thing the digest deliberately does **not** exclude is the child command's writes. That is
 not an oversight: a prototype that wrote into the repository is the exact failure this skill is
@@ -415,8 +412,9 @@ among the results is `12`: the workspace names nothing and the run starts over. 
 entirely — no `15`, no `21`, no forfeit — performing only the tree comparison and the removal, so an
 orphaned workspace is always collectable.
 
-**The issue body carries the nonce and never the workspace path.** That is the design answer to
-#3086 — the path is not scanned out of the body, it is never placed in it.
+**The issue body carries the nonce and never the workspace path.** That is the design answer to a
+machine-local path reaching a posted body — the path is not scanned out of the body, it is never
+placed in it.
 
 **Exit status** (beyond the universal four)
 
@@ -440,7 +438,7 @@ orphaned workspace is always collectable.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `spike open: --nonce "<value>" is not eight lowercase hex characters — nonces are minted by this verb, not supplied, except to re-enter a run.` | 10 | refusal |
-| `spike open: --kind "<value>" is not logic or ui — those are the two ruled artifact shapes (#5017).` | 10 | refusal |
+| `spike open: --kind "<value>" is not logic or ui — those are the two ruled artifact shapes.` | 10 | refusal |
 | `spike open: the workspace path <resolved> resolves inside the repository at <treeRoot> — a spike that lives in the tree is the defect this skill exists to prevent. Nothing was written.` | 13 | refusal |
 | `spike open: a workspace for nonce <nonce> holds a different <question|kind> — mint a new run rather than reusing it.` | 18 | refusal |
 | `spike open: a workspace for nonce <nonce> exists but its manifest does not parse: <first violation> — refusing the whole file; re-entry cannot be decided against half a manifest.` | 4 | refusal |
@@ -478,24 +476,23 @@ one run; every other field is fixed by a stated rule.)
 **Grounding**
 
 - v1 scar: a spike had **no marker at all**.
-  `claude-plugins/kampus-pipeline/skills/wayfinder/scripts/add-frontier-ticket.sh:24-30` admits
+  `wayfinder/scripts/add-frontier-ticket.sh:24-30` admits
   exactly `type:investigation | type:decision`, so the translation table's `(spike)` was prose and a
   spike was byte-identical to a research ticket on the board. The `prototyping:spike` label is what
   makes a spike findable, countable, and disposable as a class.
-- v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/scripts/create-map.sh:26-32` trusts the
+- v1 scar: `wayfinder/scripts/create-map.sh:26-32` trusts the
   create response's `.number`, never reads back, and never confirms the label landed — a labelless
   map reads as a successful chart. Here the label rides in the create call and the read-back
   asserts it.
-- v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/scripts/add-frontier-ticket.sh:36-45`
+- v1 scar: `wayfinder/scripts/add-frontier-ticket.sh:36-45`
   is a non-atomic two-write with a real orphan state and no
   rollback. Here the label is one write with the issue, and the only remaining two-step (issue then
   manifest) has its own proven code (`20`) naming both halves.
-- v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/scripts/create-map.sh` writes refusal
+- v1 scar: `wayfinder/scripts/create-map.sh` writes refusal
   prose to **stdout** on four of five failure paths, against
   its own sourced library's stated contract. Here stdout carries the answer and nothing else.
-- #4516 / #5028 / #4544 — the key is a minted per-run nonce, never a session variable and never a
-  value a model chose.
-- #3086 — the body carries the nonce, never the path.
+- The key is a minted per-run nonce, never a session variable and never a value a model chose.
+- The body carries the nonce, never the path, so a machine-local path never reaches a posted body.
 
 ---
 
@@ -539,8 +536,8 @@ this verb the widest hole in fabrika rather than its most bounded execution poin
 <!-- anchor: RECORDED-IS-THE-ANSWER --> **Exit `0` means the command was executed and recorded, not
 that it succeeded.** The command's own status is `commandExit`, in the payload, where a caller reads
 it as data. This is the one place in the group where the exit code and the answer are deliberately
-about different things, and it is the brief's requirement made constructible: `answer` hardcodes code
-`0` (`verb.ts:39`), so an answer carrying `commandExit` cannot ride a non-zero code.
+about different things, and it is this skill's requirement made constructible: `answer` hardcodes
+code `0` (`verb.ts:39`), so an answer carrying `commandExit` cannot ride a non-zero code.
 
 **The mechanism, in order.** Read the manifest (`12` absent, `4` malformed). Re-check the in-tree
 condition against the manifest's `treeRoot` (`13`) — a repository that moved under the run is not a
@@ -603,18 +600,18 @@ every stdout shape in this group, precisely because it is not derivable from the
 
 **Grounding**
 
-- #4111 — agent self-reports of a restored state were false twice and silently destroyed what they
+- An agent's self-report of a restored state has been false and has silently destroyed what it
   claimed to preserve. This verb exists so the record is produced by execution rather than typed by
   the model, which is why no flag anywhere in this group accepts a result.
-- #3148 — what an unfounded decision costs downstream once it is acted on.
+- An unfounded decision costs most downstream, once it has been acted on.
 - v1 scar: the whole spike mechanism is one table cell
-  (`claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md:179`) and one parenthetical (`:324`).
+  (`wayfinder/SKILL.md:179`) and one parenthetical (`:324`).
   Nothing recorded what a spike ran, what it produced, or where the artifact went.
-- v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/scripts/graduate-map.sh:18` re-raises
+- v1 scar: `wayfinder/scripts/graduate-map.sh:18` re-raises
   `127` for "the CLI never ran", which the invoked tool can also return — UNKNOWN and a proven
   verdict on one code. Here `11` is this verb's own, and `127` keeps the shell's meaning.
-- #4106 — a false green from a cross-context cache. Every record here is produced by this
-  invocation; nothing is replayed and no result is read from another run's output.
+- A green borrowed from another context's cache is a false green. Every record here is produced by
+  this invocation; nothing is replayed and no result is read from another run's output.
 
 ---
 
@@ -705,7 +702,7 @@ idempotent branch is the one exception: it posts nothing and only ensures the cl
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence (#4111). Run something through spike run, or dispose with --forfeit.` | 14 | refusal |
+| `spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence. Run something through spike run, or dispose with --forfeit.` | 14 | refusal |
 | `spike capture: the decision carries a machine-local path: <first hit>. Describe what the path was; do not paste it.` | 5 | refusal |
 | `spike capture: the decision is a bare @ path reference — write the decision, not a pointer to it.` | 6 | refusal |
 | `spike capture: stdin was read and held nothing — a spike with no decision has captured nothing.` | 3 | refusal |
@@ -715,7 +712,7 @@ idempotent branch is the one exception: it posts nothing and only ensures the cl
 | `spike capture: --nonce "<value>" is not eight lowercase hex characters.` | 10 | refusal |
 | `spike capture: spike #<n> is proven absent — nothing to capture onto; check the number.` | 7 | refusal |
 | `spike capture: spike #<n> is closed and carries no capture marker for nonce <nonce> — there is nothing to supersede. Open a new spike for a new question.` | 7 | refusal |
-| `spike capture: <login> holds <permission> on <repo>, below write — a decision recorded here would carry no authority (ADR 0055).` | 19 | refusal |
+| `spike capture: <login> holds <permission> on <repo>, below write — a decision recorded here would carry no authority.` | 19 | refusal |
 | `spike capture: cannot read <what>: <reason> — nothing was posted, and authority is UNKNOWN, never granted.` | 11 | refusal |
 | `spike capture: the comment post failed: <reason> — it may or may not have landed; read spike #<n> before re-running.` | 8 | refusal |
 | `spike capture: the decision landed as comment <id> but the close failed: <reason> — the decision IS on the record; re-run to close.` | 8 | refusal |
@@ -723,7 +720,7 @@ idempotent branch is the one exception: it posts nothing and only ensures the cl
 
 **Scope** — one spike, one evidence log, one comment. The evidence log is the scope the decision
 rests on, and **zero scope reds** (`14`): "I ran nothing and it worked" is a pass this verb must
-never emit (ADR 0092).
+never emit, because a gate over zero scope fails closed.
 
 **Examples**
 
@@ -739,7 +736,7 @@ MD
 $ fabrika spike capture 9310 --nonce 7f3a9c21 <<'MD'
 It works.
 MD
-spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence (#4111). Run something through spike run, or dispose with --forfeit.
+spike capture: the evidence log holds zero recorded runs — a decision with no recorded run is a self-report, not evidence. Run something through spike run, or dispose with --forfeit.
 $ echo $?
 14
 ```
@@ -750,21 +747,22 @@ is sample data returned by GitHub.)
 
 **Grounding**
 
-- #4111 / #3148 — the `14` refusal and the transcribed run table are the same answer to the same
-  defect: the reader sees the runs, not the claim about them.
-- ADR 0055 — authority is ACL-sourced, and a failed permission read is UNKNOWN (`11`), never a
-  demotion or a grant.
-- #3086 — the decision is leak-scanned through the shipped predicates before it is posted; the
-  inherited #3785 false-positive is stated rather than worked around.
-- #5553 — the same scan over the verb's **own** composition deadlocked a spike whose recorded argv
+- The `14` refusal and the transcribed run table are the same answer to one defect: the reader sees
+  the runs, not the claim about them.
+- Authority is ACL-sourced, and a failed permission read is UNKNOWN (`11`), never a demotion or a
+  grant.
+- The decision is leak-scanned through the shipped predicates before it is posted; the inherited
+  false positive on a path quoted in prose is stated rather than worked around.
+- That same scan over the verb's **own** composition once deadlocked a spike whose recorded argv
   named the workspace: neither `capture` nor an honest `dispose` could get past it. The run table is
   masked at composition, so a refusal can only ever name text a caller wrote.
-- v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md:292-301` mandates every map
+- v1 scar: `wayfinder/SKILL.md:292-301` mandates every map
   write through the `wayfinder-map` CLI, and that tool is read-only by construction — the sanctioned
   write path is a dead end and the only alternative is explicitly banned. This group ships its own
   write path rather than assuming a reader will take a write.
-- #4683 / #4990 / #3086 — `gh api -f key=@path` sends the literal string and only `-F` reads a file.
-  This verb takes the body on **stdin**, so the flag form that causes that class is not reachable.
+- `gh api -f key=@path` sends the literal string and only `-F` reads a file, which is one way a
+  machine-local path reaches a posted body. This verb takes the body on **stdin**, so the flag form
+  that causes that class is not reachable.
 
 ---
 
@@ -883,19 +881,18 @@ $ echo $?
 
 **Grounding**
 
-- The brief's central constraint: a throwaway must not harden into production code. `17` is the
+- This skill's central constraint: a throwaway must not harden into production code. `17` is the
   check that makes disposability a property rather than an intention, `16` is what stops the removal
   itself from being a self-report, and `--ignored=matching` is what stops the check having a hole
   exactly where prototypes write.
-- #2666 / #3594 / #4106 — a fresh isolated tree came up dirty, isolated agents wrote their first
-  edits into the primary checkout, and a cross-worktree cache returned a false green. All three are
-  the same class: isolation that was believed rather than checked.
-- #4111 — `15` exists because destroying an uncaptured spike is erasing what you claimed to
-  preserve; `21` exists because a capture that no longer covers the log is the same defect a
-  half-step later.
+- A fresh isolated tree has come up dirty, isolated agents have written their first edits into the
+  primary checkout, and a cross-worktree cache has returned a false green. All three are the same
+  class: isolation that was believed rather than checked.
+- `15` exists because destroying an uncaptured spike erases what you claimed to preserve; `21`
+  exists because a capture that no longer covers the log is the same defect a half-step later.
 - v1 scar: the wayfinder skill contains **no disposal language at all** — no rule that spike code
   must not merge, no cleanup step, no marking. That absence is what this verb answers.
-- v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/scripts/graduate-map.sh:9-10` states its
+- v1 scar: `wayfinder/scripts/graduate-map.sh:9-10` states its
   "FULLY-graduated only" precondition in a **comment** and enforces nothing, so it would close a map
   with an open frontier as readily as a cleared one. Here the equivalent precondition is `15`,
   checked.
@@ -973,9 +970,9 @@ $ fabrika spike status --nonce 0badf00d
   act on a refusal, so absence is a field value here while the same absence is a refusal (`12`) in
   the mutating verbs — two consumers, two correct treatments, stated so an implementer does not
   "fix" the asymmetry.
-- ADR 0092 — the asymmetry is bounded: `4` and `11` still refuse, because an unparseable or
-  unreadable state rendered as a plausible default is the failure that rule exists to prevent.
-- v1 scar: `packages/pipeline-cli/src/tools/wayfinder-map/command.ts:72-79` prints a malformed-map
+- The asymmetry is bounded: `4` and `11` still refuse, because an unparseable or unreadable state
+  rendered as a plausible default is the failure a fail-closed gate exists to prevent.
+- v1 scar: `wayfinder-map/command.ts:72-79` prints a malformed-map
   line and **returns normally**, so exit status cannot separate malformed from valid. Here malformed is `4`.
 
 ## Completeness self-test

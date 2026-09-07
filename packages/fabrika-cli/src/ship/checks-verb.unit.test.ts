@@ -111,7 +111,7 @@ describe("rollupFor", () => {
 	});
 });
 
-// #6834: the repo cancels its own runs at an unmoved head, so `cancelled` there means "replaced",
+// The repo cancels its own runs at an unmoved head, so `cancelled` there means "replaced",
 // not "failed" — and the dependent aggregator is the row that lands in it.
 describe("rollupFor over a concurrency-cancelled run", () => {
 	it("pends a superseded cancelled aggregator rather than reding it", () => {
@@ -151,7 +151,7 @@ describe("rollupFor over a concurrency-cancelled run", () => {
 		}
 	});
 
-	it("leaves an informational run carved out on both sides of the rule (ADR 0061)", () => {
+	it("leaves an informational run carved out on both sides of the rule", () => {
 		const sample = sampleOf(
 			[
 				{name: "deploy (web)", conclusion: "cancelled", suite: 91},
@@ -192,7 +192,7 @@ describe("runChecks", () => {
 		);
 	});
 
-	// ADR 0308: `checks` is an evidence-array, so it collapses to counts — but the gating axis stays
+	// `checks` is an evidence array, so it collapses to counts — but the gating axis stays
 	// in the key, or a `red` head and this one (a failing *informational* run) would tally the same.
 	it("tallies the collapsed checks by status AND gating, count-descending", async () => {
 		const out = await run(found, [
@@ -347,9 +347,9 @@ describe("runChecks", () => {
 });
 
 /**
- * #6915: the merge-authority twin of the review-side fail-open (#6522). Every check at the head
- * passed, and the workflows that produced them were the platform's own — so the word this group
- * merges on would have been printed over bytes no gate of the repo inspected.
+ * The merge-authority twin of the review-side fail-open. Every check at the head passed, and the
+ * workflows that produced them were the platform's own — so the word this group merges on would
+ * have been printed over bytes no gate of the repo inspected.
  */
 describe("the gate-coverage floor under a green head", () => {
 	const CI = ".github/workflows/ci.yml";
@@ -372,7 +372,7 @@ describe("the gate-coverage floor under a green head", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`ship checks: none of the 1 workflow(s) o/r authors produced a run at ${HEAD} — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).`,
+			`ship checks: none of the 1 workflow(s) o/r authors produced a run at ${HEAD} — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.`,
 		);
 	});
 
@@ -424,7 +424,7 @@ describe("the gate-coverage floor under a green head", () => {
 });
 
 /**
- * The incident head of #6834, end to end: a close/reopen re-fired the suite without moving the head,
+ * The concurrency-cancelled head, end to end: a close/reopen re-fired the suite without moving it,
  * so the older run was concurrency-cancelled and the newer run had not published its own
  * `ci-required` yet. The verb read the cancelled aggregator and settled red on the first sample.
  */

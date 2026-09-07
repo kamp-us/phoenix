@@ -8,8 +8,9 @@ miss, or one ambiguity the diff cannot resolve, is a FAIL — never an "it's-pro
 Typecheck, lint, unit tests, secret scan, leak scan and unresolved-thread accounting are required
 CI gates on every PR. Read them structurally (`fabrika review ci`) and refuse to conclude over an
 incomplete enumeration; do not re-run them — a local re-run can hand you another checkout's cached
-green (#4106), and a second answer to an enforced question can contradict the gate (v1's ADR 0067
-in-tree-authoritative posture is deliberately not carried; the brief's scope rule wins).
+green, and a second answer to an enforced question can contradict the gate. When the two disagree,
+the enforced gate's answer is the one that decides the merge, so an in-tree re-run is at best noise
+and at worst a verdict that overrules the thing actually blocking the button.
 
 ## Per-criterion verification
 

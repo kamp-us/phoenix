@@ -4,8 +4,7 @@
  * **The key is one the verb wrote, not one a caller remembered.** The child body carries
  * `split from #<parent>`, so a re-run reads back the same evidence it planted. The predecessor
  * called that back-reference load-bearing and then never checked the body carried it, so a child
- * filed without it was permanently invisible to the guard and every re-run fired a fresh twin
- * (#3462/#3463).
+ * filed without it was permanently invisible to the guard and every re-run fired a fresh twin.
  *
  * **Both halves, never one.** A candidate matches on `(back-reference AND normalized title)`. The
  * back-reference alone collapses every sibling of one parent into the first child ever split from it;
@@ -38,7 +37,8 @@ export const backReference = (parent: number): string => `split from #${parent}`
 /**
  * Whether `body` carries the back-reference to `parent`.
  *
- * The trailing-digit guard is what keeps `split from #431` from answering for `#43` — a false match
+ * The trailing-digit guard is what keeps `split from #<nnn>` from answering for its own prefix
+ * `#<nn>` — a false match
  * there reuses an unrelated child and drops the split.
  */
 export const hasBackReference = (body: string, parent: number): boolean =>
@@ -62,7 +62,7 @@ export const isExistingChild = (candidate: Candidate, parent: number, title: str
  *
  * The footer is not decoration. Without it `triage provenance` answers `human` and `triage kill`
  * refuses the child forever on `12` — a split child could never be killed, not even as a duplicate
- * of its own sibling (ADR 0159). `composeBody` owns the spacing so this shape stays identical to
+ * of its own sibling. `composeBody` owns the spacing so this shape stays identical to
  * `report file`'s.
  */
 export const composeChildBody = (stdin: string, parent: number, footer: string): string =>

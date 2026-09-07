@@ -1,9 +1,9 @@
 /**
- * The render-crash signal the review-design gate fails on (#2594).
+ * The render-crash signal the review-design gate fails on.
  *
- * A single screenshot only sees pixels. A mount/init race — e.g. the #2593
- * composer null-editor `TypeError: Cannot read properties of null (reading
- * 'commands')`, thrown when `setContent` runs before the tiptap instance exists —
+ * A single screenshot only sees pixels. A mount/init race — e.g. a read-only rich-text
+ * editor's `TypeError: Cannot read properties of null (reading 'commands')`, thrown when
+ * `setContent` runs before the editor instance exists —
  * throws a runtime exception into the page on a "bad tick" while the captured
  * frame still looks acceptable. The six visual prohibitions never see it, so the
  * gate green-lit a component that hard-crashes for a fraction of loads. The fix:

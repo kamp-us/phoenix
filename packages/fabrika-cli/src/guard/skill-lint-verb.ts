@@ -1,9 +1,8 @@
 /**
- * `guard skill-lint check` — the four mechanical gates over the plugin corpus (#743, #1766, #4213,
- * #4605), ported off v1's `gh-phoenix lint-skills` (epic #5720).
+ * `guard skill-lint check` — the four mechanical gates over the plugin corpus.
  *
- * **The scope walk moved into the verb.** In v1 it lived in `skill-gh-lint.yml` as forty lines of
- * bash — the physical-root resolution, the `find`, the zero-scope floor and the per-plugin coverage
+ * **The scope walk lives in the verb.** It used to sit in the workflow as forty lines of bash —
+ * the physical-root resolution, the `find`, the zero-scope floor and the per-plugin coverage
  * assertion — and the CLI was handed a file list. That put four fail-closed decisions in a shell
  * step no unit test covers, and a local reproduction of a CI red meant retyping the `find`. Here the
  * verb owns them, so the workflow is one line and every refusal below is pinned by a test.
@@ -72,14 +71,14 @@ const pluginDirs = (
  *
  * This is the assertion that makes a narrowed walk loud instead of silent: the job used to root at
  * one plugin dir, which excluded every sibling while still reporting green — and a green from an
- * empty corner is indistinguishable from a green from clean code (#5004).
+ * empty corner is indistinguishable from a green from clean code.
  */
 const uncovered = (
 	plugins: ReadonlyArray<string>,
 	files: ReadonlyArray<string>,
 ): ReadonlyArray<string> => plugins.filter((dir) => !files.some((f) => f.startsWith(`${dir}/`)));
 
-/** Which of the four scopes came back empty — each one its own fail-closed floor (ADR 0092). */
+/** Which of the four scopes came back empty — each one its own fail-closed floor. */
 const emptyScopes = (result: LintResult): ReadonlyArray<string> => {
 	const empty: Array<string> = [];
 	if (result.scanned.length === 0) empty.push("gh-call");
@@ -108,13 +107,13 @@ const findingReport = (result: LintResult): Section => {
 		sections.push(
 			located(
 				result.findings,
-				`${result.findings.length} GraphQL-path gh call(s) — REST only on this org (#743):`,
+				`${result.findings.length} GraphQL-path gh call(s) — REST only on this org:`,
 			),
 		);
 	}
 	if (result.frontmatterFindings.length > 0) {
 		sections.push({
-			head: `${result.frontmatterFindings.length} file(s) with invalid YAML frontmatter — a mid-sentence colon-space in an unquoted scalar reparses as a mapping; quote the value or use a block scalar (#1766):`,
+			head: `${result.frontmatterFindings.length} file(s) with invalid YAML frontmatter — a mid-sentence colon-space in an unquoted scalar reparses as a mapping; quote the value or use a block scalar:`,
 			lines: result.frontmatterFindings.map((f) => `  ${f.file}: ${f.reason}`),
 			annotations: result.frontmatterFindings.map((f) => atLine("error", f.file, 1, f.reason)),
 		});
@@ -123,7 +122,7 @@ const findingReport = (result: LintResult): Section => {
 		sections.push(
 			located(
 				result.barePushFindings,
-				`${result.barePushFindings.length} bare \`git push\` invocation(s) in a runnable block — the sanctioned path is \`fabrika build push\` (#4213):`,
+				`${result.barePushFindings.length} bare \`git push\` invocation(s) in a runnable block — the sanctioned path is \`fabrika build push\`:`,
 			),
 		);
 	}
@@ -131,7 +130,7 @@ const findingReport = (result: LintResult): Section => {
 		sections.push(
 			located(
 				result.portabilityFindings,
-				`${result.portabilityFindings.length} non-portable plugin path literal(s) in a fence — a consumer installs the plugin outside their repo, so \`./claude-plugins/…\` cannot resolve there; use \`./.claude/.pipeline/…\` (#4605):`,
+				`${result.portabilityFindings.length} non-portable plugin path literal(s) in a fence — a consumer installs the plugin outside their repo, so \`./claude-plugins/…\` cannot resolve there; use \`./.claude/.pipeline/…\`:`,
 			),
 		);
 	}
@@ -154,19 +153,19 @@ const judge = (
 		const expected = path.join(yield* realPath(root), CORPUS);
 		if (corpusReal !== expected) {
 			return zeroScope(
-				`${VERB}: the scan root ${CORPUS}/ resolves to ${corpusReal}, not ${expected} — the walk would scan another tree, or nothing. Fail-closed (ADR 0092).`,
+				`${VERB}: the scan root ${CORPUS}/ resolves to ${corpusReal}, not ${expected} — the walk would scan another tree, or nothing. Fail-closed.`,
 			);
 		}
 		const files = yield* walk(root, CORPUS);
 		if (files.length === 0) {
 			return zeroScope(
-				`${VERB}: the walk of ${CORPUS}/ matched ZERO .md/.sh files — a lint that scanned nothing protects nothing. Fail-closed (ADR 0092).`,
+				`${VERB}: the walk of ${CORPUS}/ matched ZERO .md/.sh files — a lint that scanned nothing protects nothing. Fail-closed.`,
 			);
 		}
 		const missing = uncovered(yield* pluginDirs(root), files);
 		if (missing.length > 0) {
 			return zeroScope(
-				`${VERB}: these plugin dirs contributed ZERO scanned files, so the walk does not cover them: ${missing.join(", ")}. Fail-closed (ADR 0092; #5004).`,
+				`${VERB}: these plugin dirs contributed ZERO scanned files, so the walk does not cover them: ${missing.join(", ")}. Fail-closed.`,
 			);
 		}
 		const corpus: Array<ScanFile> = [];
@@ -176,7 +175,7 @@ const judge = (
 		const result = lintCorpus(corpus);
 		if (isZeroScope(result)) {
 			return zeroScope(
-				`${VERB}: ${emptyScopes(result).join(", ")} scan(s) saw zero files of ${files.length} walked — a check with no scope cannot go green. Fail-closed (ADR 0092).`,
+				`${VERB}: ${emptyScopes(result).join(", ")} scan(s) saw zero files of ${files.length} walked — a check with no scope cannot go green. Fail-closed.`,
 			);
 		}
 		const total =

@@ -5,7 +5,7 @@
  * **What it covers, in terms a reader can falsify.** One raw record per changed path names the
  * path, the change letter, both modes and **both blob object names** — the source blob in the merge
  * base and the destination blob at the head. So a digest over those records binds two things at
- * once, which is exactly the pair ruled on #5508 (ADR 0276): the **three-dot diff**, because a
+ * once, which is exactly the pair this binding is ruled to cover: the **three-dot diff**, because a
  * unified diff is a function of the endpoint blobs and the pinned flags and of nothing else, and
  * the **resulting content of every changed file**, because the destination blob *is* that content.
  * Nothing here reads a blob's bytes — the object names are the content, and comparing them is what
@@ -13,15 +13,15 @@
  *
  * **The one thing it deliberately does not cover, and why that is the ruled trade.** A path the
  * head does not touch has no raw record, so a change to it on the base branch leaves this digest
- * equal. That is the residual ADR 0276 accepts out loud: a verdict survives base movement that
- * misses every reviewed path, and dies on base movement that reaches one. It is not free — see the
- * ADR's residual-risk section, which is the single place that argument lives.
+ * equal. That is the residual this design accepts out loud: a verdict survives base movement that
+ * misses every reviewed path, and dies on base movement that reaches one. It is not free — the
+ * decision record that rules it carries the residual-risk argument, and it lives only there.
  *
  * **A digest that could not be computed is never a digest.** Every failure below resolves to a
  * reason, never to an empty serialization, because an empty one hashes to a perfectly well-formed
  * value that two unrelated heads would share.
  *
- * **Two scopes, one serialization.** The PR scope binds a head; the range scope (#5825) binds what
+ * **Two scopes, one serialization.** The PR scope binds a head; the range scope binds what
  * a child's `<base>...<tip>` changed, and survives that range being merged into an epic branch
  * where those SHAs are no longer the history. Both hash the same records the same way — the range
  * half adds only the judged paths, which is what lets a later state be asked the same question.
@@ -129,7 +129,7 @@ const recordsAt = (
  * The digest of `base...head`, read from the object database with nothing checked out.
  *
  * An empty range is a `Failure`: a PR with no changed path is the zero-scope state every gate in
- * this package refuses (ADR 0092), and hashing its empty serialization would mint one shared value
+ * this package refuses, and hashing its empty serialization would mint one shared value
  * that every such PR's verdict would bind to.
  */
 export const contentDigestAt = (base: string, head: string): Shell<Attempt<string>> =>
@@ -160,9 +160,9 @@ export interface RangeContent {
 }
 
 /**
- * What a child's range changed — the pair a range verdict carries into the world (#5825).
+ * What a child's range changed — the pair a range verdict carries into the world.
  *
- * The digest is the ADR 0276 serialization over `<base>...<tip>` and nothing else, so a range
+ * The digest is the same serialization over `<base>...<tip>` and nothing else, so a range
  * verdict and a PR verdict over the same two commits carry the same twelve hex. The paths ride
  * along because the marker cannot: a verdict names a range and a digest, and re-deriving that
  * digest from a *later* state needs the pathspec the digest was taken under.
@@ -213,7 +213,8 @@ export const rangeDigestOnto = (
 	});
 
 /**
- * Whether a range verdict still binds the state that claims it — the range half of ADR 0276.
+ * Whether a range verdict still binds the state that claims it — the range half of the content
+ * binding.
  *
  * The PR-scoped rule can lean on head equality first, and a range verdict has no such shortcut: the
  * SHAs it names stop being the epic branch's history the moment the range is merged in, so content

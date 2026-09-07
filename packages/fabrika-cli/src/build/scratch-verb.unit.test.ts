@@ -14,7 +14,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {runScratch} from "./scratch-verb.ts";
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
@@ -50,7 +50,7 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 describe("runScratch", () => {
 	/**
 	 * The nonce in the key is the whole fix: v1 keyed on the session id alone, so two lanes of one
-	 * session shared a namespace and clobbered each other's fixed-name files (#4516, #4544).
+	 * session shared a namespace and clobbered each other's fixed-name files.
 	 */
 	it("keys the namespace on the CLAIM NONCE, not the session alone", async () => {
 		const out = await run(CLAIMED);

@@ -1,8 +1,8 @@
 /**
  * The plan-approval marker — the comment a human on the control plane posts to approve one epic's
- * plan (ADR 0289).
+ * plan.
  *
- *     plan-approved: #5843 @ 4d90e1bb27ac · 2026-08-16T07:16:03Z
+ *     plan-approved: #7 @ 4d90e1bb27ac · 2026-08-16T07:16:03Z
  *
  * Three fields, and the digest is the load-bearing one: the approval binds the **ledger scope** the
  * plan gate judges, so a plan rewritten after the founder read it no longer matches and does not
@@ -12,8 +12,8 @@
  * lives in `./issue-marker.ts`, which `./decision-ruling.ts` reads through too. What is written here
  * is only what is this format's own: the key, and a tail that is one timestamp.
  *
- * **The digest binds the ledger scope, not the plan's prose.** ADR 0289 states that limit itself and
- * it is repeated here so no reader over-reads the marker: what `../plan/digest.ts` serializes is the
+ * **The digest binds the ledger scope, not the plan's prose.** Stated here so no reader over-reads
+ * the marker: what `../plan/digest.ts` serializes is the
  * epic's stories, the topology, and each child's labels, criteria count, stories and containment.
  * The plan summary is outside it.
  *
@@ -94,7 +94,7 @@ export const emit = ({epic, digest, at}: PlanApproval): string =>
  *
  * Both halves are equality, and neither is a courtesy. A marker naming another epic approves nothing
  * here however fresh its digest — bytes travel, and a quoted approval is a comment on this issue like
- * any other. A digest that no longer matches is the re-plan case ADR 0289 names: not approved.
+ * any other. A digest that no longer matches is the re-plan case: not approved.
  */
 export const approves = (approval: PlanApproval, epic: number, derived: string): boolean =>
 	approval.epic === epic && approval.digest === derived.trim().toLowerCase();

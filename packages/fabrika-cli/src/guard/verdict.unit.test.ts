@@ -24,12 +24,12 @@ describe("verdictCode", () => {
 		expect(verdictCode(unknown("could not read"))).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("never collapses zero scope onto the clean exit (ADR 0092)", () => {
+	it("never collapses zero scope onto the clean exit", () => {
 		expect(verdictCode(zeroScope("nothing scanned"))).not.toBe(0);
 	});
 
-	// A declared absence is the repo answering the question, not the scan failing to (#6433) — the
-	// one shape ADR 0092's floor is not about.
+	// A declared absence is the repo answering the question, not the scan failing to — the one
+	// shape the fail-closed floor is not about.
 	it("exits a skipped guard 0, and puts its declaration on stdout", () => {
 		const verdict = skipped("guard x: this repo declares it keeps none");
 		expect(verdictCode(verdict)).toBe(0);
@@ -73,7 +73,7 @@ describe("emitVerdict", () => {
 	});
 
 	// A zero-scope red carries no per-file finding, so without the fallback it would render a blank
-	// check surface — the failure visible only to whoever opens the log (#3868).
+	// check surface — the failure visible only to whoever opens the log.
 	it("falls back to one bare ::error for a verdict that named no file", () => {
 		expect(emitVerdict(zeroScope("scanned ZERO members"), ACTIONS).stderr).toEqual([
 			"scanned ZERO members",

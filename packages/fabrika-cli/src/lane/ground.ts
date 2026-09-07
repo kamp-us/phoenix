@@ -6,7 +6,7 @@
  * whatever cwd the process happens to hold. When that cwd drifts off the repo — a session scratchpad,
  * a subdirectory — the root resolves somewhere nobody meant, and the load path proves the lane
  * *absent*: the same `7` a repo with no such lane answers, which `operate` reads as "boot a fresh
- * ledger". A drifted-cwd boot then writes a second ledger over a live lane (#6212). "Not a repo" is a
+ * ledger". A drifted-cwd boot then writes a second ledger over a live lane. "Not a repo" is a
  * different fact from "no lane here", and only the second may mean boot.
  *
  * An **absolute** root resolves against nothing, so no drift is expressible and no probe is owed —
@@ -70,8 +70,8 @@ export const groundRefusal = (
 
 /**
  * The default lanes root resolved against the repository the cwd belongs to — never against the
- * cwd itself (#5815). The owning repository is the one whose common dir the cwd's nearest `.git`
- * entry answers to (`delegate/repository.ts`, ADR 0287's identity), so a linked worktree and the
+ * cwd itself. The owning repository is the one whose common dir the cwd's nearest `.git`
+ * entry answers to (`delegate/repository.ts`), so a linked worktree and the
  * primary checkout derive the SAME ledger: the worktree's `.git` file points into the primary's
  * git dir, whose `commondir` file names it back. A cwd whose repository cannot be established is
  * UNKNOWN — never a cwd-relative fallback, which would reintroduce the drift bug quietly.
@@ -123,17 +123,17 @@ export const repoGroundRefusal = (
 			)
 		: refuse(
 				LANE_UNREADABLE,
-				`${verb}: whether ${ground.cwd} belongs to a repository is UNKNOWN (${ground.reason}) — the lanes root stays unresolved rather than guessed from the cwd (#5815).`,
+				`${verb}: whether ${ground.cwd} belongs to a repository is UNKNOWN (${ground.reason}) — the lanes root stays unresolved rather than guessed from the cwd.`,
 			);
 
 /**
  * The lanes root one verb invocation resolves when `--root` is absent: derived off the repository
- * the cwd belongs to (#5815), with the leaf joined under its primary checkout. An explicit `--root`
+ * the cwd belongs to, with the leaf joined under its primary checkout. An explicit `--root`
  * wins over whatever would be derived.
  *
  * Shared rather than private to the `lane` adapter, because a verb in another group resolving the
  * same root its own way is how one lane key comes to name two directories: `recipe unpark` defaulted
- * to a bare cwd-relative leaf and proved every worktree-driven lane absent (#7380). The verb label
+ * to a bare cwd-relative leaf and proved every worktree-driven lane absent. The verb label
  * arrives whole, so a caller outside `lane` names itself.
  */
 export const resolveRootOrRefuse = (

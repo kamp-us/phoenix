@@ -6,10 +6,10 @@
  *
  * - **A branch is cut off `FETCH_HEAD`, never off a local remote-tracking ref.** A checkout's
  *   `origin/main` can predate the commit the lane needs, and a branch cut off it misses work that is
- *   already on the base (#1920 / #3621). Every create here fetches first and cuts off what was just
+ *   already on the base. Every create here fetches first and cuts off what was just
  *   fetched.
  * - **A push is believed only after the remote ref is read back.** `git push`'s own report is not
- *   evidence: a push that died mid-hook read as sent (#4136). {@link remoteSha} asks the remote
+ *   evidence: a push that died mid-hook read as sent. {@link remoteSha} asks the remote
  *   directly, and the caller compares.
  */
 import {Effect} from "effect";
@@ -80,13 +80,13 @@ export const switchToNew = (name: string, start: string): Shell<Attempt<void>> =
  *
  * Renaming rather than cutting a second branch off the first is the whole point: two branches
  * carrying one child's commits is what `lane prove` reports as an underivable range, and that
- * refusal is unresolvable from inside a worktree (#6386).
+ * refusal is unresolvable from inside a worktree.
  *
  * **It does not refuse a branch another worktree has checked out**, which is the trap the caller
  * guards with {@link worktreeCheckouts}: `git branch -m` exits 0 there and silently retargets that
  * worktree's `HEAD` to the new name — only the `git switch` afterwards fails, by which point the
  * rename has already landed under a lane that is not this one. Measured against git 2.40.1 rather
- * than reasoned about (#6386, review round 1).
+ * than reasoned about.
  */
 export const renameBranch = (from: string, to: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
@@ -196,7 +196,7 @@ export const worktreeStatusPaths = (path: string): Shell<Attempt<number>> =>
  *
  * It asks nothing of the board and needs nothing from it: a pruned record has no directory, so there
  * is no tree holding work and no session whose fate anyone has to attest to. That keeps it outside
- * ADR 0295's licensing question rather than an exception to it.
+ * the question of who licenses a tree's removal rather than an exception to it.
  */
 export const pruneWorktrees: Shell<Attempt<void>> = Effect.gen(function* () {
 	const r = yield* execCapture("git", ["worktree", "prune"]);
@@ -233,11 +233,11 @@ export const commitsPastBase = (branch: string, base: string): Shell<Attempt<num
 	});
 
 /**
- * Commit everything another worktree holds onto the branch it is standing on — ADR 0321's salvage.
+ * Commit everything another worktree holds onto the branch it is standing on — the salvage.
  *
  * The uncommitted work in a dead spawn's tree is the only copy of what it was doing, so it is
  * preserved before the tree goes rather than weighed: that is what lets a retirement ignore
- * dirtiness (ADR 0323) without the removal being the thing that destroys the record.
+ * dirtiness without the removal being the thing that destroys the record.
  *
  * `--no-verify` because the hooks are this repo's contribution gate and a salvage is not a
  * contribution — a formatter rewriting a dying spawn's half-written file, or a guard refusing it,
@@ -256,7 +256,7 @@ export const salvageWorktree = (path: string, message: string): Shell<Attempt<vo
 	});
 
 /**
- * Remove one worktree and its registration — **never with `--force`**, which ADR 0321 bans on every
+ * Remove one worktree and its registration — **never with `--force`**, which is banned on every
  * path for every tree.
  *
  * A remove that refuses after the salvage means something in that tree is unaccounted for, and the
@@ -318,7 +318,7 @@ export const upstreamOf = (branch: string): Shell<{remote: string; ref: string} 
  *
  * Resume mode's local name is `build/pr-<pr>-<nonce>`, which by construction is never the PR's head
  * ref, so any check that reads the local name back calls every repair round a foreign lane —
- * `build push`'s false `17` (#5222) and `ui evidence`'s false `LANE_NOT_MINE` (#7402) are the same
+ * `build push`'s false `17` and `ui evidence`'s false `LANE_NOT_MINE` are the same
  * bug found twice. The fallback keeps a fresh lane, whose branch carries no upstream until its first
  * push, answering its own name.
  */
@@ -419,7 +419,7 @@ export const stagedPaths: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(fun
  */
 const COMMIT_FLAGS = ["commit", "--cleanup=verbatim"];
 
-/** Create a commit from a message on git's own stdin — the file-free carrying path (#5484). */
+/** Create a commit from a message on git's own stdin — the file-free carrying path. */
 export const commitFromStdin = (message: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
 		const r = yield* execCaptureInput("git", [...COMMIT_FLAGS, "-F", "-"], message);
@@ -437,9 +437,9 @@ export const commitFromFile = (path: string): Shell<Attempt<void>> =>
  * The message git actually recorded on a commit — the independent witness `build commit` turns on.
  *
  * `%B` is the raw body, so what comes back is what a reviewer will read in the merge record. The
- * whole point of asking git rather than trusting the invocation is #5484: the message reaching the
- * commit and the message the lane authored were different, every command exited 0, and nothing but
- * a read-back could tell.
+ * whole point of asking git rather than trusting the invocation: the message reaching the commit
+ * and the message the lane authored were different, every command exited 0, and nothing but a
+ * read-back could tell.
  */
 export const commitMessage = (sha: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
@@ -529,7 +529,7 @@ const pathLines = (stdout: string): ReadonlyArray<string> =>
  * path that does not resolve against `lane.root`. The pathspec restores repo-wide, the flag
  * restores root-relative.
  *
- * The second source is the scar (#5823). `git diff` never reports an untracked path, so a
+ * The second source is the scar. `git diff` never reports an untracked path, so a
  * brand-new file was absent from the list `build check` partitions — neither validated nor named in
  * `unvalidated`, invisible instead of disclosed, while the verdict read green. The natural lane
  * order is construct, check, then commit, which is exactly the window where a new file is untracked.

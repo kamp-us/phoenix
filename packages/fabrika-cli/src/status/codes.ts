@@ -31,7 +31,7 @@ export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The authored content is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
-/** Zero scope: an **explicitly passed** `--skills-dir` is proven absent (ADR 0092). */
+/** Zero scope: an **explicitly passed** `--skills-dir` is proven absent, so the verb fails closed. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** The write itself failed — whether anything landed is UNKNOWN. Re-read before retrying. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;

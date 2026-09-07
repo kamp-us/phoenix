@@ -37,8 +37,39 @@ tokens — cannot be made there, and a report of a browser run whose harness was
 be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
 `src/shell/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
-kernel, opens no socket and imports no agent code, so what it proves is paint and keyboard and
-nothing else. Pass `--port <n>` when the default is taken.
+kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
+when the default is taken.
+
+The same harness has four paging routes: `/paging-local`, `/paging-partial`, `/paging-completed`
+and `/paging-prepended`. Each scrolls the real `ChatWindow` with shipped styles. The last route
+checks that a prepend retains the **same DOM row** for the oldest local echo, aligns it to the
+transcript's top border, and leaves the other window's history cursor untouched. It does not assert
+an unchanged pixel offset: the initial “Load earlier messages” row disappears. Twenty labelled,
+layout-only local echoes supply scroll height without supplying an eligible history cursor.
+
+These routes call the Node-side [paging replay](src/claude/proof/paging-replay.ts): real
+`ClaudeAiAgent` over the existing captured `streaming-turn` events, a scripted SDK/store and
+`KernelBridge.scripted`. It pauses after the first text delta, checks that both local and partial
+cursors cause zero store reads, then adds completed assistant frames and pages through the live
+message id's stored alias. The captured assistant frames are re-enveloped as stored rows, as in
+the existing turn regression; this is not a live JSONL read. The browser receives that completed
+replay as JSON and supplies its page through a scripted `WindowHost` with `Delivered.view`.
+There is no kernel, transport, Claude CLI, login or provider spend in this proof. Shared-handler
+and real Pi integration coverage remain separate.
+
+`window.pagingProof` exposes the run time, read counts, dispatched cursor and DOM-anchor result for
+builder inspection. A bounded open request keeps the declared capture's network-idle wait behind
+the DOM assertions; a failed assertion raises a page error, never a success-shaped screenshot.
+The four routes are first-render proof scenarios, not new product routes.
+
+The same server's `/effort.html` is the fresh-Claude effort proof: its Node endpoint runs the
+real `ClaudeAiAgent` and core fold against the scripted SDK catalog/context response, then hands
+the emitted initial-open state to the actual `ChatWindow` through an in-memory window host.
+No model is configured, the active row is not first, and no prompt or selection precedes the
+render. `/effort-offered.html` also opens the actual effort menu without selecting an item.
+`/initial-effort.json` exposes the run timestamp, duration, events and recorded control calls.
+This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
+or model execution; the in-memory host records UI dispatches without executing them.
 
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
 Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers

@@ -6,7 +6,7 @@
  * live body, recompute, and refuse on `21` if it differs. The gap between deciding and writing is
  * closed by re-deciding, not by trusting.
  *
- * **Normalizing before hashing is a scar fix, not tidiness (#4599).** v1's splice round-trip compared
+ * **Normalizing before hashing is a scar fix, not tidiness.** v1's splice round-trip compared
  * raw bytes while its only caller captured stdout through command substitution, which strips every
  * trailing newline before the PATCH — so what GitHub stored was never what was emitted and the
  * comparison was structurally unwinnable. Hashing the normalized form makes a trailing-newline round

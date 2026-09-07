@@ -7,13 +7,13 @@
  * are `../io/gh-api.ts`'s, imported rather than re-derived.
  *
  * The disciplines are the shipped ones, restated nowhere: every response's status is read before its
- * bytes, and proven-absent is split from could-not-read at every seam. Since the port off `gh`
- * (ADR 0315) the status is a number the response carried rather than a code scraped out of an error
+ * bytes, and proven-absent is split from could-not-read at every seam. Since the port off the `gh`
+ * subprocess the status is a number the response carried rather than a code scraped out of an error
  * string, so `Absent` and `Unknown` are told apart by the platform's own answer.
  *
  * **Where the credential comes from.** Every export takes `(repo, …)` and reaches `ambientToken` for
  * its credential, erasing the transport requirement with `onTransport` rather than publishing
- * `HttpClient` up through its callers — the shape ADR 0315 carries as amended by the #6704 ruling.
+ * `HttpClient` up through its callers — the shape every transport seam in this package takes.
  */
 import {Effect} from "effect";
 import {
@@ -173,7 +173,7 @@ export const rerunFailedJobs = (repo: string, run: number): Shell<Attempt<void>>
  *
  * {@link rerunFailedJobs} is refused on a run with no failed job, which is the ordinary state of a
  * governance-floor run since the floor moved off the job's exit code onto a check-run: the job
- * succeeds — it published an answer — while the check-run it published stays pending (#6161). The
+ * succeeds — it published an answer — while the check-run it published stays pending. The
  * same 2xx-is-not-an-attempt discipline holds; the caller still proves the new attempt from run
  * state.
  */
@@ -182,7 +182,7 @@ export const rerunRun = (repo: string, run: number): Shell<Attempt<void>> =>
 
 /**
  * A read's answer beside the status GitHub served — which is what a permission denial is told apart
- * by, now that no error string carries the code (ADR 0315).
+ * by, now that no error string carries the code.
  */
 export interface Answered<A> {
 	readonly read: A;
