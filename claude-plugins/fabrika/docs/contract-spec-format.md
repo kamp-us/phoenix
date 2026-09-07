@@ -75,11 +75,12 @@ Checks 1–6 are all *presence* tests, and a spec can pass every one of them whi
 uninvented — that is check 7's finding: an example that *looks* verifiable and is not is worse than
 no example, because a reader treats the number as a contract. Check 8 runs check 3 backwards — 3
 walks the codes and asks what produces each, so it only sees what the spec already wrote down, and a
-state the spec never mentioned is invisible to it. An
-unmentioned reachable state lands on `1`, which [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)
+state the spec never mentioned is invisible to it. An unmentioned reachable state lands on `1`,
+which [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)
 reserves for a failure to invoke, so the spec's silence hands the caller a **proven** refusal it
 cannot tell from a broken binary — the verdict-versus-invocation collision. Checks 7 and 8 are the
-**outcome-completeness** pair: 7 that the spec derives every value it prints, 8 that it names every outcome it can reach.
+**outcome-completeness** pair: 7 that the spec derives every value it prints, 8 that it names every
+outcome it can reach.
 
 ## Worked example
 

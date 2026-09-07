@@ -122,10 +122,11 @@ failure to invoke it, or a caller reading `$?` cannot tell them apart.
   executable*, so the two invocation failures read as one band.
 - **`2` is allocated by nothing, in any group, and that is a hard rule rather than a free slot.** On
   a `PreToolUse` hook, exit `2` is the *one* code the harness reads as "block the tool call", so an
-  exit code seated there denies a tool call as a side effect of its status, whatever the verb meant —
-  the inverse of the fail-open polarity ruled for a hook whose verb cannot run: a verb that never ran
-  produced no evidence, so it may never deny. The full harness contract,
-  and why it is `PreToolUse`-only, is in [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract--exit-2-blocks-and-only-on-pretooluse).
+  exit code seated there denies a tool call as a side effect of its status, whatever the verb meant
+  — the inverse of the fail-open polarity ruled for a hook whose verb cannot run: a verb that never
+  ran produced no evidence, so it may never deny. The full harness contract, and why it is
+  `PreToolUse`-only, is in
+  [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract--exit-2-blocks-and-only-on-pretooluse).
   The rule is checked as data: `packages/fabrika-cli/src/exit-code-alignment.unit.test.ts` reds if
   any group's table allocates it.
 - **The `3`+ band is scoped to the verb group that seats it. A code above the reserved band means one
@@ -251,25 +252,25 @@ own cwd is set to the repo root.
 Duplication keeps the tool fabrika replaces deletable; a call is a tether that keeps it alive.
 
 **No fabrika skill and no fabrika verb invokes a predecessor tool, or anything else outside the
-plugin and its verb package.** Every deterministic step a skill needs is implemented in fabrika's own
-verb package. Where a predecessor already solved the same problem, read its source at a pinned commit
-to learn the semantics and the scars, then implement fabrika's own.
+plugin and its verb package.** Every deterministic step a skill needs is implemented in fabrika's
+own verb package. Where a predecessor already solved the same problem, read its source at a pinned
+commit to learn the semantics and the scars, then implement fabrika's own.
 
 Two consequences:
 
-- **A relay is not an exception.** Wrapper verbs whose only job is passing an upstream answer through
-  rebuild the predecessor by accretion — the outcome the rule exists to prevent.
-- **Not every predecessor call becomes a fabrika verb; some become nothing.** Where the thing being computed
-  is already *enforced* elsewhere — a CI gate, a merge check — fabrika does not compute a second
-  answer to it. Ask whether the skill needs the answer, or only needs to expect it.
+- **A relay is not an exception.** Wrapper verbs whose only job is passing an upstream answer
+  through rebuild the predecessor by accretion — the outcome the rule exists to prevent.
+- **Not every predecessor call becomes a fabrika verb; some become nothing.** Where the thing being
+  computed is already *enforced* elsewhere — a CI gate, a merge check — fabrika does not compute a
+  second answer to it. Ask whether the skill needs the answer, or only needs to expect it.
 
 An authoring brief's "assumable verbs" field is therefore a list of **prior art to read**, not a
 list of things to call.
 
 ## Enforcement
 
-There is no mechanical conformance guard yet, and that absence is deliberate: a repo-wide guard
-over zero verbs has zero scope and reds on itself, per rule 4. Enforcement lives as
-per-verb tests in each verb package, plus the data checks named above
-(`exit-code-alignment.unit.test.ts`, `short-description.unit.test.ts`). Until a repo-wide guard
-exists, this page is what a reviewer holds a verb to.
+There is no mechanical conformance guard yet, and that absence is deliberate: a repo-wide guard over
+zero verbs has zero scope and reds on itself, per rule 4. Enforcement lives as per-verb tests in
+each verb package, plus the data checks named above (`exit-code-alignment.unit.test.ts`,
+`short-description.unit.test.ts`). Until a repo-wide guard exists, this page is what a reviewer
+holds a verb to.
