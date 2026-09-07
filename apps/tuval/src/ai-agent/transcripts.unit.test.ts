@@ -7,8 +7,13 @@
  * assertion is the whole guard.
  *
  * The other two are the pair a blank transcript would hide. History comes back one page at a time
- * off the port's own `page(before, limit)`, and a session the store has since lost is a refusal
- * rather than an empty page — a row that opens onto silence has to mean the session is empty.
+ * off the port's own paging, and a session the store has since lost is a refusal rather than an
+ * empty page — a row that opens onto silence has to mean the session is empty.
+ *
+ * The load-bearing assertion on the *backend* side is the sealed row (#8233): its script refuses
+ * every `start`, so a read that answers at all is a read that opened no backend session and stood
+ * no transport up for one. Its own `start` is asserted refusing right after, so the pass is the
+ * read staying away rather than the fixture having no teeth.
  *
  * **The fixture's program id and backend tag are deliberately different strings.** The row is
  * registered as `pi-session` and its sessions carry the tag `pi`, because an earlier fixture used
@@ -19,7 +24,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer} from "effect";
+import {Context, Effect, Layer} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {Processes} from "../process/Processes.ts";
@@ -30,7 +35,13 @@ import {listAiAgentSessions} from "./backends.ts";
 import {ItemId, type TranscriptItem} from "./ports/index.ts";
 import {aiAgentProgram} from "./program.ts";
 import {models, modes, thinking} from "./service/fixtures/scripts.ts";
-import {type AgentScript, ScriptedAiAgent, sessionSummary} from "./service/index.ts";
+import {
+	type AgentScript,
+	ScriptedAiAgent,
+	StartError,
+	sessionSummary,
+	TuvalAiAgent,
+} from "./service/index.ts";
 import {readAiAgentTranscript} from "./transcripts.ts";
 
 const at = (offset: number): number => 1_760_000_000_000 + offset;
@@ -42,37 +53,51 @@ const said = (id: string, text: string): TranscriptItem => ({
 	text,
 });
 
-/**
- * A backend row whose script holds one session with `history` behind it, listed under `tag`.
- *
- * `id` and `tag` are separate parameters because they are separate fields on the row a listing
- * answers: `id` is what a read has to name and `tag` is what the meta line prints.
- */
-const backendRow = (
-	id: string,
+/** One session's script, listed under `tag`, optionally refusing every open. */
+const scriptOf = (
 	tag: string,
 	sessionId: string,
-	history: ReadonlyArray<TranscriptItem>,
-): AnyProgram => {
-	const script: AgentScript = {
-		sessionId,
-		history,
-		modes,
-		models,
-		thinking,
-		turns: [],
-		interrupt: [],
-		sessions: [sessionSummary({sessionId, lastModified: at(0), backend: tag})],
-	};
-	return aiAgentProgram({id, layer: ScriptedAiAgent.layer(script), config: {cwd: "/workspace"}});
-};
+	items: ReadonlyArray<TranscriptItem>,
+	startRefusal?: StartError,
+): AgentScript => ({
+	sessionId,
+	history: items,
+	modes,
+	models,
+	thinking,
+	turns: [],
+	interrupt: [],
+	sessions: [sessionSummary({sessionId, lastModified: at(0), backend: tag})],
+	...(startRefusal === undefined ? {} : {startRefusal}),
+});
+
+/**
+ * A backend row over one script.
+ *
+ * `id` and the script's backend tag are separate strings because they are separate fields on the
+ * row a listing answers: `id` is what a read has to name and the tag is what the meta line prints.
+ */
+const programOf = (id: string, script: AgentScript): AnyProgram =>
+	aiAgentProgram({id, layer: ScriptedAiAgent.layer(script), config: {cwd: "/workspace"}});
 
 const history = [said("m-1", "one"), said("m-2", "two"), said("m-3", "three")];
 
 const PROGRAM_ID = "pi-session";
+const SEALED_ID = "pi-sealed";
 const BACKEND_TAG = "pi";
 
-const rows = [backendRow(PROGRAM_ID, BACKEND_TAG, "s-1", history)];
+const sealed = new StartError({
+	reason: "transport",
+	cwd: "/workspace",
+	detail: "this script refuses every open",
+});
+
+const sealedScript = scriptOf(BACKEND_TAG, "s-2", history, sealed);
+
+const rows = [
+	programOf(PROGRAM_ID, scriptOf(BACKEND_TAG, "s-1", history)),
+	programOf(SEALED_ID, sealedScript),
+];
 
 /** The real process machinery, so "nothing was spawned" is a claim about the thing that spawns. */
 const kernel = (): Layer.Layer<Processes | ProcessTable | Registry | Checkpoints> =>
@@ -142,12 +167,30 @@ describe("reading a session's transcript", () => {
 		Effect.gen(function* () {
 			const raised = yield* Effect.flip(read({programId: PROGRAM_ID, sessionId: "gone"}));
 
-			assert.strictEqual(raised._tag, "tuval/ai-agent/StartError");
+			assert.strictEqual(raised._tag, "tuval/ai-agent/TranscriptError");
 			assert.strictEqual(
-				raised._tag === "tuval/ai-agent/StartError" ? raised.reason : null,
+				raised._tag === "tuval/ai-agent/TranscriptError" ? raised.reason : null,
 				"session-not-found",
 			);
 		}).pipe(Effect.provide(kernel())),
+	);
+
+	it.effect("acquires no session: it answers on a backend that refuses every open", () =>
+		Effect.gen(function* () {
+			const page = yield* read({programId: SEALED_ID, sessionId: "s-2"});
+			assert.lengthOf(page.items, 3);
+		}).pipe(Effect.provide(kernel())),
+	);
+
+	it.effect("and that backend really does refuse, so the read above stayed away", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const built = yield* Layer.build(ScriptedAiAgent.layer(sealedScript));
+				const agent = Context.get(built, TuvalAiAgent);
+
+				assert.strictEqual(yield* Effect.flip(agent.start({cwd: "/workspace"})), sealed);
+			}),
+		),
 	);
 
 	it.effect("names the registered backends when the request names one that is not one", () =>

@@ -121,6 +121,31 @@ export class PageError extends Schema.TaggedError<PageError>()("tuval/ai-agent/P
 }
 
 /**
+ * Why a stored transcript did not come back. `sessionTranscript` reads the store off disk with no
+ * session open, so its cases are the store's and never the connection's — the same split
+ * `ListError` draws for `listSessions`.
+ *
+ * `session-not-found` is the whole reason this is not `PageError`: a store that does not hold the
+ * named session is a different answer from an empty page, and a read that could not tell them
+ * apart would render a lost session as a session that said nothing (epic #8070, ruling 2).
+ */
+export const TranscriptReason = Schema.Literals([
+	"session-not-found",
+	"store-unreadable",
+	"unknown-cursor",
+]);
+export type TranscriptReason = typeof TranscriptReason.Type;
+
+export class TranscriptError extends Schema.TaggedError<TranscriptError>()(
+	"tuval/ai-agent/TranscriptError",
+	{reason: TranscriptReason, sessionId: Schema.String, detail: Schema.String},
+) {
+	override get message(): string {
+		return `the stored transcript for "${this.sessionId}" could not be read (${this.reason}): ${this.detail}`;
+	}
+}
+
+/**
  * Why a session listing did not come back. Listing reads the backend's store off disk without the
  * session transport in it at all, so its cases are the store's, not the connection's.
  *

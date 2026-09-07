@@ -19,20 +19,6 @@ export const THINKING_UNSUPPORTED = "tuval/ai-agent/ThinkingUnsupported";
 export const PAGE_ERROR = "tuval/ai-agent/PageError";
 export const TRANSPORT_ERROR = "tuval/ai-agent/TransportError";
 
-/**
- * An inbound payload this end of a port cannot act on, written against that port's own tag.
- *
- * The tag has to be the port's, because the window renders by tag (ruling 3, #7570) and a
- * misdirected mode-set shown as a prompt error lands in the wrong place. `refused` is not a case
- * any of these classes enumerates, and that is deliberate — like `deadlineFailure`, this refusal is
- * the graph's mistake and not one the backend can raise.
- */
-export const portRefused = (tag: string, detail: string): AgentFailure => ({
-	tag,
-	reason: "refused",
-	detail,
-});
-
 export const startRefused = (phase: string): AgentFailure => ({
 	tag: START_ERROR,
 	reason: "session-locked",
@@ -92,8 +78,8 @@ export const unknownRequest = (request: string): AgentFailure => ({
 /**
  * A second answer to a card whose first one is not settled — a repeated click, or the other window
  * over this process (#8006). It wears the answer call's own tag so the window renders it beside the
- * card, and a `reason` no error class enumerates, exactly as `portRefused` does: the refusal is the
- * core's, and no backend can raise it.
+ * card, and a `reason` no error class enumerates: the refusal is the core's, and no backend can
+ * raise it.
  */
 export const answerNotOffered = (
 	request: string,

@@ -27,7 +27,8 @@ import {
 	sendOutcome,
 	settleAccepted,
 	settledBy,
-	settlePending,
+	settleEndedSession,
+	settleFailedTurn,
 } from "./sends.ts";
 
 const failure = (tag: string, reason: string | null): AgentFailure => ({
@@ -82,20 +83,20 @@ describe("the ledger", () => {
 		const held = noteSend(noteSend([], {key: "old", state: "accepted"}), pending("live"));
 		expect(pendingSend(held)?.key).toBe("live");
 
-		const refused = settlePending(held, failure(PROMPT_ERROR, "refused"));
+		const refused = settleFailedTurn(held, failure(PROMPT_ERROR, "refused"));
 		expect(sendOutcome(refused, "live")).toMatchObject({state: "refused"});
 		expect(sendOutcome(refused, "old")).toEqual({key: "old", state: "accepted"});
 
 		// The failure names another call, so the send in flight is still in flight.
-		expect(settlePending(held, failure(MODE_UNSUPPORTED, null))).toEqual(held);
+		expect(settleFailedTurn(held, failure(MODE_UNSUPPORTED, null))).toEqual(held);
 		// Nothing in flight, nothing to settle.
 		expect(
-			settlePending([{key: "old", state: "accepted"}], failure(PROMPT_ERROR, "refused")),
+			settleFailedTurn([{key: "old", state: "accepted"}], failure(PROMPT_ERROR, "refused")),
 		).toEqual([{key: "old", state: "accepted"}]);
 	});
 
 	it("settles a send the session lost its footing under as uncertain, with no failure to name", () => {
-		expect(settlePending([pending("live")], null)).toEqual([
+		expect(settleEndedSession([pending("live")], null)).toEqual([
 			{key: "live", state: "uncertain", failure: null},
 		]);
 	});
@@ -163,13 +164,45 @@ describe("the ledger", () => {
 	it("settles every send in flight when the session ends under them", () => {
 		const refusal = failure(PROMPT_ERROR, "refused");
 		const running = markTurnRunning([pending("first"), pending("second")]);
-		expect(settlePending(running, refusal)).toEqual([
+		expect(settleEndedSession(running, refusal)).toEqual([
 			{key: "first", state: "refused", failure: refusal},
 			{key: "second", state: "uncertain", failure: refusal},
 		]);
-		expect(settlePending(running, null)).toEqual([
+		expect(settleEndedSession(running, null)).toEqual([
 			{key: "first", state: "uncertain", failure: null},
 			{key: "second", state: "uncertain", failure: null},
+		]);
+	});
+
+	/**
+	 * #8236's ruling: the session survives a per-turn refusal, so the sends it is not about keep
+	 * their own turns coming. Rewriting them `uncertain` here made a row `runningSend` could no
+	 * longer reach, and its turn's end then accepted nothing — the operator was told text might not
+	 * have crossed when it did.
+	 */
+	it("leaves the sends a per-turn failure is not about pending, with their turn progress", () => {
+		const refusal = failure(PROMPT_ERROR, "refused");
+		const running = markTurnRunning([pending("first"), pending("second")]);
+		expect(settleFailedTurn(running, refusal)).toEqual([
+			{key: "first", state: "refused", failure: refusal},
+			pending("second"),
+		]);
+
+		const bothRunning = markTurnRunning(running);
+		expect(settleFailedTurn(bothRunning, refusal)).toEqual([
+			{key: "first", state: "refused", failure: refusal},
+			{key: "second", state: "pending", turn: "running"},
+		]);
+	});
+
+	it("accepts a send that outlived a per-turn refusal when its own turn ends", () => {
+		const refusal = failure(PROMPT_ERROR, "refused");
+		const after = settleFailedTurn(markTurnRunning([pending("first"), pending("second")]), refusal);
+
+		const second = settleAccepted(markTurnRunning(after));
+		expect(second).toEqual([
+			{key: "first", state: "refused", failure: refusal},
+			{key: "second", state: "accepted"},
 		]);
 	});
 

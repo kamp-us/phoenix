@@ -43,12 +43,19 @@ import {
 	PromptError,
 	StartError,
 	ThinkingUnsupported,
+	TranscriptError,
 	type TransportError,
 	UnknownRequest,
 } from "./errors.ts";
 import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "./script.ts";
 import {newestFirst} from "./sessions.ts";
-import {type StartOptions, TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
+import {
+	type StartOptions,
+	type TranscriptPage,
+	type TranscriptQuery,
+	TuvalAiAgent,
+	type TuvalAiAgentApi,
+} from "./TuvalAiAgent.ts";
 
 interface ScriptState {
 	readonly started: boolean;
@@ -107,6 +114,28 @@ const toolItem = (id: string, answered: ScriptedAnswer): TranscriptItem => ({
 /** A plan that never ends is a fixture bug; the cap turns a hung run into a named failure. */
 const PLAN_CALL_LIMIT = 1_000;
 
+/**
+ * One page of a script's history, oldest-first, or `null` when `before` names no item in it.
+ *
+ * The two reads that serve it — `page` off the live session and `sessionTranscript` off the store —
+ * differ only in what refuses them, so the slicing is written once and each maps `null` onto its
+ * own unknown-cursor case.
+ */
+const historyPage = (
+	history: ReadonlyArray<TranscriptItem>,
+	before: string | null,
+	limit: number,
+): TranscriptPage | null => {
+	const end = before === null ? history.length : history.findIndex((item) => item.id === before);
+	if (end < 0) return null;
+	const from = Math.max(0, end - limit);
+	return {items: history.slice(from, end), hasMore: from > 0};
+};
+
+/** The port declares `limit > 0`; a caller that broke it has a bug this interface does not model. */
+const brokenLimit = (limit: number): Effect.Effect<never> =>
+	Effect.die(new Error(`a page was asked for ${limit} items; the port declares limit > 0`));
+
 const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.Scope> =>
 	Effect.gen(function* () {
 		// Acquired against the caller's Scope, so closing it shuts the queue: this layer's whole
@@ -160,6 +189,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 		});
 
 		const start = Effect.fn("TuvalAiAgent.start")(function* (options: StartOptions) {
+			if (script.startRefusal !== undefined) return yield* script.startRefusal;
 			const current = yield* Ref.get(state);
 			if (!current.live) {
 				return yield* new StartError({
@@ -304,23 +334,40 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 					detail: "the scripted transport is down and nothing reconnects it",
 				});
 			}
-			if (!Number.isInteger(limit) || limit < 1) {
-				return yield* Effect.die(
-					new Error(`page was asked for ${limit} items; the port declares limit > 0`),
-				);
-			}
-			const end =
-				before === null
-					? script.history.length
-					: script.history.findIndex((item) => item.id === before);
-			if (end < 0) {
-				return yield* new PageError({
-					reason: "unknown-cursor",
-					detail: `no item "${before}" is in this session's history`,
+			if (!Number.isInteger(limit) || limit < 1) return yield* brokenLimit(limit);
+			const planned = historyPage(script.history, before, limit);
+			return planned === null
+				? yield* new PageError({
+						reason: "unknown-cursor",
+						detail: `no item "${before}" is in this session's history`,
+					})
+				: planned;
+		});
+
+		// The store is the script's, so this answers before `start`, after a scripted disconnect and
+		// under a `startRefusal` — the same independence `listSessions` below has, and the whole
+		// point of the member (#8233).
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			if (query.sessionId !== script.sessionId) {
+				return yield* new TranscriptError({
+					reason: "session-not-found",
+					sessionId: query.sessionId,
+					detail: `the script holds session ${script.sessionId}`,
 				});
 			}
-			const from = Math.max(0, end - limit);
-			return {items: script.history.slice(from, end), hasMore: from > 0};
+			if (!Number.isInteger(query.limit) || query.limit < 1) {
+				return yield* brokenLimit(query.limit);
+			}
+			const planned = historyPage(script.history, query.before, query.limit);
+			return planned === null
+				? yield* new TranscriptError({
+						reason: "unknown-cursor",
+						sessionId: query.sessionId,
+						detail: `no item "${query.before}" is in this session's history`,
+					})
+				: planned;
 		});
 
 		// The store is the script's, not the session's: it answers before `start` and after a
@@ -340,6 +387,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			commands: Effect.map(Ref.get(state), (current) => current.commands),
 			setThinkingLevel,
 			page,
+			sessionTranscript,
 			listSessions,
 			events: Stream.fromQueue(queue),
 		};

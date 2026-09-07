@@ -26,7 +26,12 @@
 import {type Cmd, defineMachine} from "@demlik/tea";
 import {Cause, Context, Effect, Option, Schema} from "effect";
 import {defineSpell} from "../commands/spell.ts";
-import {SESSION_LIST_PATH, SessionList} from "../protocol/session-list.ts";
+import {
+	SESSION_LIST_DEADLINE_MILLIS,
+	SESSION_LIST_PATH,
+	SESSION_LIST_TIMED_OUT_TAG,
+	SessionList,
+} from "../protocol/session-list.ts";
 import type {AnyProgram, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";
@@ -64,11 +69,8 @@ export const aiAgentSessionListKernel = (
 	read: listAiAgentSessions(services).pipe(Effect.provideContext(services)),
 });
 
-/** How long the whole union may take before the call answers with a refusal instead of waiting. */
-export const SESSION_LIST_DEADLINE_MILLIS = 10_000;
-
 export class SessionListTimedOut extends Schema.TaggedError<SessionListTimedOut>()(
-	"tuval/SessionListTimedOut",
+	SESSION_LIST_TIMED_OUT_TAG,
 	{millis: Schema.Number},
 ) {
 	override get message(): string {

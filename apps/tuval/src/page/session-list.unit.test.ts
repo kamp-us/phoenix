@@ -7,8 +7,19 @@
 import {assert, describe, it} from "vitest";
 import {CallId} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
-import {SESSION_LIST_CALL_PATH, SESSION_LIST_PATH} from "../protocol/session-list.ts";
-import {readSessionList, sessionListCall} from "./session-list.ts";
+import {
+	SESSION_LIST_CALL_PATH,
+	SESSION_LIST_DEADLINE_MILLIS,
+	SESSION_LIST_PATH,
+} from "../protocol/session-list.ts";
+import {
+	atClock,
+	elapsedMillis,
+	reading,
+	readSessionList,
+	sessionListCall,
+	settled,
+} from "./session-list.ts";
 
 const okReply = (id: CallId, result: unknown) =>
 	new SpellReplyOk({type: "spell.reply", version: PROTOCOL_VERSION, id, ok: true, result});
@@ -103,6 +114,58 @@ describe("the page's session list", () => {
 		assert.strictEqual(
 			answer?._tag === "Refused" ? answer.failure.tag : undefined,
 			"tuval/BadSessionList",
+		);
+	});
+});
+
+describe("where the read has got to", () => {
+	const started = 1_000_000;
+	const outstanding = reading(started, SESSION_LIST_DEADLINE_MILLIS);
+
+	it("counts elapsed time from when the call left, clamped to its own bound", () => {
+		assert.strictEqual(elapsedMillis(outstanding, started + 6_000), 6_000);
+		assert.strictEqual(elapsedMillis(outstanding, started - 5), 0);
+		assert.strictEqual(
+			elapsedMillis(outstanding, started + SESSION_LIST_DEADLINE_MILLIS + 9_000),
+			SESSION_LIST_DEADLINE_MILLIS,
+		);
+	});
+
+	it("stays reading until the deadline, and is timed out from the moment it passes", () => {
+		assert.strictEqual(atClock(outstanding, started + 9_999)._tag, "Reading");
+
+		const past = atClock(outstanding, started + SESSION_LIST_DEADLINE_MILLIS);
+		assert.strictEqual(past._tag, "TimedOut");
+		assert.strictEqual(
+			past._tag === "TimedOut" ? past.deadlineMillis : 0,
+			SESSION_LIST_DEADLINE_MILLIS,
+		);
+	});
+
+	it("leaves a landed answer where it is, whatever the clock says", () => {
+		const landed = settled({_tag: "Listed", sessions: [], unreadable: []});
+		assert.strictEqual(atClock(landed, started + 60_000)._tag, "Listed");
+	});
+
+	it("reads the kernel's own timeout tag as the timed-out state, not as a refusal", () => {
+		const status = settled({
+			_tag: "Refused",
+			failure: {tag: "tuval/SessionListTimedOut", message: "did not answer within 10000ms"},
+		});
+
+		assert.strictEqual(status._tag, "TimedOut");
+	});
+
+	it("leaves every other refusal a refusal, so the kernel's own sentence still reaches a reader", () => {
+		const status = settled({
+			_tag: "Refused",
+			failure: {tag: "tuval/UnknownSpell", message: "no spell is registered there"},
+		});
+
+		assert.strictEqual(status._tag, "Refused");
+		assert.strictEqual(
+			status._tag === "Refused" ? status.failure.message : "",
+			"no spell is registered there",
 		);
 	});
 });

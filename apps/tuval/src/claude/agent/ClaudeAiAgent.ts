@@ -54,6 +54,7 @@ import {
 	type StartError,
 	type StartOptions,
 	ThinkingUnsupported,
+	type TranscriptQuery,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -90,6 +91,9 @@ import {
 	storeUnreadable,
 	streamFailed,
 	subprocessGone,
+	transcriptSessionNotFound,
+	transcriptUnknownCursor,
+	transcriptUnreadable,
 	unknownCursor,
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
@@ -825,6 +829,56 @@ const make = (
 		});
 
 		/**
+		 * Whether the CLI's store holds a session at all, asked only where the transcript read came
+		 * back empty. `listSessions` with no options is the whole store, which is the same call
+		 * `listSessions` below makes and the same reason it makes it that way.
+		 */
+		const storeHolds = (sessionId: string) =>
+			Effect.map(
+				Effect.tryPromise({
+					try: () => sdk.listSessions(),
+					catch: (cause) => transcriptUnreadable(sessionId, cause),
+				}),
+				(stored) => stored.some((info) => info.sessionId === sessionId),
+			);
+
+		/**
+		 * `page`'s answer off the store, with no session open (#8233). `getSessionMessages` reads the
+		 * CLI's transcript files directly, so nothing here touches the `query()` this layer's `start`
+		 * owns and the read works on a layer that never opened one.
+		 */
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			const rows = yield* Effect.tryPromise({
+				try: () => sdk.getSessionMessages(query.sessionId, {dir: query.cwd}),
+				catch: (cause) => transcriptUnreadable(query.sessionId, cause),
+			});
+			// The pin answers an empty array for a session it does not hold as readily as for one
+			// that is genuinely empty (`refusals.ts`), so the listing settles which of the two this
+			// is rather than the caller reading silence as either.
+			if (rows.length === 0 && !(yield* storeHolds(query.sessionId))) {
+				return yield* transcriptSessionNotFound(query.sessionId);
+			}
+			const {items, cursorAliases} = toHistoryItems(rows, {at: Date.now()});
+			const planned = planTranscriptPage(items, {
+				before: query.before,
+				cursorAliases,
+				limit: query.limit,
+				cursorBoundary: "containing-group",
+			});
+			if (isRefusal(planned)) {
+				if (planned.reason === "limit-not-positive") {
+					return yield* Effect.die(
+						new Error(`page was asked for ${query.limit} items; the port declares limit > 0`),
+					);
+				}
+				return yield* transcriptUnknownCursor(query.sessionId, planned.reason);
+			}
+			return {items: planned.items, hasMore: planned.next !== null};
+		});
+
+		/**
 		 * One subagent this session spawned, as its own transcript and its type (#8404).
 		 *
 		 * `page`'s shape, on a different file: the live session names it, the store reads it, and
@@ -866,6 +920,7 @@ const make = (
 			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
+			sessionTranscript,
 			subagentTranscript,
 			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),

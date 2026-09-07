@@ -14,10 +14,13 @@ import {agentPorts, agentSide, windowPorts, windowSide} from "../../ai-agent-fix
 import type {InPort, OutPort} from "../../registry/program.ts";
 import type {
 	ModePayload,
+	ModeSet,
 	PermissionPayload,
+	PermissionPendingSet,
 	PermissionRequest,
 	PromptPayload,
 	TranscriptPagePayload,
+	TranscriptPageReply,
 	TranscriptPayload,
 	WindowOmission,
 } from "./payloads.ts";
@@ -131,9 +134,10 @@ describe("the AI agent interface travels alone", () => {
 		expectTypeOf(agentPorts.transcript).toEqualTypeOf<OutPort<TranscriptPayload>>();
 		expectTypeOf(agentPorts.prompt).toEqualTypeOf<InPort<PromptPayload>>();
 		expectTypeOf(windowPorts.prompt).toEqualTypeOf<OutPort<PromptPayload>>();
-		expectTypeOf(windowPorts.pageReply).toEqualTypeOf<InPort<TranscriptPagePayload>>();
-		expectTypeOf(agentPorts.permissionPending).toEqualTypeOf<OutPort<PermissionPayload>>();
-		expectTypeOf(agentPorts.modeSet).toEqualTypeOf<InPort<ModePayload>>();
+		// An end of a two-way port is typed to its own direction, not the whole kind (#8235).
+		expectTypeOf(windowPorts.pageReply).toEqualTypeOf<InPort<TranscriptPageReply>>();
+		expectTypeOf(agentPorts.permissionPending).toEqualTypeOf<OutPort<PermissionPendingSet>>();
+		expectTypeOf(agentPorts.modeSet).toEqualTypeOf<InPort<ModeSet>>();
 
 		const ports = {...agentSide.ports, ...windowSide.ports};
 		expect(new Set(Object.values(ports).map((port) => port.kind)).size).toBe(5);

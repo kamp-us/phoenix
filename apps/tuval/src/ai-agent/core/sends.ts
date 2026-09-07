@@ -184,22 +184,31 @@ export const settleAccepted = (sends: ReadonlyArray<SendOutcome>): ReadonlyArray
 };
 
 /**
- * Settle every send in flight when something happened to the session as a whole — a transport
- * failure, a phase that went `gone`, a process that came back from a checkpoint.
- *
- * The failure names no key, so the send it is about is the one whose turn was running, or the
- * oldest in flight when none had begun; that one takes the arm its `reason` earns. Every other send
- * in flight is `uncertain` instead: the session ended under a turn the backend never began for it,
- * and nothing here can say whether the text crossed — which is the recoverable arm that never
- * resends on its own. Leaving them `pending` is the alternative, and it strands them for ever,
- * because a settled session narrates no more turns to accept them on (#8107).
+ * Which send a keyless outcome is about: the one whose turn was running, or the oldest in flight
+ * when none had begun. `null` when the failure names some other call, or nothing is in flight.
  */
-export const settlePending = (
+const namedByOrder = (
+	sends: ReadonlyArray<SendOutcome>,
+	failure: AgentFailure | null,
+): PendingSend | null => {
+	if (failure !== null && sendAfterFailure(failure) === null) return null;
+	return runningSend(sends) ?? pendingSend(sends);
+};
+
+/**
+ * The session is over — a phase that went `gone`, a process back from a checkpoint — so settle every
+ * send in flight.
+ *
+ * The failure names no key, so the send it is about takes the arm its `reason` earns and every
+ * other in flight is `uncertain`: nothing here can say whether their text crossed, and that is the
+ * recoverable arm that never resends on its own. Leaving them `pending` strands them for ever,
+ * because a dead session narrates no more turns to accept them on (#8107).
+ */
+export const settleEndedSession = (
 	sends: ReadonlyArray<SendOutcome>,
 	failure: AgentFailure | null,
 ): ReadonlyArray<SendOutcome> => {
-	if (failure !== null && sendAfterFailure(failure) === null) return sends;
-	const named = runningSend(sends) ?? pendingSend(sends);
+	const named = namedByOrder(sends, failure);
 	if (named === null) return sends;
 	return sends.map((held) => {
 		if (held.state !== "pending") return held;
@@ -207,4 +216,25 @@ export const settlePending = (
 			? settledBy(held.key, failure)
 			: {key: held.key, state: "uncertain", failure};
 	});
+};
+
+/**
+ * One turn failed and the session survived it, so settle only the send that failure is about.
+ *
+ * `phaseAfterFailure` walks a `prompting` session back to `ready`, and the design admits two sends
+ * in flight at once — so the other rows still have their own turns coming and stay `pending` with
+ * their `turn` progress intact, to be accepted under their own keys when those turns end.
+ * Rewriting them `uncertain` here left a send the ledger could never settle truthfully: once a row
+ * leaves `pending`, `runningSend` no longer reaches it and its turn's end accepts nothing, so the
+ * operator was told text might not have crossed when it did (#8236).
+ *
+ * The failure is never `null` on this arm: a session that survives failed at something, and the
+ * keyless session-wide settle is `settleEndedSession`'s.
+ */
+export const settleFailedTurn = (
+	sends: ReadonlyArray<SendOutcome>,
+	failure: AgentFailure,
+): ReadonlyArray<SendOutcome> => {
+	const named = namedByOrder(sends, failure);
+	return named === null ? sends : noteSend(sends, settledBy(named.key, failure));
 };
