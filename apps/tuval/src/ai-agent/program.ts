@@ -26,7 +26,7 @@ import {
 	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	aiAgentSessionMachine,
-	holdsPartialItem,
+	checkpointWorthy,
 	MODE_UNSUPPORTED,
 	PAGE_ERROR,
 	portRefused,
@@ -189,10 +189,10 @@ export const aiAgentProgram = <RIn = never>(
 		subs,
 		resume: resumeMessages,
 		restorable: (raw) => readCheckpoint(raw, options.config.cwd) !== null,
-		// A partial item is one frame of a reply the next delta replaces, so a state holding one is
-		// worth no write: without this every delta rewrites the transcript, and a stop mid-turn saves
-		// the half-written reply as the reply (#8160).
-		checkpointWorthy: (state) => !holdsPartialItem(state),
+		// One gate over both things that move per frame: a partial item, and a running subagent's
+		// slot (`core/state.ts`). Without it every delta rewrites the transcript, and a stop mid-turn
+		// saves the half-written reply as the reply (#8160).
+		checkpointWorthy,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
 		...(options.inspector === undefined ? {} : {inspector: options.inspector}),
