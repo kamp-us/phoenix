@@ -122,6 +122,7 @@ export interface SocketSession {
 }
 
 const CLOSE_POLICY = 1008;
+const quietPageClose = (code: number): boolean => code === 1000 || code === 1001 || code === 1006;
 
 /** Every attached page's writer. A catalog change reaches the pages already open through these. */
 type Attached = Set<(frame: ServerFrame) => Effect.Effect<void>>;
@@ -234,7 +235,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	} satisfies TransportServer;
 });
 
-const session = Effect.fn("Tuval.transport.session")(function* (
+export const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
 	spells: SpellChannel,
@@ -423,19 +424,23 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 		yield* Effect.ignore(Deferred.succeed(ready, undefined));
 	});
 
-	yield* socket.runString(
-		(text) => {
-			const decoded = decodeClientFrame(text);
-			// A frame can land while `greet` is still forking the pumps; waiting here is what keeps an
-			// attach from marking a process before the stream that serves it is running.
-			return Deferred.await(ready).pipe(
-				Effect.andThen(
-					decoded._tag === "Frame"
-						? onFrame(decoded.frame)
-						: close(`undecodable frame: ${decoded.reason}`),
-				),
-			);
-		},
-		{onOpen: greet},
-	);
+	yield* socket
+		.runString(
+			(text) => {
+				const decoded = decodeClientFrame(text);
+				// A frame can land while `greet` is still forking the pumps; waiting here is what keeps an
+				// attach from marking a process before the stream that serves it is running.
+				return Deferred.await(ready).pipe(
+					Effect.andThen(
+						decoded._tag === "Frame"
+							? onFrame(decoded.frame)
+							: close(`undecodable frame: ${decoded.reason}`),
+					),
+				);
+			},
+			{onOpen: greet},
+		)
+		.pipe(
+			Effect.catchFilter(Socket.SocketCloseError.filterClean(quietPageClose), () => Effect.void),
+		);
 });
