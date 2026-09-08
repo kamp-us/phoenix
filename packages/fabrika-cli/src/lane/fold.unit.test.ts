@@ -923,7 +923,7 @@ describe("the board-proven terminals", () => {
 		taskId: string,
 		event: string,
 		outcome: string,
-		evidence: {landed?: ReadonlyArray<number>; sha?: string} = {},
+		evidence: {landed?: ReadonlyArray<number>; sha?: string; assertedBy?: string} = {},
 	) =>
 		applyBoardTerminal(
 			compiled,
@@ -1079,6 +1079,70 @@ describe("the board-proven terminals", () => {
 
 		expect(parsed).toMatchObject({_tag: "Malformed"});
 		expect(parsed._tag === "Malformed" && parsed.defects[0]).toContain("carrying no `outcome`");
+	});
+
+	it("carries `assertedBy` onto the line when the caller supplied the link", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = settleWith(compiled, [], "issue", LANDED_EVENT, "completed", {
+			landed: [6894],
+			assertedBy: "caller",
+		});
+
+		expect(applied).toMatchObject({
+			_tag: "Appendable",
+			entry: {event: "ISSUE.LANDED", landed: [6894], assertedBy: "caller"},
+		});
+	});
+
+	it("leaves a body-proven landing's line without an `assertedBy` at all", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = settleWith(compiled, [], "issue", LANDED_EVENT, "completed", {landed: [6874]});
+
+		expect(applied._tag === "Appendable" && applied.entry).not.toHaveProperty("assertedBy");
+	});
+
+	it("parses an asserted landing and folds it exactly as a body-proven one", () => {
+		const compiled = lane(coderWorkflow());
+		const parsed = parseLog(
+			`${JSON.stringify({
+				task: "issue",
+				event: "ISSUE.LANDED",
+				at: AT,
+				outcome: "completed",
+				landed: [6894],
+				assertedBy: "caller",
+			})}\n`,
+		);
+		if (parsed._tag !== "Parsed") throw new Error("fixture log does not parse");
+
+		expect(parsed.entries[0]).toMatchObject({assertedBy: "caller"});
+		expect(deriveStatus(compiled, statesOf(compiled, parsed.entries))).toMatchObject({
+			stateValue: "board:landed",
+		});
+	});
+
+	it("refuses an `assertedBy` riding an event that establishes no link", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: AT, assertedBy: "caller"})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect(parsed._tag === "Malformed" && parsed.defects[0]).toContain("only a LANDED");
+	});
+
+	it("refuses an `assertedBy` naming no source", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({
+				task: "issue",
+				event: "ISSUE.LANDED",
+				at: AT,
+				outcome: "completed",
+				landed: [6894],
+				assertedBy: "",
+			})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
 	});
 
 	it("refuses an `outcome` riding an event that stands on no closure", () => {

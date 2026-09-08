@@ -87,6 +87,18 @@ export interface LogEntry {
 	 * rather than a hole in the evidence.
 	 */
 	readonly sha?: string;
+	/**
+	 * Who established the link between a {@link LANDED_EVENT}'s issue and the merge it names —
+	 * present only where a caller supplied it, absent where a pull request body proved it.
+	 *
+	 * The two landings are not equally proven and the record has to say which one this is: a body
+	 * link is on the board for anyone to re-read, while `--landed-by` is a person's word that this
+	 * merge is what discharged this lane. The board still proved the merge either way, so the
+	 * difference is exactly the link — and it is the absent field that carries the stronger claim,
+	 * which is what keeps every already-recorded line true. The set is
+	 * [`settle.ts`](settle.ts)'s.
+	 */
+	readonly assertedBy?: string;
 }
 
 export type ParseLogResult =
@@ -123,6 +135,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			corrects?: unknown;
 			outcome?: unknown;
 			sha?: unknown;
+			assertedBy?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -250,6 +263,23 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a \`sha\` field that names no commit`);
 			continue;
 		}
+		// Only a landing has a link to attribute, so the field anywhere else is a line claiming a
+		// provenance for evidence it does not carry.
+		if (
+			record.assertedBy !== undefined &&
+			!(typeof record.assertedBy === "string" && record.assertedBy !== "")
+		) {
+			defects.push(
+				`line ${index + 1} carries an \`assertedBy\` field that names no source of the link`,
+			);
+			continue;
+		}
+		if (record.assertedBy !== undefined && bareEvent(record.event) !== LANDED_EVENT) {
+			defects.push(
+				`line ${index + 1} carries \`assertedBy\` on a "${bareEvent(record.event)}" event — only a ${LANDED_EVENT} names who established its link`,
+			);
+			continue;
+		}
 		if (!corrected && record.corrects !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`corrects\` on a "${bareEvent(record.event)}" event — only a ${CORRECTED_EVENT} supersedes another line`,
@@ -274,6 +304,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
+			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -708,6 +739,8 @@ export interface SettlementEvidence {
 	readonly landed?: ReadonlyArray<number>;
 	/** The merge commit those pull requests left, where the board published one. */
 	readonly sha?: string;
+	/** Who established the link, on a landing a caller asserted; absent where a body proved it. */
+	readonly assertedBy?: string;
 }
 
 /**
@@ -777,6 +810,7 @@ export const applyBoardTerminal = (
 			outcome: evidence.outcome,
 			...(evidence.landed === undefined ? {} : {landed: evidence.landed}),
 			...(evidence.sha === undefined ? {} : {sha: evidence.sha}),
+			...(evidence.assertedBy === undefined ? {} : {assertedBy: evidence.assertedBy}),
 		},
 		previous,
 		current: deriveStatus(lane, {...states, [taskId]: next}),
