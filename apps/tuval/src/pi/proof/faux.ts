@@ -75,9 +75,11 @@ export const fauxPiLayer = ({root, replies}: FauxPiOptions): Layer.Layer<TuvalAi
 							modelRuntime,
 							agentDir: join(root, ".tuval", "pi-agent"),
 							projectRoot: root,
-							// `"all"` is no tools at all; `"builtin"` drops the four disk-touching built-ins
-							// and leaves extension tools enabled (`pi-coding-agent` `dist/core/sdk.d.ts`),
-							// which is what lets the operator's turn actually reach `subagent`.
+							// `"all"` is no tools at all; `"builtin"` leaves extension tools active and the four
+							// disk-touching built-ins inactive (`pi-coding-agent` `dist/core/sdk.js:141,144`
+							// with `agent-session.js:2086-2100`), which is what lets the turn reach
+							// `subagent`. Weaker than `"all"`, though: under `"builtin"` the builtins stay
+							// registered and allowed, so a `setActiveToolsByName` could bring them back.
 							noTools: extensionPaths.length === 0 ? "all" : "builtin",
 							...(extensionPaths.length === 0 ? {} : {extensionPaths}),
 						});

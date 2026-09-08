@@ -99,8 +99,11 @@ catalog:
   mermaid: 11.17.2
   # Pi's subagent extension (#8555), pinned exact and loaded behind a default-off flag. It ships raw
   # TypeScript (`exports: {".": "./index.ts"}`), so Tuval never imports it — Pi's own jiti-backed
-  # extension loader reads the package directory. Its `@earendil-works/*` peers are all optional and
-  # resolve to the 0.85.1 copies the catalog and the overrides below already pin.
+  # extension loader reads the package directory. Its four `@earendil-works/*` peers are optional and
+  # resolve to the 0.85.1 copies the catalog and the overrides below already pin, but it also takes a
+  # HARD `@earendil-works/pi-server@0.85.0` — a tenth family member, off the 0.85.1 the other nine
+  # sit on. Nothing in the workspace declares `pi-server`, so that copy is alone in the tree and
+  # catalog-guard never sees it; re-read the lockfile for it when this pin moves.
   'pi-subagents': 0.66.0
   react: 19.2.6
   react-dom: 19.2.6

@@ -47,11 +47,23 @@ describe("the piSubagents flag", () => {
 });
 
 describe("what Pi's own loader registers", () => {
-	it("registers the subagent tools when the flag is on", async () => {
-		const names = await toolNames(subagentExtensionPaths({piSubagents: true}));
-		expect(names).toContain("subagent");
-		expect(names).toContain("bg_wait");
-	});
+	/**
+	 * Well past vitest's 5s default, and the cost is real rather than a flake to absorb: `reload()`
+	 * makes Pi's jiti loader compile `pi-subagents`' raw TypeScript entry and the `src/**` graph
+	 * behind it from cold, which on a CI runner with no warm jiti cache took longer than the default
+	 * allows (#8596 review round 1).
+	 */
+	const COLD_JITI_COMPILE = 120_000;
+
+	it(
+		"registers the subagent tools when the flag is on",
+		async () => {
+			const names = await toolNames(subagentExtensionPaths({piSubagents: true}));
+			expect(names).toContain("subagent");
+			expect(names).toContain("bg_wait");
+		},
+		COLD_JITI_COMPILE,
+	);
 
 	it("registers nothing when the flag is off", async () => {
 		expect(await toolNames(subagentExtensionPaths({piSubagents: false}))).toEqual([]);

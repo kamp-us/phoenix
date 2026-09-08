@@ -655,12 +655,40 @@ describe("a subagent's start and end over the delta stream", () => {
 		expect(folded.events.some((event) => event.kind === "subagent")).toBe(false);
 	});
 
-	it("labels a call that names no agent by the tool that made it", () => {
-		const wait: PiTranscriptItem = {...finished, toolName: "bg_wait", input: {all: true}};
-		const folded = deltaEventsOf(opened().next, delta([wait], 2));
+	it("labels a spawn that names no agent by the tool that made it", () => {
+		const script: PiTranscriptItem = {...finished, input: {workflowScript: "runs.run('a', {})"}};
+		const folded = deltaEventsOf(opened().next, delta([script], 2));
 		const slots = folded.events.filter((event) => event.kind === "subagent");
 		expect(slots).toHaveLength(1);
-		expect(slots[0]?.slot.type).toBe("bg_wait");
+		expect(slots[0]?.slot.type).toBe("subagent");
+	});
+
+	// `subagent` is one multiplexed tool: with an `action` it manages rather than spawns, and the
+	// `agent` beside one names that action's target (`pi-subagents` `src/extension/schemas.ts:283-287`,
+	// `src/runs/foreground/subagent-executor.ts:5976`). A row for one is a worker that never ran.
+	it.each([
+		["list", {action: "list"}],
+		["status against an agent", {action: "status", agent: "reviewer"}],
+		["stop", {action: "stop", id: "run-3"}],
+		["schedule.create", {action: "schedule.create", agent: "worker", name: "nightly"}],
+		["mission.close", {action: "mission.close", id: "m-1"}],
+	])("draws no row for a management call: %s", (_case, managed) => {
+		const call: PiTranscriptItem = {
+			...spawning,
+			content: [{type: "toolCall", toolCallId: "call-9", toolName: "subagent", input: managed}],
+		};
+		const started = deltaEventsOf(opened().next, delta([call], 2));
+		const ended = deltaEventsOf(started.next, delta([{...finished, input: managed}], 3));
+		expect(started.events.some((event) => event.kind === "subagent")).toBe(false);
+		expect(ended.events.some((event) => event.kind === "subagent")).toBe(false);
+	});
+
+	// `bg_wait` waits on runs that are already slots (`src/runs/background/wait-tool.ts:36`), so a
+	// row for one duplicates a worker the list already draws.
+	it("draws no row for a bg_wait", () => {
+		const wait: PiTranscriptItem = {...finished, toolName: "bg_wait", input: {all: true}};
+		const folded = deltaEventsOf(opened().next, delta([wait], 2));
+		expect(folded.events.some((event) => event.kind === "subagent")).toBe(false);
 	});
 });
 

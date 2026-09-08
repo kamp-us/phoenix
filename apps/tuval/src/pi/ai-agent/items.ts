@@ -153,22 +153,35 @@ export const itemsOf = (item: PiTranscriptItem): ReadonlyArray<TranscriptItem> =
 };
 
 /**
- * The two tools `pi-subagents` registers on the parent session — `subagent`
- * (`pi-subagents` `src/extension/index.ts:750`) and `bg_wait`
- * (`src/runs/background/wait-tool.ts:36`). A call to either is a worker this session started.
+ * Whether one tool call *starts* a worker, which is the only kind the running list draws.
+ *
+ * `pi-subagents` registers two tools and only one of them ever spawns. `subagent` is multiplexed:
+ * its `action` field is documented as the switch — "when present, tool operates in management mode"
+ * (`pi-subagents` `src/extension/schemas.ts:283-287`) — and the executor branches on exactly that,
+ * `if (action) { … }` answering out of the management arm with the spawn path as everything after
+ * it (`src/runs/foreground/subagent-executor.ts:5960,5976`). So any of the 55 actions
+ * (`src/shared/types.ts:2757` — `list`, `status`, `stop`, `steer`, the `schedule.*` and `mission.*`
+ * families) starts nothing, and an `agent` beside one names that action's *target* rather than a
+ * worker. `bg_wait` waits on work that is already running (`src/runs/background/wait-tool.ts:36`)
+ * and starts none of it.
+ *
+ * An input this cannot read draws no row either: a worker the operator cannot find is worse than a
+ * worker the list is missing.
  */
-const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["subagent", "bg_wait"]);
+const spawns = (toolName: string, input: unknown): boolean =>
+	toolName === "subagent" &&
+	Predicate.isObject(input) &&
+	(input as {readonly action?: unknown}).action === undefined;
 
 /**
- * What kind of worker a call started, in the extension's own words: the `agent` argument, which
- * names one of the configured agents (`pi-subagents` `src/extension/schemas.ts:283`). A call that
- * names none — a `bg_wait`, or a workflow script that picks its own children — is labelled by the
- * tool, because the row has to say something and the tool name is the only true thing left.
+ * What kind of worker the call started, in the extension's own words: the `agent` argument, which
+ * names one of the configured agents (`pi-subagents` `src/extension/schemas.ts:283`). A spawn that
+ * names none — a `workflowScript`, which picks its own children — is labelled by the tool, because
+ * the row has to say something and that is the only true thing left.
  */
-const subagentType = (toolName: string, input: unknown): string => {
-	if (!Predicate.isObject(input)) return toolName;
-	const agent = (input as {readonly agent?: unknown}).agent;
-	return typeof agent === "string" && agent !== "" ? agent : toolName;
+const subagentType = (input: unknown): string => {
+	const agent = Predicate.isObject(input) ? (input as {readonly agent?: unknown}).agent : undefined;
+	return typeof agent === "string" && agent !== "" ? agent : "subagent";
 };
 
 /** The newest thing the worker wrote, off a result already bounded by `boundToolResult`. */
@@ -197,11 +210,11 @@ const countOf = (tokens: number | undefined): number =>
 export const subagentSlotsOf = (item: PiTranscriptItem): ReadonlyArray<SubagentSlot> => {
 	if (item.role === "assistant") {
 		return item.content.flatMap((part) =>
-			part.type === "toolCall" && SUBAGENT_TOOLS.has(part.toolName)
+			part.type === "toolCall" && spawns(part.toolName, part.input)
 				? [
 						{
 							id: itemId(part.toolCallId),
-							type: subagentType(part.toolName, part.input),
+							type: subagentType(part.input),
 							lastLine: "",
 							startedAt: item.timestamp,
 							tokens: 0,
@@ -212,11 +225,11 @@ export const subagentSlotsOf = (item: PiTranscriptItem): ReadonlyArray<SubagentS
 				: [],
 		);
 	}
-	if (item.role !== "tool" || !SUBAGENT_TOOLS.has(item.toolName)) return [];
+	if (item.role !== "tool" || !spawns(item.toolName, item.input)) return [];
 	return [
 		{
 			id: itemId(item.toolCallId),
-			type: subagentType(item.toolName, item.input),
+			type: subagentType(item.input),
 			lastLine: lastLineOf(boundToolResult(textOf(item.content)).text),
 			startedAt: item.timestamp,
 			tokens: countOf(item.usage?.totalTokens),
