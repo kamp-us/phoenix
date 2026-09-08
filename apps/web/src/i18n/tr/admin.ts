@@ -97,6 +97,7 @@ export const admin = {
 	"admin.agent.settings": "Pi ayarları",
 	"admin.agent.picker.loading": "yükleniyor",
 	"admin.agent.picker.none": "seçili değil",
+	"admin.agent.picker.empty": "seçenek sunulmuyor",
 	"admin.agent.setting.model": "model",
 	"admin.agent.setting.thinking": "düşünme eforu",
 	"admin.agent.select.model": "Pi modeli",

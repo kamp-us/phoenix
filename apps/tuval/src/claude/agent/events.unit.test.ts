@@ -33,11 +33,11 @@ describe("events over a captured tool turn", () => {
 					// names — then the turn, which ends on the `ready` its `result` carries.
 					[
 						"phase",
-						"phase",
 						"mode",
 						"model",
 						"commands",
 						"thinking",
+						"phase",
 						"usage",
 						"version",
 						"item",
@@ -115,11 +115,11 @@ describe("every kind rides the one stream", () => {
 					[...turn, ...card, ...rest].map((event) => event.kind),
 					[
 						"phase",
-						"phase",
 						"mode",
 						"model",
 						"commands",
 						"thinking",
+						"phase",
 						"usage",
 						"version",
 						"item",

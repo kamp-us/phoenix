@@ -118,13 +118,12 @@ describe("start opens one streaming query", () => {
 		}),
 	);
 
-	it.effect("emits starting, the handshake's ready phase, then every list it offers", () =>
+	it.effect("emits starting, every list it offers, then the handshake's ready phase", () =>
 		on({modes: MODES}, (agent) =>
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)), [
 					{kind: "phase", phase: "starting"},
-					{kind: "phase", phase: "ready"},
 					// The opening mode, not the layer's raw held `null`: nothing has called `setMode`, so
 					// what the query opened on is the row's own `permissionMode` (#7828).
 					{kind: "mode", current: Mode.make("default"), available: MODES},
@@ -133,6 +132,9 @@ describe("start opens one streaming query", () => {
 					// A CLI offering no catalog offers no effort levels either: the set is a model's
 					// (#8062), and there is no model here to read one off.
 					{kind: "thinking", current: null, available: []},
+					// Last, behind the catalogs it resolves — see `.patterns/agent-layer-phase-contract.md`
+					// and the ordering case below (#8425).
+					{kind: "phase", phase: "ready"},
 				]);
 			}),
 		),
@@ -168,11 +170,11 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 				assert.lengthOf(scripted.opened[0]?.record.prompts ?? [], 0);
 				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)), [
 					{kind: "phase", phase: "starting"},
-					{kind: "phase", phase: "ready"},
 					{kind: "mode", current: Mode.make("default"), available: MODES},
 					{kind: "model", current: null, available: []},
 					{kind: "commands", available: []},
 					{kind: "thinking", current: null, available: []},
+					{kind: "phase", phase: "ready"},
 				]);
 			}),
 		),
@@ -834,6 +836,25 @@ describe("setThinkingLevel", () => {
 					current: null,
 					available: [],
 				});
+			}),
+		),
+	);
+
+	/**
+	 * The ordering the composer's `offerResolved` rests on (#8425). `shell/chat/composer-bridge.ts`
+	 * reads "the layer has said what this session offers" off the phase, because an empty offered
+	 * set is otherwise indistinguishable from an unanswered one — so a `ready` ahead of these
+	 * catalogs tells the picker the offer resolved empty for the length of four subprocess
+	 * round-trips. The contract is `.patterns/agent-layer-phase-contract.md`.
+	 */
+	it.effect("closes the open on ready, behind every catalog it resolves (#8425)", () =>
+		on({models: EFFORT, model: "opus", modes: MODES}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const kinds = (yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS))).map(
+					(event) => event.kind,
+				);
+				assert.deepStrictEqual(kinds, ["phase", "mode", "model", "commands", "thinking", "phase"]);
 			}),
 		),
 	);

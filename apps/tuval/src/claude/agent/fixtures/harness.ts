@@ -26,8 +26,9 @@ export const MODES: ReadonlyArray<Mode> = [
 ];
 
 /**
- * What `start` itself emits: starting, ready, the mode list, the model list (#7981), then the
- * slash-command catalog (#8060) and the thinking-level set that model offers (#8062).
+ * What `start` itself emits: starting, the mode list, the model list (#7981), the slash-command
+ * catalog (#8060), the thinking-level set that model offers (#8062), and the handshake's `ready`
+ * last — behind the catalogs, never ahead of them (#8425).
  */
 export const START_EVENTS = 6;
 

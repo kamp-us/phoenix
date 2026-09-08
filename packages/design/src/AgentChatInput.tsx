@@ -419,8 +419,10 @@ export function AgentChatInput({
 	const [connection, setConnection] = useState<ConnectionState>("loading");
 	const [state, setState] = useState<Record<string, unknown>>();
 	const [commands, setCommands] = useState<readonly PiCommand[]>([]);
-	const [models, setModels] = useState<readonly PiModel[]>([]);
-	const [thinkingLevels, setThinkingLevels] = useState<readonly PiThinkingLevel[]>([]);
+	// `undefined` until the host answers, and an answer of `[]` is a real one: a harness that offers
+	// no models or no thinking levels is not a harness still loading them (#8425).
+	const [models, setModels] = useState<readonly PiModel[]>();
+	const [thinkingLevels, setThinkingLevels] = useState<readonly PiThinkingLevel[]>();
 	const [projectTrust, setProjectTrust] = useState<PiProjectTrust>("approve");
 	const [settingsChanging, setSettingsChanging] = useState(false);
 	const [files, setFiles] = useState<readonly string[]>([]);
@@ -472,10 +474,10 @@ export function AgentChatInput({
 		])
 			.then(([nextState, nextCommands, nextModels, nextThinkingLevels]) => {
 				if (!current) return;
-				const selectableThinkingLevels = nextThinkingLevels.filter((level) => level !== "off");
+				const selectableThinkingLevels = nextThinkingLevels?.filter((level) => level !== "off");
 				if (
 					mockWhenUnavailable &&
-					(nextModels.length === 0 || selectableThinkingLevels.length === 0)
+					((nextModels?.length ?? 0) === 0 || (selectableThinkingLevels?.length ?? 0) === 0)
 				) {
 					applyMockHarness();
 					return;
@@ -619,7 +621,18 @@ export function AgentChatInput({
 			// learns its per-model level set after connecting would otherwise leave a live picker
 			// over no rows (#8062).
 			const nextLevels = status && thinkingLevelList(status.thinkingLevels);
-			if (nextLevels) setThinkingLevels(nextLevels);
+			if (nextLevels) {
+				setThinkingLevels(nextLevels);
+				// A level the session has stopped offering is not the level it is running on. Left
+				// standing it reads as an operator selection the backend would refuse — and on the
+				// harness variant it kept rendering as the trigger's own label (#8425).
+				setState((current) => {
+					const held = thinkingLevelValue(current?.thinkingLevel);
+					if (held === undefined || nextLevels.includes(held)) return current;
+					const {thinkingLevel: _dropped, ...rest} = current ?? {};
+					return rest;
+				});
+			}
 			const nextLevel = status && thinkingLevelValue(status.thinkingLevel);
 			if (nextLevel) setState((current) => ({...(current ?? {}), thinkingLevel: nextLevel}));
 			if (status && booleanValue(status, "available") === false) setConnection("unavailable");
@@ -731,7 +744,7 @@ export function AgentChatInput({
 	}
 
 	async function changeModel(value: string | undefined) {
-		const nextModel = models.find((model) => modelValue(model) === value);
+		const nextModel = models?.find((model) => modelValue(model) === value);
 		if (!nextModel || value === selectedModelValue(state)) return;
 		if (usingMockHarness) {
 			setState((current) => ({...(current ?? {}), model: nextModel}));
@@ -747,7 +760,7 @@ export function AgentChatInput({
 				activeBridge.loadPiThinkingLevels(),
 			]);
 			applyState(nextState);
-			setThinkingLevels(nextThinkingLevels.filter((level) => level !== "off"));
+			setThinkingLevels(nextThinkingLevels?.filter((level) => level !== "off"));
 			addActivity(t("admin.agent.activity.modelChanged", {model: nextModel.name}));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : t("admin.agent.error.model"));
@@ -807,7 +820,7 @@ export function AgentChatInput({
 			applyState(nextState);
 			setCommands(nextCommands);
 			setModels(nextModels);
-			setThinkingLevels(nextThinkingLevels.filter((level) => level !== "off"));
+			setThinkingLevels(nextThinkingLevels?.filter((level) => level !== "off"));
 			addActivity(
 				t(
 					nextProjectTrust === "approve"
@@ -899,13 +912,15 @@ export function AgentChatInput({
 		}
 	}
 
-	const model = runningModelLabel(state, models);
+	const model = runningModelLabel(state, models ?? []);
 	// Manti's `SelectItem.label` is `string`, and the select collection stringifies it for typeahead
 	// (`itemToString: (item) => item.label`), so this list carries the provider in the label itself
 	// while the Menu-backed picker below renders it as its own dimmed span. See #8065.
-	const modelItems = useMemo<SelectItem[]>(
+	// Each list stays `undefined` while its offer is unresolved, so the pickers are handed the same
+	// three-way answer the bridge gave rather than a flattened array (#8425).
+	const modelItems = useMemo<SelectItem[] | undefined>(
 		() =>
-			models.map((candidate) => ({
+			models?.map((candidate) => ({
 				value: modelValue(candidate),
 				label: providersCollide(models)
 					? `${candidate.name} (${candidate.provider})`
@@ -913,36 +928,37 @@ export function AgentChatInput({
 			})),
 		[models],
 	);
-	const thinkingItems = useMemo<SelectItem[]>(
-		() => thinkingLevels.map((level) => ({value: level, label: t(thinkingLevelKeys[level])})),
+	const thinkingItems = useMemo<SelectItem[] | undefined>(
+		() => thinkingLevels?.map((level) => ({value: level, label: t(thinkingLevelKeys[level])})),
 		[thinkingLevels, t],
 	);
-	const focusedModelItems = useMemo<PickerItem[]>(
+	const focusedModelItems = useMemo<PickerItem[] | undefined>(
 		() =>
-			models.map((candidate) => ({
+			models?.map((candidate) => ({
 				value: modelValue(candidate),
 				label: candidate.name,
 				...(providersCollide(models) ? {note: candidate.provider} : {}),
 			})),
 		[models],
 	);
-	const focusedThinkingItems = useMemo<PickerItem[]>(
+	const focusedThinkingItems = useMemo<PickerItem[] | undefined>(
 		() =>
-			thinkingLevels.map((level) => ({
+			thinkingLevels?.map((level) => ({
 				value: level,
 				label: t(thinkingLevelKeys[level]),
 				icon: thinkingLevelIcons[level],
 			})),
 		[thinkingLevels, t],
 	);
-	const selectedModel = selectedModelValue(state) ?? modelItems[0]?.value;
+	const selectedModel = selectedModelValue(state) ?? modelItems?.[0]?.value;
 	const stateThinking = thinkingLevelValue(state?.thinkingLevel);
 	const selectedThinking = stateThinking !== "off" ? stateThinking : undefined;
 	const settingsDisabled = disabled || settingsChanging || connection !== "ready";
+	const offeredThinking = thinkingItems?.length ?? 0;
 	const thinkingDisabled =
 		settingsDisabled ||
-		thinkingItems.length === 0 ||
-		(thinkingItems.length === 1 && selectedThinking !== undefined);
+		offeredThinking === 0 ||
+		(offeredThinking === 1 && selectedThinking !== undefined);
 	const focusedDelivery =
 		connection === "working" ? (delivery === "prompt" ? "follow_up" : delivery) : "prompt";
 	const focusedMenuItems: MenuItem[] = [
@@ -1130,7 +1146,7 @@ export function AgentChatInput({
 											items={focusedModelItems}
 											value={selectedModel}
 											onValueChange={(value) => void changeModel(value)}
-											disabled={settingsDisabled || focusedModelItems.length < 2}
+											disabled={settingsDisabled || (focusedModelItems?.length ?? 0) < 2}
 										/>
 										<SettingMenu
 											label={t("admin.agent.setting.thinking")}
@@ -1151,12 +1167,12 @@ export function AgentChatInput({
 														{t("admin.agent.select.model")}
 													</span>
 												}
-												items={modelItems}
+												items={modelItems ?? []}
 												value={selectedModel ? [selectedModel] : []}
 												onValueChange={(values) => void changeModel(values[0])}
 												placement="top-start"
 												size="sm"
-												disabled={settingsDisabled || modelItems.length < 2}
+												disabled={settingsDisabled || (modelItems?.length ?? 0) < 2}
 											/>
 										</div>
 										<div className="kp-agent-chat__setting">
@@ -1168,9 +1184,15 @@ export function AgentChatInput({
 														{t("admin.agent.select.thinking")}
 													</span>
 												}
-												items={thinkingItems}
+												items={thinkingItems ?? []}
 												value={selectedThinking ? [selectedThinking] : []}
-												placeholder={t("admin.agent.picker.none")}
+												placeholder={t(
+													thinkingItems === undefined
+														? "admin.agent.picker.loading"
+														: thinkingItems.length === 0
+															? "admin.agent.picker.empty"
+															: "admin.agent.picker.none",
+												)}
 												onValueChange={(values) => void changeThinkingLevel(values[0])}
 												placement="top-start"
 												size="sm"
@@ -1318,7 +1340,11 @@ export function AgentChatInput({
 export interface SettingMenuProps {
 	/** The control's accessible name, and the group heading inside the menu. */
 	readonly label: string;
-	readonly items: readonly PickerItem[];
+	/**
+	 * What the host offers, or `undefined` while the offer is unresolved. `[]` is a resolved answer
+	 * — the host knows and offers nothing — and reads that way rather than as loading (#8425).
+	 */
+	readonly items: readonly PickerItem[] | undefined;
 	readonly value?: string;
 	readonly onValueChange: (value: string) => void;
 	readonly disabled?: boolean;
@@ -1337,13 +1363,23 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 	// checked row. Seeding it to `value` at the open makes the machine's own scroll-into-view land
 	// there and the first arrow key move from there. See ADR 0361.
 	const [highlighted, setHighlighted] = useState<string | null>(null);
-	const selected = items.find((item) => item.value === value);
-	// Two different unselected states, and only one of them is loading: an empty `items` is a host
-	// that has not resolved what it can offer, while a populated `items` with no `value` is a
-	// setting the session simply has not picked yet (#8190). Naming the second one "loading" told
-	// the screen reader something untrue.
-	const unselectedName =
-		items.length === 0 ? t("admin.agent.picker.loading") : t("admin.agent.picker.none");
+	const offered = items ?? [];
+	const selected = offered.find((item) => item.value === value);
+	// Three unselected states, and only the first is loading: `undefined` items is a host that has
+	// not resolved what it offers, `[]` is one that resolved and offers nothing, and a populated
+	// list with no `value` is a setting the session has not picked yet (#8190, #8425). Reading the
+	// middle one as loading left an operator waiting on rows that were never coming.
+	const unselectedName = t(
+		items === undefined
+			? "admin.agent.picker.loading"
+			: items.length === 0
+				? "admin.agent.picker.empty"
+				: "admin.agent.picker.none",
+	);
+	// Nothing to pick is nothing to open, either way round: an unresolved offer has no rows yet and
+	// a resolved-empty one never will, so the trigger does not advertise an operation the host
+	// cannot perform. `disabled` from the host still wins on top of this.
+	const operable = offered.length > 0;
 	const selectedName = selected
 		? selected.note
 			? `${selected.label} (${selected.note})`
@@ -1368,7 +1404,7 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 					size="sm"
 					className="kp-agent-chat__picker-trigger"
 					aria-label={`${label}: ${selectedName}`}
-					disabled={disabled}
+					disabled={disabled || !operable}
 				>
 					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
 					<span>{selected?.label ?? unselectedName}</span>
@@ -1382,7 +1418,7 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 				{
 					type: "group",
 					label,
-					items: items.map((item) => ({
+					items: offered.map((item) => ({
 						type: "radio",
 						value: item.value,
 						label: item.note ? (
