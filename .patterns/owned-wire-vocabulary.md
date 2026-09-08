@@ -8,9 +8,15 @@ names the package. Then a redesign is a swap of that module's body.
 Where this lives today: [`apps/tuval/src/pi/wire/`](../apps/tuval/src/pi/wire/), holding Tuval's Pi
 session, transcript, model and command types plus
 [`codec.ts`](../apps/tuval/src/pi/wire/codec.ts), whose body delegates to
-`@earendil-works/pi-protocol@0.84.3`. Both ends of that loopback socket are Tuval's — the server in
+`@earendil-works/pi-protocol@0.85.1`. Both ends of that loopback socket are Tuval's — the server in
 [`pi/server/`](../apps/tuval/src/pi/server/), the client in
 [`pi/client/`](../apps/tuval/src/pi/client/) — which is what makes the contract Tuval's to own.
+
+The seam has now taken the redesign it was built for: the vocabulary did not move, and `codec.ts`
+went from delegating whole messages to 0.84.3's schemas to packing the same Tuval values as opaque
+payloads inside 0.85.1's envelope (ADR [0366](../.decisions/0366-tuval-keeps-own-pi-host.md)). The
+transcript projection, the ai-agent fold and every consumer of the vocabulary did not change; what
+did was the two files either side of the socket, which had to learn the new envelope's addressing.
 
 ## Why a re-export is not the seam
 
@@ -27,36 +33,43 @@ So the types are **declared** in the app. Only the codec functions are delegated
 ## The shape
 
 Type modules with no dependency import at all, one `codec.ts` that imports the package, and an
-`index.ts` barrel every consumer reads:
+`index.ts` barrel every consumer reads. Each exported function takes or returns the app's type and
+maps it to the package's on the way through:
 
 ```ts
 import {
-	createServerMessageDecoder as createPiServerMessageDecoder,
 	encodeServerMessage as encodePiServerMessage,
+	ServerMessageDecoder as PiServerMessageDecoder,
 } from "@earendil-works/pi-protocol";
 import type {ServerMessage} from "./message.ts";
 
 export const encodeServerMessage = (message: ServerMessage, options?: FrameOptions): Uint8Array =>
-	encodePiServerMessage(message, options);
+	encodePiServerMessage(toPackageMessage(message), options);
 
 export const createServerMessageDecoder = (options?: FrameOptions): ServerMessageDecoder =>
-	createPiServerMessageDecoder(options);
+	mapped(new PiServerMessageDecoder(options), fromPackageMessage);
 ```
 
 Four rules make it hold:
 
-1. **Copy the pinned version's shapes verbatim.** A relocation that also changes a field is a diff
-   nobody can review as a no-op, and it hides a behaviour change inside a mechanical move.
+1. **Copy the pinned version's shapes verbatim, on the relocation.** A move that also changes a
+   field is a diff nobody can review as a no-op, and it hides a behaviour change inside a mechanical
+   move. This binds the slice that *builds* the seam; the swap that follows is where the shapes are
+   allowed to move, and it is reviewed as a change rather than as a move.
 2. **Match the mutability too.** A schema-derived `T[]` becomes `T[]`, not `ReadonlyArray<T>` —
    readonly *properties* stay assignable to mutable ones, but `ReadonlyArray<T>` is not assignable to
    `T[]`, so tightening an array is what breaks the delegation.
-3. **Let the seam's signatures be the proof.** Taking the app's type as a parameter and handing the
-   package's return value back typed as the app's forces both assignability directions across the
-   whole vocabulary, since the two message unions reach every type in it. A field that drifted from
-   the pinned shape reds `tsc` here rather than failing validation at runtime.
+3. **Let the seam's signatures be the proof, for as long as the package still declares the shapes.**
+   While the delegation is shape-for-shape, taking the app's type in and handing the package's value
+   back as the app's forces both assignability directions across the whole vocabulary, so a drifted
+   field reds `tsc` here rather than failing at runtime. Once the package carries the payload opaque
+   there is nothing left to check against, and the assertion that reads it back is the seam's whole
+   remaining trust — put it behind one named helper carrying the reason, never spread the cast
+   through the file.
 4. **Publish a function where the package publishes a class.** `createServerMessageDecoder()` can be
    re-implemented in the next slice; a re-exported `class ServerMessageDecoder` that call sites `new`
-   cannot, without touching every `new`.
+   cannot, without touching every `new`. 0.85.1 turned both decoder factories into classes, and this
+   rule is why no call site noticed.
 
 ## Where this stops applying
 

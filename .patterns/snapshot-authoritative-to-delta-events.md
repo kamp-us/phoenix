@@ -7,9 +7,9 @@ snapshot-pushing agent has to write, and the choices in it are not obvious.
 Where this lives today: [`apps/tuval/src/pi/ai-agent/items.ts`](../apps/tuval/src/pi/ai-agent/items.ts)
 (`eventsOf`), pinned by
 [`items.unit.test.ts`](../apps/tuval/src/pi/ai-agent/items.unit.test.ts). It folds Pi's pushed
-`SessionSnapshot` — authoritative and whole by its own protocol contract, `SessionSnapshotSchema`
-carrying the entire `transcript` on every `revision` (`@earendil-works/pi-protocol`
-`dist/schemas.d.ts` at 0.84.3) — onto the `AgentEvent` union founder ruling 1
+`SessionSnapshot` — authoritative and whole by its own protocol contract, carrying the entire
+`transcript` on every `revision` ([`pi/wire/session.ts`](../apps/tuval/src/pi/wire/session.ts)) —
+onto the `AgentEvent` union founder ruling 1
 ([#7570](https://github.com/kamp-us/phoenix/issues/7570)) defines, where `item` means "new **or
 updated** by id".
 
