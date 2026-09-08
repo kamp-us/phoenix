@@ -116,7 +116,7 @@ describe("the version slot the layers fill", () => {
 		expect(initialState("/repo").agentVersion).toBeNull();
 	});
 
-	it("comes back empty from a checkpoint, since the binary on PATH can have moved", () => {
+	it("comes back empty from a checkpoint, since the binary the layer launches can have moved", () => {
 		expect(restore({...saved, agentVersion: "2.1.259"}).agentVersion).toBeNull();
 	});
 

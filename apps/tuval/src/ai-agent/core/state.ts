@@ -412,9 +412,10 @@ const markInterrupted = (
  * for, and an abort in flight to a backend this process no longer holds a transport to.
  *
  * `agentVersion` is dropped for a narrower reason: it names the binary the *previous* process
- * drove, and the CLI on PATH can have been upgraded while the desk was off — which is the exact
- * drift the line exists to show (#7580). The layer re-reports it as this session opens, so `null`
- * for that gap says "nobody has told me yet" rather than showing a version nothing is running.
+ * drove, and a dependency update swaps the CLI the SDK bundles while the desk is off — which is the
+ * exact drift the line exists to show (#7580). The layer re-reports it as this session opens, so
+ * `null` for that gap says "nobody has told me yet" rather than showing a version nothing is
+ * running.
  *
  * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way

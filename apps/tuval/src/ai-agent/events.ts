@@ -187,8 +187,8 @@ export interface SessionResetEvent {
 }
 
 /**
- * What the layer is driving, as a version string — the Claude Code CLI on PATH for one row, Pi's
- * adapter for the other.
+ * What the layer is driving, as a version string — the Claude Code CLI for one row, Pi's adapter
+ * for the other.
  *
  * Its own kind rather than a field on `usage`: usage is a turn's spend, keyed on that turn, and a
  * version is a fact about the session that arrives whether or not anything was spent. It replaces

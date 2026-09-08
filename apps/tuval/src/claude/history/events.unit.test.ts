@@ -71,7 +71,7 @@ describe("toAgentEvents over a captured init", () => {
 		expect(mapping.model).toBe("claude-fable-5-1");
 	});
 
-	it("reports the CLI on PATH, which is not the SDK this repo pins", () => {
+	it("reports the bundled CLI's own version, which is not the SDK version this repo pins", () => {
 		const {events} = run([message("init")]);
 		expect(events.filter((one) => one.kind === "version")).toEqual([
 			{kind: "version", version: "2.1.259"},

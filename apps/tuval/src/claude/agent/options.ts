@@ -4,9 +4,11 @@
  * Kept out of the layer so the whole of what reaches the SDK is assertable without a subprocess:
  * `queryOptionsOf` is a pure function of the config, the tool server and the environment.
  *
- * `pathToClaudeCodeExecutable` is deliberately never set. The CLI the SDK spawns is the `claude` on
- * `PATH`, and SDK/CLI drift is accepted for this slice (founder ruling on #7580) — the `start` log
- * line names both versions so a drifted pair is visible in the transcript rather than silent.
+ * `pathToClaudeCodeExecutable` is deliberately never set, so the SDK launches the CLI it bundles
+ * ("Uses the built-in executable if not specified", `sdk.d.ts` at the `0.3.259` pin) rather than
+ * whatever `claude` is on `PATH` — the two routinely differ. SDK/CLI drift is accepted for this
+ * slice (founder ruling on #7580) — the `start` log line names both versions so a drifted pair is
+ * visible in the transcript rather than silent.
  */
 
 import {userInfo} from "node:os";
@@ -43,7 +45,7 @@ export interface ClaudeAiAgentOptions {
 	readonly streamPartialReplies?: boolean;
 	/** The SDK seam. Absent is the real SDK; a test hands in a scripted `Query`. */
 	readonly sdk?: AgentSdk;
-	/** Absent leaves the SDK's own local spawn, which is what runs the `claude` on `PATH`. */
+	/** Absent leaves the SDK's own local spawn, which is what runs its bundled CLI. */
 	readonly spawn?: SpawnClaudeCodeProcess;
 	/**
 	 * The id a fresh session opens under. Absent mints a v4 UUID, which is what a run does; a test
