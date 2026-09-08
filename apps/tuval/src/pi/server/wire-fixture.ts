@@ -4,10 +4,10 @@
  * is deliberately dumb — no reconnect, no lease, no transcript state.
  */
 
-import type {ClientMessage, Command, ServerMessage} from "@earendil-works/pi-protocol";
-import {encodeClientMessage, ServerMessageDecoder} from "@earendil-works/pi-protocol";
 import {Effect, Queue, type Scope} from "effect";
 import {WebSocket} from "ws";
+import type {ClientMessage, Command, ServerMessage} from "../wire/index.ts";
+import {createServerMessageDecoder, encodeClientMessage} from "../wire/index.ts";
 
 export interface WireClient {
 	readonly send: (message: ClientMessage) => Effect.Effect<void>;
@@ -25,7 +25,7 @@ export const connectWire = (
 	options: {readonly headers?: Record<string, string>} = {},
 ): Effect.Effect<WireClient, never, Scope.Scope> =>
 	Effect.gen(function* () {
-		const decoder = new ServerMessageDecoder();
+		const decoder = createServerMessageDecoder();
 		const inbox: ServerMessage[] = [];
 		const arrivals = yield* Queue.unbounded<ServerMessage>();
 		const closures = yield* Queue.unbounded<{code: number; reason: string}>();

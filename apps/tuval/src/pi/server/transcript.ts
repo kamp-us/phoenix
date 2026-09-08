@@ -26,7 +26,7 @@ import type {
 	TranscriptItem,
 	Usage,
 	UserTranscriptItem,
-} from "@earendil-works/pi-protocol";
+} from "../wire/index.ts";
 
 type UserContent = UserTranscriptItem["content"][number];
 type AssistantContent = AssistantTranscriptItem["content"][number];

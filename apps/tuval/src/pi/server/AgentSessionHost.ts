@@ -19,8 +19,8 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type {ModelMetadata, ModelRef, ThinkingLevel} from "@earendil-works/pi-protocol";
 import {Effect, Layer, Queue} from "effect";
+import type {ModelMetadata, ModelRef, ThinkingLevel} from "../wire/index.ts";
 import {projectModelCost, type SourceModelCost} from "./cost.ts";
 import {SessionCallFailed, SessionOpenFailed} from "./errors.ts";
 import {type PiSessionHandle, PiSessionHost, type PiSessionView} from "./PiSessionHost.ts";

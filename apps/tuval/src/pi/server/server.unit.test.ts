@@ -1,6 +1,6 @@
-import type {ProtocolError, ServerMessage, SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Redacted, type Scope} from "effect";
+import type {ProtocolError, ServerMessage, SessionSnapshot} from "../wire/index.ts";
 import {makeScriptedHost, type ScriptedHost} from "./fixtures.ts";
 import {CLOSE_FRAME_TOO_LARGE, CLOSE_QUEUE_OVERFLOW} from "./limits.ts";
 import {makeOutbound} from "./outbound.ts";

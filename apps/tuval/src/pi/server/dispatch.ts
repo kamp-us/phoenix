@@ -5,13 +5,8 @@
  * behaviour (locked, not found, ownership) is testable without one.
  */
 
-import type {
-	Command,
-	CommandResult,
-	ProtocolError,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {Effect} from "effect";
+import type {Command, CommandResult, ProtocolError, SessionSnapshot} from "../wire/index.ts";
 import type {PiSessionHandle, PiSessionHostApi} from "./PiSessionHost.ts";
 import type {ConnectionId, SessionRecord, SessionRecords} from "./records.ts";
 import {sessionMetadata, sessionSnapshot} from "./snapshots.ts";

@@ -9,7 +9,7 @@
  * priced in tiers. Only the four fields cross, and this is the one place that decides that.
  */
 
-import type {ModelMetadata} from "@earendil-works/pi-protocol";
+import type {ModelMetadata} from "../wire/index.ts";
 
 export type ProtocolModelCost = ModelMetadata["cost"];
 

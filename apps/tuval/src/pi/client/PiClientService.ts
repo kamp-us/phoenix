@@ -25,14 +25,9 @@
 
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {PiClient, type PiSessionHandle} from "@earendil-works/pi-client";
-import type {
-	ModelMetadata,
-	ModelRef,
-	SessionSnapshot,
-	ThinkingLevel,
-} from "@earendil-works/pi-protocol";
 import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
 import {boundedTeardown} from "../teardown.ts";
+import type {ModelMetadata, ModelRef, SessionSnapshot, ThinkingLevel} from "../wire/index.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,

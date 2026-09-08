@@ -1,5 +1,5 @@
-import {encodeServerMessage, PROTOCOL_VERSION} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
+import {encodeServerMessage, PROTOCOL_VERSION} from "../wire/index.ts";
 import {streamingMessage} from "./AgentSessionHost.ts";
 import {projectModelCost} from "./cost.ts";
 import {scriptedModel} from "./fixtures.ts";

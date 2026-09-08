@@ -18,7 +18,7 @@ import type {
 	ByteTransportFactory,
 	ByteTransportHandlers,
 } from "@earendil-works/pi-client";
-import {DEFAULT_MAX_FRAME_LENGTH} from "@earendil-works/pi-protocol";
+import {DEFAULT_MAX_FRAME_LENGTH} from "../wire/index.ts";
 
 /** Four frames of slack, the bound the pin's own Unix transport defaults to. */
 export const DEFAULT_MAX_PENDING_BYTES = DEFAULT_MAX_FRAME_LENGTH * 4;
