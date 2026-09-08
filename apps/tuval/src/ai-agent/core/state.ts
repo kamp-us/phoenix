@@ -151,8 +151,8 @@ export interface AiAgentSessionState {
 	 *
 	 * Model-blind on purpose: it is one string nobody parses, so a second backend fills the same
 	 * slot rather than growing its own. The point of showing it is drift — the SDK pin is ours and
-	 * the CLI is whatever is on PATH (#7580) — and today it reaches a log line and nothing else
-	 * (#7955).
+	 * the CLI is whatever is on PATH (#7580) — so it is rendered as the desk inspector's `Version`
+	 * row (`../window/AiAgentInspector.tsx`) rather than living in the Claude layer's log line.
 	 */
 	readonly agentVersion: string | null;
 	/**
