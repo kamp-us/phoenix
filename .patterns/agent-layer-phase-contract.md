@@ -88,6 +88,31 @@ So a layer whose `start` narrates a `ready` owes a `prompting` per send. Emittin
 backend confirms the turn — or trusting the core's own admission — leaves the first turn of every
 freshly opened session narrated as idle.
 
+## The open's `ready` ships with its catalogs
+
+The open's `ready` is also the answer to a second question, and the layer owes both in one batch:
+**emit `model` and `thinking` before the `ready` that closes the open, never after it.**
+
+A layer's `models`/`thinking` slices start on the reducer's empty defaults
+([`core/state.ts`](../apps/tuval/src/ai-agent/core/state.ts)), and an empty offered set is two
+different facts — "the layer has not answered yet" and "answered, nothing offered". Nothing in
+`AgentEvent` distinguishes them, so
+[`shell/chat/composer-bridge.ts`](../apps/tuval/src/shell/chat/composer-bridge.ts) reads the answer
+off the phase instead: past `starting`, the offer counts as resolved, and the composer stops showing
+`loading` and starts showing `thinking effort: none offered`. That read is only true of a layer
+whose catalogs are already folded when its `ready` lands.
+
+`ClaudeAiAgent` used to emit `ready` first and its catalogs 52 lines and four awaited subprocess
+round-trips later — `supportedModels`, `getContextUsage`, `supportedCommands`, `applyFlagSettings` —
+so every Claude session opened onto a disabled picker reading `none offered` until they returned
+([#8425](https://github.com/kamp-us/phoenix/issues/8425)). Delaying `ready` behind them costs
+nothing the core can see: the core reaches `ready` on the `started` Msg that `start` *returns*, and
+nothing drains the layer's queue before then, so no prompt can be admitted inside the window either
+way.
+
+`PiAiAgent` sends the whole handshake as one `emit` array with `phase: ready` last; `ClaudeAiAgent`
+now batches `thinking` with it. A new layer copies that order.
+
 ## Reference shapes
 
 - [`claude/agent/ClaudeAiAgent.ts`](../apps/tuval/src/claude/agent/ClaudeAiAgent.ts) — `prompt`

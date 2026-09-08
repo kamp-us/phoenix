@@ -599,10 +599,6 @@ const make = (
 			const continuing = previous !== null && resuming === previous.id;
 			if (!continuing) yield* Ref.set(keys, new Set<string>());
 
-			// The layer's own narration of the open, which the handshake is: the core is already
-			// `ready` off the `started` this call answers, and `coreOwned` drops a layer `starting`
-			// (`ai-agent/core/fold.ts`, #7948) but not this.
-			yield* emit(out, [{kind: "phase", phase: "ready"}]);
 			// The announced mode is resolved by the same call `open` opened the query with, never the
 			// raw `held`: `held` is null until an operator calls `setMode`, so a row carrying any
 			// non-default `permissionMode` would run on that mode and tell every subscriber it has
@@ -654,7 +650,17 @@ const make = (
 						? wanted
 						: null;
 			yield* Ref.set(effort, running);
-			yield* emit(out, [{kind: "thinking", current: running, available: levels}]);
+			// The open's `ready` ships here, behind the catalogs, and never ahead of them: the
+			// composer derives "the layer has said what this session offers" from the phase, so a
+			// `ready` emitted before these four subprocess round-trips tells the picker the offer
+			// resolved empty for as long as they take (#8425). The catalogs are the layer's own
+			// narration of the open too — the core is already `ready` off the `started` this call
+			// answers, and `coreOwned` drops a layer `starting` (`ai-agent/core/fold.ts`, #7948) but
+			// not this. See `.patterns/agent-layer-phase-contract.md`.
+			yield* emit(out, [
+				{kind: "thinking", current: running, available: levels},
+				{kind: "phase", phase: "ready"},
+			]);
 			// A card the layer does not hold cannot be answered, so a window restored with one would
 			// wedge on it. Resolving it is what lets the generic restore drop it (#7608).
 			yield* emit(

@@ -100,10 +100,10 @@ const levelOf = (
  *
  * Before the session is open it has not, and its `models`/`thinking` slices still hold the
  * reducer's empty defaults — so an empty offered set read here is "not known yet", not "nothing
- * offered". Both layers settle that in the same emit batch as the `ready` phase
- * (`pi/ai-agent/PiAiAgent.ts`, `claude/agent/ClaudeAiAgent.ts`), which makes the phase the honest
- * carrier of the answer and keeps the composer's loading state off a session that will never fill
- * (#8425).
+ * offered". The phase carries the answer only because every layer owes its catalogs ahead of the
+ * `ready` that closes its open — the contract is in
+ * `.patterns/agent-layer-phase-contract.md` ("The open's `ready` ships with its catalogs"), and a
+ * layer that breaks it opens onto a picker claiming nothing is offered (#8425).
  */
 const offerResolved = (phase: Phase): boolean => phase !== "idle" && phase !== "starting";
 

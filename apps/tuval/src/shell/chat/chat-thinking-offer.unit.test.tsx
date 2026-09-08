@@ -75,11 +75,30 @@ describe.each(["focused", "harness"] as const)("the %s thinking control", (varia
 		const composer = mount("starting", variant);
 		await waitFor(async () => expect(await reading(variant)).toContain("loading"));
 
-		// `ready` is where both layers emit their offer — `pi/ai-agent/PiAiAgent.ts` and
-		// `claude/agent/ClaudeAiAgent.ts` each put the `thinking` event in the same batch as the
-		// phase — so crossing it is what resolves the question the control was waiting on.
+		// The phase carries the answer because every layer owes its catalogs ahead of the `ready`
+		// that closes its open — `.patterns/agent-layer-phase-contract.md`, "The open's `ready`
+		// ships with its catalogs" — so crossing it resolves the question the control waited on.
 		await act(async () => composer.setPhase("ready"));
 		await waitFor(async () => expect(await reading(variant)).not.toContain("loading"));
+	});
+
+	it("stays on loading across a Claude open's catalog round-trips (#8425)", async () => {
+		// `ClaudeAiAgent.open` reads four catalogs off the subprocess before it closes the open, and
+		// each is a real IPC round-trip, so its events reach the composer over several ticks. The
+		// order that keeps this honest is the layer's own: every catalog first, `ready` last.
+		const composer = mount("starting", variant);
+		await waitFor(async () => expect(await reading(variant)).toContain("loading"));
+
+		// The `thinking` emit — a model offering no levels, which is what a Claude row without an
+		// effort axis answers. The offer is now known and still unresolved to the control, because
+		// the open has not closed.
+		await act(async () => composer.setThinking(emptyOffer));
+		await waitFor(async () => expect(await reading(variant)).toContain("loading"));
+		expect(await reading(variant)).not.toContain("none offered");
+
+		// The handshake's `ready`, a tick later. Only here does the empty offer become an answer.
+		await act(async () => composer.setPhase("ready"));
+		await waitFor(async () => expect(await reading(variant)).toContain("none offered"));
 	});
 
 	it("reads a resolved empty offer as nothing offered, and refuses to open", async () => {
