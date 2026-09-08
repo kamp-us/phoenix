@@ -619,6 +619,15 @@ const make = (
 			query: TranscriptQuery,
 		) {
 			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir(query.cwd)});
+			yield* Effect.forEach(
+				stores.failures,
+				(failure) =>
+					Effect.logWarning(
+						`Pi could not enumerate the ${failure.store} store while reading a stored transcript`,
+						failure.cause,
+					),
+				{concurrency: 1, discard: true},
+			);
 			const file = yield* locateBranch(stores.dirs, query.sessionId);
 			if (file === null) {
 				// A store that would not enumerate may be the one the file was in, so a miss across the
