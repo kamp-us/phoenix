@@ -86,8 +86,9 @@ const TICK_MILLIS = 250;
  * this window's own, ticking only while a read is actually out. A pinned clock never ticks, which
  * is what lets a test render one exact moment of the wait.
  */
-const useClock = (pinned: number | undefined, ticking: boolean): number => {
+const useClock = (pinned: number | undefined, status: SessionListStatus): number => {
 	const [now, setNow] = useState(() => pinned ?? Date.now());
+	const ticking = atClock(status, pinned ?? now)._tag === "Reading";
 	useEffect(() => {
 		if (pinned !== undefined || !ticking) return;
 		const timer = setInterval(() => setNow(Date.now()), TICK_MILLIS);
@@ -189,7 +190,7 @@ export interface SessionListProps {
  */
 export function SessionList({status, onActivate, onRetry, now}: SessionListProps): ReactElement {
 	const [chosen, setChosen] = useState<string | null>(null);
-	const clock = useClock(now, status._tag === "Reading");
+	const clock = useClock(now, status);
 	const shown = atClock(status, clock);
 
 	const sessions = shown._tag === "Listed" ? shown.sessions : [];

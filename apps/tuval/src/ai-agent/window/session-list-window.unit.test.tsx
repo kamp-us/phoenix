@@ -6,9 +6,10 @@
  * substituted by `installDomShims` and asserted nowhere.
  */
 
-import {fireEvent, render, screen} from "@testing-library/react";
+import {act, cleanup, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
-import {describe, expect, it, vi} from "vitest";
+import {Profiler, useState} from "react";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {SessionListStatus} from "../../page/session-list.ts";
 import {reading, settled} from "../../page/session-list.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
@@ -20,6 +21,80 @@ import {NO_FIRST_PROMPT} from "./rows.ts";
 import {SessionList} from "./SessionListWindow.tsx";
 
 installDomShims();
+
+describe("the unpinned wait clock", () => {
+	beforeEach(() => {
+		vi.useFakeTimers({
+			toFake: ["Date", "setInterval", "clearInterval", "setTimeout", "clearTimeout"],
+		});
+		vi.setSystemTime(NOW);
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+	});
+
+	it("crosses the deadline on its own, then stops updating until a fresh retry", () => {
+		const committed = vi.fn();
+		function RetriableList(): ReactElement {
+			const [status, setStatus] = useState(() => reading(Date.now()));
+			return <SessionList status={status} onRetry={() => setStatus(reading(Date.now()))} />;
+		}
+		render(
+			<Profiler id="session-list" onRender={committed}>
+				<RetriableList />
+			</Profiler>,
+		);
+		act(() => vi.advanceTimersByTime(SESSION_LIST_DEADLINE_MILLIS - 250));
+		expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("9");
+		act(() => vi.advanceTimersByTime(250));
+		expect(screen.queryByRole("progressbar")).toBeNull();
+		expect(screen.getByRole("status").textContent).toContain("ran past its deadline");
+		expect(vi.getTimerCount()).toBe(0);
+		committed.mockClear();
+		act(() => vi.advanceTimersByTime(60_000));
+		expect(committed).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", {name: "Read the sessions again"}));
+		expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0");
+		act(() => vi.advanceTimersByTime(1_000));
+		expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("1");
+		act(() => vi.advanceTimersByTime(SESSION_LIST_DEADLINE_MILLIS - 1_000));
+		expect(screen.getByRole("status").textContent).toContain("ran past its deadline");
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("never starts a timer for an already expired read or a pinned clock", () => {
+		const {rerender} = render(<SessionList status={reading(NOW - SESSION_LIST_DEADLINE_MILLIS)} />);
+		act(() => vi.advanceTimersByTime(0));
+		expect(screen.getByRole("status").textContent).toContain("ran past its deadline");
+		expect(vi.getTimerCount()).toBe(0);
+		rerender(<SessionList status={reading(NOW)} now={NOW} />);
+		expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0");
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it.each<SessionListStatus>([
+		{_tag: "Listed", sessions: [], unreadable: []},
+		{_tag: "Refused", failure: {tag: "tuval/UnknownSpell", message: "no spell there"}},
+	])("cleans up when a $_tag answer lands", (status) => {
+		const {rerender} = render(<SessionList status={reading(NOW)} />);
+		act(() => vi.advanceTimersByTime(0));
+		expect(vi.getTimerCount()).toBe(1);
+		rerender(<SessionList status={status} />);
+		expect(screen.queryByRole("progressbar")).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("cleans up an unanswered read on unmount", () => {
+		const {unmount} = render(<SessionList status={reading(NOW)} />);
+		act(() => vi.advanceTimersByTime(0));
+		expect(vi.getTimerCount()).toBe(1);
+		unmount();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+});
 
 const listed = (
 	sessions: ReadonlyArray<SessionRow>,
