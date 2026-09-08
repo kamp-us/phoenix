@@ -15,6 +15,7 @@ export const designTrMessages = {
 	"ui.draftRestore.text": "kaydedilmiş bir taslağın var. geri yüklemek ister misin?",
 	"ui.draftRestore.restore": "taslağı geri yükle",
 	"ui.draftRestore.dismiss": "yoksay",
+	"ui.diff": "{path} dosyasının değişiklik farkı",
 	"ui.markdown.table": "tablo",
 	"ui.markdown.code": "kod bloğu",
 	"ui.markdown.diagram": "diyagram",

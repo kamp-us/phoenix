@@ -1,0 +1,96 @@
+.kp-diff {
+	/* A consumer retunes the cap by re-declaring this on `.kp-diff` from a more specific rule. */
+	--kp-diff-max-block-size: 60vh;
+
+	max-block-size: var(--kp-diff-max-block-size);
+	overflow: auto;
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+}
+
+.kp-diff:focus-visible {
+	outline: var(--manti-focus-ring-width) solid var(--manti-focus-ring);
+	outline-offset: var(--manti-focus-ring-offset);
+}
+
+/*
+ * The seam. These are declared on the shadow host rather than on `.kp-diff` because the library's
+ * own `:host` rule sets some of them, and a `:host` declaration beats a value inherited from an
+ * ancestor; a rule matching the host from this document does not. Everything below is a role token
+ * — see `Diff.tsx` for why the pair-shaped `--diffs-light-*`/`--diffs-dark-*` inputs are fed the
+ * same token on both sides, and why the `-override` inputs are preferred where the library has one.
+ */
+.kp-diff__pane {
+	/*
+	 * The library's stylesheet is full of `light-dark()`, which resolves off the USED
+	 * `color-scheme` — and its `:host` sets `light dark`, so every one of those would follow the
+	 * operator's OS rather than phoenix's `data-theme`. Pinning the scheme here, from the same
+	 * attribute the role tokens switch on, settles all of them at once, including the row-tint
+	 * ratios (`--diffs-bg-context`, `-gutter`, `-separator`, `-addition`/`-deletion` and their
+	 * emphasis pairs) that have no `-override` input to reach.
+	 *
+	 * Dark is the unconditional arm because the token set's own default is dark — `tokens.css`
+	 * hangs the dark scales off a bare `:root` and makes `[data-theme="light"]` the opt-in. Same
+	 * rule, same reason, as `MermaidBlock`'s `darkMode: host.closest('[data-theme="light"]')
+	 * === null`.
+	 */
+	color-scheme: dark;
+
+	display: block;
+
+	/* chrome */
+	--diffs-font-family: var(--font-mono);
+	--diffs-header-font-family: var(--font-body);
+	--diffs-light-bg: var(--surface-sunken);
+	--diffs-dark-bg: var(--surface-sunken);
+	--diffs-light: var(--text-primary);
+	--diffs-dark: var(--text-primary);
+	--diffs-mixer: var(--text-primary);
+	--diffs-addition-color-override: var(--success);
+	--diffs-deletion-color-override: var(--danger);
+	--diffs-modified-color-override: var(--warning);
+	--diffs-fg-number-override: var(--text-muted);
+
+	/* the Shiki css-variables theme registered in `Diff.tsx` */
+	--diffs-foreground: var(--text-primary);
+	--diffs-background: var(--surface-sunken);
+	/*
+	 * The full ANSI set, not just the three the diff chrome reads: the theme emits
+	 * `var(--diffs-ansi-…)` with NO fallback for every one of them, so an ANSI-scoped grammar
+	 * would hit an unresolved colour. The role layer has one accent, so magenta and cyan share it.
+	 */
+	--diffs-ansi-black: var(--surface);
+	--diffs-ansi-red: var(--danger);
+	--diffs-ansi-green: var(--success);
+	--diffs-ansi-yellow: var(--warning);
+	--diffs-ansi-blue: var(--accent);
+	--diffs-ansi-magenta: var(--link);
+	--diffs-ansi-cyan: var(--link);
+	--diffs-ansi-white: var(--text-muted);
+	--diffs-ansi-bright-black: var(--text-faint);
+	--diffs-ansi-bright-red: var(--danger);
+	--diffs-ansi-bright-green: var(--success);
+	--diffs-ansi-bright-yellow: var(--warning);
+	--diffs-ansi-bright-blue: var(--accent);
+	--diffs-ansi-bright-magenta: var(--link);
+	--diffs-ansi-bright-cyan: var(--link);
+	--diffs-ansi-bright-white: var(--text-primary);
+
+	--diffs-token-comment: var(--text-muted);
+	--diffs-token-string: var(--success);
+	--diffs-token-string-expression: var(--success);
+	--diffs-token-keyword: var(--link);
+	--diffs-token-function: var(--accent);
+	--diffs-token-constant: var(--warning);
+	--diffs-token-parameter: var(--text-secondary);
+	--diffs-token-punctuation: var(--text-muted);
+	--diffs-token-link: var(--link);
+	--diffs-token-inserted: var(--success);
+	--diffs-token-deleted: var(--danger);
+	--diffs-token-changed: var(--warning);
+}
+
+[data-theme="light"] .kp-diff__pane {
+	color-scheme: light;
+}
