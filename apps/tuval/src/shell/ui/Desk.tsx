@@ -369,7 +369,8 @@ export function Desk({
 			{palette.open ? (
 				<PaletteHost
 					state={state}
-					{...(call === undefined ? {} : {call})}
+					registry={registry}
+					{...(call === undefined || !commandsConnected ? {} : {call})}
 					window={palette.window}
 					onClose={closePalette}
 				/>

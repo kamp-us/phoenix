@@ -366,3 +366,12 @@ describe("usePalette", () => {
 		expect(seen[seen.length - 1]).toBe(opener);
 	});
 });
+
+it("keeps edited input open when an earlier submission replies", () => {
+	const {input, onClose, rerenderWith} = open();
+	type(input, "workspace new scratch");
+	fireEvent.keyDown(input, {key: "Enter"});
+	type(input, "workspace new next");
+	rerenderWith(reply(true));
+	expect(onClose).not.toHaveBeenCalled();
+});

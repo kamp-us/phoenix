@@ -176,6 +176,21 @@ against, what a key binding compiles to, and what a program calls over the wire.
 registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
 `process send`, `process read`), and boot reports the total beside the program count.
 
+Open the palette with Cmd+K or Ctrl+K to discover registered program and core commands alongside
+shell shortcuts such as `window close`. Tab completes a selection; Enter runs it through the
+attached kernel. Success closes the palette and a refusal stays beneath its input. Escape closes
+it and returns focus. The `<c-b> :` command line also runs registered paths and keeps their actual
+result or refusal visible. Existing shell names such as `window:open log` retain their behavior.
+
+Use the program's registered prefix when asking for help: `help shell window close`,
+`help "shell window close"` and `help shell.window.close` describe the same command.
+`spell describe` accepts those three path forms too. Discovery follows committed catalogue
+replacements and reconnection without reloading the page.
+
+The ordinary-program browser proof runs with `pnpm test:browser commands.spec.ts` from this
+package. Its deterministic counter has proof-only tick/read/refuse commands; it verifies real
+state changes through both surfaces and captures results, refusals and help descriptions.
+
 A program row declares its own in a `spells` field, and each one is registered under the program's
 id, so `echo`'s `repeat` is `echo repeat` and no program can collide with another or with the
 kernel's list:
