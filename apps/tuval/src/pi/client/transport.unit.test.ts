@@ -1,12 +1,12 @@
 import type {ByteTransport, ByteTransportHandlers} from "@earendil-works/pi-client";
-import {
-	type ClientMessage,
-	encodeClientMessage,
-	type ServerMessage,
-	ServerMessageDecoder,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Option, Queue, type Scope} from "effect";
+import {
+	type ClientMessage,
+	createServerMessageDecoder,
+	encodeClientMessage,
+	type ServerMessage,
+} from "../wire/index.ts";
 import {startProtocolServer} from "./fixtures.ts";
 import {connectionRefusalOf} from "./refusals.ts";
 import {webSocketTransportFactory} from "./transport.ts";
@@ -36,7 +36,7 @@ interface Dialed {
 /** Opens one transport, decoding what arrives with the protocol's own decoder. */
 const dial = (url: string): Effect.Effect<Dialed, unknown, Scope.Scope> =>
 	Effect.gen(function* () {
-		const decoder = new ServerMessageDecoder();
+		const decoder = createServerMessageDecoder();
 		const inbox = yield* Queue.unbounded<ServerMessage>();
 		const terminals = yield* Queue.unbounded<string>();
 		const handlers: ByteTransportHandlers = {

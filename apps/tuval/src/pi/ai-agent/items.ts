@@ -18,11 +18,6 @@
  * said. An item's `image` parts have no port field to land in and are dropped.
  */
 
-import type {
-	TranscriptItem as PiTranscriptItem,
-	SessionPhase,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {
 	boundToolResult,
 	type ItemId,
@@ -33,6 +28,11 @@ import {
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import type {AgentEvent, Phase} from "../../ai-agent/service/index.ts";
+import type {
+	TranscriptItem as PiTranscriptItem,
+	SessionPhase,
+	SessionSnapshot,
+} from "../wire/index.ts";
 
 /** `ItemId` is an opaque string brand, minted here so no call site writes its own cast. */
 export const itemId = (value: string): ItemId => value as ItemId;

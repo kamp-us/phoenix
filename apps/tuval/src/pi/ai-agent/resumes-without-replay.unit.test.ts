@@ -20,10 +20,6 @@
  * moving the totals — the last two cases walk that in both directions.
  */
 
-import type {
-	TranscriptItem as PiTranscriptItem,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Effect, Layer, Option, Queue, Stream} from "effect";
 import {
@@ -37,6 +33,7 @@ import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {AgentEvent, Phase, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../wire/index.ts";
 import {itemsOf} from "./items.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 

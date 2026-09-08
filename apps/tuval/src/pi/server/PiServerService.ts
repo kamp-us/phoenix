@@ -16,16 +16,16 @@ import {randomUUID} from "node:crypto";
 import {createServer, type Server as HttpServer, type IncomingMessage} from "node:http";
 import type {AddressInfo} from "node:net";
 import type {Duplex} from "node:stream";
-import {
-	type ClientMessage,
-	ClientMessageDecoder,
-	encodeServerMessage,
-	PROTOCOL_VERSION,
-	type ServerMessage,
-} from "@earendil-works/pi-protocol";
 import {Context, Effect, FiberSet, Layer, Queue, Redacted, type Scope} from "effect";
 import {type WebSocket, WebSocketServer} from "ws";
 import {boundedTeardown} from "../teardown.ts";
+import {
+	type ClientMessage,
+	createClientMessageDecoder,
+	encodeServerMessage,
+	PROTOCOL_VERSION,
+	type ServerMessage,
+} from "../wire/index.ts";
 import {dispatch} from "./dispatch.ts";
 import {FrameRefused, MessageNotEncodable, ServerBindFailed} from "./errors.ts";
 import {
@@ -186,7 +186,7 @@ const make = (
 		function serveConnection(ws: WebSocket): Effect.Effect<void> {
 			return Effect.gen(function* () {
 				const connection: ConnectionId = randomUUID();
-				const decoder = new ClientMessageDecoder({maxFrameLength: limits.maxInboundFrameLength});
+				const decoder = createClientMessageDecoder({maxFrameLength: limits.maxInboundFrameLength});
 				const frames = yield* Queue.unbounded<Uint8Array>();
 				const closed = yield* Queue.unbounded<void>();
 				const requests = yield* FiberSet.make();

@@ -11,12 +11,6 @@
  * wall clock.
  */
 
-import type {
-	ModelMetadata,
-	ModelRef,
-	SessionSnapshot,
-	ThinkingLevel,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Deferred, Effect, Fiber, Layer, Queue, Ref, Stream} from "effect";
 import {type AgentEvent, type TransportError, TuvalAiAgent} from "../../ai-agent/service/index.ts";
@@ -26,6 +20,7 @@ import {
 	type PiSessionRef,
 	SessionLocked,
 } from "../client/index.ts";
+import type {ModelMetadata, ModelRef, SessionSnapshot, ThinkingLevel} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/turn";

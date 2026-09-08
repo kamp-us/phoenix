@@ -33,10 +33,10 @@ import {
 	type SessionMessageEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import type {TranscriptItem as PiTranscriptItem} from "@earendil-works/pi-protocol";
 import {planTranscriptPage, type TranscriptPageResult} from "../../ai-agent/history/index.ts";
 import type {SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
+import type {TranscriptItem as PiTranscriptItem} from "../wire/index.ts";
 import {itemId, itemsOf, thinkingId} from "./items.ts";
 
 /** An entry's ISO timestamp as epoch milliseconds; an unparseable one reads as the epoch. */

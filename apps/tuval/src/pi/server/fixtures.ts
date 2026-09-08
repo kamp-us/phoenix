@@ -5,8 +5,8 @@
  * provider, a socket to a model, or a second of wall clock.
  */
 
-import type {ModelMetadata, TranscriptItem} from "@earendil-works/pi-protocol";
 import {Effect, Layer, Queue} from "effect";
+import type {ModelMetadata, TranscriptItem} from "../wire/index.ts";
 import {SessionOpenFailed} from "./errors.ts";
 import {type PiSessionHandle, PiSessionHost, type PiSessionView} from "./PiSessionHost.ts";
 

@@ -1,6 +1,6 @@
 /**
  * An in-process protocol server for this folder's unit tests: a real `ws` listener on loopback that
- * decodes with `ClientMessageDecoder` and answers with `encodeServerMessage`, so the transport and
+ * decodes with `createClientMessageDecoder` and answers with `encodeServerMessage`, so the transport and
  * the lease service are exercised over the real codec and a real socket without a model, an
  * `AgentSession` or the loopback `PiServerService`.
  *
@@ -11,15 +11,15 @@
 import {randomUUID} from "node:crypto";
 import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
+import {Effect, type Scope} from "effect";
+import {type WebSocket, WebSocketServer} from "ws";
 import {
 	type ClientMessage,
-	ClientMessageDecoder,
+	createClientMessageDecoder,
 	encodeServerMessage,
 	PROTOCOL_VERSION,
 	type ServerMessage,
-} from "@earendil-works/pi-protocol";
-import {Effect, type Scope} from "effect";
-import {type WebSocket, WebSocketServer} from "ws";
+} from "../wire/index.ts";
 
 export interface ProtocolServer {
 	readonly url: string;
@@ -76,7 +76,7 @@ export const startProtocolServer = (
 				wss.on("connection", (socket) => {
 					connectionCount += 1;
 					sockets.add(socket);
-					const decoder = new ClientMessageDecoder();
+					const decoder = createClientMessageDecoder();
 					socket.on("error", () => {});
 					socket.on("close", () => sockets.delete(socket));
 					socket.on("message", (data: Buffer) => {

@@ -5,10 +5,6 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import type {
-	TranscriptItem as PiTranscriptItem,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {describe, expect, it} from "vitest";
 import {
 	type AiAgentSessionCmd,
@@ -20,6 +16,7 @@ import {
 } from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {TOOL_RESULT_BYTE_LIMIT, type TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../wire/index.ts";
 import {
 	emptyProjection,
 	eventsOf,
