@@ -420,12 +420,19 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		if (firstError !== null) return yield* Effect.die(firstError);
 	});
 
+	/**
+	 * This commit's publication, owed to the world however its Cmds settle: by the time a handler
+	 * runs the state is applied and checkpointed. Before #8538 the publication sat after
+	 * `runInterpret` in the same error channel, so one failing handler aborted the commit before it
+	 * and the process's public revision froze at 0 while its state went on advancing.
+	 */
+	const published = onCommit === undefined ? Effect.void : Effect.suspend(() => onCommit(state));
+
 	const commit = Effect.fn("Tuval.host.commit")(function* (next: S, cmds: readonly C[]) {
 		state = next;
 		yield* checkpoint(next);
 		yield* reconcile();
-		yield* runInterpret(cmds);
-		if (onCommit) yield* onCommit(state);
+		yield* runInterpret(cmds).pipe(Effect.ensuring(published));
 	});
 
 	const isMisaddressed = (msg: M): boolean => {
@@ -522,7 +529,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		Effect.gen(function* () {
 			yield* reconcile();
 			yield* runInterpret(initCmds);
-			if (onCommit) yield* onCommit(state);
+			yield* published;
 		}),
 	);
 
