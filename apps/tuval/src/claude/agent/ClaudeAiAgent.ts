@@ -226,9 +226,13 @@ const make = (
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
 		const commands = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
 		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
-		// offered set is looked up by the model the session is running on rather than held flat.
+		// offered set is looked up by the model the session is running on rather than held flat. It
+		// dies with the session beside `models`, for the same reason (#8542).
 		const efforts = yield* Ref.make<ReadonlyMap<string, ReadonlyArray<EffortLevel>>>(new Map());
-		const effort = yield* Ref.make<EffortLevel | null>(null);
+		// A `ThinkingLevel` rather than an `EffortLevel`, because a pick made with no session is held
+		// unvalidated: the two levels Claude has no effort for are refused by the next open's
+		// re-check, not by the setter that could only refuse them against an empty offer (#8542).
+		const effort = yield* Ref.make<ThinkingLevel | null>(null);
 		const parked = new Map<string, Parked>();
 
 		const emit = (open: EventQueue, events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
@@ -305,7 +309,7 @@ const make = (
 		): ReadonlyArray<EffortLevel> => (current === null ? [] : (table.get(current.id) ?? []));
 
 		const publishThinking = (
-			current: EffortLevel | null,
+			current: ThinkingLevel | null,
 			offered: ReadonlyArray<EffortLevel>,
 		): Effect.Effect<void> => publish([{kind: "thinking", current, available: offered}]);
 
@@ -368,9 +372,13 @@ const make = (
 			// Only now: the generator has ended, so the pump's next pull resolves and the fiber this
 			// closes is finishing rather than blocked.
 			yield* Scope.close(held.scope, Exit.void);
-			// The catalog was read off this session, so it goes with it: kept, it would still be the
-			// set `setModel` judges a pick against after the session offering it is gone (#8061).
+			// Both catalogs were read off this session, so both go with it: kept, either would still
+			// be the set a pick is judged against after the session offering it is gone (#8061,
+			// #8542). The held selections stay — a pick is the operator's, not the session's, and the
+			// next open re-validates it (#7981). Announcing the clear is `start`'s, because this
+			// queue is shut the moment this returns; see the emit behind its `starting`.
 			yield* Ref.set(models, []);
+			yield* Ref.set(efforts, new Map());
 			yield* denyEveryParked;
 		});
 
@@ -580,6 +588,19 @@ const make = (
 			const out = yield* Queue.unbounded<AgentEvent, TransportError | Cause.Done>();
 			yield* Ref.set(queue, out);
 			yield* emit(out, [{kind: "phase", phase: "starting"}]);
+			// The clear `closeCurrent` just made, said out loud on the queue a consumer is on. Without
+			// it a subscription taken across the swap keeps painting the dead session's rows, and an
+			// open that then fails emits `gone` with nothing to correct them (#8542). The held
+			// selections ride along, so the control names the pick rather than a catalog nobody holds
+			// — the founder's ruling of 2026-09-08. Only after a teardown: with no previous session
+			// this layer knows no selection, and announcing `current: null` would erase the one a
+			// restored window is showing.
+			if (previous !== null) {
+				yield* emit(out, [
+					{kind: "model", current: yield* Ref.get(model), available: []},
+					{kind: "thinking", current: yield* Ref.get(effort), available: []},
+				]);
+			}
 
 			// The layer's own switch first, then the mode the caller says to open on. The Ref is per
 			// build, so on the rebuilt layer a reconnect stands up it is null and the caller's mode is
@@ -643,11 +664,15 @@ const make = (
 			// this session landed on does not offer is dropped instead of sent.
 			const levels = offeredEfforts(table, opening);
 			const wanted = yield* Ref.get(effort);
+			// `find` rather than `includes`: the held pick is a `ThinkingLevel`, and what comes back
+			// is typed by this session's own offer, so `applyEffort` cannot be reached with one of
+			// the two levels Claude has no effort for.
+			const supported = levels.find((candidate) => candidate === wanted);
 			const running =
-				wanted === null || !levels.includes(wanted)
+				supported === undefined
 					? null
-					: (yield* applyEffort(opened.session, wanted))
-						? wanted
+					: (yield* applyEffort(opened.session, supported))
+						? supported
 						: null;
 			yield* Ref.set(effort, running);
 			// The open's `ready` ships here, behind the catalogs, and never ahead of them: the
@@ -794,11 +819,14 @@ const make = (
 			yield* publish([{kind: "model", current: held, available: offered}]);
 			// The offered levels are the model's, so a switch moves the picker's rows. A level the
 			// new model does not offer stops being the current one rather than staying on a state it
-			// would now refuse.
+			// would now refuse — against a live catalog only: between sessions there is none to judge
+			// it by, and dropping the held level there would spend the operator's pick on a model
+			// switch the next open has not seen yet (#8542).
 			const table = yield* Ref.get(efforts);
 			const levels = offeredEfforts(table, held);
 			const running = yield* Ref.get(effort);
-			const kept = running !== null && levels.includes(running) ? running : null;
+			const kept =
+				current === null ? running : (levels.find((candidate) => candidate === running) ?? null);
 			yield* Ref.set(effort, kept);
 			yield* publishThinking(kept, levels);
 		});
@@ -808,17 +836,24 @@ const make = (
 		) {
 			const table = yield* Ref.get(efforts);
 			const levels = offeredEfforts(table, yield* Ref.get(model));
+			const current = yield* Ref.get(session);
+			// The session is read before the offer is judged, and that order is the whole fix: with
+			// no session the table is empty, so judging first refused every pick with the level
+			// listed against an empty `available` — the self-contradicting refusal #7981 ruled out,
+			// and the hold the comment here used to describe was unreachable (#8542). Validation is
+			// deferred, not skipped: `start` re-checks the held level against the catalog it reads
+			// and drops one this session's model does not offer.
+			if (current === null) {
+				yield* Ref.set(effort, next);
+				return yield* publishThinking(next, levels);
+			}
 			// `find` rather than `includes`: what comes back is typed as an `EffortLevel`, so the SDK
 			// call below cannot be reached with one of the two levels Claude has no effort for.
 			const picked = levels.find((candidate) => candidate === next);
 			if (picked === undefined) {
 				return yield* new ThinkingUnsupported({level: next, available: levels});
 			}
-			const current = yield* Ref.get(session);
-			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
-			// as a mode or a model set before the first session is.
-			const changed = current === null ? true : yield* applyEffort(current, picked);
-			if (changed) yield* Ref.set(effort, picked);
+			if (yield* applyEffort(current, picked)) yield* Ref.set(effort, picked);
 			yield* publishThinking(yield* Ref.get(effort), levels);
 		});
 

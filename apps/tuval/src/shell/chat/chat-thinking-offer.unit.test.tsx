@@ -140,3 +140,18 @@ describe.each(["focused", "harness"] as const)("the %s thinking control", (varia
 		await waitFor(async () => expect(await reading(variant)).not.toContain("loading"));
 	});
 });
+
+/**
+ * The other half of the same fact, on the axis #8542's founder ruling puts beside the model one: a
+ * level held with no live catalog behind it. The focused variant is Tuval's own, and the only one
+ * that can name a selection its offer carries no row for.
+ */
+it("names a held level beside the empty offer rather than instead of it", async () => {
+	const composer = mount("ready", "focused", picked);
+	await waitFor(async () => expect(await reading("focused")).toContain("medium"));
+
+	// The session goes and its levels go with it. The pick is the operator's, so it stays named.
+	await act(async () => composer.setThinking({current: "medium", available: []}));
+	await waitFor(async () => expect(await reading("focused")).toContain("none offered"));
+	expect(await reading("focused")).toContain("medium");
+});

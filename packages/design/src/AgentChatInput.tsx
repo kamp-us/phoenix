@@ -950,9 +950,29 @@ export function AgentChatInput({
 			})),
 		[thinkingLevels, t],
 	);
-	const selectedModel = selectedModelValue(state) ?? modelItems?.[0]?.value;
+	// The host's own answer and nothing else. Falling back to the first row named a model nobody
+	// picked as the one the session runs on, and a picker opened with that row already checked read
+	// as a choice already made (#8573).
+	const selectedModel = selectedModelValue(state);
 	const stateThinking = thinkingLevelValue(state?.thinkingLevel);
 	const selectedThinking = stateThinking !== "off" ? stateThinking : undefined;
+	// Each selection as a row of its own, for the picker to name when the offer carries no row for
+	// it — the pick an operator holds while no session's catalog is live (#8542).
+	const heldModel = useMemo<PickerItem | undefined>(() => {
+		const name = modelName(state);
+		return selectedModel && name ? {value: selectedModel, label: name} : undefined;
+	}, [selectedModel, state]);
+	const heldThinking = useMemo<PickerItem | undefined>(
+		() =>
+			selectedThinking === undefined
+				? undefined
+				: {
+						value: selectedThinking,
+						label: t(thinkingLevelKeys[selectedThinking]),
+						icon: thinkingLevelIcons[selectedThinking],
+					},
+		[selectedThinking, t],
+	);
 	const settingsDisabled = disabled || settingsChanging || connection !== "ready";
 	const offeredThinking = thinkingItems?.length ?? 0;
 	const thinkingDisabled =
@@ -1145,6 +1165,7 @@ export function AgentChatInput({
 											label={t("admin.agent.setting.model")}
 											items={focusedModelItems}
 											value={selectedModel}
+											held={heldModel}
 											onValueChange={(value) => void changeModel(value)}
 											disabled={settingsDisabled || (focusedModelItems?.length ?? 0) < 2}
 										/>
@@ -1152,6 +1173,7 @@ export function AgentChatInput({
 											label={t("admin.agent.setting.thinking")}
 											items={focusedThinkingItems}
 											value={selectedThinking}
+											held={heldThinking}
 											onValueChange={(value) => void changeThinkingLevel(value)}
 											disabled={thinkingDisabled}
 										/>
@@ -1346,6 +1368,12 @@ export interface SettingMenuProps {
 	 */
 	readonly items: readonly PickerItem[] | undefined;
 	readonly value?: string;
+	/**
+	 * The selection as the host describes it, for when `items` carries no row for it — a pick held
+	 * with no live catalog behind it (#8542). The trigger names this rather than the empty offer's
+	 * copy, so the control never contradicts the selection the host is holding.
+	 */
+	readonly held?: PickerItem;
 	readonly onValueChange: (value: string) => void;
 	readonly disabled?: boolean;
 }
@@ -1355,7 +1383,14 @@ export interface SettingMenuProps {
  * the `settings` slot builds its control out of this rather than reaching for a bare `Select`,
  * which would put a differently-shaped control in a row of these.
  */
-export function SettingMenu({label, items, value, onValueChange, disabled}: SettingMenuProps) {
+export function SettingMenu({
+	label,
+	items,
+	value,
+	held,
+	onValueChange,
+	disabled,
+}: SettingMenuProps) {
 	const t = useDesignT();
 	const [open, setOpen] = useState(false);
 	// The highlight is ours to drive, not the machine's: Zag clears it on close and re-seeds it to
@@ -1364,7 +1399,6 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 	// there and the first arrow key move from there. See ADR 0361.
 	const [highlighted, setHighlighted] = useState<string | null>(null);
 	const offered = items ?? [];
-	const selected = offered.find((item) => item.value === value);
 	// Three unselected states, and only the first is loading: `undefined` items is a host that has
 	// not resolved what it offers, `[]` is one that resolved and offers nothing, and a populated
 	// list with no `value` is a setting the session has not picked yet (#8190, #8425). Reading the
@@ -1376,6 +1410,12 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 				? "admin.agent.picker.empty"
 				: "admin.agent.picker.none",
 	);
+	// A pick the offer carries no row for is still a pick: the trigger names it and the empty copy
+	// rides as its note, so an operator reads both what is held and that nothing live sits behind
+	// it. A control that showed the copy alone said the opposite of the model it was on (#8542).
+	const selected =
+		offered.find((item) => item.value === value) ??
+		(held !== undefined && held.value === value ? {...held, note: unselectedName} : undefined);
 	// Nothing to pick is nothing to open, either way round: an unresolved offer has no rows yet and
 	// a resolved-empty one never will, so the trigger does not advertise an operation the host
 	// cannot perform. `disabled` from the host still wins on top of this.
