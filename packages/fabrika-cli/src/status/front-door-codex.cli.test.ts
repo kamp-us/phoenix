@@ -21,7 +21,7 @@ describe.runIf(process.env.FABRIKA_CODEX_PROOF === "1")(
 			const repo = join(root, "repo");
 			const market = join(root, "market");
 			const plugin = join(market, "fabrika");
-			const env = {PATH: process.env.PATH, HOME: process.env.HOME, CODEX_HOME: home};
+			const env = {PATH: process.env.PATH, HOME: home, CODEX_HOME: home};
 			let accept: (body: string) => void = () => {};
 			const server = createServer(async (req, res) => {
 				const chunks: Buffer[] = [];
