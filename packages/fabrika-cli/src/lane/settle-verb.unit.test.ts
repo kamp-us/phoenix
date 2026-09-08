@@ -14,12 +14,15 @@ import {
 	ISSUE_LIVE,
 	ISSUE_UNRESOLVED,
 	LANE_UNREADABLE,
+	PROOF_ABSENT,
+	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {seatsIn} from "./concurrency.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import type {NominatedPull} from "./nominate.ts";
 import {
+	type AssertedReader,
 	type ClaimsReader,
 	type ClosureReader,
 	type PullsReader,
@@ -78,6 +81,31 @@ const unreadablePulls: PullsReader<never> = () =>
 const readsSha: ShaReader<never> = () => Effect.succeed(SHA);
 const noSha: ShaReader<never> = () => Effect.succeed(null);
 
+const ASSERTED_SHA = "4d0f6bd6c1a0a3e6c1e8b8ee4dcb2f9e0b5f2a11";
+
+const mergedPull =
+	(number: number, sha: string | null = ASSERTED_SHA): AssertedReader<never> =>
+	() =>
+		Effect.succeed({_tag: "Merged", number, sha});
+
+const unmergedPull =
+	(number: number, state = "open"): AssertedReader<never> =>
+	() =>
+		Effect.succeed({_tag: "Unmerged", number, state});
+
+const absentPull =
+	(number: number): AssertedReader<never> =>
+	() =>
+		Effect.succeed({_tag: "Absent", number});
+
+const unreadablePull: AssertedReader<never> = () =>
+	Effect.succeed({_tag: "Unknown", reason: "the API answered 503"});
+
+/** The reader a lane that names no `--landed-by` must never reach. */
+const forbiddenPull: AssertedReader<never> = () => {
+	throw new Error("the named-pull read ran with no --landed-by");
+};
+
 const claimant = (token: string): Claimant => ({
 	token,
 	session: "a-driver-session",
@@ -110,6 +138,8 @@ interface SettleOverrides {
 	readonly pulls?: PullsReader<never>;
 	readonly claims?: ClaimsReader<never>;
 	readonly sha?: ShaReader<never>;
+	readonly asserted?: AssertedReader<never>;
+	readonly landedBy?: number | null;
 	readonly token?: string | null;
 	readonly task?: string | null;
 }
@@ -123,10 +153,12 @@ const settle = (fs: ReturnType<typeof fakeFs>, over: SettleOverrides = {}) =>
 				issue: ISSUE,
 				task: over.task ?? null,
 				token: over.token ?? null,
+				landedBy: over.landedBy ?? null,
 				closure: over.closure ?? closes("closed", "not_planned"),
 				pulls: over.pulls ?? noPulls,
 				claims: over.claims ?? unclaimed,
 				sha: over.sha ?? readsSha,
+				asserted: over.asserted ?? forbiddenPull,
 			}),
 			fs.layer,
 		),
@@ -301,6 +333,118 @@ describe("lane settle — the landing arm", () => {
 	});
 });
 
+describe("lane settle — the asserted landing `--landed-by` supplies", () => {
+	it("lands a completed close whose merge names some other issue in its body", async () => {
+		const fs = laneFs(AT_REVIEW);
+
+		const out = await settle(fs, {
+			closure: closes("closed", "completed"),
+			pulls: nominates([pull({linkedIssues: [9001]})]),
+			landedBy: 6894,
+			asserted: mergedPull(6894),
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.LANDED",
+			current: "board:landed",
+			outcome: "completed",
+			landed: [6894],
+			sha: ASSERTED_SHA,
+			assertedBy: "caller",
+		});
+		expect(appendedLine(fs, AT_REVIEW)).toEqual({
+			task: "issue",
+			event: "ISSUE.LANDED",
+			at: expect.any(String),
+			outcome: "completed",
+			landed: [6894],
+			sha: ASSERTED_SHA,
+			assertedBy: "caller",
+		});
+	});
+
+	it("records the asserted landing without a sha when the board published none", async () => {
+		const fs = laneFs(AT_REVIEW);
+
+		const out = await settle(fs, {
+			closure: closes("closed", "completed"),
+			pulls: noPulls,
+			landedBy: 6894,
+			asserted: mergedPull(6894, null),
+		});
+
+		expect(out.code).toBe(0);
+		expect(appendedLine(fs, AT_REVIEW)).toMatchObject({assertedBy: "caller"});
+		expect(appendedLine(fs, AT_REVIEW)).not.toHaveProperty("sha");
+	});
+
+	it("leaves a body-proven landing body-proven: the flag fills a gap and never relabels one", async () => {
+		const fs = laneFs(AT_REVIEW);
+
+		const out = await settle(fs, {
+			closure: closes("closed", "completed"),
+			pulls: nominates([pull()]),
+			landedBy: 6894,
+			asserted: mergedPull(6894),
+		});
+
+		expect(JSON.parse(out.stdout)).toMatchObject({landed: [6874], sha: SHA});
+		expect(appendedLine(fs, AT_REVIEW)).not.toHaveProperty("assertedBy");
+	});
+
+	it("refuses a named pull request that has not merged, with the log unappended", async () => {
+		const fs = laneFs(AT_REVIEW);
+
+		const out = await settle(fs, {
+			closure: closes("closed", "completed"),
+			pulls: noPulls,
+			landedBy: 6894,
+			asserted: unmergedPull(6894),
+		});
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(fs.written.has(LOG)).toBe(false);
+	});
+
+	it("refuses a named pull request the board does not hold, with the log unappended", async () => {
+		const fs = laneFs(AT_REVIEW);
+
+		const out = await settle(fs, {
+			closure: closes("closed", "completed"),
+			pulls: noPulls,
+			landedBy: 6894,
+			asserted: absentPull(6894),
+		});
+
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(fs.written.has(LOG)).toBe(false);
+	});
+
+	it("stays UNKNOWN when the named pull request could not be read", async () => {
+		const fs = laneFs(AT_REVIEW);
+
+		const out = await settle(fs, {
+			closure: closes("closed", "completed"),
+			pulls: noPulls,
+			landedBy: 6894,
+			asserted: unreadablePull,
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.has(LOG)).toBe(false);
+	});
+
+	it("reads no named pull request on a cancellation — the closure alone entitles it", async () => {
+		const fs = laneFs();
+
+		const out = await settle(fs, {landedBy: 6894, asserted: forbiddenPull});
+
+		expect(out.code).toBe(0);
+		expect(appendedLine(fs, PARKED)).toMatchObject({event: "ISSUE.CANCELLED"});
+	});
+});
+
 describe("lane settle — what never reaches a terminal", () => {
 	it("drops out of the stale sweep as terminal, so it can never be stale again", async () => {
 		const fs = laneFs();
@@ -417,10 +561,12 @@ describe("lane settle — what never reaches a terminal", () => {
 					issue: null,
 					task: null,
 					token: null,
+					landedBy: null,
 					closure: closes("closed", "not_planned"),
 					pulls: noPulls,
 					claims: unclaimed,
 					sha: readsSha,
+					asserted: forbiddenPull,
 				}),
 				fs.layer,
 			),
