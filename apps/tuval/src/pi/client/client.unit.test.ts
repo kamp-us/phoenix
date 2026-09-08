@@ -6,10 +6,10 @@ import {
 	PiSessionDetachedError,
 	PiSessionOwnershipError,
 } from "@earendil-works/pi-client";
-import type {ClientMessage, ServerMessage, SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Duration, Effect, type Exit, Option, Queue, Stream} from "effect";
 import {TEARDOWN_CEILING} from "../teardown.ts";
+import type {ClientMessage, ServerMessage, SessionSnapshot} from "../wire/index.ts";
 import {Disconnected, SessionLocked, SessionNotFound} from "./errors.ts";
 import {defaultAnswer, startProtocolServer} from "./fixtures.ts";
 import {PiClientService} from "./PiClientService.ts";

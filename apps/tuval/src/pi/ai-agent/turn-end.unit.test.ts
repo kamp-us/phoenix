@@ -13,15 +13,12 @@
  * test says so, with the snapshot the turn ended on.
  */
 
-import type {
-	TranscriptItem as PiTranscriptItem,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
 import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/turn-end";

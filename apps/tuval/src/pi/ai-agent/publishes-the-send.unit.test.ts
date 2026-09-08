@@ -17,7 +17,6 @@
  * inside either.
  */
 
-import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Deferred, Effect, Layer, Queue, Stream} from "effect";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../../ai-agent/core/index.ts";
@@ -36,6 +35,7 @@ import {
 	type PiSessionRef,
 	SessionLocked,
 } from "../client/index.ts";
+import type {SessionSnapshot} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const PROGRAM = "pi-ai-agent-publishes-the-send-test";

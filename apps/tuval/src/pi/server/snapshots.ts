@@ -10,8 +10,8 @@ import type {
 	SessionMetadata,
 	SessionSnapshot,
 	UserTranscriptItem,
-} from "@earendil-works/pi-protocol";
-import {PROTOCOL_VERSION} from "@earendil-works/pi-protocol";
+} from "../wire/index.ts";
+import {PROTOCOL_VERSION} from "../wire/index.ts";
 import type {PiSessionView} from "./PiSessionHost.ts";
 import type {ConnectionId, SessionRecord} from "./records.ts";
 

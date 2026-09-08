@@ -17,13 +17,6 @@
  */
 
 import {applyCellChecked} from "@demlik/tea";
-import {
-	type ClientMessage,
-	type TranscriptItem as PiTranscriptItem,
-	ProtocolValidationError,
-	parseClientMessage,
-	type SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
 import {aiAgentSessionMachine} from "../../ai-agent/core/machine.ts";
@@ -32,6 +25,13 @@ import {type AiAgentSessionState, initialState} from "../../ai-agent/core/state.
 import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import {
+	type ClientMessage,
+	type TranscriptItem as PiTranscriptItem,
+	ProtocolValidationError,
+	parseClientMessage,
+	type SessionSnapshot,
+} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/mid-turn";

@@ -35,7 +35,6 @@
 import {readdirSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
-import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {
@@ -70,6 +69,7 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
+import type {SessionSnapshot} from "../wire/index.ts";
 import {planPageOverEntries} from "./entries.ts";
 import {
 	emptyProjection,

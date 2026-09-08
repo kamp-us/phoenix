@@ -11,7 +11,6 @@
  * under which a real server refuses one.
  */
 
-import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
 import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
@@ -22,6 +21,7 @@ import {
 	type PiSessionRef,
 	SessionLocked,
 } from "../client/index.ts";
+import type {SessionSnapshot} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/interrupt-refusal";
