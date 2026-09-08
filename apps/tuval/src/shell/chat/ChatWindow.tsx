@@ -678,6 +678,28 @@ function ChatWindow({
 	 * the follow stops dead in the middle of a streaming reply (#8174).
 	 */
 	const selfScrollRef = useRef<number | null>(null);
+
+	/**
+	 * Where the content ended, and where the scroller rested, at the last scroll event — the pair
+	 * the next event needs to tell the browser's own clamp from the reader.
+	 *
+	 * Shortening the row list — closing a fold, and every other path that drops rows — leaves the
+	 * scroller resting past the end of what is left, and the browser answers by clamping the offset
+	 * to the new end and firing one ordinary `scroll` carrying it. That offset is one the window
+	 * *caused* but never *asked* its scroller for, so `selfScrollRef` above is null and the clamp
+	 * reads as the reader moving: on a transcript barely taller than its viewport the clamped offset
+	 * is inside `topThreshold`, and a page of history nobody asked for goes out (#8643).
+	 *
+	 * The offset is half of it because the end alone does not name a clamp: a shrink under a reader
+	 * resting *above* the new end clamps nothing and fires no event at all, so the end left here is
+	 * the taller one, and the reader's next arrival at the bottom in a single event — `End`, a click
+	 * on the scrollbar track, a fling — would read as that clamp. A browser clamps only an offset
+	 * that was already past the new end, so requiring the rested offset to have been past it is what
+	 * makes this exactly as narrow as the event it names. `restingAt` above cannot serve: the commit
+	 * debounce nulls it (#8643, review round 1).
+	 */
+	const contentEndRef = useRef<number | null>(null);
+	const restedAtRef = useRef<number | null>(null);
 	const scrollToFn = useCallback<
 		NonNullable<VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"]>
 	>(
@@ -824,7 +846,8 @@ function ChatWindow({
 
 	const onScroll = useCallback(
 		(event: UIEvent<HTMLDivElement>) => {
-			const offset = event.currentTarget.scrollTop;
+			const scroller = event.currentTarget;
+			const offset = scroller.scrollTop;
 			// This event is the arrival of the offset `scrollToFn` above just asked for, so it is the
 			// window hearing its own request rather than the reader moving. Both readings below are
 			// about where the *reader* went — whether they left the newest turn, and whether they
@@ -832,11 +855,26 @@ function ChatWindow({
 			// own answers.
 			const asked = selfScrollRef.current;
 			selfScrollRef.current = null;
-			const byReader = asked === null || Math.abs(offset - asked) > 1;
+			// …and neither is a question the browser's clamp answers: the content ended further down
+			// at the last scroll event, the scroller rested past where it ends now, and this offset is
+			// exactly that new end — a list that shortened under a scroller sitting past it
+			// (`contentEndRef` above).
+			const contentEnd = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+			const endBefore = contentEndRef.current;
+			const restedAt = restedAtRef.current;
+			contentEndRef.current = contentEnd;
+			restedAtRef.current = offset;
+			const clamped =
+				endBefore !== null &&
+				endBefore > contentEnd &&
+				restedAt !== null &&
+				restedAt > contentEnd &&
+				Math.abs(offset - contentEnd) <= 1;
+			const byReader = !clamped && (asked === null || Math.abs(offset - asked) > 1);
 			// The pin is written on the transition and not through the debounce below: a turn landing
 			// inside the settle window would otherwise read a pin the operator has already left.
 			if (byReader) {
-				const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
+				const pinned = onNewest(scroller, totalSize, options.bottomThreshold);
 				commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
 			}
 			// The offset is where the transcript rests whoever moved it, so it is committed either way.
