@@ -30,7 +30,7 @@ import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
-import {type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
+import {chatWindow} from "./ChatWindow.tsx";
 import {
 	assistantItem,
 	call,
@@ -134,19 +134,13 @@ const probeFocus = async (root: HTMLElement, control: HTMLElement) => {
 	return found.filter((violation) => violation.id === "focusable");
 };
 
-const mountWindow = async (
-	state: AiAgentSessionState,
-	view: ChatView = initialChatView,
-	options: ChatWindowOptions = {},
-) => {
+const mountWindow = async (state: AiAgentSessionState, view: ChatView = initialChatView) => {
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
 	);
 	const host = await Effect.runPromise(process.window(WindowId.make("w1"), view));
 	const rendered = render(
-		chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined, ...options}).render(
-			host,
-		) as ReactElement,
+		chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined}).render(host) as ReactElement,
 	);
 	await screen.findByRole("log", {name: "Transcript"});
 	return rendered;
@@ -576,14 +570,8 @@ describe("the chat turn shape's authorship", () => {
 		compactionItem("c1", "context compacted"),
 	];
 
-	const mountShape = (chatTurnShape: boolean) =>
-		mountWindow(
-			withTranscript(TRANSCRIPT),
-			{...initialChatView, unfolded: ["agent"]},
-			{
-				chatTurnShape,
-			},
-		);
+	const mountShape = () =>
+		mountWindow(withTranscript(TRANSCRIPT), {...initialChatView, unfolded: ["agent"]});
 
 	/** The rows an item is behind — never the paging heads or the session row, which own their own. */
 	const ITEM_KINDS = ["user", "assistant", "tool", "thinking", "compaction"];
@@ -599,7 +587,7 @@ describe("the chat turn shape's authorship", () => {
 		);
 
 	it("prints no author label on any item row, and names the author to a reader instead", async () => {
-		const rendered = await mountShape(true);
+		const rendered = await mountShape();
 		const root = rendered.container.firstElementChild as HTMLElement;
 
 		expect(root.querySelectorAll(".tuval-chat-transcript .tuval-chat-who")).toHaveLength(0);
@@ -622,7 +610,7 @@ describe("the chat turn shape's authorship", () => {
 
 	// The indent is the second signal, never the only one (ADR 0162, Pillar 4).
 	it("says in words that a nested row ran inside another call", async () => {
-		const rendered = await mountShape(true);
+		const rendered = await mountShape();
 		const root = rendered.container.firstElementChild as HTMLElement;
 
 		const nested = itemRows(root).filter((row) => row.getAttribute("data-nested") === "true");
@@ -634,48 +622,31 @@ describe("the chat turn shape's authorship", () => {
 		rendered.unmount();
 	});
 
-	it("keeps the label and writes no role attribute with the flag off", async () => {
-		const rendered = await mountShape(false);
-		const root = rendered.container.firstElementChild as HTMLElement;
-
-		const rows = itemRows(root);
-		for (const row of rows) {
-			expect(row.getAttribute("data-message-role")).toBeNull();
-			expect(row.querySelector(".tuval-chat-who")).not.toBeNull();
-		}
-
-		rendered.unmount();
-	});
-
 	// Neither word is an author label: the compaction one names a divider, the session one a run.
-	it("leaves the compaction divider and the session row's own label alone in both states", async () => {
-		for (const on of [true, false]) {
-			const rendered = await mountShape(on);
-			const root = rendered.container.firstElementChild as HTMLElement;
-			expect(root.querySelector(".tuval-chat-compaction-label")?.textContent).toBe(
-				"context compacted",
-			);
-			expect(root.querySelector(".tuval-chat-compaction-rule")).not.toBeNull();
-			rendered.unmount();
+	it("leaves the compaction divider and the session row's own label alone", async () => {
+		const rendered = await mountShape();
+		const root = rendered.container.firstElementChild as HTMLElement;
+		expect(root.querySelector(".tuval-chat-compaction-label")?.textContent).toBe(
+			"context compacted",
+		);
+		expect(root.querySelector(".tuval-chat-compaction-rule")).not.toBeNull();
+		rendered.unmount();
 
-			const session = await mountWindow(
-				withTranscript([userItem("u1", "go"), systemItem("s1", "session resumed")]),
-				initialChatView,
-				{chatTurnShape: on},
-			);
-			const sessionRoot = session.container.firstElementChild as HTMLElement;
-			const label = sessionRoot.querySelector<HTMLElement>(
-				'.tuval-chat-row[data-kind="session"] .tuval-chat-who',
-			);
-			expect(label?.textContent).toBe("session");
-			session.unmount();
-		}
+		const session = await mountWindow(
+			withTranscript([userItem("u1", "go"), systemItem("s1", "session resumed")]),
+		);
+		const sessionRoot = session.container.firstElementChild as HTMLElement;
+		const label = sessionRoot.querySelector<HTMLElement>(
+			'.tuval-chat-row[data-kind="session"] .tuval-chat-who',
+		);
+		expect(label?.textContent).toBe("session");
+		session.unmount();
 	});
 
 	it(
-		"holds the enforced pillar-4 invariants with the flag on",
+		"holds the enforced pillar-4 invariants over the new row shape",
 		async () => {
-			const rendered = await mountShape(true);
+			const rendered = await mountShape();
 			const root = rendered.container.firstElementChild as HTMLElement;
 			expect(await scanRegions(root)).toEqual([]);
 			rendered.unmount();

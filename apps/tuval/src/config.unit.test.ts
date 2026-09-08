@@ -116,11 +116,7 @@ describe("the feature flags", () => {
 	it.effect("merge project over global one flag at a time", () =>
 		Effect.gen(function* () {
 			const merged = yield* layered(fixture("features-on"), fixture("two-rows"));
-			assert.deepStrictEqual(merged.features, {
-				subagentList: true,
-				piSubagents: true,
-				chatTurnShape: false,
-			});
+			assert.deepStrictEqual(merged.features, {subagentList: true, piSubagents: true});
 		}),
 	);
 
@@ -130,23 +126,11 @@ describe("the feature flags", () => {
 	it.effect("let a layer that states a flag off win over the on default", () =>
 		Effect.gen(function* () {
 			const global = yield* layered(fixture("features-off"), fixture("two-rows"));
-			assert.deepStrictEqual(global.features, {
-				subagentList: false,
-				piSubagents: true,
-				chatTurnShape: false,
-			});
+			assert.deepStrictEqual(global.features, {subagentList: false, piSubagents: true});
 			const project = yield* layered(fixture("two-rows"), fixture("features-off"));
-			assert.deepStrictEqual(project.features, {
-				subagentList: false,
-				piSubagents: true,
-				chatTurnShape: false,
-			});
+			assert.deepStrictEqual(project.features, {subagentList: false, piSubagents: true});
 			const overGlobalOn = yield* layered(fixture("features-on"), fixture("features-off"));
-			assert.deepStrictEqual(overGlobalOn.features, {
-				subagentList: false,
-				piSubagents: true,
-				chatTurnShape: false,
-			});
+			assert.deepStrictEqual(overGlobalOn.features, {subagentList: false, piSubagents: true});
 		}),
 	);
 });
@@ -159,7 +143,7 @@ describe("loadLayeredConfig", () => {
 				const config = yield* layered(fixture("global-layer"), fixture("project-layer"));
 				assert.deepStrictEqual(config, {
 					programs: [{id: "a"}, {id: "b", core: "project"}],
-					features: {subagentList: true, piSubagents: true, chatTurnShape: false},
+					features: {subagentList: true, piSubagents: true},
 					moduleRenderers: [],
 					graph: {
 						nodes: [
@@ -181,7 +165,7 @@ describe("loadLayeredConfig", () => {
 			const missing = fixture("does-not-exist");
 			assert.deepStrictEqual(yield* layered(missing, fixture("with-graph")), {
 				programs: [{id: "a"}],
-				features: {subagentList: true, piSubagents: true, chatTurnShape: false},
+				features: {subagentList: true, piSubagents: true},
 				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
@@ -189,7 +173,7 @@ describe("loadLayeredConfig", () => {
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
-				features: {subagentList: true, piSubagents: true, chatTurnShape: false},
+				features: {subagentList: true, piSubagents: true},
 				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
@@ -197,7 +181,7 @@ describe("loadLayeredConfig", () => {
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
-				features: {subagentList: true, piSubagents: true, chatTurnShape: false},
+				features: {subagentList: true, piSubagents: true},
 				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [],

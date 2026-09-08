@@ -107,12 +107,6 @@ export interface ChatWindowOptions {
 	 * (#8405).
 	 */
 	readonly subagentList?: boolean;
-	/**
-	 * The window's half of the config's `features.chatTurnShape` flag (#8210), off by default. On,
-	 * the per-row author label goes and the row's own shape carries authorship; off, the window
-	 * renders the label exactly as it did before the flag existed.
-	 */
-	readonly chatTurnShape?: boolean;
 	readonly pageLimit?: number;
 	readonly overscan?: number;
 	/** First guess per row, before the row is rendered and measured. */
@@ -143,7 +137,6 @@ interface ResolvedOptions {
 	readonly newKey: () => string;
 	readonly now: () => number;
 	readonly subagentList: boolean;
-	readonly chatTurnShape: boolean;
 	readonly pageLimit: number;
 	readonly overscan: number;
 	readonly estimateRowHeight: number;
@@ -158,7 +151,6 @@ const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	now: options.now ?? (() => Date.now()),
 	subagentList: options.subagentList !== false,
-	chatTurnShape: options.chatTurnShape === true,
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,
@@ -223,8 +215,8 @@ const who: Readonly<Record<RowItem["kind"], string>> = {
 };
 
 /**
- * The row's author, in the words the label prints. With `chatTurnShape` on this is the only text
- * that names it, so a nested row states both whose words these are and that they ran inside another
+ * The row's author, in the words the dropped label used to print. This is now the only text that
+ * names it, so a nested row states both whose words these are and that they ran inside another
  * call: the indent is the second signal, never the only one (ADR 0162, Pillar 4).
  */
 const authorName = (kind: RowItem["kind"], nested: boolean): string =>
@@ -295,7 +287,6 @@ function ItemRow({
 	expanded,
 	fold,
 	nested,
-	turnShape,
 	onToggleRow,
 }: {
 	readonly item: RowItem;
@@ -304,20 +295,16 @@ function ItemRow({
 	readonly expanded: boolean;
 	readonly fold: ToolFold | null;
 	readonly nested: boolean;
-	readonly turnShape: boolean;
 	readonly onToggleRow: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
-			{turnShape ? (
-				// The visible label is gone; what carries authorship is the row's own shape plus
-				// `data-message-role` on its wrapper. The name is announced on every row rather than on
-				// author change, because the list is virtualized and a reader may land on any row cold.
-				<span className="kp-visually-hidden">{authorName(item.kind, nested)}</span>
-			) : (
-				/* A nested row says whose call it was in words; the indent beside it is the second signal. */
-				<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
-			)}
+			{/*
+			 * The visible label is gone; what carries authorship is the row's own shape plus
+			 * `data-message-role` on its wrapper. The name is announced on every row rather than on
+			 * author change, because the list is virtualized and a reader may land on any row cold.
+			 */}
+			<span className="kp-visually-hidden">{authorName(item.kind, nested)}</span>
 			<RowBody item={item} expanded={expanded} fold={fold} onToggleRow={onToggleRow} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
@@ -340,7 +327,6 @@ function RowView({
 	onOlder,
 	expanded,
 	unfolded,
-	turnShape,
 	onToggleRow,
 	onToggleFold,
 }: {
@@ -350,7 +336,6 @@ function RowView({
 	readonly onOlder: () => void;
 	readonly expanded: ReadonlySet<string>;
 	readonly unfolded: ReadonlySet<string>;
-	readonly turnShape: boolean;
 	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
 }): ReactElement {
@@ -419,7 +404,6 @@ function RowView({
 						}
 			}
 			nested={row.nested}
-			turnShape={turnShape}
 			onToggleRow={onToggleRow}
 		/>
 	);
@@ -1054,12 +1038,9 @@ function ChatWindow({
 									className="tuval-chat-row"
 									data-index={virtual.index}
 									data-kind={row.kind === "item" ? row.item.kind : row.kind}
-									// Authorship as the new shape carries it (#8210), and the hook every rule
-									// below `.tuval-chat-who` hangs on — so with the flag off there is no
-									// attribute for those rules to match and the row paints as it always did.
-									data-message-role={
-										options.chatTurnShape && row.kind === "item" ? row.item.kind : undefined
-									}
+									// Authorship as the row's shape carries it (#8210), and the hook the bubble and
+									// prose rules in `chat.css` hang on.
+									data-message-role={row.kind === "item" ? row.item.kind : undefined}
 									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
 									ref={virtualizer.measureElement}
 									style={{
@@ -1076,7 +1057,6 @@ function ChatWindow({
 										onOlder={requestOlder}
 										expanded={expanded}
 										unfolded={unfolded}
-										turnShape={options.chatTurnShape}
 										onToggleRow={toggleRow}
 										onToggleFold={toggleFold}
 									/>

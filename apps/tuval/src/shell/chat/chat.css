@@ -279,8 +279,8 @@
 /*
  * The turn shape (#8210), on the T3 Code model the founder ruled on 2026-09-08: with no author
  * label, the operator's turn is a bubble pulled to the end of the row and the agent's reply is plain
- * full-width prose. Every rule here hangs off `data-message-role`, which `ChatWindow` writes only
- * when the flag is on — off, none of them match and the row paints as it did before the flag.
+ * full-width prose. `data-message-role` is what says which, and `ChatWindow` writes it on every item
+ * row.
  *
  * Authorship never rides the shape alone: the row also carries a visually-hidden author name
  * (ADR 0162, Pillar 4).

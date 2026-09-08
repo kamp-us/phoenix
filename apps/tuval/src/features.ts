@@ -21,13 +21,6 @@ export interface TuvalFeatures {
 	 * On by default since the founder desk check on 2026-09-08. Off: the row opens the session it opened before the flag existed.
 	 */
 	readonly piSubagents: boolean;
-	/**
-	 * The chat window's new turn shape (#8210): no per-row author label — a `user` row is a bubble,
-	 * an agent reply is plain prose, and authorship rides a `data-message-role` attribute plus a
-	 * visually-hidden author name. Off: every row keeps the uppercase label above it. Every child of
-	 * #8210 gates on this one flag, and flipping it is that epic's last child.
-	 */
-	readonly chatTurnShape: boolean;
 }
 
 /**
@@ -36,8 +29,4 @@ export interface TuvalFeatures {
  * runbook pass, so a flag's entry moves from `false` to `true` in this record and nowhere else. A
  * layer that states a flag still wins over it, in either direction (`./config.ts`'s merge).
  */
-export const featuresDefault: TuvalFeatures = {
-	subagentList: true,
-	piSubagents: true,
-	chatTurnShape: false,
-};
+export const featuresDefault: TuvalFeatures = {subagentList: true, piSubagents: true};
