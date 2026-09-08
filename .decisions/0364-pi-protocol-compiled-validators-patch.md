@@ -1,7 +1,7 @@
 ---
 id: 0364
 title: "`@earendil-works/pi-protocol` compiles its typebox validators once, carried as a local patch until upstream takes it"
-status: accepted
+status: superseded by [0366](0366-tuval-keeps-own-pi-host.md)
 date: 2026-09-07
 tags: [tuval, dependencies, performance, pi]
 ---
