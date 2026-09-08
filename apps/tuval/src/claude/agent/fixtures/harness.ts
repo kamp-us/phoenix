@@ -59,6 +59,7 @@ export interface HarnessOptions extends ScriptedBehaviour {
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	readonly readFails?: Error;
 	readonly openFails?: Error;
+	readonly openFailsAt?: number;
 	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
 	readonly listFails?: Error;
 	readonly spawn?: SpawnClaudeCodeProcess;
@@ -110,6 +111,7 @@ export const on = <A, E>(
 			...(harness.rows === undefined ? {} : {rows: harness.rows}),
 			...(harness.readFails === undefined ? {} : {readFails: harness.readFails}),
 			...(harness.openFails === undefined ? {} : {openFails: harness.openFails}),
+			...(harness.openFailsAt === undefined ? {} : {openFailsAt: harness.openFailsAt}),
 			...(harness.sessions === undefined ? {} : {sessions: harness.sessions}),
 			...(harness.listFails === undefined ? {} : {listFails: harness.listFails}),
 			...(harness.version === undefined ? {} : {version: harness.version}),

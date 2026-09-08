@@ -259,6 +259,12 @@ export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	 * could not spawn, which is where its `errorClass` stamps arrive (#8010).
 	 */
 	readonly openFails?: Error;
+	/**
+	 * Which open, counting from one, `openFails` throws on; absent, every open throws it. A run that
+	 * opens, tears down and then fails to reopen is the only way to reach the layer's between-sessions
+	 * state, and it needs the second open alone to fail.
+	 */
+	readonly openFailsAt?: number;
 	/** What `listSessions` answers. Absent is a store holding none, which is a truthful empty list. */
 	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
 	/** A listing that throws — a store that would not open, not a store with nothing in it. */
@@ -270,6 +276,7 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 	const opened: Array<ScriptedQuery> = [];
 	const reads: Array<{sessionId: string; dir: string | undefined}> = [];
 	const lists: Array<ListSessionsOptions | undefined> = [];
+	let opens = 0;
 	return {
 		opened,
 		reads,
@@ -277,7 +284,10 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
-				if (options.openFails !== undefined) throw options.openFails;
+				opens += 1;
+				if (options.openFails !== undefined && (options.openFailsAt ?? opens) === opens) {
+					throw options.openFails;
+				}
 				const query = scriptedQuery(params, options.opening, options);
 				opened.push(query);
 				return query;
