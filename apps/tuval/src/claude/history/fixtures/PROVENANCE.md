@@ -6,13 +6,13 @@ and ADR [0180](../../../../../../.decisions/0180-capture-real-runtime-artifact-b
 Nothing here is hand-authored: the SDK's message shapes are observable only at execution, so an
 invented envelope would prove the mapping against a contract nobody emits.
 
-Most of them came off `query()`. Three did not, because no `query()` run can force what they carry;
+Most of them came off `query()`. Five did not, because no `query()` run can force what they carry;
 they were excerpted from an operator's own CLI session log and re-keyed to the SDK's declared
-envelope, and the section below says exactly which part of each is the captured part.
+envelope, and the two sections below say exactly which part of each is the captured part.
 
 ## What produced them
 
-The rows below describe the `query()` captures; the last three fixtures have their own section.
+The rows below describe the `query()` captures; the five excerpted fixtures have their own sections.
 
 | | |
 |---|---|
@@ -47,6 +47,7 @@ in order.
 | `streaming-turn.json` | one prompt with `includePartialMessages: true`, captured 2026-09-06 — the whole `stream_event` run of one turn, `message_start` through `message_stop` (#8172) |
 | `subagent-turn.json` | one prompt asking for a single `Task` spawn, run with `forwardSubagentText: true` and `includePartialMessages: true` on `claude-opus-5` with `thinking: {type: "enabled", budgetTokens: 8000}`, captured 2026-09-07 — the whole 74-frame run of a turn that spawns one worker (#8403) |
 | `two-subagent-turn.json` | the same options on `claude-fable-5-1`, with a prompt asking for **two** `Explore` workers in parallel over two files in the throwaway cwd, captured 2026-09-07 — the whole 59-frame run, and the one capture where two workers overlap (#8408) |
+| `local-command-turn.json`, `local-command-lines-turn.json` | excerpted from an operator's own CLI session transcript, from sessions where a slash command ran — see below |
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |
@@ -121,6 +122,30 @@ Sanitization is the same as everywhere else here: uuids, `msg_*` and `req_*` ids
 consistently, the thinking block's signature replaced with a short placeholder, and every CLI-only
 field naming a machine or a checkout dropped rather than rewritten.
 
+## The two local-command captures
+
+`local-command-turn.json` and `local-command-lines-turn.json` are the same kind of excerpt as the
+three above, under the same founder ruling
+([#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806)), and for the same
+reason: a slash command is the CLI's, so no `query()` run can produce one. Both are the record of a
+command the operator ran — `/model` and `/terminal-setup` — and both are why #8211 exists: the CLI
+writes a command's result as a **user-role** message whose whole text is a
+`<local-command-stdout>` wrapper, which the mapping read as an operator turn.
+
+| | |
+|---|---|
+| Captured | 2026-09-08, from local session transcripts written by CLI **2.1.218** (the `/model` result) and **2.1.170** (the `/terminal-setup` one) |
+| Verbatim | the whole `message` body — the role and the wrapped text, terminal colour escapes included — and each row's own `timestamp` |
+| Re-keyed | `sessionId` → `session_id`, `parent_tool_use_id`/`parent_agent_id` added as `null`, and the CLI-only keys (`parentUuid`, `promptId`, `cwd`, `gitBranch`, `version`, `userType`, `entrypoint`, `isSidechain`) dropped |
+
+The escapes are the golden part of the first one, not noise a sanitizer missed: `/model` writes SGR
+runs around the model's name, and stripping them is the mapping's job (`../map.ts`), so a fixture
+without them would prove nothing about the line a reader sees. The second is the multi-line case —
+three lines, so the notice's summary line is not its whole output — and it is what pins the detail
+half of the row.
+
+Sanitized as everywhere else here: the uuid and session id substituted. Neither row carries a path.
+
 ## The sidechain capture
 
 `agent-a1b2c3d4e5f60718a.jsonl` and `agent-a1b2c3d4e5f60718a.meta.json` are one subagent's own
@@ -159,7 +184,8 @@ sidechain file is still uncovered here and rides
 ## What was sanitized, and what is golden
 
 For the `query()` captures, the **key set and the field shapes are the golden part** and are
-untouched. The three excerpted fixtures are re-keyed instead, exactly as the section above records —
+untouched. The five excerpted fixtures are re-keyed instead, exactly as the two sections above
+record —
 their golden part is the payload inside that envelope, not the envelope. Substituted, in both
 groups:
 
@@ -251,9 +277,11 @@ an operator act, not a test fixture generator. To re-capture the `query()` fixtu
 from a scratch directory exactly as the first table describes, then apply the substitutions above
 before the JSON comes anywhere near this directory.
 
-The three excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
-compaction or a usage-limit notice. Re-producing them means finding the frame again in an operator's
-own local CLI session log and re-keying it against `sdk.d.ts` at the catalog pin, per the table in
-[the section above](#the-three-excerpted-from-a-cli-session-transcript). Replacing them with real
+The five excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
+compaction, a usage-limit notice or a slash command. Re-producing them means finding the frame again
+in an operator's own local CLI session log and re-keying it against `sdk.d.ts` at the catalog pin,
+per the table in
+[the section above](#the-three-excerpted-from-a-cli-session-transcript) or in
+[the one after it](#the-two-local-command-captures). Replacing them with real
 `query()` captures is [#8038](https://github.com/kamp-us/phoenix/issues/8038)'s live capture run,
 which is where `compact-boundary.json`'s declaration-derived key names get closed.
