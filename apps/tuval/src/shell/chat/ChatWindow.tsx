@@ -563,10 +563,28 @@ function ChatWindow({
 		},
 		[commit, settleScroll],
 	);
+	/**
+	 * Where focus goes when the operator leaves a worker's view (founder ruling 2026-09-08 on
+	 * #8470, the Claude Code model): the composer, always. The navigator cannot hold it — the way
+	 * back is gone with the view, and the last finished worker takes the whole region with it — so
+	 * the destination has to be a control the window keeps, and the composer is the one an operator
+	 * leaving a transcript is on their way to anyway.
+	 */
+	const composerRef = useRef<HTMLTextAreaElement>(null);
+	const [leaving, setLeaving] = useState(false);
 	const showMain = useCallback(() => {
 		settleScroll();
+		setLeaving(true);
 		commit(viewMain);
 	}, [commit, settleScroll]);
+	// Placed from here rather than from the click, because the composer is `disabled` while a view
+	// is open (#8466) and a disabled field takes no focus. Both writes above land in one render, so
+	// by the time this runs the field is enabled and the region that held focus has already gone.
+	useLayoutEffect(() => {
+		if (!leaving || viewing !== null) return;
+		setLeaving(false);
+		composerRef.current?.focus();
+	}, [leaving, viewing]);
 
 	/**
 	 * `<c-b> a`, arriving as the key that chord's command row mints (`../commands/table.ts`). The
@@ -1112,6 +1130,7 @@ function ChatWindow({
 					onDiscard={discardSend}
 				/>
 				<AgentChatInput
+					ref={composerRef}
 					variant="focused"
 					bridge={composer.bridge}
 					// Founder ruling on #8466: while the view slot shows a subagent the composer is
