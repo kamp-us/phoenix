@@ -984,6 +984,30 @@ describe("a fold closing under the reader", () => {
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
 	});
 
+	// The other side of the guard, and the failure the first version of it shipped (review round 1
+	// on #8646): a shrink under a reader resting *above* the new end clamps nothing and fires no
+	// event, so the held content end is the taller one until the next scroll. The reader arriving at
+	// the bottom in a single event — `End`, a click on the scrollbar track, a fling — then looks
+	// exactly like the clamp, and a window that reads it as one never re-arms its pin and stops
+	// following new turns, which is #8174 arriving through this guard.
+	it("re-arms the pin when the reader jumps to the bottom after a shrink that clamped nothing", async () => {
+		const {process, view} = await withFoldOpen();
+		// The top asks for one page of history, as it should — that is the reader, and this case is
+		// not about that read.
+		await scrollTo(0);
+		await waitFor(() => expect(process.inbox()).toHaveLength(1));
+		expect(view().pinned).toBe(false);
+
+		await closeFold();
+		const closedEnd = contentEnd();
+		expect(closedEnd).toBeGreaterThan(0);
+
+		await scrollTo(closedEnd);
+
+		await waitFor(() => expect(view().pinned).toBe(true));
+		expect(process.inbox()).toHaveLength(1);
+	});
+
 	// The twin, and the reason the guard above is about the clamp rather than about folds: with the
 	// reader resting on the newest turn the window is pinned, its own follow effect issues the
 	// scroll, and `selfScrollRef` already answers the event that carries it back.
