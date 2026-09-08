@@ -9,6 +9,7 @@
  */
 
 import {ClientDisposedError, DisconnectedError, ServerError} from "@earendil-works/pi-client";
+import {retaining} from "../diagnostics.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,
@@ -18,29 +19,42 @@ import {
 	type SessionRefusal,
 } from "./errors.ts";
 
-const detailOf = (cause: unknown): string =>
-	cause instanceof Error ? cause.message : String(cause);
-
 const isConnectionLoss = (cause: unknown): boolean =>
 	cause instanceof DisconnectedError || cause instanceof ClientDisposedError;
 
 /** The refusal for a call that names no session: connect, reconnect, create. */
 export const connectionRefusalOf = (cause: unknown): ConnectionRefusal => {
-	if (isConnectionLoss(cause)) return new Disconnected({detail: detailOf(cause)});
+	if (isConnectionLoss(cause))
+		return retaining(cause, new Disconnected({detail: "the Pi connection ended"}));
 	if (cause instanceof ServerError) {
-		return new ProtocolRefused({code: cause.code, detail: detailOf(cause)});
+		return retaining(
+			cause,
+			new ProtocolRefused({code: cause.code, detail: "the Pi server refused the request"}),
+		);
 	}
-	return new ProtocolRefused({code: "internal_error", detail: detailOf(cause)});
+	return retaining(
+		cause,
+		new ProtocolRefused({
+			code: "internal_error",
+			detail: "the Pi client could not complete the request",
+		}),
+	);
 };
 
 /** The refusal for a call that names a session: attach, prompt. */
 export const sessionRefusalOf = (sessionId: string, cause: unknown): SessionRefusal => {
 	if (cause instanceof ServerError) {
 		if (cause.code === "session_locked") {
-			return new SessionLocked({sessionId, detail: detailOf(cause)});
+			return retaining(
+				cause,
+				new SessionLocked({sessionId, detail: "another connection holds this session"}),
+			);
 		}
 		if (cause.code === "not_found") {
-			return new SessionNotFound({sessionId, detail: detailOf(cause)});
+			return retaining(
+				cause,
+				new SessionNotFound({sessionId, detail: "the Pi server could not find this session"}),
+			);
 		}
 	}
 	return connectionRefusalOf(cause);

@@ -18,6 +18,7 @@ import type {AddressInfo} from "node:net";
 import type {Duplex} from "node:stream";
 import {Context, Effect, FiberSet, Layer, Queue, Redacted, type Scope} from "effect";
 import {type WebSocket, WebSocketServer} from "ws";
+import {retaining} from "../diagnostics.ts";
 import {boundedTeardown} from "../teardown.ts";
 import {
 	type ClientMessage,
@@ -88,7 +89,14 @@ export class PiServerService extends Context.Service<PiServerService, PiServerAp
 const listen = (server: HttpServer, host: string): Effect.Effect<AddressInfo, ServerBindFailed> =>
 	Effect.callback<AddressInfo, ServerBindFailed>((resume) => {
 		const onError = (error: Error): void => {
-			resume(Effect.fail(new ServerBindFailed({host, detail: error.message})));
+			resume(
+				Effect.fail(
+					retaining(
+						error,
+						new ServerBindFailed({host, detail: "the loopback listener could not be opened"}),
+					),
+				),
+			);
 		};
 		server.once("error", onError);
 		server.listen({host, port: 0}, () => {
@@ -214,7 +222,11 @@ const make = (
 				const write = (message: ServerMessage): Effect.Effect<void> =>
 					Effect.try({
 						try: () => encodeServerMessage(message),
-						catch: (cause) => new MessageNotEncodable({detail: detailOf(cause)}),
+						catch: (cause) =>
+							retaining(
+								cause,
+								new MessageNotEncodable({detail: "the Pi response could not be encoded"}),
+							),
 					}).pipe(
 						Effect.flatMap((frame) =>
 							Effect.sync(() => {
@@ -250,12 +262,15 @@ const make = (
 						try: () => decoder.push(bytes),
 						catch: (cause) => {
 							const detail = detailOf(cause);
-							return new FrameRefused({
-								detail,
-								overLengthBound:
-									detail.toLowerCase().includes("length") ||
-									detail.toLowerCase().includes("exceeds"),
-							});
+							return retaining(
+								cause,
+								new FrameRefused({
+									detail: "the Pi client frame could not be decoded",
+									overLengthBound:
+										detail.toLowerCase().includes("length") ||
+										detail.toLowerCase().includes("exceeds"),
+								}),
+							);
 						},
 					});
 
@@ -360,6 +375,7 @@ const make = (
 									discard: true,
 								}),
 							),
+							Effect.tapError((error) => Effect.logWarning("Pi client frame rejected", error)),
 							Effect.catch((error: FrameRefused) =>
 								Effect.sync(() => {
 									closeWith(

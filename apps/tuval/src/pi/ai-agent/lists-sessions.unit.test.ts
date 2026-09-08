@@ -11,7 +11,7 @@ import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Stream} from "effect";
+import {Effect, Layer, Schema, Stream} from "effect";
 import {ListError, TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService} from "../client/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
@@ -82,6 +82,12 @@ describe("the Pi layer's listSessions", () => {
 
 			assert.isTrue(error instanceof ListError);
 			assert.strictEqual(error.reason, "store-unreadable");
+			assert.strictEqual(error.detail, "Pi could not enumerate the session stores");
+			assert.isArray(error.cause);
+			const causes = error.cause as ReadonlyArray<{cause?: unknown}>;
+			assert.isTrue(causes.every((failure) => failure.cause instanceof Error));
+			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), agentDir);
+			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), projectRoot);
 		}),
 	);
 });

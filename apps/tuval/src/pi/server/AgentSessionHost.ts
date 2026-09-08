@@ -20,6 +20,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import {Effect, Layer, Queue} from "effect";
+import {retaining} from "../diagnostics.ts";
 import type {ModelMetadata, ModelRef, ThinkingLevel} from "../wire/index.ts";
 import {projectModelCost, type SourceModelCost} from "./cost.ts";
 import {SessionCallFailed, SessionOpenFailed} from "./errors.ts";
@@ -58,9 +59,6 @@ const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
 	"xhigh",
 	"max",
 ];
-
-const detailOf = (error: unknown): string =>
-	error instanceof Error ? error.message : String(error);
 
 /**
  * Where a session's JSONL lands. Exported because it is a convention two modules share: this host
@@ -124,11 +122,14 @@ const call = <A>(
 			await run();
 		},
 		catch: (error) =>
-			new SessionCallFailed({
-				sessionId: session.sessionId,
-				call: name,
-				detail: detailOf(error),
-			}),
+			retaining(
+				error,
+				new SessionCallFailed({
+					sessionId: session.sessionId,
+					call: name,
+					detail: "the Pi session did not complete the operation",
+				}),
+			),
 	});
 
 /**
@@ -258,7 +259,11 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 							settingsManager: SettingsManager.create(request.cwd, options.agentDir),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
 						}).then((result) => result.session),
-					catch: (error) => new SessionOpenFailed({cwd: request.cwd, detail: detailOf(error)}),
+					catch: (error) =>
+						retaining(
+							error,
+							new SessionOpenFailed({cwd: request.cwd, detail: "Pi could not create the session"}),
+						),
 				});
 
 				if (request.name !== undefined) session.setSessionName(request.name);
@@ -285,9 +290,9 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 				const refuse = (detail: string) => new SessionOpenFailed({cwd, detail});
 				const file = yield* Effect.try({
 					try: () => sessionFile(dir, sessionId),
-					catch: (error) => refuse(detailOf(error)),
+					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
 				});
-				if (file === undefined) return yield* refuse(`no session file for ${sessionId} in ${dir}`);
+				if (file === undefined) return yield* refuse("Pi could not find the stored session file");
 
 				const session = yield* Effect.tryPromise({
 					try: () =>
@@ -298,7 +303,7 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 							settingsManager: SettingsManager.create(cwd, options.agentDir),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
 						}).then((result) => result.session),
-					catch: (error) => refuse(detailOf(error)),
+					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
 				});
 				return yield* handleOf(options, session, cwd);
 			}),

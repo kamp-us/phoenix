@@ -119,7 +119,8 @@ describe("a Pi abort the server refuses", () => {
 				const failure = failureOf(yield* collectTo(events, "the refused abort", isFailure));
 				assert.strictEqual(failure.tag, "tuval/ai-agent/InterruptError");
 				assert.strictEqual(failure.reason, "turn-running");
-				assert.include(failure.detail, "the session is not yours");
+				assert.include(failure.detail, "another connection holds the session");
+				assert.notInclude(failure.detail, "the session is not yours");
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),
 	);
