@@ -22,6 +22,7 @@ import {
 	type ClipboardEvent,
 	type KeyboardEvent,
 	type ReactNode,
+	type Ref,
 	useEffect,
 	useId,
 	useMemo,
@@ -401,6 +402,11 @@ export interface AgentChatInputProps {
 	 * pickers rather than as a foreign control wedged beside them.
 	 */
 	readonly settings?: ReactNode;
+	/**
+	 * The prompt field itself, for a host that has to place DOM focus on it — the composer is the
+	 * only control here a host can be asked to focus, so the ref is the field and not a handle.
+	 */
+	readonly ref?: Ref<HTMLTextAreaElement>;
 }
 
 export function AgentChatInput({
@@ -411,6 +417,7 @@ export function AgentChatInput({
 	mockWhenUnavailable = false,
 	onDraftChange,
 	settings,
+	ref,
 }: AgentChatInputProps) {
 	const activeBridge = bridge ?? unavailableBridge;
 	const t = useDesignT();
@@ -1089,6 +1096,7 @@ export function AgentChatInput({
 
 					<div className="kp-agent-chat__field">
 						<Textarea
+							ref={ref}
 							id={inputId}
 							className="kp-agent-chat__textarea"
 							role="combobox"

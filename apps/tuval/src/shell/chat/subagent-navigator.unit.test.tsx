@@ -82,6 +82,13 @@ const openWindow = async (
 };
 
 const active = (): HTMLElement => document.activeElement as HTMLElement;
+/** Re-read on every use: Manti owns the field, so a case asserting across a swap would hold a
+ * node React has since replaced. */
+const composer = (): HTMLTextAreaElement => {
+	const found = document.querySelector<HTMLTextAreaElement>("textarea");
+	expect(found, "no composer field").toBeTruthy();
+	return found as HTMLTextAreaElement;
+};
 const rows = (): ReadonlyArray<HTMLButtonElement> =>
 	Array.from(
 		document.querySelectorAll<HTMLButtonElement>(
@@ -152,7 +159,7 @@ describe("<c-b> a and the list it lands in", () => {
 		rendered.unmount();
 	});
 
-	it("comes back to main from the way-back row, and leaves focus in the list", async () => {
+	it("comes back to main from the way-back row, and leaves focus on the composer", async () => {
 		const {rendered, chord} = await openWindow(twoRunning(), {subagentList: true});
 		await chord();
 		await click(active());
@@ -162,13 +169,15 @@ describe("<c-b> a and the list it lands in", () => {
 		await click(back);
 
 		expect(screen.getByRole("log", {name: "Transcript"})).toBeTruthy();
-		// The row that took the click is gone with the view it left, so focus would have fallen to
-		// the body — where a keyboard operator loses the list altogether.
-		expect(active()).toBe(rows()[0]);
+		// The navigator survives here — two workers are still running — and focus still leaves it:
+		// the destination is the composer whether or not the list outlives the view.
+		expect(rows()).toHaveLength(2);
+		expect(composer().disabled).toBe(false);
+		expect(active()).toBe(composer());
 		rendered.unmount();
 	});
 
-	it("comes back to main on Escape from inside a subagent view", async () => {
+	it("comes back to main on Escape from inside a subagent view, onto the composer", async () => {
 		const {rendered, chord} = await openWindow(twoRunning(), {subagentList: true});
 		await chord();
 		await click(active());
@@ -176,6 +185,8 @@ describe("<c-b> a and the list it lands in", () => {
 
 		await press("Escape");
 		expect(screen.getByRole("log", {name: "Transcript"})).toBeTruthy();
+		expect(composer().disabled).toBe(false);
+		expect(active()).toBe(composer());
 		rendered.unmount();
 	});
 
@@ -211,6 +222,58 @@ describe("<c-b> a and the list it lands in", () => {
 		expect(rows()).toHaveLength(8);
 		expect(screen.queryByRole("button", {name: /more running$/})).toBeNull();
 		expect(active()).toBe(rows()[SUBAGENT_ROW_CAP]);
+		rendered.unmount();
+	});
+});
+
+/**
+ * The path where the region itself goes: the only worker finishes under its own open view, so
+ * leaving lands on a window with no navigator at all. Before the founder's 2026-09-08 ruling on
+ * #8470 the list asked for its own first line here and there was none, which put focus on the body.
+ */
+describe("leaving the last finished worker", () => {
+	/** One worker, so main has nothing to list once it has stopped. */
+	const one = (status: SubagentSlot["status"]): AiAgentSessionState =>
+		withTranscript([userItem("u1", "go"), call("agent", {name: "Agent"})], {
+			subagents: slots(subagentSlot("agent", {type: "reviewer", lastLine: "wrote 4 rows", status})),
+		});
+
+	const openFinished = async () => {
+		const opened = await openWindow(one("running"), {subagentList: true});
+		await opened.chord();
+		await click(active());
+		await act(async () => {
+			await Effect.runPromise(opened.process.commit(one("finished")));
+		});
+		// Q9 on #8384, unchanged: the view it finished under stays open until the operator leaves.
+		expect(screen.getByRole("log", {name: "Transcript: reviewer subagent"})).toBeTruthy();
+		expect(composer().disabled).toBe(true);
+		return opened;
+	};
+
+	it("lands on the composer when Escape is the way out", async () => {
+		const {rendered} = await openFinished();
+
+		await press("Escape");
+
+		expect(screen.getByRole("log", {name: "Transcript"})).toBeTruthy();
+		expect(document.querySelector(".tuval-chat-subagents")).toBeNull();
+		expect(composer().disabled).toBe(false);
+		expect(active()).toBe(composer());
+		rendered.unmount();
+	});
+
+	it("lands on the composer when the back button is the way out", async () => {
+		const {rendered} = await openFinished();
+
+		const back = rows()[0] as HTMLButtonElement;
+		expect(back.textContent).toBe("Back to the agent transcript");
+		await click(back);
+
+		expect(screen.getByRole("log", {name: "Transcript"})).toBeTruthy();
+		expect(document.querySelector(".tuval-chat-subagents")).toBeNull();
+		expect(composer().disabled).toBe(false);
+		expect(active()).toBe(composer());
 		rendered.unmount();
 	});
 });
