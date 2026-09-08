@@ -52,9 +52,9 @@ const inspectorRows = (
 ): ReadonlyArray<readonly [label: string, value: string, className?: string]> => {
 	const usage = usageTotals(state.usage);
 	return [
-		["Cost", money.format(usage.cost)],
-		["Input tokens", tokens.format(usage.inputTokens)],
-		["Output tokens", tokens.format(usage.outputTokens)],
+		["Cost", money.format(usage.cost), "tuval-agent-inspector-number"],
+		["Input tokens", tokens.format(usage.inputTokens), "tuval-agent-inspector-number"],
+		["Output tokens", tokens.format(usage.outputTokens), "tuval-agent-inspector-number"],
 		["Session", state.sessionId ?? NO_SESSION_YET, "tuval-agent-inspector-wrap"],
 		["Directory", state.cwd, "tuval-agent-inspector-wrap"],
 		// Omitted rather than shown empty: unlike the session id, an absent version is not a state
