@@ -1,7 +1,9 @@
+import {PROTOCOL_VERSION as PI_PROTOCOL_VERSION} from "@earendil-works/pi-protocol";
 import type {ModelMetadata, ModelRef, ThinkingLevel} from "./model.ts";
 import type {TranscriptItem, UserTranscriptItem} from "./transcript.ts";
 
-export const PROTOCOL_VERSION = 1 as const;
+/** The envelope version both ends negotiate, read off the package rather than restated. */
+export const PROTOCOL_VERSION = PI_PROTOCOL_VERSION;
 
 /** Matches AgentHarnessPhase so adapters do not need a second phase vocabulary. */
 export type SessionPhase = "idle" | "turn" | "compaction" | "branch_summary" | "retry";

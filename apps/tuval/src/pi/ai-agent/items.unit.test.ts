@@ -359,7 +359,7 @@ describe("one revision folded into events", () => {
 	/**
 	 * The boundary can land *on* a row whose content moved while the socket was down. Pi's
 	 * assistant item has a `status: "streaming"` variant with `usage` optional
-	 * (`@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts`), so a reply the drop caught
+	 * (`../wire/transcript.ts`), so a reply the drop caught
 	 * mid-write settles server-side while this process is away. Being at the boundary does not
 	 * make it read: the operator holds the half-written copy, so the settled one has to emit, and
 	 * the turn's cost with it.

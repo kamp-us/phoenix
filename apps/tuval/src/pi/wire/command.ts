@@ -1,4 +1,3 @@
-import type {JsonValue} from "./json.ts";
 import type {ModelRef, ThinkingLevel} from "./model.ts";
 import type {SessionMetadata, SessionSnapshot} from "./session.ts";
 
@@ -11,10 +10,14 @@ export type ProtocolErrorCode =
 	| "not_implemented"
 	| "internal_error";
 
+/**
+ * Protocol 8's error object is `{code, message}` with `additionalProperties: false`, so a refusal
+ * says everything it has to say in its message — there is no structured `details` slot to put a
+ * session id in.
+ */
 export interface ProtocolError {
 	readonly code: ProtocolErrorCode;
 	readonly message: string;
-	readonly details?: JsonValue;
 }
 
 export interface ListCommand {
@@ -84,14 +87,21 @@ export interface ListResult {
 	readonly sessions: SessionMetadata[];
 }
 
+/**
+ * `attachmentId` is the lease the host just issued. Every later call on this session addresses it
+ * through a `SessionTarget` carrying that id, so a call made on a lease the host has since
+ * replaced is refused rather than served — which is the fence the 0.84.3 protocol had no room for.
+ */
 export interface CreateResult {
 	readonly command: "create";
 	readonly session: SessionSnapshot;
+	readonly attachmentId: string;
 }
 
 export interface AttachResult {
 	readonly command: "attach";
 	readonly session: SessionSnapshot;
+	readonly attachmentId: string;
 }
 
 export interface DetachResult {

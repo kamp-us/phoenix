@@ -1,20 +1,22 @@
 import {assert, describe, it} from "@effect/vitest";
-import {encodeServerMessage, PROTOCOL_VERSION} from "../wire/index.ts";
+import {encodeServerMessage, PROTOCOL_VERSION, SESSION_SUBSCRIPTION_ID} from "../wire/index.ts";
 import {streamingMessage} from "./AgentSessionHost.ts";
 import {projectModelCost} from "./cost.ts";
 import {scriptedModel} from "./fixtures.ts";
 import {projectTranscript, projectUsage, type SourceMessage} from "./transcript.ts";
 
 const serverSnapshotCarrying = (cost: unknown) => ({
-	type: "hello" as const,
-	version: PROTOCOL_VERSION,
-	connectionId: "c1",
-	snapshot: {
-		serverId: "s1",
-		protocolVersion: PROTOCOL_VERSION,
-		revision: 0,
-		sessions: [],
-		models: [{...scriptedModel, cost}],
+	type: "service_update" as const,
+	subscriptionId: SESSION_SUBSCRIPTION_ID,
+	update: {
+		type: "server_snapshot" as const,
+		snapshot: {
+			serverId: "6f1c0a1e-6c2e-4a0f-9a3c-0f2c6c1a3d55",
+			protocolVersion: PROTOCOL_VERSION,
+			revision: 0,
+			sessions: [],
+			models: [{...scriptedModel, cost}],
+		},
 	},
 });
 
@@ -32,7 +34,12 @@ describe("projectModelCost", () => {
 		);
 	});
 
-	it("is what keeps a tiered cost encodable — the unprojected one is refused", () => {
+	/**
+	 * Protocol 8 carries every payload opaque, so the envelope no longer refuses an unprojected
+	 * cost the way the 0.84.3 `ModelCostSchema` did — the projection is now the only thing keeping
+	 * a tiered cost off the wire, which is exactly why it is asserted rather than assumed.
+	 */
+	it("is what keeps a tiered cost off the wire, now that the envelope does not judge it", () => {
 		const tiered = {
 			input: 1,
 			output: 2,
@@ -40,7 +47,7 @@ describe("projectModelCost", () => {
 			cacheWrite: 4,
 			tiers: [{inputTokensAbove: 200_000, input: 9, output: 9, cacheRead: 9, cacheWrite: 9}],
 		};
-		assert.throws(() => encodeServerMessage(serverSnapshotCarrying(tiered) as never));
+		assert.notProperty(projectModelCost(tiered), "tiers");
 		encodeServerMessage(serverSnapshotCarrying(projectModelCost(tiered)) as never);
 	});
 });
@@ -121,8 +128,9 @@ describe("projectTranscript", () => {
 
 	it("produces items the wire accepts", () => {
 		encodeServerMessage({
-			type: "event",
-			event: {
+			type: "service_update",
+			subscriptionId: SESSION_SUBSCRIPTION_ID,
+			update: {
 				type: "session_snapshot",
 				snapshot: {
 					id: "s",
@@ -263,8 +271,9 @@ describe("projectTranscript over a reply still being written", () => {
 
 	it("produces a streaming item the wire accepts", () => {
 		encodeServerMessage({
-			type: "event",
-			event: {
+			type: "service_update",
+			subscriptionId: SESSION_SUBSCRIPTION_ID,
+			update: {
 				type: "session_snapshot",
 				snapshot: {
 					id: "s",

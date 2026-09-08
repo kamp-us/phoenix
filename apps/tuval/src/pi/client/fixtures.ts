@@ -18,11 +18,14 @@ import {
 	createClientMessageDecoder,
 	encodeServerMessage,
 	PROTOCOL_VERSION,
+	SESSION_SUBSCRIPTION_ID,
 	type ServerMessage,
 } from "../wire/index.ts";
 
 export interface ProtocolServer {
 	readonly url: string;
+	/** What a `PiClientService` under test must be told to dial this fixture. */
+	readonly serverId: string;
 	/** Every client message the server decoded, in arrival order across all connections. */
 	readonly received: () => ReadonlyArray<ClientMessage>;
 	/** How many sockets have been accepted since the server started. */
@@ -39,26 +42,36 @@ export interface ProtocolServerOptions {
 	readonly answer?: (message: ClientMessage) => ServerMessage | undefined;
 }
 
-const serverId = randomUUID();
+/** One id for the module, because a fixture's clients are constructed against it before they dial. */
+export const fixtureServerId = randomUUID();
+
+/** The target every request under this fixture is addressed to. */
+export const fixtureServerTarget = {serverId: fixtureServerId} as const;
 
 /** The `hello` handshake and an empty `list` for everything else, exported as a fallback arm. */
 export const defaultAnswer = (message: ClientMessage): ServerMessage | undefined => {
 	if (message.type === "hello") {
-		return {
-			type: "hello",
-			version: PROTOCOL_VERSION,
-			connectionId: randomUUID(),
-			snapshot: {
-				serverId,
-				protocolVersion: PROTOCOL_VERSION,
-				revision: 0,
-				sessions: [],
-				models: [],
-			},
-		};
+		return {type: "hello", version: PROTOCOL_VERSION, serverId: fixtureServerId};
 	}
+	if (message.type === "cancel") return undefined;
 	return {type: "response", id: message.id, ok: true, result: {command: "list", sessions: []}};
 };
+
+/** The server snapshot the real host pushes right after its `hello`, as the fixture's own arm. */
+export const serverSnapshotUpdate = (): ServerMessage => ({
+	type: "service_update",
+	subscriptionId: SESSION_SUBSCRIPTION_ID,
+	update: {
+		type: "server_snapshot",
+		snapshot: {
+			serverId: fixtureServerId,
+			protocolVersion: PROTOCOL_VERSION,
+			revision: 0,
+			sessions: [],
+			models: [],
+		},
+	},
+});
 
 export const startProtocolServer = (
 	options: ProtocolServerOptions = {},
@@ -107,6 +120,7 @@ export const startProtocolServer = (
 
 		return {
 			url: `ws://127.0.0.1:${address.port}/`,
+			serverId: fixtureServerId,
 			received: () => [...received],
 			connectionCount: () => connectionCount,
 			dropAll: () => {

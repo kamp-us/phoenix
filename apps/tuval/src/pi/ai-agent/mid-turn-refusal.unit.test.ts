@@ -26,10 +26,10 @@ import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
 import {
-	type ClientMessage,
 	type TranscriptItem as PiTranscriptItem,
 	ProtocolValidationError,
 	parseClientMessage,
+	SERVICE_ID,
 	type SessionSnapshot,
 } from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
@@ -284,36 +284,51 @@ describe("what the core does with that second ready", () => {
 const request = (command: Record<string, unknown>): unknown => ({
 	type: "request",
 	id: "req-1",
-	request: command,
+	target: {serverId: "6f1c0a1e-6c2e-4a0f-9a3c-0f2c6c1a3d55"},
+	call: {serviceId: SERVICE_ID, member: String(command.command), args: [command]},
 });
 
-describe("the pinned pi-protocol prompt command", () => {
+describe("Tuval's prompt command on protocol 8", () => {
 	/**
-	 * `PromptCommandSchema` is a `StrictObject` (`additionalProperties: false`, `dist/schemas.js`),
-	 * so `streamingBehavior` is not a field a caller may add to the wire — the frame is refused
-	 * before it reaches a session. Pi's error names an option on the *SDK*'s `PromptOptions`
-	 * (`pi-coding-agent/dist/core/agent-session.d.ts`), which is a different surface.
+	 * Through 0.84.3 the wire refused a prompt carrying `streamingBehavior`, because
+	 * `PromptCommandSchema` was a `StrictObject`. Protocol 8 carries every payload opaque, so the
+	 * envelope no longer judges the command at all and the fence is now `PromptCommand` itself —
+	 * a compile-time one. This asserts where the fence moved, so nobody reads the passing frame
+	 * below as the wire having accepted the option: Pi's `streamingBehavior` is an option on the
+	 * *SDK*'s `PromptOptions` (`pi-coding-agent/dist/core/agent-session.d.ts`), a different surface
+	 * from anything Tuval sends.
 	 */
-	it("refuses a prompt carrying streamingBehavior, and takes the same prompt without it", () => {
-		const bare = request({command: "prompt", sessionId: SESSION.id, text: "hello"});
-		assert.deepStrictEqual(parseClientMessage(bare), bare as ClientMessage);
+	it("carries the prompt through the envelope, which no longer judges its fields", () => {
+		const bare = {command: "prompt", sessionId: SESSION.id, text: "hello"} as const;
+		const parsed = parseClientMessage(request(bare));
+		assert.strictEqual(parsed.type, "request");
+		assert.deepStrictEqual(parsed.type === "request" ? parsed.request : undefined, bare);
 
+		const withOption = {...bare, streamingBehavior: "followUp"} as const;
+		const carried = parseClientMessage(request(withOption));
+		assert.deepStrictEqual(
+			carried.type === "request" ? (carried.request as unknown) : undefined,
+			withOption as unknown,
+			"the envelope passed an unknown field through — the type is what refuses it now",
+		);
+	});
+
+	it("refuses a request whose call carries no command at all", () => {
 		assert.throws(
 			() =>
-				parseClientMessage(
-					request({
-						command: "prompt",
-						sessionId: SESSION.id,
-						text: "hello",
-						streamingBehavior: "followUp",
-					}),
-				),
+				parseClientMessage({
+					type: "request",
+					id: "req-1",
+					target: {serverId: "6f1c0a1e-6c2e-4a0f-9a3c-0f2c6c1a3d55"},
+					call: {serviceId: SERVICE_ID, member: "prompt", args: []},
+				}),
 			ProtocolValidationError,
 		);
 	});
 
 	it("already carries steer as its own command, so that arm needs no wire change", () => {
-		const steer = request({command: "steer", sessionId: SESSION.id, text: "hello"});
-		assert.deepStrictEqual(parseClientMessage(steer), steer as ClientMessage);
+		const steer = {command: "steer", sessionId: SESSION.id, text: "hello"} as const;
+		const parsed = parseClientMessage(request(steer));
+		assert.deepStrictEqual(parsed.type === "request" ? parsed.request : undefined, steer);
 	});
 });

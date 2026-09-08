@@ -7,11 +7,11 @@
  * arguments and never results — the far side of this module is `ports/transcript-item.ts` only,
  * which is what keeps the Pi wire inside `src/pi/` (#7465).
  *
- * Grounded in `@earendil-works/pi-protocol` `dist/schemas.d.ts` at 0.84.3:
- * `TranscriptItemSchema` (the `user` / `assistant` / `tool` union), `ToolTranscriptItemSchema`
+ * Grounded in Tuval's own wire vocabulary (`../wire/`, relocated from `pi-protocol`'s schemas by
+ * ADR 0366): `TranscriptItem` (the `user` / `assistant` / `tool` union), `ToolTranscriptItem`
  * (`toolCallId`, `toolName`, `input`, `content`, and the `status`/`isError` pairs
- * `running`/false, `complete`/false, `error`/true), `UsageSchema` (`totalTokens`, `cost.total`)
- * and `SessionSnapshotSchema` (`revision`, `phase`, `transcript`).
+ * `running`/false, `complete`/false, `error`/true), `Usage` (`totalTokens`, `cost.total`) and
+ * `SessionSnapshot` (`revision`, `phase`, `transcript`).
  *
  * An assistant turn's `thinking` content becomes a `thinking` item of its own and never joins the
  * reply's `text` — folding reasoning into the reply would render as something the assistant never
@@ -229,7 +229,7 @@ export const eventsOf = (
  *
  * A seeded row is fingerprinted off the **caller's** copy, never off the snapshot's. Being at or
  * older than the boundary means "already read" only if an item's content cannot move, and on this
- * wire it can: `@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts` gives the assistant item a
+ * wire it can: `../wire/transcript.ts` gives the assistant item a
  * `status: "streaming"` variant with `usage` optional, so a reply the socket died in the middle of
  * settles server-side while this process is away. Seeded off the snapshot, that row would be
  * compared against itself, match, and never emit again — the operator keeps the half-written reply

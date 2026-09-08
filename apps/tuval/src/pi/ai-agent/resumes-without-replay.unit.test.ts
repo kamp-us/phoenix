@@ -304,7 +304,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 
 	/**
 	 * The drop can catch the agent mid-sentence. Pi's assistant item carries a `status: "streaming"`
-	 * variant whose `usage` is optional (`@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts`),
+	 * variant whose `usage` is optional (`../wire/transcript.ts`),
 	 * so the tail this process comes back with holds a half-written reply under the same id the
 	 * finished one now has. That id being the newest thing it holds does not make the finished reply
 	 * read: suppressing it leaves the operator on the half-written text for the life of the session

@@ -24,6 +24,8 @@ import {
 	createClientMessageDecoder,
 	encodeServerMessage,
 	PROTOCOL_VERSION,
+	SESSION_SUBSCRIPTION_ID,
+	type ServerEvent,
 	type ServerMessage,
 } from "../wire/index.ts";
 import {dispatch} from "./dispatch.ts";
@@ -61,6 +63,12 @@ export interface PiServerConfig {
 
 export interface PiServerApi {
 	readonly address: PiServerAddress;
+	/**
+	 * This server's logical identity, a canonical lowercase UUIDv4 as protocol 8 requires. A client
+	 * must know it before dialling: `pi-client`'s `Client` takes it as an option and fails the
+	 * handshake when the `hello` names another.
+	 */
+	readonly serverId: string;
 	/** The dial URL, token included — redacted so it cannot reach a log or the checkpoint. */
 	readonly url: Redacted.Redacted<string>;
 	readonly token: Redacted.Redacted<string>;
@@ -253,22 +261,23 @@ const make = (
 
 				yield* FiberSet.run(requests, outbound.run);
 
+				const publish = (event: ServerEvent): Effect.Effect<void> =>
+					write({type: "service_update", subscriptionId: SESSION_SUBSCRIPTION_ID, update: event});
+
 				const snapshotFor = (sessionId: string) =>
 					Effect.gen(function* () {
 						const record = records.get(sessionId);
 						if (record === undefined) return;
 						const view = yield* record.handle.read;
-						yield* write({
-							type: "event",
-							event: {
-								type: "session_snapshot",
-								snapshot: sessionSnapshot(record, view, connection),
-							},
+						yield* publish({
+							type: "session_snapshot",
+							snapshot: sessionSnapshot(record, view, connection),
 						});
 					});
 
 				const context = {
 					connection,
+					serverId,
 					records,
 					host,
 					now: () => Date.now(),
@@ -292,16 +301,13 @@ const make = (
 					);
 
 				const models = yield* host.models;
-				yield* write({
-					type: "hello",
-					version: PROTOCOL_VERSION,
-					connectionId: connection,
-					snapshot: serverSnapshot({
-						serverId,
-						revision: 0,
-						records: records.list(),
-						models,
-					}),
+				// Protocol 8's `hello` carries the server's identity and nothing else, so the server
+				// snapshot the 0.84.3 handshake inlined follows it as the session stream's first
+				// update — sent unasked, on the one subscription this connection has.
+				yield* write({type: "hello", version: PROTOCOL_VERSION, serverId});
+				yield* publish({
+					type: "server_snapshot",
+					snapshot: serverSnapshot({serverId, revision: 0, records: records.list(), models}),
 				});
 
 				const followed = new Set<string>();
@@ -317,7 +323,11 @@ const make = (
 									},
 								});
 					}
-					return dispatch(context, message.request).pipe(
+					// A `cancel` withdraws a request, and protocol 8 asks for no answer to one. Every
+					// Tuval command is answered from the fiber that took it, so withdrawing the answer
+					// would not stop the work; stopping a turn is the `abort` command's job.
+					if (message.type === "cancel") return Effect.void;
+					return dispatch(context, message.target, message.request).pipe(
 						Effect.tap((answer) =>
 							Effect.gen(function* () {
 								if (!answer.ok) return;
@@ -370,6 +380,7 @@ const make = (
 
 		return {
 			address: {host: address.address, port: address.port},
+			serverId,
 			url: Redacted.make(`ws://${bindHost}:${address.port}/?token=${Redacted.value(token)}`),
 			token,
 			openConnections: Effect.sync(() => connections.size),
