@@ -207,10 +207,14 @@ export function SubagentList({
 	}, [running]);
 
 	/**
-	 * A line that took the focus and then removed itself — the way back, the "more" row — would drop
-	 * focus onto the body, which is where a keyboard operator loses the list entirely. So an
-	 * activation that changes the entries names where focus goes next, and this places it once the
-	 * new entries are drawn.
+	 * A line that took the focus and then removed itself — the "more" row — would drop focus onto
+	 * the body, which is where a keyboard operator loses the list entirely. So an activation that
+	 * changes the entries names where focus goes next, and this places it once the new entries are
+	 * drawn.
+	 *
+	 * The way back is not one of them any more: leaving a view can take the whole region with it
+	 * (the last finished worker), so its destination is the window's composer and the window places
+	 * it (`ChatWindow.tsx`, founder ruling 2026-09-08 on #8470).
 	 */
 	useLayoutEffect(() => {
 		if (request === null) return;
@@ -225,11 +229,6 @@ export function SubagentList({
 		},
 		[onView],
 	);
-
-	const pickMain = useCallback(() => {
-		setRequest({kind: "first"});
-		onMain();
-	}, [onMain]);
 
 	const expand = useCallback(() => {
 		const first = runningSubagents(slots, viewing, Number.POSITIVE_INFINITY).rows[SUBAGENT_ROW_CAP];
@@ -268,12 +267,12 @@ export function SubagentList({
 					if (viewing === null) return;
 					event.preventDefault();
 					event.stopPropagation();
-					return pickMain();
+					return onMain();
 				default:
 					return;
 			}
 		},
-		[keys, moveTo, pickMain, stop, viewing],
+		[keys, moveTo, onMain, stop, viewing],
 	);
 
 	// A subagent view always draws the region, even with nothing to list: the way back is in it, and
@@ -297,7 +296,7 @@ export function SubagentList({
 							entryKey={entry.key}
 							stop={stop === entry.key}
 							register={register}
-							onPick={pickMain}
+							onPick={onMain}
 						>
 							<MetaRow as="span" className="tuval-chat-subagent">
 								Back to the agent transcript
