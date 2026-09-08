@@ -93,6 +93,12 @@ export interface FakeFsOptions {
 	 * lock another writer holds, so the losing side of an append race is testable on demand.
 	 */
 	readonly mkdirExisting?: ReadonlyArray<string>;
+	/**
+	 * Directory paths whose non-recursive creation fails `NotFound` — a real `mkdir`'s ENOENT when the
+	 * parent is not there. Kept apart from {@link FakeFsOptions.mkdirExisting} because the two are
+	 * opposite answers: one says a holder exists, the other that the containing directory does not.
+	 */
+	readonly mkdirMissingParent?: ReadonlyArray<string>;
 }
 
 export interface FakeFs {
@@ -138,6 +144,9 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 			},
 			makeDirectory: (path: string) => {
 				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
+				if (options.mkdirMissingParent?.includes(path) === true) {
+					return notFound("makeDirectory", path);
+				}
 				if (options.mkdirExisting?.includes(path) === true) {
 					return Effect.fail(
 						PlatformError.systemError({

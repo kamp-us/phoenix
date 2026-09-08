@@ -8,10 +8,11 @@
  * for the guard to matter — lives in [`append-race.cli.test.ts`](append-race.cli.test.ts), which
  * races real processes against one ledger.
  */
-import {Effect} from "effect";
+import {Effect, FileSystem} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {CONCURRENT_WRITE, EVENT_REFUSED} from "./codes.ts";
+import {acquireLedgerLock} from "./append-lock.ts";
+import {CONCURRENT_WRITE, EVENT_REFUSED, LANE_ABSENT} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -78,6 +79,58 @@ describe("lane append lock", {timeout: 10_000}, () => {
 		expect(lockedOut.code).not.toBe(refused.code);
 		// And the wording itself carries the distinction, not just the number.
 		expect(lockedOut.stderr.join(" ")).toContain("retry this exact event");
+	});
+
+	it("a lock whose parent directory is absent reports absent, without spending the budget", async () => {
+		const fs = fakeFs({mkdirMissingParent: [LOCK]});
+		const started = Date.now();
+
+		const attempt = await Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const filesystem = yield* FileSystem.FileSystem;
+					return yield* acquireLedgerLock(filesystem, LOCK, 5_000);
+				}),
+				fs.layer,
+			),
+		);
+
+		expect(attempt).toBe("absent");
+		// The whole defect was polling this one out: an ENOENT read as contention waits for a holder
+		// that cannot arrive.
+		expect(Date.now() - started).toBeLessThan(1_000);
+	});
+
+	it("an appending verb on an absent lane refuses LANE_ABSENT, writing and creating nothing", async () => {
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
+		const fs = fakeFs({});
+
+		const out = await run(fs);
+		expect(out.code).toBe(LANE_ABSENT);
+		expect(out.stderr.join(" ")).toContain("no lane at");
+		expect(fs.written.size).toBe(0);
+		// The lane directory stays absent: a ledger nobody booted is not this verb's to manufacture.
+		const made = await Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const filesystem = yield* FileSystem.FileSystem;
+					return yield* filesystem.exists(`${ROOT}/42`);
+				}),
+				fs.layer,
+			),
+		);
+		expect(made).toBe(false);
+	});
+
+	it("an absent lane and a held lock keep their own seats", async () => {
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
+
+		const absent = await run(fakeFs({}));
+		const held = await run(freshLane({mkdirExisting: [LOCK]}));
+
+		expect(absent.code).toBe(LANE_ABSENT);
+		expect(held.code).toBe(CONCURRENT_WRITE);
+		expect(held.stderr.join(" ")).toContain("another writer holds");
 	});
 
 	it("the uncontended path appends exactly as before the lock existed", async () => {

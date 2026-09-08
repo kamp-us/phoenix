@@ -250,7 +250,19 @@ const reconcileLane = <R>(
 					? unappended(`the append to ${fresh.logPath} did not land: ${wrote.failure.reason}`)
 					: {key, root, verdict: partial ? ("corrected" as const) : ("confirmed" as const), ...row};
 			}),
-			(lockDir) => unappended(lockedRefusal(VERB, lockDir)),
+			{
+				// This sweep only reaches lanes it just loaded, so an absent one here means the lane was
+				// removed under the sweep. `unknown` is that seat — the row a reader re-runs, not the
+				// `unappended` fault of an append this run actually tried.
+				onAbsent: (dir) => ({
+					key,
+					root,
+					verdict: "unknown" as const,
+					corrects,
+					reason: `no lane at ${dir} — it went away between this sweep's read and its append`,
+				}),
+				onLocked: (lockDir) => unappended(lockedRefusal(VERB, lockDir)),
+			},
 		);
 	});
 

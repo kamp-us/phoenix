@@ -386,6 +386,9 @@ export const runSettle = <R = never>(
 					],
 				);
 			}),
-			(lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
+			{
+				onAbsent: (dir) => loadRefusal(VERB, {_tag: "Absent", dir}),
+				onLocked: (lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
+			},
 		);
 	});
