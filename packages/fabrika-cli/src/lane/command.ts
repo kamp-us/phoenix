@@ -25,6 +25,7 @@ import {claimHoldReader} from "./claim-hold.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {closureReader} from "./closure.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
+import {runDispatch} from "./dispatch-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {expectationReader} from "./expectation.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal, resolveRootOrRefuse} from "./ground.ts";
@@ -34,7 +35,7 @@ import {archivedRoot, defaultRoot, type LaneKey, laneRef, parseKey, templateFile
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
-import {runProve} from "./prove-verb.ts";
+import {proveDispatched, runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {keyRefusal} from "./refusals.ts";
@@ -109,6 +110,56 @@ const onBoardKey = <R>(
 	const parsed = parseKey(raw);
 	return parsed._tag === "Malformed" ? Effect.succeed(keyRefusal(parsed)) : run(parsed.key);
 };
+
+const dispatch = leafCommand(
+	"dispatch",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		harness: Flag.string("harness").pipe(
+			Flag.withDescription("dispatch adapter; codex is supported"),
+		),
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("active lane task; required on multi-task lanes"),
+		),
+		skills: Flag.string("skills").pipe(
+			Flag.withDescription("absolute installed Fabrika skills directory"),
+		),
+		worktree: Flag.string("worktree").pipe(
+			Flag.withDescription(
+				"absent absolute path outside the primary checkout; retained after dispatch",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, harness, task, skills, worktree}) {
+		const entrypoint = yield* resolveEntrypoint();
+		yield* emit(
+			yield* onKey("dispatch", lane, root, (_key, ref) =>
+				runDispatch(
+					{
+						...ref,
+						harness,
+						task: Option.getOrNull(task),
+						skills,
+						worktree,
+						cwd: process.cwd(),
+						env: process.env,
+						repo: null,
+						entrypoint,
+					},
+					runBrief,
+					proveDispatched,
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Dispatch one active lane task to Codex in a verified worktree."),
+	Command.withDescription(
+		"Create a dedicated detached git worktree and run codex exec with a fixed skill preload envelope and the emitted lane brief unchanged. Preserves Codex model and policy configuration. Requires a new task terminal and fresh artifact proof; process exit zero alone is not completion. stdout: {harness, task, event, worktree}. Worktrees are retained. Exits 11 (missing input, isolation, process or state failure), 18 (unsupported harness or inactive state), 22 (no unique terminal), plus lane brief and lane prove refusals. Example: fabrika lane dispatch 5673 --harness codex --skills /installed/fabrika/skills --worktree /scratch/lane-5673",
+	),
+);
 
 const status = leafCommand(
 	"status",
@@ -1009,6 +1060,7 @@ export const laneCommand = Command.make("lane").pipe(
 		open,
 		emitLane,
 		brief,
+		dispatch,
 		assembly,
 		integrate,
 		pushLane,

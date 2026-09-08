@@ -218,7 +218,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 node <fabrika> lane brief $lane_key --task <name>
 ```
 
-Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
+For Claude, its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. For Codex, use the dispatch adapter below; it preserves this brief inside a fixed skill preload envelope. The brief
 derives every value: the state from the same fold you just read, the shell from its own routing
 table (`build` → builder, `build:ui` → ui-builder, `review` → reviewer, `review:ui` → ui-reviewer,
 `ship` → shipper), the issue and PR URLs off the
@@ -231,9 +231,22 @@ never restatements, and the brief's own `fabrika:` entrypoint for every verb rat
 binstub (now in the spawned tree). They are in the brief because a prompt written per
 dispatch is a prompt two drivers write differently.
 
-The spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
+On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
 from the inside.
+
+On Codex, run the deterministic adapter instead of the shared-workspace subagent tool:
+
+```bash
+node <fabrika> lane dispatch $lane_key --task <name> --harness codex --skills <absolute-installed-skills-directory> --worktree <absent-absolute-worktree-path>
+```
+
+Read [the Codex installation and dispatch guide](../../guide/codex.md) for prerequisites.
+The adapter creates and verifies the worktree, runs the declared dependency reconciler, selects
+stage skills by role, and sends a fixed preload envelope followed by the unchanged emitted brief.
+It preserves Codex configuration and waits for the child process. A zero exit is insufficient:
+a new task terminal and the existing artifact proof must both stand. A refused dispatch retains
+its worktree; inspect its named cause before retrying. Never replace it with a non-isolated spawn.
 
 `lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
@@ -246,7 +259,7 @@ and `11` is a ref this tree cannot read — the same three facts, and the same r
 seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
 instead. Parallel active tasks brief and spawn in parallel.
 
-**Then do nothing until a spawn returns — and never `sleep`.** A shell spawned with the Agent tool
+**Then do nothing until a spawn returns — and never `sleep`.** A Codex dispatch waits for its child process; a shell spawned with the Claude Agent tool
 returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
 [the skill conventions' "a skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md);
 the one thing it adds for you is that a timed `lane status` is the same defect wearing a fabrika
