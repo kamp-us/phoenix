@@ -110,16 +110,17 @@ a registered one cannot throw. Invalid rest declarations also fail as `SpellNotD
 bindings or snapshots can consume them. Both failures name the path and the source (`describeSource` renders "the core
 spell list" or `program "<id>"`).
 
-`SpellRegistry` is a `Context.Service` over one `Ref` holding the table:
+`SpellRegistry` is a `Context.Service` over one `SubscriptionRef` holding the table:
 
 | Member | Answers |
 |---|---|
 | `lookup(path)` | the `SpellRow`, or `SpellNotFound` |
 | `list` | every `SpellRow` |
 | `describe` | every row as a `SpellDescription` |
+| `changes` | current descriptions first, then each committed whole replacement |
 | `swap(table)` | replaces the whole table |
 
-Every read is a single `Ref.get` and `swap` is a single `Ref.set`, so a config reload replaces every
+Every read is a single `SubscriptionRef.get` and `swap` is a single `SubscriptionRef.set`, so a config reload replaces every
 program's spells at once and no reader ever walks a half-replaced table.
 
 `lookupRow(table, path)` is the trie walk itself, exported so the registry, the binding compiler
@@ -248,12 +249,12 @@ into an error on the next compile — which is why nothing calls `compileBinding
 ## The set boot holds
 
 `SpellSet` ([`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts)) is the registry table, the
-config's key sources and the bindings compiled from them, held in **one** `Ref` and written in one
-`Ref.set`. Two cells would be two states to keep in step, and keeping them in step is the whole
+config's key sources and the bindings compiled from them, held in **one** `SubscriptionRef` and written in one
+`SubscriptionRef.set`. Two cells would be two states to keep in step, and keeping them in step is the whole
 job: a binding is only ever as valid as the table it was compiled against.
 
 Its layer hands out `SpellSet` **and** `SpellRegistry`, both reading that one cell, so a reader's
-single `Ref.get` sees both halves of one config. Every write goes through the same private step,
+single `SubscriptionRef.get` sees both halves of one config. Every write goes through the same private step,
 which compiles the bindings against the table it is about to store:
 
 | Entry | What it does |
@@ -779,3 +780,40 @@ sent for, so a superseded call's reply is dropped rather than folded (#8280, #82
 and one landing to the next, so every rule the surface owes (older items before held ones, an id
 already on screen never repeated, a failed page leaving the history and the cursor alone) is a unit
 test with no DOM in it. The hook holds that value and renders it; it decides nothing.
+
+## Live command discovery and the command line
+
+`SpellRegistry.changes` projects descriptions from the same cell that lookup reads. Under
+`SpellSet.layer`, that cell also owns the compiled bindings: `SubscriptionRef.updateEffect` holds
+its semaphore across compilation and publishes only the completed value. The standalone registry
+uses the same replaying interface. A rejected reload writes nothing. This follows the pinned Effect
+rc.112 `SubscriptionRef.ts` implementations of `make`, `changes`, `set`, and `updateEffect`;
+`commands/registry-changes.unit.test.ts` and `commands/spell-set.unit.test.ts` prove replacements
+and concurrent binding coherence.
+
+`serveDesk` supplies this stream to the transport. Each socket runs its own subscription in its
+session scope and receives a `tuval/transport/spell-registry/v1` frame at attachment and after
+committed replacements. Wire admission decodes `RegistryDescription` and checks explicit rest
+metadata through `readParams`; optional fields and JSON Schema annotations survive unchanged.
+`PageAttachment.spells` emits no catalogue before a valid frame arrives.
+
+The page’s `useSpellRegistry` owns the subscription and associates each value with its attachment.
+Replacement hides the old catalogue immediately; closing the socket clears it and stops the pump.
+`AttachedDesk` threads descriptions into `Desk`, which shares the existing desk-to-protocol
+projection in `command-snapshot.ts` with the palette.
+
+`readCommandLine(input, options)` first resolves the shell row, including its aliases. A recognized
+shell row returns its existing Msg or refusal; invalid arguments never fall through. Only an
+unknown shell verb reaches `parse` over the live index. Its complete answer becomes a protocol
+`SpellCall`, carrying the actual registered path, a fresh correlation id, and the focused window.
+The kernel owns scope resolution and argument decoding. For example, the real shell registry
+exposes `shell window close`, so `help shell window close`, `help "shell window close"`, and
+`help shell.window.close` describe that same registered command.
+
+`CommandLine` dispatches successful shell reads and closes as before. Program calls stay open to
+show their actual JSON result or typed refusal. Repeated Enter while pending sends one call; edits
+invalidate the pending display before another submission. Attachment changes and unmount interrupt
+the local waiter and prevent its reply overwriting newer state. Interruption does not undo a command
+the kernel already received. Escape closes the prompt. The socket/routing proof is
+`shell/proof/command-line.integration.test.ts`; the rendered lifecycle proofs are
+`shell/ui/command-line.unit.test.tsx` and `page/spell-registry.unit.test.tsx`.

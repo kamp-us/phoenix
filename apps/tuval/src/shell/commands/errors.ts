@@ -10,6 +10,12 @@
  */
 
 export type CommandRefusal =
+	| {
+			readonly _tag: "SpellParseRefused";
+			readonly position: number;
+			readonly expected: string;
+			readonly didYouMean?: string;
+	  }
 	/** The line held nothing but whitespace. */
 	| {readonly _tag: "EmptyCommandLine"; readonly position: number}
 	/** No row is named this. `didYouMean` is present only when one name is near enough to be a typo. */
@@ -83,6 +89,8 @@ export const tooManyArguments = (
  */
 export const refusalMessage = (refusal: CommandRefusal): string => {
 	switch (refusal._tag) {
+		case "SpellParseRefused":
+			return `Expected ${refusal.expected}.${refusal.didYouMean === undefined ? "" : ` Did you mean "${refusal.didYouMean}"?`}`;
 		case "EmptyCommandLine":
 			return "Type a command name.";
 		case "UnknownCommand": {

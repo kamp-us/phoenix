@@ -33,6 +33,8 @@
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
+import {WindowId as ProtocolWindowId} from "../../protocol/ids.ts";
+import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {inspectorFor, statusFor} from "../desk/index.ts";
@@ -43,6 +45,7 @@ import {noEntries} from "../picker/browser.ts";
 import type {PageAttachment} from "../transport/browser.ts";
 import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
+import {commandSnapshot} from "./command-snapshot.ts";
 import {DeskInspector} from "./DeskInspector.tsx";
 import type {DeskTables} from "./desk-snapshot.ts";
 import {deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
@@ -105,6 +108,8 @@ export interface DeskProps {
 	 * with no kernel behind it, and then the palette refuses a call rather than answering one itself.
 	 */
 	readonly call?: PageAttachment["call"];
+	readonly registry?: RegistryDescription | undefined;
+	readonly commandsConnected?: boolean | undefined;
 }
 
 export function Desk({
@@ -119,6 +124,8 @@ export function Desk({
 	pressTimeoutMs = PRESS_TIMEOUT_MS,
 	reducedMotion = false,
 	call,
+	registry,
+	commandsConnected = true,
 }: DeskProps): ReactElement {
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
@@ -127,6 +134,10 @@ export function Desk({
 
 	const workspace = activeWorkspace(state);
 	const focused = workspace?.focused ?? null;
+	const lineSnapshot = useMemo(
+		() => (registry === undefined ? undefined : commandSnapshot(state, registry)),
+		[state, registry],
+	);
 
 	const palette = usePalette();
 
@@ -345,7 +356,16 @@ export function Desk({
 				</ForwardedKeyProvider>
 				{inspector === null ? null : <DeskInspector region={inspector} resetKeys={[inspecting]} />}
 			</div>
-			{commandLineOpen ? <CommandLine dispatch={dispatch} onClose={closeCommandLine} /> : null}
+			{commandLineOpen ? (
+				<CommandLine
+					dispatch={dispatch}
+					onClose={closeCommandLine}
+					registry={registry}
+					snapshot={lineSnapshot}
+					call={commandsConnected ? call : undefined}
+					window={focused === null ? undefined : ProtocolWindowId.make(focused)}
+				/>
+			) : null}
 			{palette.open ? (
 				<PaletteHost
 					state={state}
