@@ -30,11 +30,17 @@ export {
 	type ToolRun,
 } from "./rows.ts";
 export {SessionRow} from "./SessionRow.tsx";
+export {ToolCallDetail} from "./ToolCallDetail.tsx";
+export {ToolCallRow} from "./ToolCallRow.tsx";
 export {ToolRow} from "./ToolRow.tsx";
 export {ToolRunRow} from "./ToolRunRow.tsx";
 export {
-	type DiffLine,
-	diffLines,
+	type CallBlock,
+	type CallDisclosure,
+	callArgument,
+	callDisclosure,
+	callLabel,
+	canExpandCall,
 	omissionLine,
 	type ToolAction,
 	type ToolDetail,

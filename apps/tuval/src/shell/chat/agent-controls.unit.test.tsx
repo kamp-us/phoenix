@@ -87,7 +87,10 @@ describe("a collapsible tool row", () => {
 		expect(host.view().expanded).toEqual(["t1"]);
 	});
 
-	it("renders an edit call as a diff, with a marker word per changed line", async () => {
+	// The rows themselves are drawn by `@pierre/diffs` inside a shadow root, which
+	// `querySelector` does not cross and jsdom does not lay out — so what this holds is the seam:
+	// the edit reaches the design `Diff`, named for the file it touched.
+	it("renders an edit call through the design Diff, named for the file", async () => {
 		await open(
 			withTranscript([
 				call("t1", {
@@ -101,13 +104,11 @@ describe("a collapsible tool row", () => {
 			]),
 		);
 		await click(await screen.findByRole("button", {name: "edit ok"}));
-		const table = await screen.findByRole("table", {name: "Changes to src/a.ts"});
-		expect(within(table).getByRole("rowheader", {name: "removed"})).toBeDefined();
-		expect(within(table).getByRole("rowheader", {name: "added"})).toBeDefined();
-		expect(within(table).getByText("const a = 1;")).toBeDefined();
-		expect(within(table).getByText("const a = 2;")).toBeDefined();
-		// The unchanged line is present and is named, so a screen reader reads context as context.
-		expect(within(table).getAllByRole("rowheader", {name: "unchanged"}).length).toBe(1);
+		const diff = await screen.findByRole("region", {name: "diff of src/a.ts"});
+		expect(diff.classList.contains("kp-diff")).toBe(true);
+		expect(await screen.findByText("edit · src/a.ts")).toBeDefined();
+		// The one thing the old hand-rolled table was: a line table this window drew itself.
+		expect(document.querySelector(".tuval-chat-diff")).toBeNull();
 	});
 
 	it("renders a shell call as the command plus the output", async () => {

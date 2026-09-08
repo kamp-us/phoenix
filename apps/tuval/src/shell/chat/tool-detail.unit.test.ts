@@ -1,7 +1,8 @@
 /**
- * The pure half of the expanded tool row: what an input's shape says the call was, and the line
- * diff an edit renders. No DOM here — the recognition and the diff are decisions a test can make
- * without one, which is why they live outside the component.
+ * The pure half of the expanded tool row: what an input's shape says the call was, the line that
+ * names the call in a run, and what it discloses under that line. No DOM here — the recognition and
+ * the dedupe are decisions a test can make without one, which is why they live outside the
+ * component.
  */
 
 import {describe, expect, it} from "vitest";
@@ -11,7 +12,7 @@ import {
 	type JsonValue,
 	type ToolItem,
 } from "../../ai-agent/ports/index.ts";
-import {diffLines, omissionLine, toolDetail} from "./tool-detail.ts";
+import {callDisclosure, callLabel, canExpandCall, omissionLine, toolDetail} from "./tool-detail.ts";
 
 const call = (input: ToolItem["input"], name = "a_tool"): ToolItem => ({
 	kind: "tool",
@@ -35,6 +36,8 @@ describe("toolDetail", () => {
 			const detail = toolDetail(call(input));
 			expect(detail.kind).toBe("edit");
 			expect(detail.kind === "edit" ? detail.path : null).toBe("a.ts");
+			// The two texts reach `Diff` as they arrived: nothing here splits them into lines.
+			expect(detail.kind === "edit" ? [detail.before, detail.after] : null).toEqual(["one", "two"]);
 		}
 	});
 
@@ -69,57 +72,83 @@ describe("toolDetail", () => {
 	});
 });
 
-describe("diffLines", () => {
-	it("keeps the unchanged surroundings and replaces the region between them", () => {
-		expect(diffLines("a\nb\nc\nd", "a\nB\nC\nd")).toEqual([
-			{kind: "same", text: "a"},
-			{kind: "removed", text: "b"},
-			{kind: "removed", text: "c"},
-			{kind: "added", text: "B"},
-			{kind: "added", text: "C"},
-			{kind: "same", text: "d"},
-		]);
-	});
-
-	it("marks nothing when the two texts are the same", () => {
-		const rows = diffLines("a\nb", "a\nb");
-		expect(rows.every((row) => row.kind === "same")).toBe(true);
-		expect(rows.length).toBe(2);
-	});
-
-	it("reads a pure insertion as added lines and a pure deletion as removed ones", () => {
-		expect(diffLines("a\nc", "a\nb\nc")).toEqual([
-			{kind: "same", text: "a"},
-			{kind: "added", text: "b"},
-			{kind: "same", text: "c"},
-		]);
-		expect(diffLines("a\nb\nc", "a\nc")).toEqual([
-			{kind: "same", text: "a"},
-			{kind: "removed", text: "b"},
-			{kind: "same", text: "c"},
-		]);
-	});
-
-	it("does not invent a phantom line for a trailing newline", () => {
-		expect(diffLines("a\nb\n", "a\nb")).toEqual([
-			{kind: "same", text: "a"},
-			{kind: "same", text: "b"},
-		]);
-	});
-
-	it("never counts one line as both the common prefix and the common suffix", () => {
-		// "a" is the whole of both texts' overlap. Counting it twice would emit it twice, which is
-		// what a prefix scan and a suffix scan that do not bound each other do.
-		expect(diffLines("a", "a\nb")).toEqual([
-			{kind: "same", text: "a"},
-			{kind: "added", text: "b"},
-		]);
-	});
-});
-
 describe("omissionLine", () => {
 	it("says how much a bound cut, and says nothing when it cut nothing", () => {
 		expect(omissionLine(0)).toBeNull();
 		expect(omissionLine(4_096)).toBe("4096 bytes omitted from this result");
+	});
+});
+
+const shellCall = (command: string, output = "done"): ToolItem => ({
+	...call({command}, "Bash"),
+	result: boundToolResult(output),
+});
+
+describe("callLabel", () => {
+	it("names the tool and what it was pointed at", () => {
+		expect(callLabel(call({path: "src/rows.ts"}, "Read"))).toBe("Read src/rows.ts");
+		expect(callLabel(call({path: "a.ts", old: "x", new: "y"}, "Edit"))).toBe("Edit a.ts");
+		expect(callLabel(shellCall("pnpm test"))).toBe("Bash pnpm test");
+	});
+
+	it("is the tool alone when the shape carries no argument", () => {
+		expect(callLabel(call({pattern: "TODO"}, "Grep"))).toBe("Grep");
+		expect(callLabel(call(null, "Task"))).toBe("Task");
+	});
+
+	it("takes one line of a command, so a script does not become a ten-line label", () => {
+		expect(callLabel(shellCall("pnpm build\npnpm test"))).toBe("Bash pnpm build");
+	});
+});
+
+describe("callDisclosure", () => {
+	it("drops a command the visible label already shows", () => {
+		const disclosure = callDisclosure(shellCall("pnpm test"), "Bash pnpm test");
+		expect(disclosure.blocks).toEqual([{label: "output", text: "done"}]);
+	});
+
+	it("keeps that same command when the row on screen does not show it", () => {
+		// The standalone `ToolRow`'s trigger is the tool's name alone, so nothing is repeated.
+		expect(callDisclosure(shellCall("pnpm test"), "Bash").blocks).toEqual([
+			{label: "command", text: "pnpm test"},
+			{label: "output", text: "done"},
+		]);
+	});
+
+	it("shows the raw command whenever it differs from the line on screen", () => {
+		const item = shellCall("pnpm build\npnpm test");
+		expect(callDisclosure(item, callLabel(item)).blocks).toEqual([
+			{label: "command", text: "pnpm build\npnpm test"},
+			{label: "output", text: "done"},
+		]);
+	});
+
+	it("hands an edit's two texts over whole, and prints no input block beside them", () => {
+		const item = call({path: "a.ts", old: "one", new: "two"}, "Edit");
+		const disclosure = callDisclosure(item, callLabel(item));
+		expect(disclosure.edit).toEqual({path: "a.ts", before: "one", after: "two"});
+		expect(disclosure.blocks).toEqual([{label: "result", text: "done"}]);
+	});
+
+	it("carries the omission line when the per-item bound cut the result", () => {
+		const item: ToolItem = {...call({path: "a.ts"}, "Read"), result: boundToolResult("abcdef", 2)};
+		expect(callDisclosure(item, callLabel(item)).omitted).toBe("4 bytes omitted from this result");
+	});
+
+	it("drops an empty result rather than labelling an empty box", () => {
+		expect(callDisclosure(shellCall("pnpm test", ""), "Bash pnpm test").blocks).toEqual([]);
+	});
+});
+
+describe("canExpandCall", () => {
+	it("refuses a call whose whole content is the line already on screen", () => {
+		const item = shellCall("pnpm test", "");
+		expect(canExpandCall(callDisclosure(item, callLabel(item)))).toBe(false);
+	});
+
+	it("admits one with an edit, and one with a block", () => {
+		const edit = call({path: "a.ts", old: "one", new: "two"}, "Edit");
+		expect(canExpandCall(callDisclosure(edit, callLabel(edit)))).toBe(true);
+		expect(canExpandCall(callDisclosure(shellCall("pnpm test"), "Bash pnpm test"))).toBe(true);
 	});
 });

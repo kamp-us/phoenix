@@ -25,64 +25,8 @@
 import {Button, Collapsible} from "@kampus/design";
 import type {ReactElement} from "react";
 import type {ToolItem} from "../../ai-agent/ports/index.ts";
-import {omissionLine, type ToolDetail, toolDetail} from "./tool-detail.ts";
-
-function DetailView({detail}: {readonly detail: ToolDetail}): ReactElement {
-	if (detail.kind === "edit") {
-		return (
-			<div className="tuval-chat-tool-detail">
-				<p className="tuval-chat-tool-label">edit · {detail.path}</p>
-				{/*
-				 * A `table` rather than a list: each row is a line and a marker, and the marker is a
-				 * real cell rather than a `::before` glyph, so a screen reader reads "removed" instead
-				 * of nothing at all. The caption names the table for the same reason.
-				 */}
-				<table className="tuval-chat-diff">
-					<caption className="kp-visually-hidden">Changes to {detail.path}</caption>
-					<tbody>
-						{detail.diff.map((line, index) => (
-							<tr
-								// A diff line has no identity of its own — two identical lines are two rows
-								// of the same text — so the index is the only stable key there is, and the
-								// list is rebuilt whole whenever the item changes.
-								key={`${index}:${line.kind}:${line.text}`}
-								data-line={line.kind}
-							>
-								{/*
-								 * The marker is the word itself, not a `+`/`-` glyph: the change is
-								 * carried by text for everyone, and the row tint is the second signal
-								 * rather than the only one (ADR 0162, Pillar 4). An unchanged line says
-								 * so only to assistive tech, because a column of "unchanged" beside every
-								 * context line is noise on screen.
-								 */}
-								<th scope="row" className="tuval-chat-diff-kind">
-									<span className={line.kind === "same" ? "kp-visually-hidden" : undefined}>
-										{line.kind === "same" ? "unchanged" : line.kind}
-									</span>
-								</th>
-								<td className="tuval-chat-diff-text">{line.text}</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
-		);
-	}
-	if (detail.kind === "shell") {
-		return (
-			<div className="tuval-chat-tool-detail">
-				<p className="tuval-chat-tool-label">command</p>
-				<pre className="tuval-chat-pre">{detail.command}</pre>
-			</div>
-		);
-	}
-	return (
-		<div className="tuval-chat-tool-detail">
-			<p className="tuval-chat-tool-label">input</p>
-			<pre className="tuval-chat-pre">{detail.input}</pre>
-		</div>
-	);
-}
+import {ToolCallDetail} from "./ToolCallDetail.tsx";
+import {callDisclosure} from "./tool-detail.ts";
 
 /**
  * The fold button's own text, which is also its accessible name. It names the act rather than the
@@ -111,8 +55,9 @@ export function ToolRow({
 	readonly fold: ToolFold | null;
 	readonly onToggle: (open: boolean) => void;
 }): ReactElement {
-	const detail = toolDetail(item);
-	const omitted = omissionLine(item.result.omitted.bytes);
+	// The trigger shows the tool's name and nothing else, so that is the whole of what the detail
+	// below is deduped against.
+	const disclosure = callDisclosure(item, item.name);
 	return (
 		<>
 			<Collapsible
@@ -128,12 +73,7 @@ export function ToolRow({
 					</span>
 				}
 			>
-				<DetailView detail={detail} />
-				<div className="tuval-chat-tool-detail">
-					<p className="tuval-chat-tool-label">{detail.kind === "shell" ? "output" : "result"}</p>
-					<pre className="tuval-chat-pre">{item.result.text}</pre>
-					{omitted === null ? null : <p className="tuval-chat-omission">{omitted}</p>}
-				</div>
+				<ToolCallDetail disclosure={disclosure} />
 			</Collapsible>
 			{fold === null ? null : (
 				<Button

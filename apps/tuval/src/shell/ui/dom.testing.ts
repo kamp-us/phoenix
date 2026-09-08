@@ -154,6 +154,11 @@ export const installDomShims = (): void => {
 		return measure(this);
 	};
 	Element.prototype.scrollIntoView ??= function scrollIntoView(): void {};
+	// jsdom 26 constructs a `CSSStyleSheet` but implements neither `replaceSync` nor
+	// `adoptedStyleSheets`, and a custom element that adopts its own sheet in its constructor
+	// (`@pierre/diffs`, behind the design `Diff`) throws there. Same shim as the design package's
+	// own `test-setup.ts`.
+	CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
 	Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
 		configurable: true,
 		get: () => TEST_VIEWPORT.width,
