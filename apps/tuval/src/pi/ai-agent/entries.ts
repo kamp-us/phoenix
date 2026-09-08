@@ -22,7 +22,7 @@
  * the port's own boundary kind; every other non-message entry — a branch summary, a model or
  * thinking-level change, an extension's own entry, a rename, a label — is one collapsed `system`
  * notice. The entry union is `SessionEntry` in `@earendil-works/pi-coding-agent`
- * `dist/core/session-manager.d.ts` at 0.84.3, and a kind outside it is skipped rather than thrown
+ * `dist/core/session-manager.d.ts` at 0.85.1, and a kind outside it is skipped rather than thrown
  * on, so a session file a newer Pi wrote still opens.
  */
 
@@ -38,7 +38,7 @@ import type {SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
 import {compactionId} from "../wire/compaction.ts";
 import type {TranscriptItem as PiTranscriptItem} from "../wire/index.ts";
-import {itemId, itemsOf, thinkingId} from "./items.ts";
+import {failureId, itemId, itemsOf, thinkingId} from "./items.ts";
 
 /** An entry's ISO timestamp as epoch milliseconds; an unparseable one reads as the epoch. */
 const millisOf = (timestamp: string): number => {
@@ -60,7 +60,12 @@ const millisOf = (timestamp: string): number => {
 const onEntry = (item: TranscriptItem, entry: SessionMessageEntry): TranscriptItem => {
 	const timestamp = millisOf(entry.timestamp);
 	if (item.kind === "tool") return {...item, timestamp};
-	const id = item.kind === "thinking" ? thinkingId(entry.id) : itemId(entry.id);
+	const id =
+		item.kind === "thinking"
+			? thinkingId(entry.id)
+			: item.kind === "system"
+				? failureId(entry.id)
+				: itemId(entry.id);
 	return {...item, id, timestamp};
 };
 
@@ -121,7 +126,7 @@ const noticeItemOf = (entry: SessionEntry): TranscriptItem | null => {
 };
 
 /**
- * Live positions count context messages, not disk entries. Pi 0.84.3's `buildSessionContext`
+ * Live positions count context messages, not disk entries. Pi 0.85.1's `buildSessionContext`
  * composes these two exports, including compacted summaries and invisible custom messages.
  * Stored entry ids remain unchanged; only the page planner consumes these aliases.
  */
@@ -135,6 +140,8 @@ export const pageCursorAliases = (
 		if (entry.type === "message" && messages.length === 1) {
 			aliases.set(`item-${index}`, entry.id);
 			aliases.set(thinkingId(`item-${index}`), thinkingId(entry.id));
+			if (entry.message.role === "assistant" && entry.message.stopReason === "error")
+				aliases.set(failureId(`item-${index}`), failureId(entry.id));
 		}
 		if (entry.type === "compaction" && messages.length === 1) {
 			aliases.set(compactionId(index), entry.id);

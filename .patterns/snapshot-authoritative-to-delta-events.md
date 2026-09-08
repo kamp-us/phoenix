@@ -90,3 +90,28 @@ rather than a change.
   other direction: an in-memory value onto a strict wire schema
 - [effect-context-service.md](./effect-context-service.md) — where the `Ref` holding the projection
   lives
+
+## Failed Pi turns are transcript notices
+
+Pi 0.85.1's `pi-ai/dist/types.d.ts` carries `AssistantMessage.stopReason` and optional
+`errorMessage`; Tuval's server projection retains them on its error-status wire item. A failed
+turn is therefore snapshot content, even when its text is empty, and is not a socket failure or a
+new session phase.
+
+[`itemsOf`](../apps/tuval/src/pi/ai-agent/items.ts) appends a `SystemItem` under the stable
+`<turn>:failure` identity. Nonempty prose and reasoning retain their own identities; an empty
+failed prose row is omitted, while an interrupted row retains its resend control. Usage remains
+keyed by the source turn. Repeated snapshots fingerprint the notice exactly like other rows.
+
+[`providerFailureText`](../apps/tuval/src/pi/ai-agent/provider-failure.ts) translates explicitly
+recognized diagnostic prefixes into fixed credit/quota/rate/key guidance. Unknown, missing or
+non-string diagnostics receive a generic failed-turn explanation. No original diagnostic, URL,
+credential, exception object or diagnostic suffix is copied into generic state. These are provider
+reports, not independent diagnoses; this mapping does not alter RPC exception translation.
+
+History re-keys the notice as `<entry>:failure` and aliases it to the matching live notice. Thus
+initial paint, reattach and page/tail joins preserve one explanation without replacing the reply
+beside it. The shared `SessionRow` renders this text through React text content, never markdown.
+The [provider-failure regression](../apps/tuval/src/pi/window/provider-failure.unit.test.tsx) drives
+the source projection, actual protocol-8 codec, mapper, history join, reattach and rendered window
+with synthetic diagnostics and no provider credentials.
