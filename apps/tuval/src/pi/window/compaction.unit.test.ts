@@ -104,6 +104,17 @@ describe("Pi compaction through the live wire and stored history", () => {
 		).toBe(true);
 	});
 
+	it("pages from the leading compaction cursor without duplicating retained live messages", () => {
+		const tail = decodedSnapshot().transcript.flatMap(itemsOf);
+		const page = planPageOverEntries(entries, {before: tail[0]?.id ?? null, limit: 50});
+		if (page.kind !== "page") throw new Error("Expected stored history page");
+		expect(page.items.map((item) => item.id)).toEqual(["old", "kept"]);
+		expect(page.items.find((item) => item.id === "kept")?.alias).toBe("item-1");
+		const stitched = mergeOlder(tail, page.items);
+		expect(stitched).toEqual([page.items[0], ...tail]);
+		expect(mergeOlder(stitched, page.items)).toEqual(stitched);
+	});
+
 	it("never interprets ordinary user text as a compaction carrier", () => {
 		const messages: ReadonlyArray<SourceMessage> = [
 			{role: "user", content: "item-0:compaction", timestamp: 1},
