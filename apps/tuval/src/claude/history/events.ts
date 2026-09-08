@@ -26,6 +26,7 @@ import {
 	resultEvents,
 	skipMessage,
 	systemNoticeEvents,
+	taskNoticeEvents,
 	userEvents,
 } from "./map.ts";
 
@@ -57,6 +58,9 @@ export const toAgentEvents = (
 			if (message.subtype === "commands_changed") return commandsChangedEvents(message, mapping);
 			if (message.subtype === "compact_boundary") {
 				return compactBoundaryEvents(message, mapping, options);
+			}
+			if (message.subtype === "task_notification") {
+				return taskNoticeEvents(message, mapping, options);
 			}
 			return systemNoticeEvents(message, mapping, options);
 		default:

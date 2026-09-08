@@ -361,6 +361,13 @@
 	text-overflow: ellipsis;
 }
 
+/* The way into the rows a settled worker's notice names (#8475). Aligned to the start rather than
+   stretched, so the control is the size of its own label and not of the row it sits in. */
+.tuval-chat-session-link {
+	flex: none;
+	align-self: flex-start;
+}
+
 .tuval-chat-session-count {
 	flex: none;
 	font: var(--t-micro);

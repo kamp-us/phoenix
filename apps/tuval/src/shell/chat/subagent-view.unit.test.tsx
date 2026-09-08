@@ -24,7 +24,7 @@ import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
-import {assistantItem, call, userItem, withTranscript} from "./chat.testing.ts";
+import {assistantItem, call, systemItem, userItem, withTranscript} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -472,6 +472,56 @@ describe("with the flag off", () => {
 		expect(dom(root).text()).toContain("the agent's own call");
 		expect(dom(root).text()).toContain("the fold looks right");
 		expect(root.querySelectorAll('[data-nested="true"]').length).toBeGreaterThan(0);
+		rendered.unmount();
+	});
+});
+
+/**
+ * The way from a settled worker's notice into that worker's rows (#8475). The notice is one line by
+ * the time it reaches the window — the mapper drops the report it used to carry — so this control
+ * is where that report is read.
+ */
+describe("a notice naming a worker", () => {
+	const withNotice = (...held: ReadonlyArray<SubagentSlot>) =>
+		withTranscript(
+			[
+				userItem("u1", "go"),
+				call("agent", {name: "Agent"}),
+				...reviewerItems,
+				systemItem("n1", "reviewer finished", undefined, undefined, "agent"),
+			],
+			{subagents: slots(...held)},
+		);
+
+	const link = (root: ParentNode): HTMLButtonElement | null =>
+		root.querySelector<HTMLButtonElement>(".tuval-chat-session-link");
+
+	it("offers the worker's rows from the line, and swaps the view onto them", async () => {
+		const {rendered, view} = await openOne(withNotice(reviewer("finished")), {}, atOldest());
+		const root = rendered.container;
+		const control = link(root);
+		expect(control?.tagName).toBe("BUTTON");
+		// The visible label is short; the name a screen reader announces carries the line it belongs
+		// to, and contains that visible label (WCAG 2.5.3).
+		expect(control?.textContent).toBe("Show its rows — reviewer finished");
+
+		await act(async () => {
+			(control as HTMLButtonElement).click();
+		});
+
+		expect(view().viewing?.id).toBe("agent");
+		expect(dom(root).text()).toContain("the fold looks right");
+		rendered.unmount();
+	});
+
+	it("offers nothing where no list is drawn to come back to", async () => {
+		const {rendered} = await openOne(withNotice(reviewer("finished")), {subagentList: false});
+		const root = rendered.container;
+
+		expect(dom(root).list()).toBeNull();
+		expect(link(root)).toBeNull();
+		// The line itself is the row either way — it is the payload behind it that went.
+		expect(dom(root).text()).toContain("reviewer finished");
 		rendered.unmount();
 	});
 });

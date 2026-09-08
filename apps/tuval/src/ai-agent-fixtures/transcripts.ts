@@ -58,12 +58,14 @@ export const systemItem = (
 	text = "resumed",
 	timestamp = AT,
 	detail?: string,
+	subagent?: string,
 ): SystemItem => ({
 	kind: "system",
 	id: ItemId.make(id),
 	timestamp,
 	text,
 	...(detail === undefined ? {} : {detail}),
+	...(subagent === undefined ? {} : {subagent: ItemId.make(subagent)}),
 });
 
 export const thinkingItem = (id: string, text = "weighing it", timestamp = AT): ThinkingItem => ({
