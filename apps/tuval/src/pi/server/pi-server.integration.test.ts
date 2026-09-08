@@ -12,6 +12,7 @@ import {ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Redacted} from "effect";
 import type {ProtocolError, ServerMessage, SessionSnapshot} from "../wire/index.ts";
+import {applyDelta} from "../wire/index.ts";
 import {layer as agentSessionHostLayer} from "./AgentSessionHost.ts";
 import {SessionOpenFailed} from "./errors.ts";
 import {PiServerService} from "./PiServerService.ts";
@@ -32,23 +33,35 @@ const sessionOf = (message: Extract<ServerMessage, {type: "response"}>): Session
 	return message.result.session;
 };
 
-/** The first pushed snapshot at or past `revision`. Snapshots coalesce, so revisions can skip. */
+/**
+ * The session as this connection sees it at or past `revision`, folded the way a client folds it:
+ * the whole value arrives once and every revision after it is a delta, so reading one means
+ * applying them. Pushes coalesce, so revisions can skip.
+ *
+ * The fold rides `next`'s own matcher because that is the one thing this fixture calls on every
+ * message, in arrival order, over both the messages already in and the ones still to come.
+ * Re-folding a delta is a no-op, so a message the two passes both reach costs nothing.
+ */
 const pushedSnapshot = (client: WireClient, revision: number): Effect.Effect<SessionSnapshot> =>
-	client
-		.next(
-			(message) =>
-				message.type === "service_update" &&
-				message.update.type === "session_snapshot" &&
-				message.update.snapshot.revision >= revision,
-		)
-		.pipe(
-			Effect.map((message) => {
-				if (message.type !== "service_update" || message.update.type !== "session_snapshot") {
-					throw new Error("unreachable");
-				}
-				return message.update.snapshot;
-			}),
-		);
+	Effect.suspend(() => {
+		let held: SessionSnapshot | undefined;
+		const fold = (message: ServerMessage): boolean => {
+			if (message.type !== "service_update") return false;
+			const update = message.update;
+			if (update.type === "session_snapshot") held = update.snapshot;
+			else if (update.type === "session_delta" && held !== undefined) {
+				held = applyDelta(held, update.delta);
+			} else return false;
+			return held.revision >= revision;
+		};
+		return client
+			.next(fold)
+			.pipe(
+				Effect.flatMap(() =>
+					held === undefined ? Effect.die("no session update was folded") : Effect.succeed(held),
+				),
+			);
+	});
 
 const errorOf = (message: Extract<ServerMessage, {type: "response"}>): ProtocolError => {
 	if (message.ok) throw new Error("expected a refusal");

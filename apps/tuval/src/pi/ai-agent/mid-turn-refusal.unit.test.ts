@@ -7,13 +7,15 @@
  * core admits the next prompt on that `ready`; and the pinned wire cannot carry the field Pi's own
  * error names, so the remedy cannot live on the prompt command.
  *
- * The variable is the send, not the order of the pair: whichever of a turn's push and its answer
- * lands *after* the next send's `sent` mark re-folds a stale `idle` into a second `ready`. Both
+ * The variable was the send, not the order of the pair: whichever of a turn's push and its answer
+ * landed *after* the next send's `sent` mark re-folded a stale `idle` into a second `ready`. Both
  * orders are here, and so is the same schedule with nothing sent in the gap.
  *
  * The findings this pins are written up in
- * `reports/2026-09-07-pi-mid-turn-prompt-refusal.md`. Nothing here asserts a fix: the tests describe
- * the mechanism as current source runs it, so a fix reds the first one by name.
+ * `reports/2026-09-07-pi-mid-turn-prompt-refusal.md`. The first claim is now closed by the
+ * revision `SnapshotProjection` carries (#8554): all three schedules assert no second `ready`, and
+ * removing that guard reds the first two by name. The other two claims still describe current
+ * source — the core admits on a `ready`, and the wire no longer judges a prompt's fields.
  */
 
 import {applyCellChecked} from "@demlik/tea";
@@ -24,7 +26,12 @@ import type {AiAgentSessionCmd, AiAgentSessionMsg} from "../../ai-agent/core/mes
 import {type AiAgentSessionState, initialState} from "../../ai-agent/core/state.ts";
 import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
-import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import {
+	type PiClientApi,
+	PiClientService,
+	type PiSessionRef,
+	type SessionUpdate,
+} from "../client/index.ts";
 import {
 	type TranscriptItem as PiTranscriptItem,
 	ProtocolValidationError,
@@ -89,7 +96,7 @@ const TURN_A = [USER_A, REPLY_A];
  * out, which one shared Deferred cannot express.
  */
 const stub = Effect.gen(function* () {
-	const pushes = yield* Queue.unbounded<SessionSnapshot>();
+	const pushes = yield* Queue.unbounded<SessionUpdate>();
 	const first = yield* Deferred.make<SessionSnapshot>();
 	const second = yield* Deferred.make<SessionSnapshot>();
 	const answers = [first, second];
@@ -112,12 +119,12 @@ const stub = Effect.gen(function* () {
 		setModel: () => Effect.never,
 		setThinkingLevel: () => Effect.never,
 		models: Effect.succeed([]),
-		snapshots: () => Stream.fromQueue(pushes),
+		updates: () => Stream.fromQueue(pushes),
 		disconnections: Stream.never,
 	};
 	return {
 		layer: Layer.succeed(PiClientService, api),
-		push: (value: SessionSnapshot) => Queue.offer(pushes, value),
+		push: (value: SessionSnapshot) => Queue.offer(pushes, {_tag: "snapshot", snapshot: value}),
 		/** Settle the nth send's own answer, as the server's response frame does. */
 		answer: (nth: 0 | 1, value: SessionSnapshot) =>
 			Deferred.succeed(nth === 0 ? first : second, value),
@@ -149,7 +156,7 @@ const settled = (events: Events) =>
 	Queue.take(events).pipe(Effect.orDie, Effect.timeoutOption("250 millis"));
 
 describe("a send admitted while Pi is still running the previous turn", () => {
-	it.live("pushes turn A's end, then re-emits ready from A's late answer under live turn B", () =>
+	it.live("drops turn A's late answer instead of re-emitting ready under live turn B", () =>
 		Effect.gen(function* () {
 			const client = yield* stub;
 
@@ -170,14 +177,14 @@ describe("a send admitted while Pi is still running the previous turn", () => {
 				yield* agent.prompt("second");
 				yield* collectTo(events, "turn B's prompting", isPrompting);
 
-				// A's answer, arriving after B went out. `SnapshotProjection` carries no revision
-				// (`./items.ts`), so `eventsOf` has nothing to compare and folds it as current.
+				// A's answer, arriving after B went out, at the revision the push already carried.
+				// The projection is past it, so it is dropped rather than folded (`./items.ts`).
 				yield* client.answer(0, snapshot(TURN_A, "idle", 2));
 
 				const late = yield* settled(events);
 				assert.isTrue(
-					Option.isSome(late) && isReady(late.value),
-					`turn A's late answer emitted ${JSON.stringify(late)} rather than a second ready`,
+					Option.isNone(late),
+					`turn A's late answer emitted ${JSON.stringify(late)} under a live turn`,
 				);
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),
@@ -201,13 +208,14 @@ describe("a send admitted while Pi is still running the previous turn", () => {
 				yield* agent.prompt("second");
 				yield* collectTo(events, "turn B's prompting", isPrompting);
 
-				// A's push, arriving after B went out — the same stale `idle` from the other side.
+				// A's push, arriving after B went out — the same stale `idle` from the other side,
+				// and dropped on the same test, which is what makes arrival order stop mattering.
 				yield* client.push(snapshot(TURN_A, "idle", 2));
 
 				const late = yield* settled(events);
 				assert.isTrue(
-					Option.isSome(late) && isReady(late.value),
-					`answer-first emitted ${JSON.stringify(late)} rather than a second ready`,
+					Option.isNone(late),
+					`answer-first emitted ${JSON.stringify(late)} under a live turn`,
 				);
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),

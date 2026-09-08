@@ -41,3 +41,27 @@ export interface ServerSnapshot {
 	readonly sessions: SessionMetadata[];
 	readonly models: ModelMetadata[];
 }
+
+/**
+ * What one revision changed, for a viewer that already holds the previous whole value.
+ *
+ * Every field beside the three below is optional and means *unchanged when absent*, which is what
+ * keeps a streamed turn's per-token frame to the one item that moved instead of the transcript.
+ * `./delta.ts` owns both halves of that reading — the diff that builds one and the apply
+ * that folds one back into a `SessionSnapshot`.
+ */
+export interface SessionDelta {
+	readonly id: string;
+	readonly revision: number;
+	readonly updatedAt: number;
+	readonly name?: string;
+	readonly phase?: SessionPhase;
+	readonly model?: ModelRef;
+	readonly thinkingLevel?: ThinkingLevel;
+	readonly attached?: boolean;
+	readonly locked?: boolean;
+	readonly queuedSteer?: UserTranscriptItem[];
+	readonly queuedSteerCount?: number;
+	/** Transcript items that appeared or changed, in transcript order. */
+	readonly items?: TranscriptItem[];
+}

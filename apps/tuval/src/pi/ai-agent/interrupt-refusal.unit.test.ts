@@ -20,6 +20,7 @@ import {
 	PiClientService,
 	type PiSessionRef,
 	SessionLocked,
+	type SessionUpdate,
 } from "../client/index.ts";
 import type {SessionSnapshot} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
@@ -50,7 +51,7 @@ const snapshot = (phase: SessionSnapshot["phase"], revision: number): SessionSna
 
 /** The stub server: a snapshot stream the test feeds, a `prompt` it settles, an `abort` that says no. */
 const stub = Effect.gen(function* () {
-	const pushes = yield* Queue.unbounded<SessionSnapshot>();
+	const pushes = yield* Queue.unbounded<SessionUpdate>();
 	const ended = yield* Deferred.make<SessionSnapshot>();
 	const api: PiClientApi = {
 		connect: Effect.void,
@@ -65,7 +66,7 @@ const stub = Effect.gen(function* () {
 		setModel: () => Effect.never,
 		setThinkingLevel: () => Effect.never,
 		models: Effect.succeed([]),
-		snapshots: () => Stream.fromQueue(pushes),
+		updates: () => Stream.fromQueue(pushes),
 		disconnections: Stream.never,
 	};
 	return {

@@ -43,7 +43,13 @@ const failed = (
 		errorMessage,
 		timestamp: 2,
 	}) as SourceMessage;
-const snapshotOf = (messages: ReadonlyArray<SourceMessage>): SessionSnapshot => {
+/**
+ * `revision` is a parameter because the fold drops an update at or below the one it last folded
+ * (`../ai-agent/items.ts`): two snapshots whose content differs must carry different revisions, the
+ * way the server's own `records.bump` gives them. A pair sharing one revision is a state the wire
+ * cannot produce, and folding it proves nothing.
+ */
+const snapshotOf = (messages: ReadonlyArray<SourceMessage>, revision = 1): SessionSnapshot => {
 	const snapshot: SessionSnapshot = {
 		id: "failure",
 		cwd: "/workspace",
@@ -54,7 +60,7 @@ const snapshotOf = (messages: ReadonlyArray<SourceMessage>): SessionSnapshot => 
 		thinkingLevel: "off",
 		attached: true,
 		locked: false,
-		revision: 1,
+		revision,
 		transcript: [...projectTranscript(messages)],
 		queuedSteer: [],
 		queuedSteerCount: 0,
@@ -156,27 +162,31 @@ describe("Pi provider failures across the owned transcript", () => {
 			],
 		};
 		const previous = eventsOf(emptyProjection, partial);
-		const settled = snapshotOf([
-			{
-				...failed(credit, content),
-				usage: {
-					input: 3,
-					output: 2,
-					cacheRead: 0,
-					cacheWrite: 0,
-					totalTokens: 5,
-					cost: {input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 0.3},
+		// The revision the turn settled at, one past the in-flight one `partial` carries.
+		const settled = snapshotOf(
+			[
+				{
+					...failed(credit, content),
+					usage: {
+						input: 3,
+						output: 2,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 5,
+						cost: {input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 0.3},
+					},
+				} as SourceMessage,
+				{
+					role: "toolResult",
+					toolCallId: "call",
+					toolName: "read",
+					content: [{type: "text", text: "Tool output"}],
+					isError: false,
+					timestamp: 3,
 				},
-			} as SourceMessage,
-			{
-				role: "toolResult",
-				toolCallId: "call",
-				toolName: "read",
-				content: [{type: "text", text: "Tool output"}],
-				isError: false,
-				timestamp: 3,
-			},
-		]);
+			],
+			2,
+		);
 		const projected = rows(settled);
 		expect(projected.map((item) => item.kind)).toEqual(["thinking", "assistant", "system", "tool"]);
 		expect(new Set(projected.map((item) => item.id)).size).toBe(4);
@@ -236,10 +246,16 @@ describe("Pi provider failures across the owned transcript", () => {
 				.events.filter((event) => event.kind === "item")
 				.map((event) => event.item),
 		).toEqual(tail);
+		// The seed is what has to suppress these rows, so the fold runs against the *next* revision:
+		// at or below the seed's own the fold drops the update before the seed is consulted, and the
+		// assertion would hold whatever `projectionOf` returned.
+		const seed = projectionOf(snapshot, tail);
+		expect(seed, "the resume seed reached no boundary, so it suppresses nothing").not.toBeNull();
 		expect(
-			eventsOf(projectionOf(snapshot, tail), snapshot).events.filter(
-				(event) => event.kind === "item",
-			),
+			eventsOf(seed ?? emptyProjection, {
+				...snapshot,
+				revision: snapshot.revision + 1,
+			}).events.filter((event) => event.kind === "item"),
 		).toEqual([]);
 		expect(tail[1]).toMatchObject({kind: "assistant", text: "Later answer"});
 	});
