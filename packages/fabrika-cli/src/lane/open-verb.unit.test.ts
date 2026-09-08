@@ -34,6 +34,7 @@ const OPTIONS = {
 	issue: 42,
 	expectation: childless,
 	cap: UNCAPPED,
+	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 };
 
 const run = (
@@ -71,6 +72,7 @@ describe("lane open", () => {
 			issue: null,
 			expectation: null,
 			cap: UNCAPPED,
+			claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 		};
 		const fs = fakeFs({files: {[chore.templatePath]: choreTemplateText()}});
 		const opened = await run(fs, runOpen(chore));
