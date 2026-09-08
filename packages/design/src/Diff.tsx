@@ -25,7 +25,8 @@ import {useDesignT} from "./i18n";
  *   css-variables theme (`registerCustomCSSVariableTheme`) emits `var(--diffs-…)` for every colour
  *   instead, so light and dark come from the role tokens, which already switch on `data-theme`.
  *   The library's own stylesheet still calls `light-dark()` for things no property overrides — the
- *   row-tint ratios — so `Diff.css` also pins `color-scheme` off `data-theme`.
+ *   row-tint ratios — so `Diff.css` also pins `color-scheme` off `data-theme`, dark unless an
+ *   explicit `[data-theme="light"]` ancestor says otherwise, which is the token set's own default.
  * - **`overflow: "wrap"`, not the default scroll.** The default puts the horizontal scroller inside
  *   the shadow root, where no tab stop can be placed on it (WCAG 2.1.1). Wrapping removes that
  *   scroller, which leaves the block below as the one that scrolls and the one that carries the tab

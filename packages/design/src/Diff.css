@@ -27,10 +27,15 @@
 	 * `color-scheme` — and its `:host` sets `light dark`, so every one of those would follow the
 	 * operator's OS rather than phoenix's `data-theme`. Pinning the scheme here, from the same
 	 * attribute the role tokens switch on, settles all of them at once, including the row-tint
-	 * ratios (`--diffs-bg-addition`/`-deletion` and their emphasis pairs) that have no
-	 * `-override` input to reach.
+	 * ratios (`--diffs-bg-context`, `-gutter`, `-separator`, `-addition`/`-deletion` and their
+	 * emphasis pairs) that have no `-override` input to reach.
+	 *
+	 * Dark is the unconditional arm because the token set's own default is dark — `tokens.css`
+	 * hangs the dark scales off a bare `:root` and makes `[data-theme="light"]` the opt-in. Same
+	 * rule, same reason, as `MermaidBlock`'s `darkMode: host.closest('[data-theme="light"]')
+	 * === null`.
 	 */
-	color-scheme: light;
+	color-scheme: dark;
 
 	display: block;
 
@@ -86,6 +91,6 @@
 	--diffs-token-changed: var(--warning);
 }
 
-[data-theme="dark"] .kp-diff__pane {
-	color-scheme: dark;
+[data-theme="light"] .kp-diff__pane {
+	color-scheme: light;
 }

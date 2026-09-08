@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {render, screen} from "@testing-library/react";
 import fc from "fast-check";
 import {beforeEach, describe, expect, it, vi} from "vitest";
@@ -70,6 +72,34 @@ describe("Diff", () => {
 		render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
 
 		expect(seen.calls.at(-1)?.theme).toBe("kampus-role-tokens");
+	});
+
+	/**
+	 * Every `light-dark()` the library's sheet leaves without an `-override` input reads the pane's
+	 * used `color-scheme`, and the token set's own default is dark — `tokens.css` hangs the dark
+	 * scales off a bare `:root` and makes `[data-theme="light"]` the opt-in. Getting that polarity
+	 * backwards paints the light-tuned mix ratios over dark tokens, which collapses the context,
+	 * gutter and separator rows into the surface. Vitest injects no CSS, so the sheet is read off
+	 * disk and put in the document; jsdom resolves `color-scheme` and this selector itself.
+	 */
+	it("resolves color-scheme dark by default and light only under [data-theme=light]", () => {
+		const style = document.createElement("style");
+		style.textContent = readFileSync(join(import.meta.dirname, "Diff.css"), "utf8");
+		document.head.append(style);
+		const {container} = render(
+			<div data-theme="light">
+				<Diff before={BEFORE} after={AFTER} path="src/count.ts" />
+			</div>,
+		);
+		const light = container.querySelector(".kp-diff__pane") as HTMLElement;
+		const dflt = render(
+			<Diff before={BEFORE} after={AFTER} path="src/count.ts" />,
+		).container.querySelector(".kp-diff__pane") as HTMLElement;
+
+		expect(getComputedStyle(dflt).colorScheme).toBe("dark");
+		expect(getComputedStyle(light).colorScheme).toBe("light");
+
+		style.remove();
 	});
 
 	it("has no axe violations", async () => {
