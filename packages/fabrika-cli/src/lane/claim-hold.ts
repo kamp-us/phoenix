@@ -1,6 +1,6 @@
 /**
  * Whether a lane on disk is one somebody is actually driving — the board read the concurrency cap
- * counts seats by (ADR 0365's 2026-09-08 amendment).
+ * counts seats by.
  *
  * A reader a caller passes rather than a seam [`concurrency.ts`](concurrency.ts) reaches through on
  * its own, which is what keeps the counting testable with no board at all — the shape `lane open`'s

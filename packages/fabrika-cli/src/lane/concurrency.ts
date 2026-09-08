@@ -9,11 +9,9 @@
  *
  * **A seat is a lane somebody is driving.** A lane whose log folds to `active` holds one only while
  * its issue carries a live `lane claim` marker; an active lane nobody claims is idle, and it is
- * named separately in the refusal rather than counted. That is the 2026-09-07 founder ruling on
- * [#8484](https://github.com/kamp-us/phoenix/issues/8484), recorded as ADR 0365's 2026-09-08
- * amendment: the cap was counting every unsettled directory, so 69 finished lanes refused every boot
- * against a live driver count of one. There is no TTL and no heartbeat on the marker — a claim ends
- * when its driver releases it.
+ * named separately in the refusal rather than counted. The cap was counting every unsettled
+ * directory, so finished lanes refused every boot against a live driver count of one. There is no
+ * TTL and no heartbeat on the marker — a claim ends when its driver releases it.
  *
  * **What cannot be read still counts.** A lane whose record will not load, whose log will not replay,
  * or whose claim the board would not answer for is not finished — it is a seat nobody can account for

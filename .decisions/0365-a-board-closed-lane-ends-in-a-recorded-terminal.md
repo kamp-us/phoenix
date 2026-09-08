@@ -169,4 +169,5 @@ seat, and that is the known cost of the cheap cut rather than an oversight.
 **An unreadable claim keeps its seat.** A comment thread or ACL that will not answer joins the
 records that will not load or replay as `unaccountable` — reading a failed read as "unclaimed" would
 free a seat on a failure, which is the permissive arm this ADR's counting has refused from the start.
-The first run over the live root measured 16 seats before the change and 5 claimed + 11 idle after.
+Measured over the live root: 16 seats before the change, and after it 0 claimed + 16 idle — every
+active lane there is one no driver holds.
