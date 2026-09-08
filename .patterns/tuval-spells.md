@@ -723,13 +723,20 @@ mint. An `ok: false` keeps the palette open with the kernel's own words under th
 `ok: true` closes it.
 
 **Who supplies the registry and runs the call** is
-[`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx): it describes the shell's
-own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and sends the
-call down the page's socket. The reply is the kernel executor's, so the refusal a founder reads is
-the row's own schema refusing the argument and a run is the kernel's dispatch. The one translation
-the host makes is the address: a shell row's spells are registered under `[shell, ...path]`, and a
-path the shell table does not hold is refused on the page because the kernel does not hold it
-either.
+[`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx). It combines the page's live
+registry descriptions with familiar shell shortcuts. A registered shell row appears once at its
+short address (`window close`); its live description and parameter schema remain authoritative.
+Shortcuts win an exact path collision. Only a shortcut gains the shell prefix when called;
+ordinary-program and core commands keep their actual registered addresses. A socket-less fixture
+falls back to the static shell table and refuses calls without a kernel.
+
+The host rebuilds the index and completion snapshot on catalogue replacement. Removed commands
+leave discovery, and attachment replacement interrupts pending waiters and rejects old replies.
+The kernel executor supplies the actual result or refusal. Palette ranking, Tab completion,
+placement and focus restoration remain in the existing palette components. The browser journey in
+[`page/proof/commands.spec.ts`](../apps/tuval/src/page/proof/commands.spec.ts) boots a deterministic
+counter, invokes it through both surfaces, verifies its real state and all six help/describe path
+forms, then removes a command and reconnects without reloading the page.
 
 ## A window that calls a spell
 

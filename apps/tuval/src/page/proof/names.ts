@@ -16,3 +16,5 @@ export const CONTROL_PORTS = {recovering: 4319, refusing: 4320} as const;
 
 /** The negative control's document, served by the same Vite dev server as the real page. */
 export const NO_RECOVERY_PATH = "/src/page/proof/no-recovery.html";
+
+export const COMMAND_CONTROL_PORT = 4321;
