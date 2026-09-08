@@ -1,15 +1,8 @@
-/**
- * The client's four refusals → the interface's per-method errors.
- *
- * Founder ruling 3 (#7570) keys an error class to the method that raises it and enumerates the
- * cases inside it, so `SessionLocked`, `SessionNotFound`, `Disconnected` and `Refused` are not
- * tags on this side of the seam — they are `reason`s. This module is the whole translation, so a
- * `tuval/pi/client/*` error never reaches a caller of `TuvalAiAgent`.
- */
-
+/** Pi refusals become operation-specific generic errors; causes stay local (see backend-exception-translation.md). */
 import type {AgentFailure} from "../../ai-agent/events.ts";
 import {
 	InterruptError,
+	ListError,
 	PageError,
 	PromptError,
 	StartError,
@@ -17,112 +10,113 @@ import {
 	TransportError,
 } from "../../ai-agent/service/index.ts";
 import type {ConnectionRefusal, Disconnected, SessionRefusal} from "../client/index.ts";
+import {retaining} from "../diagnostics.ts";
 
-export const startErrorOf = (
-	cwd: string,
-	refusal: SessionRefusal | ConnectionRefusal,
-): StartError => {
+type Refusal = SessionRefusal | ConnectionRefusal;
+const detail = (operation: string, refusal: Refusal): string => {
 	switch (refusal._tag) {
 		case "tuval/pi/client/SessionNotFound":
-			return new StartError({reason: "session-not-found", cwd, detail: refusal.detail});
+			return `${operation}: the session is no longer available`;
 		case "tuval/pi/client/SessionLocked":
-			return new StartError({reason: "session-locked", cwd, detail: refusal.detail});
+			return `${operation}: another connection holds the session`;
 		case "tuval/pi/client/Disconnected":
-			return new StartError({reason: "transport", cwd, detail: refusal.detail});
+			return `${operation}: the Pi connection closed; reopen the session to reconnect`;
 		case "tuval/pi/client/ProtocolRefused":
-			return new StartError({reason: "refused", cwd, detail: `${refusal.code}: ${refusal.detail}`});
+			return `${operation}: the Pi server refused the request`;
 	}
 };
-
-export const promptErrorOf = (refusal: SessionRefusal): PromptError => {
-	switch (refusal._tag) {
-		case "tuval/pi/client/SessionNotFound":
-			return new PromptError({reason: "no-session", detail: refusal.detail});
-		case "tuval/pi/client/Disconnected":
-			return new PromptError({reason: "disconnected", detail: refusal.detail});
-		// A lease another connection holds refuses this send the same way a protocol code does:
-		// the session is there and it said no, which is `refused` rather than `no-session`.
-		case "tuval/pi/client/SessionLocked":
-			return new PromptError({reason: "refused", detail: refusal.detail});
-		case "tuval/pi/client/ProtocolRefused":
-			return new PromptError({reason: "refused", detail: `${refusal.code}: ${refusal.detail}`});
-	}
-};
-
-export const transportErrorOf = (dropped: Disconnected): TransportError =>
-	new TransportError({reason: "disconnected", detail: dropped.detail});
-
-/**
- * A refused send, as the plain failure the event stream carries.
- *
- * `prompt` returns at the send (#8018), so by the time the pin refuses one there is no caller left
- * holding a `PromptError` channel and the event stream is the only outbound channel the layer
- * still owns. It rides that stream as a `failure` event rather than failing the queue: the session
- * is still there and the next turn still has to reach the window. Only a lost transport ends the
- * stream, and `transportErrorOf` is the one that does it.
- */
+export const startErrorOf = (cwd: string, refusal: Refusal): StartError =>
+	retaining(
+		refusal,
+		new StartError({
+			cwd,
+			detail: detail("Pi could not start or resume the session", refusal),
+			reason:
+				refusal._tag === "tuval/pi/client/SessionNotFound"
+					? "session-not-found"
+					: refusal._tag === "tuval/pi/client/SessionLocked"
+						? "session-locked"
+						: refusal._tag === "tuval/pi/client/Disconnected"
+							? "transport"
+							: "refused",
+		}),
+	);
+export const promptErrorOf = (refusal: SessionRefusal): PromptError =>
+	retaining(
+		refusal,
+		new PromptError({
+			detail: detail("Pi could not send the message", refusal),
+			reason:
+				refusal._tag === "tuval/pi/client/SessionNotFound"
+					? "no-session"
+					: refusal._tag === "tuval/pi/client/Disconnected"
+						? "disconnected"
+						: "refused",
+		}),
+	);
+export const transportErrorOf = (refusal: Disconnected): TransportError =>
+	retaining(
+		refusal,
+		new TransportError({
+			reason: "disconnected",
+			detail: "Pi stopped receiving session updates; reopen the session to reconnect",
+		}),
+	);
 export const promptFailureOf = (refusal: PromptError): AgentFailure => ({
 	tag: refusal._tag,
 	reason: refusal.reason,
 	detail: refusal.message,
 });
-
 export const storeUnreadable = (cause: unknown): PageError =>
-	new PageError({
-		reason: "store-unreadable",
-		detail: cause instanceof Error ? cause.message : String(cause),
-	});
-
-/**
- * The three ways a *stored* session's transcript does not come back (#8233).
- *
- * `transcriptSessionMissing` is the one `storeUnreadable` above cannot say. `page` reads the file
- * of a session the layer already holds, so a missing file there is a broken store; the store read
- * is handed an id off a listing and a file that is nowhere is the ordinary answer that the session
- * is gone — which a caller must be able to tell from a store it could not enumerate.
- */
+	retaining(
+		cause,
+		new PageError({
+			reason: "store-unreadable",
+			detail: "Pi could not read this session's history page",
+		}),
+	);
+export const storeUnlistable = (cause: unknown): ListError =>
+	retaining(
+		cause,
+		new ListError({
+			reason: "store-unreadable",
+			detail: "Pi could not enumerate the session stores",
+		}),
+	);
 export const transcriptSessionMissing = (sessionId: string): TranscriptError =>
 	new TranscriptError({
 		reason: "session-not-found",
 		sessionId,
 		detail: "neither of Pi's session stores holds a file for this id",
 	});
-
 export const transcriptUnreadable = (sessionId: string, cause: unknown): TranscriptError =>
-	new TranscriptError({
-		reason: "store-unreadable",
-		sessionId,
-		detail: cause instanceof Error ? cause.message : String(cause),
-	});
-
+	retaining(
+		cause,
+		new TranscriptError({
+			reason: "store-unreadable",
+			sessionId,
+			detail: "Pi could not read the stored session transcript",
+		}),
+	);
 export const transcriptUnknownCursor = (sessionId: string, reason: string): TranscriptError =>
 	new TranscriptError({reason: "unknown-cursor", sessionId, detail: reason});
-
-/**
- * A send refused because the socket is gone, as the terminal failure that ends the event stream.
- *
- * The one refusal that takes the exit `follow` takes on `pi.disconnections`, and for the same
- * reason: nothing dials again, so leaving the stream open would leave a window waiting on a
- * transport that is not coming back. The way back in is another `start({cwd, resume})`.
- */
 export const promptDropOf = (refusal: PromptError): TransportError =>
-	new TransportError({reason: "disconnected", detail: refusal.detail});
-
-/**
- * A refused abort, as the plain failure the event stream carries (ADR 0356).
- *
- * `interrupt` keeps `Effect.Effect<void>`, so no caller is left to raise to and the stream is the
- * only outbound channel this layer still owns. It rides as an event rather than failing the queue
- * for `promptFailureOf`'s reason: the session is still there and every later turn still has to
- * reach the window.
- *
- * `turnRunning` is the half only this layer can answer, and the fold routes on it. Pi says nothing
- * about it in the refusal itself, so it comes from the session projection's own phase.
- */
+	retaining(
+		refusal,
+		new TransportError({
+			reason: "disconnected",
+			detail:
+				"Pi could not send the message because the connection closed; reopen the session to reconnect",
+		}),
+	);
+/** Refused interrupts remain nonterminal events; turnRunning remains the fold's transition discriminant. */
 export const interruptFailureOf = (refusal: SessionRefusal, turnRunning: boolean): AgentFailure => {
-	const error = new InterruptError({
-		reason: turnRunning ? "turn-running" : "no-live-turn",
-		detail: refusal.message,
-	});
+	const error = retaining(
+		refusal,
+		new InterruptError({
+			reason: turnRunning ? "turn-running" : "no-live-turn",
+			detail: detail("Pi could not interrupt the turn", refusal),
+		}),
+	);
 	return {tag: error._tag, reason: error.reason, detail: error.message};
 };

@@ -46,7 +46,6 @@ import type {
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
-	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -61,6 +60,7 @@ import {
 } from "../../ai-agent/service/index.ts";
 import {featuresDefault} from "../../features.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
+import {retaining} from "../diagnostics.ts";
 import {
 	agentSessionHostLayer,
 	defaultSessionDir,
@@ -86,6 +86,7 @@ import {
 	promptErrorOf,
 	promptFailureOf,
 	startErrorOf,
+	storeUnlistable,
 	storeUnreadable,
 	transcriptSessionMissing,
 	transcriptUnknownCursor,
@@ -333,10 +334,7 @@ const make = (
 			pi.setThinkingLevel(sessionId, level).pipe(
 				Effect.map((answered) => answered.thinkingLevel),
 				Effect.catch((refusal) =>
-					Effect.as(
-						Effect.logWarning(`the thinking switch was refused: ${refusal.message}`),
-						fallback,
-					),
+					Effect.as(Effect.logWarning("the Pi thinking switch was refused", refusal), fallback),
 				),
 			);
 
@@ -353,10 +351,7 @@ const make = (
 			pi.setModel(sessionId, selection).pipe(
 				Effect.map((answered) => answered.model),
 				Effect.catch((refusal) =>
-					Effect.as(
-						Effect.logWarning(`the model switch was refused: ${refusal.message}`),
-						fallback,
-					),
+					Effect.as(Effect.logWarning("the Pi model switch was refused", refusal), fallback),
 				),
 			);
 
@@ -491,6 +486,7 @@ const make = (
 			yield* Effect.forkIn(
 				pi.prompt(current.id, text).pipe(
 					Effect.mapError(promptErrorOf),
+					Effect.tapError((refusal) => Effect.logWarning("Pi send failed", refusal)),
 					// A send that never landed is not a turn this session has seen, so the key goes
 					// back and a retry of it is admitted.
 					Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
@@ -517,6 +513,7 @@ const make = (
 			const current = yield* Ref.get(session);
 			if (current === null) return;
 			yield* pi.abort(current.id).pipe(
+				Effect.tapError((refusal) => Effect.logWarning("Pi interrupt failed", refusal)),
 				Effect.asVoid,
 				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
 				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
@@ -629,16 +626,22 @@ const make = (
 			query: TranscriptQuery,
 		) {
 			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir(query.cwd)});
+			yield* Effect.forEach(
+				stores.failures,
+				(failure) =>
+					Effect.logWarning(
+						`Pi could not enumerate the ${failure.store} store while reading a stored transcript`,
+						failure.cause,
+					),
+				{concurrency: 1, discard: true},
+			);
 			const file = yield* locateBranch(stores.dirs, query.sessionId);
 			if (file === null) {
 				// A store that would not enumerate may be the one the file was in, so a miss across the
 				// rest is not the claim that the session is gone.
 				return yield* stores.failures.length === 0
 					? transcriptSessionMissing(query.sessionId)
-					: transcriptUnreadable(
-							query.sessionId,
-							stores.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
-						);
+					: transcriptUnreadable(query.sessionId, stores.failures);
 			}
 			const entries = yield* Effect.try({
 				try: () => SessionManager.open(file, dirname(file), query.cwd).getBranch(),
@@ -682,15 +685,13 @@ const make = (
 				read.failures,
 				(failure) =>
 					Effect.logWarning(
-						`the ${failure.store} Pi session store could not be read: ${failure.detail}`,
+						`the ${failure.store} Pi session store could not be read`,
+						failure.cause,
 					),
 				{concurrency: 1, discard: true},
 			);
 			if (read.answered.length === 0) {
-				return yield* new ListError({
-					reason: "store-unreadable",
-					detail: read.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
-				});
+				return yield* storeUnlistable(read.failures);
 			}
 			return read.sessions;
 		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
@@ -776,7 +777,14 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 						authPath: join(agentDir, "auth.json"),
 						modelsPath: join(agentDir, "models.json"),
 					}),
-				catch: (cause) => new ModelRuntimeUnavailable({agentDir, detail: String(cause)}),
+				catch: (cause) =>
+					retaining(
+						cause,
+						new ModelRuntimeUnavailable({
+							agentDir,
+							detail: "Pi could not initialize its model runtime",
+						}),
+					),
 			}).pipe(Effect.orDie);
 			// The `piSubagents` flag and nothing else decides this. Off — the shipped default — it is
 			// an empty list, and an empty list is the same session this layer opened before the flag
