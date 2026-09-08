@@ -189,19 +189,22 @@ describe("the inbound frame splitter", () => {
 });
 
 /**
- * What one revision costs on this socket. A streamed turn signals per token and every signal is a
- * frame, so one frame's encode-plus-decode round trip *is* the per-token cost the delta shape
- * exists to bring down (#8554).
+ * What one revision costs on this socket, as a **ratio**. A streamed turn signals per token and
+ * every signal is a frame, so one frame's encode-plus-decode round trip is the per-token cost the
+ * delta shape exists to bring down (#8554).
  *
- * Measured on the 0.85.1 envelope: ~40 µs for the 274-byte delta below, against ~3.2 ms for the
- * 200-item snapshot the old shape sent in its place — two orders of magnitude apart, and in the
- * same range as the spike's 25.5 µs for a 133-byte frame. The ceiling is an order of magnitude
- * above the measured cost and an order below the snapshot's, so it reds on a real regression rather
- * than on a busy CI runner.
+ * The assertion is `delta * 10 < whole` and deliberately nothing absolute. Both figures come from
+ * the same process on the same hardware within one test, so the machine's speed divides out and
+ * what is left is the property this shape claims: a delta costs a fraction of the whole-transcript
+ * frame the old wire sent in its place. A fixed µs ceiling over `performance.now()` cannot say that
+ * — it says "this machine is at least this fast", which is a fact about the runner. One reded on a
+ * shared GitHub runner at 535 µs against a 500 µs bound while the ratio beside it passed, and every
+ * such red reads as a delta-encoding regression that is not one (#8589 review round 1).
+ *
+ * For orientation only, never asserted: on one developer machine the 274-byte delta below round
+ * trips in ~40 µs and the 200-item snapshot in ~3.2 ms. Those are that machine's numbers.
  */
 describe("what one revision costs on the wire", () => {
-	const CEILING_MICROS = 500;
-
 	const longTranscript = (count: number): SessionSnapshot["transcript"] =>
 		Array.from({length: count}, (_, at) => ({
 			id: `item-${at}`,
@@ -259,15 +262,6 @@ describe("what one revision costs on the wire", () => {
 			snapshot: {...snapshot, revision: 42, transcript: [...longTranscript(200)]},
 		},
 	};
-
-	it("carries a per-delta frame in tens of microseconds, not tenths of a millisecond", () => {
-		const micros = roundTripMicros(deltaFrame, 2_000);
-		assert.isBelow(
-			micros,
-			CEILING_MICROS,
-			`one delta round trip cost ${micros.toFixed(1)} µs, over the ${CEILING_MICROS} µs ceiling`,
-		);
-	});
 
 	it("costs a fraction of the whole-transcript frame the old shape sent per token", () => {
 		const delta = roundTripMicros(deltaFrame, 2_000);

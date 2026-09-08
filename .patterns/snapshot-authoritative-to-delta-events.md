@@ -20,8 +20,12 @@ frame per token. Tuval's server therefore sends the whole value on a viewer's fi
 delta for every revision after it, diffed against the last thing it sent that viewer
 ([`pi/wire/delta.ts`](../apps/tuval/src/pi/wire/delta.ts)'s `nextPush`,
 [`pi/server/PiServerService.ts`](../apps/tuval/src/pi/server/PiServerService.ts)'s `followSession`).
-Measured over the protocol-8 envelope, that is ~40 µs per frame against ~3.2 ms for a 200-item
-snapshot ([`pi/wire/codec.unit.test.ts`](../apps/tuval/src/pi/wire/codec.unit.test.ts)).
+Over the protocol-8 envelope a delta frame round trips in under a tenth of what the whole-transcript
+frame costs — pinned as that ratio, not as a wall-clock figure, in
+[`pi/wire/codec.unit.test.ts`](../apps/tuval/src/pi/wire/codec.unit.test.ts). Absolute microseconds
+are a fact about the machine that measured them: the same bound that held on a developer laptop reds
+on a shared CI runner, so a ratio between two measurements taken in one process is the only form of
+this claim that travels.
 
 Two rules make the split safe rather than a source of drift:
 
