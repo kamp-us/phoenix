@@ -20,8 +20,9 @@ import {fauxProvider} from "@earendil-works/pi-ai";
 import {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import {Effect, Layer} from "effect";
 import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
+import {featuresDefault} from "../../features.ts";
 import {aiAgentOverHost} from "../ai-agent/PiAiAgent.ts";
-import {agentSessionHostLayer, SessionOpenFailed} from "../server/index.ts";
+import {agentSessionHostLayer, SessionOpenFailed, subagentExtensionPaths} from "../server/index.ts";
 
 /** The model the faux provider advertises. Its rates are per million tokens, as Pi's catalog states them. */
 export const FAUX_MODEL = {provider: "faux", id: "faux-1"} as const;
@@ -65,11 +66,20 @@ export const fauxPiLayer = ({root, replies}: FauxPiOptions): Layer.Layer<TuvalAi
 							authPath: join(root, ".tuval", "pi-agent", "auth.json"),
 						});
 						modelRuntime.registerNativeProvider(faux.provider);
+						// The same flag the shipped row reads (`../ai-agent/PiAiAgent.ts`), so flipping it
+						// and running `proof:pi-vertical` is the hand check for the extension (#8555).
+						// The child a `subagent` call spawns is a detached process with its own
+						// `ModelRuntime`, so it never sees this faux provider and needs a real model.
+						const extensionPaths = subagentExtensionPaths(featuresDefault);
 						return agentSessionHostLayer({
 							modelRuntime,
 							agentDir: join(root, ".tuval", "pi-agent"),
 							projectRoot: root,
-							noTools: "all",
+							// `"all"` is no tools at all; `"builtin"` drops the four disk-touching built-ins
+							// and leaves extension tools enabled (`pi-coding-agent` `dist/core/sdk.d.ts`),
+							// which is what lets the operator's turn actually reach `subagent`.
+							noTools: extensionPaths.length === 0 ? "all" : "builtin",
+							...(extensionPaths.length === 0 ? {} : {extensionPaths}),
 						});
 					},
 					catch: (cause) => new SessionOpenFailed({cwd: root, detail: String(cause)}),
