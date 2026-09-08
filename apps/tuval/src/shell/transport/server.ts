@@ -314,9 +314,16 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 						cause: error.cause,
 					}).pipe(Effect.as(false)),
 			}),
-			// A handler's own failure is not the window's: the Msg reached a live process, so the ack
-			// says Delivered and the failure comes back through the state stream.
-			Effect.orElseSucceed(() => false),
+			// A handler's own failure is not the window's: the Msg reached a live process and was
+			// applied, so the ack stays Delivered. It is still not silence — this used to
+			// `orElseSucceed` the failure away on the belief that the state stream would carry it,
+			// and the same failure was what stopped that stream (#8538).
+			Effect.catch((error) =>
+				Effect.logError("tuval transport: a Cmd handler of a dispatched Msg failed", {
+					processId,
+					error,
+				}).pipe(Effect.as(false)),
+			),
 			// A defect from the actor fiber is nobody's declared failure; it is still not silence.
 			Effect.catchCause((cause) =>
 				Effect.logError("tuval transport: a dispatched Msg died in the actor", {
