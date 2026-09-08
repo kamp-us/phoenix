@@ -6,7 +6,7 @@
  * layer folds are not something a test may invent.
  */
 
-import type {ModelInfo} from "@anthropic-ai/claude-agent-sdk";
+import type {ModelInfo, SDKSessionInfo} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
 import {Mode} from "../../ai-agent/ports/index.ts";
@@ -232,6 +232,19 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 	);
 });
 
+/** An id no scripted store below holds, which is the only thing that makes a resume a miss. */
+const ABSENT_SESSION_ID = "00000000-0000-4000-8000-00000000dead";
+
+/** One row of the CLI's store — enough for the existence check, which reads the id alone. */
+const storedSession = (sessionId: string): SDKSessionInfo => ({
+	sessionId,
+	summary: "a session with nothing in it yet",
+	lastModified: 1_760_000_000_000,
+	firstPrompt: "",
+	cwd: CWD,
+	gitBranch: "main",
+});
+
 describe("start on a resume", () => {
 	it.effect("passes the session id through and reads that session's store", () =>
 		on({rows: rows()}, (agent, scripted) =>
@@ -249,10 +262,10 @@ describe("start on a resume", () => {
 	it.effect("refuses a session the store does not hold as SessionNotFound", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				on({}, (agent) =>
+				on({sessions: [storedSession(TOOL_SESSION_ID)]}, (agent) =>
 					agent.start({
 						cwd: CWD,
-						resume: {sessionId: "00000000-0000-4000-8000-00000000dead", holdsTranscript: false},
+						resume: {sessionId: ABSENT_SESSION_ID, holdsTranscript: false},
 					}),
 				),
 			);
@@ -261,13 +274,85 @@ describe("start on a resume", () => {
 		}),
 	);
 
+	it.effect("opens an existing session that holds no message rows (#8131)", () =>
+		on({rows: [], sessions: [storedSession(TOOL_SESSION_ID)]}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
+				// The empty read alone said nothing; the listing is what settled that the session is
+				// there, and the query opened under the id the operator picked rather than a new one.
+				assert.deepStrictEqual(scripted.lists, [undefined]);
+				assert.lengthOf(scripted.opened, 1);
+				assert.strictEqual(scripted.opened[0]?.record.options.resume, TOOL_SESSION_ID);
+			}),
+		),
+	);
+
+	it.effect("opens no query for an id the listing does not hold", () =>
+		on({sessions: [storedSession(TOOL_SESSION_ID)]}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* Effect.exit(
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: ABSENT_SESSION_ID, holdsTranscript: false},
+					}),
+				);
+				assert.lengthOf(scripted.opened, 0);
+			}),
+		),
+	);
+
+	it.effect("keeps a listing that would not answer a transport failure, not an absence", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({listFails: new Error("EACCES ~/.claude/projects")}, (agent) =>
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+					}),
+				),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/StartError");
+			assert.strictEqual(failure(exit).reason, "transport");
+		}),
+	);
+
+	it.effect("keeps a transcript read that threw a transport failure, not an absence", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({readFails: new Error("EIO")}, (agent) =>
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+					}),
+				),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/StartError");
+			assert.strictEqual(failure(exit).reason, "transport");
+		}),
+	);
+
+	it.effect("asks the store nothing when the transcript read came back with rows", () =>
+		on({rows: rows()}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
+				assert.deepStrictEqual(scripted.lists, []);
+			}),
+		),
+	);
+
 	it.effect("takes the session down rather than leaving it on starting", () =>
 		on({}, (agent) =>
 			Effect.gen(function* () {
 				yield* Effect.exit(
 					agent.start({
 						cwd: CWD,
-						resume: {sessionId: "00000000-0000-4000-8000-00000000dead", holdsTranscript: false},
+						resume: {sessionId: ABSENT_SESSION_ID, holdsTranscript: false},
 					}),
 				);
 				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 2)), [

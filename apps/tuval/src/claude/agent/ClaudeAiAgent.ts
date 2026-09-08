@@ -86,6 +86,7 @@ import {
 	noSessionToPage,
 	promptDisconnected,
 	sessionNotFound,
+	startStoreUnreadable,
 	startTransport,
 	startWithoutHandshake,
 	storeUnlistable,
@@ -501,6 +502,25 @@ const make = (
 			});
 
 		/**
+		 * Whether the CLI's store holds a session at all — the pinned existence check, asked only
+		 * where a transcript read came back empty.
+		 *
+		 * At `0.3.259` `getSessionMessages` "returns Array of messages, or empty array if the session
+		 * was not found" (`sdk.d.ts`), so an empty read is two answers in one and settles neither: an
+		 * existing session with no rows and an id nobody stored read the same. `listSessions` is the
+		 * one that distinguishes them — with no options it is the whole store, the same call and the
+		 * same reason as `listSessions` below.
+		 *
+		 * The failure mapper is the caller's because the two callers refuse on different channels —
+		 * `start` owes a `StartError`, the store read a `TranscriptError` — and neither may read a
+		 * store that would not open as a session that is not there (#8131).
+		 */
+		const storeHolds = <E>(sessionId: string, unreadable: (cause: unknown) => E) =>
+			Effect.map(Effect.tryPromise({try: () => sdk.listSessions(), catch: unreadable}), (stored) =>
+				stored.some((info) => info.sessionId === sessionId),
+			);
+
+		/**
 		 * Open the session, and wait for the CLI's connect-time handshake rather than for a message.
 		 *
 		 * Nothing is read off the message iterator here. In streaming-input mode every frame belongs
@@ -519,9 +539,16 @@ const make = (
 					try: () => sdk.getSessionMessages(resume, {dir: cwd}),
 					catch: (cause) => startTransport(cwd, cause),
 				});
-				// "Returns an array of messages, or an empty array if the session was not found"
-				// (`sdk.d.ts`, `getSessionMessages`) — the miss itself, with no error text to scrape.
-				if (rows.length === 0) return yield* sessionNotFound(cwd, resume);
+				// An empty read is not a miss: the pin answers `[]` for a session it does not hold and
+				// for one that is genuinely empty alike, and `ResumeTarget` promises any listed id
+				// resumes. So the store's listing settles it, and only a listing with no such row is
+				// `session-not-found` (#8131).
+				if (
+					rows.length === 0 &&
+					!(yield* storeHolds(resume, (cause) => startStoreUnreadable(cwd, cause)))
+				) {
+					return yield* sessionNotFound(cwd, resume);
+				}
 				const {items} = toHistoryItems(rows, {at: Date.now()});
 				stale.push(...unsettledToolIds(items).filter((id) => !parked.has(id)));
 			}
@@ -885,20 +912,6 @@ const make = (
 		});
 
 		/**
-		 * Whether the CLI's store holds a session at all, asked only where the transcript read came
-		 * back empty. `listSessions` with no options is the whole store, which is the same call
-		 * `listSessions` below makes and the same reason it makes it that way.
-		 */
-		const storeHolds = (sessionId: string) =>
-			Effect.map(
-				Effect.tryPromise({
-					try: () => sdk.listSessions(),
-					catch: (cause) => transcriptUnreadable(sessionId, cause),
-				}),
-				(stored) => stored.some((info) => info.sessionId === sessionId),
-			);
-
-		/**
 		 * `page`'s answer off the store, with no session open (#8233). `getSessionMessages` reads the
 		 * CLI's transcript files directly, so nothing here touches the `query()` this layer's `start`
 		 * owns and the read works on a layer that never opened one.
@@ -913,7 +926,12 @@ const make = (
 			// The pin answers an empty array for a session it does not hold as readily as for one
 			// that is genuinely empty (`refusals.ts`), so the listing settles which of the two this
 			// is rather than the caller reading silence as either.
-			if (rows.length === 0 && !(yield* storeHolds(query.sessionId))) {
+			if (
+				rows.length === 0 &&
+				!(yield* storeHolds(query.sessionId, (cause) =>
+					transcriptUnreadable(query.sessionId, cause),
+				))
+			) {
 				return yield* transcriptSessionNotFound(query.sessionId);
 			}
 			const {items, cursorAliases} = toHistoryItems(rows, {at: Date.now()});
