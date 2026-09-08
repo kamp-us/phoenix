@@ -506,6 +506,72 @@
 	align-self: flex-start;
 }
 
+/*
+ * A run of consecutive calls as one line (#8612): a status dot, the sentence, and the status as a
+ * word for a run that failed or is still going. The dot is a state marker rather than an icon —
+ * `aria-hidden`, and it never carries the state alone: the word beside it does, which is also what
+ * survives the reduced-motion collapse of the shimmer below (ADR 0162, Pillar 4).
+ */
+.tuval-chat-tool-run {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	min-inline-size: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-tool-run-dot {
+	flex: none;
+	align-self: center;
+	inline-size: 6px;
+	block-size: 6px;
+	border-radius: 50%;
+	background: var(--text-muted);
+}
+
+.tuval-chat-tool-run-dot[data-status="error"] {
+	background: var(--danger);
+}
+
+.tuval-chat-tool-run-dot[data-status="running"] {
+	background: var(--accent);
+}
+
+.tuval-chat-tool-run-line {
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-run-status {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-tool-run-status[data-status="error"] {
+	color: var(--danger);
+}
+
+.tuval-chat-tool-run-status[data-status="running"] {
+	color: var(--accent);
+}
+
+/* A single class, so the reduced-motion override below ties on specificity and wins on source
+   order — the compound form would silently lose and keep pulsing (see #8121, and the sheet's own
+   note at the block). */
+.tuval-chat-tool-run-shimmer {
+	animation: tuval-chat-tool-run-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tuval-chat-tool-run-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.55;
+	}
+}
+
 .tuval-chat-tool-detail {
 	display: flex;
 	flex-direction: column;
@@ -863,7 +929,8 @@
    is carried here to tie, and the tie goes to this rule because it comes later. */
 @media (prefers-reduced-motion: reduce) {
 	.tuval-chat-phase[data-phase] .tuval-chat-phase-dot,
-	.tuval-chat-working-dots span {
+	.tuval-chat-working-dots span,
+	.tuval-chat-tool-run-shimmer {
 		animation: none;
 		opacity: 1;
 	}

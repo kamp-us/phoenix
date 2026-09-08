@@ -36,8 +36,19 @@ import type {ItemId, SubagentSlot, SystemItem, TranscriptItem} from "../../ai-ag
  */
 export type RowItem = Exclude<TranscriptItem, SystemItem>;
 
+/** A tool call, off the union rather than off a second import: the one above is at its width bound,
+ * and `boundary.unit.test.ts` reads import lines one at a time, so a wrapped one reads as untyped. */
+export type ToolCall = Extract<RowItem, {readonly kind: "tool"}>;
+
 /** One run of consecutive session notices, oldest-first. Non-empty by construction. */
 export type SessionRun = readonly [SystemItem, ...ReadonlyArray<SystemItem>];
+
+/**
+ * One run of consecutive tool calls, oldest-first. **Two or more** by construction: a lone call is
+ * already one row, and collapsing it into a sentence would spend its name and its disclosure to
+ * say "Read 1 file". So the type is what says a run of one is not a run.
+ */
+export type ToolRun = readonly [ToolCall, ToolCall, ...ReadonlyArray<ToolCall>];
 
 export type ChatRow =
 	/** There is more history behind this point; `items` is what the live-tail bound already dropped. */
@@ -50,6 +61,18 @@ export type ChatRow =
 	 * row that grows rather than N rows that push everything the reader was looking at down the page.
 	 */
 	| {readonly kind: "session"; readonly items: SessionRun}
+	/**
+	 * A run of consecutive tool calls as one sentence-shaped row (#8612). Six reads are one line
+	 * saying "Read 6 files" instead of six labelled blocks saying nothing about what was read.
+	 */
+	| {
+			readonly kind: "tools";
+			readonly calls: ToolRun;
+			/** This run ran inside another tool call — a subagent's, not the agent's own. */
+			readonly nested: boolean;
+			/** How many folds deep the run sits. Every call in it sits at this one depth. */
+			readonly depth: number;
+	  }
 	| {
 			readonly kind: "item";
 			readonly item: RowItem;
@@ -123,6 +146,9 @@ export const rowKey = (row: ChatRow): string => {
 	if (row.kind === "item") return `item:${row.item.id}`;
 	// The run's first notice, so the key holds still as later notices join the run behind it.
 	if (row.kind === "session") return `session:${row.items[0].id}`;
+	// Its own prefix rather than the first call's `item:` key: the two would otherwise be one string
+	// in the window's shared `expanded` set, and a run could not be opened without opening that call.
+	if (row.kind === "tools") return `tools:${row.calls[0].id}`;
 	return row.kind;
 };
 
@@ -257,6 +283,67 @@ const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
 };
 
 /**
+ * The call this row is, when it is one a run may absorb.
+ *
+ * A **spawning** call is not one, and that is the whole of the exclusion: it carries a fold of its
+ * own — a second disclosure, its `aria-expanded`, and the nested rows it reveals (#8027/#8057) —
+ * which a sentence has no room for, so it stays the tool row it was and breaks the run around it.
+ * T3 excludes its `agentSpawn` entries the same way. A call whose worker rows are in this list says
+ * so in `nestedIds`; one whose rows left the window entirely says so by holding a subagent slot,
+ * and neither reading covers the other.
+ *
+ * Every other row kind answers `null`, which is what makes a compaction boundary, a session notice,
+ * a reply, a thought and the operator's own turn each break a run just by sitting between two calls.
+ */
+const runCall = (row: ChatRow, subagents: ReadonlySet<string>): ToolCall | null => {
+	if (row.kind !== "item" || row.item.kind !== "tool") return null;
+	if (row.nestedIds.length > 0 || subagents.has(row.item.id)) return null;
+	return row.item;
+};
+
+/**
+ * Collapse each maximal span of consecutive absorbable tool calls **at one depth** into a single
+ * row (#8612). A depth change ends a span, so an open fold never reads as one sentence spanning the
+ * agent's calls and its worker's.
+ *
+ * A span of one is left exactly as it was — see `ToolRun`.
+ */
+const collapseToolRuns = (
+	rows: ReadonlyArray<ChatRow>,
+	subagents: ReadonlySet<string>,
+): ReadonlyArray<ChatRow> => {
+	const out: Array<ChatRow> = [];
+	let run: Array<{readonly row: ChatRow; readonly call: ToolCall; readonly depth: number}> = [];
+	const flush = (): void => {
+		const [first, second, ...rest] = run;
+		run = [];
+		if (first === undefined) return;
+		if (second === undefined) {
+			out.push(first.row);
+			return;
+		}
+		out.push({
+			kind: "tools",
+			calls: [first.call, second.call, ...rest.map((entry) => entry.call)],
+			nested: first.depth > 0,
+			depth: first.depth,
+		});
+	};
+	for (const row of rows) {
+		const call = runCall(row, subagents);
+		if (call === null || row.kind !== "item") {
+			flush();
+			out.push(row);
+			continue;
+		}
+		if (run[0] !== undefined && run[0].depth !== row.depth) flush();
+		run.push({row, call, depth: row.depth});
+	}
+	flush();
+	return out;
+};
+
+/**
  * The list the window renders. The tail wins on a collision: an item that reached the live stream is
  * the newer copy of itself, and a page that happens to overlap the tail must not double it. The
  * collision is `unheld`'s — id, then text against a turn the tail still holds as `local` — so the
@@ -334,7 +421,7 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	for (const item of items) {
 		if (!reachable.has(item.id)) emit(item, 1);
 	}
-	return rows;
+	return collapseToolRuns(rows, subagents);
 };
 
 /**
@@ -363,6 +450,7 @@ export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null => {
 	for (const row of rows) {
 		if (row.kind === "item") return row.item.id;
 		if (row.kind === "session") return row.items[0].id;
+		if (row.kind === "tools") return row.calls[0].id;
 	}
 	return null;
 };
@@ -376,16 +464,18 @@ export const olderPageRequest = (
 	const items = rows.flatMap((row): ReadonlyArray<TranscriptItem> => {
 		if (row.kind === "item") return [row.item];
 		if (row.kind === "session") return row.items;
+		if (row.kind === "tools") return row.calls;
 		return [];
 	});
 	const cursor = pageCursor(items, anchor);
 	return cursor.kind === "page" && cursor.before !== null ? {before: cursor.before, anchor} : null;
 };
 
-/** Membership rather than the row's key: an anchor may name a notice buried mid-run. */
+/** Membership rather than the row's key: an anchor may name a notice or a call buried mid-run. */
 const holds = (row: ChatRow, id: string): boolean => {
 	if (row.kind === "item") return row.item.id === id;
 	if (row.kind === "session") return row.items.some((item) => item.id === id);
+	if (row.kind === "tools") return row.calls.some((call) => call.id === id);
 	return false;
 };
 

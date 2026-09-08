@@ -654,3 +654,66 @@ describe("the chat turn shape's authorship", () => {
 		SLOW,
 	);
 });
+
+/**
+ * A run of consecutive calls is one sentence-shaped row (#8612), and the sentence says what
+ * happened, never how it went. So the two states a reader must not miss — a failure, and a call
+ * still going — are words on the row, and the dot's tint and the shimmer are each the second
+ * signal rather than the only one (ADR 0162, Pillar 4).
+ */
+describe("a run of tool calls as one row", () => {
+	const runRow = (root: HTMLElement): HTMLElement | null =>
+		root.querySelector<HTMLElement>('.tuval-chat-row[data-kind="tools"]');
+
+	it("says a failure in words as well as in the tint", async () => {
+		const rendered = await mountWindow(
+			withTranscript([
+				userItem("u1", "go"),
+				call("t0", {input: {file_path: "a.ts"}}),
+				call("t1", {name: "bash", input: {command: "ls"}, status: "error"}),
+			]),
+		);
+		const root = rendered.container.firstElementChild as HTMLElement;
+		const run = runRow(root);
+		expect(run?.textContent).toContain("Read 1 file and ran 1 command");
+		expect(run?.textContent).toContain("failed");
+		// The dot says nothing on its own: it is out of the accessible name entirely.
+		expect(run?.querySelector(".tuval-chat-tool-run-dot")?.getAttribute("aria-hidden")).toBe(
+			"true",
+		);
+		rendered.unmount();
+	});
+
+	it("says a call is still going in words, so the shimmer is never the only tell", async () => {
+		const rendered = await mountWindow(
+			withTranscript([
+				userItem("u1", "go"),
+				call("t0", {input: {file_path: "a.ts"}}),
+				call("t1", {input: {file_path: "b.ts"}, status: "running"}),
+			]),
+		);
+		const root = rendered.container.firstElementChild as HTMLElement;
+		const run = runRow(root);
+		expect(run?.textContent).toContain("Read 2 files");
+		expect(run?.textContent).toContain("running");
+		rendered.unmount();
+	});
+
+	it(
+		"holds the enforced pillar-4 invariants over the collapsed run",
+		async () => {
+			const rendered = await mountWindow(
+				withTranscript([
+					userItem("u1", "go"),
+					call("t0", {input: {file_path: "a.ts"}}),
+					call("t1", {name: "bash", input: {command: "ls"}, status: "error"}),
+					call("t2", {input: {path: "a.ts", old_string: "one", new_string: "two"}}),
+				]),
+			);
+			const root = rendered.container.firstElementChild as HTMLElement;
+			expect(await scanRegions(root)).toEqual([]);
+			rendered.unmount();
+		},
+		SLOW,
+	);
+});

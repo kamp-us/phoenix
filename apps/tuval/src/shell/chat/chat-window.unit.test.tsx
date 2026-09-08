@@ -1636,7 +1636,7 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		const fold = foldButton();
 		expect(fold.textContent).toBe("Show 2 nested calls");
 		expect(fold.getAttribute("aria-expanded")).toBe("false");
-		expect(screen.queryByText("bash")).toBeNull();
+		expect(screen.queryByText("Read 2 files")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(fold);
@@ -1645,8 +1645,8 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		const opened = foldButton();
 		expect(opened.textContent).toBe("Hide 2 nested calls");
 		expect(opened.getAttribute("aria-expanded")).toBe("true");
-		expect(screen.queryByText("bash")).not.toBeNull();
-		expect(screen.queryByText("grep")).not.toBeNull();
+		// The two revealed calls are consecutive at one depth, so what appears is their run (#8612).
+		expect(screen.queryByText("Read 2 files")).not.toBeNull();
 	});
 
 	// The rows are virtualized, so any idref list the button named would go stale as the reader
@@ -1955,7 +1955,14 @@ describe("the view slot's writer, under StrictMode", () => {
 	// this render was given. It reds against a ref written from an effect rather than in `commit`.
 	it("composes batched commits off the last committed value", async () => {
 		const {writes, view} = await openWindow(
-			withTranscript([userItem("a", "do it"), call("c"), call("d", {name: "grep"})]),
+			// A reply between the calls: consecutive ones collapse into one run (#8612), and this case
+			// needs two rows with a disclosure each to batch two toggles.
+			withTranscript([
+				userItem("a", "do it"),
+				call("c"),
+				assistantItem("b", "next"),
+				call("d", {name: "grep"}),
+			]),
 			{},
 			undefined,
 			{strict: true},
