@@ -261,6 +261,7 @@ describe("picking a row", () => {
 
 		expect(screen.getByRole("alert").textContent).toContain('no session "c-1" is stored');
 		expect(screen.queryByText("This session holds no messages yet.")).toBeNull();
+		expect(screen.queryByRole("combobox", {name: "Write a message to the agent"})).toBeNull();
 	});
 
 	it("renders a result it cannot decode as a refusal rather than an empty session", async () => {
@@ -439,7 +440,9 @@ const failRead = async (index: number): Promise<void> => {
 describe("transport read failures", () => {
 	it("leaves the first read recoverable until one explicit correlated retry succeeds", async () => {
 		const container = await openSession();
+		expect(screen.queryByRole("combobox", {name: "Write a message to the agent"})).toBeNull();
 		await failRead(0);
+		expect(screen.queryByRole("combobox", {name: "Write a message to the agent"})).toBeNull();
 		expect(screen.queryByText("Reading this session's transcript…")).toBeNull();
 		expect(screen.getByRole("alert").textContent).toContain(
 			"This transcript page could not be read",
@@ -457,7 +460,9 @@ describe("transport read failures", () => {
 		expect(parked[1]?.spell.window).toBe("w-1");
 		expect(screen.queryByRole("alert")).toBeNull();
 		expect(screen.getByText("Reading this session's transcript…")).toBeTruthy();
+		expect(screen.queryByRole("combobox", {name: "Write a message to the agent"})).toBeNull();
 		await answer(1, (id) => ok(id, pageOf(1, 2, null)));
+		expect(screen.getByRole("combobox", {name: "Write a message to the agent"})).toBeTruthy();
 		expect(texts(container)).toEqual(["userturn m-1", "userturn m-2"]);
 		expect(new Set(parked.map(({spell}) => spell.path.join(".")))).toEqual(
 			new Set([SESSION_TRANSCRIPT_CALL_PATH.join(".")]),

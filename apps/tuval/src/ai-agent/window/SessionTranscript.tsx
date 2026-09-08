@@ -19,7 +19,7 @@
  * did not move, so pressing it again asks for the same page rather than skipping past it.
  */
 
-import {AgentChatInput, Button, DesignTranslationProvider} from "@kampus/design";
+import {AgentChatInput, Button, DesignTranslationProvider, EmptyState} from "@kampus/design";
 import type {ReactElement} from "react";
 import {useCallback, useMemo, useState} from "react";
 import type {OlderRead, TranscriptAnswer} from "../../page/session-transcript.ts";
@@ -33,6 +33,7 @@ import "./session-list-window.css";
 
 const COPY = {
 	retry: "Try reading this transcript again",
+	refused: "This session cannot be opened",
 	reading: "Reading this session's transcript…",
 	empty: "This session holds no messages yet.",
 	older: "Load older messages",
@@ -65,8 +66,8 @@ export interface SessionTranscriptProps {
 	/** Ask for the page older than the one on screen. Absent means this caller does not page. */
 	readonly onOlder?: () => void;
 	readonly onRetry?: () => void;
-	/** The operator sent. What that does to the process is the caller's, through `send`. */
-	readonly onSend: (text: string) => void;
+	/** The caller handles the send; `false` refuses it without marking this transcript sent. */
+	readonly onSend: (text: string) => boolean | undefined;
 	/** Leave the session and put the list back in this window. */
 	readonly onBack: () => void;
 	/** Set when the row itself cannot be opened — the store filed it under no folder. */
@@ -83,12 +84,13 @@ export function SessionTranscriptView({
 	unopenable = false,
 }: SessionTranscriptProps): ReactElement {
 	const [sent, setSent] = useState(false);
+	const sendable = !unopenable && answer?._tag === "Read";
 	const submit = useCallback(
 		(text: string) => {
-			setSent(true);
-			onSend(text);
+			if (!sendable) return;
+			if (onSend(text) !== false) setSent(true);
 		},
-		[onSend],
+		[onSend, sendable],
 	);
 
 	const composer = useMemo(
@@ -115,12 +117,19 @@ export function SessionTranscriptView({
 	const body: ReactElement =
 		unopenable || refusal !== null ? (
 			<div className="tuval-session-transcript-refused">
-				<p role="alert">{refusal === null ? COPY.noFolder : failureLine(refusal)}</p>
-				{!unopenable && refusal !== null && onRetry !== undefined ? (
-					<Button type="button" variant="tertiary" size="sm" onClick={onRetry}>
-						{COPY.retry}
-					</Button>
-				) : null}
+				<EmptyState
+					title={COPY.refused}
+					description={
+						<span role="alert">{refusal === null ? COPY.noFolder : failureLine(refusal)}</span>
+					}
+					action={
+						!unopenable && refusal !== null && onRetry !== undefined ? (
+							<Button type="button" variant="tertiary" size="sm" onClick={onRetry}>
+								{COPY.retry}
+							</Button>
+						) : undefined
+					}
+				/>
 			</div>
 		) : answer === null ? (
 			<p className="tuval-session-transcript-note">{COPY.reading}</p>
@@ -170,9 +179,11 @@ export function SessionTranscriptView({
 				</div>
 			)}
 			{body}
-			<DesignTranslationProvider translate={tuvalDesignTranslate}>
-				<AgentChatInput variant="focused" bridge={composer.bridge} />
-			</DesignTranslationProvider>
+			{sendable ? (
+				<DesignTranslationProvider translate={tuvalDesignTranslate}>
+					<AgentChatInput variant="focused" bridge={composer.bridge} />
+				</DesignTranslationProvider>
+			) : null}
 		</section>
 	);
 }

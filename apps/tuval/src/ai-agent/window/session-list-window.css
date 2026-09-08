@@ -139,3 +139,9 @@
 	align-items: flex-start;
 	gap: var(--s-2);
 }
+
+div.tuval-session-transcript-refused {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}

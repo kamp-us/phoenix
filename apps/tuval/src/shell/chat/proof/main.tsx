@@ -13,7 +13,7 @@
  * ClaudeAiAgent replay behind scripted SDK/store and WindowHost seams; see the app README.
  */
 
-import {Effect} from "effect";
+import {Effect, Schema} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../../ai-agent/core/index.ts";
@@ -33,6 +33,11 @@ import {type ChatView, initialChatView} from "../view.ts";
 import {mountPagingProof} from "./paging.tsx";
 import "../../ui/tokens.css";
 import "./proof.css";
+
+class SessionRefusalProofLoadError extends Schema.TaggedError<SessionRefusalProofLoadError>()(
+	"SessionRefusalProofLoadError",
+	{cause: Schema.Defect()},
+) {}
 
 const state: AiAgentSessionState = withTranscript(
 	[
@@ -67,6 +72,14 @@ const view: ChatView = initialChatView;
 const mount = Effect.gen(function* () {
 	const host = document.getElementById("proof");
 	if (host === null) return yield* Effect.die(new Error("the proof page has no #proof element"));
+	if (location.pathname === "/session-refusal") {
+		const {mountSessionRefusalProof} = yield* Effect.tryPromise({
+			try: () => import("./session-refusal.tsx"),
+			catch: (cause) => new SessionRefusalProofLoadError({cause}),
+		});
+		mountSessionRefusalProof(host);
+		return;
+	}
 	if (location.pathname.startsWith("/paging-")) {
 		return yield* mountPagingProof(host);
 	}
