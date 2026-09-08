@@ -27,7 +27,7 @@ import {
 } from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import {scriptedSpellChannel} from "../host/fixtures.ts";
+import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import type {DispatchResult, ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
@@ -191,6 +191,7 @@ const served = Effect.fn("test.served")(function* (
 		table: defaultPrefixTable,
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 		spells: yield* scriptedSpellChannel(),
+		descriptions: scriptedDescriptions,
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
 });
@@ -322,6 +323,7 @@ describe("the page-to-kernel transport", () => {
 								: Option.fromNullishOr(built.handles.get(id)),
 						),
 					spells: yield* scriptedSpellChannel(),
+					descriptions: scriptedDescriptions,
 				}).pipe(Effect.provideContext(built.context), Effect.orDie);
 
 				const attached = yield* page(server.launchUrl);

@@ -29,8 +29,10 @@
  */
 
 import {Duration, Option, Predicate, Result, Schema} from "effect";
+import {readParams} from "../../commands/parse/spell-index.ts";
 import type {Lifecycle, ProcessId} from "../../process/process.ts";
 import {SpellCall, SpellReply} from "../../protocol/messages.ts";
+import {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {ProgramId, RendererKind, RendererRef} from "../../registry/program.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import {type Binding, CommandName, type PrefixTable} from "../keys/table.ts";
@@ -48,6 +50,7 @@ export const DISPATCHED_KIND = "tuval/transport/dispatched/v1";
 export const REGISTRY_KIND = "tuval/transport/registry/v1";
 export const KEYS_KIND = "tuval/transport/keys/v1";
 export const SPELL_REPLY_KIND = "tuval/transport/spell-reply/v1";
+export const SPELL_REGISTRY_KIND = "tuval/transport/spell-registry/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -205,6 +208,11 @@ export interface SpellReplyFrame {
 	readonly reply: SpellReply;
 }
 
+export interface SpellRegistryFrame {
+	readonly kind: typeof SPELL_REGISTRY_KIND;
+	readonly registry: RegistryDescription;
+}
+
 export type ServerFrame =
 	| TableFrame
 	| ProcessStateFrame
@@ -212,6 +220,7 @@ export type ServerFrame =
 	| DispatchedFrame
 	| RegistryFrame
 	| KeysFrame
+	| SpellRegistryFrame
 	| SpellReplyFrame;
 
 const isProcessIdString = (value: unknown): value is ProcessId => typeof value === "string";
@@ -374,6 +383,17 @@ export const admitSpellReplyFrame: Admit<SpellReplyFrame> = (value) => {
 	return Result.isFailure(decoded) ? undefined : {kind: SPELL_REPLY_KIND, reply: decoded.success};
 };
 
+export const admitSpellRegistryFrame: Admit<SpellRegistryFrame> = (value) => {
+	if (!Predicate.isObject(value) || value.kind !== SPELL_REGISTRY_KIND) return undefined;
+	const decoded = Schema.decodeUnknownResult(RegistryDescription)(value.registry);
+	if (Result.isFailure(decoded)) return undefined;
+	const valid = Result.try(() => {
+		for (const row of decoded.success) readParams(row.params);
+		return {kind: SPELL_REGISTRY_KIND, registry: decoded.success} satisfies SpellRegistryFrame;
+	});
+	return Result.isFailure(valid) ? undefined : valid.success;
+};
+
 /** Decoded, or the one reason it was not. A refusal is a value: the caller decides what to close. */
 export type Decoded<F> =
 	| {readonly _tag: "Frame"; readonly frame: F}
@@ -434,6 +454,7 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		REGISTRY_KIND,
 		KEYS_KIND,
 		SPELL_REPLY_KIND,
+		SPELL_REGISTRY_KIND,
 	]),
 	[
 		admitting(isTableFrame),
@@ -443,6 +464,7 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		admitting(isRegistryFrame),
 		admitting(isKeysFrame),
 		admitSpellReplyFrame,
+		admitSpellRegistryFrame,
 	],
 );
 

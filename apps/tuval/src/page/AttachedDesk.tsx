@@ -43,6 +43,7 @@ import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell
 import type {RendererTable} from "../shell/window/index.ts";
 import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
+import {useSpellRegistry} from "./spell-registry.ts";
 
 export interface AttachedDeskProps {
 	readonly page: PageAttachment;
@@ -144,6 +145,7 @@ export function AttachedDesk({
 	reducedMotion,
 	refusal,
 }: AttachedDeskProps): ReactElement {
+	const spells = useSpellRegistry(page);
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
@@ -373,6 +375,8 @@ export function AttachedDesk({
 				deskTables={deskTables}
 				reducedMotion={reducedMotion}
 				call={page.call}
+				registry={spells}
+				commandsConnected={attachment.status === "attached" && refusal === null}
 			/>
 		</>
 	);

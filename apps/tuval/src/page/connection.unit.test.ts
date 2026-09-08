@@ -32,6 +32,7 @@ const link = (closed: Effect.Effect<Socket.SocketError>): PageLink => ({
 	page: {
 		rows: Stream.empty,
 		programs: Stream.empty,
+		spells: Stream.empty,
 		keys: Stream.empty,
 		attachProcess: (() => Effect.never) as PageAttachment["attachProcess"],
 		call: () => Effect.never,

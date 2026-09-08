@@ -8,9 +8,9 @@
  * the real channel is minted in `./serve.ts`.
  */
 
-import {Context, Effect, Layer, Schema} from "effect";
+import {Context, Effect, Layer, Schema, Stream} from "effect";
 import {SpellExecutor} from "../../commands/executor.ts";
-import {SpellRegistry} from "../../commands/registry.ts";
+import {buildRegistry, describeSpell, SpellRegistry} from "../../commands/registry.ts";
 import {type Client, WindowIndex} from "../../commands/scope.ts";
 import {ClientId, defineSpell, WorkspaceId} from "../../commands/spell.ts";
 import type {SpellChannel} from "../transport/server.ts";
@@ -49,3 +49,9 @@ export const scriptedSpellChannel = Effect.fn("Tuval.shell.scriptedSpellChannel"
 	const executor = Context.get(context, SpellExecutor);
 	return Effect.sync(() => (call) => executor.execute(call, scriptedClient)) as SpellChannel;
 });
+
+export const scriptedDescriptions = Stream.fromEffect(
+	Effect.map(buildRegistry({core: [echoSpell, foreverSpell], programs: []}), (table) =>
+		table.rows.map(describeSpell),
+	).pipe(Effect.orDie),
+);
