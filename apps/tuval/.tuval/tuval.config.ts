@@ -23,6 +23,7 @@
 import {Console} from "effect";
 import {sessionListProgram} from "../src/ai-agent/session-list.ts";
 import {claudeSession} from "../src/claude/program.ts";
+import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
@@ -56,6 +57,8 @@ export default {
 			pi: {model: {provider: "openai-codex", id: "gpt-5.6-luna"}},
 		}),
 		claudeSession({cwd: projectRoot, scope: claudeSessionScope}),
+		// Unplanned, like Pi and Claude: opening a window starts the CLI, never booting the desk.
+		codexSession({cwd: projectRoot, scope: claudeSessionScope}),
 		// Windowed and, like the two sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),

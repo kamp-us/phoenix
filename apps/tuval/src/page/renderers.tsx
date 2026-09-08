@@ -40,6 +40,7 @@ import {
 	type TranscriptSource,
 } from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
+import {CODEX_CHAT_WINDOW_REF, codexChatWindow} from "../codex/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
 import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
@@ -283,6 +284,7 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
 const chatOptions: ThinChatWindowOptions = {subagentList: features.subagentList};
 
 const claudeWindow = claudeChatWindow(chatOptions);
+const codexWindow = codexChatWindow(chatOptions);
 const piWindow = piChatWindow(chatOptions);
 
 /**
@@ -303,6 +305,7 @@ export const pageRenderers = (call: SpellCaller): Readonly<Record<string, Readab
 	),
 	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, piWindow),
 	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
+	[CODEX_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, codexWindow),
 	[SESSION_LIST_WINDOW_REF.ref]: readsState(
 		isSessionListState,
 		sessionListWindow({

@@ -123,6 +123,7 @@ export const admin = {
 	"admin.agent.thinking.high": "high",
 	"admin.agent.thinking.xhigh": "very high",
 	"admin.agent.thinking.max": "max",
+	"admin.agent.thinking.ultra": "ultra",
 	"admin.agent.stop": "stop",
 	"admin.agent.send": "send",
 	"admin.agent.queue": "queue",

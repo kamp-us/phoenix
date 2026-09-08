@@ -729,13 +729,46 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. Two layers fill it today: `PiAiAgent.layer` was the first, and
-`ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) is the second — a
+`layer`, `cwd` and the identity. Three backends fill it today: `PiAiAgent.layer`,
+`CodexAiAgent.layer`, and `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`). Claude is a
 `Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
 the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
+
+## Codex
+
+`codex-session` implements the same `TuvalAiAgent` interface as Pi and Claude. It uses
+Tuval's shared chat window, inspector, session list and kernel spawn/send/read tools.
+The tracked config registers it without launching it at boot. Open it from the picker
+or run `window:open codex-session` in the palette.
+
+Install the Codex CLI and use its existing login. This implementation was tested against
+**codex-cli 0.153.4**. Custom configs import `codexSession` from `src/codex/program.ts`
+and supply the same `cwd` and `scope` values as the Claude row. Its optional `codex`
+settings include `mode`, `model` and `streamPartialReplies`.
+
+Modes are `read-only` and `workspace-write`, both with approvals enabled. Codex's own
+catalog supplies models and thinking levels, including `ultra` where offered. Permanent
+permission grants and terminal slash-command discovery are not advertised. Partial
+replies are off by default.
+
+New sessions use legacy history because the installed CLI refuses its paginated-history
+methods. Existing paginated sessions can fail to load rather than show false empty history:
+[8464](https://github.com/kamp-us/phoenix/issues/8464). A new legacy session has no persisted
+history before its first user message.
+
+```bash
+pnpm exec vitest run --project unit src/codex
+pnpm exec vitest run --project integration src/codex
+TUVAL_CODEX_PROTOCOL_TEST=1 pnpm exec vitest run --project integration src/codex/codex-cli.integration.test.ts
+```
+
+The last command runs the installed CLI with a temporary `CODEX_HOME`. It checks settings,
+empty history and Tuval tool calls without model generation or your credentials. Real model
+replies, approvals and nonempty history still need a live check.
+See [tuval-codex.md](../../.patterns/tuval-codex.md) for the protocol and lifetime rules.
 
 ## The Pi loopback server
 

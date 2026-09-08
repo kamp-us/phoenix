@@ -57,6 +57,7 @@ export const designTrMessages = {
 	"admin.agent.thinking.high": "yüksek",
 	"admin.agent.thinking.xhigh": "çok yüksek",
 	"admin.agent.thinking.max": "maksimum",
+	"admin.agent.thinking.ultra": "ultra",
 	"admin.agent.stop": "durdur",
 	"admin.agent.send": "gönder",
 	"admin.agent.queue": "kuyruğa al",
