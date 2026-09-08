@@ -22,6 +22,7 @@ import {WindowId} from "../../shell/window/index.ts";
 import {ItemId} from "../ports/index.ts";
 import {bareSession, claudeSession, NOW, scrambled} from "./fixtures.ts";
 import type {OpenRequest, SendPlan, TranscriptRead} from "./opening.ts";
+import * as opening from "./opening.ts";
 import {TRANSCRIPT_PAGE_SIZE} from "./opening.ts";
 import type {TranscriptPaged} from "./SessionListWindow.tsx";
 import {type SessionListWindowOptions, sessionListWindow} from "./SessionListWindow.tsx";
@@ -143,16 +144,28 @@ describe("the first send on an opened session", () => {
 		});
 	};
 
-	it("creates exactly one process on that session id, and reuses it on the second", async () => {
+	it.each([
+		[],
+		["existing turn"],
+	])("creates one process for readable history %j and reuses it", async (...texts) => {
 		const plans: Array<SendPlan> = [];
+		const sends: Array<{session: SessionRow; text: string}> = [];
 		activate({
-			useTranscript: () => paged([]),
-			onSend: (_session, _text, plan) => plans.push(plan),
+			useTranscript: () => paged(texts),
+			onSend: (session, text, plan) => {
+				plans.push(plan);
+				sends.push({session, text});
+			},
 		});
 
 		await type("first");
 		await type("second");
 
+		expect(sends).toEqual([
+			{session: claudeSession, text: "first"},
+			{session: claudeSession, text: "second"},
+		]);
+		expect(plans.every((plan) => plan.phase === "live" && plan.refused === null)).toBe(true);
 		expect(plans.map((plan) => plan.spawn)).toEqual([
 			{
 				programId: claudeSession.programId,
@@ -161,5 +174,112 @@ describe("the first send on an opened session", () => {
 			},
 			null,
 		]);
+	});
+});
+
+describe("refused session sends", () => {
+	it.each([
+		"missing-folder",
+		"read-refused",
+	])("offers no impossible keyboard send for %s, and Back opens a fresh valid session", async (kind) => {
+		const onSend = vi.fn();
+		const bad = {
+			...bareSession,
+			title: "Unopenable session",
+			...(kind === "missing-folder" ? {} : {folder: "project"}),
+		};
+		activate(
+			{
+				useAnswer: () => ({status: listed([bad, claudeSession])}),
+				useTranscript: (request) =>
+					request._tag === "Read" && request.read.sessionId === claudeSession.sessionId
+						? paged([])
+						: {
+								answer: {
+									_tag: "Refused",
+									failure: {
+										tag: "refused",
+										message: "Transcript unavailable",
+										path: ["session", "transcript"],
+									},
+								},
+							},
+				onSend,
+			},
+			{},
+		);
+		fireEvent.click(screen.getByRole("button", {name: "Back to the session list"}));
+		fireEvent.change(field(), {target: {value: "Unopenable session"}});
+		fireEvent.keyDown(field(), {key: "Enter"});
+		expect(screen.getByRole("alert")).toBeTruthy();
+		expect(screen.queryByRole("combobox", {name: "Write a message to the agent"})).toBeNull();
+		fireEvent.keyDown(
+			screen.getByRole("region", {name: /Unopenable session|Wire the session list window/}),
+			{key: "Enter"},
+		);
+		expect(onSend).not.toHaveBeenCalled();
+		expect(
+			screen
+				.getByRole("region", {name: /Unopenable session|Wire the session list window/})
+				.getAttribute("data-sent"),
+		).toBe("false");
+		fireEvent.click(screen.getByRole("button", {name: "Back to the session list"}));
+		fireEvent.keyDown(field(), {key: "Enter"});
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(
+			screen
+				.getByRole("region", {name: /Unopenable session|Wire the session list window/})
+				.getAttribute("data-sent"),
+		).toBe("false");
+		await act(async () => {
+			fireEvent.change(screen.getByRole("combobox", {name: "Write a message to the agent"}), {
+				target: {value: "new send"},
+			});
+		});
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole("combobox", {name: "Write a message to the agent"}), {
+				key: "Enter",
+			});
+		});
+		expect(onSend).toHaveBeenCalledExactlyOnceWith(
+			claudeSession,
+			"new send",
+			opening.send("reading", claudeSession),
+		);
+	});
+
+	it("consumes a refused plan before marking sent or forwarding a successful send", async () => {
+		const refused = opening.send("reading", bareSession);
+		const plan = vi.spyOn(opening, "send").mockReturnValueOnce(refused);
+		const onSend = vi.fn();
+		try {
+			activate({useTranscript: () => paged([]), onSend});
+			const input = screen.getByRole("combobox", {name: "Write a message to the agent"});
+			await act(async () => {
+				fireEvent.change(input, {target: {value: "refused send"}});
+			});
+			await act(async () => {
+				fireEvent.keyDown(input, {key: "Enter"});
+			});
+			expect(plan).toHaveBeenCalledWith("reading", claudeSession);
+			expect(onSend).not.toHaveBeenCalled();
+			expect(screen.getByRole("alert").textContent).toContain("no folder");
+			expect(
+				screen
+					.getByRole("region", {name: /Unopenable session|Wire the session list window/})
+					.getAttribute("data-sent"),
+			).toBe("false");
+			expect(screen.queryByRole("combobox", {name: "Write a message to the agent"})).toBeNull();
+			fireEvent.click(screen.getByRole("button", {name: "Back to the session list"}));
+			fireEvent.keyDown(field(), {key: "Enter"});
+			expect(screen.queryByRole("alert")).toBeNull();
+			expect(
+				screen
+					.getByRole("region", {name: /Unopenable session|Wire the session list window/})
+					.getAttribute("data-sent"),
+			).toBe("false");
+		} finally {
+			plan.mockRestore();
+		}
 	});
 });

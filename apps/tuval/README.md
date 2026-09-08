@@ -40,6 +40,12 @@ tier uses, with a tool call of each shape, a pending permission card and three m
 kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
 when the default is taken.
 
+The same server's `/session-refusal` fixture mounts the production read-only transcript with a
+missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep
+Back usable and omit the composer. The refused read's existing retry lands an empty readable
+transcript, which offers the composer again. The fixture supplies answers locally; it opens no
+kernel or agent. Session-open and page transcript tests cover send plans and socket-read recovery.
+
 The same harness has four paging routes: `/paging-local`, `/paging-partial`, `/paging-completed`
 and `/paging-prepended`. Each scrolls the real `ChatWindow` with shipped styles. The last route
 checks that a prepend retains the **same DOM row** for the oldest local echo, aligns it to the

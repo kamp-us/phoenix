@@ -373,6 +373,7 @@ function SessionListHost({
 	const read = (useAnswer ?? nothingRead)(window);
 	const [view, setView] = useState<SessionListView>(listView);
 	const [phase, setPhase] = useState<OpenPhase>("reading");
+	const [sendRefusal, setSendRefusal] = useState<SendPlan["refused"]>(null);
 
 	const activate = useCallback(
 		(session: SessionRow, target: OpenTarget) => {
@@ -382,12 +383,17 @@ function SessionListHost({
 				return;
 			}
 			setPhase("reading");
+			setSendRefusal(null);
 			setView(sessionView(session));
 		},
 		[onActivate, onOpenInNewWindow],
 	);
 
-	const back = useCallback(() => setView(listView), []);
+	const back = useCallback(() => {
+		setPhase("reading");
+		setSendRefusal(null);
+		setView(listView);
+	}, []);
 
 	if (view.kind === "list") {
 		return (
@@ -409,13 +415,19 @@ function SessionListHost({
 			session={view.session}
 			window={window}
 			useTranscript={useTranscript ?? nothingPaged}
+			sendRefusal={sendRefusal}
 			onBack={back}
 			onSend={(text) => {
 				// The phase is what makes the transition happen once: the first send hands back a spawn
 				// and moves to `live`, and every send after it hands back none.
 				const plan = send(phase, view.session);
+				if (plan.refused !== null) {
+					setSendRefusal(plan.refused);
+					return false;
+				}
 				setPhase(plan.phase);
 				onSend?.(view.session, text, plan);
+				return true;
 			}}
 		/>
 	);
@@ -428,6 +440,7 @@ function SessionListHost({
  * whose session is no longer on screen.
  */
 function SessionTranscriptHost({
+	sendRefusal,
 	session,
 	window,
 	useTranscript,
@@ -438,7 +451,8 @@ function SessionTranscriptHost({
 	readonly window: WindowId;
 	readonly useTranscript: TranscriptSource;
 	readonly onBack: () => void;
-	readonly onSend: (text: string) => void;
+	readonly sendRefusal: SendPlan["refused"];
+	readonly onSend: (text: string) => boolean;
 }): ReactElement {
 	// Memoised on the row, so the source's own effect sees one request for the life of this mount: a
 	// fresh object every render would re-send the first page on every render.
@@ -448,7 +462,7 @@ function SessionTranscriptHost({
 		<SessionTranscriptView
 			session={session}
 			answer={paged.answer}
-			unopenable={request._tag === "OpenRefused"}
+			unopenable={request._tag === "OpenRefused" || sendRefusal !== null}
 			onBack={onBack}
 			onSend={onSend}
 			{...(paged.onOlder === undefined ? {} : {onOlder: paged.onOlder})}
