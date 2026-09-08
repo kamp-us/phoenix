@@ -352,7 +352,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					}).pipe(
 						Effect.provide(
 							aiAgentOverClient({model: MODEL}).pipe(
-								Layer.provide(PiClientService.layerWebSocket({url})),
+								Layer.provide(PiClientService.layerWebSocket({url, serverId: server.serverId})),
 							),
 						),
 					);
@@ -397,7 +397,12 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				}).pipe(
 					Effect.provide(
 						aiAgentOverClient({model: MODEL}).pipe(
-							Layer.provide(PiClientService.layer({transportFactory: socket.factory})),
+							Layer.provide(
+								PiClientService.layer({
+									transportFactory: socket.factory,
+									serverId: server.serverId,
+								}),
+							),
 						),
 					),
 				);

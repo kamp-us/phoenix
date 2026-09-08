@@ -14,6 +14,7 @@ import {projectTranscript, type SourceMessage} from "../server/transcript.ts";
 import {
 	createServerMessageDecoder,
 	encodeServerMessage,
+	SESSION_SUBSCRIPTION_ID,
 	type SessionSnapshot,
 } from "../wire/index.ts";
 
@@ -59,18 +60,23 @@ const decodedSnapshot = (): SessionSnapshot => {
 	};
 	const decoder = createServerMessageDecoder();
 	const [decoded] = decoder.push(
-		encodeServerMessage({type: "event", event: {type: "session_snapshot", snapshot}}),
+		encodeServerMessage({
+			type: "service_update",
+			subscriptionId: SESSION_SUBSCRIPTION_ID,
+			update: {type: "session_snapshot", snapshot},
+		}),
 	);
 	decoder.end();
-	if (decoded?.type !== "event" || decoded.event.type !== "session_snapshot") {
+	if (decoded?.type !== "service_update" || decoded.update.type !== "session_snapshot") {
 		throw new Error("Expected the compaction snapshot to survive the pinned codec");
 	}
-	return decoded.event.snapshot;
+	return decoded.update.snapshot;
 };
 
 describe("Pi compaction through the live wire and stored history", () => {
 	it("projects Pi's real context shape through the codec into a meaningful compaction event", () => {
 		const snapshot = decodedSnapshot();
+		expect(snapshot.transcript[0]?.role).toBe("compaction");
 		const {events} = eventsOf(emptyProjection, snapshot);
 		expect(events.filter((event) => event.kind === "item").map((event) => event.item)).toEqual([
 			{
@@ -120,6 +126,14 @@ describe("Pi compaction through the live wire and stored history", () => {
 			{role: "user", content: "item-0:compaction", timestamp: 1},
 			{role: "user", content: compact.summary, timestamp: 2},
 		];
+		expect(
+			itemsOf({
+				role: "user",
+				id: "item-0:compaction",
+				content: [{type: "text", text: compact.summary}],
+				timestamp: 1,
+			})[0]?.kind,
+		).toBe("user");
 		expect(
 			projectTranscript(messages)
 				.flatMap(itemsOf)

@@ -1,6 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Redacted, type Scope} from "effect";
-import type {ProtocolError, ServerMessage, SessionSnapshot} from "../wire/index.ts";
+import type {ProtocolError, ServerMessage, ServerSnapshot, SessionSnapshot} from "../wire/index.ts";
 import {makeScriptedHost, type ScriptedHost} from "./fixtures.ts";
 import {CLOSE_FRAME_TOO_LARGE, CLOSE_QUEUE_OVERFLOW} from "./limits.ts";
 import {makeOutbound} from "./outbound.ts";
@@ -9,6 +9,23 @@ import {connectWire, type WireClient} from "./wire-fixture.ts";
 
 const isResponse = (id: string) => (message: ServerMessage) =>
 	message.type === "response" && message.id === id;
+
+const isServerSnapshot = (message: ServerMessage) =>
+	message.type === "service_update" && message.update.type === "server_snapshot";
+
+const serverSnapshotOf = (message: ServerMessage): ServerSnapshot => {
+	if (message.type !== "service_update" || message.update.type !== "server_snapshot") {
+		throw new Error("expected a server snapshot update");
+	}
+	return message.update.snapshot;
+};
+
+const sessionSnapshotOf = (message: ServerMessage): SessionSnapshot => {
+	if (message.type !== "service_update" || message.update.type !== "session_snapshot") {
+		throw new Error("expected a session snapshot update");
+	}
+	return message.update.snapshot;
+};
 
 const responseOf = (client: WireClient, id: string) =>
 	client.next(isResponse(id)) as Effect.Effect<
@@ -66,7 +83,11 @@ describe("PiServerService", () => {
 				assert.isAbove(server.address.port, 0);
 				const client = yield* dial(server);
 				const hello = yield* client.next((message) => message.type === "hello");
-				assert.strictEqual(hello.type === "hello" ? hello.snapshot.models.length : 0, 1);
+				assert.strictEqual(hello.type === "hello" ? hello.serverId : "", server.serverId);
+				// Protocol 8's `hello` names the server and nothing else, so the catalog arrives on
+				// the session stream that follows it.
+				const greeting = yield* client.next(isServerSnapshot);
+				assert.strictEqual(serverSnapshotOf(greeting).models.length, 1);
 			}),
 		);
 	});
@@ -111,18 +132,14 @@ describe("PiServerService", () => {
 
 				const pushed = yield* client.next(
 					(message) =>
-						message.type === "event" &&
-						message.event.type === "session_snapshot" &&
-						message.event.snapshot.revision >= 1,
+						message.type === "service_update" &&
+						message.update.type === "session_snapshot" &&
+						message.update.snapshot.revision >= 1,
 				);
-				const snapshot =
-					pushed.type === "event" && pushed.event.type === "session_snapshot"
-						? pushed.event.snapshot
-						: undefined;
-				assert.isDefined(snapshot);
-				assert.isAtLeast(snapshot?.revision ?? 0, 1);
+				const snapshot = sessionSnapshotOf(pushed);
+				assert.isAtLeast(snapshot.revision, 1);
 				assert.deepStrictEqual(
-					(snapshot?.transcript ?? []).map((item) => item.role),
+					snapshot.transcript.map((item) => item.role),
 					["user", "assistant"],
 				);
 			}),
@@ -181,7 +198,7 @@ describe("PiServerService", () => {
 				yield* client.request("a1", {command: "attach", sessionId: "no-such-session"});
 				const error = errorOf(yield* responseOf(client, "a1"));
 				assert.strictEqual(error.code, "not_found");
-				assert.deepStrictEqual(error.details, {sessionId: "no-such-session"});
+				assert.include(error.message, "no-such-session");
 			}),
 		);
 	});

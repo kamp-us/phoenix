@@ -7,7 +7,7 @@ import {
 	encodeClientMessage,
 	type ServerMessage,
 } from "../wire/index.ts";
-import {startProtocolServer} from "./fixtures.ts";
+import {fixtureServerId, startProtocolServer} from "./fixtures.ts";
 import {connectionRefusalOf} from "./refusals.ts";
 import {webSocketTransportFactory} from "./transport.ts";
 
@@ -15,7 +15,12 @@ import {webSocketTransportFactory} from "./transport.ts";
 const SETTLE_MS = 100;
 
 const requestFrame = (id: string): Uint8Array =>
-	encodeClientMessage({type: "request", id, request: {command: "list"}});
+	encodeClientMessage({
+		type: "request",
+		id,
+		target: {serverId: fixtureServerId},
+		request: {command: "list"},
+	});
 
 const responseIdOf = (message: ServerMessage): string => {
 	if (message.type !== "response") throw new Error(`expected a response, got ${message.type}`);

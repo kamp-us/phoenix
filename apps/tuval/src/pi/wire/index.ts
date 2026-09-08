@@ -1,6 +1,7 @@
 export {
 	type ClientMessageDecoder,
 	createClientMessageDecoder,
+	createServerFrameSplitter,
 	createServerMessageDecoder,
 	DEFAULT_MAX_FRAME_LENGTH,
 	encodeClientMessage,
@@ -10,6 +11,7 @@ export {
 	ProtocolValidationError,
 	parseClientMessage,
 	type ServerMessageDecoder,
+	type SplitFrames,
 } from "./codec.ts";
 export type {
 	AbortCommand,
@@ -37,23 +39,28 @@ export type {
 } from "./command.ts";
 export type {JsonValue} from "./json.ts";
 export type {
+	AttachmentEnvelope,
+	CancelEnvelope,
 	ClientHello,
 	ClientMessage,
-	EventEnvelope,
 	RequestEnvelope,
 	ResponseEnvelope,
 	ServerEvent,
 	ServerHello,
 	ServerHelloError,
 	ServerMessage,
+	ServiceEventEnvelope,
 } from "./message.ts";
+export {SERVICE_ID, SESSION_SUBSCRIPTION_ID} from "./message.ts";
 export type {ModelCost, ModelMetadata, ModelRef, ThinkingLevel} from "./model.ts";
 export type {ServerSnapshot, SessionMetadata, SessionPhase, SessionSnapshot} from "./session.ts";
 export {PROTOCOL_VERSION} from "./session.ts";
+export {isSessionTarget, type RpcTarget, type ServerTarget, type SessionTarget} from "./target.ts";
 export type {
 	AbortedAssistantTranscriptItem,
 	AssistantContent,
 	AssistantTranscriptItem,
+	CompactionTranscriptItem,
 	CompleteAssistantTranscriptItem,
 	CompleteToolTranscriptItem,
 	ErrorAssistantTranscriptItem,

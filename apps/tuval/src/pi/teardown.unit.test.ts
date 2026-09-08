@@ -57,7 +57,7 @@ describe("a bounded teardown wait", () => {
 				boundedTeardown(
 					"a wait that throws",
 					() => {
-						// biome-ignore lint/plugin: the throw is the subject under test — a foreign callback failing the way `PiClient.dispose()` can, not a failure this code models.
+						// biome-ignore lint/plugin: the throw is the subject under test — a foreign callback failing the way `Client.dispose()` can, not a failure this code models.
 						throw new Error("the wait refused to register");
 					},
 					CEILING,

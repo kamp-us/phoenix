@@ -1,11 +1,8 @@
 /**
  * Pi's in-memory `AgentMessage[]` → the wire's `TranscriptItem[]`.
  *
- * Every schema on the wire is a strict object (`additionalProperties: false`), and Pi's own
- * content carries fields the wire does not declare — `textSignature` on text, `thinkingSignature`
- * on thinking, `cacheWrite1h` on usage (`@earendil-works/pi-ai` `dist/types.d.ts:237-286`). So
- * this is a projection, not a cast: handing a message straight to `encodeServerMessage` fails
- * validation the first time a provider fills one of those in.
+ * Pi's provider content is projected into Tuval's owned vocabulary before the protocol-8 codec
+ * carries it as an opaque payload; see .patterns/owned-wire-vocabulary.md.
  *
  * Pi's messages carry no id, so the item id is the message's position. That is stable while
  * history only grows, which is the case for a live session; a compaction rewrites the array and
@@ -216,7 +213,7 @@ export const projectTranscript = (
 		if (message.role === "compactionSummary") {
 			items.push({
 				id: compactionId(index),
-				role: "user",
+				role: "compaction",
 				content: [{type: "text", text: message.summary}],
 				timestamp: message.timestamp,
 			});
