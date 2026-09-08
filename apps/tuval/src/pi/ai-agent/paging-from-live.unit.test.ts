@@ -182,6 +182,7 @@ describe("paging a Pi window back from its own live tail", () => {
 
 		// The live space moved: the third exchange was `item-4`/`item-5` and is now `item-1`/`item-2`.
 		expect(liveTail(compacted).map((item) => item.id)).toEqual([
+			"item-0:compaction",
 			"item-1",
 			"item-2",
 			"item-3",
@@ -200,7 +201,9 @@ describe("paging a Pi window back from its own live tail", () => {
 			"e8",
 		]);
 
-		const planned = pageBefore(compacted, liveTail(compacted)[0]?.id ?? null);
+		const retainedUser = liveTail(compacted).find((item) => item.kind === "user");
+		expect(retainedUser?.id).toBe("item-1");
+		const planned = pageBefore(compacted, retainedUser?.id ?? null);
 		expect(isRefusal(planned)).toBe(false);
 		if (isRefusal(planned)) return;
 		expect(texts(planned.items)).toEqual([

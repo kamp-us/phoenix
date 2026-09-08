@@ -81,3 +81,33 @@ thing that earns it is a known, already-diffed redesign on the other side of a p
 Its sibling is [strict-wire-schema-projection.md](./strict-wire-schema-projection.md) — that one is
 about getting a *value* across a boundary you do not own; this one is about owning the boundary's
 *names*.
+
+## Compaction in the owned transcript vocabulary
+
+Pi coding-agent 0.85.1's `dist/core/messages.d.ts` declares `CompactionSummaryMessage` with
+`role: "compactionSummary"`, `summary`, `tokensBefore` and `timestamp`.
+`dist/core/session-manager.js`'s `sessionEntryToContextMessages` constructs it from a compaction
+entry; `buildContextEntries` places the latest boundary before the retained context messages.
+The protocol package's `dist/protocol.js` carries `service_update.update` as
+`Type.Unsafe(Type.Unknown())`; it defines no transcript variants or payload validator.
+
+[The owned transcript union](../apps/tuval/src/pi/wire/transcript.ts) declares an explicit
+`compaction` role with summary text content and timestamp.
+[The server projection](../apps/tuval/src/pi/server/transcript.ts) assigns it the shared
+[boundary identity](../apps/tuval/src/pi/wire/compaction.ts) `item-<position>:compaction`.
+The role determines its kind, never the id or text. Ordinary messages receive `item-<position>`,
+so boundary identities remain disjoint while the summary consumes its original context slot.
+This is Tuval's owned payload vocabulary, not an upstream Pi transcript type. It uses the same
+opaque-payload trust contract as the other owned variants; the codec validates the outer envelope.
+
+[The adapter](../apps/tuval/src/pi/ai-agent/items.ts) maps the wire role directly to the existing
+`compaction` domain kind before the transcript reaches the window.
+[Stored history](../apps/tuval/src/pi/ai-agent/entries.ts) maps the live boundary id to the compaction
+entry's stable id and stamps the page row's alias, letting the existing page/tail stitch deduplicate
+it without a text comparison or a paging-rule change.
+
+[The boundary regression](../apps/tuval/src/pi/window/compaction.unit.test.ts) constructs typed
+entries, calls the pinned context builders, round-trips the protocol-8 service-update codec, drives
+the production event adapter and stitches stored pages into the live tail. It covers both retained
+message and compaction cursors, repeated loads, and ordinary user content — even an id resembling a
+boundary cannot turn a user-role item into compaction.
