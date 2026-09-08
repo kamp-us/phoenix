@@ -63,7 +63,12 @@ const spawnBudget = (spawns: number) => spawns * SPAWN_GUARD_MS + 5_000;
  */
 const DIRECT_BOOT_MS = 20_000;
 
-/** A boot with live processes stays up until a signal: send SIGINT once it says it is running. */
+/**
+ * A boot with live processes stays up until a signal: send SIGINT once it says it is running.
+ *
+ * It resolves on `close`, not on `exit`, so `stdout` holds everything the child wrote up to EOF —
+ * including whatever lands after `tuval: stopping`. See the restart case for why that matters.
+ */
 const runUntilRunning = (
 	args: ReadonlyArray<string>,
 	env: NodeJS.ProcessEnv = process.env,
@@ -239,7 +244,16 @@ describe("boot", () => {
 				"tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0\n",
 			);
 			expect(first.stdout).toContain("tuval: running — Ctrl-C stops and checkpoints\n");
-			expect(first.stdout.trimEnd().endsWith("tuval: stopping")).toBe(true);
+			// The stop line says the interrupt landed, not that teardown is over: `bin.ts` prints it
+			// from the innermost `onInterrupt`, and the processes stop as the outer scope closes after
+			// it, so the demo log's once-a-second `count N` can legally land between the two. That is
+			// deliberate, and asserting the stop line was *last* turned it into a random red (#8579).
+			// The stop happened: this line is here, after the run line, and `status` above is 0.
+			const stopLine = first.stdout.search(/^tuval: stopping$/m);
+			expect(stopLine).toBeGreaterThanOrEqual(0);
+			expect(stopLine).toBeGreaterThan(
+				first.stdout.indexOf("tuval: running — Ctrl-C stops and checkpoints\n"),
+			);
 
 			const second = await runUntilRunning(args);
 			expect(second.status).toBe(0);
