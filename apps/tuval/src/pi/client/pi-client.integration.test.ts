@@ -119,7 +119,7 @@ describe("the Pi client lease service against the loopback server", () => {
 					yield* pi.connect;
 
 					const session = yield* pi.createSession(cwd, {model: MODEL});
-					const pushed = yield* Stream.toQueue(pi.snapshots(session.id), {
+					const pushed = yield* Stream.toQueue(pi.updates(session.id), {
 						capacity: "unbounded",
 					});
 
@@ -129,10 +129,16 @@ describe("the Pi client lease service against the loopback server", () => {
 						["user", "assistant"],
 					);
 
-					// The server pushes the session's own snapshots to the connection that owns it,
-					// and `snapshots` is the stream the handlers turn into a Sub.
+					// The server pushes the session's own revisions to the connection that owns it, and
+					// `updates` is the stream the handlers turn into a Sub. The first one is the whole
+					// value — this connection has been sent nothing for the session yet — and every
+					// one after it is a delta.
 					const first = yield* Queue.take(pushed);
-					assert.strictEqual(first.id, session.id);
+					assert.strictEqual(first._tag, "snapshot");
+					assert.strictEqual(
+						first._tag === "snapshot" ? first.snapshot.id : first.delta.id,
+						session.id,
+					);
 
 					socket.drop();
 					const failed = yield* Effect.flip(pi.prompt(session.id, "into the void"));

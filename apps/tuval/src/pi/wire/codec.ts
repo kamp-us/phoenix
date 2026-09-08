@@ -224,9 +224,20 @@ export interface SplitFrames {
  *
  * `Client` routes a `service_update` only to a subscription its own `subscribeService` opened, and
  * drops every other one silently (`client.js`, `#handleMessage`) — so Tuval's events cannot reach
- * the app through it. Subscribing for real would mean speaking Chord's replicated-state protocol,
- * which is the next slice's question, not this one's. Splitting here costs nothing extra: each
- * frame is CBOR-decoded once, and a forwarded frame is handed on as the bytes it arrived as.
+ * the app through it. Splitting here costs nothing extra: each frame is CBOR-decoded once, and a
+ * forwarded frame is handed on as the bytes it arrived as.
+ *
+ * **Tuval does not speak Chord's replicated-state protocol, and the split stays** (#8554). Read at
+ * the 0.85.1 pin, subscribing for real means answering a `$chord.service`/`subscribe` request with
+ * a `WireServiceSubscriptionSnapshot` and then pushing every update as
+ * `{type: "state", sequence, ops}`, where `ops` is chord's own delta vocabulary decoded by a
+ * decoder that is stateful across frames — one per `(instance, member)`, with an interned path
+ * dictionary that outlives the batch (`@earendil-works/chord` `dist/delta/index.js`,
+ * `dist/services/state-codec.js`). Anything that decoder rejects fails the whole connection with a
+ * `ProtocolValidationError` (`pi-client` `dist/client.js`, `#handleMessage`), and chord is not a
+ * declared dependency of `apps/tuval` — it arrives only under `pi-client`. What that buys is a
+ * generic delta format; what this app needs is a delta over its own `SessionSnapshot`, which is one
+ * diff over a shape both ends already own (`./delta.ts`) and needs none of it.
  */
 export const createServerFrameSplitter = (
 	options?: FrameOptions,

@@ -23,10 +23,12 @@ import {
 	type ClientMessage,
 	createClientMessageDecoder,
 	encodeServerMessage,
+	nextPush,
 	PROTOCOL_VERSION,
 	SESSION_SUBSCRIPTION_ID,
 	type ServerEvent,
 	type ServerMessage,
+	type SessionSnapshot,
 } from "../wire/index.ts";
 import {dispatch} from "./dispatch.ts";
 import {FrameRefused, MessageNotEncodable, ServerBindFailed} from "./errors.ts";
@@ -264,15 +266,27 @@ const make = (
 				const publish = (event: ServerEvent): Effect.Effect<void> =>
 					write({type: "service_update", subscriptionId: SESSION_SUBSCRIPTION_ID, update: event});
 
-				const snapshotFor = (sessionId: string) =>
+				/**
+				 * The last whole value this connection was sent per session, which is what the next
+				 * revision is diffed against. One writer per session — `followSession` runs one
+				 * fiber each — so the read-diff-store round has no second writer to interleave with.
+				 */
+				const sent = new Map<string, SessionSnapshot>();
+
+				const pushFor = (sessionId: string) =>
 					Effect.gen(function* () {
 						const record = records.get(sessionId);
 						if (record === undefined) return;
 						const view = yield* record.handle.read;
-						yield* publish({
-							type: "session_snapshot",
-							snapshot: sessionSnapshot(record, view, connection),
-						});
+						const snapshot = sessionSnapshot(record, view, connection);
+						const push = nextPush(sent.get(sessionId), snapshot);
+						sent.set(sessionId, snapshot);
+						if (push._tag === "Unchanged") return;
+						yield* publish(
+							push._tag === "Snapshot"
+								? {type: "session_snapshot", snapshot: push.snapshot}
+								: {type: "session_delta", delta: push.delta},
+						);
 					});
 
 				const context = {
@@ -289,14 +303,18 @@ const make = (
 
 				/**
 				 * A session's own pushes: the host says it changed, the record's revision advances and
-				 * the owner sees the new snapshot. Forked once per session this connection touches,
-				 * over the handle rather than the id so a drained table cannot strand the loop.
+				 * the owner sees what moved. Forked once per session this connection touches, over the
+				 * handle rather than the id so a drained table cannot strand the loop.
+				 *
+				 * A streamed turn signals per token, so this loop runs per token and what it sends has
+				 * to cost per token: the first pass sends the whole value, every later one sends only
+				 * the items and scalars that changed (#8554).
 				 */
 				const followSession = (handle: PiSessionHandle) =>
 					Effect.forever(
 						handle.changes.pipe(
 							Effect.andThen(Effect.sync(() => records.bump(handle.id, Date.now()))),
-							Effect.andThen(snapshotFor(handle.id)),
+							Effect.andThen(pushFor(handle.id)),
 						),
 					);
 

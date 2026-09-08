@@ -187,3 +187,99 @@ describe("the inbound frame splitter", () => {
 		);
 	});
 });
+
+/**
+ * What one revision costs on this socket. A streamed turn signals per token and every signal is a
+ * frame, so one frame's encode-plus-decode round trip *is* the per-token cost the delta shape
+ * exists to bring down (#8554).
+ *
+ * Measured on the 0.85.1 envelope: ~40 µs for the 274-byte delta below, against ~3.2 ms for the
+ * 200-item snapshot the old shape sent in its place — two orders of magnitude apart, and in the
+ * same range as the spike's 25.5 µs for a 133-byte frame. The ceiling is an order of magnitude
+ * above the measured cost and an order below the snapshot's, so it reds on a real regression rather
+ * than on a busy CI runner.
+ */
+describe("what one revision costs on the wire", () => {
+	const CEILING_MICROS = 500;
+
+	const longTranscript = (count: number): SessionSnapshot["transcript"] =>
+		Array.from({length: count}, (_, at) => ({
+			id: `item-${at}`,
+			role: "assistant" as const,
+			content: [
+				{type: "text" as const, text: "a settled reply, roughly a paragraph long. ".repeat(6)},
+			],
+			model: {provider: "faux", id: "faux-1"},
+			timestamp: at,
+			status: "complete" as const,
+			stopReason: "stop" as const,
+		}));
+
+	/**
+	 * Microseconds per encode-plus-decode round trip, averaged over `rounds`. One decoder for the
+	 * whole run, because that is what a connection holds — a fresh one per frame would price an
+	 * allocation neither end of this socket makes.
+	 */
+	const roundTripMicros = (message: ServerMessage, rounds: number): number => {
+		const decoder = createServerMessageDecoder();
+		for (let warm = 0; warm < 20; warm += 1) decoder.push(encodeServerMessage(message));
+		const started = performance.now();
+		for (let round = 0; round < rounds; round += 1) decoder.push(encodeServerMessage(message));
+		return ((performance.now() - started) * 1000) / rounds;
+	};
+
+	const deltaFrame: ServerMessage = {
+		type: "service_update",
+		subscriptionId: SESSION_SUBSCRIPTION_ID,
+		update: {
+			type: "session_delta",
+			delta: {
+				id: snapshot.id,
+				revision: 42,
+				updatedAt: 1_700_000_000_000,
+				items: [
+					{
+						id: "item-1",
+						role: "assistant",
+						content: [{type: "text", text: "the reply so far, one token longer"}],
+						model: {provider: "faux", id: "faux-1"},
+						timestamp: 11,
+						status: "streaming",
+					},
+				],
+			},
+		},
+	};
+
+	const snapshotFrame: ServerMessage = {
+		type: "service_update",
+		subscriptionId: SESSION_SUBSCRIPTION_ID,
+		update: {
+			type: "session_snapshot",
+			snapshot: {...snapshot, revision: 42, transcript: [...longTranscript(200)]},
+		},
+	};
+
+	it("carries a per-delta frame in tens of microseconds, not tenths of a millisecond", () => {
+		const micros = roundTripMicros(deltaFrame, 2_000);
+		assert.isBelow(
+			micros,
+			CEILING_MICROS,
+			`one delta round trip cost ${micros.toFixed(1)} µs, over the ${CEILING_MICROS} µs ceiling`,
+		);
+	});
+
+	it("costs a fraction of the whole-transcript frame the old shape sent per token", () => {
+		const delta = roundTripMicros(deltaFrame, 2_000);
+		const whole = roundTripMicros(snapshotFrame, 50);
+		assert.isBelow(
+			delta * 10,
+			whole,
+			`a delta cost ${delta.toFixed(1)} µs against the snapshot's ${whole.toFixed(1)} µs — under 10x`,
+		);
+	});
+
+	it("round trips a delta unchanged", () => {
+		assert.deepStrictEqual(roundTripServer(deltaFrame), deltaFrame);
+	});
+});

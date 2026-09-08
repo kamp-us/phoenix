@@ -37,6 +37,7 @@ export type {
 	SteerCommand,
 	SteerResult,
 } from "./command.ts";
+export {applyDelta, nextPush, type SessionPush} from "./delta.ts";
 export type {JsonValue} from "./json.ts";
 export type {
 	AttachmentEnvelope,
@@ -53,7 +54,13 @@ export type {
 } from "./message.ts";
 export {SERVICE_ID, SESSION_SUBSCRIPTION_ID} from "./message.ts";
 export type {ModelCost, ModelMetadata, ModelRef, ThinkingLevel} from "./model.ts";
-export type {ServerSnapshot, SessionMetadata, SessionPhase, SessionSnapshot} from "./session.ts";
+export type {
+	ServerSnapshot,
+	SessionDelta,
+	SessionMetadata,
+	SessionPhase,
+	SessionSnapshot,
+} from "./session.ts";
 export {PROTOCOL_VERSION} from "./session.ts";
 export {isSessionTarget, type RpcTarget, type ServerTarget, type SessionTarget} from "./target.ts";
 export type {
@@ -73,7 +80,6 @@ export type {
 	ToolContent,
 	ToolTranscriptItem,
 	TranscriptItem,
-	TranscriptProgress,
 	Usage,
 	UserContent,
 	UserTranscriptItem,
