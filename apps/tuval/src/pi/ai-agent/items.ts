@@ -115,10 +115,26 @@ const thinkingOf = (item: PiTranscriptItem): ThinkingItem | null => {
 	return {kind: "thinking", id: thinkingId(item.id), timestamp: item.timestamp, text};
 };
 
+/**
+ * An assistant turn with nothing to read and no cut to report: its content is tool calls alone, or
+ * it is a reply the model has not begun writing. Such a turn earns no reply row — an `agent` label
+ * over nothing reads as a message that was dropped or is still loading, and the calls it made are
+ * already rows of their own (#8216). Claude's mapper holds the same rule on its own wire
+ * (`../../claude/history/map.ts`, `settles && (text.length > 0 || interrupted)`).
+ *
+ * `aborted` and `error` are excluded on purpose: for those the status *is* the content, and an
+ * interrupted reply with no text still has to say the turn was cut.
+ */
+const emptyOrdinaryReply = (item: PiTranscriptItem): boolean =>
+	item.role === "assistant" &&
+	(item.status === "complete" || item.status === "streaming") &&
+	textOf(item.content) === "";
+
 /** One wire item as every row it is worth: the reasoning first, then the turn that produced it. */
 export const itemsOf = (item: PiTranscriptItem): ReadonlyArray<TranscriptItem> => {
 	const thinking = thinkingOf(item);
-	return thinking === null ? [itemOf(item)] : [thinking, itemOf(item)];
+	const reply = emptyOrdinaryReply(item) ? [] : [itemOf(item)];
+	return thinking === null ? reply : [thinking, ...reply];
 };
 
 /**

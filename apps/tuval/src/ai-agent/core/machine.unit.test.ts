@@ -60,7 +60,7 @@ describe("init", () => {
 		const loaded = started({
 			phase: "prompting",
 			transcript: {
-				items: [assistantItem("a1"), userItem("u2")],
+				items: [userItem("u0"), assistantItem("a1")],
 				omitted: initialState("/x").transcript.omitted,
 			},
 		});
@@ -70,6 +70,20 @@ describe("init", () => {
 		expect(state.phase).toBe("idle");
 		expect(state.interrupted).toBe("a1");
 		expect(cmds).toEqual([]);
+	});
+
+	// The same restart, over a turn that had written nothing of its own yet — the tail ends on the
+	// operator's prompt. The reply above it belongs to the turn before and is not what got cut.
+	it("marks no cut reply when the restart caught a turn that had written none", () => {
+		const loaded = started({
+			phase: "prompting",
+			transcript: {
+				items: [userItem("u0"), assistantItem("a1"), userItem("u2")],
+				omitted: initialState("/x").transcript.omitted,
+			},
+		});
+		const [state] = machine.init(loaded, {});
+		expect(state.interrupted).toBeNull();
 	});
 
 	// The rehydrate branch is the defaulting parse and nothing else, so what the store read back is
@@ -840,6 +854,22 @@ describe("interrupt", () => {
 		expect(state.phase).toBe("prompting");
 		expect(state.interruption).toEqual({requestedAt: SENT_AT});
 		expect(state.interrupted).toBe("a1");
+		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
+	});
+
+	// Turn 1 answered in prose and settled; turn 2's content is tool calls alone, which draws no
+	// assistant row at all (#8216). The stop belongs to turn 2, so turn 1's finished reply — sitting
+	// above the operator's second prompt — must not come back badged as cut short.
+	it("marks nothing when the running turn wrote no reply of its own", () => {
+		const toolOnly = running({
+			transcript: {
+				items: [userItem("u0"), assistantItem("a1"), userItem("u2"), toolItem("t3")],
+				omitted: initialState("/x").transcript.omitted,
+			},
+		});
+		const [state, cmds] = apply(toolOnly, {type: "interrupt", at: SENT_AT});
+		expect(state.interrupted).toBeNull();
+		expect(state.interruption).toEqual({requestedAt: SENT_AT});
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
 	});
 

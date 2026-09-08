@@ -222,4 +222,12 @@ describe("reading the tail", () => {
 		expect(lastAssistantId([userItem("i0")])).toBeNull();
 		expect(lastAssistantId([])).toBeNull();
 	});
+
+	// A turn whose content was tool calls alone draws no assistant row (#8216), so a scan that ran
+	// past the operator's prompt would answer with the *previous* turn's finished reply.
+	it("stops at the newest prompt, so a tool-only turn names no cut reply", () => {
+		expect(
+			lastAssistantId([userItem("i0"), assistantItem("i1"), userItem("i2"), toolItem("i3")]),
+		).toBeNull();
+	});
 });
