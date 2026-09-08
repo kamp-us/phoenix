@@ -617,8 +617,56 @@ export const partialReplyEvents = (
 	};
 };
 
+/** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
+const NOTICE_SUMMARY_LIMIT = 200;
+
+const LOCAL_COMMAND_OPEN = "<local-command-stdout>";
+const LOCAL_COMMAND_CLOSE = "</local-command-stdout>";
+
 /**
- * A user frame is either the operator's prompt or the results of the calls the last turn opened.
+ * The escape a command writes to colour its own output for a terminal. The captured `/model`
+ * result carries two, and left in they reach a transcript as unprintable bytes inside the line.
+ */
+const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/**
+ * What a local command printed, when this user frame is a command's output rather than a turn.
+ *
+ * The CLI records a slash command's result as a user-role message whose whole text is that one
+ * wrapper (`fixtures/local-command-turn.json`), so the frame is the operator's only in role — read
+ * as a turn it puts a system echo and its markup under YOU (#8211).
+ *
+ * The match is the captured shape and nothing looser: the text must *be* the wrapper, so a prompt
+ * quoting or explaining these tags is still the operator's own and stays one. Sibling tags —
+ * `<local-command-caveat>`, `<command-name>` — are a different shape and are not read here.
+ */
+const localCommandOutputOf = (text: string): string | null => {
+	const trimmed = text.trim();
+	if (!trimmed.startsWith(LOCAL_COMMAND_OPEN) || !trimmed.endsWith(LOCAL_COMMAND_CLOSE)) {
+		return null;
+	}
+	const inner = trimmed.slice(LOCAL_COMMAND_OPEN.length, -LOCAL_COMMAND_CLOSE.length);
+	return inner.replaceAll(sgr, "").trim();
+};
+
+/**
+ * One command's output as the collapsed notice's two fields: the line always shown, and the whole
+ * output behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`).
+ */
+const noticeOf = (output: string): {readonly text: string; readonly detail?: string} => {
+	const first =
+		output
+			.split("\n")
+			.find((line) => line.trim().length > 0)
+			?.trim() ?? "";
+	const line =
+		first.length > NOTICE_SUMMARY_LIMIT ? `${first.slice(0, NOTICE_SUMMARY_LIMIT)}…` : first;
+	return line === output ? {text: line} : {text: line, detail: output};
+};
+
+/**
+ * A user frame is either the operator's prompt, a local command's output, or the results of the
+ * calls the last turn opened.
  *
  * A result whose call this mapping never saw is dropped and counted: the item union has no
  * name-less tool row, and inventing one would put a lie on screen. It happens only to a reader
@@ -640,13 +688,12 @@ export const userEvents = (
 		const id = typeof message.uuid === "string" ? message.uuid : `user-${at}`;
 		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
 		// agent's own prose — seen live on #8400's desk run.
-		const prompt: TranscriptItem = {
-			kind: "user",
-			id: itemId(id),
-			timestamp: at,
-			text,
-			...(framedParentId === null ? {} : {parentId: itemId(framedParentId)}),
-		};
+		const tag = framedParentId === null ? {} : {parentId: itemId(framedParentId)};
+		const output = localCommandOutputOf(text);
+		const prompt: TranscriptItem =
+			output === null
+				? {kind: "user", id: itemId(id), timestamp: at, text, ...tag}
+				: {kind: "system", id: itemId(id), timestamp: at, ...noticeOf(output), ...tag};
 		const folded = foldSlots(mapping, [prompt], framedParentId, 0);
 		return {
 			mapping: {...mapping, subagents: folded.subagents},
@@ -911,10 +958,6 @@ export const compactBoundaryEvents = (
 		],
 	};
 };
-
-/** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
-const NOTICE_SUMMARY_LIMIT = 200;
-
 /** The keys every frame carries; what is left is the notice's own payload, whatever its subtype. */
 const noticeEnvelope: ReadonlySet<string> = new Set([
 	"type",
