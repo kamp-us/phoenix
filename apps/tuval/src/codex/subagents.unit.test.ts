@@ -1,5 +1,5 @@
 import {describe, it} from "@effect/vitest";
-import {Effect, Stream} from "effect";
+import {Deferred, Effect, Stream} from "effect";
 import {TestClock} from "effect/testing";
 import {expect} from "vitest";
 import {foldEvent} from "../ai-agent/core/fold.ts";
@@ -159,6 +159,39 @@ describe("Codex native children on the shared protocol", () => {
 		]);
 	});
 
+	it("gives completed payloads precedence over polls and never reopens them with queued starts/deltas", () => {
+		const children = new NativeSubagents();
+		children.collab(spawn, thread.id, 10);
+		const snapshot = {
+			type: "reviewer",
+			status: "running" as const,
+			turnId: "turn-1",
+			items: [
+				{
+					kind: "assistant" as const,
+					id: ItemId.make("a"),
+					timestamp: 20,
+					text: "ABC",
+					partial: true as const,
+				},
+			],
+		};
+		children.hydrate("child-1", snapshot);
+		expect(children.delta("child-1", "a", "B")).toBeNull();
+		expect(
+			children.item("child-1", {type: "agentMessage", id: "a", text: "A"}, 30, true),
+		).toBeNull();
+		children.item("child-1", {type: "agentMessage", id: "a", text: "ABC final"}, 40, false);
+		children.hydrate("child-1", snapshot);
+		expect(children.delta("child-1", "a", "C")).toBeNull();
+		expect(children.needsSnapshot("child-1", "a")).toBe(false);
+		children.finishCall("spawn-1", "completed", false);
+		expect(children.slots.get("spawn-1")?.items).toMatchObject([
+			{text: "ABC final", timestamp: 20},
+		]);
+		expect(children.slots.get("spawn-1")?.items[0]).not.toHaveProperty("partial");
+	});
+
 	it("refuses foreign senders and ambiguous spawns, and makes uncorrelated updates visible", () => {
 		const children = new NativeSubagents();
 		expect(() => children.collab({...spawn, senderThreadId: "foreign"}, thread.id, 0)).toThrow(
@@ -209,7 +242,7 @@ describe("Codex native children on the shared protocol", () => {
 						method: "turn/completed",
 						params: {threadId: "child-1", turn: turn("completed")},
 					});
-					const done = yield* take(agent, 3);
+					const done = yield* take(agent, 4);
 					expect(slotOf(done)).toMatchObject({
 						status: "finished",
 						tokens: 13,
@@ -305,6 +338,116 @@ describe("Codex native children on the shared protocol", () => {
 });
 
 describe("Codex child polling and failure cleanup", () => {
+	it.effect.each(["completed", "interrupted"])(
+		"reconciles queued deltas, snapshot-only rows and terminal %s through the adapter",
+		(terminal) =>
+			onCodex((agent, fake) =>
+				Effect.gen(function* () {
+					let text = "ABC";
+					let snapshotOnly = "XYZ";
+					const arrived = yield* Deferred.make<void>();
+					const release = yield* Deferred.make<void>();
+					let reading = false;
+					fake.handlers.set("thread/read", () =>
+						Effect.gen(function* () {
+							if (!reading) return {thread: {...childThread, turns: []}};
+							yield* Deferred.succeed(arrived, undefined);
+							yield* Deferred.await(release);
+							return {
+								thread: {
+									...childThread,
+									turns: [
+										{
+											...turn(),
+											items: [
+												{type: "agentMessage", id: "a", text},
+												{type: "agentMessage", id: "b", text: snapshotOnly},
+											],
+										},
+									],
+								},
+							};
+						}),
+					);
+					yield* start(agent);
+					yield* fake.push(itemMessage("completed", spawn));
+					const events = [...(yield* take(agent, 3))];
+					yield* fake.push({
+						method: "item/started",
+						params: {
+							threadId: "child-1",
+							turnId: "turn-1",
+							item: {type: "agentMessage", id: "a", text: "A"},
+						},
+					});
+					events.push(...(yield* take(agent, 1)));
+					reading = true;
+					yield* TestClock.adjust("1 second");
+					yield* Deferred.await(arrived);
+					for (const [itemId, delta] of [
+						["a", "B"],
+						["a", "C"],
+						["b", "YZ"],
+					]) {
+						yield* fake.push({
+							method: "item/agentMessage/delta",
+							params: {
+								threadId: "child-1",
+								turnId: "turn-1",
+								itemId,
+								delta,
+							},
+						});
+					}
+					yield* Deferred.succeed(release, undefined);
+					const overlap = yield* take(agent, 4);
+					for (const event of overlap)
+						expect(slotOf([event])?.items).toMatchObject([{text: "ABC"}, {text: "XYZ"}]);
+					events.push(...overlap);
+					snapshotOnly = "XYZ!";
+					yield* fake.push({
+						method: "item/agentMessage/delta",
+						params: {
+							threadId: "child-1",
+							turnId: "turn-1",
+							itemId: "b",
+							delta: "!",
+						},
+					});
+					const progress = yield* take(agent, 1);
+					expect(slotOf(progress)?.items).toMatchObject([{text: "ABC"}, {text: "XYZ!"}]);
+					events.push(...progress);
+					text = "ABC final";
+					yield* fake.push({
+						method: "turn/completed",
+						params: {
+							threadId: "child-1",
+							turn: turn(terminal),
+						},
+					});
+					events.push(...(yield* take(agent, 2)));
+					const state = events.reduce(
+						(state, event) => foldEvent(state, event, {itemLimit: 100}),
+						initialState(thread.cwd),
+					);
+					expect(state.transcript.items).toMatchObject([{id: "spawn-1", kind: "tool"}]);
+					expect(state.subagents["spawn-1"]).toMatchObject({
+						status: "finished",
+						items: [
+							{id: "spawn-1/a", text: "ABC final", timestamp: 0},
+							{id: "spawn-1/b", text: "XYZ!"},
+						],
+					});
+					for (const item of state.subagents["spawn-1"]?.items ?? []) {
+						expect(item).not.toHaveProperty("partial");
+						if (terminal === "interrupted") expect(item).toHaveProperty("interrupted", true);
+						else expect(item).not.toHaveProperty("interrupted");
+					}
+					expect(fake.calls.filter((call) => call.method === "thread/resume")).toEqual([]);
+				}),
+			),
+	);
+
 	it.effect("keeps an unmaterialized refusal visible and retries until history exists", () =>
 		onCodex((agent, fake) =>
 			Effect.gen(function* () {

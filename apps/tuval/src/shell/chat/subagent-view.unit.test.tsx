@@ -316,16 +316,32 @@ describe("Codex native slots in the existing navigator", () => {
 			"parent",
 			1,
 		);
-		native.item(
-			"child",
-			{type: "agentMessage", id: "reply", text: "Native child answer"},
-			2,
-			false,
-		);
+		native.item("child", {type: "agentMessage", id: "reply", text: "Native"}, 2, true);
 		const state = () => agentSession(...native.slots.values());
 		const {rendered, process} = await openOne(state(), {}, atOldest());
 		await pick(rendered.container, "agent");
+		expect(dom(rendered.container).text()).toContain("Native");
+		native.hydrate("child", {
+			type: "agent",
+			status: "running",
+			turnId: "turn",
+			items: [
+				{
+					kind: "assistant",
+					id: ItemId.make("reply"),
+					text: "Native child answer",
+					timestamp: 3,
+					partial: true,
+				},
+			],
+		});
+		native.delta("child", "reply", " child");
+		await act(async () => {
+			await Effect.runPromise(process.commit(state()));
+		});
 		expect(dom(rendered.container).text()).toContain("Native child answer");
+		native.finishCall("agent", "completed", false);
+		native.delta("child", "reply", " answer");
 		native.collab(
 			{
 				type: "collabAgentToolCall",

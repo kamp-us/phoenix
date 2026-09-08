@@ -123,8 +123,10 @@ const make = (options: CodexAiAgentOptions) =>
 		const refreshChildren = Effect.fn("Codex.refreshChildren")(function* (
 			current: Session,
 			all = false,
+			only?: string,
 		) {
 			for (const [id, child] of current.children.children) {
+				if (only !== undefined && id !== only) continue;
 				const slot = current.children.slots.get(child.call);
 				if (slot === undefined || (!all && slot.status !== "running")) continue;
 				const result = yield* Effect.result(
@@ -191,7 +193,10 @@ const make = (options: CodexAiAgentOptions) =>
 				case "item/reasoning/summaryTextDelta":
 				case "item/reasoning/textDelta": {
 					const value = yield* Wire.decode(Wire.Delta, params);
-					yield* emitChild(current, current.children.delta(childId, value.itemId, value.delta));
+					if (current.children.needsSnapshot(childId, value.itemId))
+						yield* refreshChildren(current, false, childId);
+					else
+						yield* emitChild(current, current.children.delta(childId, value.itemId, value.delta));
 					break;
 				}
 				case "thread/tokenUsage/updated": {
@@ -216,14 +221,14 @@ const make = (options: CodexAiAgentOptions) =>
 					const value = yield* Wire.decode(Wire.TurnEvent, params);
 					const child = current.children.children.get(childId);
 					if (child !== undefined) {
+						yield* refreshChildren(current, true, childId);
 						child.turnId = null;
-						for (const item of child.transcript.finish(value.turn.status === "interrupted"))
-							yield* emitChild(current, current.children.upsert(childId, item));
 						yield* emitChild(
 							current,
 							current.children.finishCall(
 								child.call,
 								value.turn.error?.message ?? value.turn.status,
+								value.turn.status !== "completed",
 							),
 						);
 					}
@@ -676,7 +681,18 @@ const make = (options: CodexAiAgentOptions) =>
 			if (current.turn.kind !== "active") return;
 			yield* current.connection
 				.request("turn/interrupt", {threadId: current.id, turnId: current.turn.id})
-				.pipe(Effect.catch((error) => Effect.logWarning(error.message)));
+				.pipe(
+					Effect.catch((error) =>
+						emit(current, {
+							kind: "failure",
+							failure: {
+								tag: "tuval/ai-agent/InterruptError",
+								reason: current.turn.kind === "idle" ? "no-live-turn" : "turn-running",
+								detail: `Codex refused to interrupt the turn: ${error.detail}`,
+							},
+						}),
+					),
+				);
 		});
 		const answer: TuvalAiAgentApi["answer"] = (request, decision) =>
 			Effect.gen(function* () {

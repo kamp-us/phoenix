@@ -2,7 +2,7 @@ import {Schema} from "effect";
 import type {AgentEvent} from "../ai-agent/events.ts";
 import {ItemId, type SubagentSlot, type TranscriptItem} from "../ai-agent/ports/index.ts";
 import type {ChildTranscript} from "./child-store.ts";
-import {LiveTranscript} from "./history.ts";
+import {historyItem, LiveTranscript} from "./history.ts";
 
 // codex-cli 0.153.4 generate-ts: ThreadItem, CollabAgentState and SubAgentActivityKind.
 export const Collab = Schema.Struct({
@@ -52,6 +52,7 @@ const event = (slot: SubagentSlot): AgentEvent => ({kind: "subagent", slot});
 interface Child {
 	readonly call: string;
 	readonly transcript: LiveTranscript;
+	readonly versions: Map<string, "snapshot" | TranscriptItem>;
 	turnId: string | null;
 }
 
@@ -89,7 +90,12 @@ export class NativeSubagents {
 				if (child !== undefined && child.call !== value.id)
 					throw new Error("Codex child belongs to another spawning call");
 				if (child === undefined)
-					this.children.set(id, {call: value.id, transcript: new LiveTranscript(), turnId: null});
+					this.children.set(id, {
+						call: value.id,
+						transcript: new LiveTranscript(),
+						versions: new Map(),
+						turnId: null,
+					});
 			}
 			if (
 				value.status === "failed" ||
@@ -148,11 +154,24 @@ export class NativeSubagents {
 		const slot = child === undefined ? undefined : this.slots.get(child.call);
 		if (slot === undefined || child === undefined) return null;
 		child.turnId = transcript.turnId;
-		const items = transcript.items.map((item) => {
+		const items: Array<TranscriptItem> = transcript.items.map((snapshot) => {
+			const version = child.versions.get(snapshot.id);
+			const item = version === undefined || version === "snapshot" ? snapshot : version;
+			if (version === undefined) child.versions.set(item.id, "snapshot");
+			child.transcript.items.delete(item.id);
 			const tagged = {...item, id: ItemId.make(`${slot.id}/${item.id}`), parentId: slot.id};
 			const previous = slot.items.find((row) => row.id === tagged.id);
 			return previous === undefined ? tagged : {...tagged, timestamp: previous.timestamp};
 		});
+		for (const previous of slot.items) {
+			const id = previous.id.slice(slot.id.length + 1);
+			const version = child.versions.get(id);
+			if (
+				!items.some((item) => item.id === previous.id) &&
+				(child.transcript.items.has(id) || (version !== undefined && version !== "snapshot"))
+			)
+				items.push(previous);
+		}
 		const last = items.at(-1);
 		const next = {
 			...slot,
@@ -168,7 +187,15 @@ export class NativeSubagents {
 	item(id: string, raw: unknown, at: number, partial: boolean): AgentEvent | null {
 		const child = this.children.get(id);
 		if (child === undefined) return null;
-		const item = child.transcript.item(raw, at, partial);
+		const item = historyItem(raw, at, partial);
+		if (partial || (item.kind === "tool" && item.status === "running")) {
+			if (child.versions.has(item.id) || this.slots.get(child.call)?.status === "finished")
+				return null;
+			child.transcript.item(raw, at, partial);
+		} else {
+			child.versions.set(item.id, item);
+			child.transcript.items.delete(item.id);
+		}
 		const update = this.upsert(id, item);
 		if (item.kind === "tool" && item.name === "spawnAgent")
 			return this.upsert(id, {
@@ -180,8 +207,15 @@ export class NativeSubagents {
 		return update;
 	}
 
+	needsSnapshot(id: string, itemId: string): boolean {
+		const child = this.children.get(id);
+		return child?.versions.get(itemId) === "snapshot";
+	}
+
 	delta(id: string, itemId: string, text: string): AgentEvent | null {
-		const item = this.children.get(id)?.transcript.delta(itemId, text);
+		const child = this.children.get(id);
+		if (child === undefined || this.slots.get(child.call)?.status === "finished") return null;
+		const item = child.transcript.delta(itemId, text);
 		return item == null ? null : this.upsert(id, item);
 	}
 
@@ -219,13 +253,16 @@ export class NativeSubagents {
 		return event(next);
 	}
 
-	finishCall(call: string, line: string): AgentEvent | null {
+	finishCall(call: string, line: string, interrupted = true): AgentEvent | null {
+		for (const child of this.children.values()) {
+			if (child.call === call) child.transcript.items.clear();
+		}
 		const slot = this.slots.get(call);
 		if (slot === undefined) return null;
 		const items = slot.items.map((item): TranscriptItem => {
 			if ((item.kind === "assistant" || item.kind === "thinking") && item.partial) {
 				const {partial: _, ...final} = item;
-				return final.kind === "assistant" ? {...final, interrupted: true} : final;
+				return final.kind === "assistant" && interrupted ? {...final, interrupted: true} : final;
 			}
 			return item.kind === "tool" && item.status === "running" ? {...item, status: "error"} : item;
 		});

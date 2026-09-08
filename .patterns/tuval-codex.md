@@ -96,7 +96,20 @@ upserts. A slot is keyed by the spawning call, never by a later wait/send call.
 The internal child-thread map correlates subsequent notifications and reads; child
 item IDs are namespaced under that spawning call and carry its `parentId`.
 Replacing an item preserves its original timestamp and position. Stored snapshots
-restore the backend's ordering rather than appending another copy of each row.
+restore the backend's ordering rather than appending another copy of each row;
+notification-only rows not yet in that read follow it.
+
+Child items have a source-precedence policy, not a guessed delta offset. Until the
+first snapshot of an item, its live accumulator owns partial updates. Hydration retires
+that accumulator: queued starts cannot replace the snapshot, and deltas for snapshot-owned
+items request another read of that child rather than appending possibly overlapping bytes.
+This also advances rows first discovered by a snapshot. `item/completed` carries the
+final item (the versioned app-server README, Events / Items) and takes precedence over
+subsequent polls, starts and deltas. Turn completion reads the child once more, then
+finalizes the reconciled slot rows, never a retired accumulator. A successful completion
+clears partial markers without marking replies interrupted. This policy does not infer
+sequence numbers the protocol does not supply; snapshot-owned progress depends on reads,
+and a read refusal follows the visible failure path below.
 
 A completed spawn call does not imply a completed child. `agentsStates` supplies
 pending/running/completed/interrupted/errored/shutdown/notFound outcomes; `subAgentActivity`
@@ -115,8 +128,13 @@ subscription. No child is started or resumed by that read. Restore recovers spaw
 calls from parent history and reads each correlated child's stored transcript.
 A background child observed active is re-announced after the parent's ready event,
 which otherwise settles slots in the shared core. Interrupt requests address known
-active child turns as well as the parent; refusal remains visible. Parent interruption,
-unrecoverable failure and connection teardown end observation and retain the last rows.
+active child turns as well as the parent. A parent refusal emits the shared
+`tuval/ai-agent/InterruptError` failure: `turn-running` preserves the running turn in the
+core, while `no-live-turn` lets it settle. The adapter chooses the reason from its turn
+state when the refusal arrives, not when the request was sent (ADR
+[0356](../.decisions/0356-tuval-interrupt-refusal-as-failure-tag.md)). Child refusals remain
+visible in the slot's last line. Parent interruption, unrecoverable failure and connection
+teardown end observation and retain the last rows.
 Ending observation is not proof that an external worker was killed.
 
 Missing, unreadable, malformed and unsupported reads are distinct typed refusals,
@@ -153,8 +171,13 @@ isolated `CODEX_HOME`, runs the installed CLI and makes no model turn. It checks
 settings, kernel tool calls, listing and a fresh empty session through `TuvalAiAgent`.
 `subagents.unit.test.ts` scripts spawn begin/end, child item replacement and ordering,
 wait outcomes, token updates, polling, background retention, interruption, parent errors,
-checkpoint restore, isolation and typed read refusals. The shared ChatWindow test also
-navigates into a native-mapped slot, completes it and returns to the parent. These
+checkpoint restore, isolation and typed read refusals. Interleaving fixtures hold a poll
+open over queued deltas, advance snapshot-only rows and finish on a newer read, for both
+successful and interrupted turns. Completed payloads remain final across later polls.
+`agent.unit.test.ts` delays a refused interrupt until before or after turn completion and
+folds both failures through the generic core. The shared ChatWindow test also navigates
+into a native-mapped slot, hydrates it over queued text, completes it and returns to the
+parent without losing the reconciled text. These
 fixtures are authored against the versioned protocol, not captured model output.
 Paid generation, actual model-produced approval requests and nonempty real session history
 and resume still need an operator run; deterministic fixtures do not prove those paths

@@ -1,6 +1,8 @@
 import {describe, it} from "@effect/vitest";
-import {Effect, Exit, Stream} from "effect";
+import {Deferred, Effect, Exit, Fiber, Stream} from "effect";
 import {expect} from "vitest";
+import {foldEvent} from "../ai-agent/core/fold.ts";
+import {initialState} from "../ai-agent/core/state.ts";
 import {Mode} from "../ai-agent/ports/index.ts";
 import {TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
 import {itemMessage, modelRows, onCodex, opened, thread, turn, turnMessage} from "./fixtures.ts";
@@ -22,6 +24,64 @@ const approval = {
 };
 
 describe("Codex implements TuvalAiAgent", () => {
+	it.effect.each([false, true])("folds an interrupt refusal after completion=%s", (completed) =>
+		onCodex(
+			(agent, fake) =>
+				Effect.gen(function* () {
+					const arrived = yield* Deferred.make<void>();
+					const refuse = yield* Deferred.make<void>();
+					fake.handlers.set("turn/interrupt", () =>
+						Effect.gen(function* () {
+							yield* Deferred.succeed(arrived, undefined);
+							yield* Deferred.await(refuse);
+							return yield* new TransportError({reason: "refused", detail: "Cannot stop"});
+						}),
+					);
+					const events = [...(yield* start(agent))];
+					yield* agent.prompt("work");
+					events.push(...(yield* take(agent, 1)));
+					yield* fake.push(itemMessage("started", {type: "agentMessage", id: "a", text: "A"}));
+					events.push(...(yield* take(agent, 1)));
+					const interrupt = yield* Effect.forkChild(agent.interrupt);
+					yield* Deferred.await(arrived);
+					if (completed) {
+						yield* fake.push(turnMessage("completed"));
+						events.push(...(yield* take(agent, 2)));
+					}
+					yield* Deferred.succeed(refuse, undefined);
+					yield* Fiber.join(interrupt);
+					const failure = yield* take(agent, 1);
+					expect(failure).toMatchObject([
+						{
+							kind: "failure",
+							failure: {
+								tag: "tuval/ai-agent/InterruptError",
+								reason: completed ? "no-live-turn" : "turn-running",
+								detail: expect.stringContaining("Cannot stop"),
+							},
+						},
+					]);
+					const state = [...events, ...failure].reduce(
+						(state, event) => foldEvent(state, event, {itemLimit: 100}),
+						initialState(thread.cwd),
+					);
+					expect(state.phase).toBe(completed ? "ready" : "prompting");
+					expect(state.failure?.reason).toBe(completed ? "no-live-turn" : "turn-running");
+					expect(state.transcript.items.at(-1)).toMatchObject({text: "A"});
+					expect(state.transcript.items.at(-1)).toHaveProperty("kind", "assistant");
+					if (!completed) {
+						expect(state.transcript.items.at(-1)).toHaveProperty("partial", true);
+						expect(yield* Effect.flip(agent.prompt("still busy"))).toMatchObject({
+							reason: "refused",
+						});
+					} else {
+						expect(state.transcript.items.at(-1)).not.toHaveProperty("partial");
+						yield* agent.prompt("next turn");
+					}
+				}),
+			{streamPartialReplies: true},
+		),
+	);
 	it.effect("opens without a prompt and announces actual settings on the one stream", () =>
 		onCodex((agent, fake) =>
 			Effect.gen(function* () {
