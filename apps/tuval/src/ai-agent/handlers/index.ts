@@ -159,11 +159,14 @@ export const aiAgentHandlers = <RIn = never>(
 				return [{type: "started", sessionId: started.success.sessionId}];
 			}
 			const error = started.failure;
-			return refusal(
-				isTimeout(error)
-					? deadlineFailure(START_ERROR, policy.deadlineMillis)
-					: failureOf(error as AgentServiceError),
-			);
+			return [
+				{
+					type: "openFailed",
+					failure: isTimeout(error)
+						? deadlineFailure(START_ERROR, policy.deadlineMillis)
+						: failureOf(error as AgentServiceError),
+				},
+			];
 		});
 
 	/**

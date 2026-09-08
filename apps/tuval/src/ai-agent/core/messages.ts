@@ -15,6 +15,8 @@ import type {AgentFailure, HistoryPage} from "./state.ts";
 export type AiAgentSessionMsg =
 	| {readonly type: "start"; readonly cwd: string; readonly resume: string | null}
 	| {readonly type: "started"; readonly sessionId: string}
+	/** The slot was rebuilt, but its start call refused; the subscription lifetime still changed. */
+	| {readonly type: "openFailed"; readonly failure: AgentFailure}
 	/**
 	 * `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570), and the
 	 * id of the turn the `prompt` cell records is derived from it. `timestamp` rides along because
