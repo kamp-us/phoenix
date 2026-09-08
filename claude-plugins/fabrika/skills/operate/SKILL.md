@@ -498,8 +498,11 @@ unmerged one refuses at `23`, one this repository does not hold at `22`, and an 
 `11` — the flag never lowers the bar on the merge, only on who connected it to this issue. A landing
 a body already proves is judged first and stays body-proven, so the flag can only fill a gap. The
 line it appends carries `assertedBy: "caller"` beside its `landed` and `sha`, which is a person's
-word standing where a body normally stands: `lane history` and `lane view` show it, and a
-body-proven line carries no such field at all. **Use it only when you have read the merge and know it
+word standing where a body normally stands: the verb's own stdout and `lane history` show it, and a
+body-proven line carries no such field at all. **`lane view` does not show it** — the viewer page
+rebuilds every log line as `{task, event, at}` and drops the rest, `landed` and `sha` included, so
+an asserted landing and a body-proven one read identically on that screen. Read `lane history` when
+you need to tell them apart. **Use it only when you have read the merge and know it
 discharged this lane** — this is the one place in the verb where the record rests on you rather than
 on the board, so a guess here is a lie nothing downstream can catch.
 
