@@ -215,9 +215,10 @@ const who: Readonly<Record<RowItem["kind"], string>> = {
 };
 
 /**
- * What a row shows under its label. Three kinds carry a shape of their own: a tool call and a
- * thinking row are disclosures over this window's one `expanded` set, and a compaction row is a
- * divider rather than a line of prose. A session line never reaches here: `RowView` folds those
+ * What a row shows under its label. Three kinds carry a shape of their own, and all three are
+ * disclosures over this window's one `expanded` set: a tool call, a thinking row, and a compaction
+ * boundary, whose divider line is the trigger and whose summary is the panel. A session line never
+ * reaches here: `RowView` folds those
  * into the session row. Everything else, an agent reply and what the operator typed alike,
  * renders through the shared markdown block, which paints synchronously so the row's measurement
  * still holds (#8012/#8226): a fence the operator sends is the fence the agent received.
@@ -252,7 +253,15 @@ function RowBody({
 			/>
 		);
 	}
-	if (item.kind === "compaction") return <CompactionMarker text={item.text} />;
+	if (item.kind === "compaction") {
+		return (
+			<CompactionMarker
+				text={item.text}
+				expanded={expanded}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
+	}
 	// The transcript is a region inside the desk, so a `#` heading in a message is a subsection of
 	// it rather than a page title; and a transcript row is read as the lines it was typed on, so a
 	// lone newline is a break here where a document-shaped surface would fold it (#8244).
