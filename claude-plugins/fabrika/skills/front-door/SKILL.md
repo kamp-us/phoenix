@@ -1,12 +1,10 @@
 ---
 name: front-door
-description: "The operating front door — type /fabrika in a cold session for the factory's live state, the skill menu, and new-repo onboarding. Human-typed only; the model cannot fire this."
+description: "The operating front door — explicitly invoke front-door for the factory's live state, the skill menu, and new-repo onboarding."
 disable-model-invocation: true
 ---
 
 # front-door
-
-!`fabrika status open`
 
 You orient a cold **operating** session: what the factory's state is, and which skill to reach for
 next.
@@ -25,6 +23,17 @@ here because a front door hands a session its premises, and a wrong premise is n
 answer — it is every later decision taken on it.
 
 ## 1 — Read the readout three-state, never two
+
+Run the readout through the shell tool:
+
+```bash
+fabrika status open
+```
+
+Read the exit status, stdout and stderr. If the command could not run or returned no readout,
+report `the status source was unreadable` with the reason; no factory state was established.
+Continue only from the readout this invocation produced. The invocation policies for Claude Code
+and Codex are in the contract (`fabrika wire doc-section --heading "Explicit invocation across harnesses" < <skill-base>/contract.md`).
 
 <!-- anchor: UNKNOWN-IS-NEVER-A-PLAUSIBLE-VALUE --> Every field resolves to exactly one of three
 **classes**, and **the third is not the second**: a **live value**; a **proven negative** — the
@@ -190,8 +199,8 @@ never held.
 and merges nothing** — every terminal below leaves the branch untouched, because it cannot touch one.
 It holds a shell and a repo-scoped token. Its only writes are `status bootstrap`'s — a repo file, the
 board label set, or the durable readout artifact — each read back after writing, and it emits no
-cross-lane signal. The injected `fabrika status open` is read-only: it takes no stdin, writes
-nothing, and runs before you see a token.
+cross-lane signal. The first `fabrika status open` call is read-only: it takes no stdin and writes
+nothing.
 
 Orienting and routing happen on every run and are not terminals. Every run **ends** as exactly one of
 these five, and each names itself a success or a back-off. <!-- anchor: TERMINALS-ARE-ORDERED -->
@@ -240,18 +249,6 @@ routes through a verb** and none through an ad-hoc `gh` call. Re-gating is named
 
 ## Editing this file
 
-**Only `fabrika status open` is injected**, because everything injected is paid on **every**
-invocation and runs before the session sees a token. It is read-only, and in its injected form — no
-flags — it has no reachable refusal, so it cannot open a session with an error where a readout
-should be; it can still fail to *run*, which step 1 handles as its own state. The drill-downs
-(`menu`, `config`, `board`, `readout`, `bootstrap`) are separate commands run on demand. The menu
-lives behind its verb rather than in this body for the same reason it is generated at all — a body
-copy is the stale copy.
-
-An exclamation-mark-prefixed command in a `SKILL.md` body executes on **invoke**, not on plugin
-load, and its stdout lands in context.
-
-<!-- anchor: ONE-MARKER-PER-PAGE --> **A fenced code block does not neutralise the marker — it still
-runs.** So this page carries exactly one, at the top, and prose about the mechanism never places an
-exclamation mark immediately before a backtick, because that two-character sequence *is* the marker
-wherever it appears. Say "exclamation-mark-prefixed" in words instead.
+Keep the first read an explicit tool call so every harness executes the same step. The drill-downs
+(`menu`, `settings`, `board`, `readout`, `bootstrap`) run on demand. The menu stays behind its verb;
+a body copy would become stale.

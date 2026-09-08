@@ -91,8 +91,25 @@ expensive to change after shipping.
 Where a repo's own instructions pin skill routing to a filesystem path that points at some other
 tree, no path reaches any fabrika skill. That is the repo's own wiring to fix, and no clause here
 patches it — the same disposition `review`, `ship` and `governance` took.
-**This skill is a special case worth stating:** it is `disable-model-invocation: true`, so no routing
-*instruction* could reach it anyway — a human types it.
+**This skill is explicitly invoked by a human.** Its per-harness declarations are below.
+
+### Explicit invocation across harnesses
+
+Claude Code reads `disable-model-invocation: true` in `SKILL.md`. Codex reads
+`policy.allow_implicit_invocation: false` in the adjacent
+[`agents/openai.yaml`](agents/openai.yaml). Keep both declarations: neither harness's metadata is
+a substitute for the other's. Codex's policy keeps the skill available to explicit invocation
+while excluding it from automatic selection; see
+[Build skills, optional metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata).
+
+The body runs `fabrika status open` as an ordinary shell-tool step. It relies on no inline command
+interpolation. Failed execution or an absent readout reaches the existing unreadable-source terminal;
+the command's output remains report data under the skill's readout boundary.
+
+The plugin-creator packaging validator rejects `disable-model-invocation: true`, even though the
+Codex runtime loader accepts the shared file. That validator result must be reported separately
+from skill discovery and invocation-policy evidence. Retaining the Claude declaration preserves
+its invocation contract; it is not a claim that the packaging validator passed.
 
 ## Shared conventions
 
@@ -147,7 +164,7 @@ vocabulary in this group. Four consequences bind every verb below:
    one exit status; because a non-zero exit cannot carry a payload, the exit status answers only
    *"did I produce a readout at all"* and each field carries its own state inside it.
 4. <a id="open-is-total"></a>**`status open` therefore has no zero-scope and no failed-read seat at
-   all.** It is the command the skill injects before the session reads a token; a refusal writes zero
+   all.** It is the first command the skill runs; a refusal writes zero
    bytes, so a front door that refused would be silent on exactly the cold start it exists for. Every
    source it cannot read becomes a field state. Its only refusals are a bad `--field` and the
    universals.
@@ -216,7 +233,7 @@ header, whether an empty result is a fact or a failed read: **an empty roster is
 partial install), an unreadable one is `11`. Exit `7` is reserved for an **explicitly passed**
 `--skills-dir` that is proven absent — a caller error, not a state of the world — and it is seated on
 `menu` only. **`status open` is exempt though it takes the same flag**: it is the
-injected command and [cannot refuse](#open-is-total), so a bad path it was handed renders as a field
+initial readout and [cannot refuse](#open-is-total), so a bad path it was handed renders as a field
 state like any other unreadable source. `bootstrap` does not take the flag at all.
 
 <a id="core-to-field"></a>
@@ -412,8 +429,8 @@ rule for "three fine, one unknown", and every such rule either hides the unknown
 
 **That is the whole table, and it is the point** ([why](#open-is-total)). An unresolvable repo, an
 unreachable GitHub, an unreadable roster, an absent roster and an unregistered digest format each
-render their field `unknown` or `empty` at exit `0`. This verb is injected before the session reads a
-token; a refusal would write zero bytes on the cold start it exists for.
+render their field `unknown` or `empty` at exit `0`. This verb runs at the start of the skill;
+a refusal would write zero bytes on the cold start it exists for.
 
 **Errors**
 
@@ -1464,9 +1481,9 @@ readout artifact issue, and creating board labels. **No push, no branch, no merg
 access, no pull request, and no label applied to any existing issue.** This group emits no cross-lane
 signal of any kind.
 
-**`fabrika status open` is the command the skill injects**, so its capability set is the one that
+**`fabrika status open` is the skill's first command**, so its capability set is the one that
 matters most: read-only over the filesystem and GitHub, takes no stdin, and writes nothing. **The
-injected form cannot refuse** — it passes no flags, so its one refusal seat (`10`, a bad `--field`)
+initial form cannot refuse** — it passes no flags, so its one refusal seat (`10`, a bad `--field`)
 is unreachable, and every source failure becomes a field state. It can still fail to *run* (`1`, `126`,
-`127`), which is the no-readout case the skill handles as its own state. Nothing that mutates is ever
-injected.
+`127`), which is the no-readout case the skill handles as its own state. Bootstrap mutations remain
+separate calls after the readout.
