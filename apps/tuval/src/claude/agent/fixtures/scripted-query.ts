@@ -250,7 +250,11 @@ export interface ScriptedSdk {
 export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	/** The messages a fresh `query()` puts on its stream, in order. */
 	readonly opening: ReadonlyArray<SDKMessage>;
-	/** What `getSessionMessages` answers. Absent answers an empty session, which is the resume miss. */
+	/**
+	 * What `getSessionMessages` answers. Absent answers an empty array, which at the pin is both an
+	 * existing session with no rows and one the store does not hold — `sessions` is what tells the
+	 * two apart (#8131).
+	 */
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	/** A read that throws instead of answering. */
 	readonly readFails?: Error;

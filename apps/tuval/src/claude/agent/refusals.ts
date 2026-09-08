@@ -46,11 +46,12 @@ export const logRefused = (what: string, refusal: Error & {readonly detail: stri
 	Effect.logWarning(`${what}: ${refusal.detail}`, refusal.cause);
 
 /**
- * A resume whose session the store does not hold.
+ * A resume whose session the store does not hold — the store's own listing said so.
  *
- * `getSessionMessages` "returns Array of messages, or empty array if session not found"
- * (`sdk.d.ts`), so an empty read for a session the caller named is the miss itself — no error text
- * to scrape, and no `query()` opened against a session that is not there.
+ * Not the empty transcript read: `getSessionMessages` "returns Array of messages, or empty array if
+ * session not found" (`sdk.d.ts`), which is two answers in one, and an existing session with no
+ * message rows is legal to resume (`ai-agent/service/TuvalAiAgent.ts`, `ResumeTarget`). So this is
+ * raised only where `listSessions` holds no row for the id (#8131).
  */
 export const sessionNotFound = (cwd: string, resume: string): StartError =>
 	new StartError({
@@ -58,6 +59,23 @@ export const sessionNotFound = (cwd: string, resume: string): StartError =>
 		cwd,
 		detail: `no session "${resume}" is stored for this working directory`,
 	});
+
+/**
+ * The existence check itself did not answer, so whether the session is there is unknown.
+ *
+ * `transport` rather than `session-not-found`: a store that would not open is not a store that says
+ * the session is absent, and reading it as absence is the failure #8131 closed. `StartReason` has
+ * no store arm, and `transport` is what the sibling read failure at `start` already carries.
+ */
+export const startStoreUnreadable = (cwd: string, cause: unknown): StartError =>
+	retaining(
+		cause,
+		new StartError({
+			reason: "transport",
+			cwd,
+			detail: translated("the Claude Code session store could not be enumerated", cause),
+		}),
+	);
 
 export const startTransport = (cwd: string, cause: unknown): StartError =>
 	retaining(
