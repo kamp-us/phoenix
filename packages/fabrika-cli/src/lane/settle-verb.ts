@@ -17,6 +17,13 @@
  * merged linking PR is UNKNOWN, not a landing — the board says somebody called it done and names
  * nothing that did it, so what discharged the lane is genuinely unread.
  *
+ * **`--landed-by <pr>` supplies the link that read lacks, and nothing else.** Plenty of merged work
+ * cites one issue in its body and closes another by hand, which leaves a landing that really
+ * happened and no body naming it. The flag names the merge; the board still has to say that pull
+ * request merged, so an unmerged one refuses at {@link PROOF_IN_FLIGHT} and an absent one at
+ * {@link PROOF_ABSENT}, both with the log unappended. The line then records `assertedBy`, so a later
+ * reader tells an asserted link from a body-proven one without re-reading anything.
+ *
  * **A live claim is protected.** A lane another session is driving is not one to end underneath it,
  * so an authorized lane-claim marker refuses unless the caller names that very token. An unreadable
  * claim thread is UNKNOWN, never "unclaimed".
@@ -46,6 +53,8 @@ import {
 	ISSUE_LIVE,
 	ISSUE_UNRESOLVED,
 	LANE_UNREADABLE,
+	PROOF_ABSENT,
+	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {applyBoardTerminal, foldLog, resolveTask, type SettlementEvidence} from "./fold.ts";
@@ -53,7 +62,7 @@ import {CANCELLED_EVENT} from "./machine.ts";
 import {type Nomination, nominatePulls} from "./nominate.ts";
 import type {PullFact} from "./prove.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {entitlement} from "./settle.ts";
+import {type AssertedPull, entitlement} from "./settle.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane settle";
@@ -75,6 +84,15 @@ export type ClaimsReader<R> = (issue: number) => Effect.Effect<Claimants, never,
 export type ShaReader<R> = (pr: number) => Effect.Effect<string | null, never, R>;
 
 /**
+ * One named pull request as the board answers for it, or UNKNOWN where the read failed — the
+ * `--landed-by` arm's own read, kept apart from {@link ShaReader} because an absent pull request and
+ * an unreadable one take opposite remedies and a sha of `null` tells them apart from neither.
+ */
+export type AssertedReader<R> = (
+	pr: number,
+) => Effect.Effect<AssertedPull | {readonly _tag: "Unknown"; readonly reason: string}, never, R>;
+
+/**
  * The board-backed readers.
  *
  * Readers the caller passes rather than seams this verb reaches through, the shape `lane archive`
@@ -89,6 +107,7 @@ export const boardReaders = (
 	readonly pulls: PullsReader<ChildProcessSpawner.ChildProcessSpawner>;
 	readonly claims: ClaimsReader<ChildProcessSpawner.ChildProcessSpawner>;
 	readonly sha: ShaReader<ChildProcessSpawner.ChildProcessSpawner>;
+	readonly asserted: AssertedReader<ChildProcessSpawner.ChildProcessSpawner>;
 } => {
 	let resolved: string | null = null;
 	const target = Effect.gen(function* () {
@@ -143,6 +162,19 @@ export const boardReaders = (
 				const record = yield* getPullRequest(name, pr);
 				return record._tag === "Present" ? record.value.mergeCommitSha : null;
 			}),
+		asserted: (pr) =>
+			Effect.gen(function* () {
+				const name = yield* target;
+				if (name === null) return {_tag: "Unknown" as const, reason: noRepo};
+				const record = yield* getPullRequest(name, pr);
+				if (record._tag === "Absent") return {_tag: "Absent" as const, number: pr};
+				if (record._tag !== "Present") {
+					return {_tag: "Unknown" as const, reason: `cannot read #${pr}: ${record.reason}`};
+				}
+				return record.value.merged
+					? {_tag: "Merged" as const, number: pr, sha: record.value.mergeCommitSha}
+					: {_tag: "Unmerged" as const, number: pr, state: record.value.state};
+			}),
 	};
 };
 
@@ -153,10 +185,16 @@ export interface SettleOptions<R = never> extends LaneRef {
 	readonly task: string | null;
 	/** The lane-claim token, when this caller is the driver holding the lane; `null` otherwise. */
 	readonly token: string | null;
+	/**
+	 * The merged pull request a caller names as this lane's landing, where no body links the issue —
+	 * `null` on every settlement the board can prove by itself, which is every ordinary one.
+	 */
+	readonly landedBy: number | null;
 	readonly closure: ClosureReader<R>;
 	readonly pulls: PullsReader<R>;
 	readonly claims: ClaimsReader<R>;
 	readonly sha: ShaReader<R>;
+	readonly asserted: AssertedReader<R>;
 }
 
 export const runSettle = <R = never>(
@@ -213,8 +251,10 @@ export const runSettle = <R = never>(
 						`${VERB}: #${issue} is open, so this lane is live work — drive it, or close the issue first. Nothing was appended.`,
 					);
 				}
-				// Read only on the arm that needs them: a cancellation stands on the closure alone.
+				// Read only on the arm that needs them: a cancellation stands on the closure alone, and
+				// the named pull request is read only where a caller named one.
 				let facts: ReadonlyArray<PullFact> | null = null;
+				let asserted: AssertedPull | null = null;
 				if (read.reason === "completed") {
 					const nominated = yield* options.pulls(issue);
 					if (nominated._tag === "Unreadable") {
@@ -224,12 +264,34 @@ export const runSettle = <R = never>(
 						);
 					}
 					facts = nominated.pulls;
+					if (options.landedBy !== null) {
+						const named = yield* options.asserted(options.landedBy);
+						if (named._tag === "Unknown") {
+							return refuse(
+								LANE_UNREADABLE,
+								`${VERB}: cannot establish whether #${options.landedBy} merged: ${named.reason} — UNKNOWN, and the log is unappended.`,
+							);
+						}
+						asserted = named;
+					}
 				}
-				const entitled = entitlement(issue, read.state, read.reason, facts);
+				const entitled = entitlement(issue, read.state, read.reason, facts, asserted);
 				if (entitled._tag === "Unknown") {
 					return refuse(
 						LANE_UNREADABLE,
 						`${VERB}: ${entitled.reason} — UNKNOWN, and the log is unappended.`,
+					);
+				}
+				if (entitled._tag === "AssertedAbsent") {
+					return refuse(
+						PROOF_ABSENT,
+						`${VERB}: --landed-by names #${entitled.pr}, which is not a pull request on this repository — an asserted landing supplies the link a body lacks and never the merge itself. Nothing was appended.`,
+					);
+				}
+				if (entitled._tag === "AssertedUnmerged") {
+					return refuse(
+						PROOF_IN_FLIGHT,
+						`${VERB}: --landed-by names #${entitled.pr}, which the board reads "${entitled.state}" and not merged — there is no landing to record until it merges. Nothing was appended.`,
 					);
 				}
 				if (entitled._tag === "Live") {
@@ -257,11 +319,19 @@ export const runSettle = <R = never>(
 				let evidence: SettlementEvidence = {outcome: entitled.outcome};
 				if (entitled._tag === "Landed") {
 					const first = entitled.landed[0];
-					const sha = first === undefined ? null : yield* options.sha(first);
+					// An asserted landing was read in full a moment ago, so its merge commit is already
+					// in hand; a body-proven one names PRs the nomination read carries no sha for.
+					const sha =
+						entitled.assertedBy !== undefined && asserted !== null && asserted._tag === "Merged"
+							? asserted.sha
+							: first === undefined
+								? null
+								: yield* options.sha(first);
 					evidence = {
 						outcome: entitled.outcome,
 						landed: entitled.landed,
 						...(sha === null ? {} : {sha}),
+						...(entitled.assertedBy === undefined ? {} : {assertedBy: entitled.assertedBy}),
 					};
 				}
 				const applied = applyBoardTerminal(
@@ -297,6 +367,7 @@ export const runSettle = <R = never>(
 							outcome: entitled.outcome,
 							...(evidence.landed === undefined ? {} : {landed: evidence.landed}),
 							...(evidence.sha === undefined ? {} : {sha: evidence.sha}),
+							...(evidence.assertedBy === undefined ? {} : {assertedBy: evidence.assertedBy}),
 						},
 						null,
 						2,
@@ -306,6 +377,10 @@ export const runSettle = <R = never>(
 							evidence.landed === undefined
 								? ""
 								: ` over ${evidence.landed.map((pr) => `#${pr}`).join(", ")}`
+						}${
+							evidence.assertedBy === undefined
+								? ""
+								: `, whose link to #${issue} the line records as asserted by the ${evidence.assertedBy} and not read off a pull request body`
 						}.`,
 						`${VERB}: the lane is terminal at "${String(applied.current.stateValue)}" and holds no seat — the directory stays where it is, and \`fabrika lane history ${options.lane}\` still reads its whole log.`,
 					],

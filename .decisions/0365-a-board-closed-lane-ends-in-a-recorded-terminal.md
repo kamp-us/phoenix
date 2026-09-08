@@ -123,3 +123,28 @@ ADR [0350](0350-a-correction-supersedes-a-recorded-line.md) is untouched for the
 `CORRECTED` line amends a routing payload an earlier line got wrong, and a settlement records an
 outcome no line ever carried. `lane reconcile` and `lane settle` reach disjoint populations — a lane
 `reconcile` nominates recorded a merge closure, and a lane `settle` ends never recorded one.
+
+## Amendments
+
+**2026-09-08 — a caller may supply the link, and never the merge.** The first sweep under this verb
+refused 17 of the seats at `11`: the issue closed `completed`, the work merged, and the merged pull
+request's body cited some other issue, because a human closed this one by hand. The landing was real
+and the board named nothing that did it, which is exactly the refusal above — and the refusal was
+also the only way out of the cap, so those seats stayed held
+([#8535](https://github.com/kamp-us/phoenix/issues/8535)).
+
+`fabrika lane settle <lane> --landed-by <pr>` adds a second landing arm, and the split it makes is
+between the *link* and the *merge*. The merge stays the board's: the named pull request must read
+merged there, so an unmerged one refuses at `23`, one the repository does not hold at `22`, and an
+unreadable read stays UNKNOWN at `11`. What the caller supplies is the one fact no read can recover —
+that THIS merge discharged THIS lane — and the line records that they supplied it, as
+`assertedBy: "caller"` beside the `landed` and `sha` a body-proven landing already carries. A
+body-proven landing is judged first and wins, so the flag can only ever fill a gap and can never
+relabel a link the board proved; and because the field is present only on an asserted line, every
+line already recorded stays true unread.
+
+This does not widen "the board read is the whole entitlement" so much as name its edge. The closure,
+the merge and the seat are all still read off the board and refused where a read fails. Only the
+attribution moves, and it moves onto the record rather than into silence — which is the same reason
+the outcome is on the line at all: a terminal a later reader cannot audit is the thing this ADR
+exists to prevent, and an asserted link that did not say it was asserted would be exactly that.

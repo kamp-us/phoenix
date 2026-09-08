@@ -485,6 +485,27 @@ board saying "done" while naming nothing that did it is genuinely unread, not a 
 the lane's claim, pass `--token <your lane-claim token>`; without it the verb refuses at `31` rather
 than end a lane another session is driving.
 
+**That last `11` has one way out, and it is a human's.** A lane's work often lands under a PR whose
+body cites some other issue, with this one closed by hand afterwards — the landing is real and no
+body names it, so the verb correctly reads it unread. Name the merge yourself:
+
+```bash
+node <fabrika> lane settle <lane> --landed-by <pr>
+```
+
+You supply the link and nothing else. The board still has to say that pull request merged, so an
+unmerged one refuses at `23`, one this repository does not hold at `22`, and an unreadable read stays
+`11` — the flag never lowers the bar on the merge, only on who connected it to this issue. A landing
+a body already proves is judged first and stays body-proven, so the flag can only fill a gap. The
+line it appends carries `assertedBy: "caller"` beside its `landed` and `sha`, which is a person's
+word standing where a body normally stands: the verb's own stdout and `lane history` show it, and a
+body-proven line carries no such field at all. **`lane view` does not show it** — the viewer page
+rebuilds every log line as `{task, event, at}` and drops the rest, `landed` and `sha` included, so
+an asserted landing and a body-proven one read identically on that screen. Read `lane history` when
+you need to tell them apart. **Use it only when you have read the merge and know it
+discharged this lane** — this is the one place in the verb where the record rests on you rather than
+on the board, so a guess here is a lie nothing downstream can catch.
+
 The lane then folds to `board:cancelled` or `board:landed`, neither of which is `complete` or
 `tripped`, so it stops holding a seat against `laneConcurrencyCap` and never appears in a stale sweep
 again. Neither event is an operator event — `lane transition` refuses both — so `DONE`'s own proof
