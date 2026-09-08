@@ -594,7 +594,7 @@ answers a bound key, a typed line, `help`, and an agent's bridge.
 | [`shell/commands/row.ts`](../apps/tuval/src/shell/commands/row.ts) | `ShellCommand`, `defineCommand`, `CommandPath`, `commandName`, `commandPath`, `parameterNames` |
 | [`shell/commands/table.ts`](../apps/tuval/src/shell/commands/table.ts) | `shellCommands`, `commandFor`, `commandNames`, `resolveVerb`, `verbSpellings`, `msgForCommandName` |
 | [`shell/commands/line.ts`](../apps/tuval/src/shell/commands/line.ts) | `readCommandLine`, `CommandLineResult` |
-| [`shell/commands/errors.ts`](../apps/tuval/src/shell/commands/errors.ts) | `CommandRefusal` and its five arms, `refusalMessage` |
+| [`shell/commands/errors.ts`](../apps/tuval/src/shell/commands/errors.ts) | `CommandRefusal`, `refusalMessage` |
 | [`shell/commands/spells.ts`](../apps/tuval/src/shell/commands/spells.ts) | `shellSpells`, `CommandDispatched` |
 | [`shell/commands/dispatch.ts`](../apps/tuval/src/shell/commands/dispatch.ts) | `ShellDispatch` |
 
@@ -615,12 +615,13 @@ calls it — so a key press and a typed line run the same row. It answers `null`
 an argument, because a key sequence has nowhere to carry one, and the core leaves that name as a
 `runCommand` Cmd.
 
-`readCommandLine` lexes with this framework's `tokenize` and suggests with its `didYouMean`, then
-binds the tokens positionally in `Schema.Struct` declaration order and decodes them against the
-row's real schema through `Schema.decodeUnknownResult`. That is the difference from `parse` above:
-the palette's parser binds argument *text* and leaves the decode to the executor, so its refusal
-names a position; this one has the schema in hand, so its refusal names the row and the parameter.
-A verb resolves as the full name, else the `window:` row of that name, else an unambiguous last
+For a recognized shell row, `readCommandLine` lexes with this framework's `tokenize`, binds the
+tokens positionally in `Schema.Struct` declaration order, and decodes them against the row's real
+schema through `Schema.decodeUnknownResult`. This shell branch has the schema in hand, so its
+refusal names the row and the parameter. The options overload routes non-shell input through the
+shared `parse`, which binds argument text and leaves decoding to the executor; see
+[Live command discovery and the command line](#live-command-discovery-and-the-command-line).
+A shell verb resolves as the full name, else the `window:` row of that name, else an unambiguous last
 segment — `open` is claimed by both `window:open` and `command:open`, and the `window:` step is what
 keeps `:open counter` readable rather than a guess.
 
