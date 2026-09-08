@@ -51,7 +51,7 @@ import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
-import {tuvalDesignTranslate} from "./copy.ts";
+import {tuvalDesignTranslate, tuvalSubagentViewTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
@@ -342,6 +342,7 @@ function RowView({
 	unfolded,
 	onToggleRow,
 	onToggleFold,
+	onViewSubagent,
 }: {
 	readonly row: ChatRow;
 	readonly interruptedId: string | null;
@@ -351,6 +352,7 @@ function RowView({
 	readonly unfolded: ReadonlySet<string>;
 	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
+	readonly onViewSubagent: ((id: string) => void) | null;
 }): ReactElement {
 	if (row.kind === "loading") {
 		return (
@@ -396,6 +398,7 @@ function RowView({
 					run={row.items}
 					expanded={expanded.has(id)}
 					onToggle={(next) => onToggleRow(id, next)}
+					onViewSubagent={onViewSubagent}
 				/>
 			</>
 		);
@@ -987,7 +990,9 @@ function ChatWindow({
 		// The provider sits above the whole window, not just the composer: a design primitive the
 		// transcript mounts (a table's scroller name) reads this catalog too, and the package's own
 		// default is Turkish.
-		<DesignTranslationProvider translate={tuvalDesignTranslate}>
+		<DesignTranslationProvider
+			translate={viewing === null ? tuvalDesignTranslate : tuvalSubagentViewTranslate}
+		>
 			<section
 				className="tuval-chat"
 				aria-label="Agent chat"
@@ -1081,6 +1086,9 @@ function ChatWindow({
 										unfolded={unfolded}
 										onToggleRow={toggleRow}
 										onToggleFold={toggleFold}
+										// Only where the navigator is drawn: a jump into a worker's rows with
+										// no list above them leaves the reader no way back out (#8405).
+										onViewSubagent={options.subagentList ? showSubagent : null}
 									/>
 								</div>
 							);
@@ -1134,6 +1142,12 @@ function ChatWindow({
 				<AgentChatInput
 					variant="focused"
 					bridge={composer.bridge}
+					// Founder ruling on #8466: while the view slot shows a subagent the composer is
+					// disabled, not re-worded. A prompt typed here would land in the transcript the
+					// operator is not reading, and there is no second session to address it to. It stays
+					// mounted — the draft is the component's own state, so unmounting it would drop text
+					// the swap must not touch — and the placeholder swapped above says why.
+					disabled={viewing !== null}
 					// The mode picker rides the composer's `settings` slot rather than the bridge: mode is
 					// this window's vocabulary, and a bridge method would make every other implementor of
 					// `AgentChatInputBridge` answer a question only this one has (#8190).
