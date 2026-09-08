@@ -60,6 +60,34 @@ turn's end and accepts a send the backend never started
 ([#8107](https://github.com/kamp-us/phoenix/issues/8107)). `prompting` marks the send's turn
 running; only that turn's end accepts it.
 
+## The open's own `ready`, and the first turn it can swallow
+
+A layer narrates its open on the same stream it narrates turns on, and the core is not listening
+yet. `subscriptions` in [`core/machine.ts`](../apps/tuval/src/ai-agent/core/machine.ts) opens the
+events Sub off `state.sessionId`, which the `started` Msg sets — and `started` is what the layer's
+own `start` call answered, so everything `start` emitted is already sitting in the layer's queue
+when the Sub attaches. The queue is unbounded and nothing is lost; what varies is *when* it drains.
+
+That leaves a window: the core reaches `ready` on `started`, so a prompt written in it is admitted
+and `admit` walks the session to `prompting` — and then the open's own `ready`, folded a moment
+later, walks it straight back. The turn is running and the phase line says `Ready.`, with no
+`Working…` and no Escape affordance, which is what an operator measured across a 30 s first turn on
+a picker-opened Claude session ([#8358](https://github.com/kamp-us/phoenix/issues/8358)). A page
+re-attaching to an already-open process never sees it: that process opened long ago and has no
+opening events left to drain.
+
+The per-turn `prompting` is the whole defence, and it is why the layer owes one at the send rather
+than leaving `admit`'s to stand. It rides the same queue *behind* the open's events, so the session
+is back on `prompting` before the turn's first frame whichever order the drain took
+([#8156](https://github.com/kamp-us/phoenix/issues/8156)). Both orders are pinned in
+[`claude/agent/phases.unit.test.ts`](../apps/tuval/src/claude/agent/phases.unit.test.ts), which
+folds the layer's real event stream through the real core — including the case with that one event
+removed, where the running turn reads idle for its whole length.
+
+So a layer whose `start` narrates a `ready` owes a `prompting` per send. Emitting one only when the
+backend confirms the turn — or trusting the core's own admission — leaves the first turn of every
+freshly opened session narrated as idle.
+
 ## Reference shapes
 
 - [`claude/agent/ClaudeAiAgent.ts`](../apps/tuval/src/claude/agent/ClaudeAiAgent.ts) — `prompt`
