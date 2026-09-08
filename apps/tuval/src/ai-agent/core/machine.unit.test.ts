@@ -1012,6 +1012,22 @@ describe("reconnect", () => {
 	});
 });
 
+describe("openFailed", () => {
+	it("advances a failed fresh open without inventing a session subscription", () => {
+		const opening = {...initialState("/repo"), phase: "starting" as const};
+		const failure = {tag: "tuval/ai-agent/StartError", reason: "refused", detail: "not accepted"};
+		const [state, cmds] = apply(opening, {type: "openFailed", failure});
+		expect(state).toMatchObject({
+			phase: "idle",
+			sessionId: null,
+			connection: opening.connection + 1,
+			failure,
+		});
+		expect(machine.subscriptions?.(state)).toEqual([]);
+		expect(cmds).toEqual([]);
+	});
+});
+
 describe("failed", () => {
 	it("records the layer's tag and leaves the phase where the act began", () => {
 		const failure = {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "gone"};
@@ -1025,13 +1041,16 @@ describe("failed", () => {
 		expect(fromReconnect.phase).toBe("idle");
 	});
 
-	it("ends a resume the backend refused at gone, never anywhere a fresh session can open", () => {
+	it.each([
+		"failed",
+		"openFailed",
+	] as const)("ends a missing session at gone through %s", (type) => {
 		const failure = {
 			tag: "tuval/ai-agent/StartError",
 			reason: "session-not-found",
 			detail: "the backend holds no session-1",
 		};
-		const [refused] = apply(started({phase: "reconnecting"}), {type: "failed", failure});
+		const [refused] = apply(started({phase: "reconnecting"}), {type, failure});
 		expect(refused).toMatchObject({phase: "gone", sessionId: "session-1", failure});
 		expect(machine.subscriptions?.(refused)).toEqual([]);
 	});
@@ -1457,6 +1476,14 @@ describe("the Cmd each Msg answers for", () => {
 		],
 		[started({phase: "prompting"}), {type: "interrupt", at: SENT_AT}, ["aiAgent.interrupt"]],
 		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
+		[
+			started({phase: "reconnecting"}),
+			{
+				type: "openFailed",
+				failure: {tag: "tuval/ai-agent/StartError", reason: "refused", detail: "not accepted"},
+			},
+			[],
+		],
 		[
 			started(),
 			{type: "failed", failure: {tag: "tuval/ai-agent/PageError", reason: null, detail: "x"}},

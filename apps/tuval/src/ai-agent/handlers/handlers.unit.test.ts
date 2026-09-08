@@ -8,7 +8,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, type Scope} from "effect";
+import {Context, Effect, Layer, type Scope, Stream} from "effect";
 import {assistantItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {memoryStores} from "../../durability/stores.ts";
@@ -18,7 +18,11 @@ import {Processes} from "../../process/Processes.ts";
 import type {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessHandle} from "../../process/process.ts";
 import {Registry} from "../../registry/Registry.ts";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
+import {
+	type AiAgentSessionState,
+	aiAgentSessionMachine,
+	isAiAgentSessionState,
+} from "../core/index.ts";
 import type {
 	ModelRef,
 	ModePayload,
@@ -44,12 +48,18 @@ import {
 	StartError,
 	type StartOptions,
 	TuvalAiAgent,
+	type TuvalAiAgentApi,
 } from "../service/index.ts";
 import {aiAgentPortNames} from "./publish.ts";
 
 const PROGRAM = "ai-agent-session-test";
 
+type ScriptSource = AgentScript | ((build: number) => AgentScript);
+
 interface Probe {
+	agents: Array<TuvalAiAgentApi>;
+	subscribed: Array<number>;
+	unsubscribed: Array<number>;
 	acquired: number;
 	released: number;
 	/** Prompts the layer was actually asked for; a refused prompt has to reach none of them. */
@@ -59,7 +69,16 @@ interface Probe {
 	pages: Array<string | null>;
 }
 
-const probeOf = (): Probe => ({acquired: 0, released: 0, prompts: 0, sent: [], pages: []});
+const probeOf = (): Probe => ({
+	acquired: 0,
+	released: 0,
+	prompts: 0,
+	sent: [],
+	pages: [],
+	agents: [],
+	subscribed: [],
+	unsubscribed: [],
+});
 
 /** A backend that holds no session at all, whatever it is asked to open. */
 const refusesEveryStart = (options: StartOptions) =>
@@ -75,27 +94,40 @@ const refusesEveryStart = (options: StartOptions) =>
  * that the *row* builds the layer once per process and closes it once, not anything about the
  * script.
  *
- * `refuseStart` is the one behaviour the script itself cannot produce. A fresh session opens itself
- * now (#7925), so no caller is left that can hand `start` an id the backend does not hold — the
- * refusal a start answers with has to come from the layer.
+ * A script factory varies the backend by build, so a reconnect can refuse where the first open
+ * succeeded. The probe observes real streams and their finalizers without replacing the handlers.
  */
 const countingLayer = (
-	script: AgentScript,
+	script: ScriptSource,
 	probe: Probe,
 	refuseStart = false,
 ): Layer.Layer<TuvalAiAgent> =>
 	Layer.effect(
 		TuvalAiAgent,
 		Effect.gen(function* () {
-			probe.acquired += 1;
+			const build = ++probe.acquired;
 			yield* Effect.addFinalizer(() =>
 				Effect.sync(() => {
 					probe.released += 1;
 				}),
 			);
-			const agent = Context.get(yield* Layer.build(ScriptedAiAgent.layer(script)), TuvalAiAgent);
+			const selected = typeof script === "function" ? script(build) : script;
+			const agent = Context.get(yield* Layer.build(ScriptedAiAgent.layer(selected)), TuvalAiAgent);
+			probe.agents.push(agent);
 			return {
 				...agent,
+				events: Stream.unwrap(
+					Effect.sync(() => {
+						probe.subscribed.push(build);
+						return agent.events;
+					}),
+				).pipe(
+					Stream.ensuring(
+						Effect.sync(() => {
+							probe.unsubscribed.push(build);
+						}),
+					),
+				),
 				start: (options: StartOptions) =>
 					refuseStart ? Effect.fail(refusesEveryStart(options)) : agent.start(options),
 				page: (before: string | null, limit: number) =>
@@ -139,7 +171,7 @@ interface KernelOptions {
 	readonly refuseStart?: boolean;
 }
 
-const row = (script: AgentScript, probe: Probe, options: KernelOptions) =>
+const row = (script: ScriptSource, probe: Probe, options: KernelOptions) =>
 	aiAgentProgram({
 		id: PROGRAM,
 		layer: countingLayer(script, probe, options.refuseStart ?? false),
@@ -150,7 +182,7 @@ const row = (script: AgentScript, probe: Probe, options: KernelOptions) =>
 	});
 
 const withKernel = <A, E>(
-	script: AgentScript,
+	script: ScriptSource,
 	probe: Probe,
 	body: (
 		spawn: Effect.Effect<ProcessHandle, unknown>,
@@ -495,7 +527,7 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
-	it.live("turns a start the backend refuses into a failed Msg carrying the tag", () => {
+	it.live("turns a start the backend refuses into an openFailed Msg carrying the tag", () => {
 		const probe = probeOf();
 		return withKernel(
 			plainReply,
@@ -606,6 +638,102 @@ describe("the AI agent handlers under a process", () => {
 			}),
 		);
 	});
+
+	it.live(
+		"rearms the rebuilt transport after a failed second start and a later successful reconnect",
+		() => {
+			const probe = probeOf();
+			const machine = aiAgentSessionMachine({cwd: "/work"});
+			const ids = (handle: ProcessHandle) =>
+				(machine.subscriptions?.(sessionOf(handle)) ?? []).map((sub) => sub.id);
+			const script: ScriptSource = (build) => ({
+				...plainReply,
+				...(build === 2
+					? {
+							startRefusal: new StartError({
+								cwd: "/work",
+								reason: "refused",
+								detail: "second open refused",
+							}),
+						}
+					: {}),
+				interrupt: [
+					{kind: "item", item: assistantItem(`notice-${build}`, `transport-${build} notification`)},
+				],
+				turns: [
+					{
+						events: [
+							{kind: "phase", phase: "prompting"},
+							{kind: "item", item: assistantItem(`answer-${build}`, `reply-${build}`)},
+							{kind: "phase", phase: "ready"},
+						],
+					},
+				],
+			});
+			return withKernel(script, probe, (spawn, log) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).phase === "ready");
+					yield* handle.dispatch({type: "prompt", text: "first", key: "first", timestamp: 1});
+					yield* eventually(() =>
+						sessionOf(handle).transcript.items.some((item) => item.id === "answer-1"),
+					);
+					const before = ids(handle);
+					assert.lengthOf(before, 1);
+					yield* handle.dispatch({type: "reconnect"});
+					yield* eventually(
+						() => sessionOf(handle).failure?.detail.includes("second open refused") === true,
+					);
+					const failed = ids(handle);
+					assert.notDeepEqual(failed, before);
+					assert.lengthOf(failed, 1);
+					assert.strictEqual(sessionOf(handle).phase, "idle");
+					yield* eventually(() => probe.subscribed.includes(2));
+					assert.deepStrictEqual(probe.subscribed, [1, 2]);
+					assert.deepStrictEqual([probe.acquired, probe.released], [2, 1]);
+					assert.deepStrictEqual(probe.unsubscribed, [1]);
+					const rebuilt = probe.agents[1];
+					if (rebuilt === undefined) return yield* Effect.die("missing rebuilt backend");
+					yield* rebuilt.interrupt;
+					yield* eventually(() =>
+						sessionOf(handle).transcript.items.some((item) => item.id === "notice-2"),
+					);
+					assert.isTrue(sessionOf(handle).transcript.items.some((item) => item.id === "notice-2"));
+					assert.isTrue(sessionOf(handle).transcript.items.some((item) => item.id === "answer-1"));
+					assert.include(
+						JSON.stringify(lastOn(log, aiAgentPortNames.transcript)),
+						"transport-2 notification",
+					);
+					yield* handle.dispatch({
+						type: "failed",
+						failure: {
+							tag: "tuval/ai-agent/PromptError",
+							reason: "refused",
+							detail: "ordinary refusal",
+						},
+					});
+					assert.deepStrictEqual(ids(handle), failed);
+					assert.deepStrictEqual(probe.subscribed, [1, 2]);
+					yield* handle.dispatch({type: "reconnect"});
+					yield* eventually(
+						() => sessionOf(handle).phase === "ready" && probe.subscribed.includes(3),
+					);
+					assert.notDeepEqual(ids(handle), failed);
+					assert.deepStrictEqual([probe.acquired, probe.released], [3, 2]);
+					assert.deepStrictEqual(probe.unsubscribed, [1, 2]);
+					yield* handle.dispatch({type: "prompt", text: "again", key: "again", timestamp: 2});
+					yield* eventually(() =>
+						sessionOf(handle).transcript.items.some((item) => item.id === "answer-3"),
+					);
+					assert.isTrue(sessionOf(handle).transcript.items.some((item) => item.id === "answer-3"));
+					assert.include(JSON.stringify(lastOn(log, aiAgentPortNames.transcript)), "reply-3");
+					yield* handle.stop;
+					assert.deepStrictEqual([probe.acquired, probe.released], [3, 3]);
+					assert.deepStrictEqual(probe.unsubscribed, [1, 2, 3]);
+				}),
+			);
+		},
+	);
 
 	it.live("publishes nothing and fails nothing when a port has no route", () => {
 		const probe = probeOf();

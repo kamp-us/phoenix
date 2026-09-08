@@ -145,3 +145,24 @@ a layer that never sent one.
 
 A conformance test over every layer would be stronger than this doc. The layers differ enough in how
 a turn is driven that its shape is an open question; no such test exists today and none is filed.
+
+## An open outcome also ends a subscription lifetime
+
+The transport is rebuilt before the agent's `start` call in
+[`handlers/index.ts`](../apps/tuval/src/ai-agent/handlers/index.ts), so both `started` and
+`openFailed` advance `connection`. The latter is a dedicated completion message, not a diagnostic
+classification: an ordinary `failed` message has rebuilt nothing and cannot advance the generation.
+The existing failure fold still chooses `idle` for a refused open and `gone` for a missing resumed
+session; a process with no session id or a terminal session desires no event subscription.
+
+This distinction follows the current host's
+[`reconcile`](../apps/tuval/src/host/actor.ts): an ended or failed manual subscription keeps its
+registered id, and an unchanged id is never re-armed. A new generation closes that registration and
+subscribes to the agent now held by the slot. The slot's child Scope independently closes the old
+transport on rebuild; Effect rc.112's `Scope.fork` documents that closing a child detaches it from
+its parent. Neither an ended event fiber nor a failed start can stand in for the new lifetime id.
+
+The handler regression drives the real process registry with a script whose second build refuses
+start. It observes the changed desired id, a notification from that rebuilt agent's actual event
+queue, and a reply after a third build reconnects successfully. Transport and subscription
+finalizers are counted separately, and ordinary failure keeps the existing subscription identity.

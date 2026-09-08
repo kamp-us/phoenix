@@ -211,8 +211,8 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 							],
 						],
 
-			// The connection bump is what re-opens the events Sub: a reconnect stands a new transport
-			// up under the same session id, and the Sub is reconciled by id (`messages.ts`).
+			// Both open completions advance the subscription lifetime: the slot was rebuilt whether
+			// start succeeded or refused. Ordinary failures leave that lifetime alone.
 			started: (state, msg) =>
 				state.phase === "gone"
 					? [state, noCmds]
@@ -470,6 +470,8 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 					],
 				];
 			},
+
+			openFailed: (state, msg) => failed({...state, connection: state.connection + 1}, msg.failure),
 
 			failed: (state, msg) => failed(state, msg.failure),
 		},
