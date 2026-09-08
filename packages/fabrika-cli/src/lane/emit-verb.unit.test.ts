@@ -48,6 +48,7 @@ const OPTIONS = {
 	>,
 	// No cap declared — the cap's own arms live in [`concurrency.unit.test.ts`](concurrency.unit.test.ts).
 	cap: {_tag: "Value", value: null, note: "test"} as const,
+	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 };
 
 const run = (script: ReadonlyArray<readonly [RegExp, HttpReply]> = [], fs = fakeFs({files: {}})) =>

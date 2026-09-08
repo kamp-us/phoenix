@@ -1,5 +1,8 @@
 /**
- * `laneConcurrencyCap` — how many issue lanes this repo lets stand open at once.
+ * `laneConcurrencyCap` — how many issue lanes this repo lets a driver hold at once.
+ *
+ * A seat is a lane somebody is driving: active on its own log AND claimed on its issue, plus every
+ * lane no read can account for. See [`concurrency.ts`](../../lane/concurrency.ts) for the counting.
  *
  * "Cap at 2 for the rest of the night" was a spoken instruction, so it bound only the operator who
  * heard it and only for as long as they remembered it. Declared here it binds the boot itself:
@@ -40,7 +43,7 @@ export const laneConcurrencyCapKey: KeyGroup<number | null> = {
 	jsonSchema: {
 		type: ["integer", "null"],
 		description:
-			"How many issue lanes may stand open at once — `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
+			"How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 		minimum: 1,
 	},
 };

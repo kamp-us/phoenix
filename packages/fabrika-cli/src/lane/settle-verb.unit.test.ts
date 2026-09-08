@@ -8,6 +8,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {Claimant} from "../build/claim.ts";
 import {fakeFs} from "../fakes.test-support.ts";
+import type {ClaimHoldReader} from "./claim-hold.ts";
 import {
 	CLAIM_NOT_MINE,
 	EVENT_REFUSED,
@@ -265,14 +266,16 @@ describe("lane settle — the landing arm", () => {
 
 	it("frees the seat a hand-shipped lane was holding", async () => {
 		const fs = laneFs(AT_REVIEW);
-		const before = await Effect.runPromise(Effect.provide(seatsIn(ROOT), fs.layer));
-		expect(before).toEqual({_tag: "Counted", seats: [{lane: LANE, held: "active"}]});
+		const held: ClaimHoldReader<never> = () => Effect.succeed({_tag: "Claimed", token: "t"});
+		const before = await Effect.runPromise(Effect.provide(seatsIn(ROOT, held), fs.layer));
+		expect(before).toEqual({_tag: "Counted", seats: [{lane: LANE, held: "claimed"}], idle: []});
 
 		await settle(fs, {closure: closes("closed", "completed"), pulls: nominates([pull()])});
 
-		expect(await Effect.runPromise(Effect.provide(seatsIn(ROOT), fs.layer))).toEqual({
+		expect(await Effect.runPromise(Effect.provide(seatsIn(ROOT, held), fs.layer))).toEqual({
 			_tag: "Counted",
 			seats: [],
+			idle: [],
 		});
 	});
 

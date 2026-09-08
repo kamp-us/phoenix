@@ -220,7 +220,7 @@
 				"integer",
 				"null"
 			],
-			"description": "How many issue lanes may stand open at once — `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
+			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
 		},
 		"portability": {

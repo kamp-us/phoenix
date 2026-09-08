@@ -148,3 +148,25 @@ the merge and the seat are all still read off the board and refused where a read
 attribution moves, and it moves onto the record rather than into silence — which is the same reason
 the outcome is on the line at all: a terminal a later reader cannot audit is the thing this ADR
 exists to prevent, and an asserted link that did not say it was asserted would be exactly that.
+
+**2026-09-08 — a seat is a lane somebody is driving, not a lane nobody has settled.** Settling the
+closed lanes shrank the count and did not fix the shape: an active lane goes on holding a seat until
+somebody records its terminal, so a cap of 2 was still refusing every boot with one operator alive.
+The founder's 2026-09-07 ruling
+([#8484](https://github.com/kamp-us/phoenix/issues/8484#issuecomment-5578165068)) picks the cheap cut
+of two offered shapes: **a seat is a lane whose log folds to `active` AND whose issue carries a live
+`lane claim` marker; an active lane no driver claims is idle and counts for nothing.** `seatsIn`
+([`concurrency.ts`](../packages/fabrika-cli/src/lane/concurrency.ts)) asks an injected claim reader
+per lane, and the exit-`51` refusal names the claimed seats and the idle count separately, because
+their remedies differ — a claimed seat is driven, archived or released, an idle one is nobody's to
+free.
+
+**No heartbeat and no TTL, deliberately.** The claim's whole liveness is the marker's presence, the
+same as everywhere else in the claim protocol, and the ruling defers an expiry to a later step and
+only if stuck claims from killed operators actually bite. So a claim outliving its driver holds a
+seat, and that is the known cost of the cheap cut rather than an oversight.
+
+**An unreadable claim keeps its seat.** A comment thread or ACL that will not answer joins the
+records that will not load or replay as `unaccountable` — reading a failed read as "unclaimed" would
+free a seat on a failure, which is the permissive arm this ADR's counting has refused from the start.
+The first run over the live root measured 16 seats before the change and 5 claimed + 11 idle after.

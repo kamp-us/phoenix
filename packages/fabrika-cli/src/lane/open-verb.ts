@@ -23,12 +23,15 @@
  * drive. Epic wins the precedence, so a sub-epic still routes to `lane emit`.
  *
  * The repo's declared `laneConcurrencyCap` is the last gate before the write, and an issue lane's
- * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat.
+ * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat: a lane under this
+ * root whose log folds to `active` AND whose issue carries a live `lane claim`, plus every lane no
+ * read can account for. An active lane nobody claims is idle and takes no seat.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import type {ClaimHoldReader} from "./claim-hold.ts";
 import {LANE_IS_CHILD, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
@@ -51,6 +54,12 @@ export interface OpenOptions<R = never> extends LaneRef {
 	 * this root, and a chore lane lives under a root of its own that nothing here counts.
 	 */
 	readonly cap: Read<number | null>;
+	/**
+	 * Which lanes under this root a driver is holding — only a claimed one takes a seat.
+	 *
+	 * A reader the adapter passes, the way `expectation` is, so the count stays provable offline.
+	 */
+	readonly claimed: ClaimHoldReader<R>;
 }
 
 export const runOpen = <R = never>(
@@ -98,7 +107,7 @@ export const runOpen = <R = never>(
 		// Last, so a permanent defect — the wrong template for this issue, a child that gets no lane —
 		// is named ahead of a cap that will clear on its own the moment a seat frees.
 		if (issue !== null) {
-			const capped = yield* capRefusal(VERB, options.cap, options.root);
+			const capped = yield* capRefusal(VERB, options.cap, options.root, options.claimed);
 			if (capped !== null) return capped;
 		}
 		const placed = yield* placeMachine(options, template.success);
