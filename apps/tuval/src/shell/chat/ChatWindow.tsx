@@ -215,6 +215,14 @@ const who: Readonly<Record<RowItem["kind"], string>> = {
 };
 
 /**
+ * The row's author, in the words the dropped label used to print. This is now the only text that
+ * names it, so a nested row states both whose words these are and that they ran inside another
+ * call: the indent is the second signal, never the only one (ADR 0162, Pillar 4).
+ */
+const authorName = (kind: RowItem["kind"], nested: boolean): string =>
+	nested ? `${who[kind]}, inside a subagent call` : who[kind];
+
+/**
  * What a row shows under its label. Three kinds carry a shape of their own, and all three are
  * disclosures over this window's one `expanded` set: a tool call, a thinking row, and a compaction
  * boundary, whose divider line is the trigger and whose summary is the panel. A session line never
@@ -291,8 +299,12 @@ function ItemRow({
 }): ReactElement {
 	return (
 		<>
-			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
-			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
+			{/*
+			 * The visible label is gone; what carries authorship is the row's own shape plus
+			 * `data-message-role` on its wrapper. The name is announced on every row rather than on
+			 * author change, because the list is virtualized and a reader may land on any row cold.
+			 */}
+			<span className="kp-visually-hidden">{authorName(item.kind, nested)}</span>
 			<RowBody item={item} expanded={expanded} fold={fold} onToggleRow={onToggleRow} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
@@ -1026,6 +1038,9 @@ function ChatWindow({
 									className="tuval-chat-row"
 									data-index={virtual.index}
 									data-kind={row.kind === "item" ? row.item.kind : row.kind}
+									// Authorship as the row's shape carries it (#8210), and the hook the bubble and
+									// prose rules in `chat.css` hang on.
+									data-message-role={row.kind === "item" ? row.item.kind : undefined}
 									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
 									ref={virtualizer.measureElement}
 									style={{

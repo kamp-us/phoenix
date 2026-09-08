@@ -551,3 +551,106 @@ describe("the running-subagent list", () => {
 		SLOW,
 	);
 });
+
+/**
+ * Authorship once the visible label is gone (#8210, the T3 Code model the founder ruled on
+ * 2026-09-08). The label was the only text naming a row's author, so dropping it is a Pillar-4
+ * question before it is a layout one: what replaces it has to stay in the accessible tree, and it
+ * has to be there on every row, because the list is virtualized and a reader may land on any row
+ * cold.
+ */
+describe("the chat turn shape's authorship", () => {
+	// A nested row needs a parent call and an open fold; the rest is one row of every item kind.
+	const TRANSCRIPT = [
+		userItem("u1", "go"),
+		assistantItem("a1", "done"),
+		thinkingItem("th1", THINKING),
+		call("agent", {name: "Agent"}),
+		call("child", {name: "bash", parentId: "agent"}),
+		compactionItem("c1", "context compacted"),
+	];
+
+	const mountShape = () =>
+		mountWindow(withTranscript(TRANSCRIPT), {...initialChatView, unfolded: ["agent"]});
+
+	/** The rows an item is behind — never the paging heads or the session row, which own their own. */
+	const ITEM_KINDS = ["user", "assistant", "tool", "thinking", "compaction"];
+
+	const itemRows = (root: HTMLElement): ReadonlyArray<HTMLElement> =>
+		Array.from(root.querySelectorAll<HTMLElement>(".tuval-chat-row")).filter((row) =>
+			ITEM_KINDS.includes(row.getAttribute("data-kind") ?? ""),
+		);
+
+	const hiddenNames = (row: HTMLElement): ReadonlyArray<string> =>
+		Array.from(row.querySelectorAll<HTMLElement>(".kp-visually-hidden")).map(
+			(node) => node.textContent ?? "",
+		);
+
+	it("prints no author label on any item row, and names the author to a reader instead", async () => {
+		const rendered = await mountShape();
+		const root = rendered.container.firstElementChild as HTMLElement;
+
+		expect(root.querySelectorAll(".tuval-chat-transcript .tuval-chat-who")).toHaveLength(0);
+
+		const rows = itemRows(root);
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			const kind = row.getAttribute("data-kind") ?? "";
+			expect(row.getAttribute("data-message-role")).toBe(kind);
+			expect(hiddenNames(row).some((name) => name.length > 0)).toBe(true);
+		}
+
+		const user = rows.find((row) => row.getAttribute("data-message-role") === "user");
+		expect(hiddenNames(user as HTMLElement)).toContain("you");
+		const assistant = rows.find((row) => row.getAttribute("data-message-role") === "assistant");
+		expect(hiddenNames(assistant as HTMLElement)).toContain("agent");
+
+		rendered.unmount();
+	});
+
+	// The indent is the second signal, never the only one (ADR 0162, Pillar 4).
+	it("says in words that a nested row ran inside another call", async () => {
+		const rendered = await mountShape();
+		const root = rendered.container.firstElementChild as HTMLElement;
+
+		const nested = itemRows(root).filter((row) => row.getAttribute("data-nested") === "true");
+		expect(nested.length).toBeGreaterThan(0);
+		for (const row of nested) {
+			expect(hiddenNames(row).join(" ")).toContain("inside a subagent call");
+		}
+
+		rendered.unmount();
+	});
+
+	// Neither word is an author label: the compaction one names a divider, the session one a run.
+	it("leaves the compaction divider and the session row's own label alone", async () => {
+		const rendered = await mountShape();
+		const root = rendered.container.firstElementChild as HTMLElement;
+		expect(root.querySelector(".tuval-chat-compaction-label")?.textContent).toBe(
+			"context compacted",
+		);
+		expect(root.querySelector(".tuval-chat-compaction-rule")).not.toBeNull();
+		rendered.unmount();
+
+		const session = await mountWindow(
+			withTranscript([userItem("u1", "go"), systemItem("s1", "session resumed")]),
+		);
+		const sessionRoot = session.container.firstElementChild as HTMLElement;
+		const label = sessionRoot.querySelector<HTMLElement>(
+			'.tuval-chat-row[data-kind="session"] .tuval-chat-who',
+		);
+		expect(label?.textContent).toBe("session");
+		session.unmount();
+	});
+
+	it(
+		"holds the enforced pillar-4 invariants over the new row shape",
+		async () => {
+			const rendered = await mountShape();
+			const root = rendered.container.firstElementChild as HTMLElement;
+			expect(await scanRegions(root)).toEqual([]);
+			rendered.unmount();
+		},
+		SLOW,
+	);
+});
