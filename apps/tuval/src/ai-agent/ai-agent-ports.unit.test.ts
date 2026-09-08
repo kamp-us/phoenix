@@ -18,6 +18,7 @@ import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {launch} from "../launch/launch.ts";
 import {compile} from "../ports/compile.ts";
+import {PayloadRejected} from "../ports/errors.ts";
 import {type Graph, NodeId} from "../ports/graph.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {open} from "../ports/wiring.ts";
@@ -315,5 +316,87 @@ describe("the AI agent interface over a compiled graph", () => {
 				assert.strictEqual(current(), modeBrand("plan"));
 			}),
 		),
+	);
+});
+
+/**
+ * The four payloads the row's in-ports refuse at the send (#7750).
+ *
+ * `program.ts`'s receivers are pure translations with nothing left to refuse: each in-port declares
+ * one direction's predicate, so the kernel's `accepts` check turns an unstamped prompt (#7991) and
+ * a wrong-direction payload (#8235) away inside the caller's own `emit`. The refusal names the port
+ * it crossed, and the window renders a failure by that port's kind (ruling 3, #7570) — so an end
+ * that admitted the whole union again would deliver a mode-set as a page request with nothing red.
+ */
+describe("what the agent row's in-ports refuse at the send", () => {
+	const pageReply = {
+		kind: "page",
+		items: [],
+		omitted: {items: 0, bytes: 0, reason: "none"},
+		next: null,
+	};
+	const pageRequest = {kind: "request", before: null, limit: 3};
+	const pendingSet = {kind: "pending", requests: {}};
+	const answer = {kind: "decision", request: PERMISSION_REQUEST, decision: "allow-once"};
+	const modeState = {kind: "state", current: modes.current, available: modes.available};
+	const modeSet = {kind: "set", mode: modeBrand("plan")};
+
+	const refusals = [
+		{
+			sends: "a prompt carrying no idempotency key",
+			port: aiAgentPortNames.prompt,
+			kind: prompt.kind,
+			wrong: {text: "hello", timestamp: 1},
+			right: {text: "hello", key: "k1", timestamp: 1},
+		},
+		{
+			sends: "a page at the end that takes requests",
+			port: aiAgentPortNames.pageRequest,
+			kind: transcriptPage.kind,
+			wrong: pageReply,
+			right: pageRequest,
+		},
+		{
+			sends: "a pending set at the end that takes answers",
+			port: aiAgentPortNames.permissionDecision,
+			kind: permission.kind,
+			wrong: pendingSet,
+			right: answer,
+		},
+		{
+			sends: "a mode state at the end that takes sets",
+			port: aiAgentPortNames.modeSet,
+			kind: mode.kind,
+			wrong: modeState,
+			right: modeSet,
+		},
+	] as const;
+
+	/** One compiled graph per send, so a refused payload leaves no queue behind for the next case. */
+	const sending = (port: string, payload: unknown) =>
+		Effect.gen(function* () {
+			const wiring = yield* open(yield* compile(graph));
+			return yield* wiring.emit({node: windowNode, port}, payload);
+		}).pipe(Effect.scoped, Effect.provide(Registry.layer([agentRow(plainReply), windowProgram])));
+
+	it.effect.each(refusals)(
+		"refuses $sends, naming the port it crossed",
+		({port, kind, wrong, right}) =>
+			Effect.gen(function* () {
+				const refusal = yield* Effect.flip(sending(port, wrong));
+				if (!(refusal instanceof PayloadRejected)) {
+					return assert.fail(`expected PayloadRejected on ${port}, got ${String(refusal)}`);
+				}
+				assert.deepStrictEqual(
+					{node: refusal.node, program: refusal.program, port: refusal.port, kind: refusal.kind},
+					{node: agentNode, program: AGENT, port, kind},
+				);
+
+				// The same port takes its own direction, so what the case above pinned is the direction
+				// and not a port that refuses everything.
+				assert.deepStrictEqual(yield* sending(port, right), [
+					{to: {node: agentNode, port}, accepted: true},
+				]);
+			}),
 	);
 });
