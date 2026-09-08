@@ -13,9 +13,9 @@
  * is `./session-transcript.unit.test.ts`.
  */
 
-import {act, fireEvent, render, screen, within} from "@testing-library/react";
+import {act, cleanup, fireEvent, render, screen, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
-import type {Socket} from "effect/unstable/socket";
+import {Socket} from "effect/unstable/socket";
 import type {ReactElement} from "react";
 import {beforeEach, describe, expect, it} from "vitest";
 import type {SessionListState} from "../ai-agent/renderer-ref.ts";
@@ -57,6 +57,8 @@ installDomShims();
 interface Parked {
 	readonly spell: SpellCall;
 	readonly answer: (reply: SpellReply) => void;
+	readonly fail: () => void;
+	interrupted: boolean;
 }
 
 let parked: Array<Parked> = [];
@@ -103,7 +105,23 @@ const call: SpellCaller = (spell) =>
 			resume(Effect.succeed(refusal(spell.id, unknownSpell(spell.path))));
 			return;
 		}
-		parked.push({spell, answer: (reply) => resume(Effect.succeed(reply))});
+		const pending: Parked = {
+			spell,
+			answer: (reply) => resume(Effect.succeed(reply)),
+			fail: () =>
+				resume(
+					Effect.fail(
+						new Socket.SocketError({
+							reason: new Socket.SocketCloseError({code: 1006}),
+						}),
+					),
+				),
+			interrupted: false,
+		};
+		parked.push(pending);
+		return Effect.sync(() => {
+			pending.interrupted = true;
+		});
 	});
 
 /**
@@ -407,5 +425,104 @@ describe("the read-only contract", () => {
 		expect(new Set(parked.map((sent) => sent.spell.path.join(".")))).toEqual(
 			new Set([SESSION_TRANSCRIPT_CALL_PATH.join(".")]),
 		);
+	});
+});
+
+const failRead = async (index: number): Promise<void> => {
+	const pending = parked[index];
+	if (pending === undefined) throw new Error("missing transcript call");
+	await act(async () => {
+		pending.fail();
+	});
+};
+
+describe("transport read failures", () => {
+	it("leaves the first read recoverable until one explicit correlated retry succeeds", async () => {
+		const container = await openSession();
+		await failRead(0);
+		expect(screen.queryByText("Reading this session's transcript…")).toBeNull();
+		expect(screen.getByRole("alert").textContent).toContain(
+			"This transcript page could not be read",
+		);
+		await settle();
+		expect(parked).toHaveLength(1);
+		const retry = screen.getByRole("button", {name: "Try reading this transcript again"});
+		await act(async () => {
+			fireEvent.click(retry);
+			fireEvent.click(retry);
+		});
+		expect(parked).toHaveLength(2);
+		expect(parked[1]?.spell.args).toEqual(parked[0]?.spell.args);
+		expect(parked[1]?.spell.id).not.toBe(parked[0]?.spell.id);
+		expect(parked[1]?.spell.window).toBe("w-1");
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(screen.getByText("Reading this session's transcript…")).toBeTruthy();
+		await answer(1, (id) => ok(id, pageOf(1, 2, null)));
+		expect(texts(container)).toEqual(["userturn m-1", "userturn m-2"]);
+		expect(new Set(parked.map(({spell}) => spell.path.join(".")))).toEqual(
+			new Set([SESSION_TRANSCRIPT_CALL_PATH.join(".")]),
+		);
+	});
+
+	it("retains older history and its cursor across repeated failures and explicit retries", async () => {
+		const container = await openSession();
+		await answer(0, (id) => ok(id, pageOf(3, 2, "m-3")));
+		fireEvent.click(older() as HTMLElement);
+		await settle();
+		await failRead(1);
+		expect(texts(container)).toEqual(["userturn m-3", "userturn m-4"]);
+		expect(screen.queryByText("Reading older messages…")).toBeNull();
+		const retry = screen.getByRole("button", {name: "Try the older messages again"});
+		expect(retry.hasAttribute("disabled")).toBe(false);
+		await settle();
+		expect(parked).toHaveLength(2);
+		await act(async () => {
+			fireEvent.click(retry);
+			fireEvent.click(retry);
+		});
+		expect(parked).toHaveLength(3);
+		expect(parked[2]?.spell.args).toEqual(parked[1]?.spell.args);
+		expect(parked[2]?.spell.id).not.toBe(parked[1]?.spell.id);
+		await failRead(2);
+		fireEvent.click(screen.getByRole("button", {name: "Try the older messages again"}));
+		await settle();
+		expect(parked[3]?.spell.args).toMatchObject({before: "m-3"});
+		await answer(3, (id) => ok(id, pageOf(1, 2, null)));
+		expect(texts(container)).toEqual([
+			"userturn m-1",
+			"userturn m-2",
+			"userturn m-3",
+			"userturn m-4",
+		]);
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(older()).toBeNull();
+	});
+
+	it("interrupts a left read silently and ignores its late failure after reopening", async () => {
+		const container = await openSession();
+		fireEvent.click(screen.getByRole("button", {name: "Back to the session list"}));
+		await settle();
+		expect(parked[0]?.interrupted).toBe(true);
+		expect(screen.queryByRole("alert")).toBeNull();
+		fireEvent.keyDown(screen.getByRole("combobox", {name: "AI agent sessions"}), {key: "Enter"});
+		await settle();
+		await failRead(0);
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(screen.getByText("Reading this session's transcript…")).toBeTruthy();
+		await answer(1, (id) => ok(id, pageOf(1, 1, null)));
+		expect(texts(container)).toEqual(["userturn m-1"]);
+	});
+
+	it("interrupts an older read on unmount without retrying or leaking a failure", async () => {
+		await openSession();
+		await answer(0, (id) => ok(id, pageOf(3, 2, "m-3")));
+		fireEvent.click(older() as HTMLElement);
+		await settle();
+		cleanup();
+		await settle();
+		expect(parked[1]?.interrupted).toBe(true);
+		await failRead(1);
+		expect(parked).toHaveLength(2);
+		expect(screen.queryByRole("alert")).toBeNull();
 	});
 });

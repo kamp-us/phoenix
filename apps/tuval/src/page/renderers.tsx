@@ -28,7 +28,7 @@
 import features from "virtual:tuval/features";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
-import {useCallback, useEffect, useState} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
 import {isSessionListState} from "../ai-agent/renderer-ref.ts";
 import {
@@ -199,10 +199,12 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
 		const [paging, setPaging] = useState(noPages);
 		const [cursor, setCursor] = useState<string | null>(null);
 		const [attempt, setAttempt] = useState(0);
+		const reading = useRef(false);
 
 		useEffect(() => {
 			if (request._tag !== "Read") return;
 			let current = true;
+			reading.current = true;
 			const spell = sessionTranscriptCall({...request.read, before: cursor}, window);
 			const fiber = Effect.runFork(
 				call(spell).pipe(
@@ -210,10 +212,27 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
 						Effect.sync(() => {
 							if (!current) return;
 							const landing = readSessionTranscript(spell, reply);
-							if (landing !== null) setPaging((held) => landedPage(held, cursor, landing));
+							if (landing !== null) {
+								reading.current = false;
+								setPaging((held) => landedPage(held, cursor, landing));
+							}
 						}),
 					),
-					Effect.catchCause(() => Effect.void),
+					Effect.catchTag("SocketError", () =>
+						Effect.sync(() => {
+							if (!current) return;
+							reading.current = false;
+							setPaging((held) =>
+								landedPage(held, cursor, {
+									_tag: "Refused",
+									failure: {
+										tag: "tuval/TranscriptReadFailed",
+										message: "This transcript page could not be read. You can try it again.",
+									},
+								}),
+							);
+						}),
+					),
 				),
 			);
 			return () => {
@@ -225,18 +244,29 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
 		const next = paging.next;
 		const olderOut = paging.older._tag === "Reading";
 		const older = useCallback(() => {
-			if (next === null || olderOut) return;
+			if (next === null || olderOut || reading.current) return;
+			reading.current = true;
 			setPaging(askedOlder);
 			setCursor(next);
 			setAttempt((current) => current + 1);
 		}, [next, olderOut]);
+
+		const retry = useCallback(() => {
+			if (paging.refusal === null || reading.current) return;
+			reading.current = true;
+			setPaging(noPages);
+			setCursor(null);
+			setAttempt((current) => current + 1);
+		}, [paging.refusal]);
 
 		const answer = request._tag === "Read" ? pagedAnswer(paging) : null;
 		// The affordance is offered only where there is a page to ask for, so the surface's own rule
 		// ("gone once there is nothing older") and this one cannot disagree about the end of history.
 		return answer !== null && answer._tag === "Read" && answer.page.next !== null
 			? {answer, onOlder: older}
-			: {answer};
+			: answer?._tag === "Refused"
+				? {answer, onRetry: retry}
+				: {answer};
 	};
 	return useSessionTranscript;
 };
