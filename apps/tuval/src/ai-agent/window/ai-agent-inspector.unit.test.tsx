@@ -10,6 +10,8 @@
  * with each other. Both rows and the table are imported; nothing here restates a reference.
  */
 
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -47,6 +49,24 @@ const open = async (state: AiAgentSessionState) => {
 const panel = (): HTMLElement => screen.getByRole("group", {name: "Agent session"});
 
 describe("what the inspector shows", () => {
+	it("uses tabular figures only for cost and token counts", async () => {
+		const style = document.createElement("style");
+		style.textContent = readFileSync(join(import.meta.dirname, "ai-agent-inspector.css"), "utf8");
+		document.head.append(style);
+		try {
+			await open(agentSessionState({agentVersion: "2.1.259"}));
+			for (const row of panel().querySelectorAll(".tuval-agent-inspector-row")) {
+				const label = row.querySelector("dt")?.textContent;
+				const value = row.querySelector("dd") as HTMLElement;
+				const numeric = ["Cost", "Input tokens", "Output tokens"].includes(label ?? "");
+				expect(getComputedStyle(value).fontVariantNumeric === "tabular-nums").toBe(numeric);
+				if (label === "Session" || label === "Directory")
+					expect(getComputedStyle(value).overflowWrap).toBe("anywhere");
+			}
+		} finally {
+			style.remove();
+		}
+	});
 	it("renders the cost, the token counts, the session id and the cwd off the state", async () => {
 		await open(
 			agentSessionState({

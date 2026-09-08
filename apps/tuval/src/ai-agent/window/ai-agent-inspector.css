@@ -41,3 +41,7 @@
 .tuval-agent-inspector-wrap {
 	overflow-wrap: anywhere;
 }
+
+.tuval-agent-inspector-list dd.tuval-agent-inspector-number {
+	font-variant-numeric: tabular-nums;
+}

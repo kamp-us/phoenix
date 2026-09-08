@@ -31,6 +31,14 @@ pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's
 
 ### Paint proofs
 
+`pnpm proof:pi-window` also serves `/inspector.html`: the production agent inspector over an
+in-memory process. `window.inspectorProof.update(cost, input, output)` commits a usage snapshot
+through its normal subscription, so a browser can compare repeated digit substitutions and
+digit-count growth at a narrow viewport. The fixture opens no backend or model. Cost and token
+rows use tabular figures; session/directory text keeps its wrapping and ordinary typography.
+Equal digit advances stabilize same-length substitutions, not the total width of a growing number
+or a currency value whose existing formatter changes its fraction length.
+
 Both test tiers run in jsdom, which has no layout: a claim about what the chat window *paints* —
 a diff column's width, a disclosure indicator's size, whether a portaled listbox resolves its
 tokens — cannot be made there, and a report of a browser run whose harness was thrown away cannot
