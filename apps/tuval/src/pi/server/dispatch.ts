@@ -109,7 +109,11 @@ const withSession = (
 		Effect.flatMap(() => context.onChanged(sessionId)),
 		Effect.flatMap(() => snapshotOf(context, gate.record)),
 		Effect.map((session): Answer => ({ok: true, result: {command, session}})),
-		Effect.catch((error) => Effect.succeed(internal(error.message))),
+		Effect.catch((error) =>
+			Effect.logWarning("Pi session operation failed", error).pipe(
+				Effect.as(internal(`Pi could not complete ${command}`)),
+			),
+		),
 	);
 };
 
@@ -152,7 +156,11 @@ export const dispatch = (
 							result: {command: "create", session, attachmentId},
 						}),
 					),
-					Effect.catch((error) => Effect.succeed(internal(error.message))),
+					Effect.catch((error) =>
+						Effect.logWarning("Pi session creation failed", error).pipe(
+							Effect.as(internal("Pi could not create the session")),
+						),
+					),
 				);
 		}
 
@@ -177,7 +185,11 @@ export const dispatch = (
 							result: {command: "attach", session, attachmentId},
 						}),
 					),
-					Effect.orElseSucceed(() => notFound(command.sessionId)),
+					Effect.catch((error) =>
+						Effect.logWarning("Pi session resume failed", error).pipe(
+							Effect.as(notFound(command.sessionId)),
+						),
+					),
 				);
 			}
 			if (outcome._tag === "Locked") return Effect.succeed(locked(command.sessionId));

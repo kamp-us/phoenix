@@ -7,11 +7,11 @@
  * are fixture directories, written the way `sessions.unit.test.ts` writes them.
  */
 
-import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
+import {appendFileSync, mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Stream} from "effect";
+import {Effect, Layer, Logger, Schema, Stream} from "effect";
 import {ListError, TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService} from "../client/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
@@ -82,6 +82,64 @@ describe("the Pi layer's listSessions", () => {
 
 			assert.isTrue(error instanceof ListError);
 			assert.strictEqual(error.reason, "store-unreadable");
+			assert.strictEqual(error.detail, "Pi could not enumerate the session stores");
+			assert.isArray(error.cause);
+			const causes = error.cause as ReadonlyArray<{cause?: unknown}>;
+			assert.isTrue(causes.every((failure) => failure.cause instanceof Error));
+			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), agentDir);
+			assert.notInclude(JSON.stringify(Schema.encodeSync(ListError)(error)), projectRoot);
+		}),
+	);
+});
+
+describe("Pi stored transcript partial success", () => {
+	it.effect("keeps the readable transcript and logs the original failed-store error locally", () =>
+		Effect.gen(function* () {
+			const agentDir = temp();
+			const projectRoot = temp();
+			const brokenStore = join(agentDir, "sessions");
+			writeFileSync(brokenStore, "not a directory\n");
+			const directory = join(projectRoot, ".tuval", "pi-sessions");
+			writeSession(directory, "stored", projectRoot, 20);
+			appendFileSync(
+				join(directory, `${at(20).replace(/[:.]/g, "-")}_stored.jsonl`),
+				`${JSON.stringify({
+					type: "message",
+					id: "first",
+					parentId: null,
+					timestamp: at(21),
+					message: {role: "user", content: "Readable transcript", timestamp: Date.parse(at(21))},
+				})}\n`,
+			);
+			const logged: unknown[] = [];
+			const page = yield* Effect.flatMap(TuvalAiAgent, (agent) =>
+				agent.sessionTranscript({sessionId: "stored", cwd: projectRoot, before: null, limit: 20}),
+			).pipe(
+				Effect.provide([
+					aiAgentOverClient({agentDir, projectRoot}).pipe(
+						Layer.provide(Layer.succeed(PiClientService, idle)),
+					),
+					Logger.layer([
+						Logger.make(({message}) => {
+							logged.push(message);
+						}),
+					]),
+				]),
+			);
+			assert.include(JSON.stringify(page), "Readable transcript");
+			assert.notInclude(JSON.stringify(page), brokenStore);
+			assert.notInclude(JSON.stringify(page), "ENOTDIR");
+			const log = logged.find(
+				(line) =>
+					Array.isArray(line) &&
+					line[0] === "Pi could not enumerate the pi-cli store while reading a stored transcript",
+			);
+			assert.isArray(log);
+			const cause = (log as unknown[])[1];
+			assert.isTrue(cause instanceof Error);
+			assert.propertyVal(cause, "code", "ENOTDIR");
+			assert.propertyVal(cause, "path", brokenStore);
+			assert.propertyVal(cause, "syscall", "scandir");
 		}),
 	);
 });
