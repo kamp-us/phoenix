@@ -33,6 +33,7 @@ import type {
 	SessionPhase,
 	SessionSnapshot,
 } from "../wire/index.ts";
+import {providerFailureText} from "./provider-failure.ts";
 
 /** `ItemId` is an opaque string brand, minted here so no call site writes its own cast. */
 export const itemId = (value: string): ItemId => value as ItemId;
@@ -48,6 +49,8 @@ const textOf = (parts: ReadonlyArray<PiContent>): string =>
  * revision projection and `entries.ts` can re-key both off one entry.
  */
 export const thinkingId = (base: string): ItemId => itemId(`${base}:thinking`);
+
+export const failureId = (base: string): ItemId => itemId(`${base}:failure`);
 
 /**
  * `isError` decides `error` on its own: the wire pairs it with `status: "error"`, and reading the
@@ -122,20 +125,28 @@ const thinkingOf = (item: PiTranscriptItem): ThinkingItem | null => {
  * over nothing reads as a message that was dropped or is still loading, and the calls it made are
  * already rows of their own (#8216). Claude's mapper holds the same rule on its own wire
  * (`../../claude/history/map.ts`, `settles && (text.length > 0 || interrupted)`).
- *
- * `aborted` and `error` are excluded on purpose: for those the status *is* the content, and an
- * interrupted reply with no text still has to say the turn was cut.
+ * Failed turns carry their explanation in a distinct session notice; empty interrupted replies
+ * retain their resend control.
  */
-const emptyOrdinaryReply = (item: PiTranscriptItem): boolean =>
-	item.role === "assistant" &&
-	(item.status === "complete" || item.status === "streaming") &&
-	textOf(item.content) === "";
+const emptyReply = (item: PiTranscriptItem): boolean =>
+	item.role === "assistant" && item.status !== "aborted" && textOf(item.content) === "";
 
 /** One wire item as every row it is worth: the reasoning first, then the turn that produced it. */
 export const itemsOf = (item: PiTranscriptItem): ReadonlyArray<TranscriptItem> => {
 	const thinking = thinkingOf(item);
-	const reply = emptyOrdinaryReply(item) ? [] : [itemOf(item)];
-	return thinking === null ? reply : [thinking, ...reply];
+	const reply = emptyReply(item) ? [] : [itemOf(item)];
+	const rows = thinking === null ? reply : [thinking, ...reply];
+	if (item.role === "assistant" && item.status === "error")
+		return [
+			...rows,
+			{
+				kind: "system",
+				id: failureId(item.id),
+				timestamp: item.timestamp,
+				text: providerFailureText(item.errorMessage),
+			},
+		];
+	return rows;
 };
 
 /**
