@@ -13,14 +13,13 @@
 
 import type {JsonValue, ToolItem} from "../../ai-agent/ports/index.ts";
 
-export interface DiffLine {
-	readonly kind: "same" | "removed" | "added";
-	readonly text: string;
-}
-
 export type ToolDetail =
-	/** A file edit: the path it touched, and the line diff between the two texts. */
-	| {readonly kind: "edit"; readonly path: string; readonly diff: ReadonlyArray<DiffLine>}
+	/**
+	 * A file edit: the path it touched and the two texts, handed to `@kampus/design`'s `Diff` as
+	 * they arrived. Splitting them here would be a hand-rolled line table, which the design law
+	 * names as the thing that primitive replaces (`design-system-manifest.md`, component selection).
+	 */
+	| {readonly kind: "edit"; readonly path: string; readonly before: string; readonly after: string}
 	/** A shell call. The output is the item's own `result`, which every row renders. */
 	| {readonly kind: "shell"; readonly command: string}
 	/** Anything else: the input, pretty-printed. */
@@ -43,45 +42,6 @@ const stringAt = (
 		if (typeof value === "string") return value;
 	}
 	return null;
-};
-
-/**
- * Split on `\n` and drop a single trailing empty line, so a text ending in a newline and the same
- * text without one diff as identical rather than as one phantom removed line.
- */
-const lines = (text: string): ReadonlyArray<string> => {
-	const split = text.split("\n");
-	return split.length > 1 && split[split.length - 1] === "" ? split.slice(0, -1) : split;
-};
-
-/**
- * The line diff: trim the common prefix and the common suffix, and call everything between them
- * removed-then-added.
- *
- * Deliberately **not** an LCS. A tool input carries no bound — it is whatever the backend put on
- * the wire — and an LCS is quadratic in the line counts, so a single large edit would spend the
- * render thread on a table nobody reads. This pass is linear, deterministic, and shows an edit the
- * way an edit tool makes one: a contiguous region replaced inside unchanged surroundings.
- */
-export const diffLines = (before: string, after: string): ReadonlyArray<DiffLine> => {
-	const from = lines(before);
-	const to = lines(after);
-	let head = 0;
-	while (head < from.length && head < to.length && from[head] === to[head]) head += 1;
-	let tail = 0;
-	while (
-		tail < from.length - head &&
-		tail < to.length - head &&
-		from[from.length - 1 - tail] === to[to.length - 1 - tail]
-	) {
-		tail += 1;
-	}
-	const rows: Array<DiffLine> = [];
-	for (const text of from.slice(0, head)) rows.push({kind: "same", text});
-	for (const text of from.slice(head, from.length - tail)) rows.push({kind: "removed", text});
-	for (const text of to.slice(head, to.length - tail)) rows.push({kind: "added", text});
-	for (const text of from.slice(from.length - tail)) rows.push({kind: "same", text});
-	return rows;
 };
 
 /**
@@ -136,7 +96,7 @@ const rawInput = (input: JsonValue): string =>
 export const toolDetail = (item: ToolItem): ToolDetail => {
 	const shape = toolShape(item);
 	if (shape.action === "edit") {
-		return {kind: "edit", path: shape.path, diff: diffLines(shape.before, shape.after)};
+		return {kind: "edit", path: shape.path, before: shape.before, after: shape.after};
 	}
 	if (shape.action === "command") return {kind: "shell", command: shape.command};
 	return {kind: "generic", input: rawInput(item.input)};
@@ -145,3 +105,91 @@ export const toolDetail = (item: ToolItem): ToolDetail => {
 /** The omission line an expanded row shows when the per-item bound cut the result. */
 export const omissionLine = (bytes: number): string | null =>
 	bytes > 0 ? `${bytes} bytes omitted from this result` : null;
+
+/**
+ * The call's main argument as one line: the path it touched, or the first line of the command it
+ * ran. A shape with no argument has none — a bare tool name is the whole of what that call says.
+ *
+ * One line rather than the whole string because this is a *label*, and a command spanning ten lines
+ * would make the run's list ten rows tall. Truncating here is also what keeps the raw form
+ * reachable: the disclosure below dedupes against this line, so a one-line command is never printed
+ * twice while a multi-line one still shows in full (T3's `workEntryRawCommand`,
+ * `MessagesTimeline.tsx:3073-3081`).
+ */
+export const callArgument = (item: ToolItem): string | null => {
+	const shape = toolShape(item);
+	if (shape.action === "other") return null;
+	const value = shape.action === "command" ? shape.command : shape.path;
+	const first = value.trim().split("\n")[0]?.trim() ?? "";
+	return first.length === 0 ? null : first;
+};
+
+/** The call's line in a run: the tool, and what it was pointed at. */
+export const callLabel = (item: ToolItem): string => {
+	const argument = callArgument(item);
+	return argument === null ? item.name : `${item.name} ${argument}`;
+};
+
+/** One labelled block of text inside a call's disclosure. */
+export interface CallBlock {
+	readonly label: string;
+	readonly text: string;
+}
+
+/** What a call discloses under its line, with nothing the line already says repeated. */
+export interface CallDisclosure {
+	/** The edit to render through the design `Diff`, or `null` on every other shape. */
+	readonly edit: {readonly path: string; readonly before: string; readonly after: string} | null;
+	readonly blocks: ReadonlyArray<CallBlock>;
+	readonly omitted: string | null;
+}
+
+/**
+ * What one call discloses, deduped against the label the reader can already see and against itself.
+ *
+ * The label is a parameter rather than `callLabel` because two rows disclose the same call under
+ * different lines: a run's call row shows the tool and its argument, and a standalone `ToolRow`
+ * shows the tool alone. Dedupe is only ever right against the line actually on screen —
+ * T3 passes its `visibleLabel` down for the same reason
+ * (`buildToolCallExpandedBody`, `MessagesTimeline.tsx:3083-3128`). An empty block is dropped too: a
+ * labelled box with nothing in it is a line of noise.
+ */
+export const callDisclosure = (item: ToolItem, visibleLabel: string): CallDisclosure => {
+	const detail = toolDetail(item);
+	const label = visibleLabel.trim();
+	const argument = callArgument(item);
+	const seen = new Set<string>([label]);
+	if (argument !== null && label.includes(argument)) seen.add(argument);
+	const blocks: Array<CallBlock> = [];
+	const add = (label: string, value: string): void => {
+		const text = value.trim();
+		if (text.length === 0 || seen.has(text)) return;
+		seen.add(text);
+		blocks.push({label, text});
+	};
+	if (detail.kind === "shell") add("command", detail.command);
+	if (detail.kind === "generic") add("input", detail.input);
+	add(detail.kind === "shell" ? "output" : "result", item.result.text);
+	return {
+		edit:
+			detail.kind === "edit"
+				? {path: detail.path, before: detail.before, after: detail.after}
+				: null,
+		blocks,
+		omitted: omissionLine(item.result.omitted.bytes),
+	};
+};
+
+/**
+ * Whether a call's line is worth a disclosure at all. A call whose whole content is its own label
+ * gets none: no trigger, no `aria-expanded`, nothing to tab to (T3's `canExpand`,
+ * `MessagesTimeline.tsx:3312-3320`).
+ *
+ * The content decides it, and a failure does not override that. T3's first arm makes a **failed**
+ * call expandable on its label alone (`:3314`), because its row's failure lives in an icon and the
+ * accessible name it builds for the trigger is where the word "failed" appears. Here the word is on
+ * the line itself either way, so that arm would buy a reader nothing and cost them a control that
+ * opens onto an empty panel — the one thing the run's own disclosure is not allowed to be.
+ */
+export const canExpandCall = (disclosure: CallDisclosure): boolean =>
+	disclosure.edit !== null || disclosure.blocks.length > 0 || disclosure.omitted !== null;

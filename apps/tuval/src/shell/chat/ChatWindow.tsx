@@ -404,10 +404,19 @@ function RowView({
 		);
 	}
 	if (row.kind === "tools") {
+		// The run's own key, not its first call's id: the two would be one string in this window's
+		// shared `expanded` set, and the run could not be opened without opening that call (`rowKey`).
+		const id = rowKey(row);
 		return (
 			<>
 				<span className="kp-visually-hidden">{authorName("tool", row.nested)}</span>
-				<ToolRunRow calls={row.calls} />
+				<ToolRunRow
+					calls={row.calls}
+					open={expanded.has(id)}
+					onToggle={(next) => onToggleRow(id, next)}
+					expanded={expanded}
+					onToggleCall={onToggleRow}
+				/>
 			</>
 		);
 	}

@@ -73,3 +73,22 @@ Judging the drawn diagram is `review-ui`'s.
 Only inside `Markdown`, and only for a block whose content is derived from source already in the
 document. Content that needs the network is out: it can fail slowly, it can change between renders,
 and images are already excluded for exactly that reason.
+
+## The lazy-chunk case
+
+Rule 1 says the first paint is the real content, never a placeholder. One block in the transcript
+deliberately breaks it: an edit call's diff
+([`apps/tuval/src/shell/chat/ToolCallDetail.tsx`](../apps/tuval/src/shell/chat/ToolCallDetail.tsx))
+renders `@kampus/design`'s `Diff` through a `React.lazy` import, so what paints first is a one-line
+fallback and the diff arrives a frame later.
+
+The forcing constraint is measured, not assumed: referencing `Diff` from the desk entry puts
+**+143,566 B gzip** on the entry chunk (#8620's bundle comment), and a reader who never opens a tool
+call would pay all of it before first paint. Two things make the trade safe here where it would not
+be inside `Markdown`. The content is behind a disclosure, so nothing shifts under a reader who did
+not ask for it — the row only grows once they open the call. And rule 2 still holds unchanged: the
+virtualizer's `ResizeObserver` re-measures the row when the chunk lands, with no callback out of the
+block.
+
+So the exception is a disclosed block whose weight is measured and whose growth is the reader's own
+act. A block that paints into the transcript unasked still owes rule 1.
