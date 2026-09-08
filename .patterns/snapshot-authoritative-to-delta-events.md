@@ -35,6 +35,13 @@ Two rules make the split safe rather than a source of drift:
   not have. An absent scalar means unchanged, so a field that can go *absent* (Tuval's session
   `name`) takes the whole value too.
 
+  This leans on the id space staying disjoint per row kind. A compaction's boundary row is
+  `item-<n>:compaction` and an ordinary message at that slot is `item-<n>`
+  ([owned-wire-vocabulary.md](./owned-wire-vocabulary.md)), so a boundary *substituted into* the
+  transcript breaks the prefix and takes the whole value, while one *appended past* the last row is
+  an ordinary delta item. Collapse those two id spaces and the substitution starts looking like an
+  in-place edit the prefix test waves through.
+
 ## The four choices
 
 ### 1. The fold is pure, and it carries the previous projection as a value

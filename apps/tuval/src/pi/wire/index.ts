@@ -67,6 +67,7 @@ export type {
 	AbortedAssistantTranscriptItem,
 	AssistantContent,
 	AssistantTranscriptItem,
+	CompactionTranscriptItem,
 	CompleteAssistantTranscriptItem,
 	CompleteToolTranscriptItem,
 	ErrorAssistantTranscriptItem,

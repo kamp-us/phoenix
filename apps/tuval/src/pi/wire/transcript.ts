@@ -121,4 +121,15 @@ export type ToolTranscriptItem =
 	| CompleteToolTranscriptItem
 	| ErrorToolTranscriptItem;
 
-export type TranscriptItem = UserTranscriptItem | AssistantTranscriptItem | ToolTranscriptItem;
+export interface CompactionTranscriptItem {
+	readonly id: string;
+	readonly role: "compaction";
+	readonly content: TextContent[];
+	readonly timestamp: number;
+}
+
+export type TranscriptItem =
+	| UserTranscriptItem
+	| AssistantTranscriptItem
+	| ToolTranscriptItem
+	| CompactionTranscriptItem;

@@ -5,6 +5,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {compactionId} from "./compaction.ts";
 import {applyDelta, nextPush} from "./delta.ts";
 import type {SessionSnapshot, TranscriptItem} from "./index.ts";
 
@@ -34,6 +35,14 @@ const reply = (text: string, status: "streaming" | "complete"): TranscriptItem =
 				status: "complete",
 				stopReason: "stop",
 			};
+
+/** A compaction's boundary row at `position`, keyed the way the server keys one. */
+const boundary = (position: number): TranscriptItem => ({
+	id: compactionId(position),
+	role: "compaction",
+	content: [{type: "text", text: "what came before, summarised"}],
+	timestamp: position,
+});
 
 const snapshot = (options: {
 	readonly transcript: ReadonlyArray<TranscriptItem>;
@@ -108,6 +117,40 @@ describe("what one revision is worth to a viewer", () => {
 			_tag: "Snapshot",
 			snapshot: compacted,
 		});
+	});
+
+	/**
+	 * A compaction's boundary row (#8588) lands under `compactionId(position)` —
+	 * `item-<n>:compaction`, deliberately *not* the plain `item-<n>` an ordinary message at that
+	 * position takes (`./compaction.ts`, `../server/transcript.ts`). That distinctness is what makes
+	 * the prefix test see a boundary substituted into the transcript as a rewrite, and it is an
+	 * invariant across two modules that nothing else pins.
+	 */
+	it("falls back to the whole value when a boundary row replaces a row mid-transcript", () => {
+		const before = snapshot({transcript: [user, reply("hi back", "complete")], revision: 4});
+		const compacted = snapshot({
+			transcript: [boundary(0), reply("hi back", "complete")],
+			revision: 5,
+		});
+		assert.strictEqual(boundary(0).id, compactionId(0));
+		assert.notStrictEqual(boundary(0).id, user.id);
+		assert.deepStrictEqual(nextPush(before, compacted), {
+			_tag: "Snapshot",
+			snapshot: compacted,
+		});
+	});
+
+	it("carries a boundary row appended past the last one as an ordinary delta item", () => {
+		const before = snapshot({transcript: [user, reply("hi back", "complete")], revision: 4});
+		const after = snapshot({
+			transcript: [user, reply("hi back", "complete"), boundary(2)],
+			revision: 5,
+		});
+		const push = nextPush(before, after);
+		assert.strictEqual(push._tag, "Delta");
+		if (push._tag !== "Delta") return;
+		assert.deepStrictEqual(push.delta.items, [boundary(2)]);
+		assert.deepStrictEqual(applyDelta(before, push.delta), after);
 	});
 
 	it("falls back to the whole value when the session lost its name", () => {

@@ -36,6 +36,7 @@ import {
 import {planTranscriptPage, type TranscriptPageResult} from "../../ai-agent/history/index.ts";
 import type {SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {projectTranscript, type SourceMessage} from "../server/index.ts";
+import {compactionId} from "../wire/compaction.ts";
 import type {TranscriptItem as PiTranscriptItem} from "../wire/index.ts";
 import {itemId, itemsOf, thinkingId} from "./items.ts";
 
@@ -135,6 +136,9 @@ export const pageCursorAliases = (
 			aliases.set(`item-${index}`, entry.id);
 			aliases.set(thinkingId(`item-${index}`), thinkingId(entry.id));
 		}
+		if (entry.type === "compaction" && messages.length === 1) {
+			aliases.set(compactionId(index), entry.id);
+		}
 		index += messages.length;
 	}
 	return aliases;
@@ -175,7 +179,7 @@ export const pageItems = (entries: ReadonlyArray<SessionEntry>): ReadonlyArray<T
 			continue;
 		}
 		const notice = noticeItemOf(entry);
-		if (notice !== null) items.push(notice);
+		if (notice !== null) items.push(aliased(notice, live));
 	}
 	return items;
 };

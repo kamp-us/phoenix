@@ -8,7 +8,7 @@
  * which is what keeps the Pi wire inside `src/pi/` (#7465).
  *
  * Grounded in Tuval's own wire vocabulary (`../wire/`, relocated from `pi-protocol`'s schemas by
- * ADR 0366): `TranscriptItem` (the `user` / `assistant` / `tool` union), `ToolTranscriptItem`
+ * ADR 0366): `TranscriptItem` (the `user` / `assistant` / `tool` / `compaction` union), `ToolTranscriptItem`
  * (`toolCallId`, `toolName`, `input`, `content`, and the `status`/`isError` pairs
  * `running`/false, `complete`/false, `error`/true), `Usage` (`totalTokens`, `cost.total`) and
  * `SessionSnapshot` (`revision`, `phase`, `transcript`).
@@ -68,8 +68,9 @@ const toolStatusOf = (item: Extract<PiTranscriptItem, {role: "tool"}>): ToolStat
 export const itemOf = (item: PiTranscriptItem): TranscriptItem => {
 	switch (item.role) {
 		case "user":
+		case "compaction":
 			return {
-				kind: "user",
+				kind: item.role,
 				id: itemId(item.id),
 				timestamp: item.timestamp,
 				text: textOf(item.content),
