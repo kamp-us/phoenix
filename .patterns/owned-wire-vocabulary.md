@@ -68,3 +68,32 @@ thing that earns it is a known, already-diffed redesign on the other side of a p
 Its sibling is [strict-wire-schema-projection.md](./strict-wire-schema-projection.md) — that one is
 about getting a *value* across a boundary you do not own; this one is about owning the boundary's
 *names*.
+
+## Compaction on the pinned transcript wire
+
+Pi coding-agent 0.84.3's `dist/core/messages.d.ts` declares `CompactionSummaryMessage` with
+`role: "compactionSummary"`, `summary`, `tokensBefore` and `timestamp`.
+`dist/core/session-manager.js`'s `sessionEntryToContextMessages` constructs it from a compaction
+entry; `buildContextEntries` places the latest boundary before the retained context messages.
+The same pin's protocol `dist/schemas.js` `TranscriptItemSchema` accepts only user, assistant and
+tool items. Its strict objects admit no notice role or extra discriminant.
+
+Until that codec changes, [the server projection](../apps/tuval/src/pi/server/transcript.ts) carries
+summary text in an existing user-text envelope with a reserved `item-<position>:compaction` id.
+[The id convention](../apps/tuval/src/pi/wire/compaction.ts) is shared by the producer, adapter and
+stored cursor mapping. Ordinary messages are assigned exactly `item-<position>` by that producer;
+message text never chooses the id, so a user cannot turn text into a boundary. This encoding is
+Tuval's internal loopback convention, not a new upstream Pi message type. A generic upstream
+consumer would read the envelope as user text and is outside this convention's scope.
+
+[The adapter](../apps/tuval/src/pi/ai-agent/items.ts) restores the existing `compaction` domain kind
+before the transcript reaches the window. The summary still consumes exactly its original context
+position. [Stored history](../apps/tuval/src/pi/ai-agent/entries.ts) maps the reserved live id to the
+compaction entry's stable id and stamps the page row's alias, letting the existing page/tail stitch
+deduplicate it without a text comparison or a paging-rule change.
+
+[The boundary regression](../apps/tuval/src/pi/window/compaction.unit.test.ts) constructs typed
+entries, calls the pinned context builders, round-trips the real codec, drives the production event
+adapter and stitches a stored page into the live tail. It also checks that ordinary user text cannot
+select the reserved identity. Retire this carrier when the owned wire acquires a native boundary
+variant; do not broaden it into a general metadata-in-text convention.

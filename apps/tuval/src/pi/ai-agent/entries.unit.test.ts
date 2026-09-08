@@ -108,6 +108,7 @@ describe("a session branch as pageable history", () => {
 		];
 		const aliases = pageCursorAliases(entries);
 		expect(aliases.get("item-0")).toBeUndefined();
+		expect(aliases.get("item-0:compaction")).toBe("compact");
 		expect(aliases.get("item-1")).toBe("u2");
 		expect(aliases.get("item-2")).toBe("a2");
 		expect(aliases.get("item-3")).toBeUndefined();
@@ -170,7 +171,13 @@ describe("a session branch as pageable history", () => {
 		};
 		const items = pageItems([compaction, message("e2", "e1", 2, said("carry on"))]);
 		expect(items).toEqual([
-			{kind: "compaction", id: "e1", timestamp: Date.parse(at(1)), text: "we agreed on the plan"},
+			{
+				kind: "compaction",
+				id: "e1",
+				alias: "item-0:compaction",
+				timestamp: Date.parse(at(1)),
+				text: "we agreed on the plan",
+			},
 			{kind: "user", id: "e2", alias: "item-1", timestamp: Date.parse(at(2)), text: "carry on"},
 		]);
 	});
@@ -394,10 +401,10 @@ describe("the live id a stored row is also known by", () => {
 			["e2", undefined],
 			["e3", "item-1"],
 			["e4", "item-2"],
-			["compact", undefined],
+			["compact", "item-0:compaction"],
 			["e5", "item-3"],
 		]);
-		expect(liveIds(entries)).toEqual(["item-1", "item-2", "item-3"]);
+		expect(liveIds(entries)).toEqual(["item-0:compaction", "item-1", "item-2", "item-3"]);
 	});
 
 	it("leaves a tool row unaliased — its call id is the same string on both paths", () => {

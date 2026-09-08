@@ -28,6 +28,7 @@ import {
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import type {AgentEvent, Phase} from "../../ai-agent/service/index.ts";
+import {isCompactionId} from "../wire/compaction.ts";
 import type {
 	TranscriptItem as PiTranscriptItem,
 	SessionPhase,
@@ -68,7 +69,7 @@ export const itemOf = (item: PiTranscriptItem): TranscriptItem => {
 	switch (item.role) {
 		case "user":
 			return {
-				kind: "user",
+				kind: isCompactionId(item.id) ? "compaction" : "user",
 				id: itemId(item.id),
 				timestamp: item.timestamp,
 				text: textOf(item.content),
