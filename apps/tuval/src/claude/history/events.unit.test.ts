@@ -1009,3 +1009,50 @@ describe("toAgentEvents over a subagent's streamed reasoning", () => {
 		).toBeGreaterThan(0);
 	});
 });
+
+/**
+ * The settled worker's notice, shrunk (founder ruling on #8475). The capture is the two-worker one
+ * because that is where the repetition was found: each `task_notification` in it carries the whole
+ * of a worker's final report in `summary`, and the same text arrives again as the spawning call's
+ * own tool result.
+ */
+describe("toAgentEvents over the captured task notifications", () => {
+	const stream = messages("two-subagent-turn");
+	const raw = stream.filter(
+		(one): one is Extract<SDKMessage, {type: "system"}> =>
+			one.type === "system" && one.subtype === "task_notification",
+	);
+	const {events} = run(stream);
+	const notices = items(events).filter(
+		(one) => one.kind === "system" && / (finished|failed|stopped)$/.test(one.text),
+	);
+
+	it("reads one line per notification, naming the worker and how it ended", () => {
+		expect(raw).toHaveLength(2);
+		expect(notices.map((one) => one.kind === "system" && one.text)).toEqual([
+			"Explore finished",
+			"Explore finished",
+		]);
+	});
+
+	it("carries no payload at all, so the worker's report is not repeated in the transcript", () => {
+		expect(notices.map((one) => one.kind === "system" && one.detail)).toEqual([
+			undefined,
+			undefined,
+		]);
+		const summaries = raw.map((one) => (one as {readonly summary: string}).summary);
+		expect(summaries.every((text) => text.length > 300)).toBe(true);
+		const said = items(events)
+			.filter((one) => one.kind === "system")
+			.map((one) => one.text)
+			.join("\n");
+		expect(summaries.filter((text) => said.includes(text))).toEqual([]);
+	});
+
+	it("names the worker's slot, which is the row the list draws for it", () => {
+		expect(notices.map((one) => one.kind === "system" && one.subagent)).toEqual([
+			"toolu_000000000000000000000001",
+			"toolu_000000000000000000000002",
+		]);
+	});
+});

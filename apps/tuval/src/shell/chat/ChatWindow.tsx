@@ -329,6 +329,7 @@ function RowView({
 	unfolded,
 	onToggleRow,
 	onToggleFold,
+	onViewSubagent,
 }: {
 	readonly row: ChatRow;
 	readonly interruptedId: string | null;
@@ -338,6 +339,7 @@ function RowView({
 	readonly unfolded: ReadonlySet<string>;
 	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
+	readonly onViewSubagent: ((id: string) => void) | null;
 }): ReactElement {
 	if (row.kind === "loading") {
 		return (
@@ -383,6 +385,7 @@ function RowView({
 					run={row.items}
 					expanded={expanded.has(id)}
 					onToggle={(next) => onToggleRow(id, next)}
+					onViewSubagent={onViewSubagent}
 				/>
 			</>
 		);
@@ -1079,6 +1082,9 @@ function ChatWindow({
 										unfolded={unfolded}
 										onToggleRow={toggleRow}
 										onToggleFold={toggleFold}
+										// Only where the navigator is drawn: a jump into a worker's rows with
+										// no list above them leaves the reader no way back out (#8405).
+										onViewSubagent={options.subagentList ? showSubagent : null}
 									/>
 								</div>
 							);
