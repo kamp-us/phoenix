@@ -513,8 +513,19 @@ const make = (
 		const interrupt = Effect.gen(function* () {
 			const current = yield* Ref.get(session);
 			if (current === null) return;
+			// Read before the send, for the reason `prompt` reads it there: a `start` landing while
+			// this abort is in flight must not route the old session's answer into the new fold.
+			const feed = yield* Ref.get(inbox);
 			yield* pi.abort(current.id).pipe(
 				Effect.tapError((refusal) => Effect.logWarning("Pi interrupt failed", refusal)),
+				// The answer is read after `session.abort()` resolved (`../server/dispatch.ts`), so it
+				// carries the turn's terminal phase and transcript — and it goes into the same fold
+				// `prompt`'s answer does, because the push carrying that end can be coalesced away and
+				// then nothing else ever says the turn stopped. It forces no readiness of its own: a
+				// still-pending abort has no answer to fold and emits nothing.
+				Effect.tap((snapshot) =>
+					feed === null ? Effect.void : Queue.offer(feed, {_tag: "snapshot", snapshot}),
+				),
 				Effect.asVoid,
 				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
 				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
