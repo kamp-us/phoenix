@@ -184,6 +184,12 @@ export const callDisclosure = (item: ToolItem, visibleLabel: string): CallDisclo
  * Whether a call's line is worth a disclosure at all. A call whose whole content is its own label
  * gets none: no trigger, no `aria-expanded`, nothing to tab to (T3's `canExpand`,
  * `MessagesTimeline.tsx:3312-3320`).
+ *
+ * The content decides it, and a failure does not override that. T3's first arm makes a **failed**
+ * call expandable on its label alone (`:3314`), because its row's failure lives in an icon and the
+ * accessible name it builds for the trigger is where the word "failed" appears. Here the word is on
+ * the line itself either way, so that arm would buy a reader nothing and cost them a control that
+ * opens onto an empty panel — the one thing the run's own disclosure is not allowed to be.
  */
 export const canExpandCall = (disclosure: CallDisclosure): boolean =>
 	disclosure.edit !== null || disclosure.blocks.length > 0 || disclosure.omitted !== null;

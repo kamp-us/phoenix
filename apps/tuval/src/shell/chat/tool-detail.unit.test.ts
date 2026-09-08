@@ -146,6 +146,14 @@ describe("canExpandCall", () => {
 		expect(canExpandCall(callDisclosure(item, callLabel(item)))).toBe(false);
 	});
 
+	// T3 makes a failed call expandable on its label alone (`MessagesTimeline.tsx:3314`), because its
+	// row carries the failure in an icon. Tuval's line carries the word, so the arm is not taken —
+	// see `canExpandCall`. This is what that decision looks like from outside.
+	it("does not admit a failed call whose panel would be empty", () => {
+		const item: ToolItem = {...shellCall("pnpm test", ""), status: "error"};
+		expect(canExpandCall(callDisclosure(item, callLabel(item)))).toBe(false);
+	});
+
 	it("admits one with an edit, and one with a block", () => {
 		const edit = call({path: "a.ts", old: "one", new: "two"}, "Edit");
 		expect(canExpandCall(callDisclosure(edit, callLabel(edit)))).toBe(true);
