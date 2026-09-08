@@ -199,6 +199,39 @@ export interface VersionEvent {
 	readonly version: string;
 }
 
+/**
+ * The account a session booted on: the organization and the plan, and never the email.
+ *
+ * Both fields are optional because absence has three causes and none of them is an error — a layer
+ * with no account concept at all (Pi, Codex), a Claude login that carries neither (an API key, a
+ * third-party provider, where `AccountInfo`'s fields are documented absent at the `0.3.259` pin),
+ * and a CLI that answers the handshake with an empty object. A required field would have to be
+ * filled with a placeholder for all three, and the placeholder is what would reach the render.
+ *
+ * `email` is on the SDK's `AccountInfo` and is deliberately not a field here: the founder ruled org
+ * and plan only (#8649), so it is never carried rather than carried and filtered at the edge.
+ */
+export interface AgentAccount {
+	readonly organization?: string;
+	readonly subscriptionType?: string;
+}
+
+/**
+ * Which account the session booted on.
+ *
+ * Its own kind for `VersionEvent`'s reason: it is a fact about the session that arrives whether or
+ * not anything was spent, so it is not a field on `usage`. It replaces whatever the slot held, so a
+ * layer that re-announces on a resume is a no-op.
+ *
+ * "Booted on" is the honest wording, not a hedge. The SDK's `accountInfo()` never refreshes — it
+ * answers the object cached at the first connect — while the CLI re-reads the keychain every 30s,
+ * so a session whose account changed underneath it still reports the one it opened on (#8447).
+ */
+export interface AccountEvent {
+	readonly kind: "account";
+	readonly account: AgentAccount;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
@@ -229,5 +262,6 @@ export type AgentEvent =
 	| SessionResetEvent
 	| UsageEvent
 	| VersionEvent
+	| AccountEvent
 	| SubagentEvent
 	| FailureEvent;

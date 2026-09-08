@@ -39,6 +39,23 @@ const isNullOrString = (value: unknown): value is string | null =>
 const isFiniteNumber = (value: unknown): value is number =>
 	typeof value === "number" && Number.isFinite(value);
 
+const isAbsentOrString = (value: unknown): boolean =>
+	value === undefined || typeof value === "string";
+
+/**
+ * The booted-on account, whose two fields are each optional.
+ *
+ * The `email` clause is the founder's org-and-plan-only ruling held at the parse boundary (#8649):
+ * `AgentAccount` declares no such field, so nothing in this process can write one, and a checkpoint
+ * that carries one was not written by this program and is not a session this program will load.
+ */
+const isNullOrAccount = (value: unknown): boolean =>
+	value === null ||
+	(Predicate.isObject(value) &&
+		value.email === undefined &&
+		isAbsentOrString(value.organization) &&
+		isAbsentOrString(value.subscriptionType));
+
 /** The flat totals a checkpoint written before usage was keyed by turn carries; see `withUsageLedger`. */
 const isFlatUsage = (value: unknown): value is UsageTotals =>
 	Predicate.isObject(value) &&
@@ -148,6 +165,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isInterruption(value.interruption) &&
 	isUsage(value.usage) &&
 	isNullOrString(value.agentVersion) &&
+	isNullOrAccount(value.account) &&
 	isPermissions(value.permissions) &&
 	isFiniteNumber(value.permissionsRaised) &&
 	isModes(value.modes) &&

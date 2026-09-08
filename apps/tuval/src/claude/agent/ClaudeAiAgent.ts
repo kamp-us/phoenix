@@ -36,7 +36,7 @@ import type {
 	SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import {type Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream} from "effect";
-import type {AgentEvent} from "../../ai-agent/events.ts";
+import type {AgentAccount, AgentEvent} from "../../ai-agent/events.ts";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
 import type {
 	CommandRef,
@@ -422,6 +422,27 @@ const make = (
 			});
 
 		/**
+		 * The two `AccountInfo` fields the desk shows, or `null` when the handshake carried neither.
+		 *
+		 * `email` is on that type and is never read here: the founder ruled organization and plan
+		 * only (#8649). Every field of it is optional at the `0.3.259` pin, and `apiProvider`'s own
+		 * doc comment says why — for a third-party provider "the other fields are absent and auth is
+		 * external" — so a settled handshake is not the same as a known account, and one carrying
+		 * neither field announces nothing rather than an empty row.
+		 */
+		const accountOf = (handshake: {
+			readonly account?: {readonly organization?: string; readonly subscriptionType?: string};
+		}): AgentAccount | null => {
+			const organization = handshake.account?.organization;
+			const subscriptionType = handshake.account?.subscriptionType;
+			if (organization === undefined && subscriptionType === undefined) return null;
+			return {
+				...(organization === undefined ? {} : {organization}),
+				...(subscriptionType === undefined ? {} : {subscriptionType}),
+			};
+		};
+
+		/**
 		 * The first `init` frame of a session, which is the first turn's rather than the open's.
 		 *
 		 * It carries the two values the handshake does not — `SDKControlInitializeResponse` declares
@@ -583,12 +604,13 @@ const make = (
 				handle.close();
 			});
 
-			yield* Effect.tryPromise({
+			const handshake = yield* Effect.tryPromise({
 				try: () => handle.initializationResult(),
 				catch: (cause) => startWithoutHandshake(cwd, cause),
 			}).pipe(Effect.tapError(() => abandon));
 
 			return {
+				account: accountOf(handshake),
 				session: {
 					id: choice.sessionId,
 					cwd,
@@ -641,6 +663,13 @@ const make = (
 			);
 
 			yield* Ref.set(session, opened.session);
+			// Said as soon as it is known rather than behind the catalogs: unlike the model and the
+			// thinking levels this costs no subprocess round-trip — the handshake `open` already
+			// waited for carried it. A login that reported neither field announces nothing, so the
+			// inspector's row stays absent rather than empty.
+			if (opened.account !== null) {
+				yield* emit(out, [{kind: "account", account: opened.account}]);
+			}
 			// The keys belong to a session, not to the layer: a key is dropped when this *session* has
 			// seen it, so a new session admits one the previous session spent. Resuming the session the
 			// keys were recorded under is the one case that keeps them.

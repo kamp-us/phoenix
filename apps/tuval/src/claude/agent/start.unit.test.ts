@@ -156,6 +156,53 @@ describe("start opens one streaming query", () => {
 	);
 });
 
+describe("the account the handshake reports", () => {
+	it.effect("carries the organization and the plan onto the event stream", () =>
+		on({account: {organization: "kamp.us", subscriptionType: "max"}}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "account"),
+					{
+						kind: "account",
+						account: {organization: "kamp.us", subscriptionType: "max"},
+					},
+				);
+			}),
+		),
+	);
+
+	// The founder ruled organization and plan only, and the ruling is held by never reading the
+	// field rather than by dropping it later — so it is absent from the whole stream, not just the
+	// account event.
+	it.effect("carries no email, whatever the handshake reported", () =>
+		on(
+			{account: {email: "someone@example.com", organization: "kamp.us", subscriptionType: "max"}},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
+					assert.notInclude(JSON.stringify(events), "someone@example.com");
+					assert.notInclude(JSON.stringify(events), "email");
+				}),
+		),
+	);
+
+	// Absence is three ordinary cases at the `0.3.259` pin — an API-key login, a third-party
+	// provider, an older CLI — so the layer says nothing rather than announcing an empty account
+	// the inspector would then have to render as a blank row.
+	it.effect("announces nothing when the handshake carried neither field", () =>
+		on({modes: MODES}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.isUndefined(events.find((event) => event.kind === "account"));
+			}),
+		),
+	);
+});
+
 describe("start against a CLI that says nothing until the first prompt", () => {
 	// The defect this shape exists for (#7962): in streaming-input mode `init` is a turn's frame, the
 	// machine refuses a prompt outside `ready`, and an open that waited for `init` was waiting for
