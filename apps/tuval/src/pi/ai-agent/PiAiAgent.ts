@@ -38,10 +38,10 @@ import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-codi
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {
+	ThinkingLevel as AgentThinkingLevel,
 	Mode,
 	ModelRef,
 	PermissionDecision,
-	ThinkingLevel,
 } from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
@@ -69,6 +69,7 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
+import type {ThinkingLevel} from "../wire/index.ts";
 import {planPageOverEntries} from "./entries.ts";
 import {
 	deltaEventsOf,
@@ -561,8 +562,10 @@ const make = (
 		});
 
 		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
-			level: ThinkingLevel,
+			value: AgentThinkingLevel,
 		) {
+			if (value === "ultra") return yield* new ThinkingUnsupported({level: value, available: []});
+			const level = value;
 			const catalog = yield* pi.models;
 			const current = yield* Ref.get(session);
 			// Before a session exists there is no model to read an offered set off, so the pick is

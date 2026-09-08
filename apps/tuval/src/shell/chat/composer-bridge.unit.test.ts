@@ -166,6 +166,18 @@ describe("composerBridge", () => {
 		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["xhigh"]]);
 	});
 
+	it("passes Codex's offered ultra level through unchanged", async () => {
+		const handlers = seam();
+		const composer = composerBridge({
+			...handlers,
+			initialPhase: "ready",
+			initialThinking: {current: "ultra", available: ["high", "ultra"]},
+		});
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual(["high", "ultra"]);
+		await composer.bridge.setPiThinkingLevel("ultra");
+		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["ultra"]]);
+	});
+
 	it("drops a level the session does not offer rather than rejecting it", async () => {
 		const handlers = seam();
 		const composer = composerBridge({

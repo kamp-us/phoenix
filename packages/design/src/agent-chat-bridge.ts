@@ -1,7 +1,15 @@
 export type PiDeliveryMode = "prompt" | "steer" | "follow_up";
 export type PiStreamingBehavior = "steer" | "followUp";
 export type PiProjectTrust = "approve" | "no-approve";
-export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export type PiThinkingLevel =
+	| "off"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max"
+	| "ultra";
 
 export interface PiCommand {
 	readonly name: string;

@@ -18,6 +18,7 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/i
 import type {SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
+import {NativeSubagents} from "../../codex/subagents.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
@@ -294,6 +295,60 @@ describe("the way back to the agent's own transcript", () => {
 
 		expect(view().viewing?.from.scroll).toBe(640);
 		expect(view().scroll, "main's offset must not land on the subagent's view").toBe(0);
+		rendered.unmount();
+	});
+});
+
+describe("Codex native slots in the existing navigator", () => {
+	it("retains a viewed completed child and returns to the parent without a second interface", async () => {
+		const native = new NativeSubagents();
+		native.collab(
+			{
+				type: "collabAgentToolCall",
+				id: "agent",
+				tool: "spawnAgent",
+				status: "completed",
+				senderThreadId: "parent",
+				receiverThreadIds: ["child"],
+				prompt: "review",
+				agentsStates: {child: {status: "running", message: null}},
+			},
+			"parent",
+			1,
+		);
+		native.item(
+			"child",
+			{type: "agentMessage", id: "reply", text: "Native child answer"},
+			2,
+			false,
+		);
+		const state = () => agentSession(...native.slots.values());
+		const {rendered, process} = await openOne(state(), {}, atOldest());
+		await pick(rendered.container, "agent");
+		expect(dom(rendered.container).text()).toContain("Native child answer");
+		native.collab(
+			{
+				type: "collabAgentToolCall",
+				id: "wait",
+				tool: "wait",
+				status: "completed",
+				senderThreadId: "parent",
+				receiverThreadIds: ["child"],
+				prompt: null,
+				agentsStates: {child: {status: "completed", message: "Done"}},
+			},
+			"parent",
+			3,
+		);
+		await act(async () => {
+			await Effect.runPromise(process.commit(state()));
+		});
+		expect(dom(rendered.container).text()).toContain("Native child answer");
+		expect(dom(rendered.container).current()).toContain("agent");
+		await pick(rendered.container, "Back to the agent transcript");
+		expect(dom(rendered.container).text()).toContain("the agent's own call");
+		expect(dom(rendered.container).text()).not.toContain("Native child answer");
+		expect(process.inbox()).toEqual([]);
 		rendered.unmount();
 	});
 });

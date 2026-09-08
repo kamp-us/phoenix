@@ -365,6 +365,19 @@ describe("the thinking switch", () => {
 		}),
 	);
 
+	it.effect("refuses Codex's ultra level before it reaches Pi", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG});
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				const refused = yield* Effect.flip(agent.setThinkingLevel("ultra"));
+				assert.strictEqual(refused._tag, "tuval/ai-agent/ThinkingUnsupported");
+				assert.deepStrictEqual(yield* client.levels, []);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
 	it.effect("moves the offered set when the model switches under it", () =>
 		Effect.gen(function* () {
 			const client = yield* stub({catalog: CATALOG});

@@ -1,0 +1,432 @@
+import {describe, it} from "@effect/vitest";
+import {Effect, Stream} from "effect";
+import {TestClock} from "effect/testing";
+import {expect} from "vitest";
+import {foldEvent} from "../ai-agent/core/fold.ts";
+import {initialState} from "../ai-agent/core/state.ts";
+import type {AgentEvent} from "../ai-agent/events.ts";
+import {ItemId} from "../ai-agent/ports/index.ts";
+import {TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
+import {readChildTranscript} from "./child-store.ts";
+import {fakeCodex, itemMessage, onCodex, thread, turn, turnMessage} from "./fixtures.ts";
+import {NativeSubagents} from "./subagents.ts";
+
+// Scripted projections of 0.153.4's generated ThreadItem/Thread types, not model captures.
+const spawn = {
+	type: "collabAgentToolCall",
+	id: "spawn-1",
+	tool: "spawnAgent",
+	status: "completed",
+	senderThreadId: thread.id,
+	receiverThreadIds: ["child-1"],
+	prompt: "Inspect the diff",
+	agentsStates: {"child-1": {status: "running", message: null}},
+};
+const childThread = {
+	...thread,
+	id: "child-1",
+	canAcceptDirectInput: false,
+	agentRole: "reviewer",
+	source: {subagent: {thread_spawn: {parent_thread_id: thread.id}}},
+	status: {type: "active", activeFlags: []},
+	turns: [
+		{
+			...turn(),
+			items: [
+				{type: "userMessage", id: "u", content: [{type: "text", text: "Inspect the diff"}]},
+				{type: "agentMessage", id: "a", text: "Reading"},
+			],
+		},
+	],
+};
+const take = (agent: TuvalAiAgentApi, count: number) =>
+	agent.events.pipe(Stream.take(count), Stream.runCollect);
+const start = (agent: TuvalAiAgentApi) =>
+	agent.start({cwd: thread.cwd}).pipe(Effect.andThen(take(agent, 6)));
+const slotOf = (events: ReadonlyArray<AgentEvent>) =>
+	events.filter((event) => event.kind === "subagent").at(-1)?.slot;
+
+describe("Codex native children on the shared protocol", () => {
+	it("replaces slots by spawning call, not wait/send call, and child rows by stable identity", () => {
+		const children = new NativeSubagents();
+		children.collab(
+			{...spawn, status: "inProgress", receiverThreadIds: [], agentsStates: {}},
+			thread.id,
+			10,
+		);
+		children.collab(spawn, thread.id, 20);
+		children.item("child-1", {type: "agentMessage", id: "a", text: "A"}, 30, true);
+		children.delta("child-1", "a", "B");
+		children.item("child-1", {type: "agentMessage", id: "a", text: "AB"}, 40, false);
+		children.usage("child-1", 23);
+		children.usage("child-1", 10);
+		children.collab(
+			{
+				...spawn,
+				tool: "wait",
+				id: "wait-1",
+				agentsStates: {"child-1": {status: "completed", message: "AB"}},
+			},
+			thread.id,
+			50,
+		);
+		expect([...children.slots.keys()]).toEqual(["spawn-1"]);
+		expect(children.slots.get("spawn-1")).toMatchObject({
+			startedAt: 10,
+			tokens: 23,
+			status: "finished",
+			lastLine: "AB",
+			items: [{id: "spawn-1/a", parentId: "spawn-1", text: "AB", timestamp: 30}],
+		});
+		expect(children.slots.get("spawn-1")?.items).toHaveLength(1);
+	});
+
+	it.each([
+		"interrupted",
+		"completed",
+		"errored",
+		"shutdown",
+		"notFound",
+	])("retains terminal %s slots for the generic navigator", (status) => {
+		const children = new NativeSubagents();
+		const events = children.collab(spawn, thread.id, 10);
+		const item = children.item(
+			"child-1",
+			{type: "agentMessage", id: "a", text: "Child answer"},
+			20,
+			false,
+		);
+		const terminal = children.collab(
+			{
+				...spawn,
+				id: "wait-1",
+				tool: "wait",
+				agentsStates: {"child-1": {status, message: "Child answer"}},
+			},
+			thread.id,
+			30,
+		);
+		const state = [...events, ...(item === null ? [] : [item]), ...terminal].reduce(
+			(state, event) => foldEvent(state, event, {itemLimit: 100}),
+			initialState(thread.cwd),
+		);
+		expect(state.subagents["spawn-1"]?.status).toBe("finished");
+		expect(state.subagents["spawn-1"]?.items).toMatchObject([{text: "Child answer"}]);
+		expect(state.transcript.items).toEqual([]);
+	});
+
+	it("keeps child items isolated, restores authoritative order and finalizes partial/tool rows", () => {
+		const children = new NativeSubagents();
+		children.collab(spawn, thread.id, 10);
+		children.collab(
+			{...spawn, id: "spawn-2", receiverThreadIds: ["child-2"], agentsStates: {}},
+			thread.id,
+			20,
+		);
+		children.item("child-1", {type: "agentMessage", id: "same", text: "one"}, 30, true);
+		children.item("child-2", {type: "agentMessage", id: "same", text: "two"}, 30, true);
+		children.item(
+			"child-1",
+			{
+				type: "commandExecution",
+				id: "tool",
+				command: "ls",
+				cwd: "/tmp",
+				status: "inProgress",
+				aggregatedOutput: null,
+			},
+			40,
+			false,
+		);
+		children.finish("Interrupted");
+		expect(children.slots.get("spawn-1")?.items).toMatchObject([
+			{id: "spawn-1/same", text: "one", interrupted: true},
+			{status: "error"},
+		]);
+		expect(children.slots.get("spawn-2")?.items).toMatchObject([{id: "spawn-2/same", text: "two"}]);
+		children.hydrate("child-1", {
+			type: "reviewer",
+			status: "finished",
+			turnId: null,
+			items: [
+				{kind: "user", id: ItemId.make("u"), timestamp: 1, text: "prompt"},
+				{kind: "assistant", id: ItemId.make("same"), timestamp: 2, text: "settled"},
+			],
+		});
+		expect(children.slots.get("spawn-1")?.items).toMatchObject([
+			{id: "spawn-1/u"},
+			{id: "spawn-1/same", timestamp: 30, text: "settled"},
+		]);
+	});
+
+	it("refuses foreign senders and ambiguous spawns, and makes uncorrelated updates visible", () => {
+		const children = new NativeSubagents();
+		expect(() => children.collab({...spawn, senderThreadId: "foreign"}, thread.id, 0)).toThrow(
+			"foreign sender",
+		);
+		expect(() =>
+			children.collab({...spawn, receiverThreadIds: ["one", "two"]}, thread.id, 0),
+		).toThrow("multiple children");
+		expect(children.collab({...spawn, tool: "wait"}, thread.id, 0)).toMatchObject([
+			{kind: "item", item: {kind: "system", text: expect.stringContaining("Unsupported")}},
+		]);
+	});
+
+	it.effect(
+		"integrates collab, correlated child notifications, usage and completed navigation",
+		() =>
+			onCodex((agent, fake) =>
+				Effect.gen(function* () {
+					fake.handlers.set("thread/read", () => Effect.succeed({thread: childThread}));
+					yield* start(agent);
+					yield* fake.push(itemMessage("completed", spawn));
+					const initial = yield* take(agent, 3);
+					expect(slotOf(initial)).toMatchObject({
+						id: "spawn-1",
+						type: "reviewer",
+						items: [{id: "spawn-1/u"}, {id: "spawn-1/a"}],
+					});
+					yield* fake.push({
+						method: "item/completed",
+						params: {
+							threadId: "child-1",
+							turnId: "turn-1",
+							item: {type: "agentMessage", id: "a", text: "Done"},
+						},
+					});
+					yield* fake.push({
+						method: "thread/tokenUsage/updated",
+						params: {
+							threadId: "child-1",
+							turnId: "turn-1",
+							tokenUsage: {
+								total: {inputTokens: 10, outputTokens: 3},
+								last: {inputTokens: 10, outputTokens: 3},
+							},
+						},
+					});
+					yield* fake.push({
+						method: "turn/completed",
+						params: {threadId: "child-1", turn: turn("completed")},
+					});
+					const done = yield* take(agent, 3);
+					expect(slotOf(done)).toMatchObject({
+						status: "finished",
+						tokens: 13,
+						items: [{id: "spawn-1/u"}, {id: "spawn-1/a", text: "Done"}],
+					});
+					expect(done.every((event) => event.kind === "subagent")).toBe(true);
+					expect(fake.calls.some((call) => call.method === "thread/resume")).toBe(false);
+				}),
+			),
+	);
+
+	it.effect(
+		"interrupts observed child turns as well as the parent, retaining the child transcript",
+		() =>
+			onCodex((agent, fake) =>
+				Effect.gen(function* () {
+					fake.handlers.set("thread/read", () => Effect.succeed({thread: childThread}));
+					fake.handlers.set("turn/interrupt", () => Effect.succeed({}));
+					yield* start(agent);
+					yield* agent.prompt("work");
+					yield* take(agent, 1);
+					yield* fake.push(itemMessage("completed", spawn));
+					yield* take(agent, 3);
+					yield* agent.interrupt;
+					expect(fake.calls.filter((call) => call.method === "turn/interrupt")).toMatchObject([
+						{params: {threadId: "child-1", turnId: "turn-1"}},
+						{params: {threadId: thread.id, turnId: "turn-1"}},
+					]);
+					yield* fake.push(turnMessage("completed", "interrupted"));
+					expect(slotOf(yield* take(agent, 3))).toMatchObject({
+						status: "finished",
+						items: [{id: "spawn-1/u"}, {id: "spawn-1/a"}],
+					});
+				}),
+			),
+	);
+
+	it.effect("shows a child read refusal rather than empty success or a phantom running slot", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				fake.handlers.set("thread/read", () =>
+					Effect.fail(
+						new TransportError({reason: "refused", detail: "thread/read is not supported yet"}),
+					),
+				);
+				yield* start(agent);
+				yield* fake.push(itemMessage("completed", spawn));
+				expect(slotOf(yield* take(agent, 4))).toMatchObject({
+					status: "finished",
+					lastLine: expect.stringContaining("unsupported"),
+					items: [{kind: "system", text: expect.stringContaining("unsupported")}],
+				});
+			}),
+		),
+	);
+
+	it.effect("rebuilds stored child slots on checkpoint resume without resuming a child", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				fake.handlers.set("thread/read", (params) => {
+					const id =
+						typeof params === "object" && params !== null && "threadId" in params
+							? params.threadId
+							: null;
+					return Effect.succeed({
+						thread:
+							id === "child-1"
+								? {
+										...childThread,
+										status: {type: "notLoaded"},
+										turns: [{...turn("completed"), items: childThread.turns[0]?.items ?? []}],
+									}
+								: {...thread, turns: [{...turn("completed"), items: [spawn]}]},
+					});
+				});
+				yield* agent.start({
+					cwd: thread.cwd,
+					resume: {sessionId: thread.id, holdsTranscript: true, held: []},
+				});
+				const events = yield* take(agent, 11);
+				expect(slotOf(events)).toMatchObject({
+					id: "spawn-1",
+					status: "finished",
+					startedAt: 1000,
+					items: [{id: "spawn-1/u"}, {id: "spawn-1/a"}],
+				});
+				expect(fake.calls.filter((call) => call.method === "thread/resume")).toMatchObject([
+					{params: {threadId: thread.id}},
+				]);
+			}),
+		),
+	);
+});
+
+describe("Codex child polling and failure cleanup", () => {
+	it.effect("keeps an unmaterialized refusal visible and retries until history exists", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				fake.handlers.set("thread/read", () =>
+					Effect.fail(
+						new TransportError({
+							reason: "refused",
+							detail:
+								"thread child-1 is not materialized yet; includeTurns is unavailable before first user message",
+						}),
+					),
+				);
+				yield* start(agent);
+				yield* fake.push(itemMessage("completed", spawn));
+				expect(slotOf(yield* take(agent, 3))).toMatchObject({
+					status: "running",
+					items: [{text: expect.stringContaining("not materialized")}],
+				});
+				fake.handlers.set("thread/read", () => Effect.succeed({thread: childThread}));
+				yield* TestClock.adjust("1 second");
+				const slot = slotOf(yield* take(agent, 1));
+				expect(slot?.items).toMatchObject([{id: "spawn-1/u"}, {id: "spawn-1/a"}]);
+				expect(slot?.items.some((item) => item.id.endsWith("history-error"))).toBe(false);
+			}),
+		),
+	);
+
+	it.effect("polls read-only progress and keeps a background child after parent completion", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				let text = "Reading";
+				fake.handlers.set("thread/read", () =>
+					Effect.succeed({
+						thread: {
+							...childThread,
+							turns: [{...turn(), items: [{type: "agentMessage", id: "a", text}]}],
+						},
+					}),
+				);
+				yield* start(agent);
+				yield* fake.push(itemMessage("completed", spawn));
+				yield* take(agent, 3);
+				text = "Progress";
+				yield* TestClock.adjust("1 second");
+				expect(slotOf(yield* take(agent, 1))).toMatchObject({
+					lastLine: "Progress",
+					status: "running",
+				});
+				yield* fake.push(turnMessage("completed"));
+				const events = yield* take(agent, 3);
+				const state = events.reduce(
+					(state, event) => foldEvent(state, event, {itemLimit: 100}),
+					initialState(thread.cwd),
+				);
+				expect(state.subagents["spawn-1"]?.status).toBe("running");
+				expect(fake.calls.filter((call) => call.method === "thread/resume")).toEqual([]);
+			}),
+		),
+	);
+	it.effect("finishes children before an unrecoverable parent error", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				fake.handlers.set("thread/read", () => Effect.succeed({thread: childThread}));
+				yield* start(agent);
+				yield* fake.push(itemMessage("completed", spawn));
+				yield* take(agent, 3);
+				yield* fake.push({
+					method: "error",
+					params: {threadId: thread.id, error: {message: "Stopped"}, willRetry: false},
+				});
+				expect(yield* take(agent, 2)).toMatchObject([
+					{kind: "subagent", slot: {status: "finished", lastLine: "Stopped"}},
+					{kind: "failure"},
+				]);
+			}),
+		),
+	);
+});
+
+describe("Codex read-only child store", () => {
+	it.effect("accepts a genuinely empty supported history without starting or resuming", () =>
+		Effect.gen(function* () {
+			const fake = yield* fakeCodex;
+			fake.handlers.set("thread/read", () =>
+				Effect.succeed({thread: {...childThread, turns: [], status: {type: "notLoaded"}}}),
+			);
+			expect(yield* readChildTranscript(fake.connection, thread.id, "child-1")).toEqual({
+				items: [],
+				type: "reviewer",
+				status: "finished",
+				turnId: null,
+			});
+			expect(fake.calls.map((call) => call.method)).toEqual(["thread/read"]);
+		}),
+	);
+	it.effect("distinguishes unsupported, missing, unreadable and malformed from empty", () =>
+		Effect.gen(function* () {
+			const fake = yield* fakeCodex;
+			for (const [detail, reason] of [
+				["thread/read is not supported yet", "unsupported"],
+				["ephemeral threads do not support includeTurns", "unsupported"],
+				["thread not loaded: child-1", "missing"],
+				["failed to read thread: permission denied", "unreadable"],
+			] as const) {
+				fake.handlers.set("thread/read", () =>
+					Effect.fail(new TransportError({reason: "refused", detail})),
+				);
+				expect(
+					yield* Effect.flip(readChildTranscript(fake.connection, thread.id, "child-1")),
+				).toMatchObject({reason});
+			}
+			for (const value of [
+				null,
+				{...childThread, id: "other"},
+				{...childThread, source: "cli"},
+				{...childThread, turns: [{...turn(), items: [{type: "agentMessage", id: "a", text: 3}]}]},
+			]) {
+				fake.handlers.set("thread/read", () => Effect.succeed({thread: value}));
+				expect(
+					yield* Effect.flip(readChildTranscript(fake.connection, thread.id, "child-1")),
+				).toMatchObject({reason: "malformed"});
+			}
+		}),
+	);
+});

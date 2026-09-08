@@ -12,7 +12,15 @@
  * already reads the whole `AiAgentSessionState` and writes through `dispatch`.
  */
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ThinkingLevel =
+	| "off"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max"
+	| "ultra";
 
 /** The type as data, so a checkpoint can be read against it. */
 export const thinkingLevels = [
@@ -23,6 +31,7 @@ export const thinkingLevels = [
 	"high",
 	"xhigh",
 	"max",
+	"ultra",
 ] as const satisfies ReadonlyArray<ThinkingLevel>;
 
 export const isThinkingLevel = (value: unknown): value is ThinkingLevel =>

@@ -88,6 +88,7 @@ const thinkingLevelKeys: Readonly<Record<PiThinkingLevel, DesignCatalogKey>> = {
 	high: "admin.agent.thinking.high",
 	xhigh: "admin.agent.thinking.xhigh",
 	max: "admin.agent.thinking.max",
+	ultra: "admin.agent.thinking.ultra",
 };
 
 const toItems = (
@@ -103,6 +104,7 @@ const thinkingLevelIcons: Readonly<Record<PiThinkingLevel, LucideIcon>> = {
 	high: ChevronUp,
 	xhigh: ChevronsUp,
 	max: Sparkles,
+	ultra: Sparkles,
 };
 
 const mockModels: readonly PiModel[] = [
@@ -217,7 +219,8 @@ function thinkingLevelValue(value: unknown): PiThinkingLevel | undefined {
 		value === "medium" ||
 		value === "high" ||
 		value === "xhigh" ||
-		value === "max"
+		value === "max" ||
+		value === "ultra"
 		? value
 		: undefined;
 }

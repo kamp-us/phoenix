@@ -74,6 +74,7 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"admin.agent.thinking.high": "high",
 	"admin.agent.thinking.xhigh": "very high",
 	"admin.agent.thinking.max": "maximum",
+	"admin.agent.thinking.ultra": "ultra",
 	"admin.agent.stop": "stop",
 	"admin.agent.send": "send",
 	"admin.agent.queue": "queue",
