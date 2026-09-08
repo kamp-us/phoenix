@@ -569,6 +569,130 @@ describe("one delta folded into events", () => {
 });
 
 /**
+ * A `pi-subagents` worker over the same delta stream: the call that starts it and the result that
+ * ends it are two items of the ordinary transcript, so the running list fills from the wire the
+ * whole session already rides (#8555).
+ */
+describe("a subagent's start and end over the delta stream", () => {
+	const delta = (items: ReadonlyArray<PiTranscriptItem>, revision: number): SessionDelta => ({
+		id: "session-8555",
+		revision,
+		updatedAt: revision * 100,
+		items: [...items],
+	});
+
+	const input = {agent: "reviewer", task: "read it"};
+
+	const spawning: PiTranscriptItem = {
+		id: "item-1",
+		role: "assistant",
+		content: [{type: "toolCall", toolCallId: "call-9", toolName: "subagent", input}],
+		model: {provider: "faux", id: "faux-1"},
+		timestamp: 11,
+		status: "complete",
+		stopReason: "toolUse",
+	};
+
+	const finished: PiTranscriptItem = {
+		id: "item-2",
+		role: "tool",
+		toolCallId: "call-9",
+		toolName: "subagent",
+		input,
+		content: [{type: "text", text: "spawning reviewer\ndone: 3 findings"}],
+		timestamp: 12,
+		status: "complete",
+		isError: false,
+	};
+
+	const opened = () => eventsOf(emptyProjection, snapshot([user], "turn"));
+
+	it("starts one running slot off the call and finishes it off the result", () => {
+		const start = deltaEventsOf(opened().next, delta([spawning], 2));
+		expect(start.events).toEqual([
+			{
+				kind: "subagent",
+				slot: {
+					id: "call-9",
+					type: "reviewer",
+					lastLine: "",
+					startedAt: 11,
+					tokens: 0,
+					items: [],
+					status: "running",
+				},
+			},
+		]);
+
+		const end = deltaEventsOf(start.next, delta([finished], 3));
+		expect(end.events).toEqual([
+			{kind: "item", item: itemOf(finished)},
+			{
+				kind: "subagent",
+				slot: {
+					id: "call-9",
+					type: "reviewer",
+					lastLine: "done: 3 findings",
+					startedAt: 12,
+					tokens: 0,
+					items: [],
+					status: "finished",
+				},
+			},
+		]);
+	});
+
+	// The call is still in the transcript after the result lands, so a later delta naming that turn
+	// again — a settling usage, a reattach — must not push the worker back to running.
+	it("never puts a finished worker back to running", () => {
+		const start = deltaEventsOf(opened().next, delta([spawning], 2));
+		const end = deltaEventsOf(start.next, delta([finished], 3));
+		expect(deltaEventsOf(end.next, delta([spawning], 4)).events).toEqual([]);
+	});
+
+	it("leaves an ordinary tool call out of the running list", () => {
+		const folded = deltaEventsOf(opened().next, delta([settledTool], 2));
+		expect(folded.events.some((event) => event.kind === "subagent")).toBe(false);
+	});
+
+	it("labels a spawn that names no agent by the tool that made it", () => {
+		const script: PiTranscriptItem = {...finished, input: {workflowScript: "runs.run('a', {})"}};
+		const folded = deltaEventsOf(opened().next, delta([script], 2));
+		const slots = folded.events.filter((event) => event.kind === "subagent");
+		expect(slots).toHaveLength(1);
+		expect(slots[0]?.slot.type).toBe("subagent");
+	});
+
+	// `subagent` is one multiplexed tool: with an `action` it manages rather than spawns, and the
+	// `agent` beside one names that action's target (`pi-subagents` `src/extension/schemas.ts:283-287`,
+	// `src/runs/foreground/subagent-executor.ts:5976`). A row for one is a worker that never ran.
+	it.each([
+		["list", {action: "list"}],
+		["status against an agent", {action: "status", agent: "reviewer"}],
+		["stop", {action: "stop", id: "run-3"}],
+		["schedule.create", {action: "schedule.create", agent: "worker", name: "nightly"}],
+		["mission.close", {action: "mission.close", id: "m-1"}],
+	])("draws no row for a management call: %s", (_case, managed) => {
+		const call: PiTranscriptItem = {
+			...spawning,
+			content: [{type: "toolCall", toolCallId: "call-9", toolName: "subagent", input: managed}],
+		};
+		const started = deltaEventsOf(opened().next, delta([call], 2));
+		const ended = deltaEventsOf(started.next, delta([{...finished, input: managed}], 3));
+		expect(started.events.some((event) => event.kind === "subagent")).toBe(false);
+		expect(ended.events.some((event) => event.kind === "subagent")).toBe(false);
+	});
+
+	// `bg_wait` waits on runs that are already slots (`src/runs/background/wait-tool.ts:36`), so a
+	// row for one duplicates a worker the list already draws.
+	it("draws no row for a bg_wait", () => {
+		const wait: PiTranscriptItem = {...finished, toolName: "bg_wait", input: {all: true}};
+		const folded = deltaEventsOf(opened().next, delta([wait], 2));
+		expect(folded.events.some((event) => event.kind === "subagent")).toBe(false);
+	});
+});
+
+/**
  * What the streaming marker buys once it reaches the core: the in-flight row supersedes itself
  * under one id, and the tail holding it is a state `checkpointWorthy` refuses to write (#8170).
  * `holdsPartialItem` is the generic rule and needs no Pi arm — this pins that Pi now trips it.

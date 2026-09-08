@@ -58,6 +58,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
+import {featuresDefault} from "../../features.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
 import {
@@ -68,6 +69,7 @@ import {
 	PiServerService,
 	type PiSessionHost,
 	type ServerBindFailed,
+	subagentExtensionPaths,
 } from "../server/index.ts";
 import {planPageOverEntries} from "./entries.ts";
 import {
@@ -784,9 +786,14 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 						}),
 					),
 			}).pipe(Effect.orDie);
+			// The `piSubagents` flag and nothing else decides this. Off — the shipped default — it is
+			// an empty list, and an empty list is the same session this layer opened before the flag
+			// existed (`../server/AgentSessionHost.ts`'s `loaderFor`).
+			const extensionPaths = subagentExtensionPaths(featuresDefault);
 			return agentSessionHostLayer({
 				modelRuntime,
 				agentDir,
+				...(extensionPaths.length === 0 ? {} : {extensionPaths}),
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
 				...(options.streamPartialText === undefined

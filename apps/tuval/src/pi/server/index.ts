@@ -1,6 +1,7 @@
 export {
 	type AgentSessionHostOptions,
 	defaultSessionDir,
+	extensionLoader,
 	layer as agentSessionHostLayer,
 } from "./AgentSessionHost.ts";
 export {type ProtocolModelCost, projectModelCost, type SourceModelCost} from "./cost.ts";
@@ -39,5 +40,10 @@ export {
 	type PiSessionHostApi,
 	type PiSessionView,
 } from "./PiSessionHost.ts";
+export {
+	SUBAGENTS_PACKAGE,
+	subagentExtensionPaths,
+	subagentsPackageDir,
+} from "./subagents.ts";
 export {mintCapabilityToken, tokenMatches} from "./token.ts";
 export {projectTranscript, projectUsage, type SourceMessage} from "./transcript.ts";

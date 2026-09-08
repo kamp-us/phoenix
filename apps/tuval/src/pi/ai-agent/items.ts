@@ -18,11 +18,13 @@
  * said. An item's `image` parts have no port field to land in and are dropped.
  */
 
+import {Predicate} from "effect";
 import {
 	boundToolResult,
 	type ItemId,
 	type JsonValue,
 	newestBackendItemId,
+	type SubagentSlot,
 	type ThinkingItem,
 	type ToolStatus,
 	type TranscriptItem,
@@ -151,6 +153,93 @@ export const itemsOf = (item: PiTranscriptItem): ReadonlyArray<TranscriptItem> =
 };
 
 /**
+ * Whether one tool call *starts* a worker, which is the only kind the running list draws.
+ *
+ * `pi-subagents` registers two tools and only one of them ever spawns. `subagent` is multiplexed:
+ * its `action` field is documented as the switch — "when present, tool operates in management mode"
+ * (`pi-subagents` `src/extension/schemas.ts:283-287`) — and the executor branches on exactly that,
+ * `if (action) { … }` answering out of the management arm with the spawn path as everything after
+ * it (`src/runs/foreground/subagent-executor.ts:5960,5976`). So any of the 55 actions
+ * (`src/shared/types.ts:2757` — `list`, `status`, `stop`, `steer`, the `schedule.*` and `mission.*`
+ * families) starts nothing, and an `agent` beside one names that action's *target* rather than a
+ * worker. `bg_wait` waits on work that is already running (`src/runs/background/wait-tool.ts:36`)
+ * and starts none of it.
+ *
+ * An input this cannot read draws no row either: a worker the operator cannot find is worse than a
+ * worker the list is missing.
+ */
+const spawns = (toolName: string, input: unknown): boolean =>
+	toolName === "subagent" &&
+	Predicate.isObject(input) &&
+	(input as {readonly action?: unknown}).action === undefined;
+
+/**
+ * What kind of worker the call started, in the extension's own words: the `agent` argument, which
+ * names one of the configured agents (`pi-subagents` `src/extension/schemas.ts:283`). A spawn that
+ * names none — a `workflowScript`, which picks its own children — is labelled by the tool, because
+ * the row has to say something and that is the only true thing left.
+ */
+const subagentType = (input: unknown): string => {
+	const agent = Predicate.isObject(input) ? (input as {readonly agent?: unknown}).agent : undefined;
+	return typeof agent === "string" && agent !== "" ? agent : "subagent";
+};
+
+/** The newest thing the worker wrote, off a result already bounded by `boundToolResult`. */
+const lastLineOf = (text: string): string => {
+	const lines = text.split("\n").filter((line) => line.trim() !== "");
+	return lines.length === 0 ? "" : (lines[lines.length - 1] as string);
+};
+
+/** `SubagentSlot.tokens` is a non-negative integer or the slot is unreadable off a checkpoint. */
+const countOf = (tokens: number | undefined): number =>
+	tokens === undefined || !Number.isFinite(tokens) ? 0 : Math.max(0, Math.trunc(tokens));
+
+/**
+ * The subagent slots one wire item is worth — the model-blind row the running list already draws
+ * (`../../ai-agent/ports/subagent.ts`), so a Pi worker lands in the same surface a Claude one does.
+ *
+ * Two items carry one worker: the assistant turn whose `toolCall` part started it, and the tool
+ * result that ends it. The call is the `running` slot, the result the `finished` one, and both are
+ * keyed on the call id — so the second supersedes the first in the state's own record
+ * (`../../ai-agent/core/fold.ts`) instead of drawing a second row.
+ *
+ * `items` is empty and `tokens` is what the result reports, not what the worker spent: the spawn
+ * is a detached child process with its own `ModelRuntime` (#8555), so none of the child's turns
+ * reach this transcript and there is nothing else here to read them off.
+ */
+export const subagentSlotsOf = (item: PiTranscriptItem): ReadonlyArray<SubagentSlot> => {
+	if (item.role === "assistant") {
+		return item.content.flatMap((part) =>
+			part.type === "toolCall" && spawns(part.toolName, part.input)
+				? [
+						{
+							id: itemId(part.toolCallId),
+							type: subagentType(part.input),
+							lastLine: "",
+							startedAt: item.timestamp,
+							tokens: 0,
+							items: [],
+							status: "running" as const,
+						},
+					]
+				: [],
+		);
+	}
+	if (item.role !== "tool" || !spawns(item.toolName, item.input)) return [];
+	return [
+		{
+			id: itemId(item.toolCallId),
+			type: subagentType(item.input),
+			lastLine: lastLineOf(boundToolResult(textOf(item.content)).text),
+			startedAt: item.timestamp,
+			tokens: countOf(item.usage?.totalTokens),
+			items: [],
+			status: "finished",
+		},
+	];
+};
+
+/**
  * Pi's five session phases against the core's six. `idle` is the only one that is not the agent
  * working, so everything else reads as `prompting`: a compaction and a retry are both a turn the
  * operator is waiting on, and the window's phase line says so.
@@ -194,6 +283,13 @@ const usageEventOf = (item: PiTranscriptItem): Extract<AgentEvent, {kind: "usage
 export interface SnapshotProjection {
 	readonly items: ReadonlyMap<string, string>;
 	readonly usage: ReadonlyMap<string, string>;
+	/**
+	 * Subagent slots, in their own map because a slot and its tool row share one id. Keyed by
+	 * `<call id>:<status>` rather than by the id alone: one worker is two slots, the call's
+	 * `running` and the result's `finished`, and a key that held only the latest would let a
+	 * re-folded assistant turn push its `running` back over the `finished` that superseded it.
+	 */
+	readonly subagents: ReadonlyMap<string, string>;
 	readonly phase: Phase | null;
 	readonly revision: number;
 }
@@ -201,11 +297,14 @@ export interface SnapshotProjection {
 export const emptyProjection: SnapshotProjection = {
 	items: new Map(),
 	usage: new Map(),
+	subagents: new Map(),
 	phase: null,
 	revision: -1,
 };
 
 const fingerprint = (value: unknown): string => JSON.stringify(value);
+
+const slotKey = (slot: SubagentSlot): string => `${slot.id}:${slot.status}`;
 
 /** What one fold answers: the events it emitted, and the projection they left behind. */
 export interface Folded {
@@ -232,12 +331,19 @@ export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot
 	const events: Array<AgentEvent> = [];
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
+	const subagents = new Map<string, string>();
 
 	for (const source of snapshot.transcript) {
 		for (const item of itemsOf(source)) {
 			const mark = fingerprint(item);
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
+		}
+		for (const slot of subagentSlotsOf(source)) {
+			const key = slotKey(slot);
+			const mark = fingerprint(slot);
+			subagents.set(key, mark);
+			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
 	}
 
@@ -252,7 +358,7 @@ export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot
 	const phase = phaseOf(snapshot.phase);
 	if (previous.phase !== phase) events.push({kind: "phase", phase});
 
-	return {events, next: {items, usage, phase, revision: snapshot.revision}};
+	return {events, next: {items, usage, subagents, phase, revision: snapshot.revision}};
 };
 
 /**
@@ -268,6 +374,7 @@ export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta)
 	const events: Array<AgentEvent> = [];
 	const items = new Map(previous.items);
 	const usage = new Map(previous.usage);
+	const subagents = new Map(previous.subagents);
 	const changed = delta.items ?? [];
 
 	for (const source of changed) {
@@ -275,6 +382,12 @@ export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta)
 			const mark = fingerprint(item);
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
+		}
+		for (const slot of subagentSlotsOf(source)) {
+			const key = slotKey(slot);
+			const mark = fingerprint(slot);
+			subagents.set(key, mark);
+			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
 	}
 
@@ -289,7 +402,7 @@ export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta)
 	const phase = delta.phase === undefined ? previous.phase : phaseOf(delta.phase);
 	if (phase !== null && previous.phase !== phase) events.push({kind: "phase", phase});
 
-	return {events, next: {items, usage, phase, revision: delta.revision}};
+	return {events, next: {items, usage, subagents, phase, revision: delta.revision}};
 };
 
 /**
@@ -345,9 +458,11 @@ export const projectionOf = (
 	const carried = new Map(held.map((item) => [item.id as string, fingerprint(item)]));
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
+	const subagents = new Map<string, string>();
 	let reached = false;
 	for (const source of snapshot.transcript) {
 		if (reached) break;
+		for (const slot of subagentSlotsOf(source)) subagents.set(slotKey(slot), fingerprint(slot));
 		const rows = itemsOf(source);
 		const cut = rows.findIndex((item) => item.id === through);
 		reached = cut !== -1;
@@ -362,7 +477,7 @@ export const projectionOf = (
 		const event = !moved && seeded.length === rows.length ? usageEventOf(source) : null;
 		if (event !== null) usage.set(source.id, fingerprint(event));
 	}
-	return reached ? {items, usage, phase: null, revision: snapshot.revision} : null;
+	return reached ? {items, usage, subagents, phase: null, revision: snapshot.revision} : null;
 };
 
 /**

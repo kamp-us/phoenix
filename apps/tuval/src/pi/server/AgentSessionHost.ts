@@ -15,7 +15,9 @@ import {join} from "node:path";
 import {
 	type AgentSession,
 	createAgentSession,
+	DefaultResourceLoader,
 	type ModelRuntime,
+	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -48,6 +50,12 @@ export interface AgentSessionHostOptions {
 	 * it: a snapshot carrying a partial reply is a shape no client above this host reads yet.
 	 */
 	readonly streamPartialText?: boolean;
+	/**
+	 * Extension packages every session this host opens loads, as directories Pi's own loader reads
+	 * (`./subagents.ts`). Empty or absent builds no resource loader at all, which leaves
+	 * `createAgentSession` building exactly the one it built before this option existed.
+	 */
+	readonly extensionPaths?: ReadonlyArray<string>;
 }
 
 const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
@@ -111,6 +119,32 @@ export const streamingMessage = (
 	options.streamPartialText === true
 		? (state.streamingMessage as SourceMessage | undefined)
 		: undefined;
+
+/**
+ * Pi's resource loader with this host's extension packages added, or `undefined` when there are
+ * none — and `undefined` is the whole point of the branch: `createAgentSession` builds its own
+ * `DefaultResourceLoader({cwd, agentDir, settingsManager})` when handed no loader
+ * (`dist/core/sdk.js`), so a host with no extension paths opens the session it always opened.
+ *
+ * `reload()` is what loads them: the loader discovers nothing until it runs, and
+ * `createAgentSession` never calls it on a loader the caller supplied.
+ */
+export const extensionLoader = async (
+	paths: ReadonlyArray<string>,
+	cwd: string,
+	agentDir: string,
+	settingsManager: SettingsManager,
+): Promise<ResourceLoader | undefined> => {
+	if (paths.length === 0) return undefined;
+	const loader = new DefaultResourceLoader({
+		cwd,
+		agentDir,
+		settingsManager,
+		additionalExtensionPaths: [...paths],
+	});
+	await loader.reload();
+	return loader;
+};
 
 const call = <A>(
 	session: AgentSession,
@@ -247,8 +281,15 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 						: options.modelRuntime.getModel(request.model.provider, request.model.id);
 
 				const session = yield* Effect.tryPromise({
-					try: () =>
-						createAgentSession({
+					try: async () => {
+						const settingsManager = SettingsManager.create(request.cwd, options.agentDir);
+						const resourceLoader = await extensionLoader(
+							options.extensionPaths ?? [],
+							request.cwd,
+							options.agentDir,
+							settingsManager,
+						);
+						const result = await createAgentSession({
 							cwd: request.cwd,
 							...(model === undefined ? {} : {model}),
 							...(request.thinkingLevel === undefined
@@ -256,9 +297,12 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 								: {thinkingLevel: request.thinkingLevel}),
 							modelRuntime: options.modelRuntime,
 							sessionManager: SessionManager.create(request.cwd, sessionDir),
-							settingsManager: SettingsManager.create(request.cwd, options.agentDir),
+							settingsManager,
+							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
-						}).then((result) => result.session),
+						});
+						return result.session;
+					},
 					catch: (error) =>
 						retaining(
 							error,
@@ -295,14 +339,24 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 				if (file === undefined) return yield* refuse("Pi could not find the stored session file");
 
 				const session = yield* Effect.tryPromise({
-					try: () =>
-						createAgentSession({
+					try: async () => {
+						const settingsManager = SettingsManager.create(cwd, options.agentDir);
+						const resourceLoader = await extensionLoader(
+							options.extensionPaths ?? [],
+							cwd,
+							options.agentDir,
+							settingsManager,
+						);
+						const result = await createAgentSession({
 							cwd,
 							modelRuntime: options.modelRuntime,
 							sessionManager: SessionManager.open(file, dir, cwd),
-							settingsManager: SettingsManager.create(cwd, options.agentDir),
+							settingsManager,
+							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
-						}).then((result) => result.session),
+						});
+						return result.session;
+					},
 					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
 				});
 				return yield* handleOf(options, session, cwd);
