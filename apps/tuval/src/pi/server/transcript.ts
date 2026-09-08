@@ -6,9 +6,9 @@
  *
  * Pi's messages carry no id, so the item id is the message's position. That is stable while
  * history only grows, which is the case for a live session; a compaction rewrites the array and
- * therefore renumbers, and the snapshot that carries the renumbering is the client's cue to
- * replace its transcript wholesale — snapshots are authoritative, which is the model the wire's
- * own `TranscriptProgress` comment states.
+ * therefore renumbers, and a renumbering is exactly the case `../wire/delta.ts` refuses to patch:
+ * the ids stop extending the last ones, so the viewer is sent a whole snapshot and replaces its
+ * transcript wholesale.
  *
  * An in-flight message is projected at the position it will land at, which is why it is passed as
  * one more message rather than handled apart: Pi pushes the finished message onto `messages` on

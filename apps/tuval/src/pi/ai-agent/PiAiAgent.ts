@@ -59,7 +59,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
-import {PiClientService, type PiSessionRef} from "../client/index.ts";
+import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {
 	agentSessionHostLayer,
 	defaultSessionDir,
@@ -69,9 +69,9 @@ import {
 	type PiSessionHost,
 	type ServerBindFailed,
 } from "../server/index.ts";
-import type {SessionSnapshot} from "../wire/index.ts";
 import {planPageOverEntries} from "./entries.ts";
 import {
+	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
 	paintOf,
@@ -134,9 +134,7 @@ type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
  * otherwise sit at `ready` from before the send to after it and emit nothing, while the core moved
  * itself to `prompting` at the send and stayed there — refusing every later message (#7897).
  */
-type FoldInput =
-	| {readonly _tag: "snapshot"; readonly snapshot: SessionSnapshot}
-	| {readonly _tag: "sent"};
+type FoldInput = SessionUpdate | {readonly _tag: "sent"};
 
 /**
  * Read one session's branch out of Pi's JSONL, oldest-first.
@@ -265,8 +263,8 @@ const make = (
 			Effect.gen(function* () {
 				yield* Ref.set(projection, seed);
 				const pushes = pi
-					.snapshots(sessionId)
-					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
+					.updates(sessionId)
+					.pipe(Stream.runForEach((update) => Queue.offer(feed, update)));
 				const folding = Stream.fromQueue(feed).pipe(
 					Stream.runForEach((input) =>
 						Effect.gen(function* () {
@@ -276,7 +274,10 @@ const make = (
 								yield* Ref.set(projection, {...previous, phase: "prompting"});
 								return yield* emit(open, [{kind: "phase", phase: "prompting"}]);
 							}
-							const folded = eventsOf(previous, input.snapshot);
+							const folded =
+								input._tag === "snapshot"
+									? eventsOf(previous, input.snapshot)
+									: deltaEventsOf(previous, input.delta);
 							yield* Ref.set(projection, folded.next);
 							yield* emit(open, folded.events);
 						}),
@@ -286,7 +287,12 @@ const make = (
 					Stream.take(1),
 					Stream.runForEach((drop) => Queue.fail(open, transportErrorOf(drop))),
 				);
-				yield* Effect.race(Effect.race(pushes, folding), dropped);
+				// `pushes` only fills `feed`, so it is not a party to the race: raced against
+				// `folding` it would interrupt the fold the moment the update stream ended, and a
+				// turn's last update — queued, unfolded — would go with it (#8554). As a child
+				// fiber it is interrupted when this effect returns, which is what the race decides.
+				yield* Effect.forkChild(pushes);
+				yield* Effect.race(folding, dropped);
 			});
 
 		/**
@@ -385,19 +391,18 @@ const make = (
 					return {ref: opened, seed: emptyProjection, paint: []};
 				}
 				// Either way the lease's own snapshot is the seed, and neither reading of it costs a
-				// round trip: Pi re-sends the whole transcript on every revision, so a fold that
-				// opened on `emptyProjection` replays the session as live items on the first push
-				// after the attach (#8369). What differs is what the caller can already see.
+				// round trip. What differs is what the caller can already see.
 				const resumed = yield* pi.attachSession(resume.sessionId);
 				const lease = yield* pi.heldSnapshot(resumed.id);
 				// A restored process is looking at its own committed tail, so the seed suppresses
 				// everything through the boundary that tail reaches and emits whatever the session
 				// finished past it — or changed under it — while the socket was down (#8374).
-				if (resume.holdsTranscript) {
-					return {ref: resumed, seed: projectionOf(lease, resume.held), paint: []};
-				}
-				// A window opened out of the picker holds nothing, so the history is painted here,
-				// at the attach, while its tail is still empty.
+				const seeded = resume.holdsTranscript ? projectionOf(lease, resume.held) : null;
+				if (seeded !== null) return {ref: resumed, seed: seeded, paint: []};
+				// Nothing to seed from: a window opened out of the picker holds nothing, or the
+				// boundary the caller holds is not in this snapshot. Either way the history is
+				// painted here, at the attach, while its tail is still empty — a push carries only
+				// what changed, so waiting for one would replay nothing (#8554).
 				const painted = paintOf(lease);
 				return {ref: resumed, seed: painted.projection, paint: painted.events};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));

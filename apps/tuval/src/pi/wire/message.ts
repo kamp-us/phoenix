@@ -1,7 +1,6 @@
 import type {Command, CommandResult, ProtocolError} from "./command.ts";
-import type {PROTOCOL_VERSION, ServerSnapshot, SessionSnapshot} from "./session.ts";
+import type {PROTOCOL_VERSION, ServerSnapshot, SessionDelta, SessionSnapshot} from "./session.ts";
 import type {RpcTarget, SessionTarget} from "./target.ts";
-import type {TranscriptProgress} from "./transcript.ts";
 
 /**
  * Tuval's session stream rides one protocol-8 service subscription, under an id fixed here rather
@@ -39,14 +38,16 @@ export interface CancelEnvelope {
 
 export type ClientMessage = ClientHello | RequestEnvelope | CancelEnvelope;
 
+/**
+ * A session reaches a viewer as one whole value and then as what each later revision changed:
+ * `session_snapshot` on the first subscribe and on a transcript the viewer cannot patch, and
+ * `session_delta` for everything in between. A streamed turn signals per token, so the delta is
+ * the frame that turn actually rides on (`./delta.ts`).
+ */
 export type ServerEvent =
 	| {readonly type: "server_snapshot"; readonly snapshot: ServerSnapshot}
 	| {readonly type: "session_snapshot"; readonly snapshot: SessionSnapshot}
-	| {
-			readonly type: "session_progress";
-			readonly sessionId: string;
-			readonly progress: TranscriptProgress;
-	  }
+	| {readonly type: "session_delta"; readonly delta: SessionDelta}
 	| {readonly type: "session_removed"; readonly sessionId: string};
 
 export interface ServerHello {

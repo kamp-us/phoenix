@@ -17,7 +17,12 @@ import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
 import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
-import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import {
+	type PiClientApi,
+	PiClientService,
+	type PiSessionRef,
+	type SessionUpdate,
+} from "../client/index.ts";
 import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
@@ -68,7 +73,7 @@ const snapshot = (
 
 /** The stub server: a snapshot stream the test feeds, and a `prompt` the test settles. */
 const stub = Effect.gen(function* () {
-	const pushes = yield* Queue.unbounded<SessionSnapshot>();
+	const pushes = yield* Queue.unbounded<SessionUpdate, Cause.Done>();
 	const ended = yield* Deferred.make<SessionSnapshot>();
 	const api: PiClientApi = {
 		connect: Effect.void,
@@ -82,12 +87,17 @@ const stub = Effect.gen(function* () {
 		setModel: () => Effect.never,
 		setThinkingLevel: () => Effect.never,
 		models: Effect.succeed([]),
-		snapshots: () => Stream.fromQueue(pushes),
+		updates: () => Stream.fromQueue(pushes),
 		disconnections: Stream.never,
 	};
 	return {
 		layer: Layer.succeed(PiClientService, api),
-		push: (value: SessionSnapshot) => Queue.offer(pushes, value),
+		push: (value: SessionSnapshot) => Queue.offer(pushes, {_tag: "snapshot", snapshot: value}),
+		/** The turn's last update and the end of the stream carrying it, with no gap between. */
+		pushAndEnd: (value: SessionSnapshot) =>
+			Queue.offer(pushes, {_tag: "snapshot", snapshot: value}).pipe(
+				Effect.andThen(Queue.end(pushes)),
+			),
 		/** Settle the send with the snapshot the turn ended on, as the server's answer does. */
 		endTurn: (value: SessionSnapshot) => Deferred.succeed(ended, value),
 	};
@@ -178,6 +188,33 @@ describe("a Pi turn whose pushes coalesced away", () => {
 				assert.isTrue(
 					Option.isNone(after),
 					`the settled snapshot repainted something already folded: ${JSON.stringify(after)}`,
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	/**
+	 * The update stream ending is not the fold ending. `follow` used to race the two, so the moment
+	 * the stream ran out the fold was interrupted with the turn's last update still queued and
+	 * unfolded — the operator's window kept `prompting` under a turn that had finished (#8554).
+	 */
+	it.live("folds the turn's last update even when the stream ends behind it", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* collectTo(events, "the opened session's ready", isReady);
+
+				yield* agent.prompt("say hello");
+				yield* client.pushAndEnd(snapshot([user, reply], "idle", 1));
+
+				const turn = yield* collectTo(events, "the turn's ready", isReady);
+				assert.isTrue(
+					turn.some(isReply),
+					"the reply the ended stream carried never reached the window",
 				);
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),

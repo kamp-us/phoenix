@@ -133,24 +133,3 @@ export type TranscriptItem =
 	| AssistantTranscriptItem
 	| ToolTranscriptItem
 	| CompactionTranscriptItem;
-
-/** Normalized incremental activity. Snapshots remain authoritative. */
-export type TranscriptProgress =
-	| {readonly type: "item_started"; readonly item: TranscriptItem}
-	| {
-			readonly type: "assistant_delta";
-			readonly messageId: string;
-			readonly contentIndex: number;
-			readonly kind: "text" | "thinking" | "toolCall";
-			readonly delta: string;
-	  }
-	| {readonly type: "item_updated"; readonly item: AssistantTranscriptItem | ToolTranscriptItem}
-	| {
-			readonly type: "item_finished";
-			readonly item:
-				| CompleteAssistantTranscriptItem
-				| ErrorAssistantTranscriptItem
-				| AbortedAssistantTranscriptItem
-				| CompleteToolTranscriptItem
-				| ErrorToolTranscriptItem;
-	  };

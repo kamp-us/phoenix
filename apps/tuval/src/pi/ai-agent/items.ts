@@ -30,6 +30,7 @@ import {
 import type {AgentEvent, Phase} from "../../ai-agent/service/index.ts";
 import type {
 	TranscriptItem as PiTranscriptItem,
+	SessionDelta,
 	SessionPhase,
 	SessionSnapshot,
 } from "../wire/index.ts";
@@ -176,42 +177,58 @@ const usageEventOf = (item: PiTranscriptItem): Extract<AgentEvent, {kind: "usage
 };
 
 /**
- * What the last snapshot said, so the next one emits only what changed.
+ * What the revision this fold last folded said, so the next one emits only what changed.
  *
- * A snapshot is authoritative and whole — Pi re-sends the entire transcript every revision — so
- * without this the window would repaint every item on every revision. The push rate is what makes
- * that expensive: the server ticks once per session event, so a turn writing text costs a
- * revision per delta once the host is projecting the reply as it is written
- * (`../server/AgentSessionHost.ts`'s `streamPartialText`, off by default), and one item changes
- * while the rest do not. The fingerprints are the projected item's own JSON, which is exactly the
- * value the window renders: two snapshots whose projections match are, to the window, the same
- * transcript.
+ * The fingerprints are the projected item's own JSON, which is exactly the value the window
+ * renders: two revisions whose projections match are, to the window, the same transcript. That is
+ * what keeps a whole-value snapshot — the first push, and any transcript a delta cannot patch —
+ * from repainting rows the operator is already reading.
+ *
+ * `revision` is the ordering, and it is what makes a late arrival droppable. A turn's push can win
+ * the race against its own answer, and if the operator's next send lands in that gap the answer
+ * arrives carrying an `idle` this projection has already passed — folded again it emits a second
+ * `ready` under a live turn (#8544). Every fold below refuses an update at or below this number,
+ * so arrival order stops being the thing that decides. `emptyProjection` sits below every real
+ * revision because a record's first is 0.
  */
 export interface SnapshotProjection {
 	readonly items: ReadonlyMap<string, string>;
 	readonly usage: ReadonlyMap<string, string>;
 	readonly phase: Phase | null;
+	readonly revision: number;
 }
 
 export const emptyProjection: SnapshotProjection = {
 	items: new Map(),
 	usage: new Map(),
 	phase: null,
+	revision: -1,
 };
 
 const fingerprint = (value: unknown): string => JSON.stringify(value);
 
+/** What one fold answers: the events it emitted, and the projection they left behind. */
+export interface Folded {
+	readonly events: ReadonlyArray<AgentEvent>;
+	readonly next: SnapshotProjection;
+}
+
+/** An update the projection has already passed, left exactly as it was. */
+const stale = (previous: SnapshotProjection): Folded => ({events: [], next: previous});
+
 /**
- * Fold one pushed snapshot into the events it changed, oldest item first.
+ * Fold one whole-value snapshot into the events it changed, oldest item first.
  *
  * The order within a revision is content, then cost, then phase: an item is what the operator is
  * reading, its usage annotates it, and the phase line is the last thing to settle — so a window
  * that renders in arrival order never shows `ready` above a reply that has not landed yet.
+ *
+ * The item map is rebuilt from the snapshot rather than merged into the previous one, because a
+ * whole value is also the answer to a transcript that was rewritten: a row this snapshot no longer
+ * carries has to leave the projection with it.
  */
-export const eventsOf = (
-	previous: SnapshotProjection,
-	snapshot: SessionSnapshot,
-): {readonly events: ReadonlyArray<AgentEvent>; readonly next: SnapshotProjection} => {
+export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot): Folded => {
+	if (snapshot.revision <= previous.revision) return stale(previous);
 	const events: Array<AgentEvent> = [];
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
@@ -235,25 +252,64 @@ export const eventsOf = (
 	const phase = phaseOf(snapshot.phase);
 	if (previous.phase !== phase) events.push({kind: "phase", phase});
 
-	return {events, next: {items, usage, phase}};
+	return {events, next: {items, usage, phase, revision: snapshot.revision}};
+};
+
+/**
+ * Fold one delta, in the same order and by the same fingerprints `eventsOf` uses.
+ *
+ * A delta names only what moved, so the projection is carried forward and the walk is over the
+ * delta's own items — which is the whole point of the shape: a streamed turn signals per token,
+ * and folding a token costs one item rather than the transcript (#8554). An absent scalar means
+ * unchanged, so an absent `phase` leaves the phase line where it stands.
+ */
+export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta): Folded => {
+	if (delta.revision <= previous.revision) return stale(previous);
+	const events: Array<AgentEvent> = [];
+	const items = new Map(previous.items);
+	const usage = new Map(previous.usage);
+	const changed = delta.items ?? [];
+
+	for (const source of changed) {
+		for (const item of itemsOf(source)) {
+			const mark = fingerprint(item);
+			items.set(item.id, mark);
+			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
+		}
+	}
+
+	for (const source of changed) {
+		const event = usageEventOf(source);
+		if (event === null) continue;
+		const mark = fingerprint(event);
+		usage.set(source.id, mark);
+		if (previous.usage.get(source.id) !== mark) events.push(event);
+	}
+
+	const phase = delta.phase === undefined ? previous.phase : phaseOf(delta.phase);
+	if (phase !== null && previous.phase !== phase) events.push({kind: "phase", phase});
+
+	return {events, next: {items, usage, phase, revision: delta.revision}};
 };
 
 /**
  * What a snapshot the operator has already read leaves behind, so a resume folds it to nothing.
  *
- * Pi re-sends the whole transcript every revision, so a `follow` that opened on `emptyProjection`
- * after a reattach re-emits the entire history as live items — landing on top of the operator's
- * own newly typed turn and pushing it out of the window's 40-item cut (#8369). The attach lease
- * already carries the session's snapshot, and this is that snapshot read as "already rendered".
+ * The attach lease carries the session's whole transcript, and a `follow` that opened on
+ * `emptyProjection` after a reattach emits all of it as live items — landing on top of the
+ * operator's own newly typed turn and pushing it out of the window's 40-item cut (#8369). This is
+ * that same snapshot read as "already rendered".
  *
  * `held` is the caller's own tail, oldest first, and it answers both halves. Its newest
  * backend-minted row is where "already read" stops: everything at or older than that is seeded,
  * and anything after it is left unseeded so it emits — a turn the session finished while the
  * socket was down is work the operator has never seen, and seeding the whole snapshot would bury
  * it for the life of the session with no gap marker and no way to page to it (#8374). An empty
- * tail seeds nothing. A boundary this snapshot does not carry — a compaction renumbered the
- * transcript out from under the caller — also seeds nothing, which replays: a visibly wrong
- * transcript is recoverable and a silently missing reply is not.
+ * tail is `null`, which is this function's whole "nothing to seed from" answer. A boundary this
+ * snapshot does not carry — a compaction renumbered the transcript out from under the caller — is
+ * `null` too, and the caller replays: a visibly wrong transcript is recoverable and a silently
+ * missing reply is not. The replay is `paintOf` at the attach rather than the next push, because
+ * a push carries only what changed (`../wire/delta.ts`) and there is no history in one.
  *
  * A seeded row is fingerprinted off the **caller's** copy, never off the snapshot's. Being at or
  * older than the boundary means "already read" only if an item's content cannot move, and on this
@@ -283,9 +339,9 @@ export const eventsOf = (
 export const projectionOf = (
 	snapshot: SessionSnapshot,
 	held: ReadonlyArray<TranscriptItem>,
-): SnapshotProjection => {
+): SnapshotProjection | null => {
 	const through = newestBackendItemId(held);
-	if (through === null) return emptyProjection;
+	if (through === null) return null;
 	const carried = new Map(held.map((item) => [item.id as string, fingerprint(item)]));
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
@@ -306,7 +362,7 @@ export const projectionOf = (
 		const event = !moved && seeded.length === rows.length ? usageEventOf(source) : null;
 		if (event !== null) usage.set(source.id, fingerprint(event));
 	}
-	return reached ? {items, usage, phase: null} : emptyProjection;
+	return reached ? {items, usage, phase: null, revision: snapshot.revision} : null;
 };
 
 /**

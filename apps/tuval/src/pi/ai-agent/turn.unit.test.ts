@@ -130,7 +130,7 @@ const stub = (options: StubOptions) =>
 							: Effect.succeed({...SNAPSHOT, thinkingLevel: level}),
 				),
 			models: Effect.succeed(options.catalog ?? []),
-			snapshots: () => Stream.never,
+			updates: () => Stream.never,
 			disconnections: Stream.never,
 		};
 		return {

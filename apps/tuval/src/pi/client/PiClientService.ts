@@ -37,11 +37,12 @@ import type {
 	ModelRef,
 	RpcTarget,
 	ServerEvent,
+	SessionDelta,
 	SessionSnapshot,
 	SessionTarget,
 	ThinkingLevel,
 } from "../wire/index.ts";
-import {SERVICE_ID} from "../wire/index.ts";
+import {applyDelta, SERVICE_ID} from "../wire/index.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,
@@ -117,11 +118,20 @@ export interface PiClientApi {
 	 * `PiSessionRef`.
 	 */
 	readonly models: Effect.Effect<ReadonlyArray<ModelMetadata>>;
-	/** Every snapshot the server pushes for this session, for as long as the stream is pulled. */
-	readonly snapshots: (sessionId: string) => Stream.Stream<SessionSnapshot>;
+	/**
+	 * Everything the server pushes for this session, for as long as the stream is pulled: a whole
+	 * value on the first push and on a transcript no delta can patch, and what changed on every
+	 * revision in between. A caller folds both arms; this service only routes them.
+	 */
+	readonly updates: (sessionId: string) => Stream.Stream<SessionUpdate>;
 	/** One element per connection loss, so a caller can decide whether and when to reconnect. */
 	readonly disconnections: Stream.Stream<Disconnected>;
 }
+
+/** One revision as it reached this client; the two `_tag`s are the fold's own arms in `../ai-agent/`. */
+export type SessionUpdate =
+	| {readonly _tag: "snapshot"; readonly snapshot: SessionSnapshot}
+	| {readonly _tag: "delta"; readonly delta: SessionDelta};
 
 export interface PiClientConfig {
 	readonly transportFactory: ByteTransportFactory;
@@ -219,6 +229,16 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			if (event.type === "session_snapshot") {
 				const lease = leases.get(event.snapshot.id);
 				if (lease !== undefined) lease.snapshot = event.snapshot;
+			}
+			if (event.type === "session_delta") {
+				const lease = leases.get(event.delta.id);
+				// A command answer carries the whole value without bumping the revision, so a lease
+				// can already be past a delta the server built against an older send. Applying that
+				// one would walk the lease backwards; the window's fold drops it on the same test
+				// (`../ai-agent/items.ts`).
+				if (lease !== undefined && event.delta.revision > lease.snapshot.revision) {
+					lease.snapshot = applyDelta(lease.snapshot, event.delta);
+				}
 			}
 			for (const listener of eventListeners) listener(event);
 		};
@@ -392,13 +412,16 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			});
 		});
 
-		const snapshots = (sessionId: string): Stream.Stream<SessionSnapshot> =>
-			Stream.callback<SessionSnapshot>((queue) =>
+		const updates = (sessionId: string): Stream.Stream<SessionUpdate> =>
+			Stream.callback<SessionUpdate>((queue) =>
 				Effect.acquireRelease(
 					Effect.sync(() => {
 						const listener = (event: ServerEvent): void => {
 							if (event.type === "session_snapshot" && event.snapshot.id === sessionId) {
-								Queue.offerUnsafe(queue, event.snapshot);
+								Queue.offerUnsafe(queue, {_tag: "snapshot", snapshot: event.snapshot});
+							}
+							if (event.type === "session_delta" && event.delta.id === sessionId) {
+								Queue.offerUnsafe(queue, {_tag: "delta", delta: event.delta});
 							}
 						};
 						eventListeners.add(listener);
@@ -435,7 +458,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			setModel,
 			setThinkingLevel,
 			models: Effect.sync(() => models),
-			snapshots,
+			updates,
 			disconnections,
 		};
 	});

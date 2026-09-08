@@ -16,8 +16,13 @@ import {
 } from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {TOOL_RESULT_BYTE_LIMIT, type TranscriptItem} from "../../ai-agent/ports/index.ts";
-import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../wire/index.ts";
+import type {
+	TranscriptItem as PiTranscriptItem,
+	SessionDelta,
+	SessionSnapshot,
+} from "../wire/index.ts";
 import {
+	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
 	itemId,
@@ -26,6 +31,21 @@ import {
 	phaseOf,
 	projectionOf,
 } from "./items.ts";
+
+/**
+ * The seed a resume opens on, with the "nothing to seed from" answer read as the empty projection
+ * — which is what `PiAiAgent` does with it before painting the history instead.
+ */
+const seedOf = (
+	source: SessionSnapshot,
+	held: ReadonlyArray<TranscriptItem>,
+): ReturnType<typeof eventsOf>["next"] => projectionOf(source, held) ?? emptyProjection;
+
+/** The same snapshot one revision on, which is what the push after a seed actually carries. */
+const bumped = (source: SessionSnapshot): SessionSnapshot => ({
+	...source,
+	revision: source.revision + 1,
+});
 
 /**
  * The tail an operator holds who read this snapshot as far as `through`: the rows the fold would
@@ -275,14 +295,38 @@ describe("one revision folded into events", () => {
 	});
 
 	/**
+	 * The schedule from PR #8544's report: a turn's push wins the race against its own answer, the
+	 * operator's next send walks the projection back to `prompting`, and the answer lands carrying
+	 * an `idle` the projection has already passed. Folded, it emits a second `ready` under a live
+	 * turn and the core admits the next send mid-turn (#8214). The revision is what refuses it, so
+	 * arrival order is no longer the variable.
+	 */
+	it("drops an update at the revision it has already folded", () => {
+		const turn = snapshot([user, assistant("hi back", 0.42)], "idle", 2);
+		const folded = eventsOf(emptyProjection, turn);
+		const sent = {...folded.next, phase: "prompting" as const};
+
+		const late = eventsOf(sent, turn);
+		expect(late.events).toEqual([]);
+		expect(late.next).toBe(sent);
+	});
+
+	it("drops an update below the revision it has already folded", () => {
+		const folded = eventsOf(emptyProjection, snapshot([user, assistant("hi back")], "idle", 5));
+		const behind = eventsOf(folded.next, snapshot([user], "turn", 4));
+		expect(behind.events).toEqual([]);
+		expect(behind.next).toBe(folded.next);
+	});
+
+	/**
 	 * A resume opens a fresh fold over a transcript the operator is already reading, so the seed
-	 * off the attach lease's snapshot has to make Pi's next whole-transcript push a no-op: no
+	 * off the attach lease's snapshot has to make a whole-value push a no-op: no
 	 * `item`, so nothing is appended after the operator's own turn and pushed out of the window's
 	 * 40-item cut, and no `usage`, so the session's totals are not re-added (#8369).
 	 */
 	it("emits no item and no usage when a resume's seed already holds the whole transcript", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored, heldThrough(restored, "item-1")), restored);
+		const folded = eventsOf(seedOf(restored, heldThrough(restored, "item-1")), bumped(restored));
 		expect(folded.events).toEqual([{kind: "phase", phase: "ready"}]);
 	});
 
@@ -295,7 +339,7 @@ describe("one revision folded into events", () => {
 			timestamp: 13,
 		};
 		const folded = eventsOf(
-			projectionOf(restored, heldThrough(restored, "item-1")),
+			seedOf(restored, heldThrough(restored, "item-1")),
 			snapshot([user, assistant("hi back", 0.42), sent], "turn", 8),
 		);
 		expect(folded.events).toEqual([
@@ -311,7 +355,7 @@ describe("one revision folded into events", () => {
 	 */
 	it("emits what the session finished past the boundary the caller holds", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored, heldThrough(restored, user.id)), restored);
+		const folded = eventsOf(seedOf(restored, heldThrough(restored, user.id)), bumped(restored));
 		expect(folded.events).toEqual([
 			{
 				kind: "item",
@@ -339,8 +383,8 @@ describe("one revision folded into events", () => {
 	it("emits the cost of a turn the boundary fell inside, not just its reply", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
 		const folded = eventsOf(
-			projectionOf(restored, heldThrough(restored, "item-1:thinking")),
-			restored,
+			seedOf(restored, heldThrough(restored, "item-1:thinking")),
+			bumped(restored),
 		);
 		expect(folded.events).toEqual([
 			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
@@ -378,8 +422,8 @@ describe("one revision folded into events", () => {
 			status: "streaming",
 		};
 		const folded = eventsOf(
-			projectionOf(restored, [itemOf(user), ...itemsOf(streaming)]),
-			restored,
+			seedOf(restored, [itemOf(user), ...itemsOf(streaming)]),
+			bumped(restored),
 		);
 		expect(folded.events).toEqual([
 			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
@@ -403,10 +447,8 @@ describe("one revision folded into events", () => {
 	it("replays rather than guesses when the boundary is not in the snapshot", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
 		const folded = eventsOf(
-			projectionOf(restored, [
-				{kind: "assistant", id: itemId("item-gone"), timestamp: 9, text: "gone"},
-			]),
-			restored,
+			seedOf(restored, [{kind: "assistant", id: itemId("item-gone"), timestamp: 9, text: "gone"}]),
+			bumped(restored),
 		);
 		expect(folded.events.filter((event) => event.kind === "item")).toHaveLength(3);
 	});
@@ -417,16 +459,16 @@ describe("one revision folded into events", () => {
 	 */
 	it("restates the phase of a session that was still working when it was reattached", () => {
 		const working = snapshot([user], "turn", 7);
-		expect(eventsOf(projectionOf(working, heldThrough(working, "item-0")), working).events).toEqual(
-			[{kind: "phase", phase: "prompting"}],
-		);
+		expect(
+			eventsOf(seedOf(working, heldThrough(working, "item-0")), bumped(working)).events,
+		).toEqual([{kind: "phase", phase: "prompting"}]);
 	});
 
 	/**
-	 * A turn mid-stream is still one whole message: the wire's own `assistant_delta` never reaches
-	 * this fold — `PiClientService.snapshots` keeps only `session_snapshot` — so a growing reply
-	 * arrives as successive whole revisions. Its reasoning must therefore supersede itself under one
-	 * id, not stack a second row per revision.
+	 * A turn mid-stream is still one whole message. Tuval's wire carries no per-token content patch:
+	 * a `SessionDelta` names the whole item that moved (`../wire/delta.ts`), so a growing reply
+	 * arrives as successive whole copies of one item. Its reasoning must therefore supersede itself
+	 * under one id, not stack a second row per revision.
 	 */
 	it("supersedes a streaming turn's reasoning row instead of stacking one per revision", () => {
 		const streaming: PiTranscriptItem = {
@@ -458,6 +500,71 @@ describe("one revision folded into events", () => {
 			{kind: "item", item: itemOf(settledTool)},
 			{kind: "phase", phase: "ready"},
 		]);
+	});
+});
+
+/**
+ * The same fold over a delta rather than a whole value. A streamed turn signals per token, so this
+ * is the arm a live turn actually rides: the walk is over what the delta names, and everything it
+ * does not name is carried forward untouched.
+ */
+describe("one delta folded into events", () => {
+	const delta = (
+		items: ReadonlyArray<PiTranscriptItem>,
+		revision: number,
+		phase?: SessionSnapshot["phase"],
+	): SessionDelta => ({
+		id: "session-7602",
+		revision,
+		updatedAt: revision * 100,
+		...(phase === undefined ? {} : {phase}),
+		...(items.length === 0 ? {} : {items: [...items]}),
+	});
+
+	it("emits the one item a token changed and nothing else", () => {
+		const opened = eventsOf(emptyProjection, snapshot([user, streamingAssistant("hi")], "turn"));
+		const folded = deltaEventsOf(opened.next, delta([streamingAssistant("hi t")], 2));
+		expect(folded.events).toEqual([{kind: "item", item: itemOf(streamingAssistant("hi t"))}]);
+	});
+
+	it("carries the rest of the transcript forward rather than re-emitting it", () => {
+		const opened = eventsOf(emptyProjection, snapshot([user, streamingAssistant("hi")], "turn"));
+		const folded = deltaEventsOf(opened.next, delta([streamingAssistant("hi t")], 2));
+		const again = deltaEventsOf(folded.next, delta([streamingAssistant("hi t")], 3));
+		expect(again.events).toEqual([]);
+		expect(folded.next.items.get("item-0")).toBe(opened.next.items.get("item-0"));
+	});
+
+	it("emits a settled turn's cost with the reply it annotates, in that order", () => {
+		const opened = eventsOf(emptyProjection, snapshot([user, streamingAssistant("hi")], "turn"));
+		const folded = deltaEventsOf(opened.next, delta([assistant("hi back", 0.42)], 2, "idle"));
+		expect(folded.events).toEqual([
+			{kind: "item", item: itemsOf(assistant("hi back", 0.42))[0]},
+			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
+			{
+				kind: "usage",
+				turn: "item-1",
+				model: "faux/faux-1",
+				inputTokens: 11,
+				outputTokens: 22,
+				cost: 0.42,
+			},
+			{kind: "phase", phase: "ready"},
+		]);
+	});
+
+	it("leaves the phase line where it stands when the delta does not name one", () => {
+		const opened = eventsOf(emptyProjection, snapshot([user], "turn"));
+		const folded = deltaEventsOf(opened.next, delta([streamingAssistant("hi")], 2));
+		expect(folded.events.some((event) => event.kind === "phase")).toBe(false);
+		expect(folded.next.phase).toBe("prompting");
+	});
+
+	it("drops a delta at or below the revision it has already folded", () => {
+		const opened = eventsOf(emptyProjection, snapshot([user], "turn", 5));
+		const late = deltaEventsOf(opened.next, delta([streamingAssistant("hi")], 5, "idle"));
+		expect(late.events).toEqual([]);
+		expect(late.next).toBe(opened.next);
 	});
 });
 
