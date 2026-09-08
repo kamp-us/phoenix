@@ -42,7 +42,9 @@ describe("Diff", () => {
 		expect(region.classList.contains("kp-diff")).toBe(true);
 	});
 
-	it("names no individual line, so a screen reader reads the code and not a label per row", () => {
+	// `querySelectorAll` does not cross a shadow boundary, so this holds for the light DOM this
+	// component owns and says nothing about the rows the library draws inside its shadow root.
+	it("adds exactly one aria-label of its own — the region's — and none per line", () => {
 		const {container} = render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
 
 		expect(container.querySelectorAll("[aria-label]").length).toBe(1);

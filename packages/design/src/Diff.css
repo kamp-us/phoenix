@@ -1,5 +1,8 @@
 .kp-diff {
-	max-block-size: var(--kp-diff-max-block-size, 60vh);
+	/* A consumer retunes the cap by re-declaring this on `.kp-diff` from a more specific rule. */
+	--kp-diff-max-block-size: 60vh;
+
+	max-block-size: var(--kp-diff-max-block-size);
 	overflow: auto;
 	border: 1px solid var(--border);
 	border-radius: var(--r-md);
@@ -19,6 +22,16 @@
  * same token on both sides, and why the `-override` inputs are preferred where the library has one.
  */
 .kp-diff__pane {
+	/*
+	 * The library's stylesheet is full of `light-dark()`, which resolves off the USED
+	 * `color-scheme` — and its `:host` sets `light dark`, so every one of those would follow the
+	 * operator's OS rather than phoenix's `data-theme`. Pinning the scheme here, from the same
+	 * attribute the role tokens switch on, settles all of them at once, including the row-tint
+	 * ratios (`--diffs-bg-addition`/`-deletion` and their emphasis pairs) that have no
+	 * `-override` input to reach.
+	 */
+	color-scheme: light;
+
 	display: block;
 
 	/* chrome */
@@ -37,9 +50,28 @@
 	/* the Shiki css-variables theme registered in `Diff.tsx` */
 	--diffs-foreground: var(--text-primary);
 	--diffs-background: var(--surface-sunken);
-	--diffs-ansi-green: var(--success);
+	/*
+	 * The full ANSI set, not just the three the diff chrome reads: the theme emits
+	 * `var(--diffs-ansi-…)` with NO fallback for every one of them, so an ANSI-scoped grammar
+	 * would hit an unresolved colour. The role layer has one accent, so magenta and cyan share it.
+	 */
+	--diffs-ansi-black: var(--surface);
 	--diffs-ansi-red: var(--danger);
+	--diffs-ansi-green: var(--success);
+	--diffs-ansi-yellow: var(--warning);
 	--diffs-ansi-blue: var(--accent);
+	--diffs-ansi-magenta: var(--link);
+	--diffs-ansi-cyan: var(--link);
+	--diffs-ansi-white: var(--text-muted);
+	--diffs-ansi-bright-black: var(--text-faint);
+	--diffs-ansi-bright-red: var(--danger);
+	--diffs-ansi-bright-green: var(--success);
+	--diffs-ansi-bright-yellow: var(--warning);
+	--diffs-ansi-bright-blue: var(--accent);
+	--diffs-ansi-bright-magenta: var(--link);
+	--diffs-ansi-bright-cyan: var(--link);
+	--diffs-ansi-bright-white: var(--text-primary);
+
 	--diffs-token-comment: var(--text-muted);
 	--diffs-token-string: var(--success);
 	--diffs-token-string-expression: var(--success);
@@ -52,4 +84,8 @@
 	--diffs-token-inserted: var(--success);
 	--diffs-token-deleted: var(--danger);
 	--diffs-token-changed: var(--warning);
+}
+
+[data-theme="dark"] .kp-diff__pane {
+	color-scheme: dark;
 }
