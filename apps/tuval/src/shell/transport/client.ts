@@ -19,6 +19,7 @@ import {Socket} from "effect/unstable/socket";
 import type {Message, ProcessId} from "../../process/process.ts";
 import type {CallId} from "../../protocol/ids.ts";
 import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
+import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
 import type {PrefixTable} from "../keys/table.ts";
@@ -53,6 +54,7 @@ export interface AttachedProcess<S = unknown, M extends Message = Message> {
 }
 
 export interface PageAttachment {
+	readonly spells: Stream.Stream<RegistryDescription>;
 	/** The kernel's process table, current rows first and then every change. */
 	readonly rows: Stream.Stream<ReadonlyArray<TableRow>>;
 	/**
@@ -109,6 +111,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const rowsRef = yield* SubscriptionRef.make<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const programsRef = yield* SubscriptionRef.make<ReadonlyArray<WireProgram>>([]);
 	const keysRef = yield* SubscriptionRef.make<PrefixTable | null>(null);
+	const spellsRef = yield* SubscriptionRef.make<RegistryDescription | null>(null);
 	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
 	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
 	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
@@ -130,6 +133,8 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 
 	const onFrame = (frame: ServerFrame): Effect.Effect<void> => {
 		switch (frame.kind) {
+			case "tuval/transport/spell-registry/v1":
+				return SubscriptionRef.set(spellsRef, frame.registry);
 			case "tuval/transport/table/v1":
 				return SubscriptionRef.update(rowsRef, (rows) => {
 					const next = new Map(rows);
@@ -291,6 +296,10 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	);
 
 	return {
+		spells: Stream.filter(
+			SubscriptionRef.changes(spellsRef),
+			(rows): rows is RegistryDescription => rows !== null,
+		),
 		rows: Stream.map(SubscriptionRef.changes(rowsRef), (rows) => [...rows.values()]),
 		programs: SubscriptionRef.changes(programsRef),
 		keys: Stream.filter(

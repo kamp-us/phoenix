@@ -140,6 +140,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	});
 
 	const page: PageAttachment = {
+		spells: Stream.empty,
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
 		programs: Stream.succeed(options?.programs ?? catalog),
 		call: () => Effect.never,

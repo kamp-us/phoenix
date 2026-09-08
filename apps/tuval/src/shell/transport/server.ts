@@ -28,6 +28,7 @@ import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
 import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
+import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import {type AnyProgram, programLabel} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
@@ -87,6 +88,7 @@ export interface ServeOptions {
 	 * a dispatch of this transport's own.
 	 */
 	readonly spells: SpellChannel;
+	readonly descriptions: Stream.Stream<RegistryDescription>;
 }
 
 export interface TransportServer {
@@ -202,7 +204,15 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	yield* Effect.forkScoped(
 		server.run((socket) =>
 			Effect.scoped(
-				session(socket, options.handles, options.spells, options.table, pages, catalogLock),
+				session(
+					socket,
+					options.handles,
+					options.spells,
+					options.descriptions,
+					options.table,
+					pages,
+					catalogLock,
+				),
 			).pipe(Effect.provideContext(services)),
 		),
 	);
@@ -228,6 +238,7 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
 	spells: SpellChannel,
+	descriptions: Stream.Stream<RegistryDescription>,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -395,6 +406,12 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				// and reaches this page too.
 				yield* Effect.sync(() => void pages.add(send));
 			}),
+		);
+		yield* Effect.forkIn(
+			Stream.runForEach(descriptions, (registry) =>
+				send({kind: "tuval/transport/spell-registry/v1", registry}),
+			),
+			scope,
 		);
 		yield* Effect.ignore(Deferred.succeed(ready, undefined));
 	});
