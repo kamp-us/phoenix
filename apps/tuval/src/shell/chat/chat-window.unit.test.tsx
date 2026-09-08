@@ -900,6 +900,113 @@ describe("paging", () => {
 	});
 });
 
+describe("a fold closing under the reader", () => {
+	// The shape #8446 was sighted on: a tool call heading a fold of nested children, ordinary turns
+	// above it, more history behind. Closing the fold drops the revealed rows, the scroller is left
+	// resting past the end of what is left, and the browser clamps the offset to that end and fires
+	// one ordinary scroll carrying it — measured in Chromium through the repo's own playwright, on
+	// #8446. jsdom neither lays out nor clamps, so the clamp is staged: the offset is written and
+	// the event fired, the way every other scroll in this file is.
+	const group = [
+		userItem("i0", "prompt 0"),
+		assistantItem("i1", "answer 1"),
+		call("agent", {name: "Agent"}),
+		call("child-1", {name: "bash", parentId: "agent"}),
+		// Between the two calls so the fold reveals three rows rather than one: consecutive calls at
+		// one depth render as a single run row (#8612), and this case is about the height the reveal
+		// adds, not about how the calls print.
+		{...assistantItem("child-2", "nested answer"), parentId: ItemId.make("agent")},
+		call("child-3", {name: "grep", parentId: "agent"}),
+	];
+
+	// Every row measures a full viewport here, so a transcript short enough for the clamped offset
+	// to land inside the top threshold is staged from the threshold instead — the same staging the
+	// "stops following the newest turn when it is the top that asked for the page" case uses. On a
+	// real desk it is the transcript that is short: closing the fold brings it near its viewport's
+	// own height.
+	const TOP_THRESHOLD = TEST_VIEWPORT.height * 4;
+
+	const foldButton = (): HTMLElement => screen.getByRole("button", {name: /nested calls?$/});
+
+	/**
+	 * A window opened on the fold already unfolded, with its opening scroll landed and its box
+	 * following the rows.
+	 *
+	 * Restored open rather than clicked open, so the only scroll the window has asked for is the
+	 * opening one and landing it leaves the reader's own scroll as the first thing it did not ask
+	 * for. Clicking would leave the opening `scrollToIndex` re-deriving its target off the reveal's
+	 * own measurements, and a scroll of the window's own is exempt from both readings under test.
+	 */
+	const withFoldOpen = async (view: Partial<ChatView> = {}) => {
+		const harness = await openWindow(
+			withTranscript(group),
+			{pageLimit: 25, topThreshold: TOP_THRESHOLD},
+			{...initialChatView, unfolded: ["agent"], ...view},
+		);
+		trackContentHeight();
+		await landPendingScroll(harness.scrolls);
+		await settle();
+		return harness;
+	};
+
+	const closeFold = async (): Promise<void> => {
+		await act(async () => {
+			fireEvent.click(foldButton());
+		});
+		await settle();
+	};
+
+	it("reads the clamp the close produces as the clamp it is, and asks for no page", async () => {
+		const {process, view} = await withFoldOpen();
+		const revealedEnd = contentEnd();
+		// The reader resting inside the rows the fold revealed, short of the end — so the window is
+		// unpinned, which is the state `toggleFold` leaves it in when it opens one, and the state
+		// with no protection.
+		const restingAt = revealedEnd - TEST_VIEWPORT.height;
+		await scrollTo(restingAt);
+		await waitFor(() => expect(view().pinned).toBe(false));
+		await settle();
+		expect(process.inbox()).toEqual([]);
+
+		await closeFold();
+		const closedEnd = contentEnd();
+		// The list shortened under the reader, the offset they rest at is past the new end, and that
+		// end is inside the top threshold: the three facts that make the clamp reach `requestOlder`.
+		expect(closedEnd).toBeLessThan(revealedEnd);
+		expect(restingAt).toBeGreaterThan(closedEnd);
+		expect(closedEnd).toBeLessThanOrEqual(TOP_THRESHOLD);
+		expect(restingAt).toBeGreaterThan(TOP_THRESHOLD);
+
+		await scrollTo(closedEnd);
+		await settle();
+
+		expect(process.inbox()).toEqual([]);
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+	});
+
+	// The twin, and the reason the guard above is about the clamp rather than about folds: with the
+	// reader resting on the newest turn the window is pinned, its own follow effect issues the
+	// scroll, and `selfScrollRef` already answers the event that carries it back.
+	it("asks for no page when the reader rests at the bottom and the follow issues the scroll", async () => {
+		const {process, scrolls, view} = await withFoldOpen();
+		await scrollTo(contentEnd());
+		await waitFor(() => expect(view().pinned).toBe(true));
+		await settle();
+		const before = scrolls.length;
+
+		await closeFold();
+
+		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
+		const asked = scrolls[scrolls.length - 1];
+		if (asked === undefined) throw new Error("the follow asked its scroller for nothing");
+		await scrollTo(asked);
+		await settle();
+
+		expect(process.inbox()).toEqual([]);
+		expect(view().pinned).toBe(true);
+	});
+});
+
 describe("the composer", () => {
 	it("sends one prompt with a fresh key and clears the draft", async () => {
 		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
