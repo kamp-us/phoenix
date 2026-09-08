@@ -374,10 +374,19 @@ export const settleTurn = (state: AiAgentSessionState): AiAgentSessionState =>
 export const checkpointWorthy = (state: AiAgentSessionState): boolean =>
 	!holdsPartialItem(state) && !holdsRunningSubagent(state);
 
-/** The newest assistant turn in the tail, which is the one a restart can have cut. */
+/**
+ * The reply row of the turn in flight, which is the one an interrupt or a restart can have cut.
+ *
+ * Scoped to the newest `user` row deliberately: a turn whose content was tool calls alone draws no
+ * assistant row at all (`../pi/items.ts` suppresses it), so a scan that walked past the operator's
+ * prompt would answer with the *previous* turn's finished reply and badge it as cut short (#8216).
+ * `null` is the right answer there — the turn has no row to mark, and `state.interruption` plus the
+ * `aborted` row the backend pushes already carry the indication.
+ */
 export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
 	for (let index = items.length - 1; index >= 0; index -= 1) {
 		const item = items[index];
+		if (item?.kind === "user") return null;
 		if (item?.kind === "assistant") return item.id;
 	}
 	return null;
