@@ -143,8 +143,10 @@ function lateCatalogBridge(): {
 	const bridge: AgentChatInputBridge = {
 		loadPiState: async () => ({isStreaming: false}),
 		loadPiCommands: async () => [],
-		loadPiModels: async () => [],
-		loadPiThinkingLevels: async () => [],
+		// `undefined`, not `[]`: this host does not know what it offers yet, which is a different
+		// answer from knowing it offers nothing (#8425).
+		loadPiModels: async () => undefined,
+		loadPiThinkingLevels: async () => undefined,
 		loadPiFiles: async () => [],
 		setPiModel: async () => undefined,
 		setPiThinkingLevel: async () => undefined,

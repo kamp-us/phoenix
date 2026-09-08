@@ -21,6 +21,7 @@ import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {
+	assistantItem,
 	call,
 	commands,
 	models,
@@ -490,6 +491,32 @@ describe("the composer's thinking picker", () => {
 		// The model picker beside it stays untouched by the push, which is the other half of "no
 		// rebuild": a new bridge identity would have re-run its load and emptied this too.
 		expect(screen.queryByRole("button", {name: /^model: /})).toBeTruthy();
+	});
+
+	it("says nothing is offered on a ready backend that offers no levels", async () => {
+		// The reported desk (#8425): Pi's faux backend advertises no levels, so this control read
+		// `loading` from boot to exit on a session that was answering turns. It is the same empty
+		// list as the case above; the phase is what tells the two apart.
+		const answered = withTranscript([userItem("u1", "go"), assistantItem("a1", "done")], {
+			thinking: {current: null, available: []},
+		});
+		const {process} = await open(answered);
+		const trigger = await picker();
+		await waitFor(() =>
+			expect(trigger.getAttribute("aria-label")).toBe("thinking effort: none offered"),
+		);
+		expect(trigger.getAttribute("disabled")).not.toBeNull();
+
+		// And it stays settled across the restore the report also captured: a rebuilt session with
+		// the same empty offer has nothing new to say, and nothing re-enters loading.
+		await act(async () => {
+			await Effect.runPromise(process.commit({...answered, sessionId: "session-2"}));
+		});
+		await waitFor(() =>
+			expect(
+				screen.getByRole("button", {name: /^thinking effort: /}).getAttribute("aria-label"),
+			).toBe("thinking effort: none offered"),
+		);
 	});
 });
 
