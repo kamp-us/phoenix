@@ -522,10 +522,15 @@ describe("the composer's thinking picker", () => {
 
 describe("two windows over one process", () => {
 	it("keep their own expanded rows and share the cards and the mode", async () => {
-		const state = withTranscript([call("t1"), call("t2", {name: "grep"})], {
-			permissions: {r1: pendingPermission()},
-			modes: modes(["plan", "build"], "plan"),
-		});
+		// A reply between the two calls, so each is a row of its own with a disclosure of its own —
+		// consecutive calls are one collapsed run (#8612), and this case is about two open rows.
+		const state = withTranscript(
+			[call("t1"), assistantItem("a1", "on it"), call("t2", {name: "grep"})],
+			{
+				permissions: {r1: pendingPermission()},
+				modes: modes(["plan", "build"], "plan"),
+			},
+		);
 		const shared = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);

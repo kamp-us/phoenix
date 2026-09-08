@@ -12,6 +12,7 @@ import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {
 	assistantItem,
 	call,
+	compactionItem,
 	systemItem,
 	thinkingItem,
 	toolItem,
@@ -47,6 +48,14 @@ const stored = <Item extends TranscriptItem>(item: Item, position: number): Item
 
 const itemIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
 	rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
+
+/** Every transcript item a row carries, in list order — a run's calls included (#8612). */
+const carriedIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
+	rows.flatMap((row) => {
+		if (row.kind === "item") return [row.item.id];
+		if (row.kind === "tools") return row.calls.map((call) => call.id);
+		return [];
+	});
 
 describe("chatRows", () => {
 	it("puts one head row above the transcript while there is history behind it", () => {
@@ -136,15 +145,13 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 			atOldest: true,
 			unfolded: new Set(["agent"]),
 		});
-		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
-			"agent",
-			"child-1",
-			"child-2",
-			"own",
-		]);
-		expect(rows.flatMap((row) => (row.kind === "item" && row.nested ? [row.item.id] : []))).toEqual(
-			["child-1", "child-2"],
-		);
+		expect(carriedIds(rows)).toEqual(["agent", "child-1", "child-2", "own"]);
+		// The two worker calls are consecutive at one depth, so they are one run (#8612) — and the
+		// run is marked nested, which is what the indent and the spoken author name both read.
+		const run = rows[1];
+		expect(run?.kind).toBe("tools");
+		expect(run?.kind === "tools" && run.nested).toBe(true);
+		expect(run?.kind === "tools" && run.depth).toBe(1);
 	});
 
 	it("leaves a row whose parent is not loaded in place, marked nested and heading nothing", () => {
@@ -227,12 +234,13 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 		]);
 	});
 
-	it("leaves a transcript with no parent marked on it exactly as it was", () => {
-		const flat = [call("a"), call("b")];
+	it("leaves a transcript with no parent marked on it unnested, at depth zero", () => {
+		const flat = [call("a"), assistantItem("mid", "thinking about it"), call("b")];
 		const rows = chatRows({...base, tail: flat, atOldest: true});
 		expect(rows).toEqual([
 			{kind: "item", item: flat[0], nestedIds: [], nested: false, depth: 0},
 			{kind: "item", item: flat[1], nestedIds: [], nested: false, depth: 0},
+			{kind: "item", item: flat[2], nestedIds: [], nested: false, depth: 0},
 		]);
 	});
 });
@@ -519,7 +527,7 @@ describe("a live tail carrying an exchange the bounds cannot hold", () => {
 			loading: false,
 			atOldest: true,
 		});
-		const ids = rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
+		const ids = carriedIds(rows);
 		expect(ids).toEqual(history.map((item) => item.id));
 		expect(new Set(ids).size).toBe(ids.length);
 	});
@@ -704,5 +712,138 @@ describe("subagentRows", () => {
 		const open = subagentRows(slot, new Set(["t1"]));
 		expect(itemIds(open)).toEqual(["t1", "nested"]);
 		expect(open[1]?.kind === "item" && open[1].depth).toBe(1);
+	});
+});
+
+/**
+ * The run scan (#8612). Six reads are one line saying "Read 6 files", not six labelled blocks — so
+ * what has to be proven here is where a run *ends*, because a boundary the scan misses is two
+ * unrelated stretches of work read as one sentence.
+ */
+describe("chatRows collapses a run of consecutive tool calls", () => {
+	const runAt = (rows: ReadonlyArray<ChatRow>, index: number) => {
+		const row = rows[index];
+		return row?.kind === "tools" ? row.calls.map((item) => item.id) : null;
+	};
+
+	it("groups a maximal span into one row carrying the calls in order", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [userItem("u", "go"), call("t1"), call("t2"), call("t3"), assistantItem("a", "done")],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "tools", "item"]);
+		expect(runAt(rows, 1)).toEqual(["t1", "t2", "t3"]);
+	});
+
+	it("leaves a span of one as the tool row it was, disclosure and all", () => {
+		const rows = chatRows({...base, atOldest: true, tail: [call("t1"), assistantItem("a")]});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "item"]);
+	});
+
+	it("breaks on a compaction row, so two contexts never read as one run", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [call("t1"), call("t2"), compactionItem("c1"), call("t3"), call("t4")],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+		expect(runAt(rows, 0)).toEqual(["t1", "t2"]);
+		expect(runAt(rows, 2)).toEqual(["t3", "t4"]);
+	});
+
+	it("breaks on a session notice, which keeps its own row untouched", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [call("t1"), call("t2"), systemItem("s1"), call("t3"), call("t4")],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["tools", "session", "tools"]);
+	});
+
+	it("breaks on a spawning call, and never absorbs one", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				call("t1"),
+				call("t2"),
+				call("agent", {name: "Agent"}),
+				call("child", {parentId: "agent"}),
+				call("t3"),
+				call("t4"),
+			],
+		});
+		// The spawning call stays an item row: its fold, its `aria-expanded` and the rows it reveals
+		// are a second disclosure a sentence has no room for (#8027/#8057).
+		expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+		expect(rows[1]?.kind === "item" && rows[1].item.id).toBe("agent");
+		expect(rows[1]?.kind === "item" && rows[1].nestedIds).toEqual(["child"]);
+	});
+
+	it("never absorbs a spawning call whose worker rows left the window entirely", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+			tail: [
+				call("t1"),
+				call("agent", {name: "Agent"}),
+				call("child", {parentId: "agent"}),
+				call("t2"),
+			],
+		});
+		// With the worker's rows gone the call heads nothing, so the slot is the only thing left
+		// saying it spawned — and the scan has to read that rather than the now-empty `nestedIds`.
+		expect(carriedIds(rows)).toEqual(["t1", "agent", "t2"]);
+		expect(rows.every((row) => row.kind === "item")).toBe(true);
+	});
+
+	it("breaks on a reply, a thought and the operator's own turn between calls", () => {
+		for (const between of [assistantItem("a", "done"), thinkingItem("th"), userItem("u", "go")]) {
+			const rows = chatRows({
+				...base,
+				atOldest: true,
+				tail: [call("t1"), call("t2"), between, call("t3"), call("t4")],
+			});
+			expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+		}
+	});
+
+	it("breaks on a depth change, so a worker's calls and the agent's are two runs", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			unfolded: new Set(["agent"]),
+			tail: [
+				call("agent", {name: "Agent"}),
+				call("child-1", {parentId: "agent"}),
+				call("child-2", {parentId: "agent"}),
+				call("own-1"),
+				call("own-2"),
+			],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "tools", "tools"]);
+		expect(rows[1]?.kind === "tools" && rows[1].depth).toBe(1);
+		expect(rows[2]?.kind === "tools" && rows[2].depth).toBe(0);
+	});
+
+	it("keys the run apart from every call's own row id, so one `expanded` set holds both", () => {
+		const first = call("t1");
+		const calls = [first, call("t2")];
+		const rows = chatRows({...base, atOldest: true, tail: calls});
+		const key = rowKey(rows[0] as ChatRow);
+		expect(key).toBe("tools:t1");
+		expect(key).not.toBe(
+			rowKey({kind: "item", item: first, nestedIds: [], nested: false, depth: 0}),
+		);
+		expect(calls.map((item) => String(item.id))).not.toContain(key);
+	});
+
+	it("carries the page cursor and the prepend anchor like any other row", () => {
+		const rows = chatRows({...base, atOldest: true, tail: [call("t1"), call("t2")]});
+		expect(oldestLoadedId(rows)).toBe("t1");
+		// Membership, not the run's key: an anchor may name a call buried mid-run.
+		expect(rowIndexOfItem(rows, "t2")).toBe(0);
 	});
 });

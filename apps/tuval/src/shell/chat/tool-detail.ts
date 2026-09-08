@@ -84,19 +84,62 @@ export const diffLines = (before: string, after: string): ReadonlyArray<DiffLine
 	return rows;
 };
 
-/** What the expanded row shows for one call. Total: every input has a rendering. */
-export const toolDetail = (item: ToolItem): ToolDetail => {
+/**
+ * What one call did, read off its input alone. The four actions are what a run of calls is counted
+ * and spoken in (`tool-run.ts`), and they carry the strings the reading found rather than a flag
+ * beside them, so nothing downstream has to probe the input a second time and reach a different
+ * answer.
+ *
+ * `other` is the honest end of the ladder: a shape this file does not recognise says only that a
+ * tool ran. It is never guessed into one of the other three.
+ */
+export type ToolShape =
+	| {
+			readonly action: "edit";
+			readonly path: string;
+			readonly before: string;
+			readonly after: string;
+	  }
+	| {readonly action: "read"; readonly path: string}
+	| {readonly action: "command"; readonly command: string}
+	| {readonly action: "other"};
+
+export type ToolAction = ToolShape["action"];
+
+/**
+ * The one shape probe. The order is the precedence: an edit is a path plus both texts, a shell call
+ * is a command, and a bare path with neither is a read — so a call carrying a path *and* a command
+ * reads as the command it ran, as it did before this was a named answer.
+ */
+export const toolShape = (item: ToolItem): ToolShape => {
 	const input = item.input;
-	if (!isRecord(input)) return {kind: "generic", input: JSON.stringify(input) ?? "null"};
+	if (!isRecord(input)) return {action: "other"};
 	const path = stringAt(input, PATH_KEYS);
 	const before = stringAt(input, OLD_KEYS);
 	const after = stringAt(input, NEW_KEYS);
 	if (path !== null && before !== null && after !== null) {
-		return {kind: "edit", path, diff: diffLines(before, after)};
+		return {action: "edit", path, before, after};
 	}
 	const command = stringAt(input, COMMAND_KEYS);
-	if (command !== null) return {kind: "shell", command};
-	return {kind: "generic", input: JSON.stringify(input, null, 2) ?? "null"};
+	if (command !== null) return {action: "command", command};
+	return path === null ? {action: "other"} : {action: "read", path};
+};
+
+/**
+ * The raw input a generic row falls back to. A record is pretty-printed and anything else is not:
+ * an array or a bare string has no keys to lay out, and indenting one only spreads it down the row.
+ */
+const rawInput = (input: JsonValue): string =>
+	(isRecord(input) ? JSON.stringify(input, null, 2) : JSON.stringify(input)) ?? "null";
+
+/** What the expanded row shows for one call. Total: every input has a rendering. */
+export const toolDetail = (item: ToolItem): ToolDetail => {
+	const shape = toolShape(item);
+	if (shape.action === "edit") {
+		return {kind: "edit", path: shape.path, diff: diffLines(shape.before, shape.after)};
+	}
+	if (shape.action === "command") return {kind: "shell", command: shape.command};
+	return {kind: "generic", input: rawInput(item.input)};
 };
 
 /** The omission line an expanded row shows when the per-item bound cut the result. */

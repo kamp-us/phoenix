@@ -72,6 +72,7 @@ import {SessionRow} from "./SessionRow.tsx";
 import {SubagentList, type SubagentListHandle} from "./SubagentList.tsx";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
+import {ToolRunRow} from "./ToolRunRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
 import {asChatView, type ChatView, viewMain, viewSubagent} from "./view.ts";
 import "./chat.css";
@@ -221,6 +222,18 @@ const who: Readonly<Record<RowItem["kind"], string>> = {
  */
 const authorName = (kind: RowItem["kind"], nested: boolean): string =>
 	nested ? `${who[kind]}, inside a subagent call` : who[kind];
+
+/**
+ * The wrapper's shape hooks for one row. A run of calls is about its calls, so it reads as a tool
+ * row's shape and indents at its own depth; a paging head and a session run have neither.
+ */
+const rowShape = (
+	row: ChatRow,
+): {readonly role?: RowItem["kind"]; readonly nested: boolean; readonly depth: number} => {
+	if (row.kind === "item") return {role: row.item.kind, nested: row.nested, depth: row.depth};
+	if (row.kind === "tools") return {role: "tool", nested: row.nested, depth: row.depth};
+	return {nested: false, depth: 0};
+};
 
 /**
  * What a row shows under its label. Three kinds carry a shape of their own, and all three are
@@ -387,6 +400,14 @@ function RowView({
 					onToggle={(next) => onToggleRow(id, next)}
 					onViewSubagent={onViewSubagent}
 				/>
+			</>
+		);
+	}
+	if (row.kind === "tools") {
+		return (
+			<>
+				<span className="kp-visually-hidden">{authorName("tool", row.nested)}</span>
+				<ToolRunRow calls={row.calls} />
 			</>
 		);
 	}
@@ -1037,6 +1058,7 @@ function ChatWindow({
 						{virtualizer.getVirtualItems().map((virtual) => {
 							const row = rows[virtual.index];
 							if (row === undefined) return null;
+							const shape = rowShape(row);
 							return (
 								<div
 									key={virtual.key}
@@ -1045,14 +1067,14 @@ function ChatWindow({
 									data-kind={row.kind === "item" ? row.item.kind : row.kind}
 									// Authorship as the row's shape carries it (#8210), and the hook the bubble and
 									// prose rules in `chat.css` hang on.
-									data-message-role={row.kind === "item" ? row.item.kind : undefined}
-									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
+									data-message-role={shape.role}
+									data-nested={shape.nested ? "true" : undefined}
 									ref={virtualizer.measureElement}
 									style={{
 										transform: `translateY(${virtual.start}px)`,
 										// One indent step per fold the row sits inside, so a subagent's own subagent
 										// reads as a further step in rather than as another row at the same level.
-										...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
+										...(shape.depth > 0 ? {"--nest-depth": shape.depth} : {}),
 									}}
 								>
 									<RowView
