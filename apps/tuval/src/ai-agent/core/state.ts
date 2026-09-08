@@ -147,12 +147,16 @@ export interface AiAgentSessionState {
 	readonly usage: UsageLedger;
 	/**
 	 * The version of whatever the layer is driving, as that layer reports it — the Claude Code CLI
-	 * on PATH for one row, Pi's adapter for the other — or `null` before any layer has said.
+	 * for one row, Pi's adapter for the other — or `null` before any layer has said.
 	 *
 	 * Model-blind on purpose: it is one string nobody parses, so a second backend fills the same
-	 * slot rather than growing its own. The point of showing it is drift — the SDK pin is ours and
-	 * the CLI is whatever is on PATH (#7580) — so it is rendered as the desk inspector's `Version`
-	 * row (`../window/AiAgentInspector.tsx`) rather than living in the Claude layer's log line.
+	 * slot rather than growing its own. The point of showing it is drift (#7580), so it is rendered
+	 * as the desk inspector's `Version` row (`../window/AiAgentInspector.tsx`) rather than living in
+	 * the Claude layer's log line. What the Claude row reports is the CLI the Agent SDK bundles and
+	 * launches, which is not necessarily the `claude` on `PATH`: the SDK spawns its own built-in
+	 * executable unless `pathToClaudeCodeExecutable` names another (`sdk.d.ts` at the `0.3.259`
+	 * pin), and this program never sets it — a desk on SDK `0.3.259` reported CLI `2.1.259` while
+	 * `claude --version` on the same box read `2.1.263`.
 	 */
 	readonly agentVersion: string | null;
 	/**
