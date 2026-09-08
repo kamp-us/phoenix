@@ -383,14 +383,56 @@
 /*
  * The compaction marker: its line, then a rule running out to the edge, because the operator's
  * question here is *where* the earlier turns went rather than what the session said about it.
+ *
+ * Two rows in a grid, and the disclosure is `display: contents` so its own two boxes take places in
+ * that grid: the trigger sits beside the rule on the divider's line, and the panel spans the whole
+ * width beneath both. Nesting the rule inside the trigger would be the simpler markup and is not
+ * available — a `Collapsible` trigger is a `button`, which takes phrasing content only.
  */
 .tuval-chat-compaction {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto 1fr;
 	align-items: center;
-	gap: var(--s-2);
+	column-gap: var(--s-2);
+	min-inline-size: 0;
 }
 
+.tuval-chat-compaction-disclosure {
+	display: contents;
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="trigger"] {
+	grid-row: 1;
+	grid-column: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+	min-inline-size: 0;
+	min-block-size: var(--tap-min);
+	text-align: start;
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="indicator"] svg {
+	inline-size: 14px;
+	block-size: 14px;
+	color: var(--text-muted);
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="content"] {
+	grid-row: 2;
+	grid-column: 1 / -1;
+	min-inline-size: 0;
+}
+
+/*
+ * The divider's own line: micro uppercase, and never wrapping against the rule beside it. It clips
+ * because it is a preview of a payload with no length bound — the summary itself wraps in the panel
+ * below, where `.tuval-chat-markdown` styles it like any other row (#8608).
+ */
 .tuval-chat-compaction-label {
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	font: var(--t-micro);
 	color: var(--text-muted);
 	text-transform: uppercase;
@@ -398,8 +440,16 @@
 	white-space: nowrap;
 }
 
+.tuval-chat-compaction-summary {
+	padding-block-start: var(--s-2);
+	color: var(--text-secondary);
+	white-space: normal;
+	text-transform: none;
+}
+
 .tuval-chat-compaction-rule {
-	flex: 1;
+	grid-row: 1;
+	grid-column: 2;
 	margin: 0;
 	border: 0;
 	block-size: 1px;

@@ -1786,9 +1786,15 @@ describe("the two daily rows", () => {
 		expect(marker?.getAttribute("data-kind")).toBe("compaction");
 		// The line is beside the rule and is not a text row: the assistant's turn above is what a
 		// text row looks like, and this is the one other shape the transcript draws.
-		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
+		expect(marker?.querySelector(".tuval-chat-compaction-label")?.textContent).toBe(
+			"context compacted",
+		);
 		expect(screen.getByText("done").closest(".tuval-chat-markdown")).not.toBeNull();
-		expect(marker?.querySelector(".tuval-chat-markdown")).toBeNull();
+		// The payload's own markdown is behind the disclosure, so nothing of it is read until the
+		// row is opened — the marker itself stays a divider (#8608).
+		const summary = marker?.querySelector(".tuval-chat-compaction-summary");
+		expect(summary).not.toBeNull();
+		expect(summary?.closest("[data-part='content']")?.hasAttribute("hidden")).toBe(true);
 	});
 });
 
