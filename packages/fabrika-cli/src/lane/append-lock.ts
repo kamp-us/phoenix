@@ -94,7 +94,7 @@ const removeLock = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect<v
  *
  * `absent` returns on the first attempt instead of polling: waiting out the budget for a directory
  * to appear reports contention that can never clear, which is what sent a shipper into a retry loop
- * against a lane nobody had opened (#8578).
+ * against a lane nobody had opened.
  */
 export const acquireLedgerLock = (
 	fs: FileSystem.FileSystem,
@@ -130,7 +130,7 @@ export const releaseLedgerLock = (
  * the holder clears" — and it belongs only to a lock a live writer holds. `onAbsent` is the lane's
  * own absence, checked **before** the lock precisely because the lock sits inside the lane
  * directory: a verb that takes the lock first can never reach its own `loadLane`, so an unopened
- * lane answered "another writer holds it" forever (#8578). Nothing here creates the lane directory —
+ * lane answered "another writer holds it" forever. Nothing here creates the lane directory —
  * a ledger nobody booted would spend the proven absence `operate` boots on.
  */
 export const withLedgerLock = <A, R>(

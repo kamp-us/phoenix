@@ -122,6 +122,17 @@ describe("lane append lock", {timeout: 10_000}, () => {
 		expect(made).toBe(false);
 	});
 
+	it("a lane that goes away after the probe still refuses LANE_ABSENT, not a held lock", async () => {
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
+		// The probe passes and the mkdir then hits ENOENT — the window between the two, which only the
+		// lock's own reason read can answer.
+		const fs = freshLane({mkdirMissingParent: [LOCK]});
+
+		const out = await run(fs);
+		expect(out.code).toBe(LANE_ABSENT);
+		expect(fs.written.get(LOG)).toBeUndefined();
+	});
+
 	it("an absent lane and a held lock keep their own seats", async () => {
 		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
 
