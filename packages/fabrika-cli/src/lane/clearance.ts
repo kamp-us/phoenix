@@ -73,11 +73,14 @@ export const recordClearedRound = (
 					? ({_tag: "Unusable", path: loaded.logPath, reason: wrote.failure.reason} as const)
 					: ({_tag: "Recorded", task: resolved.taskId, path: loaded.logPath} as const);
 			}),
-			(lockDir) => ({
-				_tag: "Unusable" as const,
-				path: lockDir,
-				reason: lockedRefusal(VERB, lockDir),
-			}),
+			{
+				onAbsent: (dir) => ({_tag: "NoLane" as const, dir}),
+				onLocked: (lockDir) => ({
+					_tag: "Unusable" as const,
+					path: lockDir,
+					reason: lockedRefusal(VERB, lockDir),
+				}),
+			},
 		);
 	});
 };
