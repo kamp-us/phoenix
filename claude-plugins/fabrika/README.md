@@ -1,6 +1,6 @@
 # fabrika
 
-**fabrika** is an agent pipeline, shipped as a Claude Code plugin. You file an issue; a
+**fabrika** is an agent pipeline, shipped for Claude Code, Codex, and pi. You file an issue; a
 chain of agents triages it, plans it, builds it, reviews it, and merges it. Every stage leaves its
 record on the issue or the pull request, not in a chat log. It works in any GitHub repo, and it is
 for anyone who wants agents doing real work on a repo with that work reviewable afterwards.
@@ -14,6 +14,7 @@ and points at the other fabrika surfaces.
 
 ```
 claude-plugins/fabrika/
+├── .codex-plugin/plugin.json    Codex manifest; shares skills and uses CLI dispatch
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — it ships continuously, addressed by commit)
 ├── README.md                    this file
 ├── agents/                      the eight agent shells, one per stage role (see docs/agent-shells.md)
@@ -32,6 +33,8 @@ meet [docs/skill-conventions.md](docs/skill-conventions.md). Nothing lands in `s
 it is the text that is graded, not the session that produced it.
 
 ## Install
+
+For Codex, follow [the Codex guide](guide/codex.md). The commands below install the Claude Code plugin.
 
 From the `kampus` marketplace on GitHub:
 

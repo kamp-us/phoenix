@@ -202,6 +202,8 @@ Tuval is the local runnable app under `apps/tuval` (ADR [0345](../.decisions/034
 |---|---|---|
 | [package-readme-shape.md](./package-readme-shape.md) | The canonical `packages/*/README.md` section order (explanation → how-to → reference → testing), the no-tutorial-at-package-scale rule, the small-package minimum; the [`diataxis`](../claude-plugins/fabrika/skills/diataxis/SKILL.md) skill is the single-mode classifier | Writing or restructuring a package README |
 
+- [Codex lane dispatch](./codex-lane-dispatch.md): fixed skill preload, dedicated worktree, unchanged brief, and post-child proof against captured state.
+
 ## When to add a new pattern doc here
 
 A pattern may enter through either source-backed path:

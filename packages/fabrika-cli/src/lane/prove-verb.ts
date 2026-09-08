@@ -73,7 +73,7 @@ import {
 } from "./prove.ts";
 import {type ChildRange, DEEPEN_REMEDY, locateRange} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {type LaneRef, loadLane} from "./store.ts";
+import {type LaneRef, type LoadedLane, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane prove";
 
@@ -187,13 +187,14 @@ export const runProve = (
  */
 const prove = (
 	options: ProveOptions,
+	snapshot?: Extract<LoadedLane, {_tag: "Loaded"}>,
 ): Effect.Effect<
 	ProofAnswer,
 	never,
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
-		const loaded = yield* loadLane(options);
+		const loaded = snapshot ?? (yield* loadLane(options));
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const task = resolveTask(loaded.lane, options.task);
 		if (task._tag === "Unresolved") return refuse(TASK_UNKNOWN, `${VERB}: ${task.reason}`);
@@ -1126,3 +1127,9 @@ const proveRangeVerdicts = (
 			deferred,
 		};
 	});
+
+/** Re-read live evidence against the state captured before a dispatched child reported. */
+export const proveDispatched = (
+	options: ProveOptions,
+	snapshot: Extract<LoadedLane, {_tag: "Loaded"}>,
+) => prove(options, snapshot);
