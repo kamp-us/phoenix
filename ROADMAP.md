@@ -52,7 +52,7 @@ flowchart TD
 		camp_tuval["Tuval"]:::done
 		camp_tuval_first_slice["Tuval first slice"]:::active
 		camp_phoenix_i18n["phoenix i18n"]:::active
-		camp_tuval_first_slice_fast_follows["Tuval first slice - fast follows"]:::done
+		camp_tuval_first_slice_fast_follows["Tuval first slice - fast follows"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -118,7 +118,9 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Tuval | #51 | done |
 | Tuval first slice | #52 | active |
 | phoenix i18n | #53 | active |
-| Tuval first slice - fast follows | #54 | done |
+| Tuval first slice - fast follows | #54 | active |
+
+**Tuval first slice - fast follows** remains open and active for follow-up repairs discovered during Tuval work, including when its backlog is temporarily empty. Completing the current issues does not close this campaign; closure requires an explicit founder decision.
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 
