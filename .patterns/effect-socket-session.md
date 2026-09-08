@@ -57,3 +57,26 @@ depends on from being started after the frame that needed it.
   `connection` event fires, which is the only way to refuse before a frame exists.
 - **Closing on a bad frame is a `CloseEvent` through the same writer** —
   `write(new Socket.CloseEvent(1008, reason))` — never a bare `ws.close`.
+
+## Expected page closes finish the session
+
+The server applies one named `quietPageClose` policy to the run loop: 1000 (normal), 1001
+(going away), and 1006 (observed abnormal closure without a close frame). These meanings come from
+[RFC 6455 §7.4.1](https://www.rfc-editor.org/rfc/rfc6455#section-7.4.1); treating those page
+disconnections as successful session completion is Tuval's policy, not a protocol requirement.
+1006 is observed locally, never sent in a close frame. Other codes, including policy violation
+1008, remain failures.
+
+At `effect@4.0.0-rc.112`, `SocketCloseError.filterClean` checks both the outer `SocketError`
+and inner close reason before applying its code predicate. Unmatched values return unchanged.
+Pair it with `Effect.catchFilter` on `runString`, as the pinned `Socket.fromWebSocket`
+implementation does internally. Read, write, and open failures escaping the run loop retain their
+identity. The existing per-frame write-race policy above is separate.
+
+At `@effect/platform-node-shared@4.0.0-rc.112`, `src/NodeSocketServer.ts` constructs accepted
+sockets without a close-code override and reports the handler's failure cause. The socket default
+considers every close code an error, so the session must apply its own narrow policy before that
+reporter. Session scope finalization still removes its page sender and stops its subscriptions;
+it does not terminate attached kernel processes. The session unit tests prove cleanup and process
+survival, and the real WebSocket regression terminates a page without a handshake, captures the
+server reporter, and reattaches to the retained process.
