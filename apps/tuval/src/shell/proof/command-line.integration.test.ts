@@ -10,14 +10,13 @@ import {defineSpell} from "../../commands/spell.ts";
 import {SpellSet} from "../../commands/spell-set.ts";
 import {counterProgram} from "../../demo/counter.ts";
 import {counterNode} from "../../demo/index.ts";
-import {CallId, WindowId} from "../../protocol/ids.ts";
+import {CallId, WindowId, WorkspaceId} from "../../protocol/ids.ts";
+import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import {readCommandLine} from "../commands/line.ts";
-import {initialState} from "../core/machine.ts";
 import {serveDesk} from "../host/serve.ts";
 import {defaultPrefixTable} from "../keys/table.ts";
 import {attach} from "../transport/client.ts";
-import {commandSnapshot} from "../ui/command-snapshot.ts";
 
 const echo = defineSpell({
 	path: ["echo"],
@@ -53,10 +52,19 @@ it.effect("a page receives the actual registry and committed replacements over i
 		yield* Effect.forkScoped(Stream.runForEach(page.spells, (rows) => Queue.offer(seen, rows)));
 		const initial = yield* Queue.take(seen);
 		assert.ok(initial.some((row) => row.path.join(".") === "counter.echo"));
+		const snapshot = new Snapshot({
+			type: "snapshot",
+			version: PROTOCOL_VERSION,
+			rev: 0,
+			desk: {workspaces: {}, activeWorkspace: WorkspaceId.make("")},
+			windows: {},
+			processes: [],
+			registry: initial,
+		});
 		const route = (line: string) =>
 			readCommandLine(line, {
 				registry: buildSpellIndex(initial),
-				snapshot: commandSnapshot(initialState(), initial),
+				snapshot,
 				id: CallId.make(crypto.randomUUID()),
 			});
 		const call = route('counter echo "ordinary program"');
