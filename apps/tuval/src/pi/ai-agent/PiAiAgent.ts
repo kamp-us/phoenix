@@ -701,10 +701,10 @@ const make = (
 			/**
 			 * Empty by ruling, not by omission (founder, 2026-09-05, #8060). Pi's slash commands live
 			 * inside its `AgentSession` — extension commands, skills, prompt templates — and the wire
-			 * Tuval reaches it over carries no list of them: at `@earendil-works/pi-protocol@0.84.3`
-			 * `ServerSnapshotSchema` is `{serverId, protocolVersion, revision, sessions, models}` and
-			 * `CommandSchema` is a closed nine-verb union. Filling this needs an upstream protocol
-			 * change, which is its own ticket; vendoring or forking that dep is a no-go.
+			 * Tuval reaches it over carries no list of them: Tuval's own `ServerSnapshot` is
+			 * `{serverId, protocolVersion, revision, sessions, models}` and its `Command` is a closed
+			 * nine-verb union. Filling this needs Pi to expose the catalog through `AgentSession`,
+			 * which is its own ticket; vendoring or forking that dep is a no-go.
 			 *
 			 * Only the *catalog* is missing. Running one already works: `expandPromptTemplates`
 			 * (default true, `agent-session.d.ts`) dispatches extension commands and expands skill
@@ -736,7 +736,10 @@ const transport = (
 	const client = Layer.unwrap(
 		Effect.gen(function* () {
 			const running = yield* PiServerService;
-			return PiClientService.layerWebSocket({url: Redacted.value(running.url)});
+			return PiClientService.layerWebSocket({
+				url: Redacted.value(running.url),
+				serverId: running.serverId,
+			});
 		}),
 	);
 	return Layer.provideMerge(client, server);

@@ -6,7 +6,7 @@
  * ceiling is a timer beside the wait rather than `Effect.timeout` over it: timing out needs the
  * region to be interruptible, and an interruptible finalizer is skipped outright when the stop
  * itself arrived as an interrupt, which trades a hang for a leak. Neither `http.Server.close` nor
- * `PiClient.dispose` takes an `AbortSignal`, so a bound is the only shape available to them.
+ * `Client.dispose` takes an `AbortSignal`, so a bound is the only shape available to them.
  */
 
 import {Duration, Effect} from "effect";
@@ -21,7 +21,7 @@ export const TEARDOWN_CEILING = Duration.seconds(5);
  * that throws synchronously ends the wait the same way, because `Effect.callback` calls it with no
  * try/catch of its own (`internal/effect.js`'s `callbackOptions`, `const onCancel = register(…)`,
  * at the rc.112 pin): an escaping throw would leave this uninterruptible finalizer with the ceiling
- * timer still armed and no `resume` ever taken. `PiClient.dispose()` is the live case — it is not
+ * timer still armed and no `resume` ever taken. `Client.dispose()` is the live case — it is not
  * `async`, and its body rejects pending requests, disconnects the transport and disposes the state
  * synchronously before the promise is returned (`pi-client@0.84.3`, `dist/client.js` line 292).
  */

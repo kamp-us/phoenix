@@ -37,16 +37,16 @@ const pushedSnapshot = (client: WireClient, revision: number): Effect.Effect<Ses
 	client
 		.next(
 			(message) =>
-				message.type === "event" &&
-				message.event.type === "session_snapshot" &&
-				message.event.snapshot.revision >= revision,
+				message.type === "service_update" &&
+				message.update.type === "session_snapshot" &&
+				message.update.snapshot.revision >= revision,
 		)
 		.pipe(
 			Effect.map((message) => {
-				if (message.type !== "event" || message.event.type !== "session_snapshot") {
+				if (message.type !== "service_update" || message.update.type !== "session_snapshot") {
 					throw new Error("unreachable");
 				}
-				return message.event.snapshot;
+				return message.update.snapshot;
 			}),
 		);
 
