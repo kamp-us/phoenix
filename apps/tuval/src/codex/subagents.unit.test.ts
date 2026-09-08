@@ -1,5 +1,5 @@
 import {describe, it} from "@effect/vitest";
-import {Deferred, Effect, Stream} from "effect";
+import {Deferred, Effect, Fiber, Stream} from "effect";
 import {TestClock} from "effect/testing";
 import {expect} from "vitest";
 import {foldEvent} from "../ai-agent/core/fold.ts";
@@ -192,6 +192,40 @@ describe("Codex native children on the shared protocol", () => {
 		expect(children.slots.get("spawn-1")?.items[0]).not.toHaveProperty("partial");
 	});
 
+	it("detaches already finished and pending-spawn slots and rejects late hydration", () => {
+		const children = new NativeSubagents();
+		children.collab(spawn, thread.id, 10);
+		children.item("child-1", {type: "agentMessage", id: "a", text: "Retained"}, 20, false);
+		children.finishCall("spawn-1", "completed", false);
+		children.collab(
+			{...spawn, id: "pending", status: "inProgress", receiverThreadIds: [], agentsStates: {}},
+			thread.id,
+			30,
+		);
+		children.stopObserving("Parent interrupted");
+		const retained = children.slots.get("spawn-1");
+		expect(children.observes("child-1")).toBe(false);
+		expect(
+			children.hydrate("child-1", {
+				type: "reviewer",
+				status: "running",
+				turnId: "late-turn",
+				items: [],
+			}),
+		).toBeNull();
+		expect(children.status("child-1", "running")).toBeNull();
+		expect(children.collab(spawn, thread.id, 40)).toEqual([]);
+		expect(children.collab({...spawn, id: "pending"}, thread.id, 40)).toEqual([]);
+		expect(children.slots.get("spawn-1")).toEqual(retained);
+		expect(children.slots.get("pending")?.status).toBe("finished");
+		children.interruptRefused("child-1", "Cannot stop");
+		expect(children.slots.get("spawn-1")).toEqual({
+			...retained,
+			lastLine: "Interrupt refused: Cannot stop",
+		});
+		expect(children.observes("child-1")).toBe(false);
+	});
+
 	it("refuses foreign senders and ambiguous spawns, and makes uncorrelated updates visible", () => {
 		const children = new NativeSubagents();
 		expect(() => children.collab({...spawn, senderThreadId: "foreign"}, thread.id, 0)).toThrow(
@@ -338,6 +372,118 @@ describe("Codex native children on the shared protocol", () => {
 });
 
 describe("Codex child polling and failure cleanup", () => {
+	it.effect.each([
+		"running",
+		"child-completed",
+		"child-interrupted",
+		"parent-completed",
+		"parent-interrupted",
+		"parent-failed",
+		"parent-error",
+	])("preserves arrival-time child state on delayed interrupt refusal after %s", (outcome) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const arrived = yield* Deferred.make<void>();
+				const refuse = yield* Deferred.make<void>();
+				fake.handlers.set("thread/read", () => Effect.succeed({thread: childThread}));
+				fake.handlers.set("turn/interrupt", (params) =>
+					Effect.gen(function* () {
+						if ((params as {threadId: string}).threadId !== "child-1") return {};
+						yield* Deferred.succeed(arrived, undefined);
+						yield* Deferred.await(refuse);
+						return yield* new TransportError({reason: "refused", detail: "Cannot stop child"});
+					}),
+				);
+				const events = [...(yield* start(agent))];
+				yield* agent.prompt("work");
+				events.push(...(yield* take(agent, 1)));
+				yield* fake.push(itemMessage("completed", spawn));
+				events.push(...(yield* take(agent, 3)));
+				const interrupt = yield* Effect.forkChild(agent.interrupt);
+				yield* Deferred.await(arrived);
+				const detached = ["parent-interrupted", "parent-failed", "parent-error"].includes(outcome);
+				const finished = detached || outcome.startsWith("child-");
+				if (outcome.startsWith("child-")) {
+					yield* fake.push({
+						method: "turn/completed",
+						params: {threadId: "child-1", turn: turn(outcome.slice(6))},
+					});
+					events.push(...(yield* take(agent, 2)));
+				} else if (outcome === "parent-error") {
+					yield* fake.push({
+						method: "error",
+						params: {threadId: thread.id, error: {message: "Stopped"}, willRetry: false},
+					});
+					events.push(...(yield* take(agent, 2)));
+				} else if (outcome.startsWith("parent-")) {
+					yield* fake.push(turnMessage("completed", outcome.slice(7)));
+					events.push(...(yield* take(agent, 3)));
+				}
+				const retained = slotOf(events);
+				yield* Deferred.succeed(refuse, undefined);
+				yield* Fiber.join(interrupt);
+				const refusal = yield* take(agent, 1);
+				expect(slotOf(refusal)).toEqual({
+					...retained,
+					lastLine: "Interrupt refused: Cannot stop child",
+				});
+				events.push(...refusal);
+				const reads = fake.calls.filter((call) => call.method === "thread/read").length;
+				if (detached) {
+					for (const method of ["turn/started", "turn/completed"]) {
+						yield* fake.push({
+							method,
+							params: {threadId: "child-1", turn: turn()},
+						});
+					}
+					yield* fake.push({
+						method: "item/completed",
+						params: {
+							threadId: "child-1",
+							turnId: "turn-1",
+							item: {type: "agentMessage", id: "a", text: "Late content"},
+						},
+					});
+					yield* fake.push(
+						itemMessage("completed", {
+							type: "subAgentActivity",
+							id: "activity",
+							kind: "started",
+							agentThreadId: "child-1",
+						}),
+					);
+					yield* fake.push(itemMessage("completed", {...spawn, id: "wait-late", tool: "wait"}));
+				}
+				yield* TestClock.adjust("3 seconds");
+				yield* fake.push(
+					itemMessage("completed", {type: "agentMessage", id: "barrier", text: "Parent"}),
+				);
+				const later = yield* agent.events.pipe(
+					Stream.takeUntil((event) => event.kind === "item" && event.item.id === "barrier"),
+					Stream.runCollect,
+				);
+				if (finished) {
+					expect(later.filter((event) => event.kind === "subagent")).toEqual([]);
+					expect(fake.calls.filter((call) => call.method === "thread/read")).toHaveLength(reads);
+				} else {
+					expect(fake.calls.filter((call) => call.method === "thread/read").length).toBeGreaterThan(
+						reads,
+					);
+				}
+				const state = [...events, ...later].reduce(
+					(state, event) => foldEvent(state, event, {itemLimit: 100}),
+					initialState(thread.cwd),
+				);
+				expect(state.subagents["spawn-1"]).toMatchObject({
+					status: finished ? "finished" : "running",
+					items: [{id: "spawn-1/u"}, {id: "spawn-1/a", text: "Reading"}],
+				});
+				if (finished) expect(state.subagents["spawn-1"]).toEqual(slotOf(refusal));
+				expect(fake.calls.some((call) => call.method === "thread/resume")).toBe(false);
+			}),
+		),
+	);
+
 	it.effect.each(["completed", "interrupted"])(
 		"reconciles queued deltas, snapshot-only rows and terminal %s through the adapter",
 		(terminal) =>

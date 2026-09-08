@@ -133,9 +133,15 @@ active child turns as well as the parent. A parent refusal emits the shared
 core, while `no-live-turn` lets it settle. The adapter chooses the reason from its turn
 state when the refusal arrives, not when the request was sent (ADR
 [0356](../.decisions/0356-tuval-interrupt-refusal-as-failure-tag.md)). Child refusals remain
-visible in the slot's last line. Parent interruption, unrecoverable failure and connection
-teardown end observation and retain the last rows.
-Ending observation is not proof that an external worker was killed.
+visible in the slot's last line, without changing its arrival-time status, items or
+observation membership. A delayed refusal cannot revive a child that finished while the
+interrupt request was pending. Parent interruption, unrecoverable failure and connection
+teardown detach all currently known spawning slots, including already finished slots and
+spawns awaiting a child ID, and retain their last rows. Detached slots ignore subsequent
+child notifications, activity/collab state updates and read results; polling skips them.
+The refusal notice can still update a detached slot's last line. Successful parent completion
+does not detach background children. Ending observation is not proof that an external worker
+was killed.
 
 Missing, unreadable, malformed and unsupported reads are distinct typed refusals,
 not empty transcripts. A live slot displays the refusal as a system row and finishes
@@ -174,6 +180,12 @@ wait outcomes, token updates, polling, background retention, interruption, paren
 checkpoint restore, isolation and typed read refusals. Interleaving fixtures hold a poll
 open over queued deltas, advance snapshot-only rows and finish on a newer read, for both
 successful and interrupted turns. Completed payloads remain final across later polls.
+Delayed child-interrupt refusal fixtures cover running children, successful/interrupted child
+completion, successful/interrupted/failed parent completion and unrecoverable parent errors.
+They fold adapter events through the shared core and check retained content, unchanged terminal
+state and no restarted reads, including late child and parent-carried lifecycle notifications
+following teardown. A mapper fixture also rejects late hydration after detaching already
+finished and pending-spawn slots.
 `agent.unit.test.ts` delays a refused interrupt until before or after turn completion and
 folds both failures through the generic core. The shared ChatWindow test also navigates
 into a native-mapped slot, hydrates it over queued text, completes it and returns to the

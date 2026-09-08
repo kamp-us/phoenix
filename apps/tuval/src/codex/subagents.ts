@@ -60,10 +60,31 @@ interface Child {
 export class NativeSubagents {
 	readonly slots = new Map<string, SubagentSlot>();
 	readonly children = new Map<string, Child>();
+	readonly detached = new Set<string>();
+
+	observes(id: string): boolean {
+		const child = this.children.get(id);
+		return child !== undefined && !this.detached.has(child.call);
+	}
+
+	stopObserving(line: string): ReadonlyArray<AgentEvent> {
+		for (const call of this.slots.keys()) this.detached.add(call);
+		return this.finish(line);
+	}
+
+	interruptRefused(id: string, detail: string): AgentEvent | null {
+		const child = this.children.get(id);
+		const slot = child === undefined ? undefined : this.slots.get(child.call);
+		if (slot === undefined) return null;
+		const next = {...slot, lastLine: `Interrupt refused: ${detail}`};
+		this.slots.set(slot.id, next);
+		return event(next);
+	}
 
 	collab(raw: unknown, parent: string, at: number): ReadonlyArray<AgentEvent> {
 		const value = Schema.decodeUnknownSync(Collab)(raw);
 		if (value.senderThreadId !== parent) throw new Error("Codex child call has a foreign sender");
+		if (this.detached.has(value.id)) return [];
 		const touched = new Set<string>();
 		const notices: Array<AgentEvent> = [];
 		if (value.tool === "spawnAgent") {
@@ -119,7 +140,7 @@ export class NativeSubagents {
 				continue;
 			}
 			const slot = this.slots.get(child.call);
-			if (slot === undefined) continue;
+			if (slot === undefined || !this.observes(id)) continue;
 			const state = value.agentsStates[id];
 			if (state !== undefined) {
 				this.slots.set(child.call, {
@@ -150,6 +171,7 @@ export class NativeSubagents {
 	}
 
 	hydrate(id: string, transcript: ChildTranscript): AgentEvent | null {
+		if (!this.observes(id)) return null;
 		const child = this.children.get(id);
 		const slot = child === undefined ? undefined : this.slots.get(child.call);
 		if (slot === undefined || child === undefined) return null;
@@ -236,6 +258,7 @@ export class NativeSubagents {
 	}
 
 	status(id: string, status: SubagentSlot["status"], line?: string): AgentEvent | null {
+		if (!this.observes(id)) return null;
 		const child = this.children.get(id);
 		const slot = child === undefined ? undefined : this.slots.get(child.call);
 		if (slot === undefined) return null;

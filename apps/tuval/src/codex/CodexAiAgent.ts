@@ -118,7 +118,7 @@ const make = (options: CodexAiAgentOptions) =>
 			current: Session,
 			line: string,
 		) {
-			for (const event of current.children.finish(line)) yield* emit(current, event);
+			for (const event of current.children.stopObserving(line)) yield* emit(current, event);
 		});
 		const refreshChildren = Effect.fn("Codex.refreshChildren")(function* (
 			current: Session,
@@ -126,12 +126,13 @@ const make = (options: CodexAiAgentOptions) =>
 			only?: string,
 		) {
 			for (const [id, child] of current.children.children) {
-				if (only !== undefined && id !== only) continue;
+				if (!current.children.observes(id) || (only !== undefined && id !== only)) continue;
 				const slot = current.children.slots.get(child.call);
 				if (slot === undefined || (!all && slot.status !== "running")) continue;
 				const result = yield* Effect.result(
 					readChildTranscript(current.connection, current.id, id),
 				);
+				if (!current.children.observes(id)) continue;
 				if (result._tag === "Failure") {
 					const text = `Child transcript ${result.failure.reason}: ${result.failure.detail}`;
 					yield* emitChild(
@@ -175,6 +176,7 @@ const make = (options: CodexAiAgentOptions) =>
 			message: ServerMessage,
 			childId: string,
 		) {
+			if (!current.children.observes(childId)) return;
 			const {method, params} = message;
 			switch (method) {
 				case "item/started":
@@ -671,10 +673,7 @@ const make = (options: CodexAiAgentOptions) =>
 						.request("turn/interrupt", {threadId: id, turnId: child.turnId})
 						.pipe(
 							Effect.catch((error) =>
-								emitChild(
-									current,
-									current.children.status(id, "running", `Interrupt refused: ${error.detail}`),
-								),
+								emitChild(current, current.children.interruptRefused(id, error.detail)),
 							),
 						);
 			}
