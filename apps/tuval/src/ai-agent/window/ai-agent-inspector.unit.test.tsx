@@ -61,6 +61,21 @@ describe("what the inspector shows", () => {
 		expect(within(region).getByText(CWD)).toBeDefined();
 	});
 
+	it("renders the version the layer reported, beside the session id and the cwd", async () => {
+		await open(agentSessionState({agentVersion: "2.1.259"}));
+		const region = panel();
+		expect(within(region).getByText("Version")).toBeDefined();
+		expect(within(region).getByText("2.1.259")).toBeDefined();
+		expect(within(region).getByText(SESSION_ID)).toBeDefined();
+		expect(within(region).getByText(CWD)).toBeDefined();
+	});
+
+	// Unlike the session id, an absent version is not a state the operator is owed a word about.
+	it("leaves the row out entirely while no layer has reported one", async () => {
+		await open(agentSessionState({agentVersion: null}));
+		expect(within(panel()).queryByText("Version")).toBeNull();
+	});
+
 	it("names every value, because a bare number names nothing to a screen reader", async () => {
 		await open(agentSessionState());
 		for (const label of ["Cost", "Input tokens", "Output tokens", "Session", "Directory"]) {

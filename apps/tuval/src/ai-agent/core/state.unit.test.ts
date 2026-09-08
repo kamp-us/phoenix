@@ -111,6 +111,20 @@ describe("a save snapshot", () => {
 	});
 });
 
+describe("the version slot the layers fill", () => {
+	it("starts empty, because no layer has reported one yet", () => {
+		expect(initialState("/repo").agentVersion).toBeNull();
+	});
+
+	it("comes back empty from a checkpoint, since the binary the layer launches can have moved", () => {
+		expect(restore({...saved, agentVersion: "2.1.259"}).agentVersion).toBeNull();
+	});
+
+	it("refuses a saved value that is neither a string nor absent", () => {
+		expect(parseSessionState({...saved, agentVersion: 2.1})).toBeNull();
+	});
+});
+
 describe("a restored session and its subagents", () => {
 	const items = [userItem("u1"), assistantItem("a1")];
 	const loaded: AiAgentSessionState = {

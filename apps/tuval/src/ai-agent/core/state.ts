@@ -146,6 +146,20 @@ export interface AiAgentSessionState {
 	readonly interruption: Interruption | null;
 	readonly usage: UsageLedger;
 	/**
+	 * The version of whatever the layer is driving, as that layer reports it — the Claude Code CLI
+	 * for one row, Pi's adapter for the other — or `null` before any layer has said.
+	 *
+	 * Model-blind on purpose: it is one string nobody parses, so a second backend fills the same
+	 * slot rather than growing its own. The point of showing it is drift (#7580), so it is rendered
+	 * as the desk inspector's `Version` row (`../window/AiAgentInspector.tsx`) rather than living in
+	 * the Claude layer's log line. What the Claude row reports is the CLI the Agent SDK bundles and
+	 * launches, which is not necessarily the `claude` on `PATH`: the SDK spawns its own built-in
+	 * executable unless `pathToClaudeCodeExecutable` names another (`sdk.d.ts` at the `0.3.259`
+	 * pin), and this program never sets it — a desk on SDK `0.3.259` reported CLI `2.1.259` while
+	 * `claude --version` on the same box read `2.1.263`.
+	 */
+	readonly agentVersion: string | null;
+	/**
 	 * Pending permission cards by request id: one arrives with an event, and one leaves on the
 	 * confirmation of its answer rather than on the click that answered it (#8006).
 	 */
@@ -227,6 +241,7 @@ export const checkpointFields = [
 	"interrupted",
 	"interruption",
 	"usage",
+	"agentVersion",
 	"permissions",
 	"permissionsRaised",
 	"modes",
@@ -261,6 +276,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	interrupted: null,
 	interruption: null,
 	usage: emptyUsage,
+	agentVersion: null,
 	permissions: {},
 	permissionsRaised: 0,
 	modes: {current: null, available: []},
@@ -395,6 +411,12 @@ const markInterrupted = (
  * refusal nobody can act on any more, a page the window asked a transport that no longer exists
  * for, and an abort in flight to a backend this process no longer holds a transport to.
  *
+ * `agentVersion` is dropped for a narrower reason: it names the binary the *previous* process
+ * drove, and a dependency update swaps the CLI the SDK bundles while the desk is off — which is the
+ * exact drift the line exists to show (#7580). The layer re-reports it as this session opens, so
+ * `null` for that gap says "nobody has told me yet" rather than showing a version nothing is
+ * running.
+ *
  * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way
  * an interrupted queue is — recoverable, never resent on the operator's behalf.
@@ -426,6 +448,7 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
 		interruption: null,
+		agentVersion: null,
 		queued: [],
 		sends: releaseQueued(
 			loaded.queued,

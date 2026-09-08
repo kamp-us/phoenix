@@ -79,7 +79,7 @@ describe("start opens one streaming query", () => {
 				assert.isString(options?.env?.USER);
 				assert.notStrictEqual(options?.env?.USER, "");
 				// SDK/CLI drift is accepted for this slice, so the executable is never pinned: the
-				// CLI is whatever `claude` on PATH is (founder ruling on #7580).
+				// CLI is the one the SDK bundles (founder ruling on #7580).
 				assert.isUndefined(options?.pathToClaudeCodeExecutable);
 				// A fresh session names no `resume`, so `continue` cannot be implied either.
 				assert.isUndefined(options?.resume);

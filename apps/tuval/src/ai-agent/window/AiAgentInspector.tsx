@@ -1,7 +1,7 @@
 /**
  * What every ai-agent backend shows in the desk inspector: the five facts the chat bar used to
  * carry (founder ruling 2026-09-05, #8190) — cost, input tokens, output tokens, the session id and
- * the working directory.
+ * the working directory — plus the version the layer reports for whatever it is driving (#7955).
  *
  * One renderer for both backends rather than one each. The Claude window's usage and session lines
  * and the Pi window's usage line were the same values written three times, once per surface
@@ -57,6 +57,11 @@ const inspectorRows = (
 		["Output tokens", tokens.format(usage.outputTokens)],
 		["Session", state.sessionId ?? NO_SESSION_YET, "tuval-agent-inspector-wrap"],
 		["Directory", state.cwd, "tuval-agent-inspector-wrap"],
+		// Omitted rather than shown empty: unlike the session id, an absent version is not a state
+		// the operator has to be told about — the layer reports one as the session opens.
+		...(state.agentVersion === null
+			? []
+			: [["Version", state.agentVersion] as readonly [string, string]]),
 	];
 };
 

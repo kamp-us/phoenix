@@ -780,10 +780,17 @@ const MODEL_ANNOUNCEMENT = "claude:model-announcement";
 export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const model = typeof message.model === "string" ? message.model : mapping.model;
+	// The CLI is not the SDK we pin, and the drift between them is the whole point of carrying it
+	// (#7580). A frame without the field emits nothing rather than a placeholder: the core's slot
+	// stays `null`, which is what says nobody has reported one (#7955).
+	const version = message.claude_code_version;
 	return {
 		mapping: {...mapping, model},
 		events: [
 			{kind: "usage", turn: MODEL_ANNOUNCEMENT, model, inputTokens: 0, outputTokens: 0, cost: 0},
+			...(typeof version === "string" && version.length > 0
+				? [{kind: "version", version} as const]
+				: []),
 		],
 	};
 };
