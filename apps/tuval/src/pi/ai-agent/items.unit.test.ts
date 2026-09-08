@@ -822,7 +822,7 @@ describe("a turn with nothing to read", () => {
 		]);
 	});
 
-	it("leaves an ordinary reply, a user turn and a failed turn alone", () => {
+	it("keeps ordinary replies and user turns, and explains an empty failed turn", () => {
 		expect(itemsOf(settledAssistant("hi back"))).toEqual([
 			{kind: "assistant", id: "item-1", timestamp: 11, text: "hi back"},
 		]);
@@ -835,6 +835,13 @@ describe("a turn with nothing to read", () => {
 			status: "error",
 			stopReason: "error",
 		};
-		expect(itemsOf(failed)).toEqual([{kind: "assistant", id: "item-1", timestamp: 11, text: ""}]);
+		expect(itemsOf(failed)).toEqual([
+			{
+				kind: "system",
+				id: "item-1:failure",
+				timestamp: 11,
+				text: "Turn failed: the provider could not complete the response. Check your provider account or try again later.",
+			},
+		]);
 	});
 });
