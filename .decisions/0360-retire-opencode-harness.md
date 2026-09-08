@@ -1,7 +1,7 @@
 ---
 id: 0360
 title: Claude Code and pi are fabrika's only harnesses, never opencode
-status: accepted
+status: amended-in-part by [0367](0367-codex-is-a-supported-harness.md)
 date: 2026-09-07
 tags: [fabrika, harness, opencode, packaging, retirement]
 ---
