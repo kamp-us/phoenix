@@ -280,7 +280,10 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
  * Nothing here reaches `../config.ts` at runtime: the flags arrive as generated source and the
  * shape arrives as a type (`./assets.d.ts`), so the page's Node-free walk is unaffected.
  */
-const chatOptions: ThinChatWindowOptions = {subagentList: features.subagentList};
+const chatOptions: ThinChatWindowOptions = {
+	subagentList: features.subagentList,
+	chatTurnShape: features.chatTurnShape,
+};
 
 const claudeWindow = claudeChatWindow(chatOptions);
 const piWindow = piChatWindow(chatOptions);
