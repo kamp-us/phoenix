@@ -28,8 +28,8 @@ const toolNames = async (paths: ReadonlyArray<string>): Promise<ReadonlyArray<st
 };
 
 describe("the piSubagents flag", () => {
-	it("ships off, so a Pi row opens the session it opened before it existed", () => {
-		expect(featuresDefault.piSubagents).toBe(false);
+	it("ships on since the founder desk check, and off still opens the pre-flag session", () => {
+		expect(featuresDefault.piSubagents).toBe(true);
 		expect(subagentExtensionPaths({piSubagents: false})).toEqual([]);
 	});
 
