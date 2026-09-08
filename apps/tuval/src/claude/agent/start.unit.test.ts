@@ -468,9 +468,18 @@ describe("setModel", () => {
 					// The first session's rows died with it, so a model none of them named is held for
 					// the next open rather than refused against a list nothing offers any more.
 					yield* agent.setModel({id: "gpt", name: "GPT"});
-					// The failed open's own `starting` and `gone` come first on the fresh queue.
-					const events = yield* Stream.runCollect(Stream.take(agent.events, 3));
-					assert.deepStrictEqual(events[2], {
+					// The fresh queue's own opening: `starting`, the teardown's clear on both axes,
+					// then the failed open's `gone` (#8542). Without that clear a subscription taken
+					// across the swap keeps the dead session's rows, and the `gone` behind it never
+					// corrects them.
+					const events = yield* Stream.runCollect(Stream.take(agent.events, 5));
+					assert.deepStrictEqual(events.slice(0, 4), [
+						{kind: "phase", phase: "starting"},
+						{kind: "model", current: null, available: []},
+						{kind: "thinking", current: null, available: []},
+						{kind: "phase", phase: "gone"},
+					]);
+					assert.deepStrictEqual(events[4], {
 						kind: "model",
 						current: {id: "gpt", name: "GPT"},
 						available: [],
@@ -794,6 +803,92 @@ describe("setThinkingLevel", () => {
 			);
 			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/ThinkingUnsupported");
 		}),
+	);
+
+	it.effect("holds a level picked before any session instead of refusing it", () =>
+		on({models: EFFORT, model: "opus"}, (agent) =>
+			Effect.gen(function* () {
+				// The model axis's ruling on the thinking axis (#7981, #8542): with no session the
+				// offer is empty, so refusing here would list the level against nothing.
+				yield* agent.setThinkingLevel("xhigh");
+				const events = yield* Stream.runCollect(Stream.take(agent.events, 1));
+				assert.deepStrictEqual(events[0], {
+					kind: "thinking",
+					current: "xhigh",
+					available: [],
+				});
+			}),
+		),
+	);
+
+	it.effect("applies a level held before the first open at that open", () =>
+		on({models: EFFORT, model: "opus"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.setThinkingLevel("xhigh");
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[0]?.record.efforts, ["xhigh"]);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: "xhigh",
+						available: ["low", "medium", "high", "xhigh", "max"],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("drops a held level the first open's model does not offer", () =>
+		on({models: EFFORT, model: "opus"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				// Held unvalidated, so it is the open that judges it — and `minimal` is one of the two
+				// levels Claude has no effort for, so nothing is applied and nothing is announced.
+				yield* agent.setThinkingLevel("minimal");
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[0]?.record.efforts, []);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						current: null,
+						available: ["low", "medium", "high", "xhigh", "max"],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("ends the effort catalog with the session and says so, keeping the level", () =>
+		on(
+			{
+				models: EFFORT,
+				model: "opus",
+				openFails: new Error("the CLI would not spawn"),
+				openFailsAt: 2,
+			},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					yield* agent.setThinkingLevel("high");
+					const exit = yield* Effect.exit(agent.start({cwd: CWD}));
+					assert.isTrue(Exit.isFailure(exit));
+					// The dead session's levels are gone from the announcement, and the level the
+					// operator picked is not: the control names the pick, and the offer behind it is
+					// empty rather than the dead session's rows (#8542).
+					const events = yield* Stream.runCollect(Stream.take(agent.events, 3));
+					assert.deepStrictEqual(events[2], {
+						kind: "thinking",
+						current: "high",
+						available: [],
+					});
+					// And the pick survives the teardown, so the next open re-applies it.
+					const held = yield* Effect.exit(agent.setThinkingLevel("max"));
+					assert.isTrue(Exit.isSuccess(held));
+				}),
+		),
 	);
 
 	it.effect("offers nothing on a model whose row declares no effort levels", () =>

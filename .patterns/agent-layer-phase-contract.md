@@ -113,6 +113,27 @@ way.
 `PiAiAgent` sends the whole handshake as one `emit` array with `phase: ready` last; `ClaudeAiAgent`
 now batches `thinking` with it. A new layer copies that order.
 
+## A catalog that dies with its session is announced as dead
+
+A catalog read off a live session belongs to that session, so a teardown empties it. **The emptying
+is an event, not only a write to a `Ref`**: a consumer that is not told keeps painting the dead
+session's rows, and every pick it then takes is judged against a catalog nothing holds
+([#8542](https://github.com/kamp-us/phoenix/issues/8542)).
+
+Where the layer says it matters, because a teardown shuts the queue it happened on.
+`ClaudeAiAgent.closeCurrent` empties `models` and `efforts` and says nothing; `start` says it on the
+*new* queue, right behind that queue's `starting` and only when a session was actually torn down.
+That places the clear ahead of the `gone` a refused reconnect emits, which is the one path with no
+later catalog to correct it.
+
+The selection does not go with the catalog. A pick is the operator's, not the session's, so the
+clear carries `current: <the held pick>` beside `available: []`, and the picker names the pick while
+saying the offer behind it is empty ([`AgentChatInput`](../packages/design/src/AgentChatInput.tsx)'s
+`SettingMenu` takes it as `held`). The next open re-validates it against the catalog it reads and
+drops it there if that catalog does not carry it — the deferred validation of
+[#7981](https://github.com/kamp-us/phoenix/issues/7981), which is also why a setter with no session
+holds a pick rather than refusing it against an empty offer.
+
 ## Reference shapes
 
 - [`claude/agent/ClaudeAiAgent.ts`](../apps/tuval/src/claude/agent/ClaudeAiAgent.ts) — `prompt`
