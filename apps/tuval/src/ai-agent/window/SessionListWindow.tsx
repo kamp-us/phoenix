@@ -317,6 +317,7 @@ export interface TranscriptPaged {
 	readonly answer: TranscriptAnswer | null;
 	/** Absent when the caller cannot page — then the older affordance is not offered at all. */
 	readonly onOlder?: () => void;
+	readonly onRetry?: () => void;
 }
 
 /**
@@ -451,6 +452,7 @@ function SessionTranscriptHost({
 			onBack={onBack}
 			onSend={onSend}
 			{...(paged.onOlder === undefined ? {} : {onOlder: paged.onOlder})}
+			{...(paged.onRetry === undefined ? {} : {onRetry: paged.onRetry})}
 		/>
 	);
 }

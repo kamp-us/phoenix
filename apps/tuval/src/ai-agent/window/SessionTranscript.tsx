@@ -32,6 +32,7 @@ import {sessionLabel} from "./rows.ts";
 import "./session-list-window.css";
 
 const COPY = {
+	retry: "Try reading this transcript again",
 	reading: "Reading this session's transcript…",
 	empty: "This session holds no messages yet.",
 	older: "Load older messages",
@@ -63,6 +64,7 @@ export interface SessionTranscriptProps {
 	readonly answer: TranscriptAnswer | null;
 	/** Ask for the page older than the one on screen. Absent means this caller does not page. */
 	readonly onOlder?: () => void;
+	readonly onRetry?: () => void;
 	/** The operator sent. What that does to the process is the caller's, through `send`. */
 	readonly onSend: (text: string) => void;
 	/** Leave the session and put the list back in this window. */
@@ -75,6 +77,7 @@ export function SessionTranscriptView({
 	session,
 	answer,
 	onOlder,
+	onRetry,
 	onSend,
 	onBack,
 	unopenable = false,
@@ -111,9 +114,14 @@ export function SessionTranscriptView({
 
 	const body: ReactElement =
 		unopenable || refusal !== null ? (
-			<p className="tuval-session-transcript-refused" role="alert">
-				{refusal === null ? COPY.noFolder : failureLine(refusal)}
-			</p>
+			<div className="tuval-session-transcript-refused">
+				<p role="alert">{refusal === null ? COPY.noFolder : failureLine(refusal)}</p>
+				{!unopenable && refusal !== null && onRetry !== undefined ? (
+					<Button type="button" variant="tertiary" size="sm" onClick={onRetry}>
+						{COPY.retry}
+					</Button>
+				) : null}
+			</div>
 		) : answer === null ? (
 			<p className="tuval-session-transcript-note">{COPY.reading}</p>
 		) : items.length === 0 ? (
