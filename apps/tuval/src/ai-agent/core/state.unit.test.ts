@@ -125,6 +125,40 @@ describe("the version slot the layers fill", () => {
 	});
 });
 
+describe("the booted-on account slot", () => {
+	const account = {organization: "kamp.us", subscriptionType: "max"};
+
+	it("starts empty, because no layer has reported one yet", () => {
+		expect(initialState("/repo").account).toBeNull();
+	});
+
+	it("round-trips through JSON with either field present or absent", () => {
+		for (const carried of [account, {organization: "kamp.us"}, {subscriptionType: "max"}, {}]) {
+			const withAccount = {...saved, account: carried};
+			expect(parseSessionState(JSON.parse(JSON.stringify(withAccount)))).toEqual(withAccount);
+		}
+	});
+
+	// The operator can log into the other account while the desk is off, and the row exists to
+	// answer which one this session bills — so the previous process's answer is the wrong one.
+	it("comes back empty from a checkpoint, since the login can have moved", () => {
+		expect(restore({...saved, account}).account).toBeNull();
+	});
+
+	it("refuses a saved shape that is not an account", () => {
+		expect(parseSessionState({...saved, account: {organization: 7}})).toBeNull();
+		expect(parseSessionState({...saved, account: "kamp.us"})).toBeNull();
+	});
+
+	// The founder's org-and-plan-only ruling, held at the parse boundary: nothing in this process
+	// can write an email into the slot, so a checkpoint carrying one is not this program's.
+	it("refuses a saved account carrying an email", () => {
+		expect(
+			parseSessionState({...saved, account: {...account, email: "someone@example.com"}}),
+		).toBeNull();
+	});
+});
+
 describe("a restored session and its subagents", () => {
 	const items = [userItem("u1"), assistantItem("a1")];
 	const loaded: AiAgentSessionState = {

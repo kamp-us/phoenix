@@ -10,7 +10,7 @@
  * plus the running total of what the bounds dropped.
  */
 
-import type {AgentFailure, Phase} from "../events.ts";
+import type {AgentAccount, AgentFailure, Phase} from "../events.ts";
 import type {
 	CommandRef,
 	ItemId,
@@ -98,8 +98,8 @@ export interface ThinkingState {
 	readonly available: ReadonlyArray<ThinkingLevel>;
 }
 
-// A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
-export type {AgentFailure} from "../events.ts";
+// A layer pushes one of these on the event stream too, so they are declared beside `Phase`.
+export type {AgentAccount, AgentFailure} from "../events.ts";
 
 /**
  * An interruption the operator asked for and no backend event has answered yet (#8007).
@@ -159,6 +159,16 @@ export interface AiAgentSessionState {
 	 * `claude --version` on the same box read `2.1.263`.
 	 */
 	readonly agentVersion: string | null;
+	/**
+	 * The account this session booted on, as the layer reported it — or `null` for every way there
+	 * is nothing to report: no layer has said yet, the layer has no account concept (Pi, Codex), or
+	 * the login carries neither field (an API key, a third-party provider).
+	 *
+	 * Model-blind like `agentVersion` beside it, and it holds no email by construction: `AgentAccount`
+	 * has no such field, so the founder's org-and-plan-only ruling is a shape here rather than a
+	 * filter at the render (#8649).
+	 */
+	readonly account: AgentAccount | null;
 	/**
 	 * Pending permission cards by request id: one arrives with an event, and one leaves on the
 	 * confirmation of its answer rather than on the click that answered it (#8006).
@@ -242,6 +252,7 @@ export const checkpointFields = [
 	"interruption",
 	"usage",
 	"agentVersion",
+	"account",
 	"permissions",
 	"permissionsRaised",
 	"modes",
@@ -277,6 +288,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	interruption: null,
 	usage: emptyUsage,
 	agentVersion: null,
+	account: null,
 	permissions: {},
 	permissionsRaised: 0,
 	modes: {current: null, available: []},
@@ -426,6 +438,11 @@ const markInterrupted = (
  * `null` for that gap says "nobody has told me yet" rather than showing a version nothing is
  * running.
  *
+ * `account` is dropped on that same argument. It names the account the *previous* process booted
+ * on, and the operator can log into another one while the desk is off — so a row still naming the
+ * old account is exactly the wrong answer to "which of my two accounts is this billing" (#8649).
+ * The layer re-announces as this session opens.
+ *
  * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way
  * an interrupted queue is — recoverable, never resent on the operator's behalf.
@@ -458,6 +475,7 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		interrupted: cut ?? loaded.interrupted,
 		interruption: null,
 		agentVersion: null,
+		account: null,
 		queued: [],
 		sends: releaseQueued(
 			loaded.queued,

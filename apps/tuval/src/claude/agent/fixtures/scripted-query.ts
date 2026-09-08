@@ -14,6 +14,7 @@
  */
 
 import type {
+	AccountInfo,
 	EffortLevel,
 	ListSessionsOptions,
 	ModelInfo,
@@ -89,6 +90,12 @@ export interface ScriptedBehaviour {
 	 * layer's reading of its own turn state the input the fold routes on (ADR 0356).
 	 */
 	readonly interruptFails?: Error;
+	/**
+	 * What the handshake reports as the logged-in account. The default is the empty object, which is
+	 * the shape a login with no organization and no plan answers with — so a test that wants the
+	 * inspector's account row has to say so.
+	 */
+	readonly account?: AccountInfo;
 }
 
 export const scriptedQuery = (
@@ -128,8 +135,8 @@ export const scriptedQuery = (
 	// request (`sdk.mjs`, `performCleanup`). The `catch` is the SDK's own guard against an unhandled
 	// rejection on a query nobody asked the handshake of.
 	let refuseHandshake: ((cause: unknown) => void) | null = null;
-	const handshake = new Promise<unknown>((resolve, reject) => {
-		if (behaviour.endsAtOnce !== true) resolve({commands: [], agents: [], models: []});
+	const handshake = new Promise<{readonly account: AccountInfo}>((resolve, reject) => {
+		if (behaviour.endsAtOnce !== true) resolve({account: behaviour.account ?? {}});
 		refuseHandshake = reject;
 	});
 	handshake.catch(() => {});

@@ -128,6 +128,7 @@ export const on = <A, E>(
 			...(harness.commands === undefined ? {} : {commands: harness.commands}),
 			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
 			...(harness.interruptFails === undefined ? {} : {interruptFails: harness.interruptFails}),
+			...(harness.account === undefined ? {} : {account: harness.account}),
 			...(harness.effortSwitchFails === undefined
 				? {}
 				: {effortSwitchFails: harness.effortSwitchFails}),

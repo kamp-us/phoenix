@@ -25,7 +25,7 @@ import {useEffect, useState} from "react";
 import type {AnyInspectorRenderer} from "../../shell/desk/index.ts";
 import {inspectorRenderer} from "../../shell/desk/index.ts";
 import type {AnyWindowHost} from "../../shell/window/index.ts";
-import {type AiAgentSessionState, usageTotals} from "../core/index.ts";
+import {type AgentAccount, type AiAgentSessionState, usageTotals} from "../core/index.ts";
 import {isAiAgentSessionState} from "../core/snapshot.ts";
 import "./ai-agent-inspector.css";
 
@@ -46,11 +46,27 @@ const tokens = new Intl.NumberFormat("en-US");
 /** Before `start` answers there is no session id, and an empty slot would read as a lost one. */
 const NO_SESSION_YET = "no session yet";
 
+/**
+ * The booted-on account as one line, or `null` when there is nothing to say.
+ *
+ * Both fields of `AgentAccount` are optional and either can stand alone, so the answer is what is
+ * present joined rather than a fixed `org · plan` template — an API-key login reports a plan and no
+ * organization, and a template would render a leading separator against nothing.
+ */
+const accountLine = (account: AgentAccount | null): string | null => {
+	if (account === null) return null;
+	const parts = [account.organization, account.subscriptionType].filter(
+		(part): part is string => part !== undefined && part !== "",
+	);
+	return parts.length === 0 ? null : parts.join(" · ");
+};
+
 /** The rows this panel shows, in the order it shows them. */
 const inspectorRows = (
 	state: AiAgentSessionState,
 ): ReadonlyArray<readonly [label: string, value: string, className?: string]> => {
 	const usage = usageTotals(state.usage);
+	const account = accountLine(state.account);
 	return [
 		["Cost", money.format(usage.cost), "tuval-agent-inspector-number"],
 		["Input tokens", tokens.format(usage.inputTokens), "tuval-agent-inspector-number"],
@@ -62,6 +78,12 @@ const inspectorRows = (
 		...(state.agentVersion === null
 			? []
 			: [["Version", state.agentVersion] as readonly [string, string]]),
+		// The label carries "booted on" because that is the whole claim: the SDK answers the account
+		// cached at the first connect and never re-reads it, so a row saying plain "Account" would
+		// promise a currency this value does not have (#8447). Omitted on the version row's rule.
+		...(account === null
+			? []
+			: [["Account (booted on)", account, "tuval-agent-inspector-wrap"] as const]),
 	];
 };
 
