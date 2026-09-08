@@ -580,3 +580,154 @@ describe("an interruption over the Pi event path", () => {
 		expect(after.interruption).toBeNull();
 	});
 });
+
+/**
+ * The empty `agent` row of #8216: a turn that only called a tool has no text, and a label over
+ * nothing reads as a reply that was dropped or is still loading. The rows the turn really produced
+ * — its reasoning, its calls, its cost — are the ones that must survive the suppression.
+ */
+describe("a turn with nothing to read", () => {
+	const machine = aiAgentSessionMachine({cwd: "/workspace"});
+
+	const fold = (
+		state: AiAgentSessionState,
+		events: ReadonlyArray<AgentEvent>,
+	): AiAgentSessionState =>
+		events.reduce(
+			(carried, event) =>
+				applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(
+					machine,
+					carried,
+					{type: "event", sessionId: "session-7602", event},
+				)[0],
+			state,
+		);
+
+	const opened: AiAgentSessionState = {
+		...initialState("/workspace"),
+		phase: "ready",
+		sessionId: "session-7602",
+	};
+
+	const call = {
+		type: "toolCall" as const,
+		toolCallId: "call-1",
+		toolName: "read_file",
+		input: {path: "README.md"},
+	};
+
+	/** The reported shape: the model answered by calling a tool and wrote no prose at all. */
+	const toolOnly: PiTranscriptItem = {
+		id: "item-1",
+		role: "assistant",
+		content: [call],
+		model: {provider: "faux", id: "faux-1"},
+		usage: usage(0.42),
+		timestamp: 11,
+		status: "complete",
+		stopReason: "toolUse",
+	};
+
+	const reasonedToolOnly: PiTranscriptItem = {
+		...toolOnly,
+		content: [{type: "thinking", thinking: "read it first"}, call],
+	};
+
+	it("draws the tool it called and no empty reply beside it", () => {
+		expect(itemsOf(toolOnly)).toEqual([]);
+		const folded = eventsOf(emptyProjection, snapshot([user, toolOnly, settledTool], "idle"));
+		const items = folded.events.flatMap((event) => (event.kind === "item" ? [event.item] : []));
+		expect(items.map((item) => item.kind)).toEqual(["user", "tool"]);
+	});
+
+	it("keeps the reasoning, the tool row, the cost and the phase the turn ended on", () => {
+		const folded = eventsOf(
+			emptyProjection,
+			snapshot([user, reasonedToolOnly, settledTool], "idle"),
+		);
+		expect(folded.events).toEqual([
+			{kind: "item", item: {kind: "user", id: "item-0", timestamp: 10, text: "say hello"}},
+			{
+				kind: "item",
+				item: {kind: "thinking", id: "item-1:thinking", timestamp: 11, text: "read it first"},
+			},
+			{
+				kind: "item",
+				item: {
+					kind: "tool",
+					id: "call-1",
+					timestamp: 12,
+					name: "read_file",
+					input: {path: "README.md"},
+					result: {text: "the file", omitted: {bytes: 0}},
+					status: "ok",
+				},
+			},
+			{
+				kind: "usage",
+				turn: "item-1",
+				model: "faux/faux-1",
+				inputTokens: 11,
+				outputTokens: 22,
+				cost: 0.42,
+			},
+			{kind: "phase", phase: "ready"},
+		]);
+	});
+
+	it("renders one reply once when an empty partial grows into a settled one", () => {
+		const first = eventsOf(emptyProjection, snapshot([user, streamingAssistant("")], "turn"));
+		const second = eventsOf(first.next, snapshot([user, streamingAssistant("hi")], "turn", 2));
+		const third = eventsOf(second.next, snapshot([user, settledAssistant("hi back")], "idle", 3));
+		expect(
+			first.events.some((event) => event.kind === "item" && event.item.kind === "assistant"),
+		).toBe(false);
+		const settled = fold(fold(fold(opened, first.events), second.events), third.events);
+		expect(settled.transcript.items.map((item) => [item.id, item.kind])).toEqual([
+			["item-0", "user"],
+			["item-1", "assistant"],
+		]);
+		expect(settled.transcript.items.at(-1)).toEqual({
+			kind: "assistant",
+			id: "item-1",
+			timestamp: 11,
+			text: "hi back",
+		});
+	});
+
+	it("leaves no empty reply behind when the turn settles textless", () => {
+		const first = eventsOf(emptyProjection, snapshot([user, streamingAssistant("")], "turn"));
+		const second = eventsOf(first.next, snapshot([user, toolOnly, settledTool], "idle", 2));
+		const settled = fold(fold(opened, first.events), second.events);
+		expect(settled.transcript.items.map((item) => item.kind)).toEqual(["user", "tool"]);
+		expect(holdsPartialItem(settled)).toBe(false);
+	});
+
+	it("still draws an interrupted reply that carries no text", () => {
+		const aborted: PiTranscriptItem = {
+			...toolOnly,
+			content: [],
+			status: "aborted",
+			stopReason: "aborted",
+		};
+		expect(itemsOf(aborted)).toEqual([
+			{kind: "assistant", id: "item-1", timestamp: 11, text: "", interrupted: true},
+		]);
+	});
+
+	it("leaves an ordinary reply, a user turn and a failed turn alone", () => {
+		expect(itemsOf(settledAssistant("hi back"))).toEqual([
+			{kind: "assistant", id: "item-1", timestamp: 11, text: "hi back"},
+		]);
+		expect(itemsOf({...user, content: []})).toEqual([
+			{kind: "user", id: "item-0", timestamp: 10, text: ""},
+		]);
+		const failed: PiTranscriptItem = {
+			...toolOnly,
+			content: [],
+			status: "error",
+			stopReason: "error",
+		};
+		expect(itemsOf(failed)).toEqual([{kind: "assistant", id: "item-1", timestamp: 11, text: ""}]);
+	});
+});
