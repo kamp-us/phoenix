@@ -1,0 +1,55 @@
+.kp-diff {
+	max-block-size: var(--kp-diff-max-block-size, 60vh);
+	overflow: auto;
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+}
+
+.kp-diff:focus-visible {
+	outline: var(--manti-focus-ring-width) solid var(--manti-focus-ring);
+	outline-offset: var(--manti-focus-ring-offset);
+}
+
+/*
+ * The seam. These are declared on the shadow host rather than on `.kp-diff` because the library's
+ * own `:host` rule sets some of them, and a `:host` declaration beats a value inherited from an
+ * ancestor; a rule matching the host from this document does not. Everything below is a role token
+ * — see `Diff.tsx` for why the pair-shaped `--diffs-light-*`/`--diffs-dark-*` inputs are fed the
+ * same token on both sides, and why the `-override` inputs are preferred where the library has one.
+ */
+.kp-diff__pane {
+	display: block;
+
+	/* chrome */
+	--diffs-font-family: var(--font-mono);
+	--diffs-header-font-family: var(--font-body);
+	--diffs-light-bg: var(--surface-sunken);
+	--diffs-dark-bg: var(--surface-sunken);
+	--diffs-light: var(--text-primary);
+	--diffs-dark: var(--text-primary);
+	--diffs-mixer: var(--text-primary);
+	--diffs-addition-color-override: var(--success);
+	--diffs-deletion-color-override: var(--danger);
+	--diffs-modified-color-override: var(--warning);
+	--diffs-fg-number-override: var(--text-muted);
+
+	/* the Shiki css-variables theme registered in `Diff.tsx` */
+	--diffs-foreground: var(--text-primary);
+	--diffs-background: var(--surface-sunken);
+	--diffs-ansi-green: var(--success);
+	--diffs-ansi-red: var(--danger);
+	--diffs-ansi-blue: var(--accent);
+	--diffs-token-comment: var(--text-muted);
+	--diffs-token-string: var(--success);
+	--diffs-token-string-expression: var(--success);
+	--diffs-token-keyword: var(--link);
+	--diffs-token-function: var(--accent);
+	--diffs-token-constant: var(--warning);
+	--diffs-token-parameter: var(--text-secondary);
+	--diffs-token-punctuation: var(--text-muted);
+	--diffs-token-link: var(--link);
+	--diffs-token-inserted: var(--success);
+	--diffs-token-deleted: var(--danger);
+	--diffs-token-changed: var(--warning);
+}

@@ -163,6 +163,7 @@ until they land, the rule still governs (do not seed a fresh hand-built instance
 | A button (incl. `pressed` / `icon` / `loading`) | The widened `Button` primitive | Hand-roll a button wrapper around the primitive. |
 | Empty / short / sparse state | The reusable empty-state primitive ([#2162](https://github.com/kamp-us/phoenix/issues/2162)) | Ship a bare `0 yorum`-style label as the whole treatment. |
 | A reaction affordance | The on-brand controlled reaction asset ([#2165](https://github.com/kamp-us/phoenix/issues/2165)) | Ship a raw system-emoji glyph (OS-drift). |
+| A before/after text diff | The `Diff` primitive (`@pierre/diffs` behind role tokens, unified or `split`) | Hand-roll a line table, or embed a second diff renderer. |
 | A functional icon (vote / nav / toolbar / inline) | A drawn **Lucide** icon at the ruled size + role token (the [icon idiom](#the-canonical-icon-idiom) below) | Ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an icon. |
 
 **One system throughout:** one type ramp, one four-level elevation system, one icon idiom — never

@@ -14,6 +14,7 @@ import {Badge} from "../Badge";
 import {Button} from "../Button";
 import {Card, Surface} from "../Card";
 import {CountToggle} from "../CountToggle";
+import {Diff} from "../Diff";
 import {Markdown} from "../Markdown";
 import {MetaRow} from "../MetaRow";
 import {NumberInput} from "../NumberInput";
@@ -241,6 +242,19 @@ const markdownArb: fc.Arbitrary<ReactElement> = fc
 	)
 	.map((parts) => <Markdown>{parts.join("\n\n")}</Markdown>);
 
+const diffArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		before: fc.constantFrom("const a = 1;\n", "", "# notes\n\nold line\n"),
+		after: fc.constantFrom(
+			"const a = 2;\n",
+			"const a = 1;\nconst b = 2;\n",
+			"# notes\n\nnew line\n",
+		),
+		path: fc.constantFrom("src/count.ts", "docs/notes.md", "worker/index.tsx"),
+		split: fc.boolean(),
+	})
+	.map((props) => <Diff {...props} />);
+
 const COMPOUND_REASON =
 	"Manti machine primitive — needs required items/trigger/content props or a portal interaction to render a representative surface; covered by composed-usage tests.";
 
@@ -259,6 +273,7 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
+	Diff: {kind: "presentational", arb: diffArb},
 	Markdown: {kind: "presentational", arb: markdownArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
 	SandboxMarker: {

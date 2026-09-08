@@ -45,6 +45,8 @@ export {CopyLinkButton} from "./CopyLinkButton";
 export type {CountToggleProps} from "./CountToggle";
 export {CountToggle} from "./CountToggle";
 export {Dialog} from "./Dialog";
+export type {DiffProps} from "./Diff";
+export {Diff} from "./Diff";
 export {DraftRestoreBanner} from "./DraftRestoreBanner";
 export {EditedIndicator} from "./EditedIndicator";
 export {EmptyState} from "./EmptyState";

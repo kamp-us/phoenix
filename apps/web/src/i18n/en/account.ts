@@ -195,6 +195,7 @@ export const account = {
 	"ui.draftRestore.text": "you have a saved draft. want to restore it?",
 	"ui.draftRestore.restore": "restore the draft",
 	"ui.draftRestore.dismiss": "ignore",
+	"ui.diff": "diff of {path}",
 	"ui.markdown.table": "table",
 	"ui.markdown.code": "code block",
 	"ui.markdown.diagram": "diagram",

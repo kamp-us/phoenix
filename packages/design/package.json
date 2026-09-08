@@ -24,6 +24,7 @@
 		"@manti-ui/react": "catalog:",
 		"@fontsource/ibm-plex-sans": "catalog:",
 		"@fontsource/jetbrains-mono": "catalog:",
+		"@pierre/diffs": "catalog:",
 		"lucide-react": "catalog:",
 		"marked": "catalog:",
 		"mermaid": "catalog:"
