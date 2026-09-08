@@ -115,7 +115,7 @@ export const aiAgentHandlers = <RIn = never>(
 		...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 	};
 	const slot = agentSlot(options.layer);
-	const projection = transcriptProjection();
+	const projection = transcriptProjection(limits);
 
 	/**
 	 * `onFail` is how a call whose refusal belongs to something the core is holding open answers for
@@ -235,8 +235,8 @@ export const aiAgentHandlers = <RIn = never>(
 			Effect.gen(function* () {
 				const state = yield* readSession;
 				if (state === null) return nothing;
-				yield* projection.seed(state);
-				yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
+				const seeded = yield* projection.seed(state);
+				yield* emit(aiAgentPortNames.transcript, transcriptOf(seeded));
 				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
 				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
 				return nothing;
@@ -244,8 +244,10 @@ export const aiAgentHandlers = <RIn = never>(
 
 		// The turn the core recorded in the very commit that produced this Cmd (#7978) rides no
 		// layer event, so the Sub's projection would publish a tail with the operator's half
-		// missing (#7979). Re-seeding is sound here rather than a race: this Cmd is applied after
-		// every event Msg the projection has folded, so the committed state is never behind it.
+		// missing (#7979). The committed state can be behind the projection while this runs — the
+		// Sub folds each event before the host applies its Msg — so the seed carries that tail
+		// across rather than replacing it (`./projection.ts`, #8034), and the emit publishes what
+		// the seed answered rather than the commit it started from.
 		//
 		// It is also the one handler whose answer names the send it is about. `sent` carries the
 		// Cmd's own key, so the window that minted it learns what became of *its* text rather than
@@ -257,8 +259,8 @@ export const aiAgentHandlers = <RIn = never>(
 			Effect.gen(function* () {
 				const state = yield* readSession;
 				if (state !== null) {
-					yield* projection.seed(state);
-					yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
+					const seeded = yield* projection.seed(state);
+					yield* emit(aiAgentPortNames.transcript, transcriptOf(seeded));
 				}
 				const agent = yield* slot.current;
 				if (agent === null) {
