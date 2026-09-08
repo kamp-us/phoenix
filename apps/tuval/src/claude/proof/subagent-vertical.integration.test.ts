@@ -468,8 +468,8 @@ describe("the running-subagent list on a real Claude row", () => {
 					);
 
 					// Claim 2: no row of either worker in the agent's own window. Counted by kind rather
-					// than matched by text, because the CLI's own `task_notification` notice quotes a
-					// worker's summary and that notice is the agent's row, not the worker's.
+					// than matched by text, because the spawning `Agent` call's own tool result carries
+					// the worker's summary and that row is the agent's, not the worker's.
 					const spoken = repliesOf(both, first);
 					assert.isNotEmpty(spoken, "the first worker has written nothing yet to look for");
 					const kindsIn = (state: AiAgentSessionState, kind: string): number =>

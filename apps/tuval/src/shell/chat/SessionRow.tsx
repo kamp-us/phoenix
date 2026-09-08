@@ -14,6 +14,11 @@
  * The line always showing is the newest one — the session's current word — and the rest of the run
  * folds away with the details.
  *
+ * A notice naming a subagent slot (`ports/transcript-item.ts`, `subagent`) draws one control beside
+ * it, and that is still no branch per kind: the field is the port's, so any mapper filling it gets
+ * the control. A settled worker's notice is one line by then (founder ruling on #8475), so the
+ * control is where the report behind that line is read.
+ *
  * The disclosure is `@kampus/design`'s `Collapsible`, the primitive `ToolRow` and `ThinkingRow`
  * use, so `aria-expanded`/`aria-controls` are the primitive's and the accessible name is the
  * summary line (`.patterns/manti-accessibility.md`). A lone notice carrying no detail has nothing
@@ -21,7 +26,7 @@
  * the row cannot keep.
  */
 
-import {Collapsible} from "@kampus/design";
+import {Button, Collapsible} from "@kampus/design";
 import type {ReactElement} from "react";
 import type {SystemItem} from "../../ai-agent/ports/index.ts";
 import type {SessionRun} from "./rows.ts";
@@ -47,48 +52,83 @@ export function SessionRow({
 	run,
 	expanded,
 	onToggle,
+	onViewSubagent,
 }: {
 	readonly run: SessionRun;
 	readonly expanded: boolean;
 	readonly onToggle: (open: boolean) => void;
+	/**
+	 * How the row reaches the worker a notice reports on, or `null` where no list is drawn to reach.
+	 * A settled worker's notice names an outcome and nothing else (`claude/history/map.ts`), so this
+	 * is the way to the rows behind it.
+	 */
+	readonly onViewSubagent?: ((id: string) => void) | null;
 }): ReactElement {
 	const latest = run[run.length - 1] ?? run[0];
 	const earlier = run.length - 1;
 	const alone = earlier === 0 ? latest.detail : undefined;
+	const worker = latest.subagent;
+	const link =
+		worker === undefined || onViewSubagent === undefined || onViewSubagent === null ? null : (
+			<Button
+				type="button"
+				variant="tertiary"
+				size="sm"
+				className="tuval-chat-session-link"
+				style={{minBlockSize: "var(--tap-min, 36px)"}}
+				onClick={() => onViewSubagent(worker)}
+			>
+				Show its rows
+				{/* The name in context, so the control reads on its own out of the rows around it. */}
+				<span className="kp-visually-hidden"> — {sessionLine(latest)}</span>
+			</Button>
+		);
 	if (earlier === 0 && alone === undefined) {
-		return <p className="tuval-chat-text tuval-chat-session-line">{sessionLine(latest)}</p>;
+		return link === null ? (
+			<p className="tuval-chat-text tuval-chat-session-line">{sessionLine(latest)}</p>
+		) : (
+			<div className="tuval-chat-session-head">
+				<p className="tuval-chat-text tuval-chat-session-line">{sessionLine(latest)}</p>
+				{link}
+			</div>
+		);
 	}
 	return (
-		<Collapsible
-			className="tuval-chat-session"
-			open={expanded}
-			onOpenChange={onToggle}
-			trigger={
-				<span className="tuval-chat-session-head">
-					<span className="tuval-chat-session-line">{sessionLine(latest)}</span>
-					{earlier === 0 ? null : (
-						<span className="tuval-chat-session-count">{earlierLine(earlier)}</span>
-					)}
-				</span>
-			}
-		>
-			{alone !== undefined ? (
-				// A lone notice's line is the trigger, so the panel is its detail and nothing else —
-				// restating the line under the control that already says it is noise read twice.
-				<pre className="tuval-chat-pre">{alone}</pre>
-			) : (
-				// A run reads as a log, oldest-first, in the order the session raised it.
-				<ol className="tuval-chat-session-detail">
-					{run.map((item) => (
-						<li key={item.id} className="tuval-chat-session-entry">
-							<p className="tuval-chat-text">{sessionLine(item)}</p>
-							{item.detail === undefined ? null : (
-								<pre className="tuval-chat-pre">{item.detail}</pre>
-							)}
-						</li>
-					))}
-				</ol>
-			)}
-		</Collapsible>
+		<>
+			<Collapsible
+				className="tuval-chat-session"
+				open={expanded}
+				onOpenChange={onToggle}
+				trigger={
+					<span className="tuval-chat-session-head">
+						<span className="tuval-chat-session-line">{sessionLine(latest)}</span>
+						{earlier === 0 ? null : (
+							<span className="tuval-chat-session-count">{earlierLine(earlier)}</span>
+						)}
+					</span>
+				}
+			>
+				{alone !== undefined ? (
+					// A lone notice's line is the trigger, so the panel is its detail and nothing else —
+					// restating the line under the control that already says it is noise read twice.
+					<pre className="tuval-chat-pre">{alone}</pre>
+				) : (
+					// A run reads as a log, oldest-first, in the order the session raised it.
+					<ol className="tuval-chat-session-detail">
+						{run.map((item) => (
+							<li key={item.id} className="tuval-chat-session-entry">
+								<p className="tuval-chat-text">{sessionLine(item)}</p>
+								{item.detail === undefined ? null : (
+									<pre className="tuval-chat-pre">{item.detail}</pre>
+								)}
+							</li>
+						))}
+					</ol>
+				)}
+			</Collapsible>
+			{/* Outside the disclosure: the trigger is a button, and a button inside one is neither
+			    valid nor reachable. */}
+			{link}
+		</>
 	);
 }

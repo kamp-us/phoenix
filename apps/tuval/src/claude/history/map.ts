@@ -957,7 +957,8 @@ const noticeDetailOf = (message: Record<string, unknown>): string => {
  * Read shape-blind on purpose: the SDK names some fifteen such subtypes at 0.3.259 and adds more
  * each release, so this takes the frame's own name for the line, its prose when it carries any,
  * and folds everything the envelope did not claim into `detail`. A per-subtype arm here would be
- * fifteen arms none of which a golden capture backs.
+ * fifteen arms none of which a golden capture backs — `taskNoticeEvents` below is the one that a
+ * capture and a founder ruling do back, and it is the only one.
  */
 export const systemNoticeEvents = (
 	message: unknown,
@@ -983,6 +984,57 @@ export const systemNoticeEvents = (
 				timestamp: at,
 				text: summary,
 				...(detail.length === 0 ? {} : {detail}),
+			}),
+		],
+	};
+};
+
+/**
+ * What a settled task reads as. `SDKTaskNotificationMessage.status` is
+ * `'completed' | 'failed' | 'stopped'` (`sdk.d.ts`, 0.3.259); only the first wants a different
+ * word, and a value the union grows later is shown verbatim rather than forced into one of these.
+ * The frame is raised when a task settles, so one carrying no status at all still settled.
+ */
+const taskOutcomeOf = (status: unknown): string => {
+	if (typeof status !== "string" || status.length === 0) return "finished";
+	return status === "completed" ? "finished" : status;
+};
+
+/**
+ * A settled task's notice, as one line naming the worker and how it ended.
+ *
+ * The frame carries the worker's entire final report in `summary`, and the collapsed-notice arm
+ * above would fold that whole payload into `detail` — a second copy of a report the spawning call's
+ * own tool result already carries, in the one transcript the running list exists to keep a worker's
+ * output out of. The founder ruled "shrink it"
+ * (https://github.com/kamp-us/phoenix/issues/8475#issuecomment-5589392284): one line, the worker's
+ * name and its outcome, linking to that worker's row in the subagent list where the full report
+ * already lives. The spawning `Agent` tool result is untouched — it is not this frame.
+ *
+ * The name is the slot's, so the notice and the list row a reader jumps to say the same word about
+ * the same worker. A task holding no slot — a backgrounded `Bash` raises this frame too — falls
+ * back to the spawning call's name and carries no link, because there is no row to link to.
+ */
+export const taskNoticeEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `notice-${at}`;
+	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+	const slot = callId.length === 0 ? undefined : mapping.subagents.get(callId);
+	const name = slot?.type ?? mapping.toolCalls.get(callId)?.name ?? "task";
+	return {
+		mapping,
+		events: [
+			item({
+				kind: "system",
+				id: itemId(id),
+				timestamp: at,
+				text: `${name} ${taskOutcomeOf(message.status)}`,
+				...(slot === undefined ? {} : {subagent: itemId(callId)}),
 			}),
 		],
 	};
