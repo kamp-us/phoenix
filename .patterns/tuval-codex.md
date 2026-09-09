@@ -65,13 +65,31 @@ A picker resume replays all history. A checkpoint resume compares backend rows w
 held tail, replaying changed rows and anything after its newest known ID. Clock fallback
 changes alone do not count as changed content.
 
-New threads explicitly request `historyMode: "legacy"`. In the installed 0.153.4 CLI,
-default durable threads reported paginated history but `thread/items/list` and the
-paginated `thread/read` implementation refused with not-supported errors. This is
-[tracked separately](https://github.com/kamp-us/phoenix/issues/8464); generated types are
-not proof that a runtime method works. An existing unreadable thread remains an error.
-A known fresh session returns empty history until its first accepted turn, because Codex
-does not materialize a durable legacy thread before its first user message.
+New threads explicitly request `historyMode: "legacy"`. The
+[0.153.4 history investigation](../reports/2026-09-09-codex-history-8464.md) found paginated
+history conditionally supported rather than uniformly refused: nonempty legacy history and
+*projected* paginated history both read back in full, with the paginated item IDs the rollout
+carries, while a paginated thread whose metadata row is missing refuses the read outright.
+Generated types are still not proof that a runtime method works. An existing unreadable
+thread remains an error. A known fresh session returns empty history until its first accepted
+turn, because Codex does not materialize a durable legacy thread before its first user message.
+
+**An empty paginated read is refused, not believed.** The same investigation read a known
+nonempty paginated rollout that Codex had not projected yet: `thread/read(includeTurns: true)`
+answered success with `turns: []`, and turn and item paging answered empty with null cursors,
+until an explicit resume projected it. So a successful empty answer and an exhausted cursor are
+both compatible with history the store simply has not built, and nothing else in the read-only
+protocol tells the two apart — the preview is evidence neither way, since a blank one is normal
+and a nonempty one only restates the contradiction. `readHistory` therefore trusts a zero-turn
+answer only under `historyMode: "legacy"`, whose loader replays the rollout directly; a
+paginated, absent or unrecognized mode fails as an unreadable store, carrying the session ID
+and the reason. This is fail-closed and deliberately conservative: a stored paginated session
+that really is empty is refused too, and Tuval says it could not verify the emptiness rather
+than claiming the session is empty. It detects no missing projection as such, recovers no
+data, and explains nothing about Codex's internal materialization. Read-only lookup still
+never starts, resumes or attaches anything to warm that history. The guard is shared, so the
+same refusal reaches `page` and explicit-resume replay; the known-fresh active session's empty
+page is unaffected, because that path answers before it reads the store at all.
 
 Known item types are decoded at the boundary. Unknown item kinds become bounded system
 rows instead of disappearing. Live reply updates reuse the item's ID and are optional,
@@ -151,8 +169,8 @@ successful read replaces it. Unknown activity without a spawning call is a visib
 unsupported notice. Multiple children from one spawn are refused because the shared
 slot contract is one spawning call per worker. Descendant spawns inside a child's
 transcript remain tool rows; recursive descendant navigation is not implemented.
-Ephemeral histories and runtime-unsupported paginated histories remain explicit
-refusals, including the limitation tracked in #8464. These are not claims of full
+Ephemeral histories and unprojected paginated histories remain explicit refusals,
+including the fail-closed empty-read limitation above. These are not claims of full
 native runtime parity.
 
 ## Source and checks
