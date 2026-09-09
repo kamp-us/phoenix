@@ -16,7 +16,9 @@ const style = document.createElement("style");
 beforeEach(() => {
 	// Vitest elides CSS imports; inspect the shipped cascade, not an unstyled component.
 	const entry = fileURLToPath(import.meta.resolve("@kampus/design"));
-	style.textContent = readFileSync(entry.replace(/index\.ts$/, "AgentChatInput.css"), "utf8");
+	style.textContent = ["AgentChatInput.css", "agent-chat/SettingMenu.css"]
+		.map((name) => readFileSync(entry.replace(/index\.ts$/, name), "utf8"))
+		.join("\n");
 	document.head.append(style);
 });
 

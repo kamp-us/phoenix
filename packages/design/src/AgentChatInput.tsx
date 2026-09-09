@@ -2,20 +2,12 @@ import {
 	Bot,
 	Brain,
 	ChevronDown,
-	ChevronsDown,
-	ChevronsUp,
 	ChevronUp,
-	CircleOff,
-	File as FileIcon,
 	FileImage,
-	type LucideIcon,
-	Minus,
 	Paperclip,
 	SendHorizontal,
 	ShieldCheck,
-	Sparkles,
 	Square,
-	Terminal,
 	X,
 } from "lucide-react";
 import {
@@ -30,6 +22,42 @@ import {
 	useState,
 } from "react";
 import {Alert} from "./Alert";
+import {AgentActivity} from "./agent-chat/AgentActivity";
+import {
+	deliveryModeKeys,
+	projectTrustKeys,
+	thinkingLevelIcons,
+	thinkingLevelKeys,
+	toItems,
+} from "./agent-chat/catalog";
+import {HarnessWidget} from "./agent-chat/HarnessWidget";
+import {Icon} from "./agent-chat/Icon";
+import {fileAsImage, MAX_IMAGE_BYTES} from "./agent-chat/image";
+import {mockCommands, mockFiles, mockModels, mockThinkingLevels} from "./agent-chat/mock-harness";
+import {PiExtensionDialog} from "./agent-chat/PiExtensionDialog";
+import {
+	assistantMessageText,
+	booleanValue,
+	commandList,
+	completionFor,
+	deliveryMode,
+	extensionRequest,
+	isRecord,
+	modelList,
+	modelName,
+	modelValue,
+	projectTrustValue,
+	providersCollide,
+	runningModelLabel,
+	selectedModelValue,
+	stringValue,
+	thinkingLevelList,
+	thinkingLevelValue,
+} from "./agent-chat/parse";
+import {type PickerItem, SettingMenu} from "./agent-chat/SettingMenu";
+import {SuggestionRow} from "./agent-chat/SuggestionRow";
+import type {Activity, ConnectionState, ExtensionRequest, Suggestion} from "./agent-chat/types";
+import {unavailableBridge} from "./agent-chat/unavailable-bridge";
 import type {
 	AgentChatInputBridge,
 	PiCommand,
@@ -45,340 +73,12 @@ import {Kbd} from "./atoms";
 import {Button} from "./Button";
 import {Card} from "./Card";
 import {Collapsible} from "./Collapsible";
-import {Dialog} from "./Dialog";
 import {Form, Input, Textarea} from "./Form";
-import {type DesignCatalogKey, type DesignTranslate, useDesignT} from "./i18n";
+import {useDesignT} from "./i18n";
 import {Menu, type MenuItem} from "./Menu";
 import {Select, type SelectItem} from "./Select";
 import "./AgentChatInput.css";
 import "./visually-hidden.css";
-
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-const unavailableBridge: AgentChatInputBridge = {
-	loadPiState: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	loadPiCommands: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	loadPiModels: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	loadPiThinkingLevels: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	loadPiFiles: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	setPiModel: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	setPiThinkingLevel: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	setPiProjectTrust: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	sendPiPrompt: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	abortPi: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	answerPiExtension: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
-	subscribeToPiEvents: () => () => undefined,
-};
-
-const deliveryModeKeys: readonly {value: PiDeliveryMode; key: DesignCatalogKey}[] = [
-	{value: "prompt", key: "admin.agent.delivery.prompt"},
-	{value: "steer", key: "admin.agent.delivery.steer"},
-	{value: "follow_up", key: "admin.agent.delivery.followUp"},
-];
-
-const projectTrustKeys: readonly {value: PiProjectTrust; key: DesignCatalogKey}[] = [
-	{value: "approve", key: "admin.agent.trust.approve"},
-	{value: "no-approve", key: "admin.agent.trust.ignore"},
-];
-
-const thinkingLevelKeys: Readonly<Record<PiThinkingLevel, DesignCatalogKey>> = {
-	off: "admin.agent.thinking.off",
-	minimal: "admin.agent.thinking.minimal",
-	low: "admin.agent.thinking.low",
-	medium: "admin.agent.thinking.medium",
-	high: "admin.agent.thinking.high",
-	xhigh: "admin.agent.thinking.xhigh",
-	max: "admin.agent.thinking.max",
-	ultra: "admin.agent.thinking.ultra",
-};
-
-const toItems = (
-	entries: readonly {value: string; key: DesignCatalogKey}[],
-	t: DesignTranslate,
-): SelectItem[] => entries.map(({value, key}) => ({value, label: t(key)}));
-
-const thinkingLevelIcons: Readonly<Record<PiThinkingLevel, LucideIcon>> = {
-	off: CircleOff,
-	minimal: ChevronsDown,
-	low: ChevronDown,
-	medium: Minus,
-	high: ChevronUp,
-	xhigh: ChevronsUp,
-	max: Sparkles,
-	ultra: Sparkles,
-};
-
-const mockModels: readonly PiModel[] = [
-	{provider: "openai", id: "gpt-5.5", name: "GPT-5.5"},
-	{provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna"},
-	{provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol"},
-	{provider: "openai", id: "gpt-5.6-terra", name: "GPT-5.6 Terra"},
-];
-
-const mockThinkingLevels: readonly PiThinkingLevel[] = [
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-];
-
-const mockCommands = (t: DesignTranslate): readonly PiCommand[] => [
-	{name: "review", description: t("admin.agent.mock.command.review")},
-	{name: "compact", description: t("admin.agent.mock.command.compact")},
-];
-
-const mockFiles = ["apps/web/src/App.tsx", "packages/design/src/AgentChatInput.tsx"];
-
-type ConnectionState = "loading" | "ready" | "unavailable" | "working";
-
-interface Completion {
-	readonly kind: "command" | "file";
-	readonly query: string;
-	readonly start: number;
-	readonly end: number;
-}
-
-type Suggestion =
-	| {readonly kind: "command"; readonly command: PiCommand}
-	| {readonly kind: "file"; readonly path: string};
-
-interface Activity {
-	readonly id: number;
-	readonly text: string;
-}
-
-/** One row of a settings picker. Exported as `AgentSettingItem`, which is what a host's slot binds. */
-export interface PickerItem {
-	readonly value: string;
-	readonly label: string;
-	/** Secondary text beside the label, for a row the label alone does not tell apart. */
-	readonly note?: string;
-	readonly icon?: LucideIcon;
-}
-
-interface ExtensionRequest {
-	readonly id: string;
-	readonly method: "select" | "confirm" | "input" | "editor";
-	readonly title: string;
-	readonly message?: string;
-	readonly options?: readonly string[];
-	readonly placeholder?: string;
-	readonly prefill?: string;
-}
-
-type IconSize = 12 | 14 | 16 | 20 | 24;
-
-function Icon({
-	icon: Glyph,
-	size = 20,
-	className,
-	label,
-}: {
-	readonly icon: LucideIcon;
-	readonly size?: IconSize;
-	readonly className?: string;
-	readonly label?: string;
-}) {
-	return (
-		<Glyph
-			className={className ? `kp-icon ${className}` : "kp-icon"}
-			size={size}
-			aria-hidden={label ? undefined : true}
-			aria-label={label}
-			role={label ? "img" : undefined}
-		/>
-	);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringValue(record: Record<string, unknown>, key: string): string | undefined {
-	const value = record[key];
-	return typeof value === "string" ? value : undefined;
-}
-
-function booleanValue(record: Record<string, unknown>, key: string): boolean | undefined {
-	const value = record[key];
-	return typeof value === "boolean" ? value : undefined;
-}
-
-function deliveryMode(value: string | undefined): PiDeliveryMode | undefined {
-	return value === "prompt" || value === "steer" || value === "follow_up" ? value : undefined;
-}
-
-function projectTrustValue(value: unknown): PiProjectTrust | undefined {
-	return value === "approve" || value === "no-approve" ? value : undefined;
-}
-
-function thinkingLevelValue(value: unknown): PiThinkingLevel | undefined {
-	return value === "off" ||
-		value === "minimal" ||
-		value === "low" ||
-		value === "medium" ||
-		value === "high" ||
-		value === "xhigh" ||
-		value === "max" ||
-		value === "ultra"
-		? value
-		: undefined;
-}
-
-function modelValue(model: Pick<PiModel, "provider" | "id">): string {
-	return `${model.provider}/${model.id}`;
-}
-
-/**
- * Two providers can offer the same display name, and then the name alone names two rows. The
- * provider is the fact that tells them apart, so it rides every row once a second one is offered.
- */
-function providersCollide(models: readonly PiModel[]): boolean {
-	return new Set(models.map((model) => model.provider)).size > 1;
-}
-
-/** A pushed command catalog, admitted row by row. A malformed push leaves the held list alone. */
-function commandList(value: unknown): readonly PiCommand[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const rows: PiCommand[] = [];
-	for (const row of value) {
-		if (!isRecord(row)) return undefined;
-		const name = stringValue(row, "name");
-		if (!name) return undefined;
-		const description = stringValue(row, "description");
-		const source = stringValue(row, "source");
-		rows.push({name, ...(description ? {description} : {}), ...(source ? {source} : {})});
-	}
-	return rows;
-}
-
-/** A pushed model catalog, admitted row by row. A malformed push leaves the held list alone. */
-function modelList(value: unknown): readonly PiModel[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const rows: PiModel[] = [];
-	for (const row of value) {
-		if (!isRecord(row)) return undefined;
-		const provider = stringValue(row, "provider");
-		const id = stringValue(row, "id");
-		const name = stringValue(row, "name");
-		if (!provider || !id || !name) return undefined;
-		rows.push({provider, id, name});
-	}
-	return rows;
-}
-
-/**
- * A pushed level set, admitted row by row like the model catalog. `off` is dropped for the reason
- * the mount-time load drops it: it is not a row this picker selects.
- */
-function thinkingLevelList(value: unknown): readonly PiThinkingLevel[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const levels: PiThinkingLevel[] = [];
-	for (const row of value) {
-		const level = thinkingLevelValue(row);
-		if (!level) return undefined;
-		if (level !== "off") levels.push(level);
-	}
-	return levels;
-}
-
-function selectedModelValue(state: Record<string, unknown> | undefined): string | undefined {
-	const model = state && isRecord(state.model) ? state.model : undefined;
-	if (!model) return undefined;
-	const provider = stringValue(model, "provider");
-	const id = stringValue(model, "id");
-	return provider && id ? modelValue({provider, id}) : undefined;
-}
-
-function completionFor(draft: string): Completion | undefined {
-	const match = /(?:^|\s)([/@])([^\s]*)$/.exec(draft);
-	if (!match) return undefined;
-	const sigil = match[1];
-	const query = match[2] ?? "";
-	if (!sigil) return undefined;
-	const start = draft.length - match[0].length + match[0].lastIndexOf(sigil);
-	return {kind: sigil === "/" ? "command" : "file", query, start, end: draft.length};
-}
-
-function modelName(state: Record<string, unknown> | undefined): string | undefined {
-	const model = state && isRecord(state.model) ? state.model : undefined;
-	if (!model) return undefined;
-	return (
-		stringValue(model, "displayName") ?? stringValue(model, "name") ?? stringValue(model, "id")
-	);
-}
-
-/** The running model as the status line names it: bare name, or name + provider once two collide. */
-function runningModelLabel(
-	state: Record<string, unknown> | undefined,
-	models: readonly PiModel[],
-): string | undefined {
-	const name = modelName(state);
-	if (!name || !providersCollide(models)) return name;
-	const model = state && isRecord(state.model) ? state.model : undefined;
-	const provider = model && stringValue(model, "provider");
-	return provider ? `${name} (${provider})` : name;
-}
-
-function assistantMessageText(value: unknown): string | undefined {
-	if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content))
-		return undefined;
-	const text = value.content.flatMap((block) => {
-		if (!isRecord(block)) return [];
-		const value = stringValue(block, "text");
-		return value ? [value] : [];
-	});
-	return text.length > 0 ? text.join("") : undefined;
-}
-
-function extensionRequest(event: PiEvent, fallbackTitle: string): ExtensionRequest | undefined {
-	if (event.type !== "extension_ui_request") return undefined;
-	const id = stringValue(event, "id");
-	const rawMethod = stringValue(event, "method");
-	const title = stringValue(event, "title") ?? fallbackTitle;
-	if (!id || !rawMethod) return undefined;
-	if (
-		rawMethod !== "select" &&
-		rawMethod !== "confirm" &&
-		rawMethod !== "input" &&
-		rawMethod !== "editor"
-	) {
-		return undefined;
-	}
-	const options = Array.isArray(event.options)
-		? event.options.filter((option): option is string => typeof option === "string")
-		: undefined;
-	return {
-		id,
-		method: rawMethod,
-		title,
-		...(stringValue(event, "message") ? {message: stringValue(event, "message")} : {}),
-		...(options && options.length > 0 ? {options} : {}),
-		...(stringValue(event, "placeholder") ? {placeholder: stringValue(event, "placeholder")} : {}),
-		...(stringValue(event, "prefill") ? {prefill: stringValue(event, "prefill")} : {}),
-	};
-}
-
-function fileAsImage(file: File, unreadable: string): Promise<PiImage> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onerror = () => reject(new Error(unreadable));
-		reader.onload = () => {
-			if (typeof reader.result !== "string") {
-				reject(new Error(unreadable));
-				return;
-			}
-			const data = reader.result.split(",", 2)[1];
-			if (!data) {
-				reject(new Error(unreadable));
-				return;
-			}
-			resolve({data, mimeType: file.type, name: file.name});
-		};
-		reader.readAsDataURL(file);
-	});
-}
 
 export interface AgentChatInputProps {
 	readonly bridge?: AgentChatInputBridge;
@@ -1367,276 +1067,5 @@ export function AgentChatInput({
 			)}
 			{extension ? <PiExtensionDialog request={extension} onAnswer={answerExtension} /> : null}
 		</section>
-	);
-}
-
-export interface SettingMenuProps {
-	/** The control's accessible name, and the group heading inside the menu. */
-	readonly label: string;
-	/**
-	 * What the host offers, or `undefined` while the offer is unresolved. `[]` is a resolved answer
-	 * — the host knows and offers nothing — and reads that way rather than as loading (#8425).
-	 */
-	readonly items: readonly PickerItem[] | undefined;
-	readonly value?: string;
-	/**
-	 * The selection as the host describes it, for when `items` carries no row for it — a pick held
-	 * with no live catalog behind it (#8542). The trigger names this rather than the empty offer's
-	 * copy, so the control never contradicts the selection the host is holding.
-	 */
-	readonly held?: PickerItem;
-	readonly onValueChange: (value: string) => void;
-	readonly disabled?: boolean;
-}
-
-/**
- * One settings picker of the composer's fieldset. Exported as `AgentSettingMenu` so a host filling
- * the `settings` slot builds its control out of this rather than reaching for a bare `Select`,
- * which would put a differently-shaped control in a row of these.
- */
-export function SettingMenu({
-	label,
-	items,
-	value,
-	held,
-	onValueChange,
-	disabled,
-}: SettingMenuProps) {
-	const t = useDesignT();
-	const [open, setOpen] = useState(false);
-	// The highlight is ours to drive, not the machine's: Zag clears it on close and re-seeds it to
-	// row 1 on the next open, so a catalogue taller than the popover always opens away from the
-	// checked row. Seeding it to `value` at the open makes the machine's own scroll-into-view land
-	// there and the first arrow key move from there. See ADR 0361.
-	const [highlighted, setHighlighted] = useState<string | null>(null);
-	const offered = items ?? [];
-	// Three unselected states, and only the first is loading: `undefined` items is a host that has
-	// not resolved what it offers, `[]` is one that resolved and offers nothing, and a populated
-	// list with no `value` is a setting the session has not picked yet (#8190, #8425). Reading the
-	// middle one as loading left an operator waiting on rows that were never coming.
-	const unselectedName = t(
-		items === undefined
-			? "admin.agent.picker.loading"
-			: items.length === 0
-				? "admin.agent.picker.empty"
-				: "admin.agent.picker.none",
-	);
-	// A pick the offer carries no row for is still a pick: the trigger names it and the empty copy
-	// rides as its note, so an operator reads both what is held and that nothing live sits behind
-	// it. A control that showed the copy alone said the opposite of the model it was on (#8542).
-	const selected =
-		offered.find((item) => item.value === value) ??
-		(held !== undefined && held.value === value ? {...held, note: unselectedName} : undefined);
-	// Nothing to pick is nothing to open, either way round: an unresolved offer has no rows yet and
-	// a resolved-empty one never will, so the trigger does not advertise an operation the host
-	// cannot perform. `disabled` from the host still wins on top of this.
-	const operable = offered.length > 0;
-	const selectedName = selected
-		? selected.note
-			? `${selected.label} (${selected.note})`
-			: selected.label
-		: unselectedName;
-	return (
-		<Menu
-			open={open}
-			onOpenChange={(next) => {
-				if (next) setHighlighted(value ?? null);
-				setOpen(next);
-			}}
-			highlightedValue={highlighted}
-			onHighlightChange={setHighlighted}
-			placement="top-start"
-			ariaLabel={label}
-			className="kp-agent-chat__picker-menu"
-			trigger={
-				<Button
-					type="button"
-					variant="tertiary"
-					size="sm"
-					className="kp-agent-chat__picker-trigger"
-					aria-label={`${label}: ${selectedName}`}
-					disabled={disabled || !operable}
-				>
-					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
-					<span>{selected?.label ?? unselectedName}</span>
-					{selected?.note ? (
-						<span className="kp-agent-chat__picker-note">{selected.note}</span>
-					) : null}
-					<Icon icon={open ? ChevronUp : ChevronDown} size={14} />
-				</Button>
-			}
-			items={[
-				{
-					type: "group",
-					label,
-					items: offered.map((item) => ({
-						type: "radio",
-						value: item.value,
-						label: item.note ? (
-							<span className="kp-agent-chat__picker-option">
-								<span>{item.label}</span>
-								<span className="kp-agent-chat__picker-note">{item.note}</span>
-							</span>
-						) : (
-							item.label
-						),
-						checked: item.value === value,
-						...(item.icon ? {icon: <Icon icon={item.icon} size={16} />} : {}),
-					})),
-				},
-			]}
-			onSelect={(nextValue) => {
-				onValueChange(nextValue);
-				setOpen(false);
-			}}
-		/>
-	);
-}
-
-function SuggestionRow({
-	id,
-	suggestion,
-	active,
-	onSelect,
-}: {
-	readonly id: string;
-	readonly suggestion: Suggestion;
-	readonly active: boolean;
-	readonly onSelect: () => void;
-}) {
-	const command = suggestion.kind === "command" ? suggestion.command : undefined;
-	return (
-		<Button
-			id={id}
-			type="button"
-			variant="tertiary"
-			block
-			className="kp-agent-chat__suggestion"
-			role="option"
-			aria-selected={active}
-			onClick={onSelect}
-		>
-			<Icon icon={suggestion.kind === "command" ? Terminal : FileIcon} size={16} />
-			<span className="kp-agent-chat__suggestion-main">
-				{suggestion.kind === "command" ? `/${command?.name ?? ""}` : `@${suggestion.path}`}
-			</span>
-			{command?.description ? (
-				<span className="kp-agent-chat__suggestion-detail">{command.description}</span>
-			) : null}
-		</Button>
-	);
-}
-
-function HarnessWidget({lines}: {readonly lines: readonly string[]}) {
-	const t = useDesignT();
-	return (
-		<Card className="kp-agent-chat__widget" role="status">
-			<p className="kp-agent-chat__widget-title">{t("admin.agent.extension.title")}</p>
-			<pre>{lines.join("\n")}</pre>
-		</Card>
-	);
-}
-
-function AgentActivity({
-	assistantText,
-	activities,
-}: {
-	readonly assistantText: string;
-	readonly activities: readonly Activity[];
-}) {
-	const t = useDesignT();
-	return (
-		<Card className="kp-agent-chat__activity" aria-live="polite">
-			<p className="kp-agent-chat__activity-title">{t("admin.agent.activity.title")}</p>
-			{assistantText ? (
-				<pre className="kp-agent-chat__assistant-text">{assistantText}</pre>
-			) : (
-				<p className="kp-agent-chat__empty">{t("admin.agent.activity.empty")}</p>
-			)}
-			{activities.length > 0 ? (
-				<ul className="kp-agent-chat__activity-list">
-					{activities.map((activity) => (
-						<li key={activity.id}>{activity.text}</li>
-					))}
-				</ul>
-			) : null}
-		</Card>
-	);
-}
-
-function PiExtensionDialog({
-	request,
-	onAnswer,
-}: {
-	readonly request: ExtensionRequest;
-	readonly onAnswer: (answer: PiExtensionAnswer) => Promise<void>;
-}) {
-	const t = useDesignT();
-	const [value, setValue] = useState(request.prefill ?? "");
-	useEffect(() => setValue(request.prefill ?? ""), [request.id, request.prefill]);
-	const cancel = () => void onAnswer({id: request.id, cancelled: true});
-	const answer = (next: Omit<PiExtensionAnswer, "id">) => void onAnswer({id: request.id, ...next});
-	return (
-		<Dialog
-			open
-			onOpenChange={(open) => {
-				if (!open) cancel();
-			}}
-			title={request.title}
-			{...(request.message ? {description: request.message} : {})}
-			footer={() =>
-				request.method === "confirm" ? (
-					<>
-						<Button variant="tertiary" onClick={cancel}>
-							{t("admin.agent.extension.cancel")}
-						</Button>
-						<Button variant="primary" onClick={() => answer({confirmed: true})}>
-							{t("admin.agent.extension.confirm")}
-						</Button>
-					</>
-				) : request.method === "select" ? (
-					<Button variant="tertiary" onClick={cancel}>
-						{t("admin.agent.extension.cancel")}
-					</Button>
-				) : (
-					<>
-						<Button variant="tertiary" onClick={cancel}>
-							{t("admin.agent.extension.cancel")}
-						</Button>
-						<Button variant="primary" onClick={() => answer({value})}>
-							{t("admin.agent.extension.submit")}
-						</Button>
-					</>
-				)
-			}
-		>
-			{request.method === "select" ? (
-				<div className="kp-agent-chat__extension-options">
-					{request.options?.map((option) => (
-						<Button key={option} variant="secondary" block onClick={() => answer({value: option})}>
-							{option}
-						</Button>
-					))}
-				</div>
-			) : request.method === "input" ? (
-				<Input
-					label={<span className="kp-visually-hidden">{t("admin.agent.extension.input")}</span>}
-					placeholder={request.placeholder}
-					value={value}
-					onChange={(event) => setValue(event.currentTarget.value)}
-					fullWidth
-				/>
-			) : request.method === "editor" ? (
-				<Textarea
-					label={<span className="kp-visually-hidden">{t("admin.agent.extension.editor")}</span>}
-					placeholder={request.placeholder}
-					value={value}
-					onChange={(event) => setValue(event.currentTarget.value)}
-					rows={8}
-					resize="vertical"
-					fullWidth
-				/>
-			) : null}
-		</Dialog>
 	);
 }

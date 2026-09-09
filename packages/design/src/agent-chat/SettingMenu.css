@@ -1,0 +1,61 @@
+.kp-agent-chat__picker-trigger:where([data-scope="button"][data-part="root"]) {
+	--manti-button-padding-x: var(--s-2);
+	min-width: 0;
+	color: var(--text-secondary);
+}
+
+.kp-agent-chat__picker-trigger > [data-part="label"],
+.kp-agent-chat__picker-menu [data-part="item-text"] {
+	min-width: 0;
+}
+
+.kp-agent-chat__picker-trigger [data-part="label"] > span:not(.kp-agent-chat__picker-note),
+.kp-agent-chat__picker-option > span:not(.kp-agent-chat__picker-note) {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.kp-agent-chat__picker-trigger .kp-agent-chat__picker-note,
+.kp-agent-chat__picker-trigger .kp-icon {
+	flex-shrink: 0;
+}
+
+.kp-agent-chat__picker-option {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-1);
+	min-width: 0;
+}
+
+.kp-agent-chat__picker-note {
+	min-width: 0;
+	overflow: hidden;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.kp-agent-chat__picker-menu:where([data-scope="menu"][data-part="content"]) {
+	width: calc(var(--s-8) * 6);
+	max-width: calc(100vw - var(--s-4));
+	/* The cap belongs on `content`: that is the `rootEl` Zag's menu machine scrolls a highlighted
+	   item within, so an inner scroll box would leave arrow-key navigation scrolling the wrong
+	   element. */
+	max-height: min(26.25rem, 55dvh);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.kp-agent-chat__picker-menu:focus-visible {
+	outline: none;
+}
+
+.kp-agent-chat__picker-menu [data-part="item-group-label"] {
+	padding: var(--s-2) var(--s-3) var(--s-1);
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	font-weight: 700;
+}

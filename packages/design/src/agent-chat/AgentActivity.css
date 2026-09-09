@@ -1,0 +1,39 @@
+.kp-agent-chat__activity {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.kp-agent-chat__activity-title {
+	margin: 0;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	font-weight: 700;
+}
+
+.kp-agent-chat__assistant-text {
+	max-height: calc(var(--s-8) * 8);
+	margin: 0;
+	overflow: auto;
+	color: var(--text-primary);
+	font: var(--t-body);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.kp-agent-chat__empty {
+	margin: 0;
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.kp-agent-chat__activity-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+}
