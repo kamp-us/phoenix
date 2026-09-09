@@ -90,6 +90,7 @@ describe("the Claude history mapping is pure", () => {
 			"init",
 			"interrupted-assistant",
 			"local-command-caveat-turn",
+			"local-command-invocation-turn",
 			"local-command-lines-turn",
 			"local-command-turn",
 			"oversized-tool-turn",

@@ -17,6 +17,7 @@ export type FixtureName =
 	| "init"
 	| "interrupted-assistant"
 	| "local-command-caveat-turn"
+	| "local-command-invocation-turn"
 	| "local-command-lines-turn"
 	| "local-command-turn"
 	| "oversized-tool-turn"

@@ -641,7 +641,8 @@ const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
  *
  * The match is the captured shape and nothing looser: the text must *be* the wrapper, so a prompt
  * quoting or explaining these tags is still the operator's own and stays one. The sibling
- * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s; `<command-name>` is read nowhere yet.
+ * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s, and the `<command-name>` frame
+ * between them is `localCommandInvocationOf`'s.
  */
 const localCommandOutputOf = (text: string): string | null => {
 	const trimmed = text.trim();
@@ -666,6 +667,43 @@ const isLocalCommandCaveat = (text: string): boolean => {
 };
 
 /**
+ * One `<command-name>` / `<command-message>` / `<command-args>` block of the invocation record,
+ * matched at the head of what is left. Each tag may appear once, and `command-name` opens the frame.
+ */
+const COMMAND_TAG = /^<(command-name|command-message|command-args)>([\s\S]*?)<\/\1>/;
+
+const COMMAND_NAME_OPEN = "<command-name>";
+
+/**
+ * The command a slash-command invocation names, with its arguments, when this user frame is the
+ * CLI's record of that invocation rather than a turn.
+ *
+ * The middle of the three frames one slash command writes: the caveat, this record, then the
+ * output. Unlike the caveat it carries something a reader wants — which command ran — so it becomes
+ * its own notice rather than nothing (#8665). `<command-message>` restates the name and is dropped.
+ *
+ * The match is the whole trimmed text, as it is for the two siblings: every tag is consumed in turn
+ * and anything left over means this is an operator's prompt quoting the markup, which stays theirs.
+ */
+const localCommandInvocationOf = (text: string): string | null => {
+	let rest = text.trim();
+	if (!rest.startsWith(COMMAND_NAME_OPEN)) return null;
+	const parts = new Map<string, string>();
+	while (rest.length > 0) {
+		const match = COMMAND_TAG.exec(rest);
+		if (match === null) return null;
+		const [whole, tag, inner] = match;
+		if (tag === undefined || inner === undefined || parts.has(tag)) return null;
+		parts.set(tag, inner.replaceAll(sgr, "").trim());
+		rest = rest.slice(whole.length).trimStart();
+	}
+	const name = parts.get("command-name") ?? "";
+	if (name.length === 0) return null;
+	const args = parts.get("command-args") ?? "";
+	return args.length === 0 ? name : `${name} ${args}`;
+};
+
+/**
  * One command's output as the collapsed notice's two fields: the line always shown, and the whole
  * output behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`).
  */
@@ -681,8 +719,24 @@ const noticeOf = (output: string): {readonly text: string; readonly detail?: str
 };
 
 /**
- * A user frame is either the operator's prompt, a local command's caveat or output, or the results
- * of the calls the last turn opened.
+ * What one user frame stands for: the operator's own turn, or one of the two slash-command frames
+ * the CLI writes under the operator's role — the invocation record and the command's output. Each
+ * is read off its own text alone, so nothing has to survive between the frames of one command.
+ */
+const promptItemOf = (
+	text: string,
+	base: {readonly id: ItemId; readonly timestamp: number; readonly parentId?: ItemId},
+): TranscriptItem => {
+	const output = localCommandOutputOf(text);
+	if (output !== null) return {kind: "system", ...base, ...noticeOf(output)};
+	const invocation = localCommandInvocationOf(text);
+	if (invocation !== null) return {kind: "system", ...base, text: invocation};
+	return {kind: "user", ...base, text};
+};
+
+/**
+ * A user frame is either the operator's prompt, a local command's caveat, invocation record or
+ * output, or the results of the calls the last turn opened.
  *
  * A result whose call this mapping never saw is dropped and counted: the item union has no
  * name-less tool row, and inventing one would put a lie on screen. It happens only to a reader
@@ -706,11 +760,7 @@ export const userEvents = (
 		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
 		// agent's own prose — seen live on #8400's desk run.
 		const tag = framedParentId === null ? {} : {parentId: itemId(framedParentId)};
-		const output = localCommandOutputOf(text);
-		const prompt: TranscriptItem =
-			output === null
-				? {kind: "user", id: itemId(id), timestamp: at, text, ...tag}
-				: {kind: "system", id: itemId(id), timestamp: at, ...noticeOf(output), ...tag};
+		const prompt = promptItemOf(text, {id: itemId(id), timestamp: at, ...tag});
 		const folded = foldSlots(mapping, [prompt], framedParentId, 0);
 		return {
 			mapping: {...mapping, subagents: folded.subagents},

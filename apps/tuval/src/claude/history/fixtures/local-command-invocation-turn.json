@@ -1,0 +1,12 @@
+{
+	"type": "user",
+	"uuid": "00000000-0000-4000-8000-000000000079",
+	"session_id": "00000000-0000-4000-8000-000000000080",
+	"message": {
+		"role": "user",
+		"content": "<command-name>/effort</command-name>\n            <command-message>effort</command-message>\n            <command-args>medium</command-args>"
+	},
+	"parent_tool_use_id": null,
+	"parent_agent_id": null,
+	"timestamp": "2026-07-25T23:22:33.911Z"
+}

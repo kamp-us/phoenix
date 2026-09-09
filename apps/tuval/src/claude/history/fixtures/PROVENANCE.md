@@ -6,13 +6,14 @@ and ADR [0180](../../../../../../.decisions/0180-capture-real-runtime-artifact-b
 Nothing here is hand-authored: the SDK's message shapes are observable only at execution, so an
 invented envelope would prove the mapping against a contract nobody emits.
 
-Most of them came off `query()`. Six did not, because no `query()` run can force what they carry;
+Most of them came off `query()`. Seven did not, because no `query()` run can force what they carry;
 they were excerpted from an operator's own CLI session log and re-keyed to the SDK's declared
 envelope, and the two sections below say exactly which part of each is the captured part.
 
 ## What produced them
 
-The rows below describe the `query()` captures; the six excerpted fixtures have their own sections.
+The rows below describe the `query()` captures; the seven excerpted fixtures have their own
+sections.
 
 | | |
 |---|---|
@@ -47,7 +48,7 @@ in order.
 | `streaming-turn.json` | one prompt with `includePartialMessages: true`, captured 2026-09-06 — the whole `stream_event` run of one turn, `message_start` through `message_stop` (#8172) |
 | `subagent-turn.json` | one prompt asking for a single `Task` spawn, run with `forwardSubagentText: true` and `includePartialMessages: true` on `claude-opus-5` with `thinking: {type: "enabled", budgetTokens: 8000}`, captured 2026-09-07 — the whole 74-frame run of a turn that spawns one worker (#8403) |
 | `two-subagent-turn.json` | the same options on `claude-fable-5-1`, with a prompt asking for **two** `Explore` workers in parallel over two files in the throwaway cwd, captured 2026-09-07 — the whole 59-frame run, and the one capture where two workers overlap (#8408) |
-| `local-command-turn.json`, `local-command-lines-turn.json`, `local-command-caveat-turn.json` | excerpted from an operator's own CLI session transcript, from sessions where a slash command ran — see below |
+| `local-command-turn.json`, `local-command-lines-turn.json`, `local-command-caveat-turn.json`, `local-command-invocation-turn.json` | excerpted from an operator's own CLI session transcript, from sessions where a slash command ran — see below |
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |
@@ -122,18 +123,22 @@ Sanitization is the same as everywhere else here: uuids, `msg_*` and `req_*` ids
 consistently, the thinking block's signature replaced with a short placeholder, and every CLI-only
 field naming a machine or a checkout dropped rather than rewritten.
 
-## The three local-command captures
+## The four local-command captures
 
-`local-command-turn.json`, `local-command-lines-turn.json` and `local-command-caveat-turn.json`
-are the same kind of excerpt as the three above, under the same founder ruling
+`local-command-turn.json`, `local-command-lines-turn.json`, `local-command-caveat-turn.json` and
+`local-command-invocation-turn.json` are the same kind of excerpt as the three above, under the same
+founder ruling
 ([#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806)), and for the same
 reason: a slash command is the CLI's, so no `query()` run can produce one. Each is the record of one
-command the operator ran — `/model`, `/terminal-setup` and `/effort` in that order.
+command the operator ran — `/model`, `/terminal-setup`, `/effort` and `/effort` in that order.
 
 The first two are the command's **output**, and they are why #8211 exists: the CLI writes a result
 as a user-role message whose whole text is a `<local-command-stdout>` wrapper, which the mapping
 read as an operator turn. The third is the **caveat** the CLI writes ahead of that output, and it is
-why #8641 does.
+why #8641 does. The fourth is the **invocation record** the CLI writes between them, and it is why
+#8665 does — the last of the three user-role frames one slash command writes to reach the mapping
+as raw markup under YOU. The last two came out of one `/effort` run in one session, so the corpus
+now holds that whole three-frame sequence.
 
 ### The two output captures
 
@@ -171,6 +176,26 @@ path. `../map.ts` matches the tag instead, and this fixture is what holds it to 
 The text is the golden part and it is fixed boilerplate — the same sentence on every occurrence, so
 this one row stands for all 1,774 of them in the corpus it was counted in. Sanitized as everywhere
 else here: the uuid and session id substituted. The row carries no path.
+
+### The invocation record
+
+`local-command-invocation-turn.json` is the frame between the caveat and the output — the CLI's
+record of *which* command ran, as `<command-name>` and its `<command-message>` / `<command-args>`
+siblings in one user-role message. It records `/effort medium`, and it is the row immediately after
+the caveat capture above, out of the same session and the same run.
+
+| | |
+|---|---|
+| Captured | 2026-09-09, from a local session transcript written by CLI **2.1.220** — the `/effort` invocation, the row timestamped `2026-07-25T23:22:33.911Z` |
+| Verbatim | the whole `message` body — the role and the three tags with the CLI's own line breaks and indentation between them, character for character — and the row's own `timestamp` |
+| Re-keyed | `sessionId` → `session_id`, `parent_tool_use_id`/`parent_agent_id` added as `null`, and the CLI-only keys (`parentUuid`, `promptId`, `cwd`, `gitBranch`, `version`, `userType`, `entrypoint`, `isSidechain`) dropped |
+
+The indentation is the golden part rather than a formatting slip: the CLI writes the second and
+third tags indented twelve spaces, so a matcher that expects the tags flush against each other
+would fail on every real frame. It carries no `isMeta` — that flag is the caveat's, which is why
+`../map.ts` matches this frame by its tags and not by a field.
+
+Sanitized as everywhere else here: the uuid and session id substituted. The row carries no path.
 
 ## The sidechain capture
 
@@ -210,7 +235,7 @@ sidechain file is still uncovered here and rides
 ## What was sanitized, and what is golden
 
 For the `query()` captures, the **key set and the field shapes are the golden part** and are
-untouched. The six excerpted fixtures are re-keyed instead, exactly as the two sections above
+untouched. The seven excerpted fixtures are re-keyed instead, exactly as the two sections above
 record —
 their golden part is the payload inside that envelope, not the envelope. Substituted, in both
 groups:
@@ -303,11 +328,11 @@ an operator act, not a test fixture generator. To re-capture the `query()` fixtu
 from a scratch directory exactly as the first table describes, then apply the substitutions above
 before the JSON comes anywhere near this directory.
 
-The six excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
+The seven excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
 compaction, a usage-limit notice or a slash command. Re-producing them means finding the frame again
 in an operator's own local CLI session log and re-keying it against `sdk.d.ts` at the catalog pin,
 per the table in
 [the section above](#the-three-excerpted-from-a-cli-session-transcript) or in
-[the one after it](#the-three-local-command-captures). Replacing them with real
+[the one after it](#the-four-local-command-captures). Replacing them with real
 `query()` captures is [#8038](https://github.com/kamp-us/phoenix/issues/8038)'s live capture run,
 which is where `compact-boundary.json`'s declaration-derived key names get closed.
