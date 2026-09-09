@@ -38,7 +38,17 @@
 	inline-size: 100%;
 }
 
-.tuval-surface :focus-visible {
+/* Gated on the last input the desk saw (`./input-modality.ts`), because a browser matches
+   `:focus-visible` on a text field for a *pointer* focus too — the composer got a ring on every
+   click and the founder ruled it keyboard-only (#8786). Still the one rule on the root: for a
+   button or a picker row the gate is a no-op, since a browser already withholds `:focus-visible`
+   from those on pointer focus.
+
+   Written as "not pointer" rather than "is keyboard" so the gate can only ever *remove* a ring, and
+   only from a surface that has seen a click. Several `.tuval-surface` roots are not the desk and
+   publish nothing — the attaching placeholder (`../../page/AttachedDesk.tsx`), the boot screens,
+   every proof page — and a positive gate would have silently stripped the ring off all of them. */
+.tuval-surface:not([data-input-modality="pointer"]) :focus-visible {
 	outline: var(--focus-ring);
 	outline-offset: var(--focus-ring-offset);
 }

@@ -21,6 +21,7 @@ import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
+import {INPUT_MODALITY_ATTRIBUTE} from "../ui/input-modality.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
@@ -42,6 +43,10 @@ const slots = (...entries: ReadonlyArray<SubagentSlot>): Record<string, Subagent
 const openUnderSurface = async (state: AiAgentSessionState) => {
 	const surface = document.createElement("div");
 	surface.className = "tuval-surface";
+	// The desk root's own mark, which the ring rule is gated on since #8786 (`../ui/Desk.tsx` writes
+	// it). Keyboard, because that is what a desk carries until a pointer touches it, and a row
+	// reached by keyboard is the case this file is about.
+	surface.setAttribute(INPUT_MODALITY_ATTRIBUTE, "keyboard");
 	document.body.append(surface);
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
@@ -75,7 +80,7 @@ describe("the subagent rows' focus ring", () => {
 
 	it("is the desk's one rule, declared off the ring tokens", () => {
 		expect(deskSheet()).toMatch(
-			/\.tuval-surface :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
+			/\.tuval-surface:not\(\[data-input-modality="pointer"\]\) :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
 		);
 	});
 
@@ -90,7 +95,13 @@ describe("the subagent rows' focus ring", () => {
 
 		pick?.focus();
 
-		expect(Array.from(document.querySelectorAll(".tuval-surface :focus-visible"))).toContain(pick);
+		expect(
+			Array.from(
+				document.querySelectorAll(
+					'.tuval-surface:not([data-input-modality="pointer"]) :focus-visible',
+				),
+			),
+		).toContain(pick);
 		opened.unmount();
 	});
 });
