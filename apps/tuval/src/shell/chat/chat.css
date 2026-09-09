@@ -111,11 +111,6 @@
 	background: var(--surface-raised);
 }
 
-.tuval-chat-subagent-pick:focus-visible {
-	outline: 2px solid var(--focus-ring, var(--text-primary));
-	outline-offset: 1px;
-}
-
 /* The one showing. The mark is the left rule plus the stronger text, never colour alone. */
 .tuval-chat-subagent-pick[aria-current="true"] {
 	background: var(--surface-raised);
