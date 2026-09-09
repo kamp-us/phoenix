@@ -92,6 +92,12 @@ the core list by accident.
 direction and the runtime dependency stays one way: `commands/` reaches into `registry/`, never the
 reverse.
 
+An authored program writes that list as a `commands` record instead of hand-rolling spells
+([`authoring/commands.ts`](../apps/tuval/src/authoring/commands.ts)): the key is the command's own
+path, the declared `args` schema becomes the spell's `params`, and `run` becomes its `execute`,
+returning the effect vocabulary the compiler interprets through the row's own handlers. The author
+writes no group — the prefix above is composed here, from the row's id, and nowhere else.
+
 ## The registry
 
 `buildRegistry({core, programs})` in
