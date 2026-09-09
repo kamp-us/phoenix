@@ -249,6 +249,12 @@ program-blind: a process's state still crosses as `unknown`.
 - The page's picker offers both sections: every windowed program, and every running process. Opening
   by name still works through `prefix : window:open <program>`, and both routes end in the same
   `window.open` Msg, so the picker and the command line cannot drift into two spawn paths.
+- **A picker's two inputs answer in one union.** `pickerKey` takes a key and `pickerPointer` takes a
+  row index plus `"hover"` / `"click"`, and both return the same `PickerKeyAnswer`
+  (`src/shell/picker/view.ts`) — one shared `movedTo`, one cursor in the window's view slot. The
+  surface holds one switch over that union and no second write path, so `aria-activedescendant` is
+  the single highlight the mouse and the keyboard both move and a screen reader announces. Founder's
+  ruling, 2026-09-08: any picker uses the same underlying structure for both (#8655).
 - **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
   message (#7617 R1.3), so the catalog goes out as the socket opens and again on
   `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
