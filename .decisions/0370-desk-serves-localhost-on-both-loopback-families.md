@@ -75,3 +75,11 @@ and from the `port: 0` path, where a taken `[::1]` is skipped rather than refuse
 - Two desks can still run at once: they take different ports, because `port: 0` is the default.
 - A `[::1]`-only program on a requested port now blocks the desk's start where it used to be
   invisible. That is the point: the collision is reported instead of served.
+- The forwarder ends the connections it accepted before it closes. They are adopted by the page
+  server, which is torn down after it, so waiting on them instead would never settle — and the wait
+  would land on Ctrl-C, in front of the kernel's checkpoint.
+
+## Records
+
+`no vocabulary impact` — "reservation" and "forwarder" name two values inside
+`apps/tuval/src/page/loopback.ts` and are not corpus-level terms; nothing in `.glossary/` changes.

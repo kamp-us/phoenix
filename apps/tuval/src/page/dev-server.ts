@@ -22,7 +22,7 @@ import {Effect, Schema} from "effect";
 import {featuresDefault, type TuvalFeatures} from "../features.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
 import type {ModuleRendererRef} from "../shell/window/index.ts";
-import {forwardLoopback, LOOPBACK_HOSTS, reserveLoopbackPort} from "./loopback.ts";
+import {forwardLoopback, reserveLoopbackPort} from "./loopback.ts";
 
 /** The page did not start. The kernel is unaffected — the bin reports this and keeps running. */
 export class PageServerFailed extends Schema.TaggedError<PageServerFailed>()(
@@ -73,7 +73,7 @@ export interface PageServer {
 	readonly url: string;
 	/** The port `url` names — the port whose loopback origins the transport now admits. */
 	readonly port: number;
-	/** The loopback addresses serving that URL, in `LOOPBACK_HOSTS` order. */
+	/** The loopback addresses serving that URL: the one Vite bound, then each forwarded one. */
 	readonly hosts: ReadonlyArray<string>;
 }
 
@@ -402,7 +402,7 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 					// The reservation is what picked this port, so moving off it would only land somewhere
 					// the other family was never checked on.
 					strictPort: true,
-					host: LOOPBACK_HOSTS[0],
+					host: reservation.host,
 					// A program installed beside the user's config is outside the app's workspace, and
 					// Vite's default allowance is that workspace alone — so the page would resolve the
 					// module and then refuse to serve it. The workspace stays in the list: the app's own
@@ -440,10 +440,10 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 	}
 	// Vite listens on one address (`resolveHostname` → `httpServerStart`), so every other loopback
 	// address gets an accepting socket of its own handing connections to that same server.
-	for (const host of reservation.hosts.filter((host) => host !== LOOPBACK_HOSTS[0])) {
+	for (const host of reservation.forwards) {
 		yield* Effect.acquireRelease(
 			attempt(() => forwardLoopback(httpServer, host, port)),
-			(socket) => Effect.ignore(attempt(() => new Promise((done) => socket.close(done)))),
+			(forwarder) => Effect.ignore(attempt(() => forwarder.close())),
 		);
 	}
 	// `localhost` is the desk's address, and it is only honest once every family is bound: the whole
@@ -454,5 +454,9 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 	// the socket's port alone refuses it (#7560). Done here so no caller can serve a page and forget.
 	options.transport.admitLoopbackPort(port);
 	yield* warmPageGraph(server, options.root);
-	return {url, port, hosts: reservation.hosts} satisfies PageServer;
+	return {
+		url,
+		port,
+		hosts: [reservation.host, ...reservation.forwards],
+	} satisfies PageServer;
 });
