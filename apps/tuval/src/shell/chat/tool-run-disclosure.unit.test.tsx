@@ -315,9 +315,19 @@ describe("the disclosure state is the window's, not the component's", () => {
 describe("the law the new triggers are judged against", () => {
 	const css = (): string => readFileSync(fileURLToPath(import.meta.resolve("./chat.css")), "utf8");
 
+	/**
+	 * `--tap-min` is `@kampus/design`'s since #7884 — Tuval stopped re-declaring the role layer — so
+	 * the floor's value is read where it is now declared rather than out of the consuming sheet.
+	 */
+	const designTokens = (): string =>
+		readFileSync(
+			fileURLToPath(import.meta.resolve("@kampus/design")).replace(/index\.ts$/, "tokens.css"),
+			"utf8",
+		);
+
 	it("floors every collapsible trigger at the 36px hit area", () => {
 		const sheet = css();
-		expect(sheet).toContain("--tap-min: 36px;");
+		expect(designTokens()).toContain("--tap-min: 36px;");
 		// The run's trigger and each call's are inside `.tuval-chat-tool`, which is the scope the
 		// shared trigger rule sizes; a call that is no trigger holds the same line for itself.
 		expect(sheet).toMatch(

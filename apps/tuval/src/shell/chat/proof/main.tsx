@@ -31,7 +31,7 @@ import {
 } from "../chat.testing.ts";
 import {type ChatView, initialChatView} from "../view.ts";
 import {mountPagingProof} from "./paging.tsx";
-import "../../ui/tokens.css";
+import "../../../page/styles.ts";
 import "./proof.css";
 
 class SessionRefusalProofLoadError extends Schema.TaggedError<SessionRefusalProofLoadError>()(

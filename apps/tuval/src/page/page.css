@@ -1,7 +1,7 @@
 /*
  * The page around the desk: the document's own box, and the two demo renderers' rows. Every colour
- * and every size is a role token from `../shell/ui/tokens.css` — nothing here reaches under the role
- * layer (`design-system-manifest.md`).
+ * and every size is a role token from `@kampus/design` — nothing here reaches under the role layer
+ * (`design-system-manifest.md`).
  */
 
 html,
@@ -28,18 +28,14 @@ body {
  */
 .tuval-attach-reason {
 	color: var(--text-muted);
-	font:
-		var(--t-mono) ui-monospace,
-		monospace;
+	font: var(--t-mono);
 }
 
 .tuval-demo {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-2);
-	font:
-		var(--t-mono) ui-monospace,
-		monospace;
+	font: var(--t-mono);
 }
 
 .tuval-demo p {
@@ -50,17 +46,13 @@ body {
 	color: var(--text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 }
 
 /* A sentence and an empty-state line, so `--text-muted` for the same reason as the reason above. */
 .tuval-demo-hint {
 	color: var(--text-muted);
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 }
 
 .tuval-demo-lines {
@@ -86,9 +78,7 @@ body {
 	border-radius: var(--r-md);
 	background: var(--surface-raised);
 	color: var(--text-secondary);
-	font:
-		var(--t-body-sm) system-ui,
-		sans-serif;
+	font: var(--t-body-sm);
 	text-align: center;
 }
 
