@@ -11,12 +11,13 @@
  * The two demo renderers below are the demo programs' (#7517). Each reads its process through the
  * window contract's `readProcess` and nothing else: no store, no fetch, no socket.
  *
- * The Pi entry is `piChatWindow` (#7611), the Claude entry is `claudeChatWindow` (#7624) and the
- * session-list entry is `SessionListWindow` (#8102). Both chat entries are *built* here rather than
- * imported as their modules' default constants, because each is built at the operator's feature
- * flags (`chatOptions` below, #8439). They are why this module is out of the
- * kernel's strict lens and inside `tsconfig.design.json`'s: each is built on `@kampus/design`,
- * which is source-consumed and authored with
+ * The Pi entry is `piChatWindow` (#7611), the Claude entry is `claudeChatWindow` (#7624), the agy
+ * entry is `agyChatWindow` (#8180), the codex entry is `codexChatWindow` (#8600) and the
+ * session-list entry is `SessionListWindow` (#8102). The four chat entries are *built* here rather
+ * than imported as their modules' default constants, because each is built at the operator's
+ * feature flags (`chatOptions` below, #8439). They are why
+ * this module is out of the kernel's strict lens and inside `tsconfig.design.json`'s: each is built
+ * on `@kampus/design`, which is source-consumed and authored with
  * `exactOptionalPropertyTypes: false`. Each key is the reference that program's own row declares,
  * imported rather than retyped, so a row and this table cannot name two different renderers.
  *
@@ -29,6 +30,7 @@ import features from "virtual:tuval/features";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
+import {AGY_CHAT_WINDOW_REF, agyChatWindow} from "../agy/window/index.ts";
 import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
 import {isSessionListState} from "../ai-agent/renderer-ref.ts";
 import {
@@ -273,7 +275,7 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
 };
 
 /**
- * What the two chat renderers are built at: the operator's own flags, read straight out of the
+ * What the four chat renderers are built at: the operator's own flags, read straight out of the
  * module the page server generated from the booted config (`./dev-server.ts`, #8439). It is a plain
  * import rather than a fetch or a prop, which is the whole point — the table below is built
  * synchronously, so a flagged window is the first thing painted rather than the second.
@@ -286,6 +288,7 @@ const chatOptions: ThinChatWindowOptions = {subagentList: features.subagentList}
 const claudeWindow = claudeChatWindow(chatOptions);
 const codexWindow = codexChatWindow(chatOptions);
 const piWindow = piChatWindow(chatOptions);
+const agyWindow = agyChatWindow(chatOptions);
 
 /**
  * Every renderer the page knows, by the reference a program row names it with — each bound to the
@@ -305,6 +308,7 @@ export const pageRenderers = (call: SpellCaller): Readonly<Record<string, Readab
 	),
 	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, piWindow),
 	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
+	[AGY_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, agyWindow),
 	[CODEX_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, codexWindow),
 	[SESSION_LIST_WINDOW_REF.ref]: readsState(
 		isSessionListState,
