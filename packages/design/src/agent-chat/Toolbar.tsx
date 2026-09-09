@@ -2,7 +2,6 @@ import type {ReactNode} from "react";
 import {AgentChatAttach} from "./Attach";
 import {AgentChatOverflow} from "./Overflow";
 import {AgentChatPrimaryActions} from "./PrimaryActions";
-import {useAgentChatInput} from "./Root";
 import {AgentChatSettings} from "./Settings";
 
 /**
@@ -13,16 +12,14 @@ import {AgentChatSettings} from "./Settings";
  * dropped it would have a composer nothing leaves.
  */
 export function AgentChatToolbar({children}: {readonly children?: ReactNode}) {
-	const {variant} = useAgentChatInput();
-
 	return (
 		<div className="kp-agent-chat__actions">
 			<div className="kp-agent-chat__primary-controls">
 				{children ?? (
 					<>
-						{variant === "focused" ? <AgentChatAttach /> : null}
+						<AgentChatAttach />
 						<AgentChatSettings />
-						{variant === "focused" ? <AgentChatOverflow /> : null}
+						<AgentChatOverflow />
 					</>
 				)}
 			</div>

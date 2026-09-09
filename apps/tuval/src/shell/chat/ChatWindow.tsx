@@ -1239,7 +1239,6 @@ function ChatWindow({
 				/>
 				<AgentChatInput.Root
 					ref={composerRef}
-					variant="focused"
 					bridge={composer.bridge}
 					// Founder ruling on #8466: while the view slot shows a subagent the composer is
 					// disabled, not re-worded. A prompt typed here would land in the transcript the
