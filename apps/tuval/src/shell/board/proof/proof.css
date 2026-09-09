@@ -25,7 +25,5 @@ body {
 .proof-desk-note {
 	margin: 0;
 	color: var(--text-muted);
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 }
