@@ -228,10 +228,33 @@ export const subagentArtifactsDir = (sessionDir: string): string =>
 	join(sessionDir, "subagent-artifacts");
 
 /**
+ * The step index a run's artifact name carries, or `-1` for one that carries none.
+ *
+ * `getArtifactPaths` mints `${runId}_${safeAgent}${suffix}_transcript.jsonl` with
+ * `suffix = index !== undefined ? "_" + index : ""` (`src/shared/artifacts.ts`), and the index it
+ * is handed is `ctx.flatStepCount > 1 ? ctx.flatIndex : undefined`
+ * (`src/runs/background/subagent-runner.ts:851`) — so a single-step run's file has no index at all.
+ * `safeAgent` is the agent name with every non-`[\w.-]` character replaced by `_`, so `_` and
+ * digits both survive into it: an agent literally named `worker_2` on a single-step run reads back
+ * as index 2. That is only ever the one file such a run wrote, so there is nothing left to order.
+ */
+const stepIndexOf = (name: string, runId: string): number => {
+	const middle = name.slice(`${runId}_`.length, -"_transcript.jsonl".length);
+	const tail = middle.slice(middle.lastIndexOf("_") + 1);
+	return /^\d+$/.test(tail) ? Number(tail) : -1;
+};
+
+/**
  * The artifacts one run wrote. A parallel spawn starts several children under one run, each with
- * its own `<runId>_<agent>_<index>_transcript.jsonl`, and they are read in name order so the slot
- * keyed on the spawning call — which is 1:N against a parallel spawn either way — shows all of them
- * rather than an arbitrary one.
+ * its own `<runId>_<agent>_<index>_transcript.jsonl`, and they are read in step-index order so the
+ * slot keyed on the spawning call — which is 1:N against a parallel spawn either way — shows all of
+ * them, in the order the steps ran.
+ *
+ * The index is what orders them, never the whole name: the name puts the agent before the index, so
+ * a lexicographic sort ranks a run's steps alphabetically by agent and prints step 1 above step 0
+ * whenever two steps use different agents. The index is a bare decimal too, so as text `_10_` also
+ * sorts before `_2_`. Files carrying no index tie at `-1` and fall back to the name, which keeps the
+ * order total; a run without indices wrote one file anyway (#8672).
  *
  * Raw `node:fs` under `.patterns/effect-platform-access.md`'s "a `node:*`-only API the platform
  * service doesn't expose" case, for the reason `PiAiAgent`'s own `readBranch` reads that way: this
@@ -244,7 +267,11 @@ export const readChildTranscript = (dir: string, runId: string): ChildTranscript
 	try {
 		names = readdirSync(dir)
 			.filter((name) => name.startsWith(`${runId}_`) && name.endsWith("_transcript.jsonl"))
-			.sort();
+			.sort(
+				(left, right) =>
+					stepIndexOf(left, runId) - stepIndexOf(right, runId) ||
+					(left < right ? -1 : left > right ? 1 : 0),
+			);
 	} catch {
 		return emptyTranscript;
 	}

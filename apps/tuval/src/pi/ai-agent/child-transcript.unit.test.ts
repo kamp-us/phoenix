@@ -1,11 +1,19 @@
 /**
  * The child artifact's grammar, over lines shaped exactly as `pi-subagents`
- * `src/shared/child-transcript.ts` writes them. It is reimplemented rather than imported, so the
- * only thing holding the two in step is a test that spells the records out.
+ * `src/shared/child-transcript.ts` writes them, and the merge that reads a run's artifacts off disk
+ * on top of it. Both are reimplemented rather than imported, so the only thing holding them in step
+ * with `pi-subagents` is a test that spells the records and the file names out.
  */
 
-import {describe, expect, it} from "vitest";
-import {parseChildTranscript} from "./child-transcript.ts";
+import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
+import {
+	type ChildTranscript,
+	parseChildTranscript,
+	readChildTranscript,
+} from "./child-transcript.ts";
 
 const base = (recordType: string, ts: number) => ({
 	version: 1,
@@ -136,5 +144,85 @@ describe("the child transcript's record grammar", () => {
 
 	it("reads an empty artifact as an empty slot", () => {
 		expect(parseChildTranscript("")).toEqual({items: [], lastLine: "", tokens: 0});
+	});
+});
+
+/**
+ * `getArtifactPaths` mints `${runId}_${safeAgent}${suffix}_transcript.jsonl`, and the suffix is
+ * `_${index}` only when the run has more than one step (`src/shared/artifacts.ts`;
+ * `src/runs/background/subagent-runner.ts:851` passes `ctx.flatStepCount > 1 ? ctx.flatIndex :
+ * undefined`) — so these are the names a real run writes.
+ */
+const artifact = (runId: string, agent: string, index?: number): string =>
+	`${runId}_${agent}${index === undefined ? "" : `_${index}`}_transcript.jsonl`;
+
+const assistantTexts = (transcript: ChildTranscript): ReadonlyArray<string> =>
+	transcript.items.flatMap((item) => (item.kind === "assistant" ? [item.text] : []));
+
+describe("the merge over one run's artifacts", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "child-transcript-"));
+	});
+
+	afterEach(() => {
+		rmSync(dir, {recursive: true, force: true});
+	});
+
+	const write = (name: string, records: ReadonlyArray<unknown>): void =>
+		writeFileSync(join(dir, name), lines(records), "utf-8");
+
+	// The name puts the agent before the index, so a sort over the whole name ranks the steps
+	// alphabetically by agent — two steps on different agents is already enough to invert them.
+	it("orders the steps by their index, not by the agent name the index sits behind", () => {
+		write(artifact("run-1", "beta", 0), [assistant("step zero", 1)]);
+		write(artifact("run-1", "alpha", 1), [assistant("step one", 2)]);
+		expect(assistantTexts(readChildTranscript(dir, "run-1"))).toEqual(["step zero", "step one"]);
+	});
+
+	it("orders past nine, where the bare decimal index as text would put ten before two", () => {
+		write(artifact("run-1", "worker", 2), [assistant("step two", 1)]);
+		write(artifact("run-1", "worker", 10), [assistant("step ten", 2)]);
+		expect(assistantTexts(readChildTranscript(dir, "run-1"))).toEqual(["step two", "step ten"]);
+	});
+
+	it("reads a single-step run back, whose artifact carries no index suffix at all", () => {
+		write(artifact("run-1", "solo"), [assistant("only step", 1)]);
+		expect(assistantTexts(readChildTranscript(dir, "run-1"))).toEqual(["only step"]);
+	});
+
+	it("re-keys every row apart, sums the spend, and takes the newest line from the last step", () => {
+		write(artifact("run-1", "beta", 0), [
+			assistant("zero first", 1, {input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0}),
+			assistant("zero second", 2),
+		]);
+		write(artifact("run-1", "alpha", 1), [
+			assistant("one first", 3, {input: 20, output: 6, cacheRead: 0, cacheWrite: 0, cost: 0}),
+			assistant("one last", 4),
+		]);
+		const merged = readChildTranscript(dir, "run-1");
+		const ids = merged.items.map((item) => item.id);
+		expect(new Set(ids).size).toBe(ids.length);
+		expect(merged.tokens).toBe(40);
+		expect(merged.lastLine).toBe("one last");
+	});
+
+	it("skips another run's artifacts sitting in the same directory", () => {
+		write(artifact("run-1", "worker", 0), [assistant("ours", 1)]);
+		write(artifact("run-2", "worker", 0), [
+			assistant("theirs", 2, {input: 99, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0}),
+		]);
+		const merged = readChildTranscript(dir, "run-1");
+		expect(assistantTexts(merged)).toEqual(["ours"]);
+		expect(merged.tokens).toBe(0);
+	});
+
+	it("reads a directory that does not exist yet as an empty slot", () => {
+		expect(readChildTranscript(join(dir, "not-yet"), "run-1")).toEqual({
+			items: [],
+			lastLine: "",
+			tokens: 0,
+		});
 	});
 });
