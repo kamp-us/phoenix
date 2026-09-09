@@ -61,6 +61,18 @@ export function PickerView({
 		if (focused) takeFocus();
 	}, [focused, takeFocus]);
 
+	// Nothing else moves the scroll port: the listbox holds focus and the options are untabbable, so
+	// the browser never scrolls a row into view on its own and the highlight walks out of
+	// `.tuval-window-body` (#8656). `block: "nearest"` scrolls instantly and only when the row is off
+	// screen, which is why `reducedMotion` gets no say here.
+	const activeDescendant = frame.activeDescendant;
+	useEffect(() => {
+		if (activeDescendant === null) return;
+		listbox.current?.ownerDocument
+			.getElementById(activeDescendant)
+			?.scrollIntoView({block: "nearest"});
+	}, [activeDescendant]);
+
 	useForwardedKey(windowId, (key) => {
 		// A forwarded key means the desk considers this window focused. Re-claiming here is what
 		// carries focus back after the command line closes onto the desk container.
