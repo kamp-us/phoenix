@@ -1,10 +1,9 @@
 /**
  * The boundaries this slice keeps, and it is one of the two whose boundaries point *outward*: the
  * logic slices under `src/shell/` forbid React and the DOM (`../picker/boundary.unit.test.ts`,
- * `../core/boundary.unit.test.ts`), and rendering is allowed in exactly two — this one, the desk
- * itself, and `../chat/`, the shared chat window a program's renderer resolves to (#7604). So the
- * claims here are the inverse ones — nothing outside `ui/` may depend on `ui/`, and the page's one
- * application-level keyboard listener is registered in exactly one file.
+ * `../core/boundary.unit.test.ts`), and rendering is allowed in the three named by `rendering`
+ * below. So the claims here are the inverse ones — nothing outside `ui/` may depend on `ui/`, and
+ * the page's one application-level keyboard listener is registered in exactly one file.
  *
  * Every `=` probe below is a claim on the right of an assignment and each was flip-verified — see
  * `.patterns/unconditional-test-assertions.md`, "the type-level sibling".
@@ -35,8 +34,19 @@ const sourcesIn = (dir: string): ReadonlyArray<readonly [string, string]> =>
 const specifiersOf = (source: string): ReadonlyArray<string> =>
 	[...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1] ?? "");
 
-/** The two slices under `src/shell/` that render. A third one is a decision, not a drift. */
-const rendering: ReadonlySet<string> = new Set(["ui", "chat"]);
+/**
+ * The slices under `src/shell/` that render. A new one is a decision, not a drift, so each entry
+ * names the surface it is and why it could not live inside `ui/`.
+ *
+ * - `ui` — the desk itself, the page's chrome and its one keyboard listener.
+ * - `chat` — the shared chat window a program's renderer resolves to (#7604). It is reached through
+ *   the renderer registry, not by the desk, so it sits outside the chrome.
+ * - `board` — the process board (#8723). `src/page/AttachedDesk.tsx` mounts it beside the desk, not
+ *   inside it, and it reads the kernel table directly; under `ui/` the chrome slice would own a
+ *   surface the chrome never renders. It imports nothing from `ui/`, so the outward claim below
+ *   holds over it unchanged.
+ */
+const rendering: ReadonlySet<string> = new Set(["ui", "chat", "board"]);
 
 /**
  * The one module of `ui/` the other rendering slice may reach for (#8407). `useForwardedKey` is the
@@ -57,7 +67,7 @@ describe("ui boundary", () => {
 		expect(mountArms).toEqual(["Bound", "NoRenderer", "ProcessGone", "Empty"]);
 	});
 
-	it("is one of the two rendering slices, and React lives in no other one", () => {
+	it("is one of the three rendering slices, and React lives in no other one", () => {
 		const shell = dirname(import.meta.dirname);
 		const offenders = readdirSync(shell, {withFileTypes: true})
 			.filter((entry) => entry.isDirectory() && !rendering.has(entry.name))
