@@ -259,6 +259,29 @@ export const runningSpawnOf = (item: PiTranscriptItem): RunningSpawn | null => {
 };
 
 /**
+ * The calls a finished detached spawn row still needs an address for.
+ *
+ * A row that stopped running is dropped from the projection's `spawns` map, and a session rebuilt
+ * from its transcript never had one — so the finished branch of `subagentSlotsOf` has nothing
+ * carried to read by, and the only key left is the call's own id. These are the ids to hand
+ * `readAsyncSpawns` before folding (#8685).
+ */
+export const finishedAsyncCallIds = (
+	sources: ReadonlyArray<PiTranscriptItem>,
+): ReadonlyArray<string> => [
+	...new Set(
+		sources.flatMap((item) =>
+			item.role === "tool" &&
+			item.status !== "running" &&
+			spawns(item.toolName, item.input) &&
+			runIdOf(item) === null
+				? [item.toolCallId]
+				: [],
+		),
+	),
+];
+
+/**
  * One spawn under whatever the index last said about it — a fresh tail read, or the projection's
  * own earlier answer when a wire push rebuilds the row from scratch.
  *
@@ -330,11 +353,17 @@ const childOf = (
  * A foreground row is matched to its artifact by the `runId` the session stamped on it. A detached
  * one carries none, so `held` — the workers the tail resolved through the tool-call index — is what
  * matches it, and it also supplies the name for a call that named no `agent` (#8679).
+ *
+ * `resolved` is that same answer for a row `held` cannot cover: a finished detached call is out of
+ * the `spawns` map, and a restored session never put it there, so its workers are read off the
+ * results index by `toolCallId` and handed in here (#8685). `held` still wins where both answer,
+ * since it is the live read.
  */
 export const subagentSlotsOf = (
 	item: PiTranscriptItem,
 	children?: ChildTranscripts | undefined,
 	held?: ReadonlyMap<string, RunningSpawn> | undefined,
+	resolved?: AsyncSpawns | undefined,
 ): ReadonlyArray<SubagentSlot> => {
 	if (item.role === "assistant") {
 		return item.content.flatMap((part) =>
@@ -376,11 +405,12 @@ export const subagentSlotsOf = (
 		return [runningSlotOf(resolved, childOf(children, runIdsOf(resolved)) ?? emptyChild)];
 	}
 	const runId = runIdOf(item);
-	const child = childOf(children, runId === null ? (carried?.resolved?.runIds ?? []) : [runId]);
+	const finished = carried?.resolved ?? resolved?.get(item.toolCallId) ?? null;
+	const child = childOf(children, runId === null ? (finished?.runIds ?? []) : [runId]);
 	return [
 		{
 			id,
-			type: namedAgent(item.input) ?? carried?.resolved?.agent ?? null,
+			type: namedAgent(item.input) ?? finished?.agent ?? null,
 			lastLine: child?.lastLine || lastLineOf(boundToolResult(textOf(item.content)).text),
 			startedAt: item.timestamp,
 			// The child's own spend where the artifact reported one, else what the result says it
@@ -492,6 +522,7 @@ export const eventsOf = (
 	previous: SnapshotProjection,
 	snapshot: SessionSnapshot,
 	children?: ChildTranscripts | undefined,
+	resolved?: AsyncSpawns | undefined,
 ): Folded => {
 	if (snapshot.revision <= previous.revision) return stale(previous);
 	const events: Array<AgentEvent> = [];
@@ -506,7 +537,7 @@ export const eventsOf = (
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
-		for (const slot of subagentSlotsOf(source, children, previous.spawns)) {
+		for (const slot of subagentSlotsOf(source, children, previous.spawns, resolved)) {
 			const key = slotKey(slot);
 			const mark = fingerprint(slot);
 			subagents.set(key, mark);
@@ -543,6 +574,7 @@ export const deltaEventsOf = (
 	previous: SnapshotProjection,
 	delta: SessionDelta,
 	children?: ChildTranscripts | undefined,
+	resolved?: AsyncSpawns | undefined,
 ): Folded => {
 	if (delta.revision <= previous.revision) return stale(previous);
 	const events: Array<AgentEvent> = [];
@@ -558,7 +590,7 @@ export const deltaEventsOf = (
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
-		for (const slot of subagentSlotsOf(source, children, previous.spawns)) {
+		for (const slot of subagentSlotsOf(source, children, previous.spawns, resolved)) {
 			const key = slotKey(slot);
 			const mark = fingerprint(slot);
 			subagents.set(key, mark);
