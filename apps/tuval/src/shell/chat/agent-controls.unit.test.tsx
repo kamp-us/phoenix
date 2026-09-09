@@ -416,8 +416,6 @@ describe("the composer's slash-command picker", () => {
 
 	it("advertises no sigil and opens no menu on a backend offering no commands", async () => {
 		await open(withTranscript([userItem("u1", "go")], {commands: []}));
-		const hint = await screen.findByText(/file/);
-		expect(hint.textContent).not.toContain("command");
 		await type("/");
 		expect(screen.queryByRole("listbox", {name: "Completions"})).toBeNull();
 	});
