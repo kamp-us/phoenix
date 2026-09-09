@@ -67,6 +67,7 @@ const DeclaredFeatures = Schema.Struct({
 	subagentList: Schema.optionalKey(Schema.Boolean),
 	kernelChildren: Schema.optionalKey(Schema.Boolean),
 	windowTitles: Schema.optionalKey(Schema.Boolean),
+	processBoard: Schema.optionalKey(Schema.Boolean),
 });
 
 export {featuresDefault, type TuvalFeatures} from "./features.ts";

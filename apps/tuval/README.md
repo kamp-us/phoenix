@@ -24,6 +24,7 @@ pnpm test             # both tiers (vitest)
 pnpm test:unit        # the unit tier
 pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
+pnpm proof:board      # the process board in a real browser, on fixture rows — see "Paint proofs"
 pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
 pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
 pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
@@ -47,6 +48,13 @@ be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
 kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
 when the default is taken.
+
+`pnpm proof:board` serves `src/shell/board/proof/`: the process board over five fixture rows —
+an agent with both generic ports, its child, a grandchild that publishes neither, a demo counter
+and a stopping shell — nested three deep, so the tile rhythm, the nesting and where a long status
+line wraps are visible somewhere a jsdom test cannot look. It is the page the design gate captures
+as the `tuval-board` surface. The rows are a still life: a board that spawned a process on a timer
+would capture differently on every run, and what the entry animation *does* is the unit tier's.
 
 The same server's `/session-refusal` fixture mounts the production read-only transcript with a
 missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep

@@ -1,0 +1,163 @@
+/*
+ * The process board's paint. Every colour, size and radius is a role token from
+ * `../ui/tokens.css` — nothing here reaches under the role layer (`design-system-manifest.md`,
+ * Pillar 2). The tile's box, border and radius are `@kampus/design`'s `Card`; what is left here is
+ * the board's own layout, the row control inside each tile, and the one entry animation.
+ */
+
+.tuval-board {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	/* Bounded, and scrolling past the bound: the desk under it is the work, and a board that grew
+	   with the process count would push the windows off the page on a busy desk. */
+	max-block-size: 40vh;
+	overflow: auto;
+	padding: var(--s-3);
+	border-block-end: 1px solid var(--border);
+	background: var(--surface-sunken);
+}
+
+.tuval-board-heading {
+	margin: 0;
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+}
+
+/* Tiles, not rows: the roots lay out across the width and each takes the height its children need. */
+.tuval-board-tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	align-items: start;
+	gap: var(--s-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+/* The nested list is inset from the row control above it rather than from the card's edge, so the
+   indent reads against the tile's own text rather than against its border. */
+.tuval-board-children {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: var(--s-2) 0 0;
+	padding-inline: var(--s-3) var(--s-2);
+	padding-block: 0 var(--s-2);
+	list-style: none;
+}
+
+.tuval-board-item {
+	display: flex;
+	flex-direction: column;
+	min-inline-size: 0;
+}
+
+.tuval-board-tile {
+	display: flex;
+	flex-direction: column;
+	min-inline-size: 0;
+	/* `Card` pads for prose; here the row control owns the inset, so its hover wash and its focus
+	   ring reach the tile's own edges instead of floating inside a border. */
+	padding: 0;
+}
+
+/* A child's `Card` sits inside its parent's, and the sunken tone is what keeps two nested boxes
+   from reading as one: the child recedes where the parent is the page's default surface. */
+.tuval-board-children .tuval-board-tile {
+	background: var(--surface-sunken);
+}
+
+.tuval-board-open {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--s-1);
+	inline-size: 100%;
+	/* The 36px tap-target floor, held on the hit area rather than by inflating the type. */
+	min-block-size: 36px;
+	padding: var(--s-2) var(--s-3);
+	border: 0;
+	border-radius: var(--r-md);
+	background: none;
+	text-align: start;
+	font: inherit;
+	color: var(--text-primary);
+	cursor: pointer;
+	transition: background var(--motion-fast) ease;
+}
+
+.tuval-board-open:hover {
+	background: var(--accent-faint);
+}
+
+.tuval-board-tile-heading {
+	font:
+		var(--t-body) system-ui,
+		sans-serif;
+	font-weight: 600;
+	color: var(--text-primary);
+	overflow-wrap: anywhere;
+}
+
+/* `--text-muted` and never `--text-faint`: the program id, the lifecycle word and the port count
+   all carry meaning, and the faint rung clears 3:1 only. */
+.tuval-board-tile-meta {
+	color: var(--text-muted);
+}
+
+.tuval-board-tile-status {
+	font:
+		var(--t-body-sm) system-ui,
+		sans-serif;
+	color: var(--text-secondary);
+	overflow-wrap: anywhere;
+}
+
+/*
+ * A tile that was not on the last board fades and rises into place. It is decoration and carries no
+ * meaning of its own — the tile says everything it says in words — so collapsing it costs nothing
+ * (Pillar 4). Two things collapse it: the surface's own `--motion-fast`, which the reduced-motion
+ * block in `../ui/tokens.css` sets to `0ms`, and the component, which marks no tile at all when the
+ * operator asked for no motion.
+ */
+@keyframes tuval-board-enter {
+	from {
+		opacity: 0;
+		transform: translateY(var(--s-1));
+	}
+}
+
+.tuval-board-tile[data-entering="true"] {
+	animation: tuval-board-enter var(--motion-fast) ease-out;
+}
+
+/*
+ * `EmptyState`'s own block is sized for a page region — a 30vh centred well — and this board is a
+ * bounded band above the desk. The paired class carries only that divergence, which is the
+ * primitive's documented way to keep a surface's own tuning (`packages/design/src/MetaRow.css`).
+ */
+.tuval-board-empty {
+	min-block-size: 0;
+	padding: var(--s-4) var(--s-3);
+}
+
+/*
+ * The page when the board is on: a column of board over desk. The desk is `block-size: 100%` of
+ * this column (`../ui/tokens.css`), so it is the item that gives the board its room back, and
+ * `min-block-size: 0` is what lets it shrink past its own content.
+ */
+.tuval-board-page {
+	min-block-size: 0;
+}
+
+.tuval-board-page > .tuval-surface {
+	flex: 1 1 auto;
+	min-block-size: 0;
+}
