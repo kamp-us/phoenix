@@ -1,11 +1,12 @@
-export type {
-	AgentChatInputProps,
-	PickerItem as AgentSettingItem,
-	SettingMenuProps as AgentSettingMenuProps,
-} from "./AgentChatInput";
-export {AgentChatInput, SettingMenu as AgentSettingMenu} from "./AgentChatInput";
+export type {AgentChatInputProps} from "./AgentChatInput";
+export {AgentChatInput} from "./AgentChatInput";
 export {Alert} from "./Alert";
 export {Avatar} from "./Avatar";
+export type {
+	PickerItem as AgentSettingItem,
+	SettingMenuProps as AgentSettingMenuProps,
+} from "./agent-chat/SettingMenu";
+export {SettingMenu as AgentSettingMenu} from "./agent-chat/SettingMenu";
 export type {
 	AgentChatInputBridge,
 	PiCommand,

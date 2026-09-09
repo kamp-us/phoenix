@@ -6,9 +6,9 @@
 
 import fc from "fast-check";
 import type {ReactElement} from "react";
-import {SettingMenu} from "../AgentChatInput";
 import {Alert} from "../Alert";
 import {Avatar} from "../Avatar";
+import {SettingMenu} from "../agent-chat/SettingMenu";
 import {Code, Kbd, Mark, Skeleton, Tag} from "../atoms";
 import {Badge} from "../Badge";
 import {Button} from "../Button";

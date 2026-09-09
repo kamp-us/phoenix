@@ -48,10 +48,7 @@
 
 .kp-agent-chat__status,
 .kp-agent-chat__scope,
-.kp-agent-chat__hint,
-.kp-agent-chat__widget-title,
-.kp-agent-chat__activity-title,
-.kp-agent-chat__empty {
+.kp-agent-chat__hint {
 	margin: 0;
 }
 
@@ -141,36 +138,6 @@
 	max-height: calc(var(--s-8) * 8);
 	overflow: auto;
 	padding: var(--s-1);
-}
-
-.kp-agent-chat__suggestion:where([data-scope="button"][data-part="root"]) {
-	justify-content: flex-start;
-	min-width: 0;
-	min-height: var(--tap-min);
-	padding: var(--s-2);
-	text-align: start;
-}
-
-.kp-agent-chat__suggestion[aria-selected="true"] {
-	background: var(--accent-faint);
-	color: var(--text-primary);
-}
-
-.kp-agent-chat__suggestion-main {
-	min-width: 0;
-	font: var(--t-mono);
-	color: inherit;
-}
-
-.kp-agent-chat__suggestion-detail {
-	margin-inline-start: auto;
-	min-width: 0;
-	overflow: hidden;
-	color: var(--text-muted);
-	font: var(--t-meta);
-	text-align: end;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .kp-agent-chat__actions {
@@ -280,100 +247,13 @@
 	flex-wrap: nowrap;
 }
 
-.kp-agent-chat__picker-trigger:where([data-scope="button"][data-part="root"]),
 .kp-agent-chat__resources-button:where([data-scope="button"][data-part="root"]) {
 	--manti-button-padding-x: var(--s-2);
 	min-width: 0;
 	color: var(--text-secondary);
 }
 
-.kp-agent-chat__picker-trigger > [data-part="label"],
-.kp-agent-chat__picker-menu [data-part="item-text"] {
-	min-width: 0;
-}
-
-.kp-agent-chat__picker-trigger [data-part="label"] > span:not(.kp-agent-chat__picker-note),
-.kp-agent-chat__picker-option > span:not(.kp-agent-chat__picker-note) {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.kp-agent-chat__picker-trigger .kp-agent-chat__picker-note,
-.kp-agent-chat__picker-trigger .kp-icon {
-	flex-shrink: 0;
-}
-
-.kp-agent-chat__picker-option {
-	display: flex;
-	align-items: baseline;
-	gap: var(--s-1);
-	min-width: 0;
-}
-
-.kp-agent-chat__picker-note {
-	min-width: 0;
-	overflow: hidden;
-	color: var(--text-secondary);
-	font: var(--t-meta);
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.kp-agent-chat__picker-menu:where([data-scope="menu"][data-part="content"]) {
-	width: calc(var(--s-8) * 6);
-	max-width: calc(100vw - var(--s-4));
-	/* The cap belongs on `content`: that is the `rootEl` Zag's menu machine scrolls a highlighted
-	   item within, so an inner scroll box would leave arrow-key navigation scrolling the wrong
-	   element. */
-	max-height: min(26.25rem, 55dvh);
-	overflow-y: auto;
-	overscroll-behavior: contain;
-}
-
-.kp-agent-chat__picker-menu:focus-visible {
-	outline: none;
-}
-
-.kp-agent-chat__picker-menu [data-part="item-group-label"] {
-	padding: var(--s-2) var(--s-3) var(--s-1);
-	color: var(--text-secondary);
-	font: var(--t-meta);
-	font-weight: 700;
-}
-
 .kp-agent-chat__hint {
-	color: var(--text-muted);
-	font: var(--t-meta);
-}
-
-.kp-agent-chat__widget,
-.kp-agent-chat__activity {
-	display: flex;
-	flex-direction: column;
-	gap: var(--s-2);
-}
-
-.kp-agent-chat__widget-title,
-.kp-agent-chat__activity-title {
-	color: var(--text-secondary);
-	font: var(--t-meta);
-	font-weight: 700;
-}
-
-.kp-agent-chat__widget pre,
-.kp-agent-chat__assistant-text {
-	max-height: calc(var(--s-8) * 8);
-	margin: 0;
-	overflow: auto;
-	color: var(--text-primary);
-	font: var(--t-body);
-	white-space: pre-wrap;
-	word-break: break-word;
-}
-
-.kp-agent-chat__empty {
 	color: var(--text-muted);
 	font: var(--t-meta);
 }
@@ -436,23 +316,6 @@
 	gap: var(--s-2);
 }
 
-.kp-agent-chat__activity-list {
-	display: flex;
-	flex-direction: column;
-	gap: var(--s-1);
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	color: var(--text-secondary);
-	font: var(--t-meta);
-}
-
-.kp-agent-chat__extension-options {
-	display: flex;
-	flex-direction: column;
-	gap: var(--s-2);
-}
-
 @media (max-width: 40rem) {
 	.kp-agent-chat__status-row,
 	.kp-agent-chat__actions {
@@ -475,9 +338,5 @@
 
 	.kp-agent-chat__setting {
 		flex: 1 1 auto;
-	}
-
-	.kp-agent-chat__suggestion-detail {
-		display: none;
 	}
 }
