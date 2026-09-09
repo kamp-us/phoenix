@@ -14,7 +14,8 @@
 
 import type {SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {itemBytes} from "../../ai-agent/history/index.ts";
+import {byteLength, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {toHistoryItems} from "./items.ts";
@@ -234,6 +235,59 @@ describe("a captured skill invocation", () => {
 			"<command-name>/a</command-name>\n<command-name>/b</command-name>\n<command-args>x</command-args>";
 		const [one] = mapped(withText(captured, prompt));
 		expect(one?.kind).toBe("user");
+	});
+});
+
+describe("a notice body larger than the mapping's own ceiling", () => {
+	const captured = frame("local-command-skill-turn");
+
+	/** `map.ts`'s `NOTICE_DETAIL_BYTE_LIMIT`, which the module keeps to itself. */
+	const DETAIL_LIMIT = 8_000;
+
+	// The committed skill fixture is trimmed to six lines, so the size this bound exists for is
+	// built here: the tags a real skill frame carries, then a body past the ceiling.
+	const skillFrame = (body: string): string =>
+		[
+			"<command-message>fabrika:triage</command-message>",
+			"<command-name>fabrika:triage</command-name>",
+			"<skill-format>true</skill-format>",
+			body,
+		].join("\n");
+
+	const detailOf = (text: string): string => {
+		const [one] = mapped(withText(captured, text));
+		return one?.kind === "system" ? (one.detail ?? "") : "";
+	};
+
+	it("cuts a skill's body to the ceiling and says in the panel that it did", () => {
+		const detail = detailOf(skillFrame("word ".repeat(4_000)));
+		expect(byteLength(detail)).toBeLessThanOrEqual(DETAIL_LIMIT);
+		expect(detail).toMatch(/cut to fit the transcript window/);
+	});
+
+	it("holds the whole item inside that ceiling, which is what the window counts", () => {
+		const [one] = mapped(withText(captured, skillFrame("word ".repeat(40_000))));
+		expect(one).toBeDefined();
+		if (one === undefined) return;
+		expect(itemBytes(one)).toBeLessThan(DETAIL_LIMIT + 1_000);
+	});
+
+	it("cuts on a code-point boundary, so the panel reads no replacement character", () => {
+		const detail = detailOf(skillFrame("é".repeat(6_000)));
+		expect(byteLength(detail)).toBeLessThanOrEqual(DETAIL_LIMIT);
+		expect(detail).not.toMatch(/�/);
+	});
+
+	it("leaves a body inside the ceiling whole, with no marker on it", () => {
+		const body = "the skill's whole text";
+		expect(detailOf(skillFrame(body))).toBe(body);
+	});
+
+	it("bounds a command output's own detail on the same ceiling", () => {
+		const output = `first line\n${"word ".repeat(4_000)}`;
+		const detail = detailOf(`<local-command-stdout>${output}</local-command-stdout>`);
+		expect(byteLength(detail)).toBeLessThanOrEqual(DETAIL_LIMIT);
+		expect(detail).toMatch(/cut to fit the transcript window/);
 	});
 });
 
