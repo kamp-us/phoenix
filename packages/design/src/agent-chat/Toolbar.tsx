@@ -1,8 +1,5 @@
-import {Paperclip} from "lucide-react";
-import {useRef} from "react";
-import {Input} from "../Form";
-import {useDesignT} from "../i18n";
-import {AgentChatControl} from "./Control";
+import type {ReactNode} from "react";
+import {AgentChatAttach} from "./Attach";
 import {AgentChatOverflow} from "./Overflow";
 import {AgentChatPrimaryActions} from "./PrimaryActions";
 import {useAgentChatInput} from "./Root";
@@ -11,40 +8,23 @@ import {AgentChatSettings} from "./Settings";
 /**
  * The control row under the field: what the operator can attach and configure on the left, and how
  * a draft leaves the composer on the right.
+ *
+ * Children replace the left group only — the send group is the row's other half and a host that
+ * dropped it would have a composer nothing leaves.
  */
-export function AgentChatToolbar() {
-	const {disabled, variant, addImage} = useAgentChatInput();
-	const t = useDesignT();
-	const imageInputRef = useRef<HTMLInputElement>(null);
+export function AgentChatToolbar({children}: {readonly children?: ReactNode}) {
+	const {variant} = useAgentChatInput();
 
 	return (
 		<div className="kp-agent-chat__actions">
 			<div className="kp-agent-chat__primary-controls">
-				{variant === "focused" ? (
+				{children ?? (
 					<>
-						<Input
-							ref={imageInputRef}
-							className="kp-visually-hidden"
-							label={t("admin.agent.image.add")}
-							type="file"
-							accept="image/*"
-							tabIndex={-1}
-							onChange={(event) => {
-								void addImage(event.currentTarget.files?.[0]);
-								event.currentTarget.value = "";
-							}}
-						/>
-						<AgentChatControl
-							icon={Paperclip}
-							className="kp-agent-chat__icon-button"
-							aria-label={t("admin.agent.image.add")}
-							onClick={() => imageInputRef.current?.click()}
-							disabled={disabled}
-						/>
+						{variant === "focused" ? <AgentChatAttach /> : null}
+						<AgentChatSettings />
+						{variant === "focused" ? <AgentChatOverflow /> : null}
 					</>
-				) : null}
-				<AgentChatSettings />
-				{variant === "focused" ? <AgentChatOverflow /> : null}
+				)}
 			</div>
 			<AgentChatPrimaryActions />
 		</div>

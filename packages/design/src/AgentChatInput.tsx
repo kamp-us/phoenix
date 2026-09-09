@@ -1,93 +1,40 @@
-import {ChevronDown, ChevronUp} from "lucide-react";
-import {Alert} from "./Alert";
-import {AgentActivity} from "./agent-chat/AgentActivity";
+import {AgentChatAttach} from "./agent-chat/Attach";
+import {AgentChatForm} from "./agent-chat/ComposerForm";
 import {AgentChatControl} from "./agent-chat/Control";
+import {AgentChatError} from "./agent-chat/ErrorAlert";
+import {AgentChatExtensionDialog} from "./agent-chat/ExtensionDialog";
 import {AgentChatField} from "./agent-chat/Field";
-import {HarnessWidget} from "./agent-chat/HarnessWidget";
+import {AgentChatFrame} from "./agent-chat/Frame";
 import {AgentChatHint} from "./agent-chat/Hint";
-import {Icon} from "./agent-chat/Icon";
+import {AgentChatInspector} from "./agent-chat/Inspector";
 import {AgentChatOverflow} from "./agent-chat/Overflow";
-import {PiExtensionDialog} from "./agent-chat/PiExtensionDialog";
+import {AgentChatPickers} from "./agent-chat/Pickers";
 import {AgentChatPrimaryActions} from "./agent-chat/PrimaryActions";
-import {type AgentChatInputProps, AgentChatInputRoot, useAgentChatInput} from "./agent-chat/Root";
+import {type AgentChatInputProps, AgentChatInputRoot} from "./agent-chat/Root";
 import {AgentChatSettings} from "./agent-chat/Settings";
 import {AgentChatSurface} from "./agent-chat/Surface";
 import {AgentChatToolbar} from "./agent-chat/Toolbar";
-import {Collapsible} from "./Collapsible";
-import {Form} from "./Form";
-import {useDesignT} from "./i18n";
 import "./AgentChatInput.css";
 import "./visually-hidden.css";
 
 export type {AgentChatInputProps} from "./agent-chat/Root";
 
 function AgentChatInputBody() {
-	const {
-		variant,
-		error,
-		assistantText,
-		activities,
-		extension,
-		widget,
-		inspectorOpen,
-		setInspectorOpen,
-		submit,
-		answerExtension,
-	} = useAgentChatInput();
-	const t = useDesignT();
-
 	return (
-		<section
-			className={`kp-agent-chat kp-agent-chat--${variant}`}
-			aria-label={t("admin.agent.label")}
-		>
-			{variant === "harness" && widget ? <HarnessWidget lines={widget} /> : null}
+		<AgentChatFrame>
 			<AgentChatSurface>
-				<Form
-					className="kp-agent-chat__form"
-					onSubmit={(event) => {
-						event.preventDefault();
-						void submit();
-					}}
-				>
+				<AgentChatForm>
 					<AgentChatField />
 					<AgentChatToolbar />
-				</Form>
+				</AgentChatForm>
 
 				<AgentChatHint />
-				{error ? (
-					<Alert className="kp-agent-chat__error" variant="danger">
-						{error}
-					</Alert>
-				) : null}
+				<AgentChatError />
 			</AgentChatSurface>
 
-			{variant === "focused" ? (
-				<Collapsible
-					className="kp-agent-chat__inspector"
-					open={inspectorOpen}
-					onOpenChange={setInspectorOpen}
-					indicator={false}
-					trigger={
-						<span className="kp-agent-chat__inspector-trigger">
-							<span className="kp-agent-chat__inspector-title">
-								{t("admin.agent.inspector")}
-								{activities.length > 0 ? <span>{activities.length}</span> : null}
-							</span>
-							<Icon icon={inspectorOpen ? ChevronUp : ChevronDown} size={16} />
-						</span>
-					}
-				>
-					<div className="kp-agent-chat__inspector-content">
-						{widget ? <HarnessWidget lines={widget} /> : null}
-						<AgentActivity assistantText={assistantText} activities={activities} />
-					</div>
-				</Collapsible>
-			) : (
-				<AgentActivity assistantText={assistantText} activities={activities} />
-			)}
-			{extension ? <PiExtensionDialog request={extension} onAnswer={answerExtension} /> : null}
-		</section>
+			<AgentChatInspector />
+			<AgentChatExtensionDialog />
+		</AgentChatFrame>
 	);
 }
 
@@ -100,11 +47,18 @@ export function AgentChatInput(props: AgentChatInputProps) {
 }
 
 AgentChatInput.Root = AgentChatInputRoot;
+AgentChatInput.Frame = AgentChatFrame;
 AgentChatInput.Surface = AgentChatSurface;
+AgentChatInput.Form = AgentChatForm;
 AgentChatInput.Field = AgentChatField;
 AgentChatInput.Toolbar = AgentChatToolbar;
+AgentChatInput.Attach = AgentChatAttach;
 AgentChatInput.Settings = AgentChatSettings;
+AgentChatInput.Pickers = AgentChatPickers;
 AgentChatInput.Hint = AgentChatHint;
+AgentChatInput.Error = AgentChatError;
 AgentChatInput.Control = AgentChatControl;
 AgentChatInput.PrimaryActions = AgentChatPrimaryActions;
 AgentChatInput.Overflow = AgentChatOverflow;
+AgentChatInput.Inspector = AgentChatInspector;
+AgentChatInput.ExtensionDialog = AgentChatExtensionDialog;
