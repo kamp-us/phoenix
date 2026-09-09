@@ -6,7 +6,9 @@
  * reaches a caller of `TuvalAiAgent`.
  */
 
+import type {AgentFailure} from "../../ai-agent/events.ts";
 import {
+	InterruptError,
 	PageError,
 	PromptError,
 	StartError,
@@ -62,6 +64,22 @@ export const processGone = (exitCode: number | null, interrupted: boolean): Tran
 			? `the agy subprocess ended after an interrupt (exit ${exitCode ?? "unknown"}); agy reports an interrupt as a timeout, so the terminal result reads "timeout waiting for response" either way`
 			: `the agy subprocess exited with code ${exitCode ?? "unknown"}`,
 	});
+
+/**
+ * A `SIGINT` the child would not take, as the plain failure the event stream carries (ADR 0356).
+ *
+ * The refused thing here is the *interrupt call* — the signal never left this process — which is a
+ * different fact from the one `processGone` above reports, where the signal worked and the child is
+ * gone. agy's wire answers nothing about either, so `turnRunning` is this layer's own memory of
+ * having sent a turn and not yet seen its `result`, and it is the half the fold routes on.
+ */
+export const interruptFailureOf = (cause: unknown, turnRunning: boolean): AgentFailure => {
+	const error = new InterruptError({
+		reason: turnRunning ? "turn-running" : "no-live-turn",
+		detail: `agy refused to interrupt the turn: ${detailOf(cause)}`,
+	});
+	return {tag: error._tag, reason: error.reason, detail: error.message};
+};
 
 export const historyUnreadable = (detail: string): PageError =>
 	new PageError({reason: "store-unreadable", detail});

@@ -84,6 +84,7 @@ import {type AgyTurn, eventsOf, turnFrom} from "./mapper.ts";
 import {
 	detailOf,
 	historyUnreadable,
+	interruptFailureOf,
 	malformedPrompt,
 	noSession,
 	processGone,
@@ -172,6 +173,11 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		// This process's own memory of having sent SIGINT. The wire cannot tell an interrupt from a
 		// timeout, so nothing but this distinguishes them (see `refusals.ts`).
 		const interrupted = yield* Ref.make(false);
+		// Whether a turn is in flight: true from the send, false once the envelope says `result`.
+		// It is the reason a refused interrupt carries (ADR 0356), and nothing on agy's wire answers
+		// that question — a layer that read it off the stream would have to wait for the very
+		// terminal event the refusal means never comes.
+		const turnLive = yield* Ref.make(false);
 		/**
 		 * The session's usage-report ordinal, and the reason it lives here rather than on `AgyTurn`:
 		 * a respawn mints a fresh carry but keeps the core state it reports into, and the core keeps
@@ -270,6 +276,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 							// The turn is over and the composer has to be let go of. The mapper says
 							// what happened in it; only the envelope says that it ended.
 							if (read.kind === "event" && read.event.event === "result") {
+								yield* Ref.set(turnLive, false);
 								yield* emit(into, [{kind: "phase", phase: "ready"}]);
 							}
 						}),
@@ -288,6 +295,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				);
 				const ended = Effect.gen(function* () {
 					const code = yield* child.handle.exitCode.pipe(Effect.orElseSucceed(() => null));
+					yield* Ref.set(turnLive, false);
 					const failure = processGone(code, yield* Ref.get(interrupted));
 					// A child that died before it ever said `init` is a start that failed, and its
 					// caller is still holding that await.
@@ -361,6 +369,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				};
 			}).pipe(
 				Effect.tap(() => Ref.set(interrupted, false)),
+				Effect.tap(() => Ref.set(turnLive, false)),
 				Effect.mapError((detail) =>
 					resume === undefined ? startFailed(cwd, detail) : resumeFailed(cwd, resume, detail),
 				),
@@ -466,6 +475,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				// exists for fires while the first send is still in flight (ruling 2, #7570).
 				yield* Ref.update(keys, (seen) => new Set(seen).add(key));
 			}
+			yield* Ref.set(turnLive, true);
 			yield* publish([{kind: "phase", phase: "prompting"}]);
 			// This is the send, and this member returns here (#8018). The reply, its tools and its
 			// terminal `result` all arrive on `events` through `follow`, because the generic host
@@ -480,11 +490,13 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			if (current === null) return;
 			yield* Ref.set(interrupted, true);
 			yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
-				// `interrupt` declares no error channel, so a refused signal is a log line: the turn
-				// the operator wanted stopped has either already ended or the child is already gone,
-				// and both are states the next event settles.
-				Effect.catchCause((cause) =>
-					Effect.logWarning(`the agy interrupt was refused: ${detailOf(cause)}`),
+				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
+				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
+				// backend that said no from a stop still in flight.
+				Effect.catch((refusal) =>
+					Effect.flatMap(Ref.get(turnLive), (live) =>
+						publish([{kind: "failure", failure: interruptFailureOf(refusal, live)}]),
+					),
 				),
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
@@ -640,6 +652,14 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};
 	});
+
+/**
+ * The layer's body over a spawner the caller provides, for the tests that need the subprocess to
+ * behave a way the real one cannot be asked to — `interrupt-refusal.unit.test.ts` needs a `kill`
+ * that is refused, and a live child never refuses one. Not a second entry point: `index.ts`
+ * publishes the layer below and nothing else (`boundary.unit.test.ts`).
+ */
+export const aiAgentOverSpawner = make;
 
 export const AgyAiAgent = {
 	/**
