@@ -87,6 +87,7 @@ import {
 	paintOf,
 	projectionOf,
 	type SnapshotProjection,
+	spawnRunIds,
 } from "./items.ts";
 import {
 	interruptFailureOf,
@@ -331,18 +332,15 @@ const make = (
 						const running = [...(yield* Ref.get(projection)).spawns.values()];
 						if (running.length === 0) return;
 						const read = yield* Effect.sync(() => {
-							// A detached spawn's row carries no run id, so its workers are looked up by
-							// the call id through the tool-call index before anything is tailed.
+							// Every detached spawn, every tick — not just the ones with no workers yet.
+							// A workflow's `steps[]` gain their run ids as each step launches, so a run
+							// resolved once and never re-read freezes on its first worker (#8684).
 							const resolved = readAsyncSpawns(
 								asyncRunRoot(),
-								running
-									.filter((spawn) => spawn.runIds.length === 0)
-									.map((spawn) => spawn.toolCallId),
+								running.filter((spawn) => spawn.runId === null).map((spawn) => spawn.toolCallId),
 							);
 							const runIds = running.flatMap((spawn) =>
-								spawn.runIds.length > 0
-									? spawn.runIds
-									: (resolved.get(spawn.toolCallId)?.runIds ?? []),
+								spawnRunIds(spawn, resolved.get(spawn.toolCallId)),
 							);
 							return {children: readChildTranscripts(artifacts, runIds), resolved};
 						});

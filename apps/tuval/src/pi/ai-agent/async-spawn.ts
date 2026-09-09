@@ -72,6 +72,31 @@ export const encodeIndexSegment = (value: string): string => {
 		: hashedSegment(value);
 };
 
+/** The pre-hash key, where it still fits — `index-segment.ts`'s `historicallyReadableSegment`. */
+const historicalSegment = (value: string): string | undefined => {
+	let encoded: string;
+	try {
+		encoded = encodeURIComponent(value);
+	} catch {
+		return undefined;
+	}
+	if (encoded.length === 0 || encoded === "." || encoded === ".." || encoded.endsWith("."))
+		return undefined;
+	if (WINDOWS_RESERVED_NAME.test(encoded)) return undefined;
+	return Buffer.byteLength(encoded, "utf-8") > MAX_INDEX_SEGMENT_BYTES ? undefined : encoded;
+};
+
+/**
+ * Every directory name this call's aliases could be under — `indexSegmentAliases`: the key the
+ * current writer spells first, then the pre-hash one an older writer left behind. Read rather than
+ * assumed away, so a run launched under a previous pin is still findable.
+ */
+export const indexSegmentAliases = (value: string): ReadonlyArray<string> => {
+	const current = encodeIndexSegment(value);
+	const historical = historicalSegment(value);
+	return historical === undefined || historical === current ? [current] : [current, historical];
+};
+
 const sanitizeScopeSegment = (value: string): string =>
 	value
 		.trim()
@@ -111,22 +136,26 @@ const objectOf = (value: unknown): Record<string, unknown> | undefined =>
 const stringOf = (value: unknown): string | undefined =>
 	typeof value === "string" && value.trim() !== "" ? value : undefined;
 
-/** The async run ids the index aliases to this call — a hint, not yet a match. */
-const aliasedRunDirs = (root: string, toolCallId: string): ReadonlyArray<string> => {
+const aliasEntries = (root: string, segment: string): ReadonlyArray<string> => {
 	try {
-		return readdirSync(
-			join(root, ACTIVE_RUN_INDEX_DIR, TOOL_CALL_INDEX_DIR, encodeIndexSegment(toolCallId)),
-			{
-				withFileTypes: true,
-			},
-		)
+		return readdirSync(join(root, ACTIVE_RUN_INDEX_DIR, TOOL_CALL_INDEX_DIR, segment), {
+			withFileTypes: true,
+		})
 			.filter((entry) => entry.isFile())
-			.map((entry) => entry.name)
-			.sort();
+			.map((entry) => entry.name);
 	} catch {
 		return [];
 	}
 };
+
+/**
+ * The async run ids the index aliases to this call — a hint, not yet a match. Sorted by run id
+ * rather than left in `readdir` order, so two reads of one unchanged index answer identically.
+ */
+const aliasedRunDirs = (root: string, toolCallId: string): ReadonlyArray<string> =>
+	[
+		...new Set(indexSegmentAliases(toolCallId).flatMap((segment) => aliasEntries(root, segment))),
+	].sort();
 
 const readStatus = (dir: string): Record<string, unknown> | undefined => {
 	try {
@@ -152,7 +181,11 @@ const stepWorker = (
  * The status's own `toolCallId` is the confirmation: an alias directory is a filename and survives
  * a crash, so a run that does not claim this call is skipped rather than read. Several runs can
  * alias one call — a relaunch under the same row — and every confirmed one contributes its steps,
- * in the index's own order.
+ * in run-id order.
+ *
+ * The whole status is re-read on every call, so the answer always carries every step that has
+ * launched so far. That is what makes a sequential lane's later steps arrive at all: a step is
+ * declared up front with no `runId` and gains one when it launches (#8684).
  */
 export const readAsyncSpawn = (root: string, toolCallId: string): AsyncSpawn | null => {
 	const runIds: Array<string> = [];

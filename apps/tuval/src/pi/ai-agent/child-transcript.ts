@@ -270,9 +270,11 @@ export const readChildTranscript = (dir: string, runId: string): ChildTranscript
  * Several runs' transcripts as one slot's rows. An async spawn is one call over as many workers as
  * its `steps[]` names, and the slot stays keyed on the call (#8664 owns how a fan-out is laid out),
  * so their rows are concatenated in the order the steps were resolved and re-keyed apart.
+ *
+ * The re-key runs even for a single run, matching `readChildTranscript`'s own `child-<at>-` prefix:
+ * a step that launches later must not renumber the ids of the rows already on screen.
  */
 export const joinChildTranscripts = (parts: ReadonlyArray<ChildTranscript>): ChildTranscript => {
-	if (parts.length === 1) return parts[0] as ChildTranscript;
 	const items = parts.flatMap((part, at) =>
 		part.items.map((item) => ({...item, id: childItemId(`run-${at}-${item.id}`)})),
 	);

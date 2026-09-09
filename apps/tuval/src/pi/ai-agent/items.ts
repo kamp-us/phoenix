@@ -231,11 +231,16 @@ const runIdOf = (item: PiTranscriptItem): string | null => {
  */
 export interface RunningSpawn {
 	readonly id: ItemId;
-	/** The call's own id — the key a detached run is resolved by, once nothing else addresses it. */
+	/** The call's own id — the key a detached run is resolved by, since nothing else addresses it. */
 	readonly toolCallId: string;
-	/** Whose artifacts this slot reads. Empty for a detached run the index has not answered yet. */
-	readonly runIds: ReadonlyArray<string>;
-	/** The agent the call named, or `null` for a spawn that names none. */
+	/**
+	 * The run the wire named, or `null` for a detached call. That `null` is also what marks the
+	 * spawn detached: a foreground row with no run id is not tracked at all.
+	 */
+	readonly runId: string | null;
+	/** What the tool-call index last said about a detached call, re-read on every tail tick. */
+	readonly resolved: AsyncSpawn | null;
+	/** The agent the call itself named, or `null` when it named none. */
 	readonly agent: string | null;
 	readonly startedAt: number;
 }
@@ -249,24 +254,37 @@ export const runningSpawnOf = (item: PiTranscriptItem): RunningSpawn | null => {
 	return {
 		id: itemId(item.toolCallId),
 		toolCallId: item.toolCallId,
-		runIds: runId === null ? [] : [runId],
+		runId,
+		resolved: null,
 		agent: namedAgent(item.input),
 		startedAt: item.timestamp,
 	};
 };
 
 /**
- * One spawn plus whatever has since been resolved for it — the tool-call index's answer, or the
- * projection's own earlier one when a wire push rebuilds the row from scratch.
+ * One spawn under whatever the index last said about it — a fresh tail read, or the projection's
+ * own earlier answer when a wire push rebuilds the row from scratch.
  *
- * A spawn that already knows its workers keeps them: the wire's run id is the call's own, and the
- * index answers only for runs it has not released yet. The name is filled only where the call named
- * none, so an explicit `agent` is never overwritten by what the workers turned out to be.
+ * A resolution replaces the held one whole rather than merging into it, because `readAsyncSpawn`
+ * re-reads the run's entire `status.json`: its answer already carries every step that has launched
+ * so far, and a sequential lane's later steps arrive by that route and no other. An absent
+ * answer — a read that resolved nothing, or a foreground row that never resolves — leaves the held
+ * one standing, which is what stops a tick from blanking a slot the operator is reading (#8684).
  */
-const filled = (spawn: RunningSpawn, held: AsyncSpawn | RunningSpawn | undefined): RunningSpawn =>
-	held === undefined || spawn.runIds.length > 0
+const filled = (spawn: RunningSpawn, resolution: AsyncSpawn | null | undefined): RunningSpawn =>
+	resolution === null || resolution === undefined || spawn.runId !== null
 		? spawn
-		: {...spawn, runIds: held.runIds, agent: spawn.agent ?? held.agent};
+		: {...spawn, resolved: resolution};
+
+/** Whose artifacts this spawn's slot reads: the run the wire named, else the resolved workers. */
+const runIdsOf = (spawn: RunningSpawn): ReadonlyArray<string> =>
+	spawn.runId === null ? (spawn.resolved?.runIds ?? []) : [spawn.runId];
+
+/** The same rule for the tail, which needs the run ids before the fold has folded the answer. */
+export const spawnRunIds = (
+	spawn: RunningSpawn,
+	resolution?: AsyncSpawn | undefined,
+): ReadonlyArray<string> => runIdsOf(filled(spawn, resolution));
 
 /** One worker's own rows under the call that spawned it, so a window can tell whose they are. */
 const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<TranscriptItem> =>
@@ -275,7 +293,7 @@ const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<Transcrip
 /** A still-running worker's slot, off its own artifact — the shape both folds below agree on. */
 const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlot => ({
 	id: spawn.id,
-	type: subagentType(spawn.agent),
+	type: subagentType(spawn.agent ?? spawn.resolved?.agent ?? null),
 	lastLine: child.lastLine,
 	startedAt: spawn.startedAt,
 	tokens: countOf(child.tokens),
@@ -328,7 +346,7 @@ export const subagentSlotsOf = (
 						{
 							id: itemId(part.toolCallId),
 							type: subagentType(
-								namedAgent(part.input) ?? held?.get(part.toolCallId)?.agent ?? null,
+								namedAgent(part.input) ?? held?.get(part.toolCallId)?.resolved?.agent ?? null,
 							),
 							lastLine: "",
 							startedAt: item.timestamp,
@@ -359,15 +377,15 @@ export const subagentSlotsOf = (
 			];
 		// One shape for both folds, so a wire push and an artifact tail cannot fingerprint the same
 		// worker differently and repaint the row between them.
-		const resolved = filled(spawn, carried);
-		return [runningSlotOf(resolved, childOf(children, resolved.runIds) ?? emptyChild)];
+		const resolved = filled(spawn, carried?.resolved);
+		return [runningSlotOf(resolved, childOf(children, runIdsOf(resolved)) ?? emptyChild)];
 	}
 	const runId = runIdOf(item);
-	const child = childOf(children, runId === null ? (carried?.runIds ?? []) : [runId]);
+	const child = childOf(children, runId === null ? (carried?.resolved?.runIds ?? []) : [runId]);
 	return [
 		{
 			id,
-			type: subagentType(namedAgent(item.input) ?? carried?.agent ?? null),
+			type: subagentType(namedAgent(item.input) ?? carried?.resolved?.agent ?? null),
 			lastLine: child?.lastLine || lastLineOf(boundToolResult(textOf(item.content)).text),
 			startedAt: item.timestamp,
 			// The child's own spend where the artifact reported one, else what the result says it
@@ -500,7 +518,8 @@ export const eventsOf = (
 			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
 		const spawn = runningSpawnOf(source);
-		if (spawn !== null) spawns.set(spawn.id, filled(spawn, previous.spawns.get(spawn.id)));
+		if (spawn !== null)
+			spawns.set(spawn.id, filled(spawn, previous.spawns.get(spawn.id)?.resolved));
 	}
 
 	for (const source of snapshot.transcript) {
@@ -551,7 +570,8 @@ export const deltaEventsOf = (
 			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
 		const spawn = runningSpawnOf(source);
-		if (spawn !== null) spawns.set(spawn.id, filled(spawn, previous.spawns.get(spawn.id)));
+		if (spawn !== null)
+			spawns.set(spawn.id, filled(spawn, previous.spawns.get(spawn.id)?.resolved));
 		// A tool row that stopped running is a worker with nothing left to append, so the tail
 		// stops reading its artifact here rather than on a clock of its own.
 		else if (source.role === "tool") spawns.delete(source.toolCallId);
@@ -597,7 +617,7 @@ export const childEventsOf = (
 	for (const spawn of previous.spawns.values()) {
 		const found = filled(spawn, resolved?.get(spawn.toolCallId));
 		spawns.set(found.id, found);
-		const child = childOf(children, found.runIds);
+		const child = childOf(children, runIdsOf(found));
 		if (child === undefined) continue;
 		const slot = runningSlotOf(found, child);
 		const key = slotKey(slot);

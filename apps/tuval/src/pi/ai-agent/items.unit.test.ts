@@ -1002,7 +1002,7 @@ describe("a running subagent filled from its own transcript artifact", () => {
 
 	const childRow = {
 		kind: "assistant",
-		id: "call-9:child-0",
+		id: "call-9:run-0-child-0",
 		parentId: "call-9",
 		timestamp: 12,
 		text: "reading src/a.ts",
@@ -1014,7 +1014,14 @@ describe("a running subagent filled from its own transcript artifact", () => {
 
 	it("tracks the run the running row names", () => {
 		expect([...opened.next.spawns.values()]).toEqual([
-			{id: "call-9", toolCallId: "call-9", runIds: ["run-1"], agent: "reviewer", startedAt: 11},
+			{
+				id: "call-9",
+				toolCallId: "call-9",
+				runId: "run-1",
+				resolved: null,
+				agent: "reviewer",
+				startedAt: 11,
+			},
 		]);
 	});
 
@@ -1124,7 +1131,14 @@ describe("a detached subagent filled through the tool-call index", () => {
 
 	it("tracks the call with no workers until the index answers", () => {
 		expect([...opened.next.spawns.values()]).toEqual([
-			{id: "call-async", toolCallId: "call-async", runIds: [], agent: null, startedAt: 21},
+			{
+				id: "call-async",
+				toolCallId: "call-async",
+				runId: null,
+				resolved: null,
+				agent: null,
+				startedAt: 21,
+			},
 		]);
 	});
 
@@ -1156,7 +1170,7 @@ describe("a detached subagent filled through the tool-call index", () => {
 					items: [
 						{
 							kind: "assistant",
-							id: "call-async:child-0",
+							id: "call-async:run-0-child-0",
 							parentId: "call-async",
 							timestamp: 22,
 							text: "cutting the lane",
@@ -1181,8 +1195,9 @@ describe("a detached subagent filled through the tool-call index", () => {
 			{
 				id: "call-async",
 				toolCallId: "call-async",
-				runIds: ["worker-1"],
-				agent: "builder",
+				runId: null,
+				resolved: {runIds: ["worker-1"], agent: "builder"},
+				agent: null,
 				startedAt: 21,
 			},
 		]);
@@ -1190,6 +1205,72 @@ describe("a detached subagent filled through the tool-call index", () => {
 
 	it("leaves the slot alone when the index resolves nothing", () => {
 		expect(childEventsOf(opened.next, new Map(), new Map()).events).toEqual([]);
+	});
+
+	// A `workflowScript` declares its steps up front and each gains its `runId` at launch, so a run
+	// resolved once and never re-read would sit on the first worker's last line for the whole lane.
+	it("picks up a step that gains its run id after the first resolution", () => {
+		const first = childEventsOf(opened.next, new Map([["worker-1", child]]), resolved);
+		const reviewing = {
+			items: [
+				{
+					kind: "assistant" as const,
+					id: itemId("child-0"),
+					timestamp: 24,
+					text: "reading the diff",
+				},
+			],
+			lastLine: "reading the diff",
+			tokens: 9,
+		};
+		const second = childEventsOf(
+			first.next,
+			new Map([
+				["worker-1", child],
+				["worker-2", reviewing],
+			]),
+			new Map([["call-async", {runIds: ["worker-1", "worker-2"], agent: "builder, reviewer"}]]),
+		);
+		expect(second.events).toEqual([
+			{
+				kind: "subagent",
+				slot: {
+					id: "call-async",
+					type: "builder, reviewer",
+					lastLine: "reading the diff",
+					startedAt: 21,
+					tokens: 26,
+					items: [
+						{
+							kind: "assistant",
+							id: "call-async:run-0-child-0",
+							parentId: "call-async",
+							timestamp: 22,
+							text: "cutting the lane",
+						},
+						{
+							kind: "assistant",
+							id: "call-async:run-1-child-0",
+							parentId: "call-async",
+							timestamp: 24,
+							text: "reading the diff",
+						},
+					],
+					status: "running",
+				},
+			},
+		]);
+	});
+
+	// A tick that reads nothing must not undo the last one that read something.
+	it("keeps the workers it resolved when a later read answers nothing", () => {
+		const first = childEventsOf(opened.next, new Map([["worker-1", child]]), resolved);
+		const blank = childEventsOf(first.next, new Map([["worker-1", child]]), new Map());
+		expect(blank.events).toEqual([]);
+		expect([...blank.next.spawns.values()][0]?.resolved).toEqual({
+			runIds: ["worker-1"],
+			agent: "builder",
+		});
 	});
 
 	it("keeps the agent the call named over the one its steps report", () => {

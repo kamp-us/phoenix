@@ -36,6 +36,15 @@ display string load-bearing. Everything on this path is total: a missing marker,
 or a mismatched claim all answer "no workers yet", which leaves the slot exactly as an unresolved one
 looks.
 
+**Resolve on every tick, not once.** `steps[]` is declared up front and each step gains its `runId`
+only when it launches, so a sequential lane — builder, then reviewer, then shipper — publishes its
+workers one at a time. A run resolved once and never re-read keeps the first worker forever: the row
+sits on that worker's last line, labelled with its agent, looking live while it is stale. So the tail
+re-reads the index for every detached spawn it is still tracking, and the fresh answer replaces the
+held one whole (the status read already carries every step launched so far). A read that resolves
+nothing leaves the held answer standing — a tick that finds nothing must never blank a slot someone
+is reading.
+
 **2. Reimplement the artifact's parse; do not import the backend's reader.** `pi-subagents`' own
 `readFleetTranscript` lives under `src/tui/` and pulls `@earendil-works/pi-tui`, which the paths-only
 rule in `apps/tuval/src/pi/server/subagents.ts` refuses. The grammar is versioned and small, so

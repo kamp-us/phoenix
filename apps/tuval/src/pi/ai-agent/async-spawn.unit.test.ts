@@ -8,7 +8,12 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it} from "vitest";
-import {asyncRunRoot, encodeIndexSegment, readAsyncSpawn} from "./async-spawn.ts";
+import {
+	asyncRunRoot,
+	encodeIndexSegment,
+	indexSegmentAliases,
+	readAsyncSpawn,
+} from "./async-spawn.ts";
 
 const roots: Array<string> = [];
 
@@ -85,6 +90,69 @@ describe("resolving a detached spawn through the tool-call index", () => {
 		mkdirSync(dir, {recursive: true});
 		writeFileSync(join(dir, "async-3"), "");
 		expect(readAsyncSpawn(root, "call-9")).toBeNull();
+	});
+
+	// The sequential lane: `steps[]` is declared up front and each step gains its `runId` at launch,
+	// so a second read of the same run has to see workers the first one could not.
+	it("sees a later step's worker when the status gains it between reads", () => {
+		const root = asyncRoot();
+		const status = (steps: ReadonlyArray<Record<string, unknown>>) => ({
+			runId: "async-5",
+			toolCallId: "call-9",
+			mode: "workflow",
+			state: "running",
+			startedAt: 1,
+			steps,
+		});
+		launch(
+			root,
+			"async-5",
+			status([
+				{agent: "builder", runId: "worker-1", status: "running"},
+				{agent: "reviewer", status: "pending"},
+			]),
+			"call-9",
+		);
+		expect(readAsyncSpawn(root, "call-9")).toEqual({runIds: ["worker-1"], agent: "builder"});
+
+		writeFileSync(
+			join(root, "async-5", "status.json"),
+			JSON.stringify(
+				status([
+					{agent: "builder", runId: "worker-1", status: "complete"},
+					{agent: "reviewer", runId: "worker-2", status: "running"},
+				]),
+			),
+		);
+		expect(readAsyncSpawn(root, "call-9")).toEqual({
+			runIds: ["worker-1", "worker-2"],
+			agent: "builder, reviewer",
+		});
+	});
+
+	// An alias written by an older pin sits under the pre-hash key, and the run outlives the writer.
+	it("finds a run aliased under the pre-hash key", () => {
+		const root = asyncRoot();
+		const id = "call.jsonl";
+		mkdirSync(join(root, "async-6"), {recursive: true});
+		writeFileSync(
+			join(root, "async-6", "status.json"),
+			JSON.stringify({
+				runId: "async-6",
+				toolCallId: id,
+				mode: "workflow",
+				state: "running",
+				startedAt: 1,
+				steps: [{agent: "builder", runId: "worker-1", status: "running"}],
+			}),
+		);
+		const [current, historical] = indexSegmentAliases(id);
+		expect(historical).toBeDefined();
+		expect(historical).not.toBe(current);
+		const dir = join(root, ".active-runs", "tool-calls", historical as string);
+		mkdirSync(dir, {recursive: true});
+		writeFileSync(join(dir, "async-6"), "");
+		expect(readAsyncSpawn(root, id)).toEqual({runIds: ["worker-1"], agent: "builder"});
 	});
 
 	it("carries every worker a fan-out started, naming the row after all of them", () => {
