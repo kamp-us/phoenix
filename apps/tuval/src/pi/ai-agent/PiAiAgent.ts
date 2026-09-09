@@ -71,7 +71,7 @@ import {
 	type ServerBindFailed,
 	subagentExtensionPaths,
 } from "../server/index.ts";
-import type {ThinkingLevel} from "../wire/index.ts";
+import type {SessionSnapshot, ThinkingLevel} from "../wire/index.ts";
 import {type AsyncSpawns, asyncRunRoot, readAsyncSpawns} from "./async-spawn.ts";
 import {
 	type ChildTranscripts,
@@ -84,10 +84,12 @@ import {
 	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
+	finishedAsyncCallIds,
 	paintOf,
 	projectionOf,
 	type SnapshotProjection,
 	spawnRunIds,
+	subagentSlotsOf,
 } from "./items.ts";
 import {
 	interruptFailureOf,
@@ -166,6 +168,36 @@ type FoldInput =
  * child's write rate — a slower tail costs latency on a row, never a record.
  */
 const childTailInterval = "500 millis";
+
+/**
+ * What a just-attached session can fill from disk for its finished detached spawn rows.
+ *
+ * A finished row is out of the projection's `spawns` map — a delta drops it there, and a session
+ * rebuilt from its transcript never put it there at all — so no tail tick will ever reach its
+ * workers. The results index still files them under the call's own id, so it is read once here and
+ * carried by every later fold (#8685). The events are the repaint that read is worth: the paint, or
+ * the caller's own held copy, drew those rows off the result text alone.
+ */
+const asyncFillOf = (
+	snapshot: SessionSnapshot,
+	artifacts: string,
+): {
+	readonly children: ChildTranscripts;
+	readonly resolved: AsyncSpawns;
+	readonly events: ReadonlyArray<AgentEvent>;
+} => {
+	const resolved = readAsyncSpawns(asyncRunRoot(), finishedAsyncCallIds(snapshot.transcript));
+	if (resolved.size === 0) return {children: new Map(), resolved, events: []};
+	const children = readChildTranscripts(artifacts, [
+		...new Set([...resolved.values()].flatMap((spawn) => spawn.runIds)),
+	]);
+	const events = snapshot.transcript.flatMap((source) =>
+		subagentSlotsOf(source, children, undefined, resolved)
+			.filter((slot) => slot.status === "finished")
+			.map((slot) => ({kind: "subagent", slot}) as const),
+	);
+	return {children, resolved, events};
+};
 
 /**
  * Read one session's branch out of Pi's JSONL, oldest-first.
@@ -291,10 +323,14 @@ const make = (
 			feed: Queue.Queue<FoldInput>,
 			seed: SnapshotProjection,
 			artifacts: string,
+			fill: {readonly children: ChildTranscripts; readonly resolved: AsyncSpawns},
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
 				yield* Ref.set(projection, seed);
-				const children = yield* Ref.make<ChildTranscripts>(new Map());
+				const children = yield* Ref.make<ChildTranscripts>(fill.children);
+				// Sticky, never replaced: a row resolved while it ran has to still be resolvable once
+				// it finishes and leaves the `spawns` map (#8685).
+				const resolvedAsync = yield* Ref.make<AsyncSpawns>(fill.resolved);
 				const pushes = pi
 					.updates(sessionId)
 					.pipe(Stream.runForEach((update) => Queue.offer(feed, update)));
@@ -309,6 +345,8 @@ const make = (
 							}
 							if (input._tag === "children") {
 								yield* Ref.set(children, input.children);
+								if (input.resolved.size > 0)
+									yield* Ref.update(resolvedAsync, (held) => new Map([...held, ...input.resolved]));
 								const tailed = childEventsOf(previous, input.children, input.resolved);
 								yield* Ref.set(projection, tailed.next);
 								return yield* emit(open, tailed.events);
@@ -317,10 +355,11 @@ const make = (
 							// landing between two reads restates the enriched slot rather than
 							// blanking the rows the operator is looking at.
 							const held = yield* Ref.get(children);
+							const resolved = yield* Ref.get(resolvedAsync);
 							const folded =
 								input._tag === "snapshot"
-									? eventsOf(previous, input.snapshot, held)
-									: deltaEventsOf(previous, input.delta, held);
+									? eventsOf(previous, input.snapshot, held, resolved)
+									: deltaEventsOf(previous, input.delta, held, resolved);
 							yield* Ref.set(projection, folded.next);
 							yield* emit(open, folded.events);
 						}),
@@ -331,6 +370,7 @@ const make = (
 						yield* Effect.sleep(childTailInterval);
 						const running = [...(yield* Ref.get(projection)).spawns.values()];
 						if (running.length === 0) return;
+						const carried = yield* Ref.get(resolvedAsync);
 						const read = yield* Effect.sync(() => {
 							// Every detached spawn, every tick — not just the ones with no workers yet.
 							// A workflow's `steps[]` gain their run ids as each step launches, so a run
@@ -339,9 +379,14 @@ const make = (
 								asyncRunRoot(),
 								running.filter((spawn) => spawn.runId === null).map((spawn) => spawn.toolCallId),
 							);
-							const runIds = running.flatMap((spawn) =>
-								spawnRunIds(spawn, resolved.get(spawn.toolCallId)),
-							);
+							// The finished rows' workers ride along because this read replaces the held
+							// children whole, and dropping them blanks a slot the operator is reading.
+							const runIds = [
+								...new Set([
+									...running.flatMap((spawn) => spawnRunIds(spawn, resolved.get(spawn.toolCallId))),
+									...[...carried.values()].flatMap((spawn) => spawn.runIds),
+								]),
+							];
 							return {children: readChildTranscripts(artifacts, runIds), resolved};
 						});
 						yield* Queue.offer(feed, {_tag: "children", ...read});
@@ -447,28 +492,43 @@ const make = (
 						options_.cwd,
 						opening === undefined ? {} : {model: opening},
 					);
-					return {ref: opened, seed: emptyProjection, paint: []};
+					return {
+						ref: opened,
+						seed: emptyProjection,
+						paint: [],
+						fill: {children: new Map(), resolved: new Map(), events: []},
+					};
 				}
 				// Either way the lease's own snapshot is the seed, and neither reading of it costs a
 				// round trip. What differs is what the caller can already see.
 				const resumed = yield* pi.attachSession(resume.sessionId);
 				const lease = yield* pi.heldSnapshot(resumed.id);
+				// Read before either branch answers: a finished detached row is invisible to both the
+				// seed and the paint, so its workers come off the results index either way (#8685).
+				const fill = yield* Effect.sync(() =>
+					asyncFillOf(lease, subagentArtifactsDir(sessionDir(options_.cwd))),
+				);
 				// A restored process is looking at its own committed tail, so the seed suppresses
 				// everything through the boundary that tail reaches and emits whatever the session
 				// finished past it — or changed under it — while the socket was down (#8374).
 				const seeded = resume.holdsTranscript ? projectionOf(lease, resume.held) : null;
-				if (seeded !== null) return {ref: resumed, seed: seeded, paint: []};
+				if (seeded !== null) return {ref: resumed, seed: seeded, paint: fill.events, fill};
 				// Nothing to seed from: a window opened out of the picker holds nothing, or the
 				// boundary the caller holds is not in this snapshot. Either way the history is
 				// painted here, at the attach, while its tail is still empty — a push carries only
 				// what changed, so waiting for one would replay nothing (#8554).
 				const painted = paintOf(lease);
-				return {ref: resumed, seed: painted.projection, paint: painted.events};
+				return {
+					ref: resumed,
+					seed: painted.projection,
+					paint: [...painted.events, ...fill.events],
+					fill,
+				};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const {ref, seed, paint} = yield* acquire.pipe(
+			const {ref, seed, paint, fill} = yield* acquire.pipe(
 				Effect.tapError(() => emit(open, [{kind: "phase", phase: "gone"}])),
 			);
 			yield* emit(open, paint);
@@ -503,7 +563,7 @@ const make = (
 			yield* Ref.set(
 				pump,
 				yield* Effect.forkIn(
-					follow(ref.id, open, feed, seed, subagentArtifactsDir(sessionDir(options_.cwd))),
+					follow(ref.id, open, feed, seed, subagentArtifactsDir(sessionDir(options_.cwd)), fill),
 					scope,
 				),
 			);

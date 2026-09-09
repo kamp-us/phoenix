@@ -26,11 +26,13 @@ import {
 	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
+	finishedAsyncCallIds,
 	itemId,
 	itemOf,
 	itemsOf,
 	phaseOf,
 	projectionOf,
+	subagentSlotsOf,
 } from "./items.ts";
 
 /**
@@ -1283,5 +1285,112 @@ describe("a detached subagent filled through the tool-call index", () => {
 				(event) => event.kind === "subagent" && event.slot.type,
 			),
 		).toEqual(["reviewer"]);
+	});
+});
+
+/**
+ * The other half of the same row: `pi-subagents` deletes a run's active alias the moment it ends,
+ * and a session rebuilt from its transcript never watched it run — so the finished branch has no
+ * carried spawn and resolves off the results index by the call's own id (#8685).
+ */
+describe("a finished detached subagent on a session that never watched it run", () => {
+	const answered: PiTranscriptItem = {
+		id: "item-4",
+		role: "tool",
+		toolCallId: "call-async",
+		toolName: "subagent",
+		input: {async: true, context: "fresh", workflowScript: "runs.run('lane')"},
+		content: [{type: "text", text: "lane landed\nPR opened"}],
+		timestamp: 31,
+		status: "complete",
+		isError: false,
+		usage: usage(1),
+	};
+
+	const child = {
+		items: [
+			{kind: "assistant" as const, id: itemId("child-0"), timestamp: 32, text: "cutting the lane"},
+		],
+		lastLine: "cutting the lane",
+		tokens: 17,
+	};
+	const children = new Map([["worker-1", child]]);
+	const resolved = new Map([["call-async", {runIds: ["worker-1"], agent: "builder"}]]);
+
+	it("names the call a restore has to resolve, and only that one", () => {
+		const stillRunning: PiTranscriptItem = {...answered, toolCallId: "call-run", status: "running"};
+		const foreground: PiTranscriptItem = {
+			...answered,
+			toolCallId: "call-fg",
+			details: {runId: "run-1"},
+		};
+		const notASpawn: PiTranscriptItem = {...answered, toolCallId: "call-read", toolName: "read"};
+		expect(finishedAsyncCallIds([answered, stillRunning, foreground, notASpawn])).toEqual([
+			"call-async",
+		]);
+	});
+
+	it("fills the slot from the recovered workers with no spawn ever held", () => {
+		expect(subagentSlotsOf(answered, children, undefined, resolved)).toEqual([
+			{
+				id: "call-async",
+				type: "builder",
+				lastLine: "cutting the lane",
+				startedAt: 31,
+				tokens: 17,
+				items: [
+					{
+						kind: "assistant",
+						id: "call-async:run-0-child-0",
+						parentId: "call-async",
+						timestamp: 32,
+						text: "cutting the lane",
+					},
+				],
+				status: "finished",
+			},
+		]);
+	});
+
+	// A restore folds the whole transcript with an empty `spawns` map, which is the case #8684's
+	// running arm cannot reach at all.
+	it("fills the row through a snapshot fold over an empty projection", () => {
+		expect(
+			eventsOf(emptyProjection, snapshot([answered], "turn"), children, resolved).events,
+		).toContainEqual({
+			kind: "subagent",
+			slot: {
+				id: "call-async",
+				type: "builder",
+				lastLine: "cutting the lane",
+				startedAt: 31,
+				tokens: 17,
+				items: [
+					{
+						kind: "assistant",
+						id: "call-async:run-0-child-0",
+						parentId: "call-async",
+						timestamp: 32,
+						text: "cutting the lane",
+					},
+				],
+				status: "finished",
+			},
+		});
+	});
+
+	// Past the index's 24h age-out there is nothing to recover, and the row reads as it does today.
+	it("degrades to the result's own last line when nothing resolves", () => {
+		expect(subagentSlotsOf(answered, children, undefined, new Map())).toEqual([
+			{
+				id: "call-async",
+				type: "subagent",
+				lastLine: "PR opened",
+				startedAt: 31,
+				tokens: 33,
+				items: [],
+				status: "finished",
+			},
+		]);
 	});
 });

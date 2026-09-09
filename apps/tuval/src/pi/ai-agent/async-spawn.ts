@@ -114,18 +114,27 @@ const tempScopeId = (): string => {
 	return `home-${sanitizeScopeSegment(homedir())}`;
 };
 
-/**
- * Where detached runs keep their status directories — `ASYNC_DIR`
- * (`src/shared/types.ts:2730-2735`). It is process-scoped rather than session-scoped, so it is read
- * off the same environment the extension runs in: this process spawns the children.
- */
-export const asyncRunRoot = (): string => {
+/** `TEMP_ROOT_DIR` (`src/shared/types.ts:2733-2737`) — the parent both roots below hang off. */
+const tempRoot = (): string => {
 	const configured = process.env.PI_SUBAGENTS_TEMP_ROOT?.trim();
-	const root = configured ? resolve(configured) : join(tmpdir(), `pi-subagents-${tempScopeId()}`);
-	return join(root, "async-subagent-runs");
+	return configured ? resolve(configured) : join(tmpdir(), `pi-subagents-${tempScopeId()}`);
 };
 
+/**
+ * Where detached runs keep their status directories — `ASYNC_DIR`
+ * (`src/shared/types.ts:2739`). It is process-scoped rather than session-scoped, so it is read
+ * off the same environment the extension runs in: this process spawns the children.
+ */
+export const asyncRunRoot = (): string => join(tempRoot(), "async-subagent-runs");
+
+/**
+ * Where a finished run's result payload and its indexes live — `RESULTS_DIR`
+ * (`src/shared/types.ts:2738`), the sibling of the run root under the same temp scope.
+ */
+export const asyncResultsRoot = (): string => join(tempRoot(), "async-subagent-results");
+
 const ACTIVE_RUN_INDEX_DIR = ".active-runs";
+const RESULT_INDEX_DIR = "result-index";
 const TOOL_CALL_INDEX_DIR = "tool-calls";
 
 const objectOf = (value: unknown): Record<string, unknown> | undefined =>
@@ -157,6 +166,57 @@ const aliasedRunDirs = (root: string, toolCallId: string): ReadonlyArray<string>
 		...new Set(indexSegmentAliases(toolCallId).flatMap((segment) => aliasEntries(root, segment))),
 	].sort();
 
+/**
+ * The run ids the results-dir index files this call, read as JSON rather than by filename.
+ *
+ * `writeResultIndexForData` drops a `ResultIndexEntry` at
+ * `<resultsRoot>/result-index/tool-calls/<encodeIndexSegment(toolCallId)>/<encoded runId>.json`
+ * whenever a result payload carries a `toolCallId` (`src/runs/background/result-files.ts:103-108`,
+ * `149-153`), and nothing on the terminal path removes it — which is what makes it the route home
+ * for a run whose active alias is already gone. The entry's own `runId` is read rather than the
+ * filename's stem, because the stem is an encoding of it and can be a digest.
+ */
+const indexedRunIds = (resultsRoot: string, toolCallId: string): ReadonlyArray<string> => {
+	const found = new Set<string>();
+	for (const segment of indexSegmentAliases(toolCallId)) {
+		const dir = join(resultsRoot, RESULT_INDEX_DIR, TOOL_CALL_INDEX_DIR, segment);
+		let names: ReadonlyArray<string>;
+		try {
+			names = readdirSync(dir, {withFileTypes: true})
+				.filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+				.map((entry) => entry.name);
+		} catch {
+			continue;
+		}
+		for (const name of names) {
+			let entry: Record<string, unknown> | undefined;
+			try {
+				entry = objectOf(JSON.parse(readFileSync(join(dir, name), "utf-8")));
+			} catch {
+				continue;
+			}
+			const runId = entry === undefined ? undefined : stringOf(entry.runId);
+			if (runId !== undefined) found.add(runId);
+		}
+	}
+	return [...found];
+};
+
+/**
+ * Every run directory worth confirming for this call — the live aliases, then the run ids the
+ * results index still files under it. Both are hints keyed by the same run id, so the union is
+ * taken once and a run in both is confirmed once. Sorted rather than left in `readdir` order, so
+ * two reads of one unchanged pair of indexes answer identically.
+ */
+const candidateRunDirs = (
+	root: string,
+	toolCallId: string,
+	resultsRoot: string,
+): ReadonlyArray<string> =>
+	[
+		...new Set([...aliasedRunDirs(root, toolCallId), ...indexedRunIds(resultsRoot, toolCallId)]),
+	].sort();
+
 const readStatus = (dir: string): Record<string, unknown> | undefined => {
 	try {
 		return objectOf(JSON.parse(readFileSync(join(dir, "status.json"), "utf-8")));
@@ -186,11 +246,21 @@ const stepWorker = (
  * The whole status is re-read on every call, so the answer always carries every step that has
  * launched so far. That is what makes a sequential lane's later steps arrive at all: a step is
  * declared up front with no `runId` and gains one when it launches (#8684).
+ *
+ * The alias index is not the only key tried, because `releaseActiveRunIndex` deletes this call's
+ * alias the moment the run reaches a terminal state — the run directory and its `steps[]` survive,
+ * but the way back to them does not. The results index does survive, so it is read beside the
+ * aliases and confirmed by the same rule (#8685). `cleanupResultIndexes` ages those entries out at
+ * 24h, past which a finished call resolves nothing and its row shows the result text alone.
  */
-export const readAsyncSpawn = (root: string, toolCallId: string): AsyncSpawn | null => {
+export const readAsyncSpawn = (
+	root: string,
+	toolCallId: string,
+	resultsRoot: string = asyncResultsRoot(),
+): AsyncSpawn | null => {
 	const runIds: Array<string> = [];
 	const agents: Array<string> = [];
-	for (const entry of aliasedRunDirs(root, toolCallId)) {
+	for (const entry of candidateRunDirs(root, toolCallId, resultsRoot)) {
 		const status = readStatus(join(root, entry));
 		if (status === undefined || stringOf(status.toolCallId) !== toolCallId) continue;
 		const steps = Array.isArray(status.steps) ? status.steps : [];
@@ -206,10 +276,14 @@ export const readAsyncSpawn = (root: string, toolCallId: string): AsyncSpawn | n
 };
 
 /** Every named call resolved fresh — the step the tail repeats beside its artifact read. */
-export const readAsyncSpawns = (root: string, toolCallIds: ReadonlyArray<string>): AsyncSpawns => {
+export const readAsyncSpawns = (
+	root: string,
+	toolCallIds: ReadonlyArray<string>,
+	resultsRoot: string = asyncResultsRoot(),
+): AsyncSpawns => {
 	const found = new Map<string, AsyncSpawn>();
 	for (const toolCallId of toolCallIds) {
-		const spawn = readAsyncSpawn(root, toolCallId);
+		const spawn = readAsyncSpawn(root, toolCallId, resultsRoot);
 		if (spawn !== null) found.set(toolCallId, spawn);
 	}
 	return found;
