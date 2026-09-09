@@ -36,6 +36,7 @@
 		"react": "catalog:",
 		"react-dom": "catalog:",
 		"react-resizable-panels": "catalog:",
+		"typebox": "catalog:",
 		"ws": "catalog:",
 		"zod": "catalog:"
 	},

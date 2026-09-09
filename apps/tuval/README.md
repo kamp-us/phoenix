@@ -730,9 +730,9 @@ whole exchanges only, and Tuval keeps no second copy.
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
 `layer`, `cwd` and the identity. Three backends fill it today: `PiAiAgent.layer`,
-`CodexAiAgent.layer`, and `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`). Claude is a
-`Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
-the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
+`CodexAiAgent.layer`, and `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`). All three are
+a `Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools
+bridge the row provides. The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
@@ -840,14 +840,26 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 
 ## The Pi AI agent layer
 
-`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
-requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
+`Layer<TuvalAiAgent, never, KernelBridge>` and asks for nothing else (founder ruling 4,
+[#7570](https://github.com/kamp-us/phoenix/issues/7570), as ruling R9.1 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715) leaves it — the bridge is Tuval's own
+service, provided by the row from its scope the way the Claude and Codex rows provide it):
 building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
 one loopback server and one client, and closing that scope closes the client, the server and every
 session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
 plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
 type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
 no event, no method's answer and no log line.
+
+**The three kernel tools.** `spawn`, `send` and `read` reach a Pi session as plain `customTools` on
+`createAgentSession`, at those bare names — a third adapter over the one `KernelBridge`, where
+Claude's is an in-process MCP server and Codex's an HTTP one (`src/pi/tools.ts`,
+[#8720](https://github.com/kamp-us/phoenix/issues/8720)). They ship behind the default-off
+`piKernelTools` flag; off, the host passes no `customTools` key and opens exactly the session it
+opened before. Pi has no error flag on a tool result, so a bridge refusal is a rejected `execute`,
+which is what the agent loop renders as the model's tool error. The `pi-subagents` extension and its
+own flag are untouched by any of it.
 
 `start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
 `start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped

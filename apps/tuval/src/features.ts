@@ -21,6 +21,12 @@ export interface TuvalFeatures {
 	 * On by default since the founder desk check on 2026-09-08. Off: the row opens the session it opened before the flag existed.
 	 */
 	readonly piSubagents: boolean;
+	/**
+	 * Register the three kernel tools — `spawn`, `send`, `read` — on a Pi session, so a Pi row can
+	 * start, write to and read another Tuval process the way Claude and Codex already can (#8720).
+	 * Off: the session carries no custom tools, which is the session Pi opened before this flag.
+	 */
+	readonly piKernelTools: boolean;
 }
 
 /**
@@ -29,4 +35,8 @@ export interface TuvalFeatures {
  * runbook pass, so a flag's entry moves from `false` to `true` in this record and nowhere else. A
  * layer that states a flag still wins over it, in either direction (`./config.ts`'s merge).
  */
-export const featuresDefault: TuvalFeatures = {subagentList: true, piSubagents: true};
+export const featuresDefault: TuvalFeatures = {
+	subagentList: true,
+	piSubagents: true,
+	piKernelTools: false,
+};
