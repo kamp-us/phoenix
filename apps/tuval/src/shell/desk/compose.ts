@@ -122,7 +122,6 @@ const rightOf = (snapshot: DeskSnapshot): ReadonlyArray<StatusSegment> => [
 		id: "processes",
 		text: `${snapshot.kernel.processes} process${snapshot.kernel.processes === 1 ? "" : "es"}`,
 	},
-	{id: "revision", text: `rev ${snapshot.kernel.revision}`},
 ];
 
 export const statusFor = (snapshot: DeskSnapshot): StatusBar => {
