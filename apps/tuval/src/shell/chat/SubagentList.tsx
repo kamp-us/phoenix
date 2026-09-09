@@ -107,10 +107,15 @@ function Line({
 function RowFields({row, at}: {readonly row: SubagentRow; readonly at: number}): ReactElement {
 	return (
 		<MetaRow as="span" className="tuval-chat-subagent">
-			<span className="tuval-chat-subagent-type" data-field="type">
-				{row.type}
-			</span>
-			<MetaRow.Dot />
+			{/* A row whose worker named itself nothing draws no name field — and no dot for one. */}
+			{row.type === null ? null : (
+				<>
+					<span className="tuval-chat-subagent-type" data-field="type">
+						{row.type}
+					</span>
+					<MetaRow.Dot />
+				</>
+			)}
 			<span className="tuval-chat-subagent-line" data-field="line">
 				{row.lastLine}
 			</span>

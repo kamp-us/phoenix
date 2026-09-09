@@ -39,6 +39,9 @@ describe("a subagent slot", () => {
 		expect(isSubagentSlot({...slot, id: 7})).toBe(false);
 		expect(isSubagentSlot({...slot, id: ""})).toBe(false);
 		expect(isSubagentSlot({...slot, type: {name: "general-purpose"}})).toBe(false);
+		// An unnamed worker and a worker named "" are different facts, and only the first is a slot.
+		expect(isSubagentSlot({...slot, type: null})).toBe(true);
+		expect(isSubagentSlot({...slot, type: ""})).toBe(false);
 		expect(isSubagentSlot({...slot, lastLine: null})).toBe(false);
 		expect(isSubagentSlot({...slot, startedAt: "2026-09-07"})).toBe(false);
 		expect(isSubagentSlot({...slot, startedAt: Number.NaN})).toBe(false);

@@ -70,6 +70,7 @@ import {
 } from "./rows.ts";
 import {SessionRow} from "./SessionRow.tsx";
 import {SubagentList, type SubagentListHandle} from "./SubagentList.tsx";
+import {subagentPhrase} from "./subagents.ts";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {ToolRunRow} from "./ToolRunRow.tsx";
@@ -1118,8 +1119,8 @@ function ChatWindow({
 									? "Showing the agent's own transcript."
 									: "Showing a subagent whose transcript is not in this session's state."
 								: viewedSlot.status === "finished"
-									? `Showing the ${viewedSlot.type} subagent's transcript. Finished: ${viewedSlot.lastLine}`
-									: `Showing the ${viewedSlot.type} subagent's transcript. Still running.`}
+									? `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Finished: ${viewedSlot.lastLine}`
+									: `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Still running.`}
 						</p>
 					</>
 				) : null}
@@ -1131,7 +1132,9 @@ function ChatWindow({
 					role="log"
 					data-view={viewing === null ? undefined : viewing.id}
 					aria-label={
-						viewedSlot === undefined ? "Transcript" : `Transcript: ${viewedSlot.type} subagent`
+						viewedSlot === undefined
+							? "Transcript"
+							: `Transcript: ${subagentPhrase(viewedSlot.type)}`
 					}
 					// The scroll container is the only way to older turns on a plain transcript, so a
 					// keyboard user must be able to focus it (axe scrollable-region-focusable).
@@ -1193,7 +1196,7 @@ function ChatWindow({
 								{viewedSlot.lastLine}
 							</>
 						) : (
-							`The ${viewedSlot.type} subagent is still running.`
+							`The ${subagentPhrase(viewedSlot.type)} is still running.`
 						)}
 					</p>
 				)}

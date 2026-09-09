@@ -656,12 +656,12 @@ describe("a subagent's start and end over the delta stream", () => {
 		expect(folded.events.some((event) => event.kind === "subagent")).toBe(false);
 	});
 
-	it("labels a spawn that names no agent by the tool that made it", () => {
+	it("leaves a spawn that names no agent unnamed rather than stamping a placeholder", () => {
 		const script: PiTranscriptItem = {...finished, input: {workflowScript: "runs.run('a', {})"}};
 		const folded = deltaEventsOf(opened().next, delta([script], 2));
 		const slots = folded.events.filter((event) => event.kind === "subagent");
 		expect(slots).toHaveLength(1);
-		expect(slots[0]?.slot.type).toBe("subagent");
+		expect(slots[0]?.slot.type).toBeNull();
 	});
 
 	// `subagent` is one multiplexed tool: with an `action` it manages rather than spawns, and the
@@ -1147,7 +1147,7 @@ describe("a detached subagent filled through the tool-call index", () => {
 			kind: "subagent",
 			slot: {
 				id: "call-async",
-				type: "subagent",
+				type: null,
 				lastLine: "",
 				startedAt: 21,
 				tokens: 0,
@@ -1271,6 +1271,18 @@ describe("a detached subagent filled through the tool-call index", () => {
 			runIds: ["worker-1"],
 			agent: "builder",
 		});
+	});
+
+	// #8680: the call named none and the steps report none either, so there is no name to draw and
+	// the row says so — the sentences read it as an absence rather than as a worker called
+	// "subagent".
+	it("stays unnamed when neither the call nor its resolved steps name an agent", () => {
+		const nameless = new Map([["call-async", {runIds: ["worker-1"], agent: null}]]);
+		expect(
+			childEventsOf(opened.next, new Map([["worker-1", child]]), nameless).events.map(
+				(event) => event.kind === "subagent" && event.slot.type,
+			),
+		).toEqual([null]);
 	});
 
 	it("keeps the agent the call named over the one its steps report", () => {
