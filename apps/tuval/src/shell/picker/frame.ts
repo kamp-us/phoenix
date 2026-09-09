@@ -47,6 +47,12 @@ export interface PickerOption {
 	readonly selected: boolean;
 	/** The highlight as a character, so selection is never carried by colour alone. */
 	readonly marker: string;
+	/**
+	 * This option's index into `flatten(entries)` — the argument `pickerPointer` takes, so a surface
+	 * binding a pointer event reads the row number off the frame instead of re-deriving the offset
+	 * its section starts at.
+	 */
+	readonly index: number;
 	readonly entry: PickerEntry;
 }
 
@@ -153,6 +159,7 @@ export const pickerFrame = (
 				detail: detailOf(entry),
 				selected,
 				marker: selected ? "▸" : " ",
+				index: absolute,
 				entry,
 			};
 		});
