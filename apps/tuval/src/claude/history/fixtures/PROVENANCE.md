@@ -124,13 +124,18 @@ field naming a machine or a checkout dropped rather than rewritten.
 
 ## The three local-command captures
 
-`local-command-turn.json`, `local-command-lines-turn.json` and `local-command-caveat-turn.json` are the same kind of excerpt as the
-three above, under the same founder ruling
+`local-command-turn.json`, `local-command-lines-turn.json` and `local-command-caveat-turn.json`
+are the same kind of excerpt as the three above, under the same founder ruling
 ([#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806)), and for the same
-reason: a slash command is the CLI's, so no `query()` run can produce one. Both are the record of a
-command the operator ran — `/model` and `/terminal-setup` — and both are why #8211 exists: the CLI
-writes a command's result as a **user-role** message whose whole text is a
-`<local-command-stdout>` wrapper, which the mapping read as an operator turn.
+reason: a slash command is the CLI's, so no `query()` run can produce one. Each is the record of one
+command the operator ran — `/model`, `/terminal-setup` and `/effort` in that order.
+
+The first two are the command's **output**, and they are why #8211 exists: the CLI writes a result
+as a user-role message whose whole text is a `<local-command-stdout>` wrapper, which the mapping
+read as an operator turn. The third is the **caveat** the CLI writes ahead of that output, and it is
+why #8641 does.
+
+### The two output captures
 
 | | |
 |---|---|
@@ -150,10 +155,12 @@ Sanitized as everywhere else here: the uuid and session id substituted. No row c
 
 `local-command-caveat-turn.json` is the *other* user-role frame one slash command writes — the
 caveat the CLI puts ahead of the command's output, which #8211 left as a YOU row and #8641 drops.
+Its own command is `/effort`, but nothing about the frame depends on which: the text is the same
+sentence whatever ran.
 
 | | |
 |---|---|
-| Captured | 2026-09-08, from a local session transcript written by CLI **2.1.220**, the row timestamped `2026-07-25T23:22:33.911Z` |
+| Captured | 2026-09-08, from a local session transcript written by CLI **2.1.220** — the caveat ahead of an `/effort` run, the row timestamped `2026-07-25T23:22:33.911Z` |
 | Verbatim | the whole `message` body — the role and the wrapped text, character for character — and the row's own `timestamp` |
 | Re-keyed | `sessionId` → `session_id`, `parent_tool_use_id`/`parent_agent_id` added as `null`, and the CLI-only keys (`parentUuid`, `promptId`, `isMeta`, `cwd`, `gitBranch`, `version`, `userType`, `entrypoint`, `isSidechain`) dropped |
 
