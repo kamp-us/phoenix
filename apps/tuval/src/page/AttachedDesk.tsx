@@ -16,7 +16,7 @@
  * instead of a blank tab (#8004).
  */
 
-import {Effect, Fiber, Stream} from "effect";
+import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
@@ -65,6 +65,12 @@ export interface AttachedDeskProps {
 	 * says so; `null` means the lifecycle is still working, whatever the socket is doing right now.
 	 */
 	readonly refusal: string | null;
+	/**
+	 * The operator's `windowTitles` flag (`../features.ts`, #8721), read off the generated module at
+	 * the page's root (`./boot.tsx`) and handed down rather than imported here, so a test renders
+	 * this component at either setting without a bundler in the way.
+	 */
+	readonly windowTitles?: boolean;
 }
 
 /**
@@ -144,6 +150,7 @@ export function AttachedDesk({
 	statuses = EMPTY_RENDERERS,
 	reducedMotion,
 	refusal,
+	windowTitles = false,
 }: AttachedDeskProps): ReactElement {
 	const spells = useSpellRegistry(page);
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
@@ -300,19 +307,33 @@ export function AttachedDesk({
 			const row = rows.get(id);
 			const process = attached.get(processId);
 			if (row === undefined || process === undefined) return processGone(id);
+			// The row is the whole title (#8721): the newest `title@1` line the kernel latched, and the
+			// program that published it. The flag off is `null`, which is the desk that names its
+			// windows by uuid.
+			const name = windowTitles
+				? {title: Option.getOrNull(row.title), programId: row.programId}
+				: null;
 			const program = catalog.get(row.programId);
 			if (program === undefined) {
 				// Not "declares no renderer": a miss is also what an empty catalog looks like, and both
 				// `rows` and `programs` replay their initial value, so a page can render once before the
 				// registry frame lands. The honest sentence names this page's own catalog, not the kernel's.
-				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`);
+				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`, name);
 			}
 			const resolved = resolveRenderer(program.renderer);
 			if (resolved._tag === "RendererUnresolved" && resolved.reason === "module-load-failed") {
-				return noRenderer(id, `this page could not load a renderer module: ${resolved.detail}`);
+				return noRenderer(
+					id,
+					`this page could not load a renderer module: ${resolved.detail}`,
+					name,
+				);
 			}
 			if (resolved._tag !== "Resolved") {
-				return noRenderer(id, `this page answers to no renderer named ${program.renderer.ref}`);
+				return noRenderer(
+					id,
+					`this page answers to no renderer named ${program.renderer.ref}`,
+					name,
+				);
 			}
 			return boundMount(
 				{
@@ -325,9 +346,10 @@ export function AttachedDesk({
 						Effect.sync(() => dispatch({type: "window.setView", windowId, view: next})),
 				},
 				resolved.renderer.render,
+				name,
 			);
 		},
-		[rows, attached, catalog, resolveRenderer, views, dispatch],
+		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles],
 	);
 
 	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
@@ -377,6 +399,7 @@ export function AttachedDesk({
 				call={page.call}
 				registry={spells}
 				commandsConnected={attachment.status === "attached" && refusal === null}
+				windowTitles={windowTitles}
 			/>
 		</>
 	);

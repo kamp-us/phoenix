@@ -45,6 +45,31 @@
 	letter-spacing: 0.04em;
 }
 
+/* Where the process id lives now that the window title is the program's own line (#8721). */
+.tuval-inspector-process {
+	margin: 0 0 var(--s-3);
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-2);
+	color: var(--text-muted);
+}
+
+.tuval-inspector-process-label {
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.tuval-inspector-process code {
+	font:
+		var(--t-meta) ui-monospace,
+		monospace;
+	/* The id is one long token and the column is 320px: it wraps rather than pushing the panel wide. */
+	overflow-wrap: anywhere;
+}
+
 /* The boundary panel where an inspector threw: the region's box, so the throw costs this column. */
 .tuval-inspector-panel {
 	min-block-size: 0;

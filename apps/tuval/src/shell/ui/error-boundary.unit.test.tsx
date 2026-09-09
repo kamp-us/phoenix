@@ -31,6 +31,7 @@ const throwingMount =
 	(throwing: boolean): MountResolver =>
 	(windowId, processId) => ({
 		_tag: "Bound",
+		name: null,
 		host: {
 			windowId,
 			processId: ProcessId.make(processId ?? "process-1"),
@@ -109,6 +110,7 @@ describe("a window renderer that throws", () => {
 /** Two bound windows over two processes, where only the first one's renderer throws (#8157). */
 const oneThrowingMount: MountResolver = (windowId, processId) => ({
 	_tag: "Bound",
+	name: null,
 	host: {
 		windowId,
 		processId: ProcessId.make(processId ?? "process-1"),
