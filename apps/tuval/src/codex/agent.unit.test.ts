@@ -5,7 +5,17 @@ import {foldEvent} from "../ai-agent/core/fold.ts";
 import {initialState} from "../ai-agent/core/state.ts";
 import {Mode} from "../ai-agent/ports/index.ts";
 import {type AgentEvent, TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
-import {itemMessage, modelRows, onCodex, opened, thread, turn, turnMessage} from "./fixtures.ts";
+import {
+	fixtureTurns,
+	itemMessage,
+	modelRows,
+	onCodex,
+	opened,
+	storedThread,
+	thread,
+	turn,
+	turnMessage,
+} from "./fixtures.ts";
 
 const take = (agent: TuvalAiAgentApi, count: number) =>
 	agent.events.pipe(Stream.take(count), Stream.runCollect);
@@ -418,6 +428,175 @@ describe("Codex implements TuvalAiAgent", () => {
 				);
 				expect(yield* Effect.flip(agent.sessionTranscript(query))).toMatchObject({
 					reason: "store-unreadable",
+				});
+				expect(fake.state.opened).toBe(fake.state.closed);
+			}),
+		),
+	);
+
+	it.effect.each([
+		{shape: "default-selected paginated (001)", id: "session-1"},
+		{shape: "explicit paginated (003)", id: "session-3"},
+	])("refuses the unprojected $shape fixture rather than reporting it empty", ({id}) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				storedThread(fake, {
+					...thread,
+					id,
+					historyMode: "paginated",
+					preview: "fixture user 1",
+					turns: [],
+				});
+				const failure = yield* Effect.flip(
+					agent.sessionTranscript({cwd: thread.cwd, sessionId: id, before: null, limit: 10}),
+				);
+				expect(failure).toMatchObject({
+					reason: "store-unreadable",
+					sessionId: id,
+					detail: expect.stringContaining("cannot tell an empty session from history"),
+				});
+				expect(failure.detail).toContain("paginated");
+				expect(fake.calls.map((call) => call.method)).toEqual([
+					"thread/list",
+					"thread/list",
+					"thread/read",
+				]);
+				expect(fake.state).toEqual({opened: 1, closed: 1});
+				expect(fake.replies).toEqual([]);
+			}),
+		),
+	);
+
+	it.effect.each([
+		{mode: "paginated with a blank preview", patch: {historyMode: "paginated", preview: ""}},
+		{mode: "no reported history mode", patch: {preview: "fixture user 1"}},
+		{mode: "an unrecognized history mode", patch: {historyMode: "transcriptV2"}},
+	])("cannot certify an empty history read under $mode", ({mode, patch}) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const {historyMode: _reported, ...modeless} = thread;
+				storedThread(fake, {...modeless, ...patch, turns: []});
+				expect(
+					yield* Effect.flip(
+						agent.sessionTranscript({
+							cwd: thread.cwd,
+							sessionId: thread.id,
+							before: null,
+							limit: 10,
+						}),
+					),
+				).toMatchObject({
+					reason: "store-unreadable",
+					sessionId: thread.id,
+					detail: expect.stringContaining(
+						mode === "no reported history mode" ? "none reported" : "cannot tell",
+					),
+				});
+				expect(fake.calls.some((call) => call.method === "thread/resume")).toBe(false);
+				expect(fake.state).toEqual({opened: 1, closed: 1});
+			}),
+		),
+	);
+
+	it.effect("keeps the known-fresh active session's empty page, which reads no store", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				yield* start(agent);
+				expect(yield* agent.page(null, 10)).toEqual({items: [], hasMore: false});
+				expect(fake.calls.some((call) => call.method === "thread/read")).toBe(false);
+				yield* fake.push(turnMessage("started"));
+				yield* take(agent, 1);
+				storedThread(fake, {...thread, historyMode: "paginated", turns: []});
+				expect(yield* Effect.flip(agent.page(null, 10))).toMatchObject({
+					reason: "store-unreadable",
+					detail: expect.stringContaining("cannot tell an empty session from history"),
+				});
+				expect(fake.calls.some((call) => call.method === "turn/start")).toBe(false);
+			}),
+		),
+	);
+
+	it.effect("refuses an explicit resume whose stored paginated history reads empty", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				storedThread(fake, {...thread, historyMode: "paginated", turns: []});
+				expect(
+					yield* Effect.flip(
+						agent.start({
+							cwd: thread.cwd,
+							resume: {sessionId: thread.id, holdsTranscript: false},
+						}),
+					),
+				).toMatchObject({
+					reason: "transport",
+					detail: expect.stringContaining("cannot tell an empty session from history"),
+				});
+				expect(fake.calls.some((call) => call.method === "turn/start")).toBe(false);
+			}),
+		),
+	);
+
+	it.effect.each([
+		{
+			label: "legacy",
+			mode: "legacy",
+			ids: ["item-1", "item-2", "item-3", "item-4"] as const,
+		},
+		{
+			label: "projected paginated",
+			mode: "paginated",
+			ids: ["user-1", "assistant-1", "user-2", "assistant-2"] as const,
+		},
+	])("reads the four $label fixture messages oldest first, a whole turn at a time", ({mode, ids}) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				storedThread(fake, {...thread, historyMode: mode, turns: fixtureTurns(ids)});
+				const query = {cwd: thread.cwd, sessionId: thread.id, before: null, limit: 1};
+				const newest = yield* agent.sessionTranscript(query);
+				expect(newest).toMatchObject({
+					items: [
+						{id: ids[2], text: "fixture user 2", timestamp: 4000},
+						{id: ids[3], text: "fixture assistant 2", timestamp: 4000},
+					],
+					hasMore: true,
+				});
+				expect(yield* agent.sessionTranscript({...query, before: ids[2]})).toMatchObject({
+					items: [
+						{id: ids[0], text: "fixture user 1", timestamp: 3000},
+						{id: ids[1], text: "fixture assistant 1", timestamp: 3000},
+					],
+					hasMore: false,
+				});
+				expect(yield* agent.sessionTranscript({...query, limit: 10})).toMatchObject({
+					items: ids.map((id) => ({id})),
+					hasMore: false,
+				});
+				expect(fake.calls.some((call) => call.method === "thread/resume")).toBe(false);
+				expect(fake.state.opened).toBe(fake.state.closed);
+			}),
+		),
+	);
+
+	it.effect("keeps unsupported and malformed history reads distinct from an uncertain empty", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const query = {cwd: thread.cwd, sessionId: thread.id, before: null, limit: 10};
+				storedThread(fake, {...thread, turns: [{...turn("completed"), items: [{type: 23}]}]});
+				expect(yield* Effect.flip(agent.sessionTranscript(query))).toMatchObject({
+					reason: "store-unreadable",
+					detail: expect.stringContaining("SchemaError"),
+				});
+				fake.handlers.set("thread/read", () =>
+					Effect.fail(
+						new TransportError({
+							reason: "refused",
+							detail: "thread/items/list is not supported yet",
+						}),
+					),
+				);
+				expect(yield* Effect.flip(agent.sessionTranscript(query))).toMatchObject({
+					reason: "store-unreadable",
+					detail: expect.stringContaining("not supported yet"),
 				});
 				expect(fake.state.opened).toBe(fake.state.closed);
 			}),

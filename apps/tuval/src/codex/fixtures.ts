@@ -133,6 +133,44 @@ export const fakeCodex = Effect.gen(function* () {
 });
 export type FakeCodex = Effect.Success<typeof fakeCodex>;
 
+/** Serve one stored thread from both `thread/list` and `thread/read`, as the real store does. */
+export const storedThread = <A extends {id: string}>(fake: FakeCodex, stored: A) => {
+	fake.handlers.set("thread/list", (params) =>
+		Effect.succeed({
+			data: Schema.decodeUnknownSync(Schema.Struct({archived: Schema.Boolean}))(params).archived
+				? []
+				: [stored],
+			nextCursor: null,
+		}),
+	);
+	fake.handlers.set("thread/read", () => Effect.succeed({thread: stored}));
+	return stored;
+};
+
+/** The four messages every projected read of the investigation's fixtures returns, oldest first. */
+export const fixtureTurns = (ids: readonly [string, string, string, string]) => [
+	{
+		id: "turn-1",
+		status: "completed",
+		error: null,
+		startedAt: 3,
+		items: [
+			{type: "userMessage", id: ids[0], content: [{type: "text", text: "fixture user 1"}]},
+			{type: "agentMessage", id: ids[1], text: "fixture assistant 1"},
+		],
+	},
+	{
+		id: "turn-2",
+		status: "completed",
+		error: null,
+		startedAt: 4,
+		items: [
+			{type: "userMessage", id: ids[2], content: [{type: "text", text: "fixture user 2"}]},
+			{type: "agentMessage", id: ids[3], text: "fixture assistant 2"},
+		],
+	},
+];
+
 export const onCodex = <A, E, R>(
 	body: (agent: TuvalAiAgentApi, fake: FakeCodex) => Effect.Effect<A, E, R>,
 	options: CodexAiAgentOptions = {},
