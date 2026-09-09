@@ -1,12 +1,12 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Paperclip} from "lucide-react";
 import {createRef, useRef} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AgentChatInput} from "./AgentChatInput";
 import {useAgentChatInput} from "./agent-chat/Root";
-import type {AgentChatInputBridge} from "./agent-chat-bridge";
+import type {AgentChatInputBridge, PiEvent} from "./agent-chat-bridge";
 import {Form, Input} from "./Form";
 import {type DesignTranslate, DesignTranslationProvider, defaultDesignTranslate} from "./i18n";
 
@@ -17,7 +17,9 @@ function response(body: unknown): Response {
 function installHarnessFetch(): {
 	fetch: ReturnType<typeof vi.fn>;
 	bridge: AgentChatInputBridge;
+	push: (event: PiEvent) => void;
 } {
+	let listener: ((event: PiEvent) => void) | null = null;
 	let model = {provider: "openai", id: "gpt-5", name: "GPT-5"};
 	let thinkingLevel = "medium";
 	let projectTrust = "approve";
@@ -129,9 +131,14 @@ function installHarnessFetch(): {
 				headers: {"Content-Type": "application/json"},
 				body: JSON.stringify(answer),
 			}),
-		subscribeToPiEvents: () => () => undefined,
+		subscribeToPiEvents: (onEvent) => {
+			listener = onEvent;
+			return () => {
+				if (listener === onEvent) listener = null;
+			};
+		},
 	};
-	return {fetch, bridge};
+	return {fetch, bridge, push: (event) => listener?.(event)};
 }
 
 /**
@@ -209,52 +216,52 @@ function collidingCatalogBridge(): {
  * blanked.
  */
 function ComposedComposer() {
-	const {submit, variant, disabled, addImage} = useAgentChatInput();
+	const {submit, disabled, addImage} = useAgentChatInput();
 	const t = defaultDesignTranslate;
 	const imageInputRef = useRef<HTMLInputElement>(null);
 	return (
-		<AgentChatInput.Surface>
-			<Form
-				className="kp-agent-chat__form"
-				onSubmit={(event) => {
-					event.preventDefault();
-					void submit();
-				}}
-			>
-				<AgentChatInput.Field />
-				<div className="kp-agent-chat__actions">
-					<div className="kp-agent-chat__primary-controls">
-						{variant === "focused" ? (
-							<>
-								<Input
-									ref={imageInputRef}
-									className="kp-visually-hidden"
-									label={t("admin.agent.image.add")}
-									type="file"
-									accept="image/*"
-									tabIndex={-1}
-									onChange={(event) => {
-										void addImage(event.currentTarget.files?.[0]);
-										event.currentTarget.value = "";
-									}}
-								/>
-								<AgentChatInput.Control
-									icon={Paperclip}
-									className="kp-agent-chat__icon-button"
-									aria-label={t("admin.agent.image.add")}
-									onClick={() => imageInputRef.current?.click()}
-									disabled={disabled}
-								/>
-							</>
-						) : null}
-						<AgentChatInput.Settings />
-						{variant === "focused" ? <AgentChatInput.Overflow /> : null}
+		<AgentChatInput.Frame>
+			<AgentChatInput.Surface>
+				<Form
+					className="kp-agent-chat__form"
+					onSubmit={(event) => {
+						event.preventDefault();
+						void submit();
+					}}
+				>
+					<AgentChatInput.Field />
+					<div className="kp-agent-chat__actions">
+						<div className="kp-agent-chat__primary-controls">
+							<Input
+								ref={imageInputRef}
+								className="kp-visually-hidden"
+								label={t("admin.agent.image.add")}
+								type="file"
+								accept="image/*"
+								tabIndex={-1}
+								onChange={(event) => {
+									void addImage(event.currentTarget.files?.[0]);
+									event.currentTarget.value = "";
+								}}
+							/>
+							<AgentChatInput.Control
+								icon={Paperclip}
+								className="kp-agent-chat__icon-button"
+								aria-label={t("admin.agent.image.add")}
+								onClick={() => imageInputRef.current?.click()}
+								disabled={disabled}
+							/>
+							<AgentChatInput.Settings />
+							<AgentChatInput.Overflow />
+						</div>
+						<AgentChatInput.PrimaryActions />
 					</div>
-					<AgentChatInput.PrimaryActions />
-				</div>
-			</Form>
-			<AgentChatInput.Hint />
-		</AgentChatInput.Surface>
+				</Form>
+			</AgentChatInput.Surface>
+
+			<AgentChatInput.Inspector />
+			<AgentChatInput.ExtensionDialog />
+		</AgentChatInput.Frame>
 	);
 }
 
@@ -266,29 +273,64 @@ const GENERATED_IDS =
  * thing the four bridge loads move. Reading the markup before they land compares half-settled
  * trees, which goes red on timing rather than on a difference.
  */
-async function settledComposerMarkup(container: HTMLElement): Promise<string> {
+async function settleComposer(): Promise<void> {
 	await screen.findAllByText("GPT-5");
 	await screen.findAllByText("orta");
-	return composerMarkup(container);
 }
 
+/**
+ * Drives the three parts that render nothing at rest: `Inspector` has no activity to list until
+ * the harness pushes one and stays folded until the disclosure is opened; `ExtensionDialog` is
+ * `null` until a request is outstanding. Without this the parity comparison reads empty against
+ * empty and proves nothing about them (#8711).
+ */
+async function driveComposerParts(push: (event: PiEvent) => void): Promise<void> {
+	act(() => {
+		push({type: "tool_execution_start", toolName: "Read"});
+		push({
+			type: "extension_ui_request",
+			id: "ext-1",
+			method: "input",
+			title: "Dal adı",
+			message: "Hangi dala geçelim?",
+			placeholder: "umut/…",
+		});
+	});
+	fireEvent.click(await screen.findByRole("button", {name: /Pi denetçisi/}));
+	await screen.findByText("Pi Read kullanıyor.");
+	await screen.findByRole("dialog");
+}
+
+/**
+ * Everything the composer paints: the `Frame` section with its own attributes — its class and the
+ * label the whole composer is named off — and the overlay `ExtensionDialog` raises, which
+ * Manti portals to `document.body` and so lands beside the render container rather than inside it.
+ * Two renders never draw the same generated ids — React's `useId` and Manti's own `data-uid` both
+ * count up per render — so every id-carrying attribute is blanked.
+ */
 function composerMarkup(container: HTMLElement): string {
-	const composer = container.querySelector('[data-testid="agent-chat-input"]');
-	if (!composer) throw new Error("no composer rendered");
-	return composer.innerHTML.replace(GENERATED_IDS, ' $1="*"');
+	const frame = container.querySelector("section.kp-agent-chat");
+	if (!frame) throw new Error("no composer rendered");
+	const portaled = Array.from(document.body.children).filter(
+		(child) => child !== container && child.getAttribute("data-scope") === "dialog",
+	);
+	return [frame, ...portaled]
+		.map((element) => element.outerHTML)
+		.join("\n")
+		.replace(GENERATED_IDS, ' $1="*"');
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AgentChatInput", () => {
-	describe.each(["focused", "harness"] as const)("%s effort picker", (variant) => {
+	describe("the effort picker", () => {
 		const translate: DesignTranslate = (key, params) =>
 			key === "admin.agent.picker.none"
 				? "No effort selected"
 				: defaultDesignTranslate(key, params);
-		const role = variant === "focused" ? "button" : "combobox";
-		const itemRole = variant === "focused" ? "menuitemradio" : "option";
-		const selectedAttribute = variant === "focused" ? "aria-checked" : "aria-selected";
+		const role = "button";
+		const itemRole = "menuitemradio";
+		const selectedAttribute = "aria-checked";
 
 		it.each([
 			{levels: ["low", "medium"] as const},
@@ -310,7 +352,7 @@ describe("AgentChatInput", () => {
 			};
 			render(
 				<DesignTranslationProvider translate={translate}>
-					<AgentChatInput bridge={bridge} variant={variant} />
+					<AgentChatInput bridge={bridge} />
 				</DesignTranslationProvider>,
 			);
 
@@ -335,7 +377,7 @@ describe("AgentChatInput", () => {
 
 		it("keeps a supplied level selected", async () => {
 			const {bridge} = installHarnessFetch();
-			render(<AgentChatInput bridge={bridge} variant={variant} />);
+			render(<AgentChatInput bridge={bridge} />);
 
 			const picker = await screen.findByRole(role, {name: /düşünme eforu/});
 			await waitFor(() => expect(picker.textContent).toBe("orta"));
@@ -401,36 +443,12 @@ describe("AgentChatInput", () => {
 		expect((input as HTMLTextAreaElement).value).toBe("@apps/web/src/App.tsx ");
 	});
 
-	it("sends the selected delivery mode through the Pi bridge", async () => {
-		const {fetch, bridge} = installHarnessFetch();
-		render(<AgentChatInput bridge={bridge} />);
-		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
-
-		fireEvent.change(input, {target: {value: "Review the component."}});
-		fireEvent.click(screen.getByRole("combobox", {name: "Pi teslim modu"}));
-		fireEvent.click(await screen.findByRole("option", {name: "sonraya al"}));
-		await waitFor(() => {
-			expect(screen.getByRole("combobox", {name: "Pi teslim modu"}).textContent).toBe("sonraya al");
-		});
-		fireEvent.click(screen.getByRole("button", {name: /gönder/i}));
-
-		await waitFor(() => {
-			expect(fetch).toHaveBeenCalledWith(
-				"/__pi/prompt",
-				expect.objectContaining({
-					method: "POST",
-					body: JSON.stringify({type: "follow_up", message: "Review the component."}),
-				}),
-			);
-		});
-	});
-
-	it("changes Pi model, effort, and project trust from the composer", async () => {
+	it("changes the Pi model from the composer", async () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
 
-		fireEvent.click(await screen.findByRole("combobox", {name: "Pi modeli"}));
-		fireEvent.click(await screen.findByRole("option", {name: "GPT-5.6"}));
+		fireEvent.click(await screen.findByRole("button", {name: "model: GPT-5"}));
+		fireEvent.click(await screen.findByRole("menuitemradio", {name: "GPT-5.6"}));
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(
 				"/__pi/model",
@@ -440,32 +458,11 @@ describe("AgentChatInput", () => {
 				}),
 			);
 		});
-
-		fireEvent.click(screen.getByRole("combobox", {name: "Pi düşünme eforu"}));
-		fireEvent.click(await screen.findByRole("option", {name: "yüksek"}));
-		await waitFor(() => {
-			expect(fetch).toHaveBeenCalledWith(
-				"/__pi/thinking-level",
-				expect.objectContaining({method: "POST", body: JSON.stringify({level: "high"})}),
-			);
-		});
-
-		fireEvent.click(screen.getByRole("combobox", {name: /Pi proje izni/i}));
-		fireEvent.click(await screen.findByRole("option", {name: "yoksay"}));
-		await waitFor(() => {
-			expect(fetch).toHaveBeenCalledWith(
-				"/__pi/project-trust",
-				expect.objectContaining({
-					method: "POST",
-					body: JSON.stringify({projectTrust: "no-approve"}),
-				}),
-			);
-		});
 	});
 
 	it("takes a catalog pushed after mount and enables the picker on it", async () => {
 		const {bridge, push} = lateCatalogBridge();
-		render(<AgentChatInput bridge={bridge} variant="focused" />);
+		render(<AgentChatInput bridge={bridge} />);
 
 		const before = await screen.findByRole("button", {name: /model/i});
 		expect(before.getAttribute("disabled")).not.toBeNull();
@@ -504,20 +501,9 @@ describe("AgentChatInput", () => {
 		expect((input as HTMLTextAreaElement).value).toBe("/compact ");
 	});
 
-	it("drops the slash hint on a harness that offers no commands", async () => {
-		const {bridge} = lateCatalogBridge();
-		render(<AgentChatInput bridge={bridge} variant="harness" />);
-		await screen.findByLabelText("Pi'ye mesaj yaz");
-
-		// The hint is the only thing advertising the sigil; typing `/` against an empty catalog opens
-		// nothing, so a hint promising a picker reads as a fault rather than as a feature.
-		const hint = screen.getByText(/dosya/);
-		expect(hint.textContent).not.toContain("komut");
-	});
-
 	it("omits off effort returned by the bridge on load and model refresh", async () => {
 		const {fetch, bridge} = installHarnessFetch();
-		render(<AgentChatInput bridge={bridge} variant="focused" />);
+		render(<AgentChatInput bridge={bridge} />);
 
 		fireEvent.click(await screen.findByRole("button", {name: "düşünme eforu: orta"}));
 		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
@@ -538,9 +524,9 @@ describe("AgentChatInput", () => {
 		expect(screen.queryByRole("menuitemradio", {name: "kapalı"})).toBeNull();
 	});
 
-	it("keeps secondary harness controls behind disclosure in the focused variant", async () => {
+	it("keeps the composer's secondary controls behind the overflow menu", async () => {
 		const {fetch, bridge} = installHarnessFetch();
-		render(<AgentChatInput bridge={bridge} variant="focused" />);
+		render(<AgentChatInput bridge={bridge} />);
 
 		await screen.findByRole("button", {name: "model: GPT-5"});
 		expect(screen.queryByText("yalnızca yerel atölye")).toBeNull();
@@ -564,7 +550,7 @@ describe("AgentChatInput", () => {
 
 	it("adds an image pasted from clipboard items", async () => {
 		const {bridge} = installHarnessFetch();
-		render(<AgentChatInput bridge={bridge} variant="focused" />);
+		render(<AgentChatInput bridge={bridge} />);
 		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 		const image = new File([new Uint8Array([137, 80, 78, 71])], "ekran.png", {
 			type: "image/png",
@@ -585,7 +571,7 @@ describe("AgentChatInput", () => {
 			"fetch",
 			vi.fn(async () => response({})),
 		);
-		render(<AgentChatInput variant="focused" mockWhenUnavailable />);
+		render(<AgentChatInput mockWhenUnavailable />);
 
 		expect(await screen.findByRole("button", {name: "model: GPT-5.5"})).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", {name: "düşünme eforu: orta"}));
@@ -630,24 +616,9 @@ describe("AgentChatInput", () => {
 		expect(drafts).toEqual([]);
 	});
 
-	it("tells two providers' same-named models apart in the select list", async () => {
-		const {bridge, picks} = collidingCatalogBridge();
-		render(<AgentChatInput bridge={bridge} />);
-
-		fireEvent.click(await screen.findByRole("combobox", {name: "Pi modeli"}));
-		const rows = await screen.findAllByRole("option");
-		expect(rows.map((row) => row.textContent)).toEqual([
-			"GPT-5.6 Luna (openai)",
-			"GPT-5.6 Luna (openai-codex)",
-		]);
-
-		fireEvent.click(screen.getByRole("option", {name: "GPT-5.6 Luna (openai-codex)"}));
-		await waitFor(() => expect(picks).toEqual([{provider: "openai-codex", id: "gpt-5.6-luna"}]));
-	});
-
 	it("renders the provider as a row's secondary text in the focused picker", async () => {
 		const {bridge, picks} = collidingCatalogBridge();
-		render(<AgentChatInput bridge={bridge} variant="focused" />);
+		render(<AgentChatInput bridge={bridge} />);
 
 		fireEvent.click(await screen.findByRole("button", {name: "model: GPT-5.6 Luna (openai)"}));
 		const rows = await screen.findAllByRole("menuitemradio");
@@ -663,37 +634,38 @@ describe("AgentChatInput", () => {
 		await waitFor(() => expect(picks).toEqual([{provider: "openai-codex", id: "gpt-5.6-luna"}]));
 	});
 
-	it("names the running model with its provider once two providers are offered", async () => {
-		const {bridge} = collidingCatalogBridge();
-		render(<AgentChatInput bridge={bridge} />);
-
-		expect(await screen.findByText(/Pi hazır · GPT-5\.6 Luna \(openai\)/)).toBeTruthy();
-	});
-
 	it("leaves a single-provider catalog's rows bare", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
 
-		fireEvent.click(await screen.findByRole("combobox", {name: "Pi modeli"}));
-		expect((await screen.findAllByRole("option")).map((row) => row.textContent)).toEqual([
-			"GPT-5",
-			"GPT-5.6",
+		fireEvent.click(await screen.findByRole("button", {name: "model: GPT-5"}));
+		const rows = await screen.findAllByRole("menuitemradio");
+		expect(rows.map((row) => row.querySelector(".kp-agent-chat__picker-note"))).toEqual([
+			null,
+			null,
 		]);
 	});
 
-	describe.each(["harness", "focused"] as const)("the %s composer's compound parts", (variant) => {
+	describe("the composer's compound parts", () => {
 		it("assemble into the tree the plain export renders", async () => {
-			const {bridge} = installHarnessFetch();
-			const plain = render(<AgentChatInput bridge={bridge} variant={variant} />);
-			const expected = await settledComposerMarkup(plain.container);
+			const {bridge, push} = installHarnessFetch();
+			const plain = render(<AgentChatInput bridge={bridge} />);
+			await settleComposer();
+			await driveComposerParts(push);
+			const expected = composerMarkup(plain.container);
+			expect(expected).toContain('class="kp-agent-chat"');
+			expect(expected).toContain('aria-label="Agent chat input"');
+			expect(expected).toContain("Pi Read kullanıyor.");
+			expect(expected).toContain("Hangi dala geçelim?");
 			plain.unmount();
 
 			const composed = render(
-				<AgentChatInput.Root bridge={bridge} variant={variant}>
+				<AgentChatInput.Root bridge={bridge}>
 					<ComposedComposer />
 				</AgentChatInput.Root>,
 			);
-			await settledComposerMarkup(composed.container);
+			await settleComposer();
+			await driveComposerParts(push);
 			await waitFor(() => expect(composerMarkup(composed.container)).toBe(expected));
 		});
 	});
@@ -704,7 +676,7 @@ describe("AgentChatInput", () => {
 
 		const slotted = await screen.findByRole("button", {name: "Ajan kipi"});
 		expect(slotted.closest("fieldset")?.className).toContain("kp-agent-chat__settings");
-		expect(screen.getByRole("combobox", {name: "Pi modeli"})).toBeTruthy();
+		expect(screen.getByRole("button", {name: "model: GPT-5"})).toBeTruthy();
 	});
 
 	it("lets Settings children stand in for the controls it owns, slot untouched", async () => {
@@ -719,7 +691,7 @@ describe("AgentChatInput", () => {
 
 		const own = await screen.findByRole("button", {name: "Yalnız bu"});
 		expect(own.closest("fieldset")?.className).toContain("kp-agent-chat__settings");
-		expect(screen.queryByRole("combobox", {name: "Pi modeli"})).toBeNull();
+		expect(screen.queryByRole("button", {name: /^model:/})).toBeNull();
 		expect(screen.queryByRole("button", {name: "Ajan kipi"})).toBeNull();
 	});
 
@@ -765,24 +737,17 @@ describe("the compact composer", () => {
 		expect(fieldRule).toContain("max-height: calc(var(--s-8) * 5)");
 	});
 
-	it("keeps the hint out of layout until the empty field is focused", () => {
-		expect(sheet).toContain(".kp-agent-chat__hint {\n\tdisplay: none;");
-		expect(sheet).toContain(
-			".kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)",
-		);
-	});
-
 	/*
 	 * Pillar 4's floor is absolute, and the first cut of #8669 spent it: the field landed at 23px
 	 * because it dropped its floor to zero, and the sheet-wide count below could not see it — a
 	 * control that never names `--tap-min` is invisible to a count of `--tap-min` (#8714). So the
-	 * field is asserted at its own rule, and the count stays as the tripwire for the other five.
+	 * field is asserted at its own rule, and the count stays as the tripwire for the other four.
 	 */
 	it("floors the prompt field at the tap target", () => {
 		expect(fieldRule).toContain("min-height: var(--tap-min)");
 	});
 
 	it("leaves every toolbar control on the tap-target floor", () => {
-		expect(sheet.match(/var\(--tap-min\)/g) ?? []).toHaveLength(6);
+		expect(sheet.match(/var\(--tap-min\)/g) ?? []).toHaveLength(5);
 	});
 });

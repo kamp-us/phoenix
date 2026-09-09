@@ -124,8 +124,18 @@ session's rows, and every pick it then takes is judged against a catalog nothing
 Where the layer says it matters, because a teardown shuts the queue it happened on.
 `ClaudeAiAgent.closeCurrent` empties `models` and `efforts` and says nothing; `start` says it on the
 *new* queue, right behind that queue's `starting` and only when a session was actually torn down.
-That places the clear ahead of the `gone` a refused reconnect emits, which is the one path with no
-later catalog to correct it.
+
+**That announcement covers the in-process teardown, and the core owns the invariant everywhere
+else.** The `start` clear is guarded on there having been a previous session, so a lifetime whose
+layer never ran `start` gets nothing said — a refused reconnect on a rebuilt layer, a checkpoint
+saved at `gone`, and a live process failing into `gone` are all such lifetimes, and `models`,
+`thinking`, `modes` and `commands` are checkpointed, so their dead rows come back off disk intact
+([#8634](https://github.com/kamp-us/phoenix/issues/8634)). So the rule is the core's: **a session at
+`gone` offers no rows.** `closeOfferedCatalogs`
+([`ai-agent/core/state.ts`](../apps/tuval/src/ai-agent/core/state.ts)) empties the four, and every
+route to `gone` runs it — `restore` on a checkpoint loaded at `gone`, and both `fold`'s `phase` arm
+and the `gone` landing of its `failure` arm. The layer's clear then agrees with the core rather than
+being the only thing holding the line.
 
 The selection does not go with the catalog. A pick is the operator's, not the session's, so the
 clear carries `current: <the held pick>` beside `available: []`, and the picker names the pick while

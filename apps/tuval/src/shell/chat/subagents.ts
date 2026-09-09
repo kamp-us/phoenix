@@ -10,9 +10,15 @@
  * component reads makes of it, and computing it here would freeze it at the render that built the
  * model. `status` and `current` are not a fifth and sixth field but the row's own state: which
  * navigator entry is the one showing, and whether its worker still runs (#8406).
+ *
+ * `workers` is not that refused count either: Q1's "no" was about the transcript rows a slot holds,
+ * and this is how many workers the one spawning call started. A fan-out stays one slot (founder
+ * ruling 2026-09-09 on #8664), so without it the row's line, elapsed and tokens read as one
+ * worker's when they are several workers' together.
  */
 
 import type {ItemId, SubagentSlot, SubagentStatus} from "../../ai-agent/ports/index.ts";
+import {workerCountLabel} from "./copy.ts";
 
 /** How many rows the list shows before the tail collapses into one "more" row (Q3). */
 export const SUBAGENT_ROW_CAP = 5;
@@ -22,8 +28,13 @@ export const SUBAGENT_ROW_CAP = 5;
  * the bare word when no name is known. One phrase for the footer, the live region and the
  * transcript label, so none of them can double the word (#8680).
  */
-export const subagentPhrase = (type: string | null): string =>
-	type === null ? "subagent" : `${type} subagent`;
+export const subagentPhrase = (type: string | null, workers: number = 1): string => {
+	const named = type === null ? "subagent" : `${type} subagent`;
+	const count = workerCountLabel(workers);
+	// Read as an adjective rather than appended, because every call site drops this into a sentence
+	// ("the … is still running", "the …'s transcript") where a trailing count would break it.
+	return count === null ? named : `${workers}-worker ${named}`;
+};
 
 export interface SubagentRow {
 	readonly id: ItemId;
@@ -33,6 +44,8 @@ export interface SubagentRow {
 	/** Epoch milliseconds, so the row's elapsed is the reader's own clock minus this. */
 	readonly startedAt: number;
 	readonly tokens: number;
+	/** How many workers the slot holds. One is the ordinary row and draws no count. */
+	readonly workers: number;
 	/**
 	 * A `finished` row is only ever here because it is the one being viewed (Q9). It draws neither
 	 * elapsed nor tokens — Q2 answered "no" to both once a worker stops.
@@ -60,6 +73,7 @@ const rowOf = (slot: SubagentSlot, current: boolean): SubagentRow => ({
 	lastLine: slot.lastLine,
 	startedAt: slot.startedAt,
 	tokens: slot.tokens,
+	workers: slot.workers,
 	status: slot.status,
 	current,
 	...(slot.process === undefined ? {} : {process: slot.process}),

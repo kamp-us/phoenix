@@ -388,6 +388,32 @@ describe("the offer's resolution", () => {
 		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
 	});
 
+	// #8634: the core empties the catalogs on every route to `gone`, so what the bridge reads at a
+	// dead session is a resolved-but-empty offer — the picker says "no rows" rather than painting
+	// the dead session's rows or spinning on `undefined` forever.
+	it("answers a resolved empty offer at gone rather than the dead session's rows", async () => {
+		const composer = composerBridge({
+			...seam(),
+			initialPhase: "ready",
+			initialModels: {current: opus, available: [opus, sonnet]},
+			initialThinking: effort,
+			initialCommands: [compact],
+		});
+		composer.setPhase("gone");
+		composer.setModels({current: opus, available: []});
+		composer.setThinking({current: "medium", available: []});
+		composer.setCommands([]);
+		expect(await composer.bridge.loadPiModels()).toEqual([]);
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
+		expect(await composer.bridge.loadPiCommands()).toEqual([]);
+		// The pick is the operator's and outlives the catalog it was made against (#7981).
+		expect(await composer.bridge.loadPiState()).toEqual({
+			isStreaming: false,
+			model: {id: "claude-opus-5", name: "Opus 5", provider: "anthropic"},
+			thinkingLevel: "medium",
+		});
+	});
+
 	it("omits the catalog keys from a status pushed before the offer resolves", () => {
 		const composer = composerBridge({...seam(), initialPhase: "starting"});
 		const seen: Array<unknown> = [];

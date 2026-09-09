@@ -13,7 +13,7 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import type {Phase} from "../events.ts";
-import {Mode, type PermissionRequest} from "../ports/index.ts";
+import {Mode, type ModelRef, type PermissionRequest} from "../ports/index.ts";
 import {parseSessionState} from "./snapshot.ts";
 import {
 	type AiAgentSessionState,
@@ -263,5 +263,52 @@ describe("reading the tail", () => {
 		expect(
 			lastAssistantId([userItem("i0"), assistantItem("i1"), userItem("i2"), toolItem("i3")]),
 		).toBeNull();
+	});
+});
+
+/**
+ * #8634: the catalogs are checkpointed, so a session saved at `gone` would otherwise come back off
+ * disk offering the rows of a session that is over — and `offerResolved` reads `gone` as resolved.
+ */
+describe("a restored session and its offered catalogs", () => {
+	const opus: ModelRef = {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"};
+	const sonnet: ModelRef = {provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"};
+	const offering: AiAgentSessionState = {
+		...initialState("/repo"),
+		modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},
+		models: {current: opus, available: [opus, sonnet]},
+		commands: [{name: "compact", description: "Summarise the conversation."}],
+		thinking: {current: "medium", available: ["low", "medium", "high"]},
+	};
+
+	it("comes back offering nothing when the checkpoint was saved at gone", () => {
+		const back = restore({...offering, phase: "gone"});
+		expect(back.phase).toBe("gone");
+		expect(back.models.available).toEqual([]);
+		expect(back.thinking.available).toEqual([]);
+		expect(back.modes.available).toEqual([]);
+		expect(back.commands).toEqual([]);
+	});
+
+	// The selection does not go with the catalog: it is the operator's, re-validated at the next
+	// open against whatever that session reads (#7981).
+	it("keeps the operator's held picks beside the empty offer", () => {
+		const back = restore({...offering, phase: "gone"});
+		expect(back.models.current).toEqual(opus);
+		expect(back.thinking.current).toBe("medium");
+		expect(back.modes.current).toBe(Mode.make("plan"));
+	});
+
+	// Any other phase comes back `idle`, where `offerResolved` is false, so nothing paints these
+	// rows before the reconnect re-announces what the session offers.
+	it("keeps them intact when the checkpoint restores to idle", () => {
+		for (const phase of ["ready", "prompting", "reconnecting", "starting", "idle"] as const) {
+			const back = restore({...offering, phase});
+			expect(back.phase).toBe("idle");
+			expect(back.models.available).toEqual([opus, sonnet]);
+			expect(back.thinking.available).toEqual(["low", "medium", "high"]);
+			expect(back.modes.available).toHaveLength(2);
+			expect(back.commands).toHaveLength(1);
+		}
 	});
 });

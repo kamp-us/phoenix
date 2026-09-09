@@ -165,7 +165,7 @@ export function AttachedDesk({
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
-	/** The shell process's own revision — the bar's `rev`, read off the same view the snapshot is. */
+	/** The shell process's own revision — what the newest-wins compare below and the snapshot read. */
 	const [revision, setRevision] = useState(0);
 	/** Ids an attach has already been started for; a second window must not open a second socket read. */
 	const asked = useRef(new Set<string>());

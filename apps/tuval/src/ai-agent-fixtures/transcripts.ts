@@ -96,6 +96,7 @@ export const subagentSlot = (
 	lastLine: "reading the file",
 	startedAt: AT,
 	tokens: 1_200,
+	workers: 1,
 	items: [],
 	status: "running",
 	...overrides,

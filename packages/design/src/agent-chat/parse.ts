@@ -1,6 +1,5 @@
 import type {
 	PiCommand,
-	PiDeliveryMode,
 	PiEvent,
 	PiModel,
 	PiProjectTrust,
@@ -20,10 +19,6 @@ export function stringValue(record: Record<string, unknown>, key: string): strin
 export function booleanValue(record: Record<string, unknown>, key: string): boolean | undefined {
 	const value = record[key];
 	return typeof value === "boolean" ? value : undefined;
-}
-
-export function deliveryMode(value: string | undefined): PiDeliveryMode | undefined {
-	return value === "prompt" || value === "steer" || value === "follow_up" ? value : undefined;
 }
 
 export function projectTrustValue(value: unknown): PiProjectTrust | undefined {
@@ -124,18 +119,6 @@ export function modelName(state: Record<string, unknown> | undefined): string | 
 	return (
 		stringValue(model, "displayName") ?? stringValue(model, "name") ?? stringValue(model, "id")
 	);
-}
-
-/** The running model as the status line names it: bare name, or name + provider once two collide. */
-export function runningModelLabel(
-	state: Record<string, unknown> | undefined,
-	models: readonly PiModel[],
-): string | undefined {
-	const name = modelName(state);
-	if (!name || !providersCollide(models)) return name;
-	const model = state && isRecord(state.model) ? state.model : undefined;
-	const provider = model && stringValue(model, "provider");
-	return provider ? `${name} (${provider})` : name;
 }
 
 export function assistantMessageText(value: unknown): string | undefined {

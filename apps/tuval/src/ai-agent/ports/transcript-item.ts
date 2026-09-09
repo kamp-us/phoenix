@@ -216,6 +216,9 @@ const isOptionalId = (value: unknown): boolean => value === undefined || isId(va
 export const isNonNegativeInteger = (value: unknown): boolean =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
 
+export const isPositiveInteger = (value: unknown): boolean =>
+	isNonNegativeInteger(value) && (value as number) >= 1;
+
 const isToolResult = (value: unknown): value is ToolResult =>
 	Predicate.isObject(value) &&
 	typeof value.text === "string" &&

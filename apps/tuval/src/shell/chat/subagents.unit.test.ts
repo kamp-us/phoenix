@@ -10,6 +10,7 @@ import {
 	runningSubagents,
 	SUBAGENT_ROW_CAP,
 	shownSubagents,
+	subagentPhrase,
 	tokenLabel,
 } from "./subagents.ts";
 
@@ -33,6 +34,7 @@ describe("runningSubagents", () => {
 					lastLine: "reading rows.ts",
 					startedAt: 1_756_000_000_000,
 					tokens: 2_400,
+					workers: 1,
 					status: "running",
 					current: false,
 				},
@@ -198,5 +200,23 @@ describe("a kernel child's row", () => {
 	it("carries no process for a worker the backend spawned, which is the other fact", () => {
 		const model = runningSubagents(slots(subagentSlot("a")));
 		expect(model.rows[0]).not.toHaveProperty("process");
+	});
+});
+
+describe("subagentPhrase", () => {
+	it("names one worker as the slot's own label, or the bare word when it has none", () => {
+		expect(subagentPhrase("explorer")).toBe("explorer subagent");
+		expect(subagentPhrase(null)).toBe("subagent");
+		expect(subagentPhrase("explorer", 1)).toBe("explorer subagent");
+	});
+
+	// Every call site drops this into a sentence — "the … is still running", "the …'s transcript" —
+	// so the count reads as an adjective rather than appended (founder ruling 2026-09-09 on #8664).
+	it("carries a fan-out's worker count where the sentence still parses", () => {
+		expect(subagentPhrase("explorer", 3)).toBe("3-worker explorer subagent");
+		expect(subagentPhrase(null, 3)).toBe("3-worker subagent");
+		expect(`The ${subagentPhrase("explorer", 3)} is still running.`).toBe(
+			"The 3-worker explorer subagent is still running.",
+		);
 	});
 });

@@ -322,6 +322,7 @@ const make = (options: CodexAiAgentOptions) =>
 									lastLine: "",
 									startedAt: item.timestamp,
 									tokens: 0,
+									workers: 1,
 									items: [],
 									status: "running",
 									process: spawn.process,
