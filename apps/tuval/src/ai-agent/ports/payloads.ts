@@ -1,5 +1,5 @@
 /**
- * What travels on each of the five AI agent ports, and the predicate that admits it.
+ * What travels on each of the six AI agent ports, and the predicate that admits it.
  *
  * A port is a nominal kind plus a payload predicate (#7512) — not a schema system — so each
  * payload here is a plain type with a hand-written predicate, the shape `src/ports/` routes on.
@@ -44,6 +44,30 @@ export interface TranscriptPayload {
 
 export const isTranscriptPayload = (value: unknown): value is TranscriptPayload =>
 	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
+
+/**
+ * `result` — one finished turn, as whatever consumes an agent's answer reads it (R19.3 on #8715).
+ *
+ * `text` is the reply a caller would quote and `items` is the same turn whole, because the two
+ * answer different questions: a parent program routing an answer onward wants the line, and one
+ * judging what the turn *did* needs the tool calls under it. `ok` is the turn ending with nothing
+ * refused — a turn that failed or was cut short still lands here, marked, because a consumer that
+ * never hears about a failed turn waits for a payload that is not coming.
+ *
+ * It carries no session id: a port already names the process it came out of, and a payload
+ * restating that would be a second identity for a reader to reconcile.
+ */
+export interface TurnResult {
+	readonly text: string;
+	readonly items: ReadonlyArray<TranscriptItem>;
+	readonly ok: boolean;
+}
+
+export const isTurnResult = (value: unknown): value is TurnResult =>
+	Predicate.isObject(value) &&
+	typeof value.text === "string" &&
+	isTranscriptItems(value.items) &&
+	typeof value.ok === "boolean";
 
 /**
  * `transcript-page` — a request for older history and the page that answers it. `before` is the

@@ -40,6 +40,7 @@ import {
 	UnknownRequest,
 } from "../ai-agent/service/index.ts";
 import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
+import {withTurnResult} from "../ai-agent/turn-result.ts";
 import {ChildTranscriptError, readChildTranscript} from "./child-store.ts";
 import {type CodexSessionConfigInput, codexModes, codexSessionSettings} from "./config.ts";
 import {LiveTranscript} from "./history.ts";
@@ -890,7 +891,7 @@ const make = (options: CodexAiAgentOptions) =>
 			page,
 			sessionTranscript,
 			listSessions,
-			events: Stream.unwrap(Effect.sync(() => Stream.fromQueue(events))),
+			events: withTurnResult(Stream.unwrap(Effect.sync(() => Stream.fromQueue(events)))),
 		};
 	});
 

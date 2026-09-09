@@ -59,6 +59,7 @@ import {
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
 import {KernelBridge} from "../../ai-agent/tools/KernelBridge.ts";
+import {withTurnResult} from "../../ai-agent/turn-result.ts";
 import {featuresDefault} from "../../features.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
@@ -866,7 +867,9 @@ const make = (
 			page,
 			sessionTranscript,
 			listSessions,
-			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
+			events: withTurnResult(
+				Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
+			),
 		};
 	});
 

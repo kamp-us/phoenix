@@ -16,6 +16,7 @@ import {
 	isSubagentSlots,
 	isThinkingLevel,
 	isTranscriptItems,
+	isTurnResult,
 	isWindowOmission,
 	type PendingPermission,
 } from "../ports/index.ts";
@@ -178,6 +179,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isPage(value.lastPage) &&
 	isPageOutcome(value.pageOutcome) &&
 	isSubagentSlots(value.subagents) &&
+	(value.result === null || isTurnResult(value.result)) &&
 	isFailure(value.failure);
 
 /** A snapshot the predicate refuses is `null`, never a throw — the store decides what to do. */

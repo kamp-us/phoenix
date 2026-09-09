@@ -73,20 +73,24 @@ const SENT_AT = 1_700_000_000_000;
 const sent = (state: AiAgentSessionState, text: string, key: string): AiAgentSessionState =>
 	apply(state, {type: "prompt", text, key, timestamp: SENT_AT})[0];
 
-/** The prompt's own `prompting`, then the reset — the whole answer a local command produces. */
-const CLEARED_EVENTS = 2;
+/**
+ * The prompt's own `prompting`, the turn's result, then the reset — the whole answer a local command
+ * produces. The result rides ahead of the reset because the reset is this turn's end and the
+ * conversation swap at once, and the answer belongs to the conversation that ran it (#8724).
+ */
+const CLEARED_EVENTS = 3;
 
 /**
  * Send `/clear`, read what the layer put on the stream, then send again so the second prompt's own
  * envelope says which conversation it landed in.
  */
-const cleared = (frames: ReadonlyArray<SDKMessage>) =>
+const cleared = (frames: ReadonlyArray<SDKMessage>, count = CLEARED_EVENTS) =>
 	on({opening: frames, deferOpening: true}, (agent, scripted) =>
 		Effect.gen(function* () {
 			yield* agent.start({cwd: CWD});
 			yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
 			yield* agent.prompt("/clear", "k1");
-			const events = [...(yield* Stream.runCollect(Stream.take(agent.events, CLEARED_EVENTS)))];
+			const events = [...(yield* Stream.runCollect(Stream.take(agent.events, count)))];
 			yield* agent.prompt("and now this", "k2");
 			// The scripted query reads the input iterable on its own fiber, so the second envelope
 			// is written after this one yields.
@@ -101,6 +105,9 @@ describe("a local command that ends its own conversation", () => {
 			const {events} = yield* cleared([resetFrame]);
 			assert.deepStrictEqual(events, [
 				{kind: "phase", phase: "prompting"},
+				// A local command draws no rows and says nothing, so the turn it ends answered
+				// nothing — and still owes the one result its end is worth.
+				{kind: "result", result: {text: "", items: [], ok: true}},
 				{kind: "session-reset", sessionId: NEW_CONVERSATION_ID},
 			]);
 		}),
@@ -194,7 +201,8 @@ describe("a local command that ends its own conversation", () => {
 			const [settled, cmds] = apply(queued, {
 				type: "event",
 				sessionId: SESSION_ID,
-				event: events[1] as AgentEvent,
+				// The reset itself, which is the last of the three the command produced.
+				event: events.at(-1) as AgentEvent,
 			});
 			assert.deepStrictEqual(settled.queued, []);
 			assert.deepStrictEqual(cmds, [
@@ -228,7 +236,8 @@ describe("what still does not end a turn", () => {
 	 */
 	it.effect("leaves the session prompting on a frame that says nothing about the turn", () =>
 		Effect.gen(function* () {
-			const {events} = yield* cleared([message("unknown-message")]);
+			// Two events, not three: the turn never ends, so it owes no result yet either.
+			const {events} = yield* cleared([message("unknown-message")], 2);
 			const settled = fold(sent(opened, "hello", "k1"), events);
 			assert.strictEqual(settled.phase, "prompting");
 			assert.deepStrictEqual(settled.sends, [{key: "k1", state: "pending", turn: "running"}]);
@@ -242,7 +251,7 @@ describe("what still does not end a turn", () => {
 	 */
 	it.effect("ignores a reset frame carrying no conversation id", () =>
 		Effect.gen(function* () {
-			const {events} = yield* cleared([malformed as SDKMessage, message("unknown-message")]);
+			const {events} = yield* cleared([malformed as SDKMessage, message("unknown-message")], 2);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
 				["phase", "item"],

@@ -21,6 +21,7 @@ import type {
 	ThinkingLevel,
 	TranscriptItem,
 	TranscriptPayload,
+	TurnResult,
 	WindowOmission,
 } from "../ports/index.ts";
 import {promptUnqueued} from "./failures.ts";
@@ -212,6 +213,14 @@ export interface AiAgentSessionState {
 	 * (Q9 on #8384).
 	 */
 	readonly subagents: Readonly<Record<string, SubagentSlot>>;
+	/**
+	 * What the last finished turn came to, or `null` before any turn has finished (#8724).
+	 *
+	 * Held rather than only published, so a window re-attaching to a running process is answered
+	 * from the same slot the port is filled from — `republish` reads this, and a second copy
+	 * computed at that moment would be a different answer to the same question.
+	 */
+	readonly result: TurnResult | null;
 	readonly failure: AgentFailure | null;
 }
 
@@ -269,6 +278,10 @@ export const checkpointFields = [
 	// backend's own store answers for the agent's transcript, not for a worker's subtree). What a
 	// restart does change is liveness: `restore` brings every slot back finished.
 	"subagents",
+	// Decided to survive a restart: it is a fact about a turn that finished, like the tail it
+	// summarizes, and a consumer that reads the port after a restore is asking what this session
+	// last answered — not what it answered since the process came back.
+	"result",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
 
@@ -301,6 +314,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	lastPage: null,
 	pageOutcome: null,
 	subagents: {},
+	result: null,
 	failure: null,
 });
 
