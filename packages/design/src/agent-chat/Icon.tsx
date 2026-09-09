@@ -1,6 +1,6 @@
 import type {LucideIcon} from "lucide-react";
 
-type IconSize = 12 | 14 | 16 | 20 | 24;
+export type IconSize = 12 | 14 | 16 | 20 | 24;
 
 export function Icon({
 	icon: Glyph,
