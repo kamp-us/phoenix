@@ -742,6 +742,14 @@ describe("AgentChatInput", () => {
  */
 describe("the compact composer", () => {
 	const sheet = readFileSync(fileURLToPath(import.meta.resolve("./AgentChatInput.css")), "utf8");
+	const fieldRule =
+		sheet
+			.split('.kp-agent-chat__textarea [data-scope="field"][data-part="input"]:is(textarea) {')[1]
+			?.split("}")[0] ?? "";
+
+	it("has a prompt-field rule to read", () => {
+		expect(fieldRule).not.toBe("");
+	});
 
 	it("opens the prompt field at one row", async () => {
 		const {bridge} = installHarnessFetch();
@@ -751,10 +759,10 @@ describe("the compact composer", () => {
 		expect(field.rows).toBe(1);
 	});
 
-	it("grows the field to a cap instead of standing on a min-height floor", () => {
+	it("grows the field to a cap, off the old 80px floor", () => {
 		expect(sheet).not.toContain("min-height: calc(var(--s-8) * 2)");
-		expect(sheet).toContain("field-sizing: content");
-		expect(sheet).toContain("max-height: calc(var(--s-8) * 5)");
+		expect(fieldRule).toContain("field-sizing: content");
+		expect(fieldRule).toContain("max-height: calc(var(--s-8) * 5)");
 	});
 
 	it("keeps the hint out of layout until the empty field is focused", () => {
@@ -764,9 +772,17 @@ describe("the compact composer", () => {
 		);
 	});
 
-	// Pillar 4 owns the tap target and #8669 does not spend it: the height win is the field and the
-	// hint, never a control shrunk under the floor.
+	/*
+	 * Pillar 4's floor is absolute, and the first cut of #8669 spent it: the field landed at 23px
+	 * because it dropped its floor to zero, and the sheet-wide count below could not see it — a
+	 * control that never names `--tap-min` is invisible to a count of `--tap-min` (#8714). So the
+	 * field is asserted at its own rule, and the count stays as the tripwire for the other five.
+	 */
+	it("floors the prompt field at the tap target", () => {
+		expect(fieldRule).toContain("min-height: var(--tap-min)");
+	});
+
 	it("leaves every toolbar control on the tap-target floor", () => {
-		expect(sheet.match(/var\(--tap-min\)/g) ?? []).toHaveLength(5);
+		expect(sheet.match(/var\(--tap-min\)/g) ?? []).toHaveLength(6);
 	});
 });
