@@ -18,6 +18,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
 import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {servePage} from "./page/dev-server.ts";
+import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
@@ -106,7 +107,11 @@ const tuval = Command.make(
 			// a module its renderer table imports, and that is the only way a flag an operator turned
 			// on in their config reaches the browser (#8439).
 			yield* servePage({root: appRoot, transport, port: pagePort, moduleRenderers, features}).pipe(
-				Effect.flatMap((page) => Console.log(`tuval: desk at ${page.url}`)),
+				Effect.flatMap((page) =>
+					// The localhost URL, and the addresses behind it: whichever family the browser resolves
+					// reaches this desk, and the founder can see that it does (ADR 0370, #8593).
+					Console.log(`tuval: desk at ${page.url} — ${page.hosts.map(displayHost).join(" and ")}`),
+				),
 				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
 			);
 		}

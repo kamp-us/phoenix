@@ -137,7 +137,7 @@
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/pi-vertical",
 			"basePath": "/",
-			"command": "pnpm --filter @kampus/tuval proof:pi-vertical --page-port {{port}} --strict-port 1>&2",
+			"command": "pnpm --filter @kampus/tuval proof:pi-vertical --page-port {{port}} 1>&2",
 			"readyPath": "/"
 		}
 	],

@@ -22,6 +22,7 @@ import {Effect, Schema} from "effect";
 import {featuresDefault, type TuvalFeatures} from "../features.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
 import type {ModuleRendererRef} from "../shell/window/index.ts";
+import {forwardLoopback, LOOPBACK_HOSTS, reserveLoopbackPort} from "./loopback.ts";
 
 /** The page did not start. The kernel is unaffected — the bin reports this and keeps running. */
 export class PageServerFailed extends Schema.TaggedError<PageServerFailed>()(
@@ -45,16 +46,13 @@ export interface PageServerOptions {
 	 * than its URL is what makes those two one act, so a served page's origin is never unadmitted.
 	 */
 	readonly transport: TransportServer;
-	/** `0` picks a free port, which is what a second `pnpm dev` on one machine needs. */
-	readonly port: number;
 	/**
-	 * Bind `port` or fail. A caller that was *handed* a port — the render harness allocates one and
-	 * builds the origin it will screenshot from it — needs the loud failure: falling back to the next
-	 * free port leaves that origin pointing at whatever else answers there, which on a machine running
-	 * several worktrees is a green capture of another tree (#7992). A caller that asked for `0` is
-	 * unaffected either way, so the default stays the forgiving one for `pnpm dev`.
+	 * `0` picks a free port, which is what a second `pnpm dev` on one machine needs. Any other port
+	 * is bound on every loopback address or refused (ADR 0370) — the loud failure a caller that was
+	 * *handed* a port needs, since falling back leaves the origin it built pointing at whatever else
+	 * answers there (#7992).
 	 */
-	readonly strictPort?: boolean;
+	readonly port: number;
 	/**
 	 * The `kind: "module"` renderer specifiers the booted rows declared (`moduleRendererRefs`,
 	 * `../shell/window/renderer.ts`), each beside the config module that declared it (ADR 0359, as
@@ -71,10 +69,12 @@ export interface PageServerOptions {
 }
 
 export interface PageServer {
-	/** What the founder opens. */
+	/** What the founder opens: `localhost`, which every bound loopback address answers. */
 	readonly url: string;
 	/** The port `url` names — the port whose loopback origins the transport now admits. */
 	readonly port: number;
+	/** The loopback addresses serving that URL, in `LOOPBACK_HOSTS` order. */
+	readonly hosts: ReadonlyArray<string>;
 }
 
 export const LAUNCH_ENDPOINT = "/__tuval/launch";
@@ -381,6 +381,10 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 		options.root,
 		options.moduleRenderers ?? [],
 	);
+	// Both loopback families are settled before Vite is created: the port it is handed is one every
+	// family this machine has is free on, and a collision on a requested port refuses here, naming
+	// the address that is taken (ADR 0370).
+	const reservation = yield* attempt(() => reserveLoopbackPort(options.port));
 	const server = yield* Effect.acquireRelease(
 		attempt(() =>
 			createServer({
@@ -394,9 +398,11 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 					react.default(),
 				],
 				server: {
-					port: options.port,
-					strictPort: options.strictPort ?? false,
-					host: "127.0.0.1",
+					port: reservation.port,
+					// The reservation is what picked this port, so moving off it would only land somewhere
+					// the other family was never checked on.
+					strictPort: true,
+					host: LOOPBACK_HOSTS[0],
 					// A program installed beside the user's config is outside the app's workspace, and
 					// Vite's default allowance is that workspace alone — so the page would resolve the
 					// module and then refuse to serve it. The workspace stays in the list: the app's own
@@ -419,17 +425,34 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 		(dev) => Effect.ignore(attempt(() => dev.close())),
 	);
 	yield* attempt(() => server.listen());
-	const url = server.resolvedUrls?.local[0];
-	if (url === undefined) {
+	const bound = server.resolvedUrls?.local[0];
+	if (bound === undefined) {
 		return yield* new PageServerFailed({cause: new Error("it bound no local address")});
 	}
-	const port = Number(new URL(url).port);
+	const local = new URL(bound);
+	const port = Number(local.port);
 	if (!Number.isInteger(port) || port === 0) {
-		return yield* new PageServerFailed({cause: new Error(`its local URL names no port: ${url}`)});
+		return yield* new PageServerFailed({cause: new Error(`its local URL names no port: ${bound}`)});
 	}
+	const httpServer = server.httpServer;
+	if (httpServer === null) {
+		return yield* new PageServerFailed({cause: new Error("it serves no HTTP server to attach to")});
+	}
+	// Vite listens on one address (`resolveHostname` → `httpServerStart`), so every other loopback
+	// address gets an accepting socket of its own handing connections to that same server.
+	for (const host of reservation.hosts.filter((host) => host !== LOOPBACK_HOSTS[0])) {
+		yield* Effect.acquireRelease(
+			attempt(() => forwardLoopback(httpServer, host, port)),
+			(socket) => Effect.ignore(attempt(() => new Promise((done) => socket.close(done)))),
+		);
+	}
+	// `localhost` is the desk's address, and it is only honest once every family is bound: the whole
+	// point of ADR 0370 is that whichever one the browser resolves reaches this server.
+	local.hostname = "localhost";
+	const url = local.toString();
 	// The browser's upgrade carries this server's origin, not the socket's, and a fence built from
 	// the socket's port alone refuses it (#7560). Done here so no caller can serve a page and forget.
 	options.transport.admitLoopbackPort(port);
 	yield* warmPageGraph(server, options.root);
-	return {url, port} satisfies PageServer;
+	return {url, port, hosts: reservation.hosts} satisfies PageServer;
 });
