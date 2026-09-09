@@ -5,9 +5,10 @@
  *
  * A shape describes port signatures and nothing else — no id, no version, no behaviour — and the
  * check that a candidate fits one reads payload fit, never a version string (R13.1). Payload fit
- * is decided over the two schemas' generated JSON Schema, canonicalised so property order does not
- * decide it: two packages that each wrote `Schema.Struct({pr: Schema.Number})` fit each other
- * whatever their own npm versions say.
+ * is decided over the two schemas' generated JSON Schema, canonicalised so neither property order
+ * nor the name a package gave its schema decides it: two packages that each wrote
+ * `Schema.Struct({pr: Schema.Number})` fit each other whatever their own npm versions say, and
+ * whatever either called it.
  */
 
 import {Result, Schema} from "effect";
@@ -105,10 +106,22 @@ export const shapeOf = (source: ShapeSource): AnyProgramShape => {
 };
 
 /**
+ * The generator's default reference policy is `({identifier}) => identifier`, which emits any schema
+ * carrying an `identifier` annotation as a `$ref` into `$defs` keyed by that name — so the name its
+ * package chose would land in the compared string and two identical payloads named differently would
+ * not fit. Naming a schema is the ordinary Effect idiom, so that is the common case, not the rare
+ * one. Returning `undefined` inlines every named schema instead. A recursive payload still needs a
+ * `$def` to point at and gets a synthetic name derived from its own structure, not from the author's
+ * annotation, so two recursive payloads of the same shape still compare equal.
+ */
+const inlineNames = {referencePolicy: () => undefined} as const;
+
+/**
  * A schema's payload as a comparable string: its JSON Schema, with every object's keys sorted, so
  * two structurally identical payloads compare equal however their authors ordered the fields.
  */
-const canonical = (schema: PortCodec<any>): string => stable(Schema.toJsonSchemaDocument(schema));
+const canonical = (schema: PortCodec<any>): string =>
+	stable(Schema.toJsonSchemaDocument(schema, inlineNames));
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
