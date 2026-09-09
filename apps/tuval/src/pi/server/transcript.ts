@@ -20,6 +20,7 @@ import {compactionId} from "../wire/compaction.ts";
 import type {
 	AssistantTranscriptItem,
 	JsonValue,
+	RunningToolTranscriptItem,
 	ToolTranscriptItem,
 	TranscriptItem,
 	Usage,
@@ -192,18 +193,31 @@ const assistantStatus = (stopReason: string, errorMessage: string | undefined): 
  * "streaming"` — the marker that tells a client this text is not the whole reply, and the one that
  * keeps it out of the store. That last slot is the only thing that decides the marker; see
  * `IN_FLIGHT` for why the message's own stop reason cannot.
+ *
+ * `details` is what the session has said about a call that has not answered yet, keyed by call id
+ * (`AgentSessionHost`). It fills the `details` field the wire has always declared, and it is also
+ * the only thing that puts a *running* tool row on this transcript: a call the model made and no
+ * result has landed for is a message Pi does not hold, so without it an in-flight tool is invisible
+ * until it finishes. The running row is superseded by the result at the same id, which is the
+ * supersession `../ai-agent/items.ts`'s `itemOf` already keys tool rows for.
  */
 export const projectTranscript = (
 	messages: ReadonlyArray<SourceMessage>,
 	streaming?: SourceMessage | undefined,
+	details?: ReadonlyMap<string, JsonValue> | undefined,
 ): ReadonlyArray<TranscriptItem> => {
 	const all = streaming === undefined ? messages : [...messages, streaming];
 	const inFlight = streaming === undefined ? -1 : all.length - 1;
 	const toolInputs = new Map<string, Record<string, unknown>>();
+	const toolCalls = new Map<string, {readonly name: string; readonly timestamp: number}>();
+	const answered = new Set<string>();
 	for (const message of all) {
+		if (message.role === "toolResult") answered.add(message.toolCallId);
 		if (message.role !== "assistant") continue;
 		for (const content of message.content) {
-			if (content.type === "toolCall") toolInputs.set(content.id, content.arguments);
+			if (content.type !== "toolCall") continue;
+			toolInputs.set(content.id, content.arguments);
+			toolCalls.set(content.id, {name: content.name, timestamp: message.timestamp});
 		}
 	}
 
@@ -245,6 +259,7 @@ export const projectTranscript = (
 		}
 
 		if (message.role === "toolResult") {
+			const detail = details?.get(message.toolCallId);
 			items.push({
 				id,
 				role: "tool",
@@ -252,6 +267,7 @@ export const projectTranscript = (
 				toolName: message.toolName,
 				input: (toolInputs.get(message.toolCallId) ?? null) as JsonValue,
 				content: textOrImage(message.content),
+				...(detail === undefined ? {} : {details: detail}),
 				...(message.usage === undefined ? {} : {usage: projectUsage(message.usage)}),
 				timestamp: message.timestamp,
 				...(message.isError
@@ -260,5 +276,22 @@ export const projectTranscript = (
 			});
 		}
 	});
+
+	for (const [toolCallId, detail] of details ?? []) {
+		const call = toolCalls.get(toolCallId);
+		if (call === undefined || answered.has(toolCallId)) continue;
+		items.push({
+			id: `item-${items.length}`,
+			role: "tool",
+			toolCallId,
+			toolName: call.name,
+			input: (toolInputs.get(toolCallId) ?? null) as JsonValue,
+			content: [],
+			details: detail,
+			timestamp: call.timestamp,
+			status: "running",
+			isError: false,
+		} satisfies RunningToolTranscriptItem);
+	}
 	return items;
 };

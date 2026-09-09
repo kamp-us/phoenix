@@ -72,8 +72,14 @@ import {
 	subagentExtensionPaths,
 } from "../server/index.ts";
 import type {ThinkingLevel} from "../wire/index.ts";
+import {
+	type ChildTranscripts,
+	readChildTranscripts,
+	subagentArtifactsDir,
+} from "./child-transcript.ts";
 import {planPageOverEntries} from "./entries.ts";
 import {
+	childEventsOf,
 	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
@@ -138,7 +144,21 @@ type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
  * otherwise sit at `ready` from before the send to after it and emit nothing, while the core moved
  * itself to `prompting` at the send and stayed there — refusing every later message (#7897).
  */
-type FoldInput = SessionUpdate | {readonly _tag: "sent"};
+type FoldInput =
+	| SessionUpdate
+	| {readonly _tag: "sent"}
+	/** What the running workers' own artifacts said when the tail last read them. */
+	| {readonly _tag: "children"; readonly children: ChildTranscripts};
+
+/**
+ * How often the tail re-reads a running worker's transcript artifact.
+ *
+ * It is a poll rather than an `fs.watch` because the parent session offers no signal to hang the
+ * read on: the child is a detached process, so nothing it appends is a session event, and the wire
+ * push that would carry it never comes. The interval is the operator's own reading speed, not the
+ * child's write rate — a slower tail costs latency on a row, never a record.
+ */
+const childTailInterval = "500 millis";
 
 /**
  * Read one session's branch out of Pi's JSONL, oldest-first.
@@ -263,9 +283,11 @@ const make = (
 			open: EventQueue,
 			feed: Queue.Queue<FoldInput>,
 			seed: SnapshotProjection,
+			artifacts: string,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
 				yield* Ref.set(projection, seed);
+				const children = yield* Ref.make<ChildTranscripts>(new Map());
 				const pushes = pi
 					.updates(sessionId)
 					.pipe(Stream.runForEach((update) => Queue.offer(feed, update)));
@@ -278,14 +300,38 @@ const make = (
 								yield* Ref.set(projection, {...previous, phase: "prompting"});
 								return yield* emit(open, [{kind: "phase", phase: "prompting"}]);
 							}
+							if (input._tag === "children") {
+								yield* Ref.set(children, input.children);
+								const tailed = childEventsOf(previous, input.children);
+								yield* Ref.set(projection, tailed.next);
+								return yield* emit(open, tailed.events);
+							}
+							// The wire fold reads the same children the tail last saw, so a push
+							// landing between two reads restates the enriched slot rather than
+							// blanking the rows the operator is looking at.
+							const held = yield* Ref.get(children);
 							const folded =
 								input._tag === "snapshot"
-									? eventsOf(previous, input.snapshot)
-									: deltaEventsOf(previous, input.delta);
+									? eventsOf(previous, input.snapshot, held)
+									: deltaEventsOf(previous, input.delta, held);
 							yield* Ref.set(projection, folded.next);
 							yield* emit(open, folded.events);
 						}),
 					),
+				);
+				const tailing = Effect.forever(
+					Effect.gen(function* () {
+						yield* Effect.sleep(childTailInterval);
+						const running = [...(yield* Ref.get(projection)).spawns.values()];
+						if (running.length === 0) return;
+						const read = yield* Effect.sync(() =>
+							readChildTranscripts(
+								artifacts,
+								running.map((spawn) => spawn.runId),
+							),
+						);
+						yield* Queue.offer(feed, {_tag: "children", children: read});
+					}),
 				);
 				const dropped = pi.disconnections.pipe(
 					Stream.take(1),
@@ -296,6 +342,7 @@ const make = (
 				// turn's last update — queued, unfolded — would go with it (#8554). As a child
 				// fiber it is interrupted when this effect returns, which is what the race decides.
 				yield* Effect.forkChild(pushes);
+				yield* Effect.forkChild(tailing);
 				yield* Effect.race(folding, dropped);
 			});
 
@@ -439,7 +486,13 @@ const make = (
 			yield* Ref.set(inbox, feed);
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
-			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed, seed), scope));
+			yield* Ref.set(
+				pump,
+				yield* Effect.forkIn(
+					follow(ref.id, open, feed, seed, subagentArtifactsDir(sessionDir(options_.cwd))),
+					scope,
+				),
+			);
 			const offered = catalog.map(refOf);
 			yield* emit(open, [
 				// `StartOptions.mode` is ignored here, and this is the one layer where that is right:

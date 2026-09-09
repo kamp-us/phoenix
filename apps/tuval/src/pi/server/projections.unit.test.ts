@@ -1,6 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {encodeServerMessage, PROTOCOL_VERSION, SESSION_SUBSCRIPTION_ID} from "../wire/index.ts";
-import {streamingMessage} from "./AgentSessionHost.ts";
+import {runDetails, streamingMessage} from "./AgentSessionHost.ts";
 import {projectModelCost} from "./cost.ts";
 import {scriptedModel} from "./fixtures.ts";
 import {projectTranscript, projectUsage, type SourceMessage} from "./transcript.ts";
@@ -336,5 +336,109 @@ describe("streamingMessage", () => {
 			inFlight,
 		);
 		assert.strictEqual(streamingMessage({streamPartialText: true}, {}), undefined);
+	});
+});
+
+/**
+ * The run correlation the session delivers and the snapshot cannot recover: `pi-subagents` stamps
+ * the spawned run's id onto every progressive update it reports, and that update is the only place
+ * the id is ever stated (#8663, grounded on #8627).
+ */
+describe("a spawned run's correlation", () => {
+	const call: SourceMessage = {
+		role: "assistant",
+		content: [{type: "toolCall", id: "call-9", name: "subagent", arguments: {agent: "reviewer"}}],
+		provider: "faux",
+		model: "faux-1",
+		stopReason: "toolUse",
+		timestamp: 2,
+	};
+	const details = new Map([["call-9", {runId: "run-1"}]]);
+
+	it("is read off a tool_execution_update that carries one", () => {
+		assert.deepStrictEqual(
+			runDetails({
+				type: "tool_execution_update",
+				toolCallId: "call-9",
+				toolName: "subagent",
+				args: {},
+				partialResult: {output: "…", details: {runId: "run-1", mode: "single"}},
+			}),
+			{toolCallId: "call-9", details: {runId: "run-1"}},
+		);
+	});
+
+	it.each([
+		["another event", {type: "message_end", message: {}}],
+		[
+			"an update with no details",
+			{
+				type: "tool_execution_update",
+				toolCallId: "c",
+				toolName: "read",
+				args: {},
+				partialResult: {},
+			},
+		],
+		[
+			"an update whose details name no run",
+			{
+				type: "tool_execution_update",
+				toolCallId: "c",
+				toolName: "read",
+				args: {},
+				partialResult: {details: {progress: 4}},
+			},
+		],
+	])("is nothing for %s", (_case, event) => {
+		assert.isNull(runDetails(event));
+	});
+
+	it("puts a running row on the transcript for a call that has not answered", () => {
+		const items = projectTranscript([call], undefined, details);
+		assert.deepStrictEqual(items[1], {
+			id: "item-1",
+			role: "tool",
+			toolCallId: "call-9",
+			toolName: "subagent",
+			input: {agent: "reviewer"},
+			content: [],
+			details: {runId: "run-1"},
+			timestamp: 2,
+			status: "running",
+			isError: false,
+		});
+	});
+
+	it("carries the details onto the result and draws no second row once it lands", () => {
+		const answered: SourceMessage = {
+			role: "toolResult",
+			toolCallId: "call-9",
+			toolName: "subagent",
+			content: [{type: "text", text: "done"}],
+			isError: false,
+			timestamp: 3,
+		};
+		const items = projectTranscript([call, answered], undefined, details);
+		assert.strictEqual(items.length, 2);
+		assert.deepStrictEqual(items[1], {
+			id: "item-1",
+			role: "tool",
+			toolCallId: "call-9",
+			toolName: "subagent",
+			input: {agent: "reviewer"},
+			content: [{type: "text", text: "done"}],
+			details: {runId: "run-1"},
+			timestamp: 3,
+			status: "complete",
+			isError: false,
+		});
+	});
+
+	it("leaves the transcript exactly as it was when no run was named", () => {
+		assert.deepStrictEqual(
+			projectTranscript([call], undefined, new Map()),
+			projectTranscript([call]),
+		);
 	});
 });
