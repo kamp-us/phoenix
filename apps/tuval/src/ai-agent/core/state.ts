@@ -374,6 +374,30 @@ export const settleTurn = (state: AiAgentSessionState): AiAgentSessionState =>
 	settleRunningSubagents(settlePartialItems(state));
 
 /**
+ * A session at `gone` offers no rows: every catalog it read off that session is emptied, and the
+ * operator's held picks stay.
+ *
+ * The four are session-owned and checkpointed, so without this they come back off disk intact and
+ * `offerResolved` (`../../shell/chat/composer-bridge.ts`) paints them as a live offer on a window
+ * whose session is over (#8634). The layer's own teardown clear is announced from
+ * `ClaudeAiAgent.start` and only when a session was torn down in this process, so it reaches one
+ * lifetime of three — a refused reconnect on a rebuilt layer, a checkpoint saved at `gone` and a
+ * live process failing into `gone` all arrive here with no layer announcement behind them. Holding
+ * the invariant in the core covers all three, and agrees with the layer rather than racing it.
+ *
+ * `current` is untouched on purpose: a pick is the operator's, not the session's, and the next open
+ * re-validates it against the catalog it reads (#7981). `commands` has no selection to keep — the
+ * picker inserts a command as prompt text — so it empties whole.
+ */
+export const closeOfferedCatalogs = (state: AiAgentSessionState): AiAgentSessionState => ({
+	...state,
+	modes: {current: state.modes.current, available: []},
+	models: {current: state.models.current, available: []},
+	commands: [],
+	thinking: {current: state.thinking.current, available: []},
+});
+
+/**
  * Is this state worth a checkpoint write? The predicate a program hands the host (`../program.ts`).
  *
  * Both arms are the same rule read over two fields: a value that is superseded by the next frame
@@ -465,6 +489,10 @@ const markInterrupted = (
  * old account is exactly the wrong answer to "which of my two accounts is this billing" (#8649).
  * The layer re-announces as this session opens.
  *
+ * A checkpoint saved at `gone` comes back with its catalogs emptied (`closeOfferedCatalogs`), and
+ * one saved at any other phase keeps them: it comes back `idle`, where `offerResolved` is false, so
+ * nothing paints them before the reconnect re-announces what this session offers.
+ *
  * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way
  * an interrupted queue is — recoverable, never resent on the operator's behalf.
@@ -490,8 +518,12 @@ const markInterrupted = (
  */
 export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	const cut = loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null;
+	const settled =
+		loaded.phase === "gone"
+			? closeOfferedCatalogs(settleRunningSubagents(loaded))
+			: settleRunningSubagents(loaded);
 	return {
-		...settleRunningSubagents(loaded),
+		...settled,
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
