@@ -33,6 +33,8 @@ describe("picker entries", () => {
 				parentId: Option.none(),
 				ports: {},
 				stateSummary: {lifecycle: "running", revision: 0},
+				title: Option.none(),
+				status: Option.none(),
 			},
 			{
 				id: ProcessId.make("p-2"),
@@ -40,6 +42,8 @@ describe("picker entries", () => {
 				parentId: Option.some(ProcessId.make("p-1")),
 				ports: {},
 				stateSummary: {lifecycle: "running", revision: 3},
+				title: Option.none(),
+				status: Option.none(),
 			},
 			{
 				id: ProcessId.make("p-3"),
@@ -47,6 +51,8 @@ describe("picker entries", () => {
 				parentId: Option.none(),
 				ports: {},
 				stateSummary: {lifecycle: "running", revision: 0},
+				title: Option.none(),
+				status: Option.none(),
 			},
 		];
 		expect(processEntries(rows, table)).toEqual([
