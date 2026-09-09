@@ -111,14 +111,17 @@ tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: transport on 127.0.0.1:58319
-tuval: desk at http://127.0.0.1:5173/
+tuval: desk at http://localhost:5173/ — 127.0.0.1 and [::1]
 tuval: running — Ctrl-C stops and checkpoints
 count 1
 count 2
 ```
 
 Those are two ports on purpose — the socket and the page bind separately — and the transport admits
-the page's origin as it starts, so the browser's attach goes through (#7560).
+the page's origin as it starts, so the browser's attach goes through (#7560). The desk answers
+`localhost` on both loopback addresses, so it cannot be shadowed by another program holding the same
+port on the family it did not bind; a `--page-port` either family has taken refuses the start and
+names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-both-loopback-families.md)).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
