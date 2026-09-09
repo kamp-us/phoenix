@@ -31,7 +31,7 @@ const designCss = (name: string): string => {
 };
 
 beforeAll(() => {
-	for (const name of ["Menu.css", "AgentChatInput.css"]) {
+	for (const name of ["Menu.css", "AgentChatInput.css", "agent-chat/SettingMenu.css"]) {
 		const style = document.createElement("style");
 		style.textContent = designCss(name);
 		document.head.appendChild(style);
