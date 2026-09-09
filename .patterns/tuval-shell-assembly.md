@@ -253,8 +253,10 @@ program-blind: a process's state still crosses as `unknown`.
   row index plus `"hover"` / `"click"`, and both return the same `PickerKeyAnswer`
   (`src/shell/picker/view.ts`) — one shared `movedTo`, one cursor in the window's view slot. The
   surface holds one switch over that union and no second write path, so `aria-activedescendant` is
-  the single highlight the mouse and the keyboard both move and a screen reader announces. Founder's
-  ruling, 2026-09-08: any picker uses the same underlying structure for both (#8655).
+  the single highlight the mouse and the keyboard both move and a screen reader announces. Why it has
+  to be one structure and not two is ADR
+  [0368](../.decisions/0368-picker-one-cursor-both-inputs.md), which binds every Tuval picker
+  (#8655).
 - **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
   message (#7617 R1.3), so the catalog goes out as the socket opens and again on
   `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
