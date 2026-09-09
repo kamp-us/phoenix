@@ -12,9 +12,15 @@
  *   `" delegated the research task…"` where the response reads `"I have delegated…"`.
  * - **`init.model` names the model** and only `init` carries it, while every usage payload that
  *   needs the name arrives later.
- * - **`result.usage` is the turn's total, not another increment** — field by field it is the sum of
- *   the step usages already reported, while the core's `addUsage` folds every usage event by plain
- *   addition. So the turn carries what it has reported and the `result` reports only the residual.
+ * - **`result.usage` is the *conversation's* running total, not the turn's.** A three-turn census of
+ *   agy v1.1.28 (the third turn run on a resumed child) reads `16771/1`, `21419/2`, `26280/3` in
+ *   `result.usage.input_tokens`/`output_tokens` while the three turns' own `agent_response` steps
+ *   report `16771/1`, `4648/1`, `4861/1` — field by field the result is the sum of every step in the
+ *   *conversation*, so it restates what earlier turns already spent. The core's `addUsage` folds
+ *   usage by plain addition, so a `result` reported as this turn's own total double-counts every
+ *   earlier turn ([#8695](https://github.com/kamp-us/phoenix/issues/8695)): the turn is the
+ *   cumulative's increment over the last cumulative this child read, and `result.num_turns` is what
+ *   says whether there is an earlier one inside it at all.
  * - A row with no natural wire key (an unreadable line, a denied-action report) needs an id that
  *   does not collide with the next one.
  *
@@ -25,6 +31,14 @@
  * `duration_seconds` to its `ACTIVE` one — the `subagent_info` payload is byte-identical and
  * carries no result — so `state` alone drives the transition.
  *
+ * **A turn the operator stopped is marked, not failed.** `SIGINT` lands a terminal `result` reading
+ * `status: "ERROR"` / `error: "interrupted"` — measured, and the whole point of
+ * [#8694](https://github.com/kamp-us/phoenix/issues/8694) — so this wire does name the stop. It
+ * projects onto the cut reply row carrying `interrupted: true` and no `failure` event at all, which
+ * is the mark `pi/ai-agent/items.ts` makes of an `aborted` item and `codex/history.ts` of an
+ * `interrupted` turn. A row is minted even when the reply had no text yet, for the reason Pi keeps an
+ * empty aborted reply: the mark needs a row to sit on.
+ *
  * **An unrecognised `step_type` renders a `SystemItem` and is never dropped and never thrown on.**
  * That is the whole reason this file has a default arm: the enum is provably open and the stream
  * carries no version to branch on (see `wire.ts`).
@@ -32,7 +46,15 @@
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import type {ItemId, JsonValue, ToolStatus} from "../../ai-agent/ports/index.ts";
-import {assistantItem, itemId, systemItem, toolItem, toolStatusOf, userItem} from "./items.ts";
+import {
+	assistantItem,
+	interruptedItem,
+	itemId,
+	systemItem,
+	toolItem,
+	toolStatusOf,
+	userItem,
+} from "./items.ts";
 import {
 	type AgyResult,
 	type AgyStepUpdate,
@@ -48,34 +70,70 @@ export {itemId} from "./items.ts";
 /** How much of an unreadable line reaches the transcript before it is cut. */
 export const UNREADABLE_LINE_LIMIT = 500;
 
-/** What this turn has already handed the core, so `result.usage` can be reported as a residual. */
-interface ReportedUsage {
+/**
+ * What `result.error` reads when the turn ended because `SIGINT` landed.
+ *
+ * Measured, twice and independently: a scratch desk against v1.1.27
+ * ([#8694](https://github.com/kamp-us/phoenix/issues/8694)) and a direct `SIGINT` probe against
+ * v1.1.28, both of which answered `{"status":"ERROR","response":"","error":"interrupted"}` and exit
+ * 1. ADR 0362 originally recorded `"timeout waiting for response"` here and has been corrected.
+ */
+export const AGY_INTERRUPTED_ERROR = "interrupted";
+
+/**
+ * Read off the wire rather than off the layer's memory of having sent the signal, which is what
+ * #8694 buys: the wire names the stop, so the mapper stays pure and a stop agy took on its own
+ * account reads the same as one this process asked for — which is the truth either way.
+ */
+const wasInterrupted = (result: AgyResult): boolean =>
+	result.status !== "SUCCESS" && result.error?.trim().toLowerCase() === AGY_INTERRUPTED_ERROR;
+
+/** A pair of token counts, which is all of `AgyUsage` the port has a field for. */
+interface Tokens {
 	readonly inputTokens: number;
 	readonly outputTokens: number;
 }
 
-const nothingReported: ReportedUsage = {inputTokens: 0, outputTokens: 0};
+const noTokens: Tokens = {inputTokens: 0, outputTokens: 0};
 
-/** The ledger key one usage report is folded under; see `AgyTurn.usageReports`. */
-const usageKey = (report: number): string => `agy:usage:${report}`;
+const tokensOf = (usage: AgyUsage): Tokens => ({
+	inputTokens: usage.input_tokens,
+	outputTokens: usage.output_tokens,
+});
+
+const minus = (total: Tokens, already: Tokens): Tokens => ({
+	// Clamped: a negative increment is not a thing the ledger can hold, and a wire that ever
+	// under-reports a total against its own parts must not be able to subtract spend.
+	inputTokens: Math.max(0, total.inputTokens - already.inputTokens),
+	outputTokens: Math.max(0, total.outputTokens - already.outputTokens),
+});
+
+const spent = (tokens: Tokens): boolean => tokens.inputTokens > 0 || tokens.outputTokens > 0;
+
+/**
+ * The ledger keys, and the reason both name agy's own identities rather than a counter this process
+ * keeps.
+ *
+ * The core keys a cost on `UsageEvent.turn` and keeps the *first* report under a key it has seen
+ * (`../../ai-agent/core/fold.ts`). A desk restore rebuilds the layer over a core state that already
+ * holds this conversation's ledger, so a counter starting at `0` either aliases a key the ledger has
+ * spent — dropping the restored session's tokens — or lands past it and double-counts a report agy
+ * repeats ([#8695](https://github.com/kamp-us/phoenix/issues/8695)). Keyed on the conversation plus
+ * the step or the turn agy itself numbers, a report lands on the entry it already wrote whatever
+ * process reads it, so the dedupe does the work and the carry needs no memory across a restore —
+ * which is how `pi/ai-agent/items.ts` keys usage (on the backend's own item id).
+ *
+ * `step_index` is numbered per conversation and continues across a resume (measured: a resumed child
+ * opened at `4` on a conversation that had reached `3`), and `result.num_turns` counts that
+ * conversation's turns (`1`, `2`, then `3` on the resumed child).
+ */
+const stepUsageKey = (conversationId: string, stepIndex: number): string =>
+	`agy:usage:${conversationId}:step:${stepIndex}`;
+
+const turnUsageKey = (conversationId: string, turns: number): string =>
+	`agy:usage:${conversationId}:turn:${turns}`;
 
 export interface AgyTurn {
-	/**
-	 * How many usage reports this *session* has already handed the core — the ordinal each one is
-	 * keyed by. The core keys a cost on `UsageEvent.turn` and keeps the *first* report under a key it
-	 * has seen (`../../ai-agent/core/fold.ts`); agy reports usage as increments *within* a turn
-	 * (steps, then the residual at `result`) and never restates one, so keying every report on the
-	 * turn itself would drop every increment after the first. Keyed per report, the ledger sums them
-	 * and the dedupe is the no-op it should be for a backend that never re-reports.
-	 *
-	 * The carry this rides on is minted per agy *child*, and a `setModel` / `setMode` /
-	 * `setThinkingLevel` respawn hands the same core state a second child. So the ordinal cannot
-	 * originate here: the layer owns it (`AgyAiAgent.ts`, a `Ref` beside `interrupted`), seeds each
-	 * child's carry from it through `turnFrom`, and mirrors it back after every fold. Restarting it
-	 * at `0` on a respawn would alias keys the ledger has already spent and drop the new child's
-	 * tokens silently.
-	 */
-	readonly usageReports: number;
 	/** `agy/<model>` once `init` names one, else the bare binary — agy omits `init.model` on a default run. */
 	readonly model: string;
 	/** The item this turn's reply streams into, minted at its first `agent_response` delta. */
@@ -83,23 +141,26 @@ export interface AgyTurn {
 	readonly responseText: string;
 	/** Monotonic, so two keyless rows never share an id. */
 	readonly minted: number;
-	readonly reported: ReportedUsage;
+	/** What this turn's own steps have already reported, so the `result` reports only the residual. */
+	readonly reported: Tokens;
+	/**
+	 * The last `result.usage` this child read — the *conversation's* cumulative, against which the
+	 * next `result` is an increment. `null` before this child has read one, which is the case a
+	 * resumed child is in for its first turn: the cumulative it then reads contains turns this
+	 * process never saw, and `result.num_turns` is what distinguishes that from a genuinely first
+	 * turn whose cumulative is its own.
+	 */
+	readonly cumulative: Tokens | null;
 }
 
 export const idleTurn: AgyTurn = {
 	model: "agy",
-	usageReports: 0,
 	responseId: null,
 	responseText: "",
 	minted: 0,
-	reported: nothingReported,
+	reported: noTokens,
+	cumulative: null,
 };
-
-/**
- * The carry a freshly launched child folds against, seeded with the session's usage ordinal so the
- * new child's first report cannot collide with a key an earlier child already spent.
- */
-export const turnFrom = (usageReports: number): AgyTurn => ({...idleTurn, usageReports});
 
 interface Folded {
 	readonly events: ReadonlyArray<AgentEvent>;
@@ -115,39 +176,31 @@ const systemEvent = (id: string, timestamp: number, text: string): AgentEvent =>
  * agy reports no cost anywhere on the stream, so `cost` is `0` rather than a guess, and
  * `thinking_tokens` / `cache_read_tokens` have no port field and are left on the wire.
  */
-const usageEvent = (
-	model: string,
-	report: number,
-	usage: AgyUsage | undefined,
-): UsageEvent | null =>
-	usage === undefined
-		? null
-		: {
-				kind: "usage",
-				turn: usageKey(report),
-				model,
-				inputTokens: usage.input_tokens,
-				outputTokens: usage.output_tokens,
-				cost: 0,
-			};
+const usageEvent = (model: string, key: string, tokens: Tokens): UsageEvent => ({
+	kind: "usage",
+	turn: key,
+	model,
+	inputTokens: tokens.inputTokens,
+	outputTokens: tokens.outputTokens,
+	cost: 0,
+});
 
 /**
- * What is left of `result.usage` once the steps have reported theirs. A stream whose steps carried
- * no usage still reports the whole total, because then the residual *is* the total. The clamp
- * refuses to hand the core a negative increment if a step ever over-reports against the total.
+ * What this turn spent, read out of a cumulative that may contain turns this child never saw.
+ *
+ * Three arms, and the middle one is the measurement: with a cumulative of its own to subtract, the
+ * turn is the difference. Without one, `num_turns` decides — a first turn's cumulative *is* its own,
+ * while a resumed child's first cumulative carries the whole conversation, and then the turn's own
+ * steps are the only grounded measure of it. Reporting the cumulative there would charge the operator
+ * again for every turn before the restore, which is the defect #8695 caught; reporting the steps
+ * under-reports only a turn whose steps said nothing, and that is the smaller lie by the whole of
+ * the conversation's history.
  */
-const residualUsageEvent = (
-	model: string,
-	report: number,
-	reported: ReportedUsage,
-	usage: AgyUsage | undefined,
-): UsageEvent | null => {
-	if (usage === undefined) return null;
-	const inputTokens = Math.max(0, usage.input_tokens - reported.inputTokens);
-	const outputTokens = Math.max(0, usage.output_tokens - reported.outputTokens);
-	return inputTokens === 0 && outputTokens === 0
-		? null
-		: {kind: "usage", turn: usageKey(report), model, inputTokens, outputTokens, cost: 0};
+const turnTokensOf = (previous: AgyTurn, result: AgyResult): Tokens => {
+	if (result.usage === undefined) return noTokens;
+	const cumulative = tokensOf(result.usage);
+	if (previous.cumulative !== null) return minus(cumulative, previous.cumulative);
+	return result.num_turns <= 1 ? cumulative : previous.reported;
 };
 
 const subagentInput = (info: AgySubagentInfo): JsonValue => ({
@@ -238,15 +291,16 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 			events.push(systemEvent(key, timestamp, unrecognisedText(step)));
 	}
 
-	const usage = usageEvent(next.model, next.usageReports, step.usage);
-	if (usage !== null) {
-		events.push(usage);
+	if (step.usage !== undefined) {
+		const tokens = tokensOf(step.usage);
+		events.push(
+			usageEvent(next.model, stepUsageKey(step.conversation_id, step.step_index), tokens),
+		);
 		next = {
 			...next,
-			usageReports: next.usageReports + 1,
 			reported: {
-				inputTokens: next.reported.inputTokens + usage.inputTokens,
-				outputTokens: next.reported.outputTokens + usage.outputTokens,
+				inputTokens: next.reported.inputTokens + tokens.inputTokens,
+				outputTokens: next.reported.outputTokens + tokens.outputTokens,
 			},
 		};
 	}
@@ -256,10 +310,19 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): Folded => {
 	const events: Array<AgentEvent> = [];
 	let minted = previous.minted;
+	const stopped = wasInterrupted(result);
 
-	if (result.response.length > 0) {
+	// A stopped turn carries no `response` — the reply it was writing is the carry's, and the row is
+	// minted even when that is empty too, because the mark has to sit on a row.
+	if (result.response.length > 0 || stopped) {
 		const id = previous.responseId ?? itemId(`${result.conversation_id}:response`);
-		events.push({kind: "item", item: assistantItem(id, timestamp, result.response)});
+		const text = result.response.length > 0 ? result.response : previous.responseText;
+		events.push({
+			kind: "item",
+			item: stopped
+				? interruptedItem(id, timestamp, text)
+				: assistantItem(id, timestamp, result.response),
+		});
 	}
 
 	const denied = result.denied_actions;
@@ -274,17 +337,19 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 		minted += 1;
 	}
 
-	const usage = residualUsageEvent(
-		previous.model,
-		previous.usageReports,
-		previous.reported,
-		result.usage,
-	);
-	if (usage !== null) events.push(usage);
+	const residual = minus(turnTokensOf(previous, result), previous.reported);
+	if (spent(residual)) {
+		events.push(
+			usageEvent(previous.model, turnUsageKey(result.conversation_id, result.num_turns), residual),
+		);
+	}
 
 	// Fail closed: only `SUCCESS` is a success, so a status this pin has not seen surfaces as a
-	// failure instead of being silently folded into a completed turn.
-	if (result.status !== "SUCCESS")
+	// failure instead of being silently folded into a completed turn. The stop the operator asked for
+	// is the one `ERROR` that is not one — it is marked on the row above, the way the peers mark it,
+	// and a failure here would additionally recover the send the turn really ran (`core/sends.ts`'s
+	// `settleFailedTurn`) and leave a refusal standing over a session that did what it was told.
+	if (result.status !== "SUCCESS" && !stopped)
 		events.push({
 			kind: "failure",
 			failure: {
@@ -301,8 +366,8 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 			responseId: null,
 			responseText: "",
 			minted,
-			usageReports: previous.usageReports + (usage === null ? 0 : 1),
-			reported: nothingReported,
+			reported: noTokens,
+			cumulative: result.usage === undefined ? previous.cumulative : tokensOf(result.usage),
 		},
 	};
 };

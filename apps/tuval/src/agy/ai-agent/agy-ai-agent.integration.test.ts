@@ -30,6 +30,13 @@ beforeEach(() => {
 	writeFileSync(argvLog, "");
 });
 
+/** Whether a pid still names a live process. `kill(pid, 0)` signals nothing and only tests for one. */
+const alive = (pid: number): Effect.Effect<boolean> =>
+	Effect.try(() => {
+		process.kill(pid, 0);
+		return true;
+	}).pipe(Effect.orElseSucceed(() => false));
+
 /** Every argv the fake was launched with, in order. */
 const launches = (): ReadonlyArray<ReadonlyArray<string>> =>
 	readFileSync(argvLog, "utf8")
@@ -236,9 +243,12 @@ describe("the agy layer over a scripted binary", () => {
 			}),
 		);
 		const usage = usageOf(collectedEvents);
-		// The ordinal is the session's, not the child's: a second child restarting it at `0` would
-		// alias the first child's key, and `addUsage` keeps the entry it already holds.
-		expect(usage.map((event) => event.turn)).toEqual(["agy:usage:0", "agy:usage:1"]);
+		// The key is agy's own — the conversation plus the step it numbered — and both continue across
+		// the respawn, so the second child's report cannot land on an entry `addUsage` already holds.
+		expect(usage.map((event) => event.turn)).toEqual([
+			"agy:usage:fake-0000-1111-2222:step:1",
+			"agy:usage:fake-0000-1111-2222:step:3",
+		]);
 		const totals = usageTotals(usage.reduce(addUsage, emptyUsage));
 		expect(totals.inputTokens).toBe(14);
 		expect(totals.outputTokens).toBe(6);
@@ -324,7 +334,7 @@ describe("the agy layer over a scripted binary", () => {
 		expect(refusal._tag).toBe("tuval/ai-agent/UnknownRequest");
 	});
 
-	it("interrupts with SIGINT, and reports the resulting timeout-shaped result as such", async () => {
+	it("interrupts with SIGINT, and marks the cut turn rather than failing it", async () => {
 		const collectedEvents = await drive((collected) =>
 			Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
@@ -334,20 +344,28 @@ describe("the agy layer over a scripted binary", () => {
 				);
 				yield* agent.prompt("something long");
 				yield* agent.interrupt;
-				yield* until(collected, (events) => events.some((event) => event.kind === "failure"));
+				yield* until(collected, (events) =>
+					events.some((event) => event.kind === "phase" && event.phase === "gone"),
+				);
 				return [...collected];
 			}),
 		);
-		const failure = collectedEvents.flatMap((event) =>
-			event.kind === "failure" ? [event.failure] : [],
+		// The wire names the stop (`error: "interrupted"`, #8694), so the turn is marked rather than
+		// failed — and the child is really gone, which the window has to be told: the exit watch used
+		// to lose a race to stdout's own EOF and the session read `ready` over a dead process (#8693).
+		expect(
+			collectedEvents.flatMap((event) => (event.kind === "failure" ? [event.failure] : [])),
+		).toEqual([]);
+		const marked = collectedEvents.flatMap((event) =>
+			event.kind === "item" && event.item.kind === "assistant" && event.item.interrupted === true
+				? [event.item]
+				: [],
 		);
-		// The wire cannot tell an interrupt from a stall: agy emits a well-formed terminal result
-		// carrying `status: "ERROR"` and `"timeout waiting for response"` for both.
-		expect(failure.at(0)).toEqual({
-			tag: "AgyTurnFailed",
-			reason: "ERROR",
-			detail: "timeout waiting for response",
-		});
+		expect(marked).toHaveLength(1);
+		const phases = collectedEvents.flatMap((event) =>
+			event.kind === "phase" ? [event.phase] : [],
+		);
+		expect(phases.at(-1)).toBe("gone");
 	});
 
 	it("pages history out of agy's own transcript.jsonl", async () => {
@@ -398,5 +416,50 @@ describe("the agy layer over a scripted binary", () => {
 		);
 		expect(refusal._tag).toBe("tuval/ai-agent/StartError");
 		expect(refusal.reason).toBe("transport");
+	});
+
+	/**
+	 * The child is spawned into a Scope of its own, so a respawn can take one down without the layer.
+	 * Nothing held the last one when the layer's own Scope closed, and the CLI outlived the desk that
+	 * launched it — an orphan holding a model session and a sandbox profile open (#8696).
+	 *
+	 * `AGY_FAKE_LINGER` is what makes the assertion mean anything: the fake otherwise exits when its
+	 * stdin closes, so a run would pass with no kill at all.
+	 */
+	it("kills the child when the layer's scope closes, rather than orphaning it", async () => {
+		const pidLog = join(home, "pids");
+		writeFileSync(pidLog, "");
+		await Effect.gen(function* () {
+			const agent = yield* TuvalAiAgent;
+			yield* agent.start({cwd: "/repo"});
+		}).pipe(
+			Effect.provide(
+				AgyAiAgent.layer({
+					binary: fakeAgy,
+					home,
+					env: {AGY_FAKE_LOG: argvLog, AGY_FAKE_PID_LOG: pidLog, AGY_FAKE_LINGER: "1"},
+				}),
+			),
+			Effect.scoped,
+			Effect.orDie,
+			Effect.runPromise,
+		);
+		const pids = readFileSync(pidLog, "utf8")
+			.split("\n")
+			.filter((line) => line.trim().length > 0)
+			.map(Number);
+		expect(pids).toHaveLength(1);
+		const pid = pids[0] as number;
+		// A signal travels on the event loop, so the baseline is met a tick or two after the scope's
+		// last statement; the cap is well under the suite budget and names the pid that outlived it
+		// (`.patterns/ci-legible-integration-tests.md`).
+		const gone = await Effect.gen(function* () {
+			for (let attempt = 0; attempt < 100; attempt += 1) {
+				if (!(yield* alive(pid))) return true;
+				yield* Effect.sleep("50 millis");
+			}
+			return false;
+		}).pipe(Effect.runPromise);
+		if (!gone) expect.fail(`the closed layer scope left the agy child (pid ${pid}) running`);
 	});
 });

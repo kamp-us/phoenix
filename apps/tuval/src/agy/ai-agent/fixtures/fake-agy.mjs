@@ -15,20 +15,31 @@
  * - A session emits `init` with `conversation_id` at the *top* level, then `step_update` and
  *   `result` with theirs nested inside the payload.
  * - `--conversation=<id>` returns that same id, which is what makes resume a resume.
- * - SIGINT emits a well-formed terminal `result` with `status: "ERROR"` and
- *   `error: "timeout waiting for response"`, then exits 1. There is no `INTERRUPTED` status,
- *   because the real binary never emits one either (ADR 0362).
+ * - **`step_index` and `num_turns` are the conversation's, not the process's, and `result.usage` is
+ *   the conversation's running total.** All three continue across a resume in the real binary
+ *   (measured; ADR 0362), which is why they are carried in a sidecar beside `$AGY_FAKE_LOG` rather
+ *   than in module state: a respawned child restarting its counters would alias the usage keys the
+ *   ledger already holds, and a fake that did so would hide the defect #8695 was about.
+ * - SIGINT emits a well-formed terminal `result` with `status: "ERROR"` and `error: "interrupted"`,
+ *   then exits 1. There is no `INTERRUPTED` *status*, because the real binary never emits one either.
  *
  * Every invocation appends its argv to `$AGY_FAKE_LOG` as one JSON line, which is how a test
  * asserts a composed argv against the thing that actually received it.
  */
 
-import {appendFileSync} from "node:fs";
+import {appendFileSync, readFileSync, writeFileSync} from "node:fs";
 
 const argv = process.argv.slice(2);
 
 const log = process.env.AGY_FAKE_LOG;
 if (log !== undefined) appendFileSync(log, `${JSON.stringify(argv)}\n`);
+
+const pidLog = process.env.AGY_FAKE_PID_LOG;
+if (pidLog !== undefined) appendFileSync(pidLog, `${process.pid}\n`);
+
+// `AGY_FAKE_LINGER` makes this process outlive its own stdin, which is what lets a test tell a child
+// that was *killed* from one that merely noticed the pipe close — the distinction #8696 turns on.
+if (process.env.AGY_FAKE_LINGER === "1") setInterval(() => {}, 60_000);
 
 const flagValue = (name) => {
 	const found = argv.find((token) => token.startsWith(`${name}=`));
@@ -87,33 +98,53 @@ write({
 	},
 });
 
+/** Where this conversation's counters live between processes, so a resume continues them. */
+const statePath = log === undefined ? undefined : `${log}.${conversationId}.state`;
+
+const readState = () => {
+	if (statePath === undefined) return {steps: 0, turns: 0, input: 0, output: 0};
+	try {
+		return JSON.parse(readFileSync(statePath, "utf8"));
+	} catch {
+		return {steps: 0, turns: 0, input: 0, output: 0};
+	}
+};
+
+let state = readState();
+
+const saveState = () => {
+	if (statePath !== undefined) writeFileSync(statePath, JSON.stringify(state));
+};
+
+const cumulative = () => ({
+	input_tokens: state.input,
+	output_tokens: state.output,
+	thinking_tokens: 0,
+	cache_read_tokens: 0,
+	total_tokens: state.input + state.output,
+});
+
 process.on("SIGINT", () => {
+	state = {...state, turns: state.turns + 1};
+	saveState();
 	write({
 		event: "result",
 		result: {
 			conversation_id: conversationId,
 			status: "ERROR",
 			response: "",
-			error: "timeout waiting for response",
-			num_turns: 1,
-			usage: {
-				input_tokens: 0,
-				output_tokens: 0,
-				thinking_tokens: 0,
-				cache_read_tokens: 0,
-				total_tokens: 0,
-			},
+			error: "interrupted",
+			num_turns: state.turns,
+			usage: cumulative(),
 		},
 	});
 	process.exit(1);
 });
 
-let stepIndex = 0;
-
 const runTurn = async (content) => {
 	await sleep(TURN_DELAY_MS);
-	const index = stepIndex;
-	stepIndex += 2;
+	const index = state.steps;
+	state = {...state, steps: index + 2};
 	write({
 		event: "step_update",
 		step_update: {
@@ -151,20 +182,16 @@ const runTurn = async (content) => {
 			},
 		},
 	});
+	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
+	saveState();
 	write({
 		event: "result",
 		result: {
 			conversation_id: conversationId,
 			status: "SUCCESS",
 			response: `you said ${content}`,
-			num_turns: 1,
-			usage: {
-				input_tokens: 7,
-				output_tokens: 3,
-				thinking_tokens: 0,
-				cache_read_tokens: 0,
-				total_tokens: 10,
-			},
+			num_turns: state.turns,
+			usage: cumulative(),
 		},
 	});
 };
@@ -205,5 +232,6 @@ process.stdin.on("data", (chunk) => {
 });
 
 process.stdin.on("end", () => {
+	if (process.env.AGY_FAKE_LINGER === "1") return;
 	pending.then(() => process.exit(0));
 });

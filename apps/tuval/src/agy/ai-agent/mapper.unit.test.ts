@@ -1,5 +1,6 @@
 /**
- * The agy fold, over captured v1.1.27 stream lines rather than a live CLI.
+ * The agy fold, over captured stream lines rather than a live CLI — v1.1.27 throughout, plus the
+ * v1.1.28 usage census and interrupted `result` that `fixtures.ts` declares as such.
  *
  * **Nothing here enumerates the observed `step_type`s as exhaustive.** The cases below name the
  * five that were observed and the eleven that were not, and every one of them is a claim about
@@ -18,9 +19,15 @@ import {
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import * as fixtures from "./fixtures.ts";
-import {type AgyTurn, eventsOf, idleTurn, turnFrom} from "./mapper.ts";
+import {type AgyTurn, eventsOf, idleTurn} from "./mapper.ts";
 
 const AT = 1_700_000_000_000;
+
+/** The conversation every `fixtures.result*`/`response*` line above carries, and so every usage key. */
+const CONVERSATION = "9dcbb5a5-9a5f-4f9c-989b-ede03e790bbf";
+
+/** The one the three-turn usage census ran on. */
+const CENSUS_CONVERSATION = "cba39437-e61b-48f0-a7cd-d78b59b6fcae";
 
 const fold = (
 	lines: ReadonlyArray<string>,
@@ -277,7 +284,7 @@ describe("usage", () => {
 		expect(events.filter((event) => event.kind === "usage")).toEqual([
 			{
 				kind: "usage",
-				turn: "agy:usage:0",
+				turn: `agy:usage:${CONVERSATION}:step:3`,
 				model: "agy/gemini-3.8-flash-low",
 				inputTokens: 4481,
 				outputTokens: 110,
@@ -286,16 +293,16 @@ describe("usage", () => {
 		]);
 	});
 
-	// `result.usage` is the turn's total, not another increment, and the core sums every usage
-	// event it is handed under a key it has not seen (`ai-agent/core/fold.ts`'s `addUsage`), which
-	// is why each report carries its own ordinal key (`AgyTurn.usageReports`). The cases below pin the residual
+	// `result.usage` is the *conversation's* running total and the core sums every usage event it is
+	// handed under a key it has not seen (`ai-agent/core/fold.ts`'s `addUsage`), so a first turn's
+	// result is reported as the residual of what its steps already said. The cases below pin that
 	// against agy's own captured numbers rather than against the arithmetic that produced it.
 	it("reports result.usage as a residual, so the captured turn totals agy's own numbers", () => {
 		const {events} = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
 		expect(events.filter((event) => event.kind === "usage")).toEqual([
 			{
 				kind: "usage",
-				turn: "agy:usage:0",
+				turn: `agy:usage:${CONVERSATION}:step:3`,
 				model: "agy/gemini-3.8-flash-low",
 				inputTokens: 4481,
 				outputTokens: 110,
@@ -303,7 +310,7 @@ describe("usage", () => {
 			},
 			{
 				kind: "usage",
-				turn: "agy:usage:1",
+				turn: `agy:usage:${CONVERSATION}:turn:1`,
 				model: "agy/gemini-3.8-flash-low",
 				inputTokens: 20963 - 4481,
 				outputTokens: 151 - 110,
@@ -338,30 +345,107 @@ describe("usage", () => {
 		expect(summed(events)).toEqual({inputTokens: 4481, outputTokens: 110});
 	});
 
-	it("carries no usage across the turn boundary, so a second turn's residual is its own", () => {
-		const {turn} = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
-		const {events} = fold([fixtures.resultSuccess], turn);
-		expect(summed(events)).toEqual({inputTokens: 20963, outputTokens: 151});
+	// The three-turn census is the whole of the evidence that `result.usage` is cumulative, so the
+	// cases below fold it rather than a synthetic second turn: a one-turn capture cannot tell a
+	// per-turn total from a conversation total, which is exactly how #8695 got written.
+	it("totals a three-turn conversation at agy's own last cumulative, not at the sum of them", () => {
+		const census = [
+			fixtures.init,
+			fixtures.censusTurnOneStep,
+			fixtures.censusTurnOneResult,
+			fixtures.censusTurnTwoStep,
+			fixtures.censusTurnTwoResult,
+		];
+		const {events} = fold(census);
+		expect(summed(events)).toEqual({inputTokens: 21419, outputTokens: 2});
+	});
+
+	it("reports a second turn as its own spend and not again as the first's", () => {
+		const {events} = fold([
+			fixtures.init,
+			fixtures.censusTurnOneStep,
+			fixtures.censusTurnOneResult,
+			fixtures.censusTurnTwoStep,
+			fixtures.censusTurnTwoResult,
+		]);
+		const usage = events.filter((event) => event.kind === "usage");
+		expect(usage.map((event) => event.turn)).toEqual([
+			`agy:usage:${CENSUS_CONVERSATION}:step:1`,
+			`agy:usage:${CENSUS_CONVERSATION}:step:3`,
+		]);
+		// The second turn spent 4648 in. A `result` read as that turn's own total would report
+		// 21419 − 4648 = 16771 — the first turn's spend, a second time, under a key of its own.
+		expect(usage.map((event) => event.inputTokens)).toEqual([16771, 4648]);
+	});
+
+	it("leaves a restored session's totals exactly where the checkpoint left them", () => {
+		// The restore: the desk boots over a checkpointed ledger, the layer is rebuilt from nothing
+		// (`idleTurn`, no ordinal and no cumulative), and `start({resume})` reopens the conversation on
+		// a new child. What the ledger already holds must neither grow nor be aliased away (#8695).
+		const before = fold([
+			fixtures.init,
+			fixtures.censusTurnOneStep,
+			fixtures.censusTurnOneResult,
+			fixtures.censusTurnTwoStep,
+			fixtures.censusTurnTwoResult,
+		]);
+		const checkpointed = before.events
+			.filter((event) => event.kind === "usage")
+			.reduce(addUsage, emptyUsage);
+		expect(usageTotals(checkpointed)).toMatchObject({inputTokens: 21419, outputTokens: 2});
+
+		// The resumed child replays nothing (measured: eight seconds of silence after `init` before
+		// any prompt), so a restore with no further turn hands the ledger nothing at all.
+		const restored = fold([fixtures.init], idleTurn);
+		expect(restored.events.filter((event) => event.kind === "usage")).toEqual([]);
+		const afterRestore = restored.events
+			.filter((event) => event.kind === "usage")
+			.reduce(addUsage, checkpointed);
+		expect(usageTotals(afterRestore)).toMatchObject({inputTokens: 21419, outputTokens: 2});
+
+		// And the turn run *after* the restore adds its own spend, once: keyed on agy's own step and
+		// turn numbers, it can neither land on an entry the checkpoint holds nor be counted twice.
+		const third = fold([fixtures.init, fixtures.censusResumedStep, fixtures.censusResumedResult]);
+		const totals = usageTotals(
+			third.events.filter((event) => event.kind === "usage").reduce(addUsage, afterRestore),
+		);
+		expect(totals).toMatchObject({inputTokens: 21419 + 4861, outputTokens: 3});
+	});
+
+	it("re-folds a replayed turn onto the entry it already wrote rather than a second one", () => {
+		const once = fold([fixtures.init, fixtures.censusTurnOneStep, fixtures.censusTurnOneResult]);
+		const ledger = once.events
+			.filter((event) => event.kind === "usage")
+			.reduce(addUsage, emptyUsage);
+		// The same lines again, through a carry that knows nothing — a replay from a rebuilt layer.
+		const again = fold([fixtures.init, fixtures.censusTurnOneStep, fixtures.censusTurnOneResult]);
+		const totals = usageTotals(
+			again.events.filter((event) => event.kind === "usage").reduce(addUsage, ledger),
+		);
+		expect(totals).toMatchObject({inputTokens: 16771, outputTokens: 1});
 	});
 
 	it("keys a respawned child's usage past what the previous child spent", () => {
-		// A respawn (`setModel` / `setMode` / `setThinkingLevel`) mints a fresh carry for the new
-		// child while the core keeps the ledger it already has, so the ordinal is seeded from the
-		// session rather than restarted — `addUsage` keeps the *first* entry under a key it has seen.
-		const first = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
-		const second = fold(
-			[fixtures.init, fixtures.responseDone, fixtures.resultSuccess],
-			turnFrom(first.turn.usageReports),
-		);
+		// A respawn (`setModel` / `setMode` / `setThinkingLevel`) mints a fresh carry for the new child
+		// while the core keeps the ledger it already has. The new child resumes the same conversation,
+		// so its steps carry step indices the first child never used and its `result` a higher
+		// `num_turns` — and nothing has to be handed across the respawn for the keys to stay apart.
+		const first = fold([
+			fixtures.init,
+			fixtures.censusTurnOneStep,
+			fixtures.censusTurnOneResult,
+			fixtures.censusTurnTwoStep,
+			fixtures.censusTurnTwoResult,
+		]);
+		const second = fold([fixtures.init, fixtures.censusResumedStep, fixtures.censusResumedResult]);
 		const usage = [...first.events, ...second.events].filter((event) => event.kind === "usage");
 		expect(usage.map((event) => event.turn)).toEqual([
-			"agy:usage:0",
-			"agy:usage:1",
-			"agy:usage:2",
-			"agy:usage:3",
+			`agy:usage:${CENSUS_CONVERSATION}:step:1`,
+			`agy:usage:${CENSUS_CONVERSATION}:step:3`,
+			`agy:usage:${CENSUS_CONVERSATION}:step:6`,
 		]);
 		const totals = usageTotals(usage.reduce(addUsage, emptyUsage));
-		expect(totals).toMatchObject({inputTokens: 20963 * 2, outputTokens: 151 * 2});
+		expect(totals).toMatchObject({inputTokens: 21419 + 4861, outputTokens: 3});
 	});
 
 	it("falls back to the bare binary name when init announced no model", () => {
@@ -400,6 +484,56 @@ describe("the terminal result", () => {
 	it("reads a status this pin has never seen as a failure rather than a success", () => {
 		const {events} = fold([patchResult(fixtures.resultSuccess, {status: "INTERRUPTED"})]);
 		expect(events.at(-1)).toMatchObject({kind: "failure", failure: {reason: "INTERRUPTED"}});
+	});
+
+	/**
+	 * `fixtures.resultInterrupted` is a verbatim capture of the terminal `result` a `SIGINT`'d turn
+	 * emits — taken from a direct probe of agy v1.1.28, and the same shape
+	 * [#8694](https://github.com/kamp-us/phoenix/issues/8694) recorded off a v1.1.27 desk run (that
+	 * issue quotes the projection, `detail: "interrupted"`, rather than the whole line; the probe
+	 * supplies the envelope around it). The mark is what #8693 was missing: the window renders the
+	 * break off the transcript, so a stop with no row to mark leaves "Ready." and nothing else.
+	 */
+	describe("a turn the operator stopped", () => {
+		it("marks the cut reply interrupted instead of failing the turn", () => {
+			const {events} = fold([
+				fixtures.init,
+				fixtures.responseActive,
+				patchResult(fixtures.resultInterrupted, {conversation_id: CONVERSATION}),
+			]);
+			expect(events.filter((event) => event.kind === "failure")).toEqual([]);
+			const rendered = items(events);
+			const cut = rendered.at(-1);
+			expect(cut).toMatchObject({kind: "assistant", interrupted: true});
+			// The same row the deltas streamed into, superseded rather than doubled.
+			expect(cut?.id).toBe(rendered[0]?.id);
+			expect(cut?.kind === "assistant" && cut.text).toContain("**5** files");
+		});
+
+		it("mints a row to carry the mark even when the reply had no text yet", () => {
+			const rendered = items(fold([fixtures.init, fixtures.resultInterrupted]).events);
+			expect(rendered).toEqual([
+				expect.objectContaining({kind: "assistant", text: "", interrupted: true}),
+			]);
+		});
+
+		it("still reports the stopped turn's usage, which agy does count", () => {
+			const {events} = fold([fixtures.init, fixtures.resultInterrupted]);
+			expect(summed(events)).toEqual({inputTokens: 16793, outputTokens: 1105});
+		});
+
+		it("reads any other ERROR as the failure it is", () => {
+			const {events} = fold([
+				patchResult(fixtures.resultInterrupted, {error: "timeout waiting for response"}),
+			]);
+			expect(events.at(-1)).toMatchObject({
+				kind: "failure",
+				failure: {tag: "AgyTurnFailed", detail: "timeout waiting for response"},
+			});
+			expect(items(events).some((item) => item.kind === "assistant" && item.interrupted)).toBe(
+				false,
+			);
+		});
 	});
 
 	it("surfaces denied_actions as a system row instead of swallowing them", () => {

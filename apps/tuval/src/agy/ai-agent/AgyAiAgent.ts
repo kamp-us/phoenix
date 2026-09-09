@@ -16,11 +16,13 @@
  * `--conversation=<id>`, which returns the same conversation id and carries its context. The event
  * queue is *not* replaced across a respawn: a model switch must not end the window's subscription.
  *
- * **`interrupt` ends the session and cannot say so at the wire.** SIGINT makes agy exit 1 after a
- * well-formed terminal `result` reading `status: "ERROR"` / `"timeout waiting for response"`, and
- * no `INTERRUPTED` status is ever emitted (ADR 0362). The layer's own memory of having sent the
- * signal is the only thing that separates the two, and it spends it in `refusals.ts`'s
- * `processGone`. The way back is another `start({cwd, resume})`.
+ * **`interrupt` ends the session, and the wire does say so.** SIGINT makes agy exit 1 after a
+ * well-formed terminal `result` reading `status: "ERROR"` / `error: "interrupted"` — measured at
+ * v1.1.27 and v1.1.28, correcting ADR 0362's original reading of that string as
+ * `"timeout waiting for response"` (#8694). So the stop is named on the stream and `mapper.ts` marks
+ * the cut reply off it; the layer's own memory of having sent the signal is still what `refusals.ts`'s
+ * `processGone` spends, because a child that dies with no terminal result at all says nothing either
+ * way. The way back is another `start({cwd, resume})`.
  *
  * **Two agy behaviours shape this file without being visible in it.** Turns are strictly sequential
  * — stdin lines queue and a second prompt does not preempt a running one — so nothing here
@@ -80,7 +82,7 @@ import {
 import {commandsOf} from "./commands.ts";
 import {systemItem} from "./items.ts";
 import {commandArgv, promptLine, sessionArgv} from "./launch.ts";
-import {type AgyTurn, eventsOf, turnFrom} from "./mapper.ts";
+import {type AgyTurn, eventsOf, idleTurn} from "./mapper.ts";
 import {
 	detailOf,
 	historyUnreadable,
@@ -170,21 +172,14 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		const session = yield* Ref.make<Session | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const commandCache = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
-		// This process's own memory of having sent SIGINT. The wire cannot tell an interrupt from a
-		// timeout, so nothing but this distinguishes them (see `refusals.ts`).
+		// This process's own memory of having sent SIGINT, spent only where the wire said nothing: a
+		// child that exits with no terminal `result` at all (see `refusals.ts`'s `processGone`).
 		const interrupted = yield* Ref.make(false);
 		// Whether a turn is in flight: true from the send, false once the envelope says `result`.
 		// It is the reason a refused interrupt carries (ADR 0356), and nothing on agy's wire answers
 		// that question — a layer that read it off the stream would have to wait for the very
 		// terminal event the refusal means never comes.
 		const turnLive = yield* Ref.make(false);
-		/**
-		 * The session's usage-report ordinal, and the reason it lives here rather than on `AgyTurn`:
-		 * a respawn mints a fresh carry but keeps the core state it reports into, and the core keeps
-		 * the *first* entry under a usage key. An ordinal that restarted per child would alias keys
-		 * the ledger has already spent and drop the new child's tokens (#8178 criterion 12).
-		 */
-		const usageReports = yield* Ref.make(0);
 		/**
 		 * A pick made before any session existed, or the settings the running one was launched with.
 		 * Held rather than refused — "no session yet" is not "not offered" (#7981) — and on this
@@ -260,7 +255,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			opened: Deferred.Deferred<string, string>,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
-				const turn = yield* Ref.make<AgyTurn>(turnFrom(yield* Ref.get(usageReports)));
+				const turn = yield* Ref.make<AgyTurn>(idleTurn);
 				const lines = Stream.decodeText(child.handle.stdout).pipe(
 					Stream.splitLines,
 					Stream.runForEach((line) =>
@@ -271,7 +266,6 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 							}
 							const folded = eventsOf(yield* Ref.get(turn), line, Date.now());
 							yield* Ref.set(turn, folded.next);
-							yield* Ref.set(usageReports, folded.next.usageReports);
 							yield* emit(into, folded.events);
 							// The turn is over and the composer has to be let go of. The mapper says
 							// what happened in it; only the envelope says that it ended.
@@ -303,7 +297,16 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 					yield* emit(into, [{kind: "phase", phase: "gone"}]);
 					yield* Queue.fail(into, failure);
 				});
-				yield* Effect.race(Effect.race(lines, warnings), ended);
+				// Drains first, exit last, and never a race between them: stdout closes the instant the
+				// child goes, so racing the two let the EOF cancel the exit watch — no `gone` phase,
+				// no failed queue, and a window left on whatever phase it had last been given. That is
+				// how an interrupted turn came to read "Ready." over a dead subprocess (#8693). In the
+				// other direction the same order is what keeps the terminal `result` from being cut
+				// off mid-fold by an exit that arrived while lines were still buffered.
+				yield* Effect.andThen(
+					Effect.all([lines, warnings], {concurrency: "unbounded", discard: true}),
+					ended,
+				);
 			});
 
 		const teardown = (child: Child): Effect.Effect<void> =>
@@ -311,6 +314,18 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				Effect.andThen(Queue.shutdown(child.stdin)),
 				Effect.andThen(Scope.close(child.scope, Exit.void)),
 			);
+
+		// The child is spawned into a Scope of its own so a respawn can take one down without taking
+		// the layer with it — which leaves nothing holding the last one when the layer itself closes,
+		// and the CLI outlived the desk that launched it (#8696). `ChildProcess.make`'s own kill is
+		// that Scope's finalizer, so closing it here is the whole fix; the codex transport gets this
+		// for free by spawning into its caller's ambient Scope (`codex/transport.ts`).
+		yield* Scope.addFinalizer(
+			layerScope,
+			Effect.flatMap(Ref.get(session), (current) =>
+				current === null ? Effect.void : teardown(current.child),
+			),
+		);
 
 		/**
 		 * Launch, wait for `init`, and hand back the session it opened.

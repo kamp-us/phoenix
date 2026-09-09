@@ -49,19 +49,17 @@ export const malformedPrompt = (detail: string): PromptError =>
 /**
  * The subprocess is gone, as the one failure that ends `events`.
  *
- * **An interrupt is indistinguishable from a timeout at this wire, and this is the mapping site
- * that says so.** `SIGINT` makes agy exit 1 after emitting a well-formed terminal `result` carrying
- * `status: "ERROR"` and `error: "timeout waiting for response"`; the `INTERRUPTED` status exists in
- * the binary as a string and never fires (ADR 0362). So nothing downstream can tell a stop the
- * operator asked for from a stall the model fell into — *except* this layer, which knows it sent
- * the signal, and that knowledge lives here and nowhere else. The `interrupted` flag is not
- * evidence about the wire; it is this process's own memory of what it did.
+ * **This is the exit, not the turn.** `SIGINT` makes agy exit 1 after a terminal `result` reading
+ * `status: "ERROR"` / `error: "interrupted"` — the wire names the stop, which `mapper.ts` marks the
+ * cut reply off (#8694, correcting ADR 0362's `"timeout waiting for response"`). What reaches *here*
+ * is the child being gone, and a child can go without ever saying why: then the `interrupted` flag is
+ * this process's own memory of what it did, and the only thing that separates a stop from a crash.
  */
 export const processGone = (exitCode: number | null, interrupted: boolean): TransportError =>
 	new TransportError({
 		reason: "disconnected",
 		detail: interrupted
-			? `the agy subprocess ended after an interrupt (exit ${exitCode ?? "unknown"}); agy reports an interrupt as a timeout, so the terminal result reads "timeout waiting for response" either way`
+			? `the agy subprocess ended after an interrupt (exit ${exitCode ?? "unknown"})`
 			: `the agy subprocess exited with code ${exitCode ?? "unknown"}`,
 	});
 
@@ -70,8 +68,8 @@ export const processGone = (exitCode: number | null, interrupted: boolean): Tran
  *
  * The refused thing here is the *interrupt call* — the signal never left this process — which is a
  * different fact from the one `processGone` above reports, where the signal worked and the child is
- * gone. agy's wire answers nothing about either, so `turnRunning` is this layer's own memory of
- * having sent a turn and not yet seen its `result`, and it is the half the fold routes on.
+ * gone. The signal never left, so no `result` is coming to say which half this is: `turnRunning` is
+ * this layer's own memory of having sent a turn and not yet seen one, and it is what the fold routes on.
  */
 export const interruptFailureOf = (cause: unknown, turnRunning: boolean): AgentFailure => {
 	const error = new InterruptError({

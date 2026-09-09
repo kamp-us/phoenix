@@ -1,6 +1,8 @@
 /**
- * Captured agy v1.1.27 stream lines, verbatim apart from one substitution: the invoking user's
- * home directory reads `/Users/founder`, so no real home path lands in the repo.
+ * Captured agy stream lines, verbatim apart from one substitution: the invoking user's home
+ * directory reads `/Users/founder`, so no real home path lands in the repo. Everything down to
+ * `resultSuccess` is v1.1.27, the version ADR 0362 pins; the usage census and the interrupted
+ * `result` at the foot are v1.1.28 and say so where they are declared.
  *
  * Every line below came off a live run of
  * `agy --input-format=stream-json --output-format=stream-json --print='' --model=gemini-3.8-flash-low
@@ -51,3 +53,41 @@ export const systemMessage =
 /** The terminal `result`. `response` holds text no step delta carried (`"I have delegated…"`). */
 export const resultSuccess =
 	'{"event":"result","result":{"conversation_id":"9dcbb5a5-9a5f-4f9c-989b-ede03e790bbf","status":"SUCCESS","response":"The current directory contains **5** files:\\n\\n- [err.txt](file:///tmp/agyprobe/err.txt)\\n- [out.ndjson](file:///tmp/agyprobe/out.ndjson)\\n- [sample.txt](file:///tmp/agyprobe/sample.txt)\\n- [tool.err](file:///tmp/agyprobe/tool.err)\\n- [tool.ndjson](file:///tmp/agyprobe/tool.ndjson)\\n\\nTotal count: **5**\\n","duration_seconds":4.7196169999999995,"num_turns":1,"usage":{"input_tokens":20963,"output_tokens":151,"thinking_tokens":0,"cache_read_tokens":12195,"total_tokens":21114}}}';
+
+/**
+ * A three-turn usage census, captured from **agy v1.1.28** on one conversation — the first two turns
+ * on one child, the third on a child that resumed it with `--conversation=<id>`. It is here because
+ * it is the only capture that can show what a one-turn capture cannot: `result.usage` is the
+ * *conversation's* running total, while a turn's own `agent_response` step reports that turn's spend
+ * (ADR 0362; [#8695](https://github.com/kamp-us/phoenix/issues/8695)).
+ *
+ * Read the six together: the steps report `16771/1`, `4648/1`, `4861/1` and the results report
+ * `16771/1`, `21419/2`, `26280/3`.
+ */
+export const censusTurnOneStep =
+	'{"event":"step_update","step_update":{"conversation_id":"cba39437-e61b-48f0-a7cd-d78b59b6fcae","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"ONE\\n","duration_seconds":1.418274,"usage":{"input_tokens":16771,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16772}}}';
+
+export const censusTurnOneResult =
+	'{"event":"result","result":{"conversation_id":"cba39437-e61b-48f0-a7cd-d78b59b6fcae","status":"SUCCESS","response":"ONE\\n","duration_seconds":1.465859,"num_turns":1,"usage":{"input_tokens":16771,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16772}}}';
+
+export const censusTurnTwoStep =
+	'{"event":"step_update","step_update":{"conversation_id":"cba39437-e61b-48f0-a7cd-d78b59b6fcae","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\\n","duration_seconds":1.277398,"usage":{"input_tokens":4648,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":12195,"total_tokens":4649}}}';
+
+export const censusTurnTwoResult =
+	'{"event":"result","result":{"conversation_id":"cba39437-e61b-48f0-a7cd-d78b59b6fcae","status":"SUCCESS","response":"TWO\\n","duration_seconds":2.783006,"num_turns":2,"usage":{"input_tokens":21419,"output_tokens":2,"thinking_tokens":0,"cache_read_tokens":12195,"total_tokens":21421}}}';
+
+/** The resumed child's first turn. Its `step_index` continues at `6`, not at `0`. */
+export const censusResumedStep =
+	'{"event":"step_update","step_update":{"conversation_id":"cba39437-e61b-48f0-a7cd-d78b59b6fcae","step_index":6,"state":"DONE","step_type":"agent_response","text_delta":"\\n","duration_seconds":1.061844,"usage":{"input_tokens":4861,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":12188,"total_tokens":4862}}}';
+
+export const censusResumedResult =
+	'{"event":"result","result":{"conversation_id":"cba39437-e61b-48f0-a7cd-d78b59b6fcae","status":"SUCCESS","response":"THREE\\n","duration_seconds":31.583936,"num_turns":3,"usage":{"input_tokens":26280,"output_tokens":3,"thinking_tokens":0,"cache_read_tokens":24383,"total_tokens":26283}}}';
+
+/**
+ * The terminal `result` of a turn stopped with `SIGINT`, captured from a direct probe of agy v1.1.28.
+ * The same shape the v1.1.27 desk run recorded on
+ * [#8694](https://github.com/kamp-us/phoenix/issues/8694) — `status: "ERROR"`, an empty `response`
+ * and `error: "interrupted"` — which is what corrected ADR 0362's reading of that string.
+ */
+export const resultInterrupted =
+	'{"event":"result","result":{"conversation_id":"9cb073ff-0a81-4b21-b81b-1a2e1c78969c","status":"ERROR","response":"","error":"interrupted","duration_seconds":5.99386,"num_turns":1,"usage":{"input_tokens":16793,"output_tokens":1105,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":17898}}}';
