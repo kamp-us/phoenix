@@ -621,6 +621,7 @@ describe("a subagent's start and end over the delta stream", () => {
 					lastLine: "",
 					startedAt: 11,
 					tokens: 0,
+					workers: 1,
 					items: [],
 					status: "running",
 				},
@@ -638,6 +639,7 @@ describe("a subagent's start and end over the delta stream", () => {
 					lastLine: "done: 3 findings",
 					startedAt: 12,
 					tokens: 0,
+					workers: 1,
 					items: [],
 					status: "finished",
 				},
@@ -1037,6 +1039,7 @@ describe("a running subagent filled from its own transcript artifact", () => {
 					lastLine: "reading src/a.ts",
 					startedAt: 11,
 					tokens: 42,
+					workers: 1,
 					items: [childRow],
 					status: "running",
 				},
@@ -1081,6 +1084,7 @@ describe("a running subagent filled from its own transcript artifact", () => {
 				lastLine: "reading src/a.ts",
 				startedAt: 13,
 				tokens: 42,
+				workers: 1,
 				items: [childRow],
 				status: "finished",
 			},
@@ -1153,6 +1157,7 @@ describe("a detached subagent filled through the tool-call index", () => {
 				lastLine: "",
 				startedAt: 21,
 				tokens: 0,
+				workers: 1,
 				items: [],
 				status: "running",
 			},
@@ -1169,6 +1174,7 @@ describe("a detached subagent filled through the tool-call index", () => {
 					lastLine: "cutting the lane",
 					startedAt: 21,
 					tokens: 17,
+					workers: 1,
 					items: [
 						{
 							kind: "assistant",
@@ -1242,6 +1248,8 @@ describe("a detached subagent filled through the tool-call index", () => {
 					lastLine: "reading the diff",
 					startedAt: 21,
 					tokens: 26,
+					// Two runs resolved, so the one slot says how many workers its merged rows are of.
+					workers: 2,
 					items: [
 						{
 							kind: "assistant",
@@ -1350,6 +1358,7 @@ describe("a finished detached subagent on a session that never watched it run", 
 				lastLine: "cutting the lane",
 				startedAt: 31,
 				tokens: 17,
+				workers: 1,
 				items: [
 					{
 						kind: "assistant",
@@ -1377,6 +1386,7 @@ describe("a finished detached subagent on a session that never watched it run", 
 				lastLine: "cutting the lane",
 				startedAt: 31,
 				tokens: 17,
+				workers: 1,
 				items: [
 					{
 						kind: "assistant",
@@ -1400,6 +1410,7 @@ describe("a finished detached subagent on a session that never watched it run", 
 				lastLine: "PR opened",
 				startedAt: 31,
 				tokens: 33,
+				workers: 1,
 				items: [],
 				status: "finished",
 			},

@@ -94,6 +94,8 @@ export class NativeSubagents {
 			this.slots.set(
 				value.id,
 				previous ?? {
+					// One worker by construction: the multi-child spawn is refused just above.
+					workers: 1,
 					id: ItemId.make(value.id),
 					type: "agent",
 					lastLine: "",

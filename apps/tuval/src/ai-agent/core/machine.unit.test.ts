@@ -8,7 +8,12 @@
 import {applyCellChecked} from "@demlik/tea";
 import {describe, expect, it} from "vitest";
 import {pendingPermission} from "../../ai-agent-fixtures/permissions.ts";
-import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
+import {
+	assistantItem,
+	subagentSlot,
+	toolItem,
+	userItem,
+} from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent} from "../events.ts";
 import {Mode, type ModelRef, type PermissionRequest, type TranscriptItem} from "../ports/index.ts";
 import {checkpointUnreadable} from "./failures.ts";
@@ -163,6 +168,33 @@ describe("a checkpoint written by an older build", () => {
 
 	it("keeps a refusal the operator can read out of the restored session", () => {
 		expect(restoredFrom(deskShaped()).failure).toBeNull();
+	});
+
+	/**
+	 * A slot saved before it counted its workers, read as the one worker it meant (#8664).
+	 *
+	 * `withCheckpointDefaults` cannot reach it: `subagents` is present and well-formed, and it is
+	 * the per-slot shape that grew a field — so without the repair the predicate refuses the whole
+	 * checkpoint and every desk holding a subagent comes back `gone`.
+	 */
+	const uncounted = (): Record<string, unknown> => {
+		const {workers, ...slot} = subagentSlot("call-1");
+		return {...deskShaped(), subagents: {"call-1": slot}};
+	};
+
+	it("reads a slot that counted no workers as the one worker it held", () => {
+		const state = restoredFrom(uncounted());
+		expect(state.failure).toBeNull();
+		expect(state.subagents["call-1"]?.workers).toBe(1);
+		expect(state.subagents["call-1"]?.lastLine).toBe(subagentSlot("call-1").lastLine);
+	});
+
+	it("still refuses a slot whose count is present and wrong", () => {
+		const state = restoredFrom({
+			...deskShaped(),
+			subagents: {"call-1": {...subagentSlot("call-1"), workers: 0}},
+		});
+		expect(state.failure).toEqual(checkpointUnreadable);
 	});
 
 	// Reds if a field is added to the state with no entry in `initialState` to default it from.

@@ -5,7 +5,13 @@
 
 import {describe, expect, it} from "vitest";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
-import {elapsedLabel, runningSubagents, SUBAGENT_ROW_CAP, tokenLabel} from "./subagents.ts";
+import {
+	elapsedLabel,
+	runningSubagents,
+	SUBAGENT_ROW_CAP,
+	subagentPhrase,
+	tokenLabel,
+} from "./subagents.ts";
 
 const slots = (...entries: ReadonlyArray<ReturnType<typeof subagentSlot>>) =>
 	Object.fromEntries(entries.map((slot) => [slot.id, slot]));
@@ -27,6 +33,7 @@ describe("runningSubagents", () => {
 					lastLine: "reading rows.ts",
 					startedAt: 1_756_000_000_000,
 					tokens: 2_400,
+					workers: 1,
 					status: "running",
 					current: false,
 				},
@@ -166,5 +173,23 @@ describe("tokenLabel", () => {
 	it("reads millions compactly too", () => {
 		expect(tokenLabel(1_250_000)).toBe("1.3M");
 		expect(tokenLabel(4_000_000)).toBe("4M");
+	});
+});
+
+describe("subagentPhrase", () => {
+	it("names one worker as the slot's own label, or the bare word when it has none", () => {
+		expect(subagentPhrase("explorer")).toBe("explorer subagent");
+		expect(subagentPhrase(null)).toBe("subagent");
+		expect(subagentPhrase("explorer", 1)).toBe("explorer subagent");
+	});
+
+	// Every call site drops this into a sentence — "the … is still running", "the …'s transcript" —
+	// so the count reads as an adjective rather than appended (founder ruling 2026-09-09 on #8664).
+	it("carries a fan-out's worker count where the sentence still parses", () => {
+		expect(subagentPhrase("explorer", 3)).toBe("3-worker explorer subagent");
+		expect(subagentPhrase(null, 3)).toBe("3-worker subagent");
+		expect(`The ${subagentPhrase("explorer", 3)} is still running.`).toBe(
+			"The 3-worker explorer subagent is still running.",
+		);
 	});
 });

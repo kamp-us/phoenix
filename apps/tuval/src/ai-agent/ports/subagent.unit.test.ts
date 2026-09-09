@@ -1,5 +1,5 @@
 /**
- * The subagent slot's admission test: the six fields it carries, and what each of them refuses.
+ * The subagent slot's admission test: the seven fields it carries, and what each of them refuses.
  *
  * The `items` arm is the one worth a case of its own. A worker's inbound turn arrives
  * parent-tagged like everything else it produces, so the slot admits every item kind rather than
@@ -22,7 +22,7 @@ import {isSubagentSlot, isSubagentSlots} from "./subagent.ts";
 const slot = subagentSlot("call-1");
 
 describe("a subagent slot", () => {
-	it("is admitted with the five reported fields and the id it is keyed on", () => {
+	it("is admitted with the six reported fields and the id it is keyed on", () => {
 		expect(isSubagentSlot(slot)).toBe(true);
 		expect(Object.keys(slot).sort()).toEqual([
 			"id",
@@ -32,6 +32,7 @@ describe("a subagent slot", () => {
 			"status",
 			"tokens",
 			"type",
+			"workers",
 		]);
 	});
 
@@ -48,6 +49,13 @@ describe("a subagent slot", () => {
 		expect(isSubagentSlot({...slot, tokens: -1})).toBe(false);
 		expect(isSubagentSlot({...slot, tokens: 1.5})).toBe(false);
 		expect(isSubagentSlot({...slot, tokens: "340k"})).toBe(false);
+		// A slot is of at least one worker, so zero is not a count and neither is an absent one.
+		expect(isSubagentSlot({...slot, workers: 3})).toBe(true);
+		expect(isSubagentSlot({...slot, workers: 0})).toBe(false);
+		expect(isSubagentSlot({...slot, workers: -1})).toBe(false);
+		expect(isSubagentSlot({...slot, workers: 1.5})).toBe(false);
+		expect(isSubagentSlot({...slot, workers: "3 workers"})).toBe(false);
+		expect(isSubagentSlot({...slot, workers: undefined})).toBe(false);
 		expect(isSubagentSlot({...slot, items: [{kind: "user"}]})).toBe(false);
 		expect(isSubagentSlot({...slot, items: {}})).toBe(false);
 		expect(isSubagentSlot({...slot, status: "done"})).toBe(false);

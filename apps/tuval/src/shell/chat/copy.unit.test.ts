@@ -5,7 +5,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {tuvalDesignMessages, tuvalDesignTranslate} from "./copy.ts";
+import {tuvalDesignMessages, tuvalDesignTranslate, workerCountLabel} from "./copy.ts";
 
 const entries = Object.entries(tuvalDesignMessages);
 
@@ -33,5 +33,14 @@ describe("the Tuval design catalog", () => {
 			"The agent is using {tool}.",
 		);
 		expect(tuvalDesignTranslate("admin.agent.send")).toBe("send");
+	});
+});
+
+describe("workerCountLabel", () => {
+	// A fan-out stays one slot (founder ruling 2026-09-09 on #8664), and this is what says so.
+	it("counts a fan-out's workers and says nothing about a single one", () => {
+		expect(workerCountLabel(1)).toBeNull();
+		expect(workerCountLabel(2)).toBe("2 workers");
+		expect(workerCountLabel(12)).toBe("12 workers");
 	});
 });

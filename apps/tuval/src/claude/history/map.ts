@@ -217,6 +217,8 @@ const openSlot = (id: string, type: string, at: number): SubagentSlot => ({
 	lastLine: "",
 	startedAt: at,
 	tokens: 0,
+	// A sidechain is one worker: the SDK drives each through its own spawning call.
+	workers: 1,
 	items: [],
 	status: "running",
 });
