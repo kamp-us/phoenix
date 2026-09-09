@@ -623,6 +623,9 @@ const NOTICE_SUMMARY_LIMIT = 200;
 const LOCAL_COMMAND_OPEN = "<local-command-stdout>";
 const LOCAL_COMMAND_CLOSE = "</local-command-stdout>";
 
+const CAVEAT_OPEN = "<local-command-caveat>";
+const CAVEAT_CLOSE = "</local-command-caveat>";
+
 /**
  * The escape a command writes to colour its own output for a terminal. The captured `/model`
  * result carries two, and left in they reach a transcript as unprintable bytes inside the line.
@@ -637,8 +640,8 @@ const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
  * as a turn it puts a system echo and its markup under YOU (#8211).
  *
  * The match is the captured shape and nothing looser: the text must *be* the wrapper, so a prompt
- * quoting or explaining these tags is still the operator's own and stays one. Sibling tags —
- * `<local-command-caveat>`, `<command-name>` — are a different shape and are not read here.
+ * quoting or explaining these tags is still the operator's own and stays one. The sibling
+ * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s; `<command-name>` is read nowhere yet.
  */
 const localCommandOutputOf = (text: string): string | null => {
 	const trimmed = text.trim();
@@ -647,6 +650,19 @@ const localCommandOutputOf = (text: string): string | null => {
 	}
 	const inner = trimmed.slice(LOCAL_COMMAND_OPEN.length, -LOCAL_COMMAND_CLOSE.length);
 	return inner.replaceAll(sgr, "").trim();
+};
+
+/**
+ * Whether this user frame is the caveat the CLI writes ahead of a slash command's output.
+ *
+ * Fixed boilerplate addressed to the model — "DO NOT respond to these messages" — identical on
+ * every occurrence and carrying nothing a transcript reader can use, so unlike the command's own
+ * output it becomes no row at all (#8641). Matched the same way as that output: the trimmed text
+ * must *be* the wrapper, so an operator prompt quoting the tag stays the operator's own turn.
+ */
+const isLocalCommandCaveat = (text: string): boolean => {
+	const trimmed = text.trim();
+	return trimmed.startsWith(CAVEAT_OPEN) && trimmed.endsWith(CAVEAT_CLOSE);
 };
 
 /**
@@ -665,8 +681,8 @@ const noticeOf = (output: string): {readonly text: string; readonly detail?: str
 };
 
 /**
- * A user frame is either the operator's prompt, a local command's output, or the results of the
- * calls the last turn opened.
+ * A user frame is either the operator's prompt, a local command's caveat or output, or the results
+ * of the calls the last turn opened.
  *
  * A result whose call this mapping never saw is dropped and counted: the item union has no
  * name-less tool row, and inventing one would put a lie on screen. It happens only to a reader
@@ -685,6 +701,7 @@ export const userEvents = (
 	if (results.length === 0) {
 		const text = textOf(body);
 		if (text.length === 0) return skipMessage(mapping);
+		if (isLocalCommandCaveat(text)) return skipMessage(mapping);
 		const id = typeof message.uuid === "string" ? message.uuid : `user-${at}`;
 		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
 		// agent's own prose — seen live on #8400's desk run.
