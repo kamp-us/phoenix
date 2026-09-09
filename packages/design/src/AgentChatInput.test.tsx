@@ -1,10 +1,11 @@
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
-import {createRef} from "react";
+import {Paperclip} from "lucide-react";
+import {createRef, useRef} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AgentChatInput} from "./AgentChatInput";
 import {useAgentChatInput} from "./agent-chat/Root";
 import type {AgentChatInputBridge} from "./agent-chat-bridge";
-import {Form} from "./Form";
+import {Form, Input} from "./Form";
 import {type DesignTranslate, DesignTranslationProvider, defaultDesignTranslate} from "./i18n";
 
 function response(body: unknown): Response {
@@ -206,7 +207,9 @@ function collidingCatalogBridge(): {
  * blanked.
  */
 function ComposedComposer() {
-	const {submit} = useAgentChatInput();
+	const {submit, variant, disabled, addImage} = useAgentChatInput();
+	const t = defaultDesignTranslate;
+	const imageInputRef = useRef<HTMLInputElement>(null);
 	return (
 		<AgentChatInput.Surface>
 			<Form
@@ -217,7 +220,36 @@ function ComposedComposer() {
 				}}
 			>
 				<AgentChatInput.Field />
-				<AgentChatInput.Toolbar />
+				<div className="kp-agent-chat__actions">
+					<div className="kp-agent-chat__primary-controls">
+						{variant === "focused" ? (
+							<>
+								<Input
+									ref={imageInputRef}
+									className="kp-visually-hidden"
+									label={t("admin.agent.image.add")}
+									type="file"
+									accept="image/*"
+									tabIndex={-1}
+									onChange={(event) => {
+										void addImage(event.currentTarget.files?.[0]);
+										event.currentTarget.value = "";
+									}}
+								/>
+								<AgentChatInput.Control
+									icon={Paperclip}
+									className="kp-agent-chat__icon-button"
+									aria-label={t("admin.agent.image.add")}
+									onClick={() => imageInputRef.current?.click()}
+									disabled={disabled}
+								/>
+							</>
+						) : null}
+						<AgentChatInput.Settings />
+						{variant === "focused" ? <AgentChatInput.Overflow /> : null}
+					</div>
+					<AgentChatInput.PrimaryActions />
+				</div>
 			</Form>
 			<AgentChatInput.Hint />
 		</AgentChatInput.Surface>
