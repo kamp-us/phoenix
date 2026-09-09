@@ -1,7 +1,7 @@
 // The headless registry — the array order IS the curation order. See .patterns/atolye-exhibit-harness.md
 
 import type {AnyExhibit} from "./exhibit";
-import {agentChatInputExhibit} from "./exhibits/AgentChatInput.exhibit";
+import {agentChatInputExhibit, agentChatInputPartsExhibit} from "./exhibits/AgentChatInput.exhibit";
 import {avatarExhibit} from "./exhibits/Avatar.exhibit";
 import {buttonExhibit} from "./exhibits/Button.exhibit";
 import {cardExhibit} from "./exhibits/Card.exhibit";
@@ -33,6 +33,7 @@ const exhibits: readonly AnyExhibit[] = [
 	composerExhibit,
 	commandPaletteExhibit,
 	agentChatInputExhibit,
+	agentChatInputPartsExhibit,
 	buttonExhibit,
 	avatarExhibit,
 	cardExhibit,

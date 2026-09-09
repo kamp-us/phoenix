@@ -1226,7 +1226,7 @@ function ChatWindow({
 					onRestore={restoreSend}
 					onDiscard={discardSend}
 				/>
-				<AgentChatInput
+				<AgentChatInput.Root
 					ref={composerRef}
 					variant="focused"
 					bridge={composer.bridge}
@@ -1236,15 +1236,37 @@ function ChatWindow({
 					// mounted — the draft is the component's own state, so unmounting it would drop text
 					// the swap must not touch — and the placeholder swapped above says why.
 					disabled={viewing !== null}
-					// The mode picker rides the composer's `settings` slot rather than the bridge: mode is
-					// this window's vocabulary, and a bridge method would make every other implementor of
-					// `AgentChatInputBridge` answer a question only this one has (#8190).
-					settings={<ModeSwitch modes={process.state.modes} onSetMode={setMode} />}
 					initialValue={view.draft}
 					onDraftChange={(draft) =>
 						commit((current) => (current.draft === draft ? current : {...current, draft}))
 					}
-				/>
+				>
+					<AgentChatInput.Frame>
+						<AgentChatInput.Surface>
+							<AgentChatInput.Form>
+								<AgentChatInput.Field />
+								<AgentChatInput.Toolbar>
+									<AgentChatInput.Attach />
+									<AgentChatInput.Settings>
+										<AgentChatInput.Pickers />
+										{/*
+										 * The mode picker sits in the settings fieldset rather than behind a bridge
+										 * method: mode is this window's vocabulary, and a bridge method would make
+										 * every other implementor of `AgentChatInputBridge` answer a question only
+										 * this one has (#8190).
+										 */}
+										<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+									</AgentChatInput.Settings>
+									<AgentChatInput.Overflow />
+								</AgentChatInput.Toolbar>
+							</AgentChatInput.Form>
+							<AgentChatInput.Hint />
+							<AgentChatInput.Error />
+						</AgentChatInput.Surface>
+						<AgentChatInput.Inspector />
+						<AgentChatInput.ExtensionDialog />
+					</AgentChatInput.Frame>
+				</AgentChatInput.Root>
 			</section>
 		</DesignTranslationProvider>
 	);

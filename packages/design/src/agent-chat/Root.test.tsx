@@ -154,11 +154,18 @@ describe("AgentChatInput.Root", () => {
 	// Every part reads Root, so every part is unusable outside one — the primitive `Control` is the
 	// exception on purpose: it takes no state and is a button a host can place anywhere.
 	it.each([
+		["Frame", () => <AgentChatInput.Frame>body</AgentChatInput.Frame>],
 		["Surface", () => <AgentChatInput.Surface>body</AgentChatInput.Surface>],
+		["Form", () => <AgentChatInput.Form>body</AgentChatInput.Form>],
 		["Field", () => <AgentChatInput.Field />],
 		["Toolbar", () => <AgentChatInput.Toolbar />],
+		["Attach", () => <AgentChatInput.Attach />],
 		["Settings", () => <AgentChatInput.Settings />],
+		["Pickers", () => <AgentChatInput.Pickers />],
 		["Hint", () => <AgentChatInput.Hint />],
+		["Error", () => <AgentChatInput.Error />],
+		["Inspector", () => <AgentChatInput.Inspector />],
+		["ExtensionDialog", () => <AgentChatInput.ExtensionDialog />],
 	])("refuses %s outside a Root", (_name, Rendered) => {
 		const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 		expect(() => render(<Rendered />)).toThrow(

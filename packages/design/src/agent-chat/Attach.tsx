@@ -1,0 +1,40 @@
+import {Paperclip} from "lucide-react";
+import {useRef} from "react";
+import {Input} from "../Form";
+import {useDesignT} from "../i18n";
+import {AgentChatControl} from "./Control";
+import {useAgentChatInput} from "./Root";
+
+/**
+ * The image attach control and the hidden file input it opens — one part, because the control is
+ * useless without the input and a host placing them apart would only get that wrong.
+ */
+export function AgentChatAttach() {
+	const {disabled, addImage} = useAgentChatInput();
+	const t = useDesignT();
+	const imageInputRef = useRef<HTMLInputElement>(null);
+
+	return (
+		<>
+			<Input
+				ref={imageInputRef}
+				className="kp-visually-hidden"
+				label={t("admin.agent.image.add")}
+				type="file"
+				accept="image/*"
+				tabIndex={-1}
+				onChange={(event) => {
+					void addImage(event.currentTarget.files?.[0]);
+					event.currentTarget.value = "";
+				}}
+			/>
+			<AgentChatControl
+				icon={Paperclip}
+				className="kp-agent-chat__icon-button"
+				aria-label={t("admin.agent.image.add")}
+				onClick={() => imageInputRef.current?.click()}
+				disabled={disabled}
+			/>
+		</>
+	);
+}
