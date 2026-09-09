@@ -65,6 +65,11 @@ const DeclaredFeatures = Schema.Struct({
 	 * one change — a subagent's rows leaving the agent window's transcript (#8405).
 	 */
 	subagentList: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * Load the `pi-subagents` extension into a Pi session (#8555). A key missing here is a key the
+	 * decode drops, so a layer that stated it reached the browser and nothing else (#8595).
+	 */
+	piSubagents: Schema.optionalKey(Schema.Boolean),
 });
 
 export {featuresDefault, type TuvalFeatures} from "./features.ts";

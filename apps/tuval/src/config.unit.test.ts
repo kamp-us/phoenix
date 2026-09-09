@@ -133,6 +133,26 @@ describe("the feature flags", () => {
 			assert.deepStrictEqual(overGlobalOn.features, {subagentList: false, piSubagents: true});
 		}),
 	);
+
+	// A key the schema does not declare is a key the decode drops, so a flag missing from
+	// `DeclaredFeatures` reads as a config that stated nothing (#8595).
+	it.effect("keep a stated piSubagents rather than dropping it at the decode", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("pi-subagents-off"));
+			assert.deepStrictEqual(config.features, {piSubagents: false});
+		}),
+	);
+
+	it.effect("let a layer turn piSubagents off against its on default", () =>
+		Effect.gen(function* () {
+			const global = yield* layered(fixture("pi-subagents-off"), fixture("two-rows"));
+			assert.deepStrictEqual(global.features, {subagentList: true, piSubagents: false});
+			const project = yield* layered(fixture("two-rows"), fixture("pi-subagents-off"));
+			assert.deepStrictEqual(project.features, {subagentList: true, piSubagents: false});
+			const overGlobalOn = yield* layered(fixture("pi-subagents-on"), fixture("pi-subagents-off"));
+			assert.deepStrictEqual(overGlobalOn.features, {subagentList: true, piSubagents: false});
+		}),
+	);
 });
 
 describe("loadLayeredConfig", () => {

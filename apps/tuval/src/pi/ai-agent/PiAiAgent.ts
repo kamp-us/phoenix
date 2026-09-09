@@ -58,7 +58,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
-import {featuresDefault} from "../../features.ts";
+import {Features} from "../../feature-flags.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
 import {
@@ -908,7 +908,7 @@ const transport = (
  * runtime holds nothing to release — it declares no `dispose` or `close` — so it is created rather
  * than acquired.
  */
-const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
+const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost, never, Features> =>
 	Layer.unwrap(
 		Effect.gen(function* () {
 			const agentDir = options.agentDir ?? getAgentDir();
@@ -927,10 +927,11 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 						}),
 					),
 			}).pipe(Effect.orDie);
-			// The `piSubagents` flag and nothing else decides this. Off — the shipped default — it is
-			// an empty list, and an empty list is the same session this layer opened before the flag
-			// existed (`../server/AgentSessionHost.ts`'s `loaderFor`).
-			const extensionPaths = subagentExtensionPaths(featuresDefault);
+			// The `piSubagents` flag and nothing else decides this, read off the merged config rather
+			// than the defaults: a layer that states it wins, in either direction (#8595). Off is an
+			// empty list, which is the same session this layer opened before the flag existed
+			// (`../server/AgentSessionHost.ts`'s `loaderFor`).
+			const extensionPaths = subagentExtensionPaths(yield* Features);
 			return agentSessionHostLayer({
 				modelRuntime,
 				agentDir,
@@ -978,6 +979,6 @@ export const PiAiAgent = {
 	 * nothing that could act on one — a loopback port this process cannot bind is a broken host, not
 	 * a case the row models.
 	 */
-	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent> =>
+	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent, never, Features> =>
 		aiAgentOverHost(options).pipe(Layer.provide(host(options))),
 } as const;

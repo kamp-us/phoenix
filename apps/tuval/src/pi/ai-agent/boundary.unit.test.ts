@@ -13,17 +13,20 @@ import {join} from "node:path";
 import type {Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
+import type {Features} from "../../feature-flags.ts";
 import type {PiServerService, PiSessionHost, ServerBindFailed} from "../server/index.ts";
 import {PiAiAgent} from "./index.ts";
 
 /**
- * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is empty: the
- * ruled `Scope` is the scoped layer's own and is not a requirement a `Layer` type carries, so a
- * process provides this layer nothing and holds no Pi value of its own.
+ * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is `Features`
+ * and nothing else: the ruled `Scope` is the scoped layer's own and is not a requirement a `Layer`
+ * type carries, and the one open requirement is the merged flag record the kernel hands over at
+ * spawn (#8595). It is a kernel service, so the boundary this file guards still holds: no Pi value
+ * crosses out and no Pi type is named in `R`.
  */
 type RuledShape<L> =
 	L extends Layer.Layer<infer A, infer E, infer R>
-		? [A, E, R] extends [TuvalAiAgent, never, never]
+		? [A, E, R] extends [TuvalAiAgent, never, Features]
 			? true
 			: false
 		: false;
@@ -31,10 +34,12 @@ type RuledShape<L> =
 const surface: RuledShape<ReturnType<typeof PiAiAgent.layer>> = true;
 
 /** The control: a layer that published the server would publish the token with it. */
-const leaksTheServer: RuledShape<Layer.Layer<TuvalAiAgent | PiServerService>> = false;
+const leaksTheServer: RuledShape<Layer.Layer<TuvalAiAgent | PiServerService, never, Features>> =
+	false;
 
 /** The second control: a departure this test used to pin, now red on the error channel. */
-const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed>> = false;
+const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed, Features>> =
+	false;
 
 /**
  * The third control: the departure round 1 shipped. A `PiSessionHost` in `R` is a Pi-typed
