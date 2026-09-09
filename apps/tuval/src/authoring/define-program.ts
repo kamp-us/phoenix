@@ -1,0 +1,315 @@
+/**
+ * The spine of the authoring layer: `defineProgram` takes what a user writes — an id, ports,
+ * `init`, an `update` table and Demlik's dep-keyed `subs` — and answers a registry row
+ * (`../registry/program.ts`) the kernel already knows how to launch, wire, checkpoint, restore,
+ * reload, pick and window. It is a compiler, not a runtime: nothing here runs a program.
+ *
+ * Two things it exists to hide (#8716 R12.1). An in-port arrival is an `update` event carrying the
+ * decoded payload, which is the row's `receive` map written for the author. A returned effect list
+ * (`./effect.ts`) is the row's Cmd union, and the `handlers` that run those Cmds against
+ * `ProcessPorts` and the process spells are written once here rather than by every author — as is
+ * the dead `interpret` Demlik demands and the host never reads (#7576).
+ *
+ * **`FIELD_COMPILERS` is the extension seam this epic's field children share.** One row field per
+ * key, one key per line: `commands`, the `key` opt-in and the `title`/`status`/`window` children
+ * each add their own line and none edits another's; `define-program.unit.test.ts` holds that shape.
+ *
+ * Everything the layer does not sugar is still reachable, because the row is a plain object:
+ * `{...defineProgram({...}), restorable, checkpointWorthy}`.
+ */
+
+import type {DepKeyedSub, Interpret} from "@demlik/tea";
+import {Effect, Option} from "effect";
+import type {
+	PortRefused,
+	UnknownPort,
+	UnknownProcess,
+	UnknownProgram,
+} from "../commands/core/process.ts";
+import {SpawnedProcesses} from "../commands/core/process.ts";
+import type {OpenError} from "../durability/Checkpoints.ts";
+import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
+import {ProcessPorts} from "../ports/ProcessPorts.ts";
+import type {HandlerFailed, ProcessNotFound} from "../process/errors.ts";
+import {Processes} from "../process/Processes.ts";
+import type {
+	AnyProgram,
+	CapabilityRequest,
+	DefinitionIdentity,
+	HostHandlers,
+	Placement,
+	PortSchema,
+	ProgramCore,
+	Receiver,
+} from "../registry/program.ts";
+import {ProgramId} from "../registry/program.ts";
+import {
+	type AskEffect,
+	type EmitEffect,
+	type ProgramEffect,
+	type SendEffect,
+	type SpawnEffect,
+	type StopEffect,
+	spawned,
+	stopped,
+} from "./effect.ts";
+import {
+	type AnyPortDecl,
+	compilePorts,
+	type OutPortDecl,
+	type PortDecls,
+	type PortPayload,
+} from "./port.ts";
+
+/** Every event an authored `update` may hold a cell for carries its own type tag, as a Msg does. */
+export interface AuthoredEvent {
+	readonly type: string;
+}
+
+/** What one `update` cell answers: the next state, and the effects it asks for. */
+export type Answer<S> = readonly [S, ReadonlyArray<ProgramEffect>];
+
+export type EventHandler<S, E> = (state: S, event: E) => Answer<S>;
+
+/** An in-port arrival as the author's `update` sees it: the port's name, its decoded payload. */
+export interface ArrivalEvent<Name extends string, Payload> {
+	readonly type: Name;
+	readonly payload: Payload;
+}
+
+/** The declared ports that own a queue — `in` and `request` — which are the ones that arrive. */
+export type ArrivingPortNames<D extends PortDecls> = {
+	[K in keyof D]: D[K] extends OutPortDecl<any> ? never : K;
+}[keyof D] &
+	string;
+
+/**
+ * The author's `update`: a cell per event, keyed by the event's type. Every arriving port owes one
+ * and gets that port's decoded payload; the author's own events take the cells beside them.
+ *
+ * One mapped type over `keyof U | <arriving ports>` rather than an intersection of the two halves,
+ * because an intersection whose other half is an index signature contextually types every cell's
+ * event at `any` — including the port cells, which is exactly the inference this layer exists for.
+ * Measured at this pin: under the intersection a port cell's `event` accepted a `string`.
+ */
+export type UpdateTable<S, D extends PortDecls, U> = {
+	[K in keyof U | ArrivingPortNames<D>]: K extends ArrivingPortNames<D>
+		? EventHandler<S, ArrivalEvent<K & string, PortPayload<D[K & keyof D]>>>
+		: EventHandler<S, any>;
+};
+
+/** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
+export interface AuthoredProgram<S, D extends PortDecls, U> {
+	readonly id: string;
+	/** What a surface calls this program; absent falls through to `identity.program`. */
+	readonly label?: string;
+	readonly ports?: D;
+	/**
+	 * The state a fresh process starts on. A restored one starts on its checkpoint instead, which
+	 * is why this takes nothing: Demlik refuses a rehydrating `init` that emits Cmds, so the
+	 * compiled `init` answers the loaded state untouched whenever there is one.
+	 */
+	readonly init: () => S;
+	readonly update: U & UpdateTable<S, D, U>;
+	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
+	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
+	/**
+	 * The three inert records, each defaulted so an author writes none of them. They are data the
+	 * kernel stores and enforces nothing on (`../registry/program.ts` says so at length), so a
+	 * default here grants nothing that a hand-written row would not have granted.
+	 */
+	readonly capabilities?: ReadonlyArray<CapabilityRequest>;
+	readonly identity?: Partial<DefinitionIdentity>;
+	readonly placement?: Placement;
+}
+
+export type AnyAuthoredProgram = AuthoredProgram<any, any, any>;
+
+/** What every field compiler is handed beside the authored record: the id and the compiled ports. */
+export interface CompileContext {
+	readonly id: ProgramId;
+	readonly ports: Readonly<Record<string, PortSchema>>;
+}
+
+/**
+ * One row field, compiled. `undefined` leaves the field off the row entirely, which is how an
+ * optional field a program did not ask for stays absent rather than present-and-empty.
+ */
+export type FieldCompiler<K extends keyof AnyProgram> = (
+	authored: AnyAuthoredProgram,
+	context: CompileContext,
+) => AnyProgram[K] | undefined;
+
+export type FieldCompilers = {readonly [K in keyof AnyProgram]?: FieldCompiler<K>};
+
+const NO_EFFECTS: ReadonlyArray<ProgramEffect> = [];
+const NO_EVENTS: ReadonlyArray<AuthoredEvent> = [];
+const NO_CAPABILITIES: ReadonlyArray<CapabilityRequest> = [];
+const LOCAL: Placement = {host: "local"};
+
+/**
+ * The identity an authored program takes when it states none. Inert data, so the defaults only
+ * have to be honest about what they are: this app's own package, the program's own id, and a
+ * digest that says the row was compiled here rather than pretending to hash any bytes.
+ */
+const defaultIdentity = (id: string): DefinitionIdentity => ({
+	package: "@kampus/tuval",
+	program: id,
+	version: "0.0.0",
+	digest: `authored:${id}`,
+});
+
+/** Does this port arrive? `out` is a name routes leave from and owns no queue, so it never does. */
+const arrives = (decl: AnyPortDecl): boolean => decl.direction !== "out";
+
+const arrivingPorts = (authored: AnyAuthoredProgram): ReadonlyArray<string> =>
+	Object.entries(authored.ports ?? {})
+		.filter(([, decl]) => arrives(decl as AnyPortDecl))
+		.map(([name]) => name);
+
+/**
+ * The five effect handlers, written once. Each answers the events its effect produces: `emit` and
+ * `send` announce nothing back, `spawn` answers `spawned` and `stop` answers `stopped`.
+ */
+const emitHandler = (cmd: EmitEffect) =>
+	Effect.gen(function* () {
+		const ports = yield* ProcessPorts;
+		yield* ports.emit(cmd.port, cmd.payload);
+		return NO_EVENTS;
+	});
+
+const spawnHandler = (cmd: SpawnEffect) =>
+	Effect.gen(function* () {
+		const processes = yield* SpawnedProcesses;
+		// The spawner's own process id is not something a handler can name — `ProcessPorts` is the
+		// whole of what a running process knows about itself — so a program-spawned child is a root
+		// and `on` has nowhere to route the child's out-ports back to (#8756, #8757).
+		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.none());
+		return [spawned(child, cmd.program)];
+	});
+
+const sendHandler = (cmd: SendEffect) =>
+	Effect.gen(function* () {
+		const processes = yield* SpawnedProcesses;
+		yield* processes.send(cmd.to.process, cmd.to.port, cmd.payload);
+		return NO_EVENTS;
+	});
+
+/**
+ * An `ask` delivers on the target's request port exactly as a `send` does. The answer does not come
+ * back yet: a request port compiles to an in-port and the kernel carries no reply channel to
+ * correlate `reply` against, so the `Reply` event is owed by the substrate, not by this compiler
+ * (#8756). Delivering is the half that exists; failing here would refuse a payload that lands.
+ */
+const askHandler = (cmd: AskEffect) =>
+	Effect.gen(function* () {
+		const processes = yield* SpawnedProcesses;
+		yield* processes.send(cmd.to.process, cmd.to.port, cmd.payload);
+		return NO_EVENTS;
+	});
+
+const stopHandler = (cmd: StopEffect) =>
+	Effect.gen(function* () {
+		const processes = yield* Processes;
+		yield* processes.stop(cmd.process);
+		return [stopped(cmd.process)];
+	});
+
+/** Everything an authored program's effects can fail with, gathered off the services they run on. */
+export type EffectFailure =
+	| PayloadRejected
+	| PortNotWired
+	| UnknownProgram
+	| UnknownProcess
+	| UnknownPort
+	| PortRefused
+	| OpenError
+	| HandlerFailed
+	| ProcessNotFound;
+
+export type EffectServices = ProcessPorts | SpawnedProcesses | Processes;
+
+const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, EffectServices> = {
+	emit: emitHandler,
+	spawn: spawnHandler,
+	send: sendHandler,
+	ask: askHandler,
+	stop: stopHandler,
+};
+
+/** Demlik demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576). */
+const dead = (): Promise<void> => Promise.resolve();
+
+const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
+	emit: dead,
+	spawn: dead,
+	send: dead,
+	ask: dead,
+	stop: dead,
+};
+
+const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, any, any> => ({
+	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract.
+	init: (loaded: unknown) => [loaded ?? authored.init(), NO_EFFECTS],
+	update: authored.update,
+	...(authored.subs === undefined ? {} : {subs: authored.subs}),
+	interpret: INTERPRET,
+});
+
+/**
+ * A receiver per arriving port, so launch can never refuse a compiled row for a missing one. The
+ * payload crossed the wire as `unknown` and the port's own `accepts` ran before it was enqueued,
+ * so what lands here already fits the schema the author declared.
+ */
+const compileReceive = (
+	authored: AnyAuthoredProgram,
+): Readonly<Record<string, Receiver<AuthoredEvent>>> =>
+	Object.fromEntries(
+		arrivingPorts(authored).map((name) => [
+			name,
+			(payload: unknown) => ({type: name, payload}) satisfies ArrivalEvent<string, unknown>,
+		]),
+	);
+
+const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
+	...defaultIdentity(authored.id),
+	...authored.identity,
+});
+
+/**
+ * The seam. One row field per key, one key per line: a field child of #8716 adds its line here and
+ * its own module beside this one, and edits nothing another child wrote.
+ */
+export const FIELD_COMPILERS = {
+	id: (_authored, context) => context.id,
+	label: (authored) => authored.label,
+	core: (authored) => compileCore(authored),
+	ports: (_authored, context) => context.ports,
+	receive: (authored) => compileReceive(authored),
+	handlers: () => HANDLERS,
+	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
+	identity: (authored) => compileIdentity(authored),
+	placement: (authored) => authored.placement ?? LOCAL,
+} satisfies FieldCompilers;
+
+/**
+ * Compile one authored program into the registry row. The row is a plain object, so every field
+ * this layer does not sugar is still reachable by spread.
+ */
+export const defineProgram = <S, D extends PortDecls = Record<string, never>, U = unknown>(
+	authored: AuthoredProgram<S, D, U>,
+): AnyProgram => {
+	const id = ProgramId.make(authored.id);
+	const context: CompileContext = {id, ports: compilePorts(id, authored.ports ?? {})};
+	// The record above proved each field's type one key at a time; iterating it erases them, which
+	// is what the closing cast buys back.
+	const compilers = Object.entries(FIELD_COMPILERS) as ReadonlyArray<
+		readonly [string, (authored: AnyAuthoredProgram, context: CompileContext) => unknown]
+	>;
+	const row: Partial<AnyProgram> & Record<string, unknown> = {};
+	for (const [field, compile] of compilers) {
+		const value = compile(authored, context);
+		if (value !== undefined) row[field] = value;
+	}
+	return row as AnyProgram;
+};
