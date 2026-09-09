@@ -1,12 +1,12 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Paperclip} from "lucide-react";
 import {createRef, useRef} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AgentChatInput} from "./AgentChatInput";
 import {useAgentChatInput} from "./agent-chat/Root";
-import type {AgentChatInputBridge} from "./agent-chat-bridge";
+import type {AgentChatInputBridge, PiEvent} from "./agent-chat-bridge";
 import {Form, Input} from "./Form";
 import {type DesignTranslate, DesignTranslationProvider, defaultDesignTranslate} from "./i18n";
 
@@ -17,7 +17,9 @@ function response(body: unknown): Response {
 function installHarnessFetch(): {
 	fetch: ReturnType<typeof vi.fn>;
 	bridge: AgentChatInputBridge;
+	push: (event: PiEvent) => void;
 } {
+	let listener: ((event: PiEvent) => void) | null = null;
 	let model = {provider: "openai", id: "gpt-5", name: "GPT-5"};
 	let thinkingLevel = "medium";
 	let projectTrust = "approve";
@@ -129,9 +131,14 @@ function installHarnessFetch(): {
 				headers: {"Content-Type": "application/json"},
 				body: JSON.stringify(answer),
 			}),
-		subscribeToPiEvents: () => () => undefined,
+		subscribeToPiEvents: (onEvent) => {
+			listener = onEvent;
+			return () => {
+				if (listener === onEvent) listener = null;
+			};
+		},
 	};
-	return {fetch, bridge};
+	return {fetch, bridge, push: (event) => listener?.(event)};
 }
 
 /**
@@ -213,47 +220,52 @@ function ComposedComposer() {
 	const t = defaultDesignTranslate;
 	const imageInputRef = useRef<HTMLInputElement>(null);
 	return (
-		<AgentChatInput.Surface>
-			<Form
-				className="kp-agent-chat__form"
-				onSubmit={(event) => {
-					event.preventDefault();
-					void submit();
-				}}
-			>
-				<AgentChatInput.Field />
-				<div className="kp-agent-chat__actions">
-					<div className="kp-agent-chat__primary-controls">
-						{variant === "focused" ? (
-							<>
-								<Input
-									ref={imageInputRef}
-									className="kp-visually-hidden"
-									label={t("admin.agent.image.add")}
-									type="file"
-									accept="image/*"
-									tabIndex={-1}
-									onChange={(event) => {
-										void addImage(event.currentTarget.files?.[0]);
-										event.currentTarget.value = "";
-									}}
-								/>
-								<AgentChatInput.Control
-									icon={Paperclip}
-									className="kp-agent-chat__icon-button"
-									aria-label={t("admin.agent.image.add")}
-									onClick={() => imageInputRef.current?.click()}
-									disabled={disabled}
-								/>
-							</>
-						) : null}
-						<AgentChatInput.Settings />
-						{variant === "focused" ? <AgentChatInput.Overflow /> : null}
+		<AgentChatInput.Frame>
+			<AgentChatInput.Surface>
+				<Form
+					className="kp-agent-chat__form"
+					onSubmit={(event) => {
+						event.preventDefault();
+						void submit();
+					}}
+				>
+					<AgentChatInput.Field />
+					<div className="kp-agent-chat__actions">
+						<div className="kp-agent-chat__primary-controls">
+							{variant === "focused" ? (
+								<>
+									<Input
+										ref={imageInputRef}
+										className="kp-visually-hidden"
+										label={t("admin.agent.image.add")}
+										type="file"
+										accept="image/*"
+										tabIndex={-1}
+										onChange={(event) => {
+											void addImage(event.currentTarget.files?.[0]);
+											event.currentTarget.value = "";
+										}}
+									/>
+									<AgentChatInput.Control
+										icon={Paperclip}
+										className="kp-agent-chat__icon-button"
+										aria-label={t("admin.agent.image.add")}
+										onClick={() => imageInputRef.current?.click()}
+										disabled={disabled}
+									/>
+								</>
+							) : null}
+							<AgentChatInput.Settings />
+							{variant === "focused" ? <AgentChatInput.Overflow /> : null}
+						</div>
+						<AgentChatInput.PrimaryActions />
 					</div>
-					<AgentChatInput.PrimaryActions />
-				</div>
-			</Form>
-		</AgentChatInput.Surface>
+				</Form>
+			</AgentChatInput.Surface>
+
+			<AgentChatInput.Inspector />
+			<AgentChatInput.ExtensionDialog />
+		</AgentChatInput.Frame>
 	);
 }
 
@@ -265,16 +277,56 @@ const GENERATED_IDS =
  * thing the four bridge loads move. Reading the markup before they land compares half-settled
  * trees, which goes red on timing rather than on a difference.
  */
-async function settledComposerMarkup(container: HTMLElement): Promise<string> {
+async function settleComposer(): Promise<void> {
 	await screen.findAllByText("GPT-5");
 	await screen.findAllByText("orta");
-	return composerMarkup(container);
 }
 
+/**
+ * Drives the three parts that render nothing at rest: `Inspector` has no activity to list until
+ * the harness pushes one and, on `focused`, stays folded until the disclosure is opened;
+ * `ExtensionDialog` is `null` until a request is outstanding. Without this the parity comparison
+ * reads empty against empty and proves nothing about them (#8711).
+ */
+async function driveComposerParts(
+	variant: "harness" | "focused",
+	push: (event: PiEvent) => void,
+): Promise<void> {
+	act(() => {
+		push({type: "tool_execution_start", toolName: "Read"});
+		push({
+			type: "extension_ui_request",
+			id: "ext-1",
+			method: "input",
+			title: "Dal adı",
+			message: "Hangi dala geçelim?",
+			placeholder: "umut/…",
+		});
+	});
+	if (variant === "focused") {
+		fireEvent.click(await screen.findByRole("button", {name: /Pi denetçisi/}));
+	}
+	await screen.findByText("Pi Read kullanıyor.");
+	await screen.findByRole("dialog");
+}
+
+/**
+ * Everything the composer paints: the `Frame` section with its own attributes — the variant class
+ * and the label the whole composer is named off — and the overlay `ExtensionDialog` raises, which
+ * Manti portals to `document.body` and so lands beside the render container rather than inside it.
+ * Two renders never draw the same generated ids — React's `useId` and Manti's own `data-uid` both
+ * count up per render — so every id-carrying attribute is blanked.
+ */
 function composerMarkup(container: HTMLElement): string {
-	const composer = container.querySelector('[data-testid="agent-chat-input"]');
-	if (!composer) throw new Error("no composer rendered");
-	return composer.innerHTML.replace(GENERATED_IDS, ' $1="*"');
+	const frame = container.querySelector("section.kp-agent-chat");
+	if (!frame) throw new Error("no composer rendered");
+	const portaled = Array.from(document.body.children).filter(
+		(child) => child !== container && child.getAttribute("data-scope") === "dialog",
+	);
+	return [frame, ...portaled]
+		.map((element) => element.outerHTML)
+		.join("\n")
+		.replace(GENERATED_IDS, ' $1="*"');
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -671,9 +723,15 @@ describe("AgentChatInput", () => {
 
 	describe.each(["harness", "focused"] as const)("the %s composer's compound parts", (variant) => {
 		it("assemble into the tree the plain export renders", async () => {
-			const {bridge} = installHarnessFetch();
+			const {bridge, push} = installHarnessFetch();
 			const plain = render(<AgentChatInput bridge={bridge} variant={variant} />);
-			const expected = await settledComposerMarkup(plain.container);
+			await settleComposer();
+			await driveComposerParts(variant, push);
+			const expected = composerMarkup(plain.container);
+			expect(expected).toContain(`class="kp-agent-chat kp-agent-chat--${variant}"`);
+			expect(expected).toContain('aria-label="Agent chat input"');
+			expect(expected).toContain("Pi Read kullanıyor.");
+			expect(expected).toContain("Hangi dala geçelim?");
 			plain.unmount();
 
 			const composed = render(
@@ -681,7 +739,8 @@ describe("AgentChatInput", () => {
 					<ComposedComposer />
 				</AgentChatInput.Root>,
 			);
-			await settledComposerMarkup(composed.container);
+			await settleComposer();
+			await driveComposerParts(variant, push);
 			await waitFor(() => expect(composerMarkup(composed.container)).toBe(expected));
 		});
 	});
