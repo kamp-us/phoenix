@@ -25,6 +25,7 @@ import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, call, systemItem, userItem, withTranscript} from "./chat.testing.ts";
+import {composerStateAnnouncement} from "./copy.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -556,7 +557,9 @@ describe("naming the worker a view is open on", () => {
 		const root = rendered.container;
 
 		expect(dom(root).end()).toBe("The subagent is still running.");
-		expect(status(root)).toBe("Showing the subagent's transcript. Still running.");
+		expect(status(root)).toBe(
+			`Showing the subagent's transcript. Still running. ${composerStateAnnouncement(true)}`,
+		);
 		expect(within(root).getByRole("log", {name: "Transcript: subagent"})).toBeTruthy();
 		rendered.unmount();
 	});
@@ -580,7 +583,9 @@ describe("naming the worker a view is open on", () => {
 		const root = rendered.container;
 
 		expect(dom(root).end()).toBe("The builder subagent is still running.");
-		expect(status(root)).toBe("Showing the builder subagent's transcript. Still running.");
+		expect(status(root)).toBe(
+			`Showing the builder subagent's transcript. Still running. ${composerStateAnnouncement(true)}`,
+		);
 		expect(within(root).getByRole("log", {name: "Transcript: builder subagent"})).toBeTruthy();
 		expect(typeField(root)?.textContent).toBe("builder");
 		rendered.unmount();
