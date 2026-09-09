@@ -667,12 +667,14 @@ const isLocalCommandCaveat = (text: string): boolean => {
 };
 
 /**
- * One `<command-name>` / `<command-message>` / `<command-args>` block of the invocation record,
- * matched at the head of what is left. Each tag may appear once, and `command-name` opens the frame.
+ * One tag of the invocation record, matched at the head of what is left. The set is open rather
+ * than the three the plain slash command writes, because a plugin or skill invocation carries
+ * siblings of its own — `<skill-format>` on every one (`fixtures/local-command-skill-turn.json`).
  */
-const COMMAND_TAG = /^<(command-name|command-message|command-args)>([\s\S]*?)<\/\1>/;
+const COMMAND_TAG = /^<([a-z][a-z-]*)>([\s\S]*?)<\/\1>/;
 
-const COMMAND_NAME_OPEN = "<command-name>";
+/** The CLI's marker that this frame is a skill's, and that the skill's own body follows its tags. */
+const SKILL_FORMAT = "skill-format";
 
 /**
  * The command a slash-command invocation names, with its arguments, when this user frame is the
@@ -682,16 +684,21 @@ const COMMAND_NAME_OPEN = "<command-name>";
  * output. Unlike the caveat it carries something a reader wants — which command ran — so it becomes
  * its own notice rather than nothing (#8665). `<command-message>` restates the name and is dropped.
  *
- * The match is the whole trimmed text, as it is for the two siblings: every tag is consumed in turn
- * and anything left over means this is an operator's prompt quoting the markup, which stays theirs.
+ * Order is not fixed and the tag set is not closed: a plain command writes `<command-name>` first,
+ * a plugin command writes `<command-message>` first, and a skill's frame adds `<skill-format>` and
+ * then the whole skill body. So the read is the tags themselves — every one consumed in turn, each
+ * at most once, and `<command-name>` required. What is left over decides the rest: on a skill frame
+ * it is the body and rides the notice's `detail`, and anywhere else it means an operator wrote
+ * about the markup, which stays their own turn.
  */
-const localCommandInvocationOf = (text: string): string | null => {
+const localCommandInvocationOf = (
+	text: string,
+): {readonly text: string; readonly detail?: string} | null => {
 	let rest = text.trim();
-	if (!rest.startsWith(COMMAND_NAME_OPEN)) return null;
 	const parts = new Map<string, string>();
 	while (rest.length > 0) {
 		const match = COMMAND_TAG.exec(rest);
-		if (match === null) return null;
+		if (match === null) break;
 		const [whole, tag, inner] = match;
 		if (tag === undefined || inner === undefined || parts.has(tag)) return null;
 		parts.set(tag, inner.replaceAll(sgr, "").trim());
@@ -699,8 +706,12 @@ const localCommandInvocationOf = (text: string): string | null => {
 	}
 	const name = parts.get("command-name") ?? "";
 	if (name.length === 0) return null;
+	// A skill's own body follows its tags in the same frame, and only there: without the CLI's
+	// `<skill-format>` marker, text past the tags is an operator writing about the markup.
+	if (rest.length > 0 && !parts.has(SKILL_FORMAT)) return null;
 	const args = parts.get("command-args") ?? "";
-	return args.length === 0 ? name : `${name} ${args}`;
+	const line = args.length === 0 ? name : `${name} ${args}`;
+	return rest.length === 0 ? {text: line} : {text: line, detail: rest.replaceAll(sgr, "")};
 };
 
 /**
@@ -730,7 +741,7 @@ const promptItemOf = (
 	const output = localCommandOutputOf(text);
 	if (output !== null) return {kind: "system", ...base, ...noticeOf(output)};
 	const invocation = localCommandInvocationOf(text);
-	if (invocation !== null) return {kind: "system", ...base, text: invocation};
+	if (invocation !== null) return {kind: "system", ...base, ...invocation};
 	return {kind: "user", ...base, text};
 };
 

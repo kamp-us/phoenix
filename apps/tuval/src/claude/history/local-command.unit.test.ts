@@ -4,8 +4,9 @@
  * The CLI runs a command like `/model` locally and records its caveat, the invocation itself and
  * its result as user-role messages whose whole text is markup. Read as turns they land under YOU,
  * tags and terminal escapes included — the shape the founder's desk screenshot caught. The output
- * and the invocation each become their own notice, the caveat becomes nothing. Every fixture here
- * is that record, taken
+ * and the invocation each become their own notice, the caveat becomes nothing. A plugin's or a
+ * skill's invocation is the same record in a different hand — its tags come in another order, and a
+ * skill's carries the whole skill body after them. Every fixture here is that record, taken
  * from an operator's own CLI session log under the founder's ruling on
  * [#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806) and re-keyed to
  * `SessionMessage` (`fixtures/PROVENANCE.md`).
@@ -149,7 +150,7 @@ describe("a captured local command's invocation record", () => {
 		);
 	});
 
-	it("is one row above the output's own, over the three frames one command writes", () => {
+	it("puts the invocation above the output, over one of each frame kind", () => {
 		const command = [
 			frame("local-command-caveat-turn") as SessionMessage,
 			captured as SessionMessage,
@@ -181,6 +182,58 @@ describe("a captured local command's invocation record", () => {
 		const [one] = mapped(withText(captured, prompt));
 		expect(one?.kind).toBe("user");
 		expect(one?.kind === "user" ? one.text : "").toBe(prompt);
+	});
+});
+
+describe("a captured skill invocation", () => {
+	const captured = frame("local-command-skill-turn");
+	const body =
+		"Base directory for this skill: /tmp/tuval-capture/claude-plugins/fabrika/skills/triage\n\n# triage\n\nYou are the guardrail. **The failure that matters is not a missing label — it is a confident wrong\none**, indistinguishable from a correct one once it lands. Each step makes its answer checkable, not";
+
+	it("lands as a notice naming the skill, with its body behind the disclosure", () => {
+		expect(mapped(captured)).toEqual([
+			{
+				kind: "system",
+				id: "00000000-0000-4000-8000-000000000081",
+				timestamp: Date.parse("2026-08-18T01:48:12.086Z"),
+				text: "fabrika:triage",
+				detail: body,
+			},
+		]);
+	});
+
+	it("replays the same way off a stored session", () => {
+		const {items, skipped} = toHistoryItems([captured as SessionMessage], {at: AT});
+		expect(items.map((one) => (one.kind === "system" ? one.text : one.kind))).toEqual([
+			"fabrika:triage",
+		]);
+		expect(skipped).toBe(0);
+	});
+
+	// Verbatim from a `/unslop` row in an operator's own session log: a plugin command writes the
+	// two tags in this order and adds neither `<command-args>` nor `<skill-format>`.
+	it("reads a plugin command that writes its message tag ahead of its name", () => {
+		const plugin =
+			"<command-message>unslop</command-message>\n<command-name>/unslop</command-name>";
+		const [one] = mapped(withText(captured, plugin));
+		expect(one?.kind).toBe("system");
+		expect(one?.kind === "system" ? one.text : "").toBe("/unslop");
+		expect(one?.kind === "system" ? one.detail : "none").toBeUndefined();
+	});
+
+	it("stays a user item when a prompt writes tags and then prose without the skill marker", () => {
+		const prompt =
+			"<command-message>unslop</command-message>\n<command-name>/unslop</command-name>\nwhy is this my message?";
+		const [one] = mapped(withText(captured, prompt));
+		expect(one?.kind).toBe("user");
+		expect(one?.kind === "user" ? one.text : "").toBe(prompt);
+	});
+
+	it("stays a user item when a tag repeats, which no invocation record does", () => {
+		const prompt =
+			"<command-name>/a</command-name>\n<command-name>/b</command-name>\n<command-args>x</command-args>";
+		const [one] = mapped(withText(captured, prompt));
+		expect(one?.kind).toBe("user");
 	});
 });
 

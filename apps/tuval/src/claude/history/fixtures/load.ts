@@ -19,6 +19,7 @@ export type FixtureName =
 	| "local-command-caveat-turn"
 	| "local-command-invocation-turn"
 	| "local-command-lines-turn"
+	| "local-command-skill-turn"
 	| "local-command-turn"
 	| "oversized-tool-turn"
 	| "permission-denied"
