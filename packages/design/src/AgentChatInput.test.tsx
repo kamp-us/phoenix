@@ -253,7 +253,6 @@ function ComposedComposer() {
 					<AgentChatInput.PrimaryActions />
 				</div>
 			</Form>
-			<AgentChatInput.Hint />
 		</AgentChatInput.Surface>
 	);
 }
@@ -504,17 +503,6 @@ describe("AgentChatInput", () => {
 		expect((input as HTMLTextAreaElement).value).toBe("/compact ");
 	});
 
-	it("drops the slash hint on a harness that offers no commands", async () => {
-		const {bridge} = lateCatalogBridge();
-		render(<AgentChatInput bridge={bridge} variant="harness" />);
-		await screen.findByLabelText("Pi'ye mesaj yaz");
-
-		// The hint is the only thing advertising the sigil; typing `/` against an empty catalog opens
-		// nothing, so a hint promising a picker reads as a fault rather than as a feature.
-		const hint = screen.getByText(/dosya/);
-		expect(hint.textContent).not.toContain("komut");
-	});
-
 	it("omits off effort returned by the bridge on load and model refresh", async () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} variant="focused" />);
@@ -763,13 +751,6 @@ describe("the compact composer", () => {
 		expect(sheet).not.toContain("min-height: calc(var(--s-8) * 2)");
 		expect(fieldRule).toContain("field-sizing: content");
 		expect(fieldRule).toContain("max-height: calc(var(--s-8) * 5)");
-	});
-
-	it("keeps the hint out of layout until the empty field is focused", () => {
-		expect(sheet).toContain(".kp-agent-chat__hint {\n\tdisplay: none;");
-		expect(sheet).toContain(
-			".kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)",
-		);
 	});
 
 	/*

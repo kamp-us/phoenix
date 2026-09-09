@@ -1260,7 +1260,6 @@ function ChatWindow({
 									<AgentChatInput.Overflow />
 								</AgentChatInput.Toolbar>
 							</AgentChatInput.Form>
-							<AgentChatInput.Hint />
 							<AgentChatInput.Error />
 						</AgentChatInput.Surface>
 						<AgentChatInput.ExtensionDialog />

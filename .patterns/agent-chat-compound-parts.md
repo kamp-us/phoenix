@@ -14,7 +14,6 @@ so the two can't drift.
         <AgentChatInput.Field />         {/* attachments, textarea, completion listbox */}
         <AgentChatInput.Toolbar />       {/* Attach + Settings + Overflow, then PrimaryActions */}
       </AgentChatInput.Form>
-      <AgentChatInput.Hint />
       <AgentChatInput.Error />
     </AgentChatInput.Surface>
     <AgentChatInput.Inspector />

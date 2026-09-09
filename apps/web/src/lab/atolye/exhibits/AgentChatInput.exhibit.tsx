@@ -58,7 +58,6 @@ function AgentChatInputParts({
 						<AgentChatInput.Field />
 						<AgentChatInput.Toolbar />
 					</AgentChatInput.Form>
-					<AgentChatInput.Hint />
 					<AgentChatInput.Error />
 				</AgentChatInput.Surface>
 				<AgentChatInput.Inspector />
