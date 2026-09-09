@@ -3,9 +3,10 @@ import {Deferred, Effect, Fiber, Stream} from "effect";
 import {TestClock} from "effect/testing";
 import {expect} from "vitest";
 import {foldEvent} from "../ai-agent/core/fold.ts";
+import {parseSessionState} from "../ai-agent/core/snapshot.ts";
 import {initialState} from "../ai-agent/core/state.ts";
 import type {AgentEvent} from "../ai-agent/events.ts";
-import {ItemId} from "../ai-agent/ports/index.ts";
+import {ItemId, isSubagentSlots} from "../ai-agent/ports/index.ts";
 import {TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
 import {readChildTranscript} from "./child-store.ts";
 import {fakeCodex, itemMessage, onCodex, thread, turn, turnMessage} from "./fixtures.ts";
@@ -716,6 +717,44 @@ describe("Codex read-only child store", () => {
 					yield* Effect.flip(readChildTranscript(fake.connection, thread.id, "child-1")),
 				).toMatchObject({reason: "malformed"});
 			}
+		}),
+	);
+	it.effect("reads an empty agent role as the default label, like an absent or null one", () =>
+		Effect.gen(function* () {
+			const fake = yield* fakeCodex;
+			const {agentRole: _absent, ...roleless} = childThread;
+			for (const [view, type] of [
+				[{...childThread, agentRole: ""}, "agent"],
+				[{...childThread, agentRole: null}, "agent"],
+				[roleless, "agent"],
+				[childThread, "reviewer"],
+			] as const) {
+				fake.handlers.set("thread/read", () => Effect.succeed({thread: view}));
+				const transcript = yield* readChildTranscript(fake.connection, thread.id, "child-1");
+				expect(transcript.type).toBe(type);
+				expect(transcript.type.length).toBeGreaterThan(0);
+			}
+		}),
+	);
+	it.effect("leaves a checkpoint carrying an empty-role child readable", () =>
+		Effect.gen(function* () {
+			const fake = yield* fakeCodex;
+			fake.handlers.set("thread/read", () =>
+				Effect.succeed({thread: {...childThread, agentRole: ""}}),
+			);
+			const children = new NativeSubagents();
+			const events = children.collab(spawn, thread.id, 10);
+			const hydrated = children.hydrate(
+				"child-1",
+				yield* readChildTranscript(fake.connection, thread.id, "child-1"),
+			);
+			const state = [...events, ...(hydrated === null ? [] : [hydrated])].reduce(
+				(state, event) => foldEvent(state, event, {itemLimit: 100}),
+				initialState(thread.cwd),
+			);
+			expect(state.subagents["spawn-1"]?.type).toBe("agent");
+			expect(isSubagentSlots(state.subagents)).toBe(true);
+			expect(parseSessionState(state)).not.toBeNull();
 		}),
 	);
 });
