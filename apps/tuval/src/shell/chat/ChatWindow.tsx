@@ -44,7 +44,7 @@ import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEve
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
-import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {Mode, SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import {useForwardedKey} from "../ui/forwarded-key.tsx";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
@@ -163,6 +163,8 @@ interface ResolvedOptions {
 	readonly scrollCommitMs: number;
 	readonly scrollToFn?: VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"];
 }
+
+const NO_SLOTS: Readonly<Record<string, SubagentSlot>> = {};
 
 const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
@@ -1125,7 +1127,10 @@ function ChatWindow({
 					<>
 						<SubagentList
 							ref={navigatorRef}
-							slots={subagentSlots ?? process.state.subagents}
+							// Empty rather than the unfiltered set: `subagentSlots` is null only where this
+							// window has no state to read, and a fallback to `process.state.subagents` would
+							// be the one path that draws kernel rows with the flag off (#8719).
+							slots={subagentSlots ?? NO_SLOTS}
 							now={options.now}
 							viewing={viewing?.id ?? null}
 							onView={showSubagent}
