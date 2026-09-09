@@ -11,12 +11,6 @@
  * wall clock.
  */
 
-import type {
-	ModelMetadata,
-	ModelRef,
-	SessionSnapshot,
-	ThinkingLevel,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Deferred, Effect, Fiber, Layer, Queue, Ref, Stream} from "effect";
 import {type AgentEvent, type TransportError, TuvalAiAgent} from "../../ai-agent/service/index.ts";
@@ -26,6 +20,7 @@ import {
 	type PiSessionRef,
 	SessionLocked,
 } from "../client/index.ts";
+import type {ModelMetadata, ModelRef, SessionSnapshot, ThinkingLevel} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/turn";
@@ -135,7 +130,7 @@ const stub = (options: StubOptions) =>
 							: Effect.succeed({...SNAPSHOT, thinkingLevel: level}),
 				),
 			models: Effect.succeed(options.catalog ?? []),
-			snapshots: () => Stream.never,
+			updates: () => Stream.never,
 			disconnections: Stream.never,
 		};
 		return {
@@ -364,6 +359,19 @@ describe("the thinking switch", () => {
 				// level is refused against the running model's row rather than against the union.
 				yield* agent.setModel({provider: "anthropic", id: "sonnet", name: "Sonnet 5"});
 				const refused = yield* Effect.flip(agent.setThinkingLevel("high"));
+				assert.strictEqual(refused._tag, "tuval/ai-agent/ThinkingUnsupported");
+				assert.deepStrictEqual(yield* client.levels, []);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.effect("refuses Codex's ultra level before it reaches Pi", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG});
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				const refused = yield* Effect.flip(agent.setThinkingLevel("ultra"));
 				assert.strictEqual(refused._tag, "tuval/ai-agent/ThinkingUnsupported");
 				assert.deepStrictEqual(yield* client.levels, []);
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);

@@ -23,6 +23,12 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 	globalThis.ResizeObserver = ResizeObserverShim;
 }
 
+// jsdom 26 constructs a CSSStyleSheet but implements neither `replaceSync` nor `adoptedStyleSheets`,
+// and a custom element that adopts its own sheet in its constructor (`@pierre/diffs`) throws there.
+if (typeof CSSStyleSheet.prototype.replaceSync === "undefined") {
+	CSSStyleSheet.prototype.replaceSync = () => undefined;
+}
+
 if (typeof Element.prototype.scrollIntoView === "undefined") {
 	Element.prototype.scrollIntoView = () => undefined;
 }

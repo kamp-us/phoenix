@@ -56,7 +56,7 @@ const hostLayer = (cwd: string, provider: ReturnType<typeof fauxProvider>) =>
 		}).pipe(Effect.orDie),
 	);
 
-/** A factory that records the transport it last handed `PiClient`, so a test can drop it. */
+/** A factory that records the transport it last handed `Client`, so a test can drop it. */
 const droppable = (url: string): {factory: ByteTransportFactory; drop: () => void} => {
 	const open = webSocketTransportFactory({url});
 	let live: ByteTransport | undefined;
@@ -70,7 +70,7 @@ const droppable = (url: string): {factory: ByteTransportFactory; drop: () => voi
 	};
 };
 
-describe("the PiClient lease service against the loopback server", () => {
+describe("the Pi client lease service against the loopback server", () => {
 	it.live(
 		"refuses a second client's attach with SessionLocked, and a missing id with SessionNotFound",
 		() => {
@@ -96,8 +96,8 @@ describe("the PiClient lease service against the loopback server", () => {
 
 						const missing = yield* Effect.flip(intruder.attachSession("no-such-session"));
 						assert.instanceOf(missing, SessionNotFound);
-					}).pipe(Effect.provide(PiClientService.layerWebSocket({url})));
-				}).pipe(Effect.provide(PiClientService.layerWebSocket({url})));
+					}).pipe(Effect.provide(PiClientService.layerWebSocket({url, serverId: server.serverId})));
+				}).pipe(Effect.provide(PiClientService.layerWebSocket({url, serverId: server.serverId})));
 			}).pipe(
 				Effect.scoped,
 				Effect.provide(PiServerService.layer().pipe(Layer.provide(hostLayer(cwd, faux)))),
@@ -119,7 +119,7 @@ describe("the PiClient lease service against the loopback server", () => {
 					yield* pi.connect;
 
 					const session = yield* pi.createSession(cwd, {model: MODEL});
-					const pushed = yield* Stream.toQueue(pi.snapshots(session.id), {
+					const pushed = yield* Stream.toQueue(pi.updates(session.id), {
 						capacity: "unbounded",
 					});
 
@@ -129,10 +129,16 @@ describe("the PiClient lease service against the loopback server", () => {
 						["user", "assistant"],
 					);
 
-					// The server pushes the session's own snapshots to the connection that owns it,
-					// and `snapshots` is the stream the handlers turn into a Sub.
+					// The server pushes the session's own revisions to the connection that owns it, and
+					// `updates` is the stream the handlers turn into a Sub. The first one is the whole
+					// value — this connection has been sent nothing for the session yet — and every
+					// one after it is a delta.
 					const first = yield* Queue.take(pushed);
-					assert.strictEqual(first.id, session.id);
+					assert.strictEqual(first._tag, "snapshot");
+					assert.strictEqual(
+						first._tag === "snapshot" ? first.snapshot.id : first.delta.id,
+						session.id,
+					);
 
 					socket.drop();
 					const failed = yield* Effect.flip(pi.prompt(session.id, "into the void"));
@@ -153,7 +159,14 @@ describe("the PiClient lease service against the loopback server", () => {
 						"say hello",
 						"the reacquired session kept the transcript from before the drop",
 					);
-				}).pipe(Effect.provide(PiClientService.layer({transportFactory: socket.factory})));
+				}).pipe(
+					Effect.provide(
+						PiClientService.layer({
+							transportFactory: socket.factory,
+							serverId: server.serverId,
+						}),
+					),
+				);
 
 				assert.strictEqual(faux.state.callCount, 2);
 			}).pipe(

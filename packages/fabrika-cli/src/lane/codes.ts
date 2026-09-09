@@ -389,11 +389,13 @@ export const GRANT_REFUSED = 47;
 export const LANE_IS_CHILD = 48;
 
 /**
- * `lane archive` was pointed at a lane whose issue is still open on the board.
+ * A verb whose whole entitlement is a closed issue was pointed at a lane whose issue is still open
+ * on the board — `lane archive`, or `lane settle`.
  *
  * An archive moves a lane out of every sweep, so the closed issue is half of what makes that safe:
- * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Its own seat
- * because the remedy is to drive the lane, not to fix the record.
+ * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Settling ends the
+ * lane outright, and an open issue's closure has said nothing yet. Its own seat because the remedy
+ * on both is to drive the lane, not to fix the record.
  */
 export const ISSUE_LIVE = 49;
 
@@ -407,12 +409,14 @@ export const ISSUE_LIVE = 49;
 export const LOG_REPLAYS = 50;
 
 /**
- * The lanes root already holds as many lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows, so
- * the boot is refused with nothing written.
+ * The lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap`
+ * allows, so the boot is refused with nothing written. The refusal names the claimed seats and the
+ * idle unclaimed count separately, because they take different remedies.
  *
  * Its own seat rather than {@link LANE_EXISTS}'s: that one says this lane is already there and the
- * remedy is to drive it, while this one says every seat is taken by *other* lanes and the remedy is
- * to free one — `lane archive` on a lane that is done, or a raised number in the config. No flag
- * opens it, because a cap with an override is the spoken instruction it replaced.
+ * remedy is to drive it, while this one says every seat is taken by *other* lanes somebody is
+ * driving and the remedy is to free one — `lane archive` on a lane that is done, `lane release` on a
+ * claim nobody is using, or a raised number in the config. No flag opens it, because a cap with an
+ * override is the spoken instruction it replaced.
  */
 export const CONCURRENCY_CAPPED = 51;

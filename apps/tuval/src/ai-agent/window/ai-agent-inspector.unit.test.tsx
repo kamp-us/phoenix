@@ -10,6 +10,8 @@
  * with each other. Both rows and the table are imported; nothing here restates a reference.
  */
 
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
@@ -24,7 +26,7 @@ import {inspectorFor} from "../../shell/desk/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {testProcess} from "../../shell/window/fixtures.ts";
 import {type AnyWindowHost, WindowId} from "../../shell/window/index.ts";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../core/index.ts";
+import type {AgentAccount, AiAgentSessionMsg, AiAgentSessionState} from "../core/index.ts";
 import {ScriptedAiAgent} from "../service/index.ts";
 import {AiAgentInspector} from "./AiAgentInspector.tsx";
 import {agentSessionState, CWD, SESSION_ID, usageOf} from "./inspector.testing.ts";
@@ -47,6 +49,24 @@ const open = async (state: AiAgentSessionState) => {
 const panel = (): HTMLElement => screen.getByRole("group", {name: "Agent session"});
 
 describe("what the inspector shows", () => {
+	it("uses tabular figures only for cost and token counts", async () => {
+		const style = document.createElement("style");
+		style.textContent = readFileSync(join(import.meta.dirname, "ai-agent-inspector.css"), "utf8");
+		document.head.append(style);
+		try {
+			await open(agentSessionState({agentVersion: "2.1.259"}));
+			for (const row of panel().querySelectorAll(".tuval-agent-inspector-row")) {
+				const label = row.querySelector("dt")?.textContent;
+				const value = row.querySelector("dd") as HTMLElement;
+				const numeric = ["Cost", "Input tokens", "Output tokens"].includes(label ?? "");
+				expect(getComputedStyle(value).fontVariantNumeric === "tabular-nums").toBe(numeric);
+				if (label === "Session" || label === "Directory")
+					expect(getComputedStyle(value).overflowWrap).toBe("anywhere");
+			}
+		} finally {
+			style.remove();
+		}
+	});
 	it("renders the cost, the token counts, the session id and the cwd off the state", async () => {
 		await open(
 			agentSessionState({
@@ -59,6 +79,83 @@ describe("what the inspector shows", () => {
 		expect(within(region).getByText("340")).toBeDefined();
 		expect(within(region).getByText(SESSION_ID)).toBeDefined();
 		expect(within(region).getByText(CWD)).toBeDefined();
+	});
+
+	it("renders the version the layer reported, beside the session id and the cwd", async () => {
+		await open(agentSessionState({agentVersion: "2.1.259"}));
+		const region = panel();
+		expect(within(region).getByText("Version")).toBeDefined();
+		expect(within(region).getByText("2.1.259")).toBeDefined();
+		expect(within(region).getByText(SESSION_ID)).toBeDefined();
+		expect(within(region).getByText(CWD)).toBeDefined();
+	});
+
+	// Unlike the session id, an absent version is not a state the operator is owed a word about.
+	it("leaves the row out entirely while no layer has reported one", async () => {
+		await open(agentSessionState({agentVersion: null}));
+		expect(within(panel()).queryByText("Version")).toBeNull();
+	});
+
+	it("names the account the session booted on, as organization and plan", async () => {
+		await open(agentSessionState({account: {organization: "kamp.us", subscriptionType: "max"}}));
+		const region = panel();
+		expect(within(region).getByText("Account (booted on)")).toBeDefined();
+		expect(within(region).getByText("kamp.us · max")).toBeDefined();
+	});
+
+	// Each field stands alone: an API-key login reports a plan and no organization, and a fixed
+	// `org · plan` template would render a separator against nothing.
+	it("shows whichever of the two fields the login reported", async () => {
+		await open(agentSessionState({account: {subscriptionType: "max"}}));
+		expect(within(panel()).getByText("max")).toBeDefined();
+	});
+
+	it("leaves the row out while no layer has reported an account", async () => {
+		await open(agentSessionState({account: null}));
+		expect(within(panel()).queryByText("Account (booted on)")).toBeNull();
+	});
+
+	// An account with neither field is what a third-party provider answers with, and a row reading
+	// `Account (booted on)` against an empty value says less than no row at all.
+	it("leaves the row out when the reported account carries neither field", async () => {
+		await open(agentSessionState({account: {}}));
+		expect(within(panel()).queryByText("Account (booted on)")).toBeNull();
+	});
+
+	// The founder ruled org and plan only, and the ruling holds at two places on this path. Here is
+	// the render: an account is one line of the fields the row shows, so nothing else on it reaches
+	// the panel however the state was built.
+	it("renders the row as the two ruled fields and nothing else", async () => {
+		await open(agentSessionState({account: {organization: "kamp.us", subscriptionType: "max"}}));
+		const row = [...panel().querySelectorAll(".tuval-agent-inspector-row")].find(
+			(candidate) => candidate.querySelector("dt")?.textContent === "Account (booted on)",
+		);
+		expect(row?.querySelector("dd")?.textContent).toBe("kamp.us · max");
+	});
+
+	// And here is the reader in front of it. `AgentAccount` has no email field, so a state carrying
+	// one was not written by this program — `isAiAgentSessionState` refuses it, and the panel never
+	// takes the state rather than taking it and filtering the field at the edge.
+	it("refuses a state whose account carries an email, so none is ever on screen", async () => {
+		const email = "someone@example.com";
+		render(
+			AiAgentInspector.render(
+				(await Effect.runPromise(
+					Effect.flatMap(
+						testProcess<AiAgentSessionState, AiAgentSessionMsg>(
+							ProcessId.make("p-email"),
+							agentSessionState({
+								account: {organization: "kamp.us", subscriptionType: "max", email} as AgentAccount,
+							}),
+						),
+						(process) => process.window(WindowId.make("w-email"), {selected: null}),
+					),
+				)) as AnyWindowHost,
+			) as ReactElement,
+		);
+		await screen.findByTestId("empty-state");
+		expect(screen.queryByRole("group", {name: "Agent session"})).toBeNull();
+		expect(document.body.textContent).not.toContain(email);
 	});
 
 	it("names every value, because a bare number names nothing to a screen reader", async () => {

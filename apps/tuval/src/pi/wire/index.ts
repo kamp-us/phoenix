@@ -1,0 +1,87 @@
+export {
+	type ClientMessageDecoder,
+	createClientMessageDecoder,
+	createServerFrameSplitter,
+	createServerMessageDecoder,
+	DEFAULT_MAX_FRAME_LENGTH,
+	encodeClientMessage,
+	encodeServerMessage,
+	type FrameOptions,
+	type MessageDecoder,
+	ProtocolValidationError,
+	parseClientMessage,
+	type ServerMessageDecoder,
+	type SplitFrames,
+} from "./codec.ts";
+export type {
+	AbortCommand,
+	AbortResult,
+	AttachCommand,
+	AttachResult,
+	Command,
+	CommandResult,
+	CreateCommand,
+	CreateResult,
+	DetachCommand,
+	DetachResult,
+	ListCommand,
+	ListResult,
+	PromptCommand,
+	PromptResult,
+	ProtocolError,
+	ProtocolErrorCode,
+	SetModelCommand,
+	SetModelResult,
+	SetThinkingCommand,
+	SetThinkingResult,
+	SteerCommand,
+	SteerResult,
+} from "./command.ts";
+export {applyDelta, nextPush, type SessionPush} from "./delta.ts";
+export type {JsonValue} from "./json.ts";
+export type {
+	AttachmentEnvelope,
+	CancelEnvelope,
+	ClientHello,
+	ClientMessage,
+	RequestEnvelope,
+	ResponseEnvelope,
+	ServerEvent,
+	ServerHello,
+	ServerHelloError,
+	ServerMessage,
+	ServiceEventEnvelope,
+} from "./message.ts";
+export {SERVICE_ID, SESSION_SUBSCRIPTION_ID} from "./message.ts";
+export type {ModelCost, ModelMetadata, ModelRef, ThinkingLevel} from "./model.ts";
+export type {
+	ServerSnapshot,
+	SessionDelta,
+	SessionMetadata,
+	SessionPhase,
+	SessionSnapshot,
+} from "./session.ts";
+export {PROTOCOL_VERSION} from "./session.ts";
+export {isSessionTarget, type RpcTarget, type ServerTarget, type SessionTarget} from "./target.ts";
+export type {
+	AbortedAssistantTranscriptItem,
+	AssistantContent,
+	AssistantTranscriptItem,
+	CompactionTranscriptItem,
+	CompleteAssistantTranscriptItem,
+	CompleteToolTranscriptItem,
+	ErrorAssistantTranscriptItem,
+	ErrorToolTranscriptItem,
+	ImageContent,
+	RunningToolTranscriptItem,
+	StreamingAssistantTranscriptItem,
+	TextContent,
+	ThinkingContent,
+	ToolCallContent,
+	ToolContent,
+	ToolTranscriptItem,
+	TranscriptItem,
+	Usage,
+	UserContent,
+	UserTranscriptItem,
+} from "./transcript.ts";

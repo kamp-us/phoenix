@@ -900,6 +900,137 @@ describe("paging", () => {
 	});
 });
 
+describe("a fold closing under the reader", () => {
+	// The shape #8446 was sighted on: a tool call heading a fold of nested children, ordinary turns
+	// above it, more history behind. Closing the fold drops the revealed rows, the scroller is left
+	// resting past the end of what is left, and the browser clamps the offset to that end and fires
+	// one ordinary scroll carrying it — measured in Chromium through the repo's own playwright, on
+	// #8446. jsdom neither lays out nor clamps, so the clamp is staged: the offset is written and
+	// the event fired, the way every other scroll in this file is.
+	const group = [
+		userItem("i0", "prompt 0"),
+		assistantItem("i1", "answer 1"),
+		call("agent", {name: "Agent"}),
+		call("child-1", {name: "bash", parentId: "agent"}),
+		// Between the two calls so the fold reveals three rows rather than one: consecutive calls at
+		// one depth render as a single run row (#8612), and this case is about the height the reveal
+		// adds, not about how the calls print.
+		{...assistantItem("child-2", "nested answer"), parentId: ItemId.make("agent")},
+		call("child-3", {name: "grep", parentId: "agent"}),
+	];
+
+	// Every row measures a full viewport here, so a transcript short enough for the clamped offset
+	// to land inside the top threshold is staged from the threshold instead — the same staging the
+	// "stops following the newest turn when it is the top that asked for the page" case uses. On a
+	// real desk it is the transcript that is short: closing the fold brings it near its viewport's
+	// own height.
+	const TOP_THRESHOLD = TEST_VIEWPORT.height * 4;
+
+	const foldButton = (): HTMLElement => screen.getByRole("button", {name: /nested calls?$/});
+
+	/**
+	 * A window opened on the fold already unfolded, with its opening scroll landed and its box
+	 * following the rows.
+	 *
+	 * Restored open rather than clicked open, so the only scroll the window has asked for is the
+	 * opening one and landing it leaves the reader's own scroll as the first thing it did not ask
+	 * for. Clicking would leave the opening `scrollToIndex` re-deriving its target off the reveal's
+	 * own measurements, and a scroll of the window's own is exempt from both readings under test.
+	 */
+	const withFoldOpen = async (view: Partial<ChatView> = {}) => {
+		const harness = await openWindow(
+			withTranscript(group),
+			{pageLimit: 25, topThreshold: TOP_THRESHOLD},
+			{...initialChatView, unfolded: ["agent"], ...view},
+		);
+		trackContentHeight();
+		await landPendingScroll(harness.scrolls);
+		await settle();
+		return harness;
+	};
+
+	const closeFold = async (): Promise<void> => {
+		await act(async () => {
+			fireEvent.click(foldButton());
+		});
+		await settle();
+	};
+
+	it("reads the clamp the close produces as the clamp it is, and asks for no page", async () => {
+		const {process, view} = await withFoldOpen();
+		const revealedEnd = contentEnd();
+		// The reader resting inside the rows the fold revealed, short of the end — so the window is
+		// unpinned, which is the state `toggleFold` leaves it in when it opens one, and the state
+		// with no protection.
+		const restingAt = revealedEnd - TEST_VIEWPORT.height;
+		await scrollTo(restingAt);
+		await waitFor(() => expect(view().pinned).toBe(false));
+		await settle();
+		expect(process.inbox()).toEqual([]);
+
+		await closeFold();
+		const closedEnd = contentEnd();
+		// The list shortened under the reader, the offset they rest at is past the new end, and that
+		// end is inside the top threshold: the three facts that make the clamp reach `requestOlder`.
+		expect(closedEnd).toBeLessThan(revealedEnd);
+		expect(restingAt).toBeGreaterThan(closedEnd);
+		expect(closedEnd).toBeLessThanOrEqual(TOP_THRESHOLD);
+		expect(restingAt).toBeGreaterThan(TOP_THRESHOLD);
+
+		await scrollTo(closedEnd);
+		await settle();
+
+		expect(process.inbox()).toEqual([]);
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+	});
+
+	// The other side of the guard, and the failure the first version of it shipped (review round 1
+	// on #8646): a shrink under a reader resting *above* the new end clamps nothing and fires no
+	// event, so the held content end is the taller one until the next scroll. The reader arriving at
+	// the bottom in a single event — `End`, a click on the scrollbar track, a fling — then looks
+	// exactly like the clamp, and a window that reads it as one never re-arms its pin and stops
+	// following new turns, which is #8174 arriving through this guard.
+	it("re-arms the pin when the reader jumps to the bottom after a shrink that clamped nothing", async () => {
+		const {process, view} = await withFoldOpen();
+		// The top asks for one page of history, as it should — that is the reader, and this case is
+		// not about that read.
+		await scrollTo(0);
+		await waitFor(() => expect(process.inbox()).toHaveLength(1));
+		expect(view().pinned).toBe(false);
+
+		await closeFold();
+		const closedEnd = contentEnd();
+		expect(closedEnd).toBeGreaterThan(0);
+
+		await scrollTo(closedEnd);
+
+		await waitFor(() => expect(view().pinned).toBe(true));
+		expect(process.inbox()).toHaveLength(1);
+	});
+
+	// The twin, and the reason the guard above is about the clamp rather than about folds: with the
+	// reader resting on the newest turn the window is pinned, its own follow effect issues the
+	// scroll, and `selfScrollRef` already answers the event that carries it back.
+	it("asks for no page when the reader rests at the bottom and the follow issues the scroll", async () => {
+		const {process, scrolls, view} = await withFoldOpen();
+		await scrollTo(contentEnd());
+		await waitFor(() => expect(view().pinned).toBe(true));
+		await settle();
+		const before = scrolls.length;
+
+		await closeFold();
+
+		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
+		const asked = scrolls[scrolls.length - 1];
+		if (asked === undefined) throw new Error("the follow asked its scroller for nothing");
+		await scrollTo(asked);
+		await settle();
+
+		expect(process.inbox()).toEqual([]);
+		expect(view().pinned).toBe(true);
+	});
+});
+
 describe("the composer", () => {
 	it("sends one prompt with a fresh key and clears the draft", async () => {
 		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
@@ -956,6 +1087,33 @@ describe("the composer", () => {
 		expect(phaseLine().getAttribute("role")).toBe("status");
 		await waitFor(() => expect(phaseLine().textContent).toContain("Interrupting"));
 		expect(phaseLine().textContent).not.toContain("Ready");
+	});
+
+	// The bar and the tell render together, so they have to say one thing: a refusal the bar names
+	// while the tell still claims an abort is in flight reads as an abort the backend has not
+	// answered, which is the case ADR 0356 exists to tell apart.
+	it("says a refused interrupt was refused, in the bar and in the tell alike", async () => {
+		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "prompting"}));
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(
+					withTranscript(transcriptOf(2), {
+						phase: "prompting",
+						interruption: {requestedAt: SENT_AT},
+						failure: {
+							tag: "tuval/ai-agent/InterruptError",
+							reason: "turn-running",
+							detail: "the agent transport failed (refused): Operation aborted",
+						},
+					}),
+				),
+			);
+		});
+		await waitFor(() => expect(phaseLine().textContent).toContain("refused to stop"));
+		expect(phaseLine().textContent).not.toContain("has not confirmed");
+		const tell = document.querySelector(".tuval-chat-working");
+		expect(tell?.textContent).toContain("refused");
+		expect(tell?.textContent).not.toBe("Interrupting…");
 	});
 
 	it("restores the draft the window was left with", async () => {
@@ -1609,7 +1767,7 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		const fold = foldButton();
 		expect(fold.textContent).toBe("Show 2 nested calls");
 		expect(fold.getAttribute("aria-expanded")).toBe("false");
-		expect(screen.queryByText("bash")).toBeNull();
+		expect(screen.queryByText("Read 2 files")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(fold);
@@ -1618,8 +1776,8 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		const opened = foldButton();
 		expect(opened.textContent).toBe("Hide 2 nested calls");
 		expect(opened.getAttribute("aria-expanded")).toBe("true");
-		expect(screen.queryByText("bash")).not.toBeNull();
-		expect(screen.queryByText("grep")).not.toBeNull();
+		// The two revealed calls are consecutive at one depth, so what appears is their run (#8612).
+		expect(screen.queryByText("Read 2 files")).not.toBeNull();
 	});
 
 	// The rows are virtualized, so any idref list the button named would go stale as the reader
@@ -1759,9 +1917,15 @@ describe("the two daily rows", () => {
 		expect(marker?.getAttribute("data-kind")).toBe("compaction");
 		// The line is beside the rule and is not a text row: the assistant's turn above is what a
 		// text row looks like, and this is the one other shape the transcript draws.
-		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
+		expect(marker?.querySelector(".tuval-chat-compaction-label")?.textContent).toBe(
+			"context compacted",
+		);
 		expect(screen.getByText("done").closest(".tuval-chat-markdown")).not.toBeNull();
-		expect(marker?.querySelector(".tuval-chat-markdown")).toBeNull();
+		// The payload's own markdown is behind the disclosure, so nothing of it is read until the
+		// row is opened — the marker itself stays a divider (#8608).
+		const summary = marker?.querySelector(".tuval-chat-compaction-summary");
+		expect(summary).not.toBeNull();
+		expect(summary?.closest("[data-part='content']")?.hasAttribute("hidden")).toBe(true);
 	});
 });
 
@@ -1922,7 +2086,10 @@ describe("the view slot's writer, under StrictMode", () => {
 	// this render was given. It reds against a ref written from an effect rather than in `commit`.
 	it("composes batched commits off the last committed value", async () => {
 		const {writes, view} = await openWindow(
-			withTranscript([userItem("a", "do it"), call("c"), call("d", {name: "grep"})]),
+			// A reply between the calls: consecutive ones collapse into one run (#8612), and this case
+			// needs two rows with a disclosure each to batch two toggles. No opening `user` item, so
+			// these rows head no turn and the turn fold leaves them where they are (#8614).
+			withTranscript([call("c"), assistantItem("b", "next"), call("d", {name: "grep"})]),
 			{},
 			undefined,
 			{strict: true},

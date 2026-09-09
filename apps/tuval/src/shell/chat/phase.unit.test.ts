@@ -9,7 +9,7 @@
 import {describe, expect, it} from "vitest";
 import type {AgentFailure} from "../../ai-agent/core/index.ts";
 import type {Phase} from "../../ai-agent/events.ts";
-import {interruptionGraceMillis, isWorking, phaseLines, statusLine} from "./phase.ts";
+import {interruptionGraceMillis, isWorking, phaseLines, statusLine, workingTell} from "./phase.ts";
 
 const startFailure = (detail: string, reason: string): AgentFailure => ({
 	tag: "tuval/ai-agent/StartError",
@@ -142,5 +142,44 @@ describe("the status line", () => {
 			"gone",
 		];
 		expect(phases.filter(isWorking)).toEqual(["prompting"]);
+	});
+});
+
+/**
+ * The tell under the transcript, which renders beside the bar while a turn runs. The two are read
+ * as one readout, so a refusal the bar names has to reach this word too (#8007).
+ */
+describe("the working tell", () => {
+	const refused: AgentFailure = {
+		tag: "tuval/ai-agent/InterruptError",
+		reason: "turn-running",
+		detail: "the agent transport failed (refused): Operation aborted",
+	};
+
+	const tellOf = (failure: AgentFailure | null, interruption: number | null): string =>
+		workingTell({
+			phase: "prompting",
+			failure,
+			interruption: interruption === null ? null : {requestedAt: interruption},
+			now: NOW,
+		});
+
+	it("says the turn is working while no abort has been asked for", () => {
+		expect(tellOf(null, null)).toBe("Working…");
+	});
+
+	it("says an unanswered abort is interrupting", () => {
+		expect(tellOf(null, NOW)).toBe("Interrupting…");
+	});
+
+	// The contradiction this closes: the bar said the agent refused to stop while this word still
+	// claimed an abort was in flight.
+	it("stops claiming an abort is in flight once the agent has refused it", () => {
+		expect(tellOf(refused, NOW)).toContain("refused");
+		expect(tellOf(refused, NOW)).not.toBe("Interrupting…");
+	});
+
+	it("is not read by a failure about some other act", () => {
+		expect(tellOf(startFailure("the call did not answer", "transport"), NOW)).toBe("Interrupting…");
 	});
 });

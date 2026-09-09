@@ -36,7 +36,7 @@ import type {
 	SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import {type Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream} from "effect";
-import type {AgentEvent} from "../../ai-agent/events.ts";
+import type {AgentAccount, AgentEvent} from "../../ai-agent/events.ts";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
 import type {
 	CommandRef,
@@ -86,6 +86,7 @@ import {
 	noSessionToPage,
 	promptDisconnected,
 	sessionNotFound,
+	startStoreUnreadable,
 	startTransport,
 	startWithoutHandshake,
 	storeUnlistable,
@@ -217,14 +218,22 @@ const make = (
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const mode = yield* Ref.make<Mode | null>(null);
 		const model = yield* Ref.make<ModelRef | null>(null);
-		// Only an operator pick survives as an override; a discovered default is read afresh.
+		// Only an operator pick survives as an override; a discovered default is read afresh. The
+		// pick is recorded whether or not a session exists, and `start` re-applies it against the
+		// catalog it reads (#8061).
 		const pickedModel = yield* Ref.make<ModelRef | null>(null);
+		// The session's catalog, and it dies with the session: `closeCurrent` empties it, so a pick
+		// made between sessions is never judged against rows the dead session offered (#8061).
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
 		const commands = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
 		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
-		// offered set is looked up by the model the session is running on rather than held flat.
+		// offered set is looked up by the model the session is running on rather than held flat. It
+		// dies with the session beside `models`, for the same reason (#8542).
 		const efforts = yield* Ref.make<ReadonlyMap<string, ReadonlyArray<EffortLevel>>>(new Map());
-		const effort = yield* Ref.make<EffortLevel | null>(null);
+		// A `ThinkingLevel` rather than an `EffortLevel`, because a pick made with no session is held
+		// unvalidated: the two levels Claude has no effort for are refused by the next open's
+		// re-check, not by the setter that could only refuse them against an empty offer (#8542).
+		const effort = yield* Ref.make<ThinkingLevel | null>(null);
 		const parked = new Map<string, Parked>();
 
 		const emit = (open: EventQueue, events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
@@ -301,7 +310,7 @@ const make = (
 		): ReadonlyArray<EffortLevel> => (current === null ? [] : (table.get(current.id) ?? []));
 
 		const publishThinking = (
-			current: EffortLevel | null,
+			current: ThinkingLevel | null,
 			offered: ReadonlyArray<EffortLevel>,
 		): Effect.Effect<void> => publish([{kind: "thinking", current, available: offered}]);
 
@@ -364,6 +373,13 @@ const make = (
 			// Only now: the generator has ended, so the pump's next pull resolves and the fiber this
 			// closes is finishing rather than blocked.
 			yield* Scope.close(held.scope, Exit.void);
+			// Both catalogs were read off this session, so both go with it: kept, either would still
+			// be the set a pick is judged against after the session offering it is gone (#8061,
+			// #8542). The held selections stay — a pick is the operator's, not the session's, and the
+			// next open re-validates it (#7981). Announcing the clear is `start`'s, because this
+			// queue is shut the moment this returns; see the emit behind its `starting`.
+			yield* Ref.set(models, []);
+			yield* Ref.set(efforts, new Map());
 			yield* denyEveryParked;
 		});
 
@@ -404,6 +420,27 @@ const make = (
 				context.signal.addEventListener("abort", onAbort, {once: true});
 				void runtime.runPromise(publish([{kind: "permission", request, detail: card}]));
 			});
+
+		/**
+		 * The two `AccountInfo` fields the desk shows, or `null` when the handshake carried neither.
+		 *
+		 * `email` is on that type and is never read here: the founder ruled organization and plan
+		 * only (#8649). Every field of it is optional at the `0.3.259` pin, and `apiProvider`'s own
+		 * doc comment says why — for a third-party provider "the other fields are absent and auth is
+		 * external" — so a settled handshake is not the same as a known account, and one carrying
+		 * neither field announces nothing rather than an empty row.
+		 */
+		const accountOf = (handshake: {
+			readonly account?: {readonly organization?: string; readonly subscriptionType?: string};
+		}): AgentAccount | null => {
+			const organization = handshake.account?.organization;
+			const subscriptionType = handshake.account?.subscriptionType;
+			if (organization === undefined && subscriptionType === undefined) return null;
+			return {
+				...(organization === undefined ? {} : {organization}),
+				...(subscriptionType === undefined ? {} : {subscriptionType}),
+			};
+		};
 
 		/**
 		 * The first `init` frame of a session, which is the first turn's rather than the open's.
@@ -486,6 +523,25 @@ const make = (
 			});
 
 		/**
+		 * Whether the CLI's store holds a session at all — the pinned existence check, asked only
+		 * where a transcript read came back empty.
+		 *
+		 * At `0.3.259` `getSessionMessages` "returns Array of messages, or empty array if the session
+		 * was not found" (`sdk.d.ts`), so an empty read is two answers in one and settles neither: an
+		 * existing session with no rows and an id nobody stored read the same. `listSessions` is the
+		 * one that distinguishes them — with no options it is the whole store, the same call and the
+		 * same reason as `listSessions` below.
+		 *
+		 * The failure mapper is the caller's because the two callers refuse on different channels —
+		 * `start` owes a `StartError`, the store read a `TranscriptError` — and neither may read a
+		 * store that would not open as a session that is not there (#8131).
+		 */
+		const storeHolds = <E>(sessionId: string, unreadable: (cause: unknown) => E) =>
+			Effect.map(Effect.tryPromise({try: () => sdk.listSessions(), catch: unreadable}), (stored) =>
+				stored.some((info) => info.sessionId === sessionId),
+			);
+
+		/**
 		 * Open the session, and wait for the CLI's connect-time handshake rather than for a message.
 		 *
 		 * Nothing is read off the message iterator here. In streaming-input mode every frame belongs
@@ -504,9 +560,16 @@ const make = (
 					try: () => sdk.getSessionMessages(resume, {dir: cwd}),
 					catch: (cause) => startTransport(cwd, cause),
 				});
-				// "Returns an array of messages, or an empty array if the session was not found"
-				// (`sdk.d.ts`, `getSessionMessages`) — the miss itself, with no error text to scrape.
-				if (rows.length === 0) return yield* sessionNotFound(cwd, resume);
+				// An empty read is not a miss: the pin answers `[]` for a session it does not hold and
+				// for one that is genuinely empty alike, and `ResumeTarget` promises any listed id
+				// resumes. So the store's listing settles it, and only a listing with no such row is
+				// `session-not-found` (#8131).
+				if (
+					rows.length === 0 &&
+					!(yield* storeHolds(resume, (cause) => startStoreUnreadable(cwd, cause)))
+				) {
+					return yield* sessionNotFound(cwd, resume);
+				}
 				const {items} = toHistoryItems(rows, {at: Date.now()});
 				stale.push(...unsettledToolIds(items).filter((id) => !parked.has(id)));
 			}
@@ -541,12 +604,13 @@ const make = (
 				handle.close();
 			});
 
-			yield* Effect.tryPromise({
+			const handshake = yield* Effect.tryPromise({
 				try: () => handle.initializationResult(),
 				catch: (cause) => startWithoutHandshake(cwd, cause),
 			}).pipe(Effect.tapError(() => abandon));
 
 			return {
+				account: accountOf(handshake),
 				session: {
 					id: choice.sessionId,
 					cwd,
@@ -573,6 +637,19 @@ const make = (
 			const out = yield* Queue.unbounded<AgentEvent, TransportError | Cause.Done>();
 			yield* Ref.set(queue, out);
 			yield* emit(out, [{kind: "phase", phase: "starting"}]);
+			// The clear `closeCurrent` just made, said out loud on the queue a consumer is on. Without
+			// it a subscription taken across the swap keeps painting the dead session's rows, and an
+			// open that then fails emits `gone` with nothing to correct them (#8542). The held
+			// selections ride along, so the control names the pick rather than a catalog nobody holds
+			// — the founder's ruling of 2026-09-08. Only after a teardown: with no previous session
+			// this layer knows no selection, and announcing `current: null` would erase the one a
+			// restored window is showing.
+			if (previous !== null) {
+				yield* emit(out, [
+					{kind: "model", current: yield* Ref.get(model), available: []},
+					{kind: "thinking", current: yield* Ref.get(effort), available: []},
+				]);
+			}
 
 			// The layer's own switch first, then the mode the caller says to open on. The Ref is per
 			// build, so on the rebuilt layer a reconnect stands up it is null and the caller's mode is
@@ -586,16 +663,19 @@ const make = (
 			);
 
 			yield* Ref.set(session, opened.session);
+			// Said as soon as it is known rather than behind the catalogs: unlike the model and the
+			// thinking levels this costs no subprocess round-trip — the handshake `open` already
+			// waited for carried it. A login that reported neither field announces nothing, so the
+			// inspector's row stays absent rather than empty.
+			if (opened.account !== null) {
+				yield* emit(out, [{kind: "account", account: opened.account}]);
+			}
 			// The keys belong to a session, not to the layer: a key is dropped when this *session* has
 			// seen it, so a new session admits one the previous session spent. Resuming the session the
 			// keys were recorded under is the one case that keeps them.
 			const continuing = previous !== null && resuming === previous.id;
 			if (!continuing) yield* Ref.set(keys, new Set<string>());
 
-			// The layer's own narration of the open, which the handshake is: the core is already
-			// `ready` off the `started` this call answers, and `coreOwned` drops a layer `starting`
-			// (`ai-agent/core/fold.ts`, #7948) but not this.
-			yield* emit(out, [{kind: "phase", phase: "ready"}]);
 			// The announced mode is resolved by the same call `open` opened the query with, never the
 			// raw `held`: `held` is null until an operator calls `setMode`, so a row carrying any
 			// non-default `permissionMode` would run on that mode and tell every subscriber it has
@@ -640,14 +720,28 @@ const make = (
 			// this session landed on does not offer is dropped instead of sent.
 			const levels = offeredEfforts(table, opening);
 			const wanted = yield* Ref.get(effort);
+			// `find` rather than `includes`: the held pick is a `ThinkingLevel`, and what comes back
+			// is typed by this session's own offer, so `applyEffort` cannot be reached with one of
+			// the two levels Claude has no effort for.
+			const supported = levels.find((candidate) => candidate === wanted);
 			const running =
-				wanted === null || !levels.includes(wanted)
+				supported === undefined
 					? null
-					: (yield* applyEffort(opened.session, wanted))
-						? wanted
+					: (yield* applyEffort(opened.session, supported))
+						? supported
 						: null;
 			yield* Ref.set(effort, running);
-			yield* emit(out, [{kind: "thinking", current: running, available: levels}]);
+			// The open's `ready` ships here, behind the catalogs, and never ahead of them: the
+			// composer derives "the layer has said what this session offers" from the phase, so a
+			// `ready` emitted before these four subprocess round-trips tells the picker the offer
+			// resolved empty for as long as they take (#8425). The catalogs are the layer's own
+			// narration of the open too — the core is already `ready` off the `started` this call
+			// answers, and `coreOwned` drops a layer `starting` (`ai-agent/core/fold.ts`, #7948) but
+			// not this. See `.patterns/agent-layer-phase-contract.md`.
+			yield* emit(out, [
+				{kind: "thinking", current: running, available: levels},
+				{kind: "phase", phase: "ready"},
+			]);
 			// A card the layer does not hold cannot be answered, so a window restored with one would
 			// wedge on it. Resolving it is what lets the generic restore drop it (#7608).
 			yield* emit(
@@ -756,16 +850,22 @@ const make = (
 
 		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (next: ModelRef) {
 			const offered = yield* Ref.get(models);
-			const picked = offered.find((candidate) => sameModel(candidate, next));
+			const current = yield* Ref.get(session);
+			// With no session there is no catalog to judge against — the rows belong to a live query
+			// and `closeCurrent` drops them — so the pick is taken unvalidated rather than refused
+			// with the model listed against an empty `available`, the self-contradicting refusal
+			// #7981 ruled out. Validation is not skipped, only deferred: `start` re-checks the held
+			// pick against the catalog it reads and opens on the spawned model instead when that
+			// catalog does not carry it, so `ModelUnsupported` still means "the session refuses it"
+			// wherever a session exists to refuse (#8061).
+			const picked =
+				current === null ? next : offered.find((candidate) => sameModel(candidate, next));
 			if (picked === undefined) {
 				return yield* new ModelUnsupported({
 					model: next.id,
 					available: offered.map((candidate) => candidate.id),
 				});
 			}
-			const current = yield* Ref.get(session);
-			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
-			// as a mode set before the first session is.
 			const changed = current === null ? true : yield* applyModel(current, picked);
 			if (changed) {
 				yield* Ref.set(model, picked);
@@ -775,11 +875,14 @@ const make = (
 			yield* publish([{kind: "model", current: held, available: offered}]);
 			// The offered levels are the model's, so a switch moves the picker's rows. A level the
 			// new model does not offer stops being the current one rather than staying on a state it
-			// would now refuse.
+			// would now refuse — against a live catalog only: between sessions there is none to judge
+			// it by, and dropping the held level there would spend the operator's pick on a model
+			// switch the next open has not seen yet (#8542).
 			const table = yield* Ref.get(efforts);
 			const levels = offeredEfforts(table, held);
 			const running = yield* Ref.get(effort);
-			const kept = running !== null && levels.includes(running) ? running : null;
+			const kept =
+				current === null ? running : (levels.find((candidate) => candidate === running) ?? null);
 			yield* Ref.set(effort, kept);
 			yield* publishThinking(kept, levels);
 		});
@@ -789,17 +892,24 @@ const make = (
 		) {
 			const table = yield* Ref.get(efforts);
 			const levels = offeredEfforts(table, yield* Ref.get(model));
+			const current = yield* Ref.get(session);
+			// The session is read before the offer is judged, and that order is the whole fix: with
+			// no session the table is empty, so judging first refused every pick with the level
+			// listed against an empty `available` — the self-contradicting refusal #7981 ruled out,
+			// and the hold the comment here used to describe was unreachable (#8542). Validation is
+			// deferred, not skipped: `start` re-checks the held level against the catalog it reads
+			// and drops one this session's model does not offer.
+			if (current === null) {
+				yield* Ref.set(effort, next);
+				return yield* publishThinking(next, levels);
+			}
 			// `find` rather than `includes`: what comes back is typed as an `EffortLevel`, so the SDK
 			// call below cannot be reached with one of the two levels Claude has no effort for.
 			const picked = levels.find((candidate) => candidate === next);
 			if (picked === undefined) {
 				return yield* new ThinkingUnsupported({level: next, available: levels});
 			}
-			const current = yield* Ref.get(session);
-			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
-			// as a mode or a model set before the first session is.
-			const changed = current === null ? true : yield* applyEffort(current, picked);
-			if (changed) yield* Ref.set(effort, picked);
+			if (yield* applyEffort(current, picked)) yield* Ref.set(effort, picked);
 			yield* publishThinking(yield* Ref.get(effort), levels);
 		});
 
@@ -831,20 +941,6 @@ const make = (
 		});
 
 		/**
-		 * Whether the CLI's store holds a session at all, asked only where the transcript read came
-		 * back empty. `listSessions` with no options is the whole store, which is the same call
-		 * `listSessions` below makes and the same reason it makes it that way.
-		 */
-		const storeHolds = (sessionId: string) =>
-			Effect.map(
-				Effect.tryPromise({
-					try: () => sdk.listSessions(),
-					catch: (cause) => transcriptUnreadable(sessionId, cause),
-				}),
-				(stored) => stored.some((info) => info.sessionId === sessionId),
-			);
-
-		/**
 		 * `page`'s answer off the store, with no session open (#8233). `getSessionMessages` reads the
 		 * CLI's transcript files directly, so nothing here touches the `query()` this layer's `start`
 		 * owns and the read works on a layer that never opened one.
@@ -859,7 +955,12 @@ const make = (
 			// The pin answers an empty array for a session it does not hold as readily as for one
 			// that is genuinely empty (`refusals.ts`), so the listing settles which of the two this
 			// is rather than the caller reading silence as either.
-			if (rows.length === 0 && !(yield* storeHolds(query.sessionId))) {
+			if (
+				rows.length === 0 &&
+				!(yield* storeHolds(query.sessionId, (cause) =>
+					transcriptUnreadable(query.sessionId, cause),
+				))
+			) {
 				return yield* transcriptSessionNotFound(query.sessionId);
 			}
 			const {items, cursorAliases} = toHistoryItems(rows, {at: Date.now()});

@@ -1,20 +1,22 @@
-import {encodeServerMessage, PROTOCOL_VERSION} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
-import {streamingMessage} from "./AgentSessionHost.ts";
+import {encodeServerMessage, PROTOCOL_VERSION, SESSION_SUBSCRIPTION_ID} from "../wire/index.ts";
+import {runDetails, streamingMessage} from "./AgentSessionHost.ts";
 import {projectModelCost} from "./cost.ts";
 import {scriptedModel} from "./fixtures.ts";
 import {projectTranscript, projectUsage, type SourceMessage} from "./transcript.ts";
 
 const serverSnapshotCarrying = (cost: unknown) => ({
-	type: "hello" as const,
-	version: PROTOCOL_VERSION,
-	connectionId: "c1",
-	snapshot: {
-		serverId: "s1",
-		protocolVersion: PROTOCOL_VERSION,
-		revision: 0,
-		sessions: [],
-		models: [{...scriptedModel, cost}],
+	type: "service_update" as const,
+	subscriptionId: SESSION_SUBSCRIPTION_ID,
+	update: {
+		type: "server_snapshot" as const,
+		snapshot: {
+			serverId: "6f1c0a1e-6c2e-4a0f-9a3c-0f2c6c1a3d55",
+			protocolVersion: PROTOCOL_VERSION,
+			revision: 0,
+			sessions: [],
+			models: [{...scriptedModel, cost}],
+		},
 	},
 });
 
@@ -32,7 +34,12 @@ describe("projectModelCost", () => {
 		);
 	});
 
-	it("is what keeps a tiered cost encodable — the unprojected one is refused", () => {
+	/**
+	 * Protocol 8 carries every payload opaque, so the envelope no longer refuses an unprojected
+	 * cost the way the 0.84.3 `ModelCostSchema` did — the projection is now the only thing keeping
+	 * a tiered cost off the wire, which is exactly why it is asserted rather than assumed.
+	 */
+	it("is what keeps a tiered cost off the wire, now that the envelope does not judge it", () => {
 		const tiered = {
 			input: 1,
 			output: 2,
@@ -40,7 +47,7 @@ describe("projectModelCost", () => {
 			cacheWrite: 4,
 			tiers: [{inputTokensAbove: 200_000, input: 9, output: 9, cacheRead: 9, cacheWrite: 9}],
 		};
-		assert.throws(() => encodeServerMessage(serverSnapshotCarrying(tiered) as never));
+		assert.notProperty(projectModelCost(tiered), "tiers");
 		encodeServerMessage(serverSnapshotCarrying(projectModelCost(tiered)) as never);
 	});
 });
@@ -121,8 +128,9 @@ describe("projectTranscript", () => {
 
 	it("produces items the wire accepts", () => {
 		encodeServerMessage({
-			type: "event",
-			event: {
+			type: "service_update",
+			subscriptionId: SESSION_SUBSCRIPTION_ID,
+			update: {
 				type: "session_snapshot",
 				snapshot: {
 					id: "s",
@@ -263,8 +271,9 @@ describe("projectTranscript over a reply still being written", () => {
 
 	it("produces a streaming item the wire accepts", () => {
 		encodeServerMessage({
-			type: "event",
-			event: {
+			type: "service_update",
+			subscriptionId: SESSION_SUBSCRIPTION_ID,
+			update: {
 				type: "session_snapshot",
 				snapshot: {
 					id: "s",
@@ -327,5 +336,109 @@ describe("streamingMessage", () => {
 			inFlight,
 		);
 		assert.strictEqual(streamingMessage({streamPartialText: true}, {}), undefined);
+	});
+});
+
+/**
+ * The run correlation the session delivers and the snapshot cannot recover: `pi-subagents` stamps
+ * the spawned run's id onto every progressive update it reports, and that update is the only place
+ * the id is ever stated (#8663, grounded on #8627).
+ */
+describe("a spawned run's correlation", () => {
+	const call: SourceMessage = {
+		role: "assistant",
+		content: [{type: "toolCall", id: "call-9", name: "subagent", arguments: {agent: "reviewer"}}],
+		provider: "faux",
+		model: "faux-1",
+		stopReason: "toolUse",
+		timestamp: 2,
+	};
+	const details = new Map([["call-9", {runId: "run-1"}]]);
+
+	it("is read off a tool_execution_update that carries one", () => {
+		assert.deepStrictEqual(
+			runDetails({
+				type: "tool_execution_update",
+				toolCallId: "call-9",
+				toolName: "subagent",
+				args: {},
+				partialResult: {output: "…", details: {runId: "run-1", mode: "single"}},
+			}),
+			{toolCallId: "call-9", details: {runId: "run-1"}},
+		);
+	});
+
+	it.each([
+		["another event", {type: "message_end", message: {}}],
+		[
+			"an update with no details",
+			{
+				type: "tool_execution_update",
+				toolCallId: "c",
+				toolName: "read",
+				args: {},
+				partialResult: {},
+			},
+		],
+		[
+			"an update whose details name no run",
+			{
+				type: "tool_execution_update",
+				toolCallId: "c",
+				toolName: "read",
+				args: {},
+				partialResult: {details: {progress: 4}},
+			},
+		],
+	])("is nothing for %s", (_case, event) => {
+		assert.isNull(runDetails(event));
+	});
+
+	it("puts a running row on the transcript for a call that has not answered", () => {
+		const items = projectTranscript([call], undefined, details);
+		assert.deepStrictEqual(items[1], {
+			id: "item-1",
+			role: "tool",
+			toolCallId: "call-9",
+			toolName: "subagent",
+			input: {agent: "reviewer"},
+			content: [],
+			details: {runId: "run-1"},
+			timestamp: 2,
+			status: "running",
+			isError: false,
+		});
+	});
+
+	it("carries the details onto the result and draws no second row once it lands", () => {
+		const answered: SourceMessage = {
+			role: "toolResult",
+			toolCallId: "call-9",
+			toolName: "subagent",
+			content: [{type: "text", text: "done"}],
+			isError: false,
+			timestamp: 3,
+		};
+		const items = projectTranscript([call, answered], undefined, details);
+		assert.strictEqual(items.length, 2);
+		assert.deepStrictEqual(items[1], {
+			id: "item-1",
+			role: "tool",
+			toolCallId: "call-9",
+			toolName: "subagent",
+			input: {agent: "reviewer"},
+			content: [{type: "text", text: "done"}],
+			details: {runId: "run-1"},
+			timestamp: 3,
+			status: "complete",
+			isError: false,
+		});
+	});
+
+	it("leaves the transcript exactly as it was when no run was named", () => {
+		assert.deepStrictEqual(
+			projectTranscript([call], undefined, new Map()),
+			projectTranscript([call]),
+		);
 	});
 });

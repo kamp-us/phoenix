@@ -21,9 +21,11 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {closedReader, runArchive} from "./archive-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
+import {claimHoldReader} from "./claim-hold.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {closureReader} from "./closure.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
+import {runDispatch} from "./dispatch-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {expectationReader} from "./expectation.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal, resolveRootOrRefuse} from "./ground.ts";
@@ -33,12 +35,13 @@ import {archivedRoot, defaultRoot, type LaneKey, laneRef, parseKey, templateFile
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
-import {runProve} from "./prove-verb.ts";
+import {proveDispatched, runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
+import {boardReaders, runSettle} from "./settle-verb.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
@@ -107,6 +110,56 @@ const onBoardKey = <R>(
 	const parsed = parseKey(raw);
 	return parsed._tag === "Malformed" ? Effect.succeed(keyRefusal(parsed)) : run(parsed.key);
 };
+
+const dispatch = leafCommand(
+	"dispatch",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		harness: Flag.string("harness").pipe(
+			Flag.withDescription("dispatch adapter; codex is supported"),
+		),
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("active lane task; required on multi-task lanes"),
+		),
+		skills: Flag.string("skills").pipe(
+			Flag.withDescription("absolute installed Fabrika skills directory"),
+		),
+		worktree: Flag.string("worktree").pipe(
+			Flag.withDescription(
+				"absent absolute path outside the primary checkout; retained after dispatch",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, harness, task, skills, worktree}) {
+		const entrypoint = yield* resolveEntrypoint();
+		yield* emit(
+			yield* onKey("dispatch", lane, root, (_key, ref) =>
+				runDispatch(
+					{
+						...ref,
+						harness,
+						task: Option.getOrNull(task),
+						skills,
+						worktree,
+						cwd: process.cwd(),
+						env: process.env,
+						repo: null,
+						entrypoint,
+					},
+					runBrief,
+					proveDispatched,
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Dispatch one active lane task to Codex in a verified worktree."),
+	Command.withDescription(
+		"Create a dedicated detached git worktree and run codex exec with a fixed skill preload envelope and the emitted lane brief unchanged. Preserves Codex model and policy configuration. Requires a new task terminal and fresh artifact proof; process exit zero alone is not completion. stdout: {harness, task, event, worktree}. Worktrees are retained. Exits 11 (missing input, isolation, process or state failure), 18 (unsupported harness or inactive state), 22 (no unique terminal), plus lane brief and lane prove refusals. Example: fabrika lane dispatch 5673 --harness codex --skills /installed/fabrika/skills --worktree /scratch/lane-5673",
+	),
+);
 
 const status = leafCommand(
 	"status",
@@ -358,6 +411,7 @@ const open = leafCommand(
 					issue: key._tag === "Issue" ? Number(key.lane) : null,
 					expectation: expectationReader(Option.getOrNull(repo), process.env),
 					cap,
+					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
 				}),
 			),
 		);
@@ -365,7 +419,7 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Boot a lane from the committed template its key selects."),
 	Command.withDescription(
-		"Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's type, its native sub-issue links and its parent edge: the coder template has one task, so an epic has no machine here and is refused at 46 before anything is written. Both halves of \"epic\" are asked for, because they answer for different moments — a planned epic carries children, and an epic nobody has planned yet carries none and is known only by its `type:epic` label, which is the window the wrong-template lane was booted in. The refusal names which case it is: an unplanned epic goes to `plan-epic` first, and a planned one is booted with `fabrika lane emit <n>`. An epic's CHILD carries neither fact, and is refused at 48 instead, naming the parent whose lane already carries it as a task — a child gets no lane of its own. Epic wins the precedence, so a sub-epic still routes to `lane emit`. The parent edge rides the issue read already made, so those two reads stay the only network calls; a `chore:<name>` key drives no issue and is never asked. Last before the write, an issue key is counted against `.fabrika.jsonc`'s `laneConcurrencyCap`: the issue lanes under this root that have not folded to done hold its seats, an archived one is already out of the count, and there is no override flag — raising the number in the config is how it changes. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 46 (the issue is an epic — typed `type:epic`, or carrying sub-issue links — so this template is the wrong machine for it), 48 (the issue hangs under a parent, whose lane is the one to drive), 51 (the lanes root already holds as many lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — the cap, the count and every lane holding a seat are named, and nothing was written). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
+		"Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's type, its native sub-issue links and its parent edge: the coder template has one task, so an epic has no machine here and is refused at 46 before anything is written. Both halves of \"epic\" are asked for, because they answer for different moments — a planned epic carries children, and an epic nobody has planned yet carries none and is known only by its `type:epic` label, which is the window the wrong-template lane was booted in. The refusal names which case it is: an unplanned epic goes to `plan-epic` first, and a planned one is booted with `fabrika lane emit <n>`. An epic's CHILD carries neither fact, and is refused at 48 instead, naming the parent whose lane already carries it as a task — a child gets no lane of its own. Epic wins the precedence, so a sub-epic still routes to `lane emit`. The parent edge rides the issue read already made, so those two reads stay the only network calls; a `chore:<name>` key drives no issue and is never asked. Last before the write, an issue key is counted against `.fabrika.jsonc`'s `laneConcurrencyCap`: a seat is held by an issue lane under this root that has not folded to done AND whose issue carries a live `lane claim` marker, plus every lane no read can account for — an active lane nobody claims is idle and holds nothing, an archived one is already out of the count, and there is no override flag — raising the number in the config is how it changes. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 46 (the issue is an epic — typed `type:epic`, or carrying sub-issue links — so this template is the wrong machine for it), 48 (the issue hangs under a parent, whose lane is the one to drive), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — the cap, the claimed count, every lane holding a seat and, separately, the number of idle unclaimed lanes are named, and nothing was written). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
 	),
 );
 
@@ -403,6 +457,7 @@ const emitLane = leafCommand(
 					repo: Option.getOrNull(repo),
 					env: process.env,
 					cap,
+					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
 				}),
 			),
 		);
@@ -410,7 +465,7 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other). Example: fabrika lane emit 5680",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). Example: fabrika lane emit 5680",
 	),
 );
 
@@ -844,6 +899,60 @@ const archive = leafCommand(
 	),
 );
 
+const settle = leafCommand(
+	"settle",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task the terminal addresses; omittable on a single-task lane"),
+		),
+		token: Flag.string("token").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the lane-claim token, when the driver holding this lane is the one settling it",
+			),
+		),
+		landedBy: Flag.integer("landed-by").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the merged pull request that discharged this lane, where no body links the issue — supplies the link, never the merge",
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the closure, pull-request and claim reads read (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, token, landedBy, repo}) {
+		const readers = boardReaders(Option.getOrNull(repo), process.env);
+		yield* emit(
+			yield* onKey("settle", lane, root, (key, ref) =>
+				runSettle({
+					...ref,
+					issue: key._tag === "Issue" ? Number(key.lane) : null,
+					task: Option.getOrNull(task),
+					token: Option.getOrNull(token),
+					landedBy: Option.getOrNull(landedBy),
+					closure: readers.closure,
+					pulls: readers.pulls,
+					claims: readers.claims,
+					sha: readers.sha,
+					asserted: readers.asserted,
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("End a lane against its issue's own closure, as a recorded event."),
+	Command.withDescription(
+		'Append the terminal the board\'s own closure proves, to a lane whose own flow never reached one. Two stranded shapes, one verb: a lane parked while its issue closed not planned or duplicate owes no artifact, and a lane sitting in build or review while its issue closed completed over a merged PR was hand-shipped past the ledger. Neither can be ended by the operator\'s six — DONE claims an open PR that is not there, BLOCKED only parks, UNBLOCKED resumes work that is already over — so the only remedy was deleting the lane directory, which erases an append-only history instead of recording an outcome. This appends ONE line and moves nothing on disk; `fabrika lane history <lane>` still reads the whole log. The board read is the whole entitlement. A `state_reason` of not_planned or duplicate records `<TASK>.CANCELLED`; `completed` PLUS at least one merged pull request whose body links the issue (closing keyword or `Part of`) records `<TASK>.LANDED`, carrying those pull request numbers as `landed` and the first one\'s merge commit as `sha`. The pull requests are read only on the completed arm, so a cancellation costs one board read. Everything else appends nothing: an open issue refuses at 49, and a read that failed, a close carrying no `state_reason`, a reason outside the three, or a completed close naming no merged linking PR are all UNKNOWN at 11 — a completed close with nothing that did it is genuinely unread, not a landing. --landed-by <pr> supplies exactly that missing link and nothing more, for a closure a human closed by hand over a merge whose body cites some other issue: the board must still read that PR merged, so an unmerged one refuses at 23 and one this repository does not hold at 22, both with the log unappended, and an unreadable read stays UNKNOWN at 11. A body-proven landing is judged FIRST and wins, so the flag can only ever fill a gap; the line it appends carries `assertedBy: "caller"` beside its `landed`/`sha`, which is how this verb\'s own stdout and `lane history` tell an asserted link from a body-proven one, and a body-proven line carries no such field at all. `lane view` does NOT show it: the viewer page rebuilds every log line as {task, event, at} and drops the rest, `landed` and `sha` included, so the distinction is readable through `lane history` and not on that screen. Neither event is an operator event: the operator\'s six are unchanged and `lane transition` refuses both, so `DONE`\'s proof semantics are untouched. A live authorized lane claim refuses at 31 unless --token names it, so a lane another session is driving is not ended underneath it; an unreadable claim thread is UNKNOWN, never "unclaimed". The lane then folds to the terminal stateValue "cancelled" or "landed" — its own, neither "complete" (which would claim this lane\'s flow finished it) nor "tripped" (which would claim it failed) — so `lane status`, `lane stale` and `lane view` read it done and it holds no seat against `laneConcurrencyCap`. The offline gate runs first, so a lane already carrying a terminal costs no board read at all. stdout is {answer:"settled", lane, issue, previous, event, current, taskAffected, outcome} plus `landed` and `sha` on a landing, and `assertedBy` on an asserted one. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the append did not land — the terminal is NOT recorded), 11 (the lane, the board closure, the pull requests, the --landed-by pull request or the claim thread could not be read, or the closure proves no terminal — UNKNOWN, never an append), 12 (this lane already carries a terminal, or the task is in a final — there is nothing here to settle), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 19 (the key names no issue, so the closure gate can never be satisfied; a chore lane is not settleable), 21 (the key is not a lane key), 22 (--landed-by names no pull request this repository holds), 23 (--landed-by names a pull request that has not merged), 31 (the issue carries a live lane claim this caller did not name), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 40 (another writer holds the ledger lock — retry). Examples: fabrika lane settle 5983 · fabrika lane settle 6100 --landed-by 6878',
+	),
+);
+
 const reconcile = leafCommand(
 	"reconcile",
 	{
@@ -951,6 +1060,7 @@ export const laneCommand = Command.make("lane").pipe(
 		open,
 		emitLane,
 		brief,
+		dispatch,
 		assembly,
 		integrate,
 		pushLane,
@@ -958,6 +1068,7 @@ export const laneCommand = Command.make("lane").pipe(
 		migrate,
 		reconcile,
 		archive,
+		settle,
 		claim,
 		release,
 		adopt,

@@ -33,6 +33,7 @@ export type PiSessionStore = "pi-cli" | "tuval";
 export interface StoreFailure {
 	readonly store: PiSessionStore;
 	readonly detail: string;
+	readonly cause?: unknown;
 }
 
 export interface StoreRead {
@@ -49,9 +50,6 @@ export interface PiSessionStores {
 	/** Tuval's own store, or absent when this layer has no project root to locate one under. */
 	readonly tuvalDir?: string | undefined;
 }
-
-const detailOf = (cause: unknown): string =>
-	cause instanceof Error ? cause.message : String(cause);
 
 /** What the pin writes as `firstMessage` for a session holding none. An absence, not a prompt. */
 const NO_MESSAGES = "(no messages)";
@@ -98,7 +96,7 @@ const leavesOf = (
 				.filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
 				.map((entry) => join(root, entry.name));
 		},
-		catch: (cause) => ({store, detail: detailOf(cause)}),
+		catch: (cause) => ({store, detail: "Pi could not read the session store", cause}),
 	});
 
 /** Every directory the stores keep `.jsonl` files in, beside the stores that would not answer. */
@@ -154,7 +152,11 @@ const readStore = (store: PiSessionStore, root: string): Effect.Effect<StoreAnsw
 				(leaf) =>
 					Effect.tryPromise({
 						try: () => SessionManager.listAll(leaf),
-						catch: (cause): StoreFailure => ({store, detail: detailOf(cause)}),
+						catch: (cause): StoreFailure => ({
+							store,
+							detail: "Pi could not read the session store",
+							cause,
+						}),
 					}),
 				// Independent directory reads, and the result order is the input's either way.
 				{concurrency: "unbounded"},

@@ -1,9 +1,9 @@
 /**
- * What a resume owes the window, over a stub `PiClientService` whose snapshot stream is a queue the
+ * What a resume owes the window, over a stub `PiClientService` whose update stream is a queue the
  * test pushes.
  *
- * Pi re-sends the whole transcript every revision, so the fold's projection is the only thing
- * standing between a reattach and a full replay of the session as live items. A restored process
+ * The attach lease carries the session's whole transcript, so the fold's projection is the only
+ * thing standing between a reattach and a full replay of it as live items. A restored process
  * comes back with that transcript already on screen, and the replay lands on top of the operator's
  * own newly typed turn, pushing it out of the 40-item window (#8369). A window opened on a session
  * out of the picker holds nothing, and the same replay is the only way its history paints — so both
@@ -20,10 +20,6 @@
  * moving the totals — the last two cases walk that in both directions.
  */
 
-import type {
-	TranscriptItem as PiTranscriptItem,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {type Cause, Effect, Layer, Option, Queue, Stream} from "effect";
 import {
@@ -36,7 +32,13 @@ import {
 import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {AgentEvent, Phase, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
-import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import {
+	type PiClientApi,
+	PiClientService,
+	type PiSessionRef,
+	type SessionUpdate,
+} from "../client/index.ts";
+import type {TranscriptItem as PiTranscriptItem, SessionSnapshot} from "../wire/index.ts";
 import {itemsOf} from "./items.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
@@ -103,11 +105,17 @@ const snapshot = (
 /** The transcript the session already had when this client attached to it. */
 const HELD = snapshot([user, reply], "idle", 7);
 
+/**
+ * The first push after that attach. Every push carries a revision the record just bumped, so a
+ * push at the lease's own revision is one the fold drops as already folded (`./items.ts`).
+ */
+const PUSHED = snapshot([user, reply], "idle", 8);
+
 /** The tail a restored process comes back with: the rows the fold emitted it for these turns. */
 const held = (...sources: ReadonlyArray<PiTranscriptItem>) => sources.flatMap(itemsOf);
 
 const stub = Effect.gen(function* () {
-	const pushes = yield* Queue.unbounded<SessionSnapshot>();
+	const pushes = yield* Queue.unbounded<SessionUpdate>();
 	const api: PiClientApi = {
 		connect: Effect.void,
 		reconnect: Effect.void,
@@ -120,12 +128,12 @@ const stub = Effect.gen(function* () {
 		setModel: () => Effect.never,
 		setThinkingLevel: () => Effect.never,
 		models: Effect.succeed([]),
-		snapshots: () => Stream.fromQueue(pushes),
+		updates: () => Stream.fromQueue(pushes),
 		disconnections: Stream.never,
 	};
 	return {
 		layer: Layer.succeed(PiClientService, api),
-		push: (value: SessionSnapshot) => Queue.offer(pushes, value),
+		push: (value: SessionSnapshot) => Queue.offer(pushes, {_tag: "snapshot", snapshot: value}),
 	};
 });
 
@@ -192,7 +200,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 					yield* drain(events);
 
-					yield* client.push(HELD);
+					yield* client.push(PUSHED);
 					const folded = yield* drain(events);
 					assert.deepStrictEqual(itemIds(folded), [], "the resume replayed the transcript");
 					assert.strictEqual(usages(folded), 0, "the resume re-added the session's usage");
@@ -293,7 +301,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 				yield* drain(events);
 
-				yield* client.push(HELD);
+				yield* client.push(PUSHED);
 				const folded = yield* drain(events);
 				assert.deepStrictEqual(
 					itemIds(folded),
@@ -307,7 +315,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 
 	/**
 	 * The drop can catch the agent mid-sentence. Pi's assistant item carries a `status: "streaming"`
-	 * variant whose `usage` is optional (`@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts`),
+	 * variant whose `usage` is optional (`../wire/transcript.ts`),
 	 * so the tail this process comes back with holds a half-written reply under the same id the
 	 * finished one now has. That id being the newest thing it holds does not make the finished reply
 	 * read: suppressing it leaves the operator on the half-written text for the life of the session
@@ -336,7 +344,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 					yield* drain(events);
 
-					yield* client.push(HELD);
+					yield* client.push(PUSHED);
 					const folded = yield* drain(events);
 					assert.deepStrictEqual(
 						itemIds(folded),
@@ -369,7 +377,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 				yield* drain(events);
 
-				yield* client.push(HELD);
+				yield* client.push(PUSHED);
 				const folded = yield* drain(events);
 				assert.strictEqual(
 					spent(counted(tail, "ready"), folded).cost,

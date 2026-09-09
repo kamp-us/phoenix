@@ -18,12 +18,13 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/i
 import type {SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
+import {NativeSubagents} from "../../codex/subagents.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
-import {assistantItem, call, userItem, withTranscript} from "./chat.testing.ts";
+import {assistantItem, call, systemItem, userItem, withTranscript} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -298,6 +299,76 @@ describe("the way back to the agent's own transcript", () => {
 	});
 });
 
+describe("Codex native slots in the existing navigator", () => {
+	it("retains a viewed completed child and returns to the parent without a second interface", async () => {
+		const native = new NativeSubagents();
+		native.collab(
+			{
+				type: "collabAgentToolCall",
+				id: "agent",
+				tool: "spawnAgent",
+				status: "completed",
+				senderThreadId: "parent",
+				receiverThreadIds: ["child"],
+				prompt: "review",
+				agentsStates: {child: {status: "running", message: null}},
+			},
+			"parent",
+			1,
+		);
+		native.item("child", {type: "agentMessage", id: "reply", text: "Native"}, 2, true);
+		const state = () => agentSession(...native.slots.values());
+		const {rendered, process} = await openOne(state(), {}, atOldest());
+		await pick(rendered.container, "agent");
+		expect(dom(rendered.container).text()).toContain("Native");
+		native.hydrate("child", {
+			type: "agent",
+			status: "running",
+			turnId: "turn",
+			items: [
+				{
+					kind: "assistant",
+					id: ItemId.make("reply"),
+					text: "Native child answer",
+					timestamp: 3,
+					partial: true,
+				},
+			],
+		});
+		native.delta("child", "reply", " child");
+		await act(async () => {
+			await Effect.runPromise(process.commit(state()));
+		});
+		expect(dom(rendered.container).text()).toContain("Native child answer");
+		native.finishCall("agent", "completed", false);
+		native.delta("child", "reply", " answer");
+		native.collab(
+			{
+				type: "collabAgentToolCall",
+				id: "wait",
+				tool: "wait",
+				status: "completed",
+				senderThreadId: "parent",
+				receiverThreadIds: ["child"],
+				prompt: null,
+				agentsStates: {child: {status: "completed", message: "Done"}},
+			},
+			"parent",
+			3,
+		);
+		await act(async () => {
+			await Effect.runPromise(process.commit(state()));
+		});
+		expect(dom(rendered.container).text()).toContain("Native child answer");
+		expect(dom(rendered.container).current()).toContain("agent");
+		await pick(rendered.container, "Back to the agent transcript");
+		expect(dom(rendered.container).text()).toContain("the agent's own call");
+		expect(dom(rendered.container).text()).not.toContain("Native child answer");
+		expect(process.inbox()).toEqual([]);
+		rendered.unmount();
+	});
+});
+
 describe("a subagent that finishes while its view is open (Q9)", () => {
 	const finish = async (process: Process) => {
 		await act(async () => {
@@ -401,6 +472,56 @@ describe("with the flag off", () => {
 		expect(dom(root).text()).toContain("the agent's own call");
 		expect(dom(root).text()).toContain("the fold looks right");
 		expect(root.querySelectorAll('[data-nested="true"]').length).toBeGreaterThan(0);
+		rendered.unmount();
+	});
+});
+
+/**
+ * The way from a settled worker's notice into that worker's rows (#8475). The notice is one line by
+ * the time it reaches the window — the mapper drops the report it used to carry — so this control
+ * is where that report is read.
+ */
+describe("a notice naming a worker", () => {
+	const withNotice = (...held: ReadonlyArray<SubagentSlot>) =>
+		withTranscript(
+			[
+				userItem("u1", "go"),
+				call("agent", {name: "Agent"}),
+				...reviewerItems,
+				systemItem("n1", "reviewer finished", undefined, undefined, "agent"),
+			],
+			{subagents: slots(...held)},
+		);
+
+	const link = (root: ParentNode): HTMLButtonElement | null =>
+		root.querySelector<HTMLButtonElement>(".tuval-chat-session-link");
+
+	it("offers the worker's rows from the line, and swaps the view onto them", async () => {
+		const {rendered, view} = await openOne(withNotice(reviewer("finished")), {}, atOldest());
+		const root = rendered.container;
+		const control = link(root);
+		expect(control?.tagName).toBe("BUTTON");
+		// The visible label is short; the name a screen reader announces carries the line it belongs
+		// to, and contains that visible label (WCAG 2.5.3).
+		expect(control?.textContent).toBe("Show its rows — reviewer finished");
+
+		await act(async () => {
+			(control as HTMLButtonElement).click();
+		});
+
+		expect(view().viewing?.id).toBe("agent");
+		expect(dom(root).text()).toContain("the fold looks right");
+		rendered.unmount();
+	});
+
+	it("offers nothing where no list is drawn to come back to", async () => {
+		const {rendered} = await openOne(withNotice(reviewer("finished")), {subagentList: false});
+		const root = rendered.container;
+
+		expect(dom(root).list()).toBeNull();
+		expect(link(root)).toBeNull();
+		// The line itself is the row either way — it is the payload behind it that went.
+		expect(dom(root).text()).toContain("reviewer finished");
 		rendered.unmount();
 	});
 });

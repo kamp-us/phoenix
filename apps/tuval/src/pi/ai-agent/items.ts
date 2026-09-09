@@ -7,32 +7,37 @@
  * arguments and never results — the far side of this module is `ports/transcript-item.ts` only,
  * which is what keeps the Pi wire inside `src/pi/` (#7465).
  *
- * Grounded in `@earendil-works/pi-protocol` `dist/schemas.d.ts` at 0.84.3:
- * `TranscriptItemSchema` (the `user` / `assistant` / `tool` union), `ToolTranscriptItemSchema`
+ * Grounded in Tuval's own wire vocabulary (`../wire/`, relocated from `pi-protocol`'s schemas by
+ * ADR 0366): `TranscriptItem` (the `user` / `assistant` / `tool` / `compaction` union), `ToolTranscriptItem`
  * (`toolCallId`, `toolName`, `input`, `content`, and the `status`/`isError` pairs
- * `running`/false, `complete`/false, `error`/true), `UsageSchema` (`totalTokens`, `cost.total`)
- * and `SessionSnapshotSchema` (`revision`, `phase`, `transcript`).
+ * `running`/false, `complete`/false, `error`/true), `Usage` (`totalTokens`, `cost.total`) and
+ * `SessionSnapshot` (`revision`, `phase`, `transcript`).
  *
  * An assistant turn's `thinking` content becomes a `thinking` item of its own and never joins the
  * reply's `text` — folding reasoning into the reply would render as something the assistant never
  * said. An item's `image` parts have no port field to land in and are dropped.
  */
 
-import type {
-	TranscriptItem as PiTranscriptItem,
-	SessionPhase,
-	SessionSnapshot,
-} from "@earendil-works/pi-protocol";
+import {Predicate} from "effect";
 import {
 	boundToolResult,
 	type ItemId,
 	type JsonValue,
 	newestBackendItemId,
+	type SubagentSlot,
 	type ThinkingItem,
 	type ToolStatus,
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import type {AgentEvent, Phase} from "../../ai-agent/service/index.ts";
+import type {
+	TranscriptItem as PiTranscriptItem,
+	SessionDelta,
+	SessionPhase,
+	SessionSnapshot,
+} from "../wire/index.ts";
+import type {ChildTranscript, ChildTranscripts} from "./child-transcript.ts";
+import {providerFailureText} from "./provider-failure.ts";
 
 /** `ItemId` is an opaque string brand, minted here so no call site writes its own cast. */
 export const itemId = (value: string): ItemId => value as ItemId;
@@ -48,6 +53,8 @@ const textOf = (parts: ReadonlyArray<PiContent>): string =>
  * revision projection and `entries.ts` can re-key both off one entry.
  */
 export const thinkingId = (base: string): ItemId => itemId(`${base}:thinking`);
+
+export const failureId = (base: string): ItemId => itemId(`${base}:failure`);
 
 /**
  * `isError` decides `error` on its own: the wire pairs it with `status: "error"`, and reading the
@@ -67,8 +74,9 @@ const toolStatusOf = (item: Extract<PiTranscriptItem, {role: "tool"}>): ToolStat
 export const itemOf = (item: PiTranscriptItem): TranscriptItem => {
 	switch (item.role) {
 		case "user":
+		case "compaction":
 			return {
-				kind: "user",
+				kind: item.role,
 				id: itemId(item.id),
 				timestamp: item.timestamp,
 				text: textOf(item.content),
@@ -115,10 +123,206 @@ const thinkingOf = (item: PiTranscriptItem): ThinkingItem | null => {
 	return {kind: "thinking", id: thinkingId(item.id), timestamp: item.timestamp, text};
 };
 
+/**
+ * An assistant turn with nothing to read and no cut to report: its content is tool calls alone, or
+ * it is a reply the model has not begun writing. Such a turn earns no reply row — an `agent` label
+ * over nothing reads as a message that was dropped or is still loading, and the calls it made are
+ * already rows of their own (#8216). Claude's mapper holds the same rule on its own wire
+ * (`../../claude/history/map.ts`, `settles && (text.length > 0 || interrupted)`).
+ * Failed turns carry their explanation in a distinct session notice; empty interrupted replies
+ * retain their resend control.
+ */
+const emptyReply = (item: PiTranscriptItem): boolean =>
+	item.role === "assistant" && item.status !== "aborted" && textOf(item.content) === "";
+
 /** One wire item as every row it is worth: the reasoning first, then the turn that produced it. */
 export const itemsOf = (item: PiTranscriptItem): ReadonlyArray<TranscriptItem> => {
 	const thinking = thinkingOf(item);
-	return thinking === null ? [itemOf(item)] : [thinking, itemOf(item)];
+	const reply = emptyReply(item) ? [] : [itemOf(item)];
+	const rows = thinking === null ? reply : [thinking, ...reply];
+	if (item.role === "assistant" && item.status === "error")
+		return [
+			...rows,
+			{
+				kind: "system",
+				id: failureId(item.id),
+				timestamp: item.timestamp,
+				text: providerFailureText(item.errorMessage),
+			},
+		];
+	return rows;
+};
+
+/**
+ * Whether one tool call *starts* a worker, which is the only kind the running list draws.
+ *
+ * `pi-subagents` registers two tools and only one of them ever spawns. `subagent` is multiplexed:
+ * its `action` field is documented as the switch — "when present, tool operates in management mode"
+ * (`pi-subagents` `src/extension/schemas.ts:283-287`) — and the executor branches on exactly that,
+ * `if (action) { … }` answering out of the management arm with the spawn path as everything after
+ * it (`src/runs/foreground/subagent-executor.ts:5960,5976`). So any of the 55 actions
+ * (`src/shared/types.ts:2757` — `list`, `status`, `stop`, `steer`, the `schedule.*` and `mission.*`
+ * families) starts nothing, and an `agent` beside one names that action's *target* rather than a
+ * worker. `bg_wait` waits on work that is already running (`src/runs/background/wait-tool.ts:36`)
+ * and starts none of it.
+ *
+ * An input this cannot read draws no row either: a worker the operator cannot find is worse than a
+ * worker the list is missing.
+ */
+const spawns = (toolName: string, input: unknown): boolean =>
+	toolName === "subagent" &&
+	Predicate.isObject(input) &&
+	(input as {readonly action?: unknown}).action === undefined;
+
+/**
+ * What kind of worker the call started, in the extension's own words: the `agent` argument, which
+ * names one of the configured agents (`pi-subagents` `src/extension/schemas.ts:283`). A spawn that
+ * names none — a `workflowScript`, which picks its own children — is labelled by the tool, because
+ * the row has to say something and that is the only true thing left.
+ */
+const subagentType = (input: unknown): string => {
+	const agent = Predicate.isObject(input) ? (input as {readonly agent?: unknown}).agent : undefined;
+	return typeof agent === "string" && agent !== "" ? agent : "subagent";
+};
+
+/** The newest thing the worker wrote, off a result already bounded by `boundToolResult`. */
+const lastLineOf = (text: string): string => {
+	const lines = text.split("\n").filter((line) => line.trim() !== "");
+	return lines.length === 0 ? "" : (lines[lines.length - 1] as string);
+};
+
+/** `SubagentSlot.tokens` is a non-negative integer or the slot is unreadable off a checkpoint. */
+const countOf = (tokens: number | undefined): number =>
+	tokens === undefined || !Number.isFinite(tokens) ? 0 : Math.max(0, Math.trunc(tokens));
+
+/**
+ * The run a spawning call's row names, off the `details` the session stamped onto it
+ * (`../server/AgentSessionHost.ts`). It is the whole address of the worker's own transcript, so a
+ * row carrying none is a spawn this process cannot read rows for — not an error, just a slot that
+ * shows what the parent knows.
+ */
+const runIdOf = (item: PiTranscriptItem): string | null => {
+	if (item.role !== "tool") return null;
+	const details = item.details;
+	return Predicate.isObject(details) && typeof details.runId === "string" ? details.runId : null;
+};
+
+/**
+ * A worker still writing, as the child-artifact tail tracks it. Held on the projection because the
+ * artifact grows without the parent session changing at all: the wire says a spawn started, and
+ * everything after that arrives out of band (`childEventsOf`).
+ */
+export interface RunningSpawn {
+	readonly id: ItemId;
+	readonly runId: string;
+	readonly type: string;
+	readonly startedAt: number;
+}
+
+/** The spawn a running tool row names, or `null` for every row that starts no worker. */
+export const runningSpawnOf = (item: PiTranscriptItem): RunningSpawn | null => {
+	if (item.role !== "tool" || item.status !== "running" || !spawns(item.toolName, item.input))
+		return null;
+	const runId = runIdOf(item);
+	return runId === null
+		? null
+		: {
+				id: itemId(item.toolCallId),
+				runId,
+				type: subagentType(item.input),
+				startedAt: item.timestamp,
+			};
+};
+
+/** One worker's own rows under the call that spawned it, so a window can tell whose they are. */
+const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<TranscriptItem> =>
+	child.items.map((item) => ({...item, id: itemId(`${id}:${item.id}`), parentId: id}));
+
+/** A still-running worker's slot, off its own artifact — the shape both folds below agree on. */
+const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlot => ({
+	id: spawn.id,
+	type: spawn.type,
+	lastLine: child.lastLine,
+	startedAt: spawn.startedAt,
+	tokens: countOf(child.tokens),
+	items: childItems(spawn.id, child),
+	status: "running",
+});
+
+/**
+ * The subagent slots one wire item is worth — the model-blind row the running list already draws
+ * (`../../ai-agent/ports/subagent.ts`), so a Pi worker lands in the same surface a Claude one does.
+ *
+ * Three items can carry one worker: the assistant turn whose `toolCall` part started it, the
+ * running tool row the session's own run correlation puts on the transcript, and the result that
+ * ends it. All are keyed on the call id, so each supersedes the last in the state's own record
+ * (`../../ai-agent/core/fold.ts`) instead of drawing a second row.
+ *
+ * `items`, `lastLine` and `tokens` are the child's own, read off the JSONL artifact it appends to
+ * while it runs (`child-transcript.ts`) and matched to the row by the `runId` the session stamped
+ * on it. The spawn is a detached child process with its own `ModelRuntime` (#8555), so none of its
+ * turns reach this transcript — the artifact is the only channel, and a slot whose artifact has not
+ * been read yet falls back to what the parent knows: nothing while it runs, the tool result's own
+ * text and usage once it is over.
+ */
+export const subagentSlotsOf = (
+	item: PiTranscriptItem,
+	children?: ChildTranscripts | undefined,
+): ReadonlyArray<SubagentSlot> => {
+	if (item.role === "assistant") {
+		return item.content.flatMap((part) =>
+			part.type === "toolCall" && spawns(part.toolName, part.input)
+				? [
+						{
+							id: itemId(part.toolCallId),
+							type: subagentType(part.input),
+							lastLine: "",
+							startedAt: item.timestamp,
+							tokens: 0,
+							items: [],
+							status: "running" as const,
+						},
+					]
+				: [],
+		);
+	}
+	if (item.role !== "tool" || !spawns(item.toolName, item.input)) return [];
+	const runId = runIdOf(item);
+	const child = runId === null ? undefined : children?.get(runId);
+	const id = itemId(item.toolCallId);
+	if (item.status === "running") {
+		const spawn = runningSpawnOf(item);
+		// One shape for both folds, so a wire push and an artifact tail cannot fingerprint the same
+		// worker differently and repaint the row between them.
+		return [
+			spawn === null
+				? {
+						id,
+						type: subagentType(item.input),
+						lastLine: "",
+						startedAt: item.timestamp,
+						tokens: 0,
+						items: [],
+						status: "running",
+					}
+				: runningSlotOf(spawn, child ?? {items: [], lastLine: "", tokens: 0}),
+		];
+	}
+	return [
+		{
+			id,
+			type: subagentType(item.input),
+			lastLine: child?.lastLine || lastLineOf(boundToolResult(textOf(item.content)).text),
+			startedAt: item.timestamp,
+			// The child's own spend where the artifact reported one, else what the result says it
+			// cost the parent — the two count different things and neither is a bound on the other.
+			tokens: countOf(
+				child === undefined || child.tokens === 0 ? item.usage?.totalTokens : child.tokens,
+			),
+			items: child === undefined ? [] : childItems(id, child),
+			status: "finished",
+		},
+	];
 };
 
 /**
@@ -148,45 +352,84 @@ const usageEventOf = (item: PiTranscriptItem): Extract<AgentEvent, {kind: "usage
 };
 
 /**
- * What the last snapshot said, so the next one emits only what changed.
+ * What the revision this fold last folded said, so the next one emits only what changed.
  *
- * A snapshot is authoritative and whole — Pi re-sends the entire transcript every revision — so
- * without this the window would repaint every item on every revision. The push rate is what makes
- * that expensive: the server ticks once per session event, so a turn writing text costs a
- * revision per delta once the host is projecting the reply as it is written
- * (`../server/AgentSessionHost.ts`'s `streamPartialText`, off by default), and one item changes
- * while the rest do not. The fingerprints are the projected item's own JSON, which is exactly the
- * value the window renders: two snapshots whose projections match are, to the window, the same
- * transcript.
+ * The fingerprints are the projected item's own JSON, which is exactly the value the window
+ * renders: two revisions whose projections match are, to the window, the same transcript. That is
+ * what keeps a whole-value snapshot — the first push, and any transcript a delta cannot patch —
+ * from repainting rows the operator is already reading.
+ *
+ * `revision` is the ordering, and it is what makes a late arrival droppable. A turn's push can win
+ * the race against its own answer, and if the operator's next send lands in that gap the answer
+ * arrives carrying an `idle` this projection has already passed — folded again it emits a second
+ * `ready` under a live turn (#8544). Every fold below refuses an update at or below this number,
+ * so arrival order stops being the thing that decides. `emptyProjection` sits below every real
+ * revision because a record's first is 0.
  */
 export interface SnapshotProjection {
 	readonly items: ReadonlyMap<string, string>;
 	readonly usage: ReadonlyMap<string, string>;
+	/**
+	 * Subagent slots, in their own map because a slot and its tool row share one id. Keyed by
+	 * `<call id>:<status>` rather than by the id alone: one worker is two slots, the call's
+	 * `running` and the result's `finished`, and a key that held only the latest would let a
+	 * re-folded assistant turn push its `running` back over the `finished` that superseded it.
+	 */
+	readonly subagents: ReadonlyMap<string, string>;
+	/**
+	 * The workers still writing, by the call each was spawned under. It is carried rather than
+	 * derived because the artifact those workers append to grows while the parent session stands
+	 * still: the wire states a spawn once, and every row after that arrives out of band.
+	 */
+	readonly spawns: ReadonlyMap<string, RunningSpawn>;
 	readonly phase: Phase | null;
+	readonly revision: number;
 }
 
 export const emptyProjection: SnapshotProjection = {
 	items: new Map(),
 	usage: new Map(),
+	subagents: new Map(),
+	spawns: new Map(),
 	phase: null,
+	revision: -1,
 };
 
 const fingerprint = (value: unknown): string => JSON.stringify(value);
 
+const slotKey = (slot: SubagentSlot): string => `${slot.id}:${slot.status}`;
+
+/** What one fold answers: the events it emitted, and the projection they left behind. */
+export interface Folded {
+	readonly events: ReadonlyArray<AgentEvent>;
+	readonly next: SnapshotProjection;
+}
+
+/** An update the projection has already passed, left exactly as it was. */
+const stale = (previous: SnapshotProjection): Folded => ({events: [], next: previous});
+
 /**
- * Fold one pushed snapshot into the events it changed, oldest item first.
+ * Fold one whole-value snapshot into the events it changed, oldest item first.
  *
  * The order within a revision is content, then cost, then phase: an item is what the operator is
  * reading, its usage annotates it, and the phase line is the last thing to settle — so a window
  * that renders in arrival order never shows `ready` above a reply that has not landed yet.
+ *
+ * The item map is rebuilt from the snapshot rather than merged into the previous one, because a
+ * whole value is also the answer to a transcript that was rewritten: a row this snapshot no longer
+ * carries has to leave the projection with it.
  */
 export const eventsOf = (
 	previous: SnapshotProjection,
 	snapshot: SessionSnapshot,
-): {readonly events: ReadonlyArray<AgentEvent>; readonly next: SnapshotProjection} => {
+	children?: ChildTranscripts | undefined,
+): Folded => {
+	if (snapshot.revision <= previous.revision) return stale(previous);
 	const events: Array<AgentEvent> = [];
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
+	const subagents = new Map<string, string>();
+	const spawns = new Map<string, RunningSpawn>();
 
 	for (const source of snapshot.transcript) {
 		for (const item of itemsOf(source)) {
@@ -194,6 +437,14 @@ export const eventsOf = (
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
+		for (const slot of subagentSlotsOf(source, children)) {
+			const key = slotKey(slot);
+			const mark = fingerprint(slot);
+			subagents.set(key, mark);
+			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
+		}
+		const spawn = runningSpawnOf(source);
+		if (spawn !== null) spawns.set(spawn.id, spawn);
 	}
 
 	for (const source of snapshot.transcript) {
@@ -207,29 +458,111 @@ export const eventsOf = (
 	const phase = phaseOf(snapshot.phase);
 	if (previous.phase !== phase) events.push({kind: "phase", phase});
 
-	return {events, next: {items, usage, phase}};
+	return {events, next: {items, usage, subagents, spawns, phase, revision: snapshot.revision}};
+};
+
+/**
+ * Fold one delta, in the same order and by the same fingerprints `eventsOf` uses.
+ *
+ * A delta names only what moved, so the projection is carried forward and the walk is over the
+ * delta's own items — which is the whole point of the shape: a streamed turn signals per token,
+ * and folding a token costs one item rather than the transcript (#8554). An absent scalar means
+ * unchanged, so an absent `phase` leaves the phase line where it stands.
+ */
+export const deltaEventsOf = (
+	previous: SnapshotProjection,
+	delta: SessionDelta,
+	children?: ChildTranscripts | undefined,
+): Folded => {
+	if (delta.revision <= previous.revision) return stale(previous);
+	const events: Array<AgentEvent> = [];
+	const items = new Map(previous.items);
+	const usage = new Map(previous.usage);
+	const subagents = new Map(previous.subagents);
+	const spawns = new Map(previous.spawns);
+	const changed = delta.items ?? [];
+
+	for (const source of changed) {
+		for (const item of itemsOf(source)) {
+			const mark = fingerprint(item);
+			items.set(item.id, mark);
+			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
+		}
+		for (const slot of subagentSlotsOf(source, children)) {
+			const key = slotKey(slot);
+			const mark = fingerprint(slot);
+			subagents.set(key, mark);
+			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
+		}
+		const spawn = runningSpawnOf(source);
+		if (spawn !== null) spawns.set(spawn.id, spawn);
+		// A tool row that stopped running is a worker with nothing left to append, so the tail
+		// stops reading its artifact here rather than on a clock of its own.
+		else if (source.role === "tool") spawns.delete(source.toolCallId);
+	}
+
+	for (const source of changed) {
+		const event = usageEventOf(source);
+		if (event === null) continue;
+		const mark = fingerprint(event);
+		usage.set(source.id, mark);
+		if (previous.usage.get(source.id) !== mark) events.push(event);
+	}
+
+	const phase = delta.phase === undefined ? previous.phase : phaseOf(delta.phase);
+	if (phase !== null && previous.phase !== phase) events.push({kind: "phase", phase});
+
+	return {events, next: {items, usage, subagents, spawns, phase, revision: delta.revision}};
+};
+
+/**
+ * Fold what the running workers' own artifacts now say, out of band from the wire.
+ *
+ * A spawned child appends to its transcript file while the parent session sits still — it is a
+ * detached process, and nothing it writes is a session event — so the wire push that would carry it
+ * never comes. This is the other half of the tail: the reader hands over what it just read, and the
+ * slots the projection is already tracking are rebuilt off it.
+ *
+ * It leaves `revision` alone, because a child's own progress is not a revision of the parent's
+ * transcript and bumping it would make the parent's next real push read as stale.
+ */
+export const childEventsOf = (previous: SnapshotProjection, children: ChildTranscripts): Folded => {
+	const events: Array<AgentEvent> = [];
+	const subagents = new Map(previous.subagents);
+	for (const spawn of previous.spawns.values()) {
+		const child = children.get(spawn.runId);
+		if (child === undefined) continue;
+		const slot = runningSlotOf(spawn, child);
+		const key = slotKey(slot);
+		const mark = fingerprint(slot);
+		subagents.set(key, mark);
+		if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
+	}
+	return {events, next: {...previous, subagents}};
 };
 
 /**
  * What a snapshot the operator has already read leaves behind, so a resume folds it to nothing.
  *
- * Pi re-sends the whole transcript every revision, so a `follow` that opened on `emptyProjection`
- * after a reattach re-emits the entire history as live items — landing on top of the operator's
- * own newly typed turn and pushing it out of the window's 40-item cut (#8369). The attach lease
- * already carries the session's snapshot, and this is that snapshot read as "already rendered".
+ * The attach lease carries the session's whole transcript, and a `follow` that opened on
+ * `emptyProjection` after a reattach emits all of it as live items — landing on top of the
+ * operator's own newly typed turn and pushing it out of the window's 40-item cut (#8369). This is
+ * that same snapshot read as "already rendered".
  *
  * `held` is the caller's own tail, oldest first, and it answers both halves. Its newest
  * backend-minted row is where "already read" stops: everything at or older than that is seeded,
  * and anything after it is left unseeded so it emits — a turn the session finished while the
  * socket was down is work the operator has never seen, and seeding the whole snapshot would bury
  * it for the life of the session with no gap marker and no way to page to it (#8374). An empty
- * tail seeds nothing. A boundary this snapshot does not carry — a compaction renumbered the
- * transcript out from under the caller — also seeds nothing, which replays: a visibly wrong
- * transcript is recoverable and a silently missing reply is not.
+ * tail is `null`, which is this function's whole "nothing to seed from" answer. A boundary this
+ * snapshot does not carry — a compaction renumbered the transcript out from under the caller — is
+ * `null` too, and the caller replays: a visibly wrong transcript is recoverable and a silently
+ * missing reply is not. The replay is `paintOf` at the attach rather than the next push, because
+ * a push carries only what changed (`../wire/delta.ts`) and there is no history in one.
  *
  * A seeded row is fingerprinted off the **caller's** copy, never off the snapshot's. Being at or
  * older than the boundary means "already read" only if an item's content cannot move, and on this
- * wire it can: `@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts` gives the assistant item a
+ * wire it can: `../wire/transcript.ts` gives the assistant item a
  * `status: "streaming"` variant with `usage` optional, so a reply the socket died in the middle of
  * settles server-side while this process is away. Seeded off the snapshot, that row would be
  * compared against itself, match, and never emit again — the operator keeps the half-written reply
@@ -255,15 +588,20 @@ export const eventsOf = (
 export const projectionOf = (
 	snapshot: SessionSnapshot,
 	held: ReadonlyArray<TranscriptItem>,
-): SnapshotProjection => {
+): SnapshotProjection | null => {
 	const through = newestBackendItemId(held);
-	if (through === null) return emptyProjection;
+	if (through === null) return null;
 	const carried = new Map(held.map((item) => [item.id as string, fingerprint(item)]));
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
+	const subagents = new Map<string, string>();
+	const spawns = new Map<string, RunningSpawn>();
 	let reached = false;
 	for (const source of snapshot.transcript) {
 		if (reached) break;
+		for (const slot of subagentSlotsOf(source)) subagents.set(slotKey(slot), fingerprint(slot));
+		const spawn = runningSpawnOf(source);
+		if (spawn !== null) spawns.set(spawn.id, spawn);
 		const rows = itemsOf(source);
 		const cut = rows.findIndex((item) => item.id === through);
 		reached = cut !== -1;
@@ -278,7 +616,9 @@ export const projectionOf = (
 		const event = !moved && seeded.length === rows.length ? usageEventOf(source) : null;
 		if (event !== null) usage.set(source.id, fingerprint(event));
 	}
-	return reached ? {items, usage, phase: null} : emptyProjection;
+	return reached
+		? {items, usage, subagents, spawns, phase: null, revision: snapshot.revision}
+		: null;
 };
 
 /**

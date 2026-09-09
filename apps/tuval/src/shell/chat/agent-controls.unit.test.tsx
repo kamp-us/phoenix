@@ -21,6 +21,7 @@ import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {
+	assistantItem,
 	call,
 	commands,
 	models,
@@ -86,7 +87,10 @@ describe("a collapsible tool row", () => {
 		expect(host.view().expanded).toEqual(["t1"]);
 	});
 
-	it("renders an edit call as a diff, with a marker word per changed line", async () => {
+	// The rows themselves are drawn by `@pierre/diffs` inside a shadow root, which
+	// `querySelector` does not cross and jsdom does not lay out — so what this holds is the seam:
+	// the edit reaches the design `Diff`, named for the file it touched.
+	it("renders an edit call through the design Diff, named for the file", async () => {
 		await open(
 			withTranscript([
 				call("t1", {
@@ -100,13 +104,11 @@ describe("a collapsible tool row", () => {
 			]),
 		);
 		await click(await screen.findByRole("button", {name: "edit ok"}));
-		const table = await screen.findByRole("table", {name: "Changes to src/a.ts"});
-		expect(within(table).getByRole("rowheader", {name: "removed"})).toBeDefined();
-		expect(within(table).getByRole("rowheader", {name: "added"})).toBeDefined();
-		expect(within(table).getByText("const a = 1;")).toBeDefined();
-		expect(within(table).getByText("const a = 2;")).toBeDefined();
-		// The unchanged line is present and is named, so a screen reader reads context as context.
-		expect(within(table).getAllByRole("rowheader", {name: "unchanged"}).length).toBe(1);
+		const diff = await screen.findByRole("region", {name: "diff of src/a.ts"});
+		expect(diff.classList.contains("kp-diff")).toBe(true);
+		expect(await screen.findByText("edit · src/a.ts")).toBeDefined();
+		// The one thing the old hand-rolled table was: a line table this window drew itself.
+		expect(document.querySelector(".tuval-chat-diff")).toBeNull();
 	});
 
 	it("renders a shell call as the command plus the output", async () => {
@@ -491,14 +493,45 @@ describe("the composer's thinking picker", () => {
 		// rebuild": a new bridge identity would have re-run its load and emptied this too.
 		expect(screen.queryByRole("button", {name: /^model: /})).toBeTruthy();
 	});
+
+	it("says nothing is offered on a ready backend that offers no levels", async () => {
+		// The reported desk (#8425): Pi's faux backend advertises no levels, so this control read
+		// `loading` from boot to exit on a session that was answering turns. It is the same empty
+		// list as the case above; the phase is what tells the two apart.
+		const answered = withTranscript([userItem("u1", "go"), assistantItem("a1", "done")], {
+			thinking: {current: null, available: []},
+		});
+		const {process} = await open(answered);
+		const trigger = await picker();
+		await waitFor(() =>
+			expect(trigger.getAttribute("aria-label")).toBe("thinking effort: none offered"),
+		);
+		expect(trigger.getAttribute("disabled")).not.toBeNull();
+
+		// And it stays settled across the restore the report also captured: a rebuilt session with
+		// the same empty offer has nothing new to say, and nothing re-enters loading.
+		await act(async () => {
+			await Effect.runPromise(process.commit({...answered, sessionId: "session-2"}));
+		});
+		await waitFor(() =>
+			expect(
+				screen.getByRole("button", {name: /^thinking effort: /}).getAttribute("aria-label"),
+			).toBe("thinking effort: none offered"),
+		);
+	});
 });
 
 describe("two windows over one process", () => {
 	it("keep their own expanded rows and share the cards and the mode", async () => {
-		const state = withTranscript([call("t1"), call("t2", {name: "grep"})], {
-			permissions: {r1: pendingPermission()},
-			modes: modes(["plan", "build"], "plan"),
-		});
+		// A reply between the two calls, so each is a row of its own with a disclosure of its own —
+		// consecutive calls are one collapsed run (#8612), and this case is about two open rows.
+		const state = withTranscript(
+			[call("t1"), assistantItem("a1", "on it"), call("t2", {name: "grep"})],
+			{
+				permissions: {r1: pendingPermission()},
+				modes: modes(["plan", "build"], "plan"),
+			},
+		);
 		const shared = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);

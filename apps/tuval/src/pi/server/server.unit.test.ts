@@ -1,6 +1,12 @@
-import type {ProtocolError, ServerMessage, SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Redacted, type Scope} from "effect";
+import type {
+	ProtocolError,
+	ServerMessage,
+	ServerSnapshot,
+	SessionDelta,
+	SessionSnapshot,
+} from "../wire/index.ts";
 import {makeScriptedHost, type ScriptedHost} from "./fixtures.ts";
 import {CLOSE_FRAME_TOO_LARGE, CLOSE_QUEUE_OVERFLOW} from "./limits.ts";
 import {makeOutbound} from "./outbound.ts";
@@ -9,6 +15,36 @@ import {connectWire, type WireClient} from "./wire-fixture.ts";
 
 const isResponse = (id: string) => (message: ServerMessage) =>
 	message.type === "response" && message.id === id;
+
+const isServerSnapshot = (message: ServerMessage) =>
+	message.type === "service_update" && message.update.type === "server_snapshot";
+
+const serverSnapshotOf = (message: ServerMessage): ServerSnapshot => {
+	if (message.type !== "service_update" || message.update.type !== "server_snapshot") {
+		throw new Error("expected a server snapshot update");
+	}
+	return message.update.snapshot;
+};
+
+const isSessionSnapshot = (message: ServerMessage) =>
+	message.type === "service_update" && message.update.type === "session_snapshot";
+
+const isSessionDelta = (message: ServerMessage) =>
+	message.type === "service_update" && message.update.type === "session_delta";
+
+const sessionSnapshotOf = (message: ServerMessage): SessionSnapshot => {
+	if (message.type !== "service_update" || message.update.type !== "session_snapshot") {
+		throw new Error("expected a session snapshot update");
+	}
+	return message.update.snapshot;
+};
+
+const sessionDeltaOf = (message: ServerMessage): SessionDelta => {
+	if (message.type !== "service_update" || message.update.type !== "session_delta") {
+		throw new Error("expected a session delta update");
+	}
+	return message.update.delta;
+};
 
 const responseOf = (client: WireClient, id: string) =>
 	client.next(isResponse(id)) as Effect.Effect<
@@ -66,7 +102,11 @@ describe("PiServerService", () => {
 				assert.isAbove(server.address.port, 0);
 				const client = yield* dial(server);
 				const hello = yield* client.next((message) => message.type === "hello");
-				assert.strictEqual(hello.type === "hello" ? hello.snapshot.models.length : 0, 1);
+				assert.strictEqual(hello.type === "hello" ? hello.serverId : "", server.serverId);
+				// Protocol 8's `hello` names the server and nothing else, so the catalog arrives on
+				// the session stream that follows it.
+				const greeting = yield* client.next(isServerSnapshot);
+				assert.strictEqual(serverSnapshotOf(greeting).models.length, 1);
 			}),
 		);
 	});
@@ -100,6 +140,42 @@ describe("PiServerService", () => {
 		);
 	});
 
+	/**
+	 * The whole value goes out once, on this connection's first push for the session; every change
+	 * after it costs a delta naming what moved. A streamed turn signals per token, so the second
+	 * frame is the one a live turn actually rides (#8554).
+	 */
+	it.live("sends the whole value once, then a delta per change", () => {
+		const host = makeScriptedHost();
+		return withServer(host, (server) =>
+			Effect.gen(function* () {
+				const client = yield* dial(server);
+				const session = yield* createSession(client, "r0");
+
+				yield* client.request("p1", {command: "prompt", sessionId: session.id, text: "hi"});
+				yield* responseOf(client, "p1");
+				const whole = sessionSnapshotOf(yield* client.next(isSessionSnapshot));
+
+				yield* client.request("p2", {command: "prompt", sessionId: session.id, text: "again"});
+				yield* responseOf(client, "p2");
+				const delta = sessionDeltaOf(yield* client.next(isSessionDelta));
+
+				assert.isAbove(delta.revision, whole.revision);
+				assert.isDefined(delta.items, "the delta named no item for a turn that appended two");
+				assert.isBelow(
+					(delta.items ?? []).length,
+					whole.transcript.length + (delta.items ?? []).length,
+					"the delta carried the whole transcript rather than what changed",
+				);
+				assert.deepStrictEqual(
+					(delta.items ?? []).map((item) => item.id),
+					["item-2", "item-3"],
+					"the delta named rows the first push had already carried",
+				);
+			}),
+		);
+	});
+
 	it.live("pushes a session snapshot per change, with advancing revisions", () => {
 		const host = makeScriptedHost();
 		return withServer(host, (server) =>
@@ -111,18 +187,14 @@ describe("PiServerService", () => {
 
 				const pushed = yield* client.next(
 					(message) =>
-						message.type === "event" &&
-						message.event.type === "session_snapshot" &&
-						message.event.snapshot.revision >= 1,
+						message.type === "service_update" &&
+						message.update.type === "session_snapshot" &&
+						message.update.snapshot.revision >= 1,
 				);
-				const snapshot =
-					pushed.type === "event" && pushed.event.type === "session_snapshot"
-						? pushed.event.snapshot
-						: undefined;
-				assert.isDefined(snapshot);
-				assert.isAtLeast(snapshot?.revision ?? 0, 1);
+				const snapshot = sessionSnapshotOf(pushed);
+				assert.isAtLeast(snapshot.revision, 1);
 				assert.deepStrictEqual(
-					(snapshot?.transcript ?? []).map((item) => item.role),
+					snapshot.transcript.map((item) => item.role),
 					["user", "assistant"],
 				);
 			}),
@@ -181,7 +253,7 @@ describe("PiServerService", () => {
 				yield* client.request("a1", {command: "attach", sessionId: "no-such-session"});
 				const error = errorOf(yield* responseOf(client, "a1"));
 				assert.strictEqual(error.code, "not_found");
-				assert.deepStrictEqual(error.details, {sessionId: "no-such-session"});
+				assert.include(error.message, "no-such-session");
 			}),
 		);
 	});

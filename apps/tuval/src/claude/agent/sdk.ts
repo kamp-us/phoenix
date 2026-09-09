@@ -18,6 +18,7 @@ import type {
 	Options,
 	PermissionMode,
 	SDKControlGetContextUsageResponse,
+	SDKControlInitializeResponse,
 	SDKMessage,
 	SDKSessionInfo,
 	SDKUserMessage,
@@ -35,18 +36,19 @@ export const SDK_VERSION = "0.3.259";
  * Narrower than the SDK's own `Query`, which declares two dozen control requests: a scripted
  * stand-in has to implement what the layer calls, not everything the CLI can be asked. The real
  * `Query` satisfies this structurally, so the seam's default needs no adapter. The return types are
- * `unknown` where the layer reads nothing off the answer, which keeps a stand-in from having to
- * mint an SDK payload it never uses.
+ * `unknown` where the layer reads nothing off the answer, and a `Pick` of the SDK's own where it
+ * reads one field, which keeps a stand-in from having to mint an SDK payload it never uses.
  *
- * `initializationResult` is the layer's opened-ness signal. `sdk.d.ts` at the `0.3.259` pin
- * documents it as returning "the cached first-connect result" (the contrast `Query.reinitialize`
- * draws against itself), so the `initialize` control request it settles completes on connect with
- * no prompt sent. The `system`/`init` message is the other thing and cannot serve: the same file
+ * `initializationResult` is the layer's opened-ness signal, and since #8649 also the one place the
+ * booted-on account is readable. `sdk.d.ts` at the `0.3.259` pin documents it as returning "the
+ * cached first-connect result" (the contrast `Query.reinitialize` draws against itself), so the
+ * `initialize` control request it settles completes on connect with no prompt sent — and so the
+ * account it carries is the one this session opened on, never a later one. The `system`/`init` message is the other thing and cannot serve: the same file
  * calls it "session metadata the CLI emits at the start of each turn", and there is no turn before
  * a prompt.
  */
 export interface AgentSession extends AsyncGenerator<SDKMessage, void> {
-	initializationResult(): Promise<unknown>;
+	initializationResult(): Promise<Pick<SDKControlInitializeResponse, "account">>;
 	interrupt(): Promise<unknown>;
 	setPermissionMode(mode: PermissionMode): Promise<void>;
 	/**

@@ -1,7 +1,8 @@
 /**
- * The picker's keyboard model. Everything the picker "remembers" is the window's own view slot — a
- * cursor, at most one refusal, and the process the window was showing before it came back here — so
- * the picker itself holds nothing: `mountPicker` derives a fresh view from its one argument, which
+ * The picker's cursor model, and the one structure both the keyboard and the pointer write
+ * through. Everything the picker "remembers" is the window's own view slot — a cursor, at most one
+ * refusal, and the process the window was showing before it came back here — so the picker itself
+ * holds nothing: `mountPicker` derives a fresh view from its one argument, which
  * is why a second mount after a registry change cannot show yesterday's list or yesterday's
  * highlight.
  *
@@ -119,6 +120,16 @@ const CHOOSE = ["<enter>", "<space>"];
 const DISMISS = ["<escape>"];
 
 /**
+ * The one move. A move onto the row already under the cursor keeps a showing refusal, because
+ * nothing has been moved on from; any other move clears it. Both inputs go through here, so hover
+ * and the arrow keys cannot answer the same move two ways.
+ */
+const movedTo = (view: PickerView, at: number, next: number, length: number): PickerKeyAnswer =>
+	length === 0 || next === at
+		? {_tag: "Moved", view: {...view, cursor: at}}
+		: {_tag: "Moved", view: {...view, cursor: next, refusal: null}};
+
+/**
  * One key against the picker. `<arrow*>` are the ARIA listbox keys and `j`/`k`/`<c-n>`/`<c-p>` the
  * Vim and readline spellings of the same move, so the founder's muscle memory and a screen-reader
  * user's expected keys are one implementation rather than two.
@@ -144,10 +155,7 @@ export const pickerKey = (
 	const rows = flatten(entries);
 	const at = cursorOf(entries, view);
 
-	const moveTo = (next: number): PickerKeyAnswer =>
-		rows.length === 0 || next === at
-			? {_tag: "Moved", view: {...view, cursor: at}}
-			: {_tag: "Moved", view: {...view, cursor: next, refusal: null}};
+	const moveTo = (next: number): PickerKeyAnswer => movedTo(view, at, next, rows.length);
 
 	if (DOWN.includes(pressed)) return moveTo(clamp(at + 1, rows.length));
 	if (UP.includes(pressed)) return moveTo(clamp(at - 1, rows.length));
@@ -166,4 +174,37 @@ export const pickerKey = (
 		return entry === undefined ? ignored : {_tag: "Chose", intent: intentOf(windowId, entry)};
 	}
 	return ignored;
+};
+
+/**
+ * What a pointer did to one row. `hover` is the pointer landing on it, `click` the commit — the two
+ * gestures a `role="option"` offers, and nothing else: a listbox driven by `aria-activedescendant`
+ * has no per-option focus to model.
+ */
+export type PickerPointer = "hover" | "click";
+
+/**
+ * One pointer gesture against the picker, answered in `pickerKey`'s own union so the surface has a
+ * single switch to dispatch (founder's ruling, 2026-09-08: one underlying structure for both
+ * inputs). `index` addresses `flatten(entries)` — the same list the cursor indexes — so a hover and
+ * an arrow key that land on one row store the same view, and `aria-activedescendant` stays the one
+ * highlight either way.
+ *
+ * An index naming no row is `Ignored` rather than clamped: a pointer event carries a row that was
+ * really under it, so an out-of-range index means the list changed under the gesture, and moving
+ * the cursor somewhere the user never pointed at is worse than doing nothing.
+ */
+export const pickerPointer = (
+	windowId: WindowId,
+	entries: PickerEntries,
+	view: PickerView,
+	index: number,
+	gesture: PickerPointer,
+): PickerKeyAnswer => {
+	const rows = flatten(entries);
+	const entry = rows[index];
+	if (entry === undefined) return ignored;
+	return gesture === "click"
+		? {_tag: "Chose", intent: intentOf(windowId, entry)}
+		: movedTo(view, cursorOf(entries, view), index, rows.length);
 };

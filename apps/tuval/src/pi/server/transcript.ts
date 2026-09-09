@@ -1,17 +1,14 @@
 /**
  * Pi's in-memory `AgentMessage[]` → the wire's `TranscriptItem[]`.
  *
- * Every schema on the wire is a strict object (`additionalProperties: false`), and Pi's own
- * content carries fields the wire does not declare — `textSignature` on text, `thinkingSignature`
- * on thinking, `cacheWrite1h` on usage (`@earendil-works/pi-ai` `dist/types.d.ts:237-286`). So
- * this is a projection, not a cast: handing a message straight to `encodeServerMessage` fails
- * validation the first time a provider fills one of those in.
+ * Pi's provider content is projected into Tuval's owned vocabulary before the protocol-8 codec
+ * carries it as an opaque payload; see .patterns/owned-wire-vocabulary.md.
  *
  * Pi's messages carry no id, so the item id is the message's position. That is stable while
  * history only grows, which is the case for a live session; a compaction rewrites the array and
- * therefore renumbers, and the snapshot that carries the renumbering is the client's cue to
- * replace its transcript wholesale — snapshots are authoritative, which is the model the wire's
- * own `TranscriptProgress` comment states.
+ * therefore renumbers, and a renumbering is exactly the case `../wire/delta.ts` refuses to patch:
+ * the ids stop extending the last ones, so the viewer is sent a whole snapshot and replaces its
+ * transcript wholesale.
  *
  * An in-flight message is projected at the position it will land at, which is why it is passed as
  * one more message rather than handled apart: Pi pushes the finished message onto `messages` on
@@ -19,14 +16,16 @@
  * takes, and every snapshot of a growing reply supersedes one item instead of appending a row.
  */
 
+import {compactionId} from "../wire/compaction.ts";
 import type {
 	AssistantTranscriptItem,
 	JsonValue,
+	RunningToolTranscriptItem,
 	ToolTranscriptItem,
 	TranscriptItem,
 	Usage,
 	UserTranscriptItem,
-} from "@earendil-works/pi-protocol";
+} from "../wire/index.ts";
 
 type UserContent = UserTranscriptItem["content"][number];
 type AssistantContent = AssistantTranscriptItem["content"][number];
@@ -60,6 +59,11 @@ type SourceContent =
 	  };
 
 export type SourceMessage =
+	| {
+			readonly role: "compactionSummary";
+			readonly summary: string;
+			readonly timestamp: number;
+	  }
 	| {
 			readonly role: "user";
 			readonly content: string | ReadonlyArray<SourceContent>;
@@ -189,24 +193,46 @@ const assistantStatus = (stopReason: string, errorMessage: string | undefined): 
  * "streaming"` — the marker that tells a client this text is not the whole reply, and the one that
  * keeps it out of the store. That last slot is the only thing that decides the marker; see
  * `IN_FLIGHT` for why the message's own stop reason cannot.
+ *
+ * `details` is what the session has said about a call that has not answered yet, keyed by call id
+ * (`AgentSessionHost`). It fills the `details` field the wire has always declared, and it is also
+ * the only thing that puts a *running* tool row on this transcript: a call the model made and no
+ * result has landed for is a message Pi does not hold, so without it an in-flight tool is invisible
+ * until it finishes. The running row is superseded by the result at the same id, which is the
+ * supersession `../ai-agent/items.ts`'s `itemOf` already keys tool rows for.
  */
 export const projectTranscript = (
 	messages: ReadonlyArray<SourceMessage>,
 	streaming?: SourceMessage | undefined,
+	details?: ReadonlyMap<string, JsonValue> | undefined,
 ): ReadonlyArray<TranscriptItem> => {
 	const all = streaming === undefined ? messages : [...messages, streaming];
 	const inFlight = streaming === undefined ? -1 : all.length - 1;
 	const toolInputs = new Map<string, Record<string, unknown>>();
+	const toolCalls = new Map<string, {readonly name: string; readonly timestamp: number}>();
+	const answered = new Set<string>();
 	for (const message of all) {
+		if (message.role === "toolResult") answered.add(message.toolCallId);
 		if (message.role !== "assistant") continue;
 		for (const content of message.content) {
-			if (content.type === "toolCall") toolInputs.set(content.id, content.arguments);
+			if (content.type !== "toolCall") continue;
+			toolInputs.set(content.id, content.arguments);
+			toolCalls.set(content.id, {name: content.name, timestamp: message.timestamp});
 		}
 	}
 
 	const items: TranscriptItem[] = [];
 	all.forEach((message, index) => {
 		const id = `item-${index}`;
+		if (message.role === "compactionSummary") {
+			items.push({
+				id: compactionId(index),
+				role: "compaction",
+				content: [{type: "text", text: message.summary}],
+				timestamp: message.timestamp,
+			});
+			return;
+		}
 		if (message.role === "user") {
 			const content: Array<UserContent> =
 				typeof message.content === "string"
@@ -233,6 +259,7 @@ export const projectTranscript = (
 		}
 
 		if (message.role === "toolResult") {
+			const detail = details?.get(message.toolCallId);
 			items.push({
 				id,
 				role: "tool",
@@ -240,6 +267,7 @@ export const projectTranscript = (
 				toolName: message.toolName,
 				input: (toolInputs.get(message.toolCallId) ?? null) as JsonValue,
 				content: textOrImage(message.content),
+				...(detail === undefined ? {} : {details: detail}),
 				...(message.usage === undefined ? {} : {usage: projectUsage(message.usage)}),
 				timestamp: message.timestamp,
 				...(message.isError
@@ -248,5 +276,22 @@ export const projectTranscript = (
 			});
 		}
 	});
+
+	for (const [toolCallId, detail] of details ?? []) {
+		const call = toolCalls.get(toolCallId);
+		if (call === undefined || answered.has(toolCallId)) continue;
+		items.push({
+			id: `item-${items.length}`,
+			role: "tool",
+			toolCallId,
+			toolName: call.name,
+			input: (toolInputs.get(toolCallId) ?? null) as JsonValue,
+			content: [],
+			details: detail,
+			timestamp: call.timestamp,
+			status: "running",
+			isError: false,
+		} satisfies RunningToolTranscriptItem);
+	}
 	return items;
 };

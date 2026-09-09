@@ -292,3 +292,70 @@ describe("folding a refused interrupt", () => {
 		expect(refused.failure).toEqual(failure);
 	});
 });
+
+describe("folding the version a layer reports", () => {
+	const limits: WindowLimits = {};
+
+	it("fills the slot the state starts empty", () => {
+		const start = initialState("/repo");
+		expect(start.agentVersion).toBeNull();
+		expect(foldEvent(start, {kind: "version", version: "2.1.259"}, limits).agentVersion).toBe(
+			"2.1.259",
+		);
+	});
+
+	// A layer re-announces on every open, and a resume walks a stream that has already announced —
+	// so the newest report has to win rather than accumulate beside the one before it.
+	it("replaces what it held, so a re-announced session reads as what it runs now", () => {
+		const first = foldEvent(initialState("/repo"), {kind: "version", version: "2.1.259"}, limits);
+		expect(foldEvent(first, {kind: "version", version: "2.2.0"}, limits).agentVersion).toBe(
+			"2.2.0",
+		);
+	});
+
+	it("touches nothing else on the session", () => {
+		const start: AiAgentSessionState = {...initialState("/repo"), phase: "prompting"};
+		const folded = foldEvent(start, {kind: "version", version: "2.1.259"}, limits);
+		expect({...folded, agentVersion: null}).toEqual(start);
+	});
+});
+
+describe("folding the account a layer reports", () => {
+	const limits: WindowLimits = {};
+	const account = {organization: "kamp.us", subscriptionType: "max"};
+
+	it("fills the slot the state starts empty", () => {
+		const start = initialState("/repo");
+		expect(start.account).toBeNull();
+		expect(foldEvent(start, {kind: "account", account}, limits).account).toEqual(account);
+	});
+
+	// Each field stands alone: an API-key login reports a plan and no organization, and neither is
+	// a state the slot has to represent with a placeholder.
+	it("keeps a report that carries only one of the two fields", () => {
+		const folded = foldEvent(initialState("/repo"), {kind: "account", account: {}}, limits);
+		expect(folded.account).toEqual({});
+		expect(
+			foldEvent(
+				initialState("/repo"),
+				{kind: "account", account: {subscriptionType: "max"}},
+				limits,
+			).account,
+		).toEqual({subscriptionType: "max"});
+	});
+
+	// Replaced whole rather than merged: a field the newest announcement omits is a field this
+	// session does not have, and keeping the previous login's organization beside it would lie.
+	it("replaces what it held rather than merging into it", () => {
+		const first = foldEvent(initialState("/repo"), {kind: "account", account}, limits);
+		expect(
+			foldEvent(first, {kind: "account", account: {subscriptionType: "pro"}}, limits).account,
+		).toEqual({subscriptionType: "pro"});
+	});
+
+	it("touches nothing else on the session", () => {
+		const start: AiAgentSessionState = {...initialState("/repo"), phase: "prompting"};
+		const folded = foldEvent(start, {kind: "account", account}, limits);
+		expect({...folded, account: null}).toEqual(start);
+	});
+});

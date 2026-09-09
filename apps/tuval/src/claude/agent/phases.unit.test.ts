@@ -42,23 +42,27 @@ const promptedTurn = (opening: ReadonlyArray<SDKMessage>, count: number) =>
 		}),
 	);
 
-/** What the open alone puts on the queue, before any prompt — the `ready` #8107 is about. */
-const openingOf = (opening: ReadonlyArray<SDKMessage>) =>
+/** Everything the open alone puts on the queue, in order, before any prompt. */
+const openingEvents = (opening: ReadonlyArray<SDKMessage>) =>
 	on({opening, deferOpening: true}, (agent) =>
 		Effect.gen(function* () {
 			yield* agent.start({cwd: CWD});
-			return [...(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)))].filter(
-				(event) => event.kind === "phase" && event.phase === "ready",
-			);
+			return [...(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)))];
 		}),
 	);
 
+/** What the open alone puts on the queue, before any prompt — the `ready` #8107 is about. */
+const openingOf = (opening: ReadonlyArray<SDKMessage>) =>
+	Effect.map(openingEvents(opening), (events) =>
+		events.filter((event) => event.kind === "phase" && event.phase === "ready"),
+	);
+
 /**
- * `assistant-turn.json` is init, one assistant frame and one `success` result — five events out:
- * the `prompting` the send itself narrates, the model init names, the reply, the turn's spend, and
- * the `ready` that ends it.
+ * `assistant-turn.json` is init, one assistant frame and one `success` result — six events out: the
+ * `prompting` the send itself narrates, the model and the CLI version init names, the reply, the
+ * turn's spend, and the `ready` that ends it.
  */
-const ASSISTANT_TURN_EVENTS = 5;
+const ASSISTANT_TURN_EVENTS = 6;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 
@@ -89,7 +93,7 @@ describe("a turn ends on its result", () => {
 			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
-				["phase", "usage", "item", "usage", "phase"],
+				["phase", "usage", "version", "item", "usage", "phase"],
 			);
 			assert.deepStrictEqual(
 				events.filter((event) => event.kind === "phase"),
@@ -117,10 +121,10 @@ describe("a turn ends on its result", () => {
 });
 
 /**
- * Claude's half of #8007. The layer's `interrupt` declares no error channel and logs a refused
- * one, so nothing about the abort itself reaches the core — the confirming event is the turn's own
- * `result`, which the pump emits `ready` for on every subtype including the errors an aborted turn
- * ends on.
+ * Claude's half of #8007, on the path where the CLI takes the abort: the confirming event is the
+ * turn's own `result`, which the pump emits `ready` for on every subtype including the errors an
+ * aborted turn ends on. A refused one is a failure event of its own and reads in
+ * `interrupt-refusal.unit.test.ts` (ADR 0356).
  */
 describe("an interruption over the Claude event path", () => {
 	const asked = (
@@ -231,6 +235,65 @@ describe("the core over what the layer emitted", () => {
 			});
 			assert.isNull(next.failure);
 			assert.deepStrictEqual(cmds, [{type: "aiAgent.prompt", text: "and again", key: "k2"}]);
+		}),
+	);
+});
+
+/**
+ * The first turn of a session the picker has just opened (#8358).
+ *
+ * The open's own events sit in the layer's queue until the core's `started` commit opens the events
+ * Sub (`../../ai-agent/core/machine.ts`, `subscriptions`), so a prompt admitted in that window is
+ * folded ahead of them: `admit` walks the session to `prompting` and the open's own `ready` lands on
+ * top of it. That is the order the operator measured on PR #8199's head — a 30 s turn narrated
+ * `Ready.`, with no `Working…` and no Escape affordance.
+ *
+ * What closes it is the `prompting` the send itself narrates (#8156, `prompt` in
+ * `./ClaudeAiAgent.ts`). It sits behind the open's events on the one queue, so the session is back
+ * on `prompting` before the turn's first frame and stays there until the `result`.
+ */
+describe("a first turn whose open drained after the send", () => {
+	const sent = (): AiAgentSessionState =>
+		apply(opened, {type: "prompt", text: "hello", key: "k1", timestamp: SENT_AT})[0];
+
+	it.effect("narrates prompting for the whole turn, and ready only at its end", () =>
+		Effect.gen(function* () {
+			const opening = yield* openingEvents(messages("assistant-turn"));
+			const turn = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
+
+			const late = fold(sent(), opening);
+			assert.strictEqual(late.phase, "ready", "the open's ready is what walks the send back");
+			assert.deepStrictEqual(
+				late.sends,
+				[{key: "k1", state: "pending", turn: "unstarted"}],
+				"the open's ready must not accept a send whose turn never began (#8107)",
+			);
+
+			const running = fold(late, turn.slice(0, -1));
+			assert.strictEqual(running.phase, "prompting");
+			assert.deepStrictEqual(running.sends, [{key: "k1", state: "pending", turn: "running"}]);
+
+			const settled = fold(running, turn.slice(-1));
+			assert.strictEqual(settled.phase, "ready");
+			assert.deepStrictEqual(settled.sends, [{key: "k1", state: "accepted"}]);
+		}),
+	);
+
+	/**
+	 * Why that narration is load-bearing rather than decoration. Drop the one event the send
+	 * publishes and the same fold leaves a running turn reading idle for its whole length — the
+	 * defect itself, pinned here so a layer that stops narrating its own send reds the case above
+	 * rather than shipping a `Ready.` line over a live turn.
+	 */
+	it.effect("would read idle for the whole turn without the send's own prompting", () =>
+		Effect.gen(function* () {
+			const opening = yield* openingEvents(messages("assistant-turn"));
+			const turn = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
+			assert.deepStrictEqual(turn[0], {kind: "phase", phase: "prompting"});
+
+			const unnarrated = fold(fold(sent(), opening), turn.slice(1, -1));
+			assert.strictEqual(unnarrated.phase, "ready");
+			assert.deepStrictEqual(unnarrated.sends, [{key: "k1", state: "pending", turn: "unstarted"}]);
 		}),
 	);
 });

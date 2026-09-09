@@ -19,6 +19,7 @@ import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import type {Read} from "../config/read-key.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import type {ClaimHoldReader} from "./claim-hold.ts";
 import {
 	LANE_EXISTS,
 	LANE_UNREADABLE,
@@ -34,13 +35,15 @@ import {type LaneRef, placeMachine} from "./store.ts";
 
 const VERB = "fabrika lane emit";
 
-export interface EmitOptions {
+export interface EmitOptions<R = never> {
 	readonly epic: number;
 	readonly root: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The repo's declared `laneConcurrencyCap` — an epic's lane holds a seat like any other. */
 	readonly cap: Read<number | null>;
+	/** Which lanes under this root a driver is holding — only a claimed one takes a seat. */
+	readonly claimed: ClaimHoldReader<R>;
 }
 
 const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}>): VerbOutcome => {
@@ -78,11 +81,12 @@ const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}
 	}
 };
 
-export const runEmit = (
-	options: EmitOptions,
+export const runEmit = <R = never>(
+	options: EmitOptions<R>,
 ): Effect.Effect<
 	VerbOutcome,
 	never,
+	| R
 	| ChildProcessSpawner.ChildProcessSpawner
 	| FileSystem.FileSystem
 	| HttpClient.HttpClient
@@ -110,7 +114,7 @@ export const runEmit = (
 		const emitted = emitMachine(options.epic, target.issue.body, listed.value);
 		if (emitted._tag !== "Emitted") return emitRefusal(options.epic, emitted);
 		const ref: LaneRef = {root: options.root, lane: String(options.epic)};
-		const capped = yield* capRefusal(VERB, options.cap, options.root);
+		const capped = yield* capRefusal(VERB, options.cap, options.root, options.claimed);
 		if (capped !== null) return capped;
 		const placed = yield* placeMachine(ref, emitted.text);
 		if (placed._tag === "Exists") {

@@ -28,6 +28,7 @@ import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
 import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
+import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import {type AnyProgram, programLabel} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
@@ -87,6 +88,7 @@ export interface ServeOptions {
 	 * a dispatch of this transport's own.
 	 */
 	readonly spells: SpellChannel;
+	readonly descriptions: Stream.Stream<RegistryDescription>;
 }
 
 export interface TransportServer {
@@ -120,6 +122,7 @@ export interface SocketSession {
 }
 
 const CLOSE_POLICY = 1008;
+const quietPageClose = (code: number): boolean => code === 1000 || code === 1001 || code === 1006;
 
 /** Every attached page's writer. A catalog change reaches the pages already open through these. */
 type Attached = Set<(frame: ServerFrame) => Effect.Effect<void>>;
@@ -202,7 +205,15 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	yield* Effect.forkScoped(
 		server.run((socket) =>
 			Effect.scoped(
-				session(socket, options.handles, options.spells, options.table, pages, catalogLock),
+				session(
+					socket,
+					options.handles,
+					options.spells,
+					options.descriptions,
+					options.table,
+					pages,
+					catalogLock,
+				),
 			).pipe(Effect.provideContext(services)),
 		),
 	);
@@ -224,10 +235,11 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	} satisfies TransportServer;
 });
 
-const session = Effect.fn("Tuval.transport.session")(function* (
+export const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
 	spells: SpellChannel,
+	descriptions: Stream.Stream<RegistryDescription>,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -314,9 +326,16 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 						cause: error.cause,
 					}).pipe(Effect.as(false)),
 			}),
-			// A handler's own failure is not the window's: the Msg reached a live process, so the ack
-			// says Delivered and the failure comes back through the state stream.
-			Effect.orElseSucceed(() => false),
+			// A handler's own failure is not the window's: the Msg reached a live process and was
+			// applied, so the ack stays Delivered. It is still not silence — this used to
+			// `orElseSucceed` the failure away on the belief that the state stream would carry it,
+			// and the same failure was what stopped that stream (#8538).
+			Effect.catch((error) =>
+				Effect.logError("tuval transport: a Cmd handler of a dispatched Msg failed", {
+					processId,
+					error,
+				}).pipe(Effect.as(false)),
+			),
 			// A defect from the actor fiber is nobody's declared failure; it is still not silence.
 			Effect.catchCause((cause) =>
 				Effect.logError("tuval transport: a dispatched Msg died in the actor", {
@@ -396,22 +415,32 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				yield* Effect.sync(() => void pages.add(send));
 			}),
 		);
+		yield* Effect.forkIn(
+			Stream.runForEach(descriptions, (registry) =>
+				send({kind: "tuval/transport/spell-registry/v1", registry}),
+			),
+			scope,
+		);
 		yield* Effect.ignore(Deferred.succeed(ready, undefined));
 	});
 
-	yield* socket.runString(
-		(text) => {
-			const decoded = decodeClientFrame(text);
-			// A frame can land while `greet` is still forking the pumps; waiting here is what keeps an
-			// attach from marking a process before the stream that serves it is running.
-			return Deferred.await(ready).pipe(
-				Effect.andThen(
-					decoded._tag === "Frame"
-						? onFrame(decoded.frame)
-						: close(`undecodable frame: ${decoded.reason}`),
-				),
-			);
-		},
-		{onOpen: greet},
-	);
+	yield* socket
+		.runString(
+			(text) => {
+				const decoded = decodeClientFrame(text);
+				// A frame can land while `greet` is still forking the pumps; waiting here is what keeps an
+				// attach from marking a process before the stream that serves it is running.
+				return Deferred.await(ready).pipe(
+					Effect.andThen(
+						decoded._tag === "Frame"
+							? onFrame(decoded.frame)
+							: close(`undecodable frame: ${decoded.reason}`),
+					),
+				);
+			},
+			{onOpen: greet},
+		)
+		.pipe(
+			Effect.catchFilter(Socket.SocketCloseError.filterClean(quietPageClose), () => Effect.void),
+		);
 });

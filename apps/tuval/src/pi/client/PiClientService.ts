@@ -1,18 +1,21 @@
 /**
- * The lease handling around the 0.84.3 `PiClient`, running in Node inside the Pi process. Every
- * `Promise` the pin throws is folded into one of the four refusals in [`errors.ts`](./errors.ts),
- * so nothing below this file's surface returns a `Promise` or throws a Pi error class.
+ * The lease handling around `@earendil-works/pi-client`'s `Client`, running in Node inside the Pi
+ * process. Every `Promise` the pin throws is folded into one of the four refusals in
+ * [`errors.ts`](./errors.ts), so nothing below this file's surface returns a `Promise` or throws a
+ * Pi error class.
  *
- * Hand-derived from the spike's `play.ts` (#7469, founder gist), which proved the dial, the lease
- * and the reconnect-then-reacquire behaviours; nothing is imported from it or from the `epic/7140`
- * POC branch.
+ * At 0.85.1 `Client` is a request/response pipe and nothing more: the 0.84.3 pin's session handle
+ * is gone, so the session table, the leases and the snapshot each lease landed with are this file's
+ * (ADR 0366). A lease is now a `SessionTarget` the host issued — `{serverId, sessionId,
+ * attachmentId}` — and it is the envelope's own fence, so a call on a replaced lease is refused by
+ * the host rather than by bookkeeping here.
  *
  * Two behaviours of the pin the service is built around, both read off `pi-client`'s `client.js` at
- * 0.84.3 rather than assumed:
+ * 0.85.1 rather than assumed:
  *
- * - **A drop invalidates every lease.** `#handleConnectionStateChange` clears the attachments and
- *   bumps every session's lease generation, so the handles this service holds are dead the moment
- *   the socket goes. Reconnect therefore reacquires by session id; it never preserves a handle.
+ * - **A drop invalidates every lease.** `#handleConnectionStateChange` rejects every pending
+ *   request and clears the client's own state, and the host releases the connection's sessions when
+ *   its socket closes. Reconnect therefore reacquires by session id; it never preserves a lease.
  * - **`reconnect()` is `connect()`.** It opens a fresh transport through the factory and refuses
  *   when the client is not disconnected, which is why reconnect is a caller's call here.
  *
@@ -24,15 +27,22 @@
  */
 
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
-import {PiClient, type PiSessionHandle} from "@earendil-works/pi-client";
-import type {
-	ModelMetadata,
-	ModelRef,
-	SessionSnapshot,
-	ThinkingLevel,
-} from "@earendil-works/pi-protocol";
+import {Client} from "@earendil-works/pi-client";
 import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
 import {boundedTeardown} from "../teardown.ts";
+import type {
+	Command,
+	CommandResult,
+	ModelMetadata,
+	ModelRef,
+	RpcTarget,
+	ServerEvent,
+	SessionDelta,
+	SessionSnapshot,
+	SessionTarget,
+	ThinkingLevel,
+} from "../wire/index.ts";
+import {applyDelta, SERVICE_ID} from "../wire/index.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,
@@ -42,7 +52,7 @@ import {
 	type SessionRefusal,
 } from "./errors.ts";
 import {connectionRefusalOf, sessionRefusalOf} from "./refusals.ts";
-import {webSocketTransportFactory} from "./transport.ts";
+import {webSocketTransportFactory, withSessionEvents} from "./transport.ts";
 
 /** What a caller needs to keep about a session it holds a lease on. */
 export interface PiSessionRef {
@@ -102,25 +112,38 @@ export interface PiClientApi {
 		level: ThinkingLevel,
 	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/**
-	 * The catalog the server put in its `hello` frame, already cut to the authenticated,
-	 * describable set by the host's `offered()`. Empty before the first dial, and a fact about the
-	 * server rather than about any session — which is why it is not on `PiSessionRef`.
+	 * The catalog the server put in the session stream's first update, already cut to the
+	 * authenticated, describable set by the host's `offered()`. Empty before the first dial, and a
+	 * fact about the server rather than about any session — which is why it is not on
+	 * `PiSessionRef`.
 	 */
 	readonly models: Effect.Effect<ReadonlyArray<ModelMetadata>>;
-	/** Every snapshot the server pushes for this session, for as long as the stream is pulled. */
-	readonly snapshots: (sessionId: string) => Stream.Stream<SessionSnapshot>;
+	/**
+	 * Everything the server pushes for this session, for as long as the stream is pulled: a whole
+	 * value on the first push and on a transcript no delta can patch, and what changed on every
+	 * revision in between. A caller folds both arms; this service only routes them.
+	 */
+	readonly updates: (sessionId: string) => Stream.Stream<SessionUpdate>;
 	/** One element per connection loss, so a caller can decide whether and when to reconnect. */
 	readonly disconnections: Stream.Stream<Disconnected>;
 }
 
+/** One revision as it reached this client; the two `_tag`s are the fold's own arms in `../ai-agent/`. */
+export type SessionUpdate =
+	| {readonly _tag: "snapshot"; readonly snapshot: SessionSnapshot}
+	| {readonly _tag: "delta"; readonly delta: SessionDelta};
+
 export interface PiClientConfig {
 	readonly transportFactory: ByteTransportFactory;
+	/** The `PiServerService`'s own `serverId`; the pin refuses a dial that names another. */
+	readonly serverId: string;
 	readonly maxFrameLength?: number;
 }
 
 export interface PiClientWebSocketConfig {
 	/** The `PiServerService`'s dial URL, token included. */
 	readonly url: string;
+	readonly serverId: string;
 	readonly maxFrameLength?: number;
 	readonly maxPendingBytes?: number;
 }
@@ -138,6 +161,7 @@ export class PiClientService extends Context.Service<PiClientService, PiClientAp
 		// `exactOptionalPropertyTypes` refuses an explicit `undefined` on an optional field, so an
 		// absent bound stays absent instead of being forwarded as one.
 		PiClientService.layer({
+			serverId: config.serverId,
 			transportFactory: webSocketTransportFactory({
 				url: config.url,
 				...(config.maxPendingBytes === undefined ? {} : {maxPendingBytes: config.maxPendingBytes}),
@@ -152,9 +176,9 @@ export class PiClientService extends Context.Service<PiClientService, PiClientAp
  * The server keys session ownership by a connection id it mints per accepted socket and clears the
  * old owner only once that socket's `close` lands (`../server/records.ts`). `reconnect()` opens a
  * fresh transport, so a reacquire is a different connection racing that release, and losing the
- * race reads as `session_locked` for a session this client just held. The 0.84.3 protocol carries
- * no message naming the connection being replaced, so a client cannot ask the server to retire the
- * old owner first; waiting is the only sequencing available on this side of the wire.
+ * race reads as `session_locked` for a session this client just held. Protocol 8 carries no message
+ * naming the connection being replaced, so a client cannot ask the server to retire the old owner
+ * first; waiting is the only sequencing available on this side of the wire.
  *
  * Six tries over roughly 630ms, and only where this client already held the session — a client
  * attaching a session it never owned is still refused on its first try.
@@ -165,15 +189,70 @@ const reacquireWait = {
 	schedule: Schedule.exponential("10 millis", 2),
 } as const;
 
+/**
+ * One command as the envelope's `call`.
+ *
+ * `Client.request` types its call as Chord's `ServiceCall`, whose `args` are index-signature
+ * `JsonValue`s. A `Command` is JSON but an interface never widens to that, and there is nothing to
+ * decode against on this side — the wire seam's `asTuval` carries the same note at the same
+ * boundary.
+ */
+type ServiceCall = Parameters<Client["request"]>[1];
+
+const serviceCall = (command: Command): ServiceCall => {
+	const call: unknown = {serviceId: SERVICE_ID, member: command.command, args: [command]};
+	return call as ServiceCall;
+};
+
+/** A session this client holds: the envelope address it calls on, and its last known snapshot. */
+interface Lease {
+	readonly target: SessionTarget;
+	snapshot: SessionSnapshot;
+}
+
 const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.Scope> =>
 	Effect.gen(function* () {
 		const listenerErrors = yield* Queue.unbounded<Error>();
 
+		/**
+		 * The leases this client holds, keyed by session id. A drop leaves the entries in place
+		 * rather than removing them, so a call after a drop refuses `Disconnected` off the pin's
+		 * own dead connection instead of `SessionNotFound` off an emptied table — the session did
+		 * not go anywhere, the connection did. A reacquire overwrites its entry.
+		 */
+		const leases = new Map<string, Lease>();
+		const eventListeners = new Set<(event: ServerEvent) => void>();
+		let models: ReadonlyArray<ModelMetadata> = [];
+
+		const onEvent = (event: ServerEvent): void => {
+			if (event.type === "server_snapshot") models = event.snapshot.models;
+			if (event.type === "session_snapshot") {
+				const lease = leases.get(event.snapshot.id);
+				if (lease !== undefined) lease.snapshot = event.snapshot;
+			}
+			if (event.type === "session_delta") {
+				const lease = leases.get(event.delta.id);
+				// A command answer carries the whole value without bumping the revision, so a lease
+				// can already be past a delta the server built against an older send. Applying that
+				// one would walk the lease backwards; the window's fold drops it on the same test
+				// (`../ai-agent/items.ts`).
+				if (lease !== undefined && event.delta.revision > lease.snapshot.revision) {
+					lease.snapshot = applyDelta(lease.snapshot, event.delta);
+				}
+			}
+			for (const listener of eventListeners) listener(event);
+		};
+
 		const client = yield* Effect.acquireRelease(
 			Effect.sync(
 				() =>
-					new PiClient({
-						transportFactory: config.transportFactory,
+					new Client({
+						serverId: config.serverId,
+						transportFactory: withSessionEvents(
+							config.transportFactory,
+							onEvent,
+							config.maxFrameLength === undefined ? {} : {maxFrameLength: config.maxFrameLength},
+						),
 						...(config.maxFrameLength === undefined ? {} : {maxFrameLength: config.maxFrameLength}),
 						onListenerError: (error) => {
 							Queue.offerUnsafe(listenerErrors, error);
@@ -183,9 +262,9 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			// A release has no error channel to model into, so the settle is one arm either way: a
 			// rejection is nothing this scope can act on. The wait is the one thing that matters
 			// here and it runs under `../teardown.ts`'s ceiling, because a `dispose` that never
-			// resolves would hang the close for good. `dispose()` is not `async` at the 0.84.3 pin,
-			// so it can throw before returning its promise; the ceiling folds that throw rather
-			// than letting it escape this uninterruptible finalizer.
+			// resolves would hang the close for good. `dispose()` is not `async` at this pin, so it
+			// can throw before returning its promise; the ceiling folds that throw rather than
+			// letting it escape this uninterruptible finalizer.
 			(open) =>
 				boundedTeardown("the Pi client's dispose", (settled) => {
 					open.dispose().then(settled, settled);
@@ -196,33 +275,43 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			Effect.forever(Queue.take(listenerErrors).pipe(Effect.flatMap(Effect.logError))),
 		);
 
-		/**
-		 * The leases this client holds, keyed by session id. A drop leaves the entries in place
-		 * *invalidated* rather than removing them, so a call after a drop refuses `Disconnected`
-		 * off the pin's own dead handle instead of `SessionNotFound` off an emptied table — the
-		 * session did not go anywhere, the connection did. A reacquire overwrites its entry.
-		 */
-		const leases = new Map<string, PiSessionHandle>();
+		const serverTarget: RpcTarget = {serverId: config.serverId};
 
 		/**
-		 * A lease carries the session's own snapshot the moment its `create`/`attach` result is
-		 * applied, so an absent one is the server having answered something the protocol does not
-		 * allow — a refusal rather than a `cwd` this service would have to invent.
+		 * One command, one answer. `Client.request` puts the call through Chord's `parseServiceCall`
+		 * and hands back whatever the host put in `result`, which is Tuval's own `CommandResult`;
+		 * a result under another verb is the server answering something the protocol does not allow.
 		 */
-		const refOf = (lease: PiSessionHandle): Effect.Effect<PiSessionRef, ProtocolRefused> =>
-			lease.snapshot === undefined
-				? Effect.fail(
-						new ProtocolRefused({
-							code: "internal_error",
-							detail: `no snapshot arrived for session ${lease.id}`,
-						}),
-					)
-				: Effect.succeed({
-						id: lease.id,
-						cwd: lease.snapshot.cwd,
-						model: lease.snapshot.model,
-						thinkingLevel: lease.snapshot.thinkingLevel,
-					});
+		const call = <TResult extends CommandResult>(
+			target: RpcTarget,
+			command: Command,
+		): Promise<TResult> =>
+			client.request(target, serviceCall(command)).then((result) => {
+				const answer = result as CommandResult | undefined;
+				return answer === undefined || answer.command !== command.command
+					? Promise.reject(
+							new ProtocolRefused({
+								code: "internal_error",
+								detail: `the server answered ${String(answer?.command)} to a ${command.command}`,
+							}),
+						)
+					: (answer as TResult);
+			});
+
+		const refOf = (snapshot: SessionSnapshot): PiSessionRef => ({
+			id: snapshot.id,
+			cwd: snapshot.cwd,
+			model: snapshot.model,
+			thinkingLevel: snapshot.thinkingLevel,
+		});
+
+		const hold = (snapshot: SessionSnapshot, attachmentId: string): PiSessionRef => {
+			leases.set(snapshot.id, {
+				target: {serverId: config.serverId, sessionId: snapshot.id, attachmentId},
+				snapshot,
+			});
+			return refOf(snapshot);
+		};
 
 		const dial = (open: () => Promise<unknown>): Effect.Effect<void, ConnectionRefusal> =>
 			Effect.tryPromise({try: open, catch: connectionRefusalOf}).pipe(Effect.asVoid);
@@ -231,26 +320,32 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			cwd: string,
 			options: OpenSessionOptions = {},
 		) {
-			const lease = yield* Effect.tryPromise({
-				try: () => client.createSession({...options, cwd}),
+			const result = yield* Effect.tryPromise({
+				try: () =>
+					call<Extract<CommandResult, {command: "create"}>>(serverTarget, {
+						command: "create",
+						cwd,
+						...options,
+					}),
 				catch: connectionRefusalOf,
 			});
-			leases.set(lease.id, lease);
-			return yield* refOf(lease);
+			return hold(result.session, result.attachmentId);
 		});
 
 		const attachSession = Effect.fn("PiClientService.attachSession")(function* (sessionId: string) {
 			const held = leases.get(sessionId);
-			if (held?.active) return yield* refOf(held);
 			const attach = Effect.tryPromise({
-				try: () => client.attachSession(sessionId),
+				try: () =>
+					call<Extract<CommandResult, {command: "attach"}>>(serverTarget, {
+						command: "attach",
+						sessionId,
+					}),
 				catch: (cause) => sessionRefusalOf(sessionId, cause),
 			});
-			// A dead entry is this client having owned the session on the socket that just went, so
+			// A held entry is this client having owned the session on the socket that just went, so
 			// this call is a reacquire and the server's release of the old owner may lag it.
-			const lease = yield* held === undefined ? attach : Effect.retry(attach, reacquireWait);
-			leases.set(lease.id, lease);
-			return yield* refOf(lease);
+			const result = yield* held === undefined ? attach : Effect.retry(attach, reacquireWait);
+			return hold(result.session, result.attachmentId);
 		});
 
 		/**
@@ -258,7 +353,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 		 * taken the session, which is a different fact from the server not knowing it — the
 		 * detail says which, because both arrive as `SessionNotFound`.
 		 */
-		const leased = (sessionId: string): Effect.Effect<PiSessionHandle, SessionNotFound> => {
+		const leased = (sessionId: string): Effect.Effect<Lease, SessionNotFound> => {
 			const lease = leases.get(sessionId);
 			return lease === undefined
 				? Effect.fail(
@@ -271,64 +366,68 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 		};
 
 		const heldSnapshot = Effect.fn("PiClientService.heldSnapshot")(function* (sessionId: string) {
-			const lease = yield* leased(sessionId);
-			return lease.snapshot === undefined
-				? yield* new ProtocolRefused({
-						code: "internal_error",
-						detail: `no snapshot arrived for session ${lease.id}`,
-					})
-				: lease.snapshot;
+			return (yield* leased(sessionId)).snapshot;
 		});
 
+		/** A session call's shared tail: send it on this session's lease, keep the snapshot it answers. */
+		const onSession = (sessionId: string, command: Command) =>
+			leased(sessionId).pipe(
+				Effect.flatMap((lease) =>
+					Effect.tryPromise({
+						try: () =>
+							call<Extract<CommandResult, {session: SessionSnapshot}>>(lease.target, command),
+						catch: (cause) => sessionRefusalOf(sessionId, cause),
+					}).pipe(
+						Effect.map((result) => {
+							lease.snapshot = result.session;
+							return result.session;
+						}),
+					),
+				),
+			);
+
 		const prompt = Effect.fn("PiClientService.prompt")(function* (sessionId: string, text: string) {
-			const lease = yield* leased(sessionId);
-			return yield* Effect.tryPromise({
-				try: () => lease.prompt(text),
-				catch: (cause) => sessionRefusalOf(sessionId, cause),
-			});
+			return yield* onSession(sessionId, {command: "prompt", sessionId, text});
 		});
 
 		const abort = Effect.fn("PiClientService.abort")(function* (sessionId: string) {
-			const lease = yield* leased(sessionId);
-			return yield* Effect.tryPromise({
-				try: () => lease.abort(),
-				catch: (cause) => sessionRefusalOf(sessionId, cause),
-			});
+			return yield* onSession(sessionId, {command: "abort", sessionId});
 		});
 
 		const setModel = Effect.fn("PiClientService.setModel")(function* (
 			sessionId: string,
 			model: ModelRef,
 		) {
-			const lease = yield* leased(sessionId);
-			return yield* Effect.tryPromise({
-				try: () => lease.setModel(model),
-				catch: (cause) => sessionRefusalOf(sessionId, cause),
-			});
+			return yield* onSession(sessionId, {command: "set_model", sessionId, model});
 		});
 
 		const setThinkingLevel = Effect.fn("PiClientService.setThinkingLevel")(function* (
 			sessionId: string,
 			level: ThinkingLevel,
 		) {
-			const lease = yield* leased(sessionId);
-			return yield* Effect.tryPromise({
-				try: () => lease.setThinking(level),
-				catch: (cause) => sessionRefusalOf(sessionId, cause),
+			return yield* onSession(sessionId, {
+				command: "set_thinking",
+				sessionId,
+				thinkingLevel: level,
 			});
 		});
 
-		const snapshots = (sessionId: string): Stream.Stream<SessionSnapshot> =>
-			Stream.callback<SessionSnapshot>((queue) =>
+		const updates = (sessionId: string): Stream.Stream<SessionUpdate> =>
+			Stream.callback<SessionUpdate>((queue) =>
 				Effect.acquireRelease(
-					Effect.sync(() =>
-						client.onEvent((event) => {
+					Effect.sync(() => {
+						const listener = (event: ServerEvent): void => {
 							if (event.type === "session_snapshot" && event.snapshot.id === sessionId) {
-								Queue.offerUnsafe(queue, event.snapshot);
+								Queue.offerUnsafe(queue, {_tag: "snapshot", snapshot: event.snapshot});
 							}
-						}),
-					),
-					(unsubscribe) => Effect.sync(unsubscribe),
+							if (event.type === "session_delta" && event.delta.id === sessionId) {
+								Queue.offerUnsafe(queue, {_tag: "delta", delta: event.delta});
+							}
+						};
+						eventListeners.add(listener);
+						return listener;
+					}),
+					(listener) => Effect.sync(() => eventListeners.delete(listener)),
 				),
 			);
 
@@ -358,8 +457,8 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			abort,
 			setModel,
 			setThinkingLevel,
-			models: Effect.sync(() => client.snapshot?.models ?? []),
-			snapshots,
+			models: Effect.sync(() => models),
+			updates,
 			disconnections,
 		};
 	});

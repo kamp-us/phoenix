@@ -17,7 +17,6 @@
  * inside either.
  */
 
-import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Deferred, Effect, Layer, Queue, Stream} from "effect";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../../ai-agent/core/index.ts";
@@ -35,7 +34,9 @@ import {
 	PiClientService,
 	type PiSessionRef,
 	SessionLocked,
+	type SessionUpdate,
 } from "../client/index.ts";
+import type {SessionSnapshot} from "../wire/index.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const PROGRAM = "pi-ai-agent-publishes-the-send-test";
@@ -110,7 +111,7 @@ const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 	Effect.gen(function* () {
 		const sends: Array<string> = [];
 		const turn = yield* Deferred.make<void>();
-		const pushed = yield* Queue.unbounded<SessionSnapshot>();
+		const pushed = yield* Queue.unbounded<SessionUpdate>();
 		const state = {ended: false};
 
 		const api: PiClientApi = {
@@ -137,7 +138,7 @@ const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 			setModel: () => Effect.succeed(snapshotOf([], "idle", 0)),
 			setThinkingLevel: () => Effect.succeed(snapshotOf([], "idle", 0)),
 			models: Effect.succeed([]),
-			snapshots: () => Stream.fromQueue(pushed),
+			updates: () => Stream.fromQueue(pushed),
 			disconnections: Stream.never,
 		};
 
@@ -146,7 +147,7 @@ const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 			get sends() {
 				return sends;
 			},
-			push: (snapshot) => Effect.asVoid(Queue.offer(pushed, snapshot)),
+			push: (snapshot) => Effect.asVoid(Queue.offer(pushed, {_tag: "snapshot", snapshot})),
 			endTurn: Effect.asVoid(Deferred.succeed(turn, undefined)),
 			hasEnded: () => state.ended,
 		};

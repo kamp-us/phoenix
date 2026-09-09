@@ -8,10 +8,12 @@ entries and ownership boundaries.
 | Entry | Contents |
 | --- | --- |
 | `@kampus/design` | Component and type exports from [`src/index.ts`](./src/index.ts) |
+| `@kampus/design/Diff` | The `Diff` component, on its own entry so a consumer can code-split it |
 | `@kampus/design/tokens.css` | Raw, semantic, role, density, and Manti bridge tokens |
 | `@kampus/design/fonts.css` | First-party IBM Plex Sans and JetBrains Mono faces |
 | `AgentChatInputBridge` | App-owned Pi RPC transport supplied to `AgentChatInput` |
 | `CommandPalette` | Modal, keyboard-first search surface over caller-owned results |
+| `Diff` | Before/after renderer over `@pierre/diffs` — unified or split, role-token themed, shadow DOM. Off the barrel deliberately: its library costs ~144 KB gzip, and a barrel edge is one no bundler can cut |
 | `Markdown` | Read-only renderer for agent markdown — raw HTML in the source prints as text |
 | `design-token-lint.config.json` | The token guard's package-owned baseline and allow-list |
 | `src/a11y/` | Property-based accessibility suite and its posture/registry |

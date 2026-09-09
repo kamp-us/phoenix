@@ -61,7 +61,7 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 }
 
 /**
- * Complete the username bootstrap gate if it's up. A fresh Pasaport user has `username = NULL`, so
+ * Complete the username bootstrap gate for a fresh account. A new user has `username = NULL`, so
  * the Layout replaces the page content with <UsernameBootstrap> — specs that sign up and then
  * assert page content must clear this first or they see the form.
  *
@@ -71,14 +71,8 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
  */
 export async function completeBootstrap(page: Page): Promise<void> {
 	const input = page.locator("input#bootstrap-username");
-	// The gate mounts only after `useMe` resolves (async over fate), so a
-	// point-in-time visibility check races the fetch. Wait for it to appear; if
-	// it never does within the window, assume the user is already bootstrapped.
-	try {
-		await expect(input).toBeVisible({timeout: 10_000});
-	} catch {
-		return;
-	}
+	// Every caller just signed up: an absent gate is failed setup, never a completed account.
+	await expect(input).toBeVisible({timeout: 10_000});
 	const prefilled = await input.inputValue();
 	const handle =
 		prefilled && prefilled.length >= 3

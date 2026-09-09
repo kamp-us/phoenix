@@ -1,17 +1,11 @@
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
-import {
-	PiClientDisposedError,
-	PiDisconnectedError,
-	PiServerError,
-	PiSessionDetachedError,
-	PiSessionOwnershipError,
-} from "@earendil-works/pi-client";
-import type {ClientMessage, ServerMessage, SessionSnapshot} from "@earendil-works/pi-protocol";
+import {ClientDisposedError, DisconnectedError, ServerError} from "@earendil-works/pi-client";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Duration, Effect, type Exit, Option, Queue, Stream} from "effect";
 import {TEARDOWN_CEILING} from "../teardown.ts";
+import type {ClientMessage, ServerMessage, SessionSnapshot} from "../wire/index.ts";
 import {Disconnected, SessionLocked, SessionNotFound} from "./errors.ts";
-import {defaultAnswer, startProtocolServer} from "./fixtures.ts";
+import {defaultAnswer, fixtureServerId, startProtocolServer} from "./fixtures.ts";
 import {PiClientService} from "./PiClientService.ts";
 import {connectionRefusalOf, sessionRefusalOf} from "./refusals.ts";
 import {webSocketTransportFactory} from "./transport.ts";
@@ -27,29 +21,24 @@ const failureOf = (exit: Exit.Exit<unknown, unknown>): unknown => {
 	);
 };
 
-describe("folding PiClient's thrown values into the four refusals", () => {
-	it("names the session when the pin refuses ownership", () => {
-		const refusal = sessionRefusalOf(
-			"s-1",
-			new PiSessionOwnershipError("s-1", "Session s-1 already has an active lease"),
-		);
-		assert.instanceOf(refusal, SessionLocked);
-	});
-
+describe("folding Client's thrown values into the four refusals", () => {
+	/**
+	 * On protocol 8 a lease is a `SessionTarget` the host issued, so an ownership refusal is no
+	 * longer a client-side error class — it is the host answering `session_locked` on the wire.
+	 */
 	it("reads session_locked and not_found off the protocol error", () => {
 		const locked = sessionRefusalOf(
 			"s-1",
-			new PiServerError({code: "session_locked", message: "no"}),
+			new ServerError({code: "session_locked", message: "no"}),
 		);
-		const missing = sessionRefusalOf("s-2", new PiServerError({code: "not_found", message: "no"}));
+		const missing = sessionRefusalOf("s-2", new ServerError({code: "not_found", message: "no"}));
 		assert.instanceOf(locked, SessionLocked);
 		assert.instanceOf(missing, SessionNotFound);
 	});
 
 	it("treats every way the connection ends as one Disconnected", () => {
-		assert.instanceOf(connectionRefusalOf(new PiDisconnectedError()), Disconnected);
-		assert.instanceOf(connectionRefusalOf(new PiClientDisposedError()), Disconnected);
-		assert.instanceOf(sessionRefusalOf("s-1", new PiSessionDetachedError("s-1")), Disconnected);
+		assert.instanceOf(connectionRefusalOf(new DisconnectedError()), Disconnected);
+		assert.instanceOf(connectionRefusalOf(new ClientDisposedError()), Disconnected);
 	});
 
 	it("folds an unrecognised value rather than letting it through", () => {
@@ -59,6 +48,8 @@ describe("folding PiClient's thrown values into the four refusals", () => {
 });
 
 const HELD = {id: "s-held", cwd: "/tuval/reacquire"} as const;
+
+const ATTACHMENT = "attachment-1";
 
 const heldSnapshot: SessionSnapshot = {
 	id: HELD.id,
@@ -91,7 +82,7 @@ const lockedUntil = (attempts: number) => {
 					type: "response",
 					id: message.id,
 					ok: true,
-					result: {command: "create", session: heldSnapshot},
+					result: {command: "create", session: heldSnapshot, attachmentId: ATTACHMENT},
 				};
 			}
 			if (message.request.command !== "attach") return defaultAnswer(message);
@@ -104,20 +95,19 @@ const lockedUntil = (attempts: number) => {
 						error: {
 							code: "session_locked",
 							message: `session ${HELD.id} is attached to another connection`,
-							details: {sessionId: HELD.id},
 						},
 					}
 				: {
 						type: "response",
 						id: message.id,
 						ok: true,
-						result: {command: "attach", session: heldSnapshot},
+						result: {command: "attach", session: heldSnapshot, attachmentId: ATTACHMENT},
 					};
 		},
 	};
 };
 
-describe("the PiClient lease service", () => {
+describe("the Pi client lease service", () => {
 	it.live("holds no retry loop: one drop, one Disconnected, no redial until asked", () =>
 		Effect.gen(function* () {
 			const server = yield* startProtocolServer();
@@ -149,7 +139,11 @@ describe("the PiClient lease service", () => {
 				yield* pi.reconnect;
 				assert.isTrue(yield* pi.connected);
 				assert.strictEqual(server.connectionCount(), 2);
-			}).pipe(Effect.provide(PiClientService.layerWebSocket({url: server.url})));
+			}).pipe(
+				Effect.provide(
+					PiClientService.layerWebSocket({url: server.url, serverId: server.serverId}),
+				),
+			);
 		}).pipe(Effect.scoped),
 	);
 
@@ -174,7 +168,11 @@ describe("the PiClient lease service", () => {
 				const reacquired = yield* pi.attachSession(HELD.id);
 				assert.strictEqual(reacquired.id, HELD.id);
 				assert.strictEqual(attach.attempts(), 3, "the reacquire retried the refusals it met");
-			}).pipe(Effect.provide(PiClientService.layerWebSocket({url: server.url})));
+			}).pipe(
+				Effect.provide(
+					PiClientService.layerWebSocket({url: server.url, serverId: server.serverId}),
+				),
+			);
 		}).pipe(Effect.scoped),
 	);
 
@@ -188,7 +186,11 @@ describe("the PiClient lease service", () => {
 				const exit = yield* Effect.exit(pi.attachSession(HELD.id));
 				assert.instanceOf(failureOf(exit), SessionLocked);
 				assert.strictEqual(attach.attempts(), 1, "a second claimant is refused, not waited out");
-			}).pipe(Effect.provide(PiClientService.layerWebSocket({url: server.url})));
+			}).pipe(
+				Effect.provide(
+					PiClientService.layerWebSocket({url: server.url, serverId: server.serverId}),
+				),
+			);
 		}).pipe(Effect.scoped),
 	);
 
@@ -200,17 +202,21 @@ describe("the PiClient lease service", () => {
 				yield* pi.connect;
 				const exit = yield* Effect.exit(pi.prompt("s-unknown", "hello"));
 				assert.instanceOf(failureOf(exit), SessionNotFound);
-			}).pipe(Effect.provide(PiClientService.layerWebSocket({url: server.url})));
+			}).pipe(
+				Effect.provide(
+					PiClientService.layerWebSocket({url: server.url, serverId: server.serverId}),
+				),
+			);
 		}).pipe(Effect.scoped),
 	);
 });
 
 /**
- * `PiClient.dispose()` is not `async` at the 0.84.3 pin: its body rejects the pending requests,
- * calls `#connection.disconnect(error)` and disposes the state before the promise is returned
- * (`dist/client.js` line 292), and `disconnect` reaches `transport?.close()` with no try/catch
- * (`dist/connection.js` line 190). A transport whose `close()` throws therefore makes `dispose()`
- * throw synchronously — into an uninterruptible release, where an escaping throw would leave the
+ * `Client.dispose()` is not `async` at the 0.85.1 pin: its body rejects the pending requests, calls
+ * `#connection.disconnect(error)` and clears its listeners before the promise is returned
+ * (`dist/client.js`), and `disconnect` reaches `transport?.close()` with no try/catch
+ * (`dist/connection.js`). A transport whose `close()` throws therefore makes `dispose()` throw
+ * synchronously — into an uninterruptible release, where an escaping throw would leave the
  * ceiling's timer armed and the stop never resumed.
  */
 const closeThrows = (url: string): ByteTransportFactory => {
@@ -221,7 +227,6 @@ const closeThrows = (url: string): ByteTransportFactory => {
 			send: (chunk) => transport.send(chunk),
 			close: () => {
 				transport.close();
-				// biome-ignore lint/plugin: the throw is the subject under test — the pin's own `transport?.close()` call site has no try/catch, so this is how a real one lands.
 				throw new Error("the transport refused to close");
 			},
 		};
@@ -238,7 +243,12 @@ describe("the lease service's release", () => {
 				yield* pi.connect;
 				assert.isTrue(yield* pi.connected);
 			}).pipe(
-				Effect.provide(PiClientService.layer({transportFactory: closeThrows(server.url)})),
+				Effect.provide(
+					PiClientService.layer({
+						transportFactory: closeThrows(server.url),
+						serverId: fixtureServerId,
+					}),
+				),
 				Effect.scoped,
 			);
 			assert.isBelow(

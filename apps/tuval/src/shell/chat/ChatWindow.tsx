@@ -51,11 +51,11 @@ import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
-import {tuvalDesignTranslate} from "./copy.ts";
+import {tuvalDesignTranslate, tuvalSubagentViewTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
-import {interruptionGraceMillis, isWorking, statusLine} from "./phase.ts";
+import {interruptionGraceMillis, isWorking, statusLine, workingTell} from "./phase.ts";
 import {QueuedMessages} from "./QueuedMessages.tsx";
 import {
 	type ChatRow,
@@ -72,6 +72,7 @@ import {SessionRow} from "./SessionRow.tsx";
 import {SubagentList, type SubagentListHandle} from "./SubagentList.tsx";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
+import {ToolRunRow} from "./ToolRunRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
 import {asChatView, type ChatView, viewMain, viewSubagent} from "./view.ts";
 import "./chat.css";
@@ -215,9 +216,30 @@ const who: Readonly<Record<RowItem["kind"], string>> = {
 };
 
 /**
- * What a row shows under its label. Three kinds carry a shape of their own: a tool call and a
- * thinking row are disclosures over this window's one `expanded` set, and a compaction row is a
- * divider rather than a line of prose. A session line never reaches here: `RowView` folds those
+ * The row's author, in the words the dropped label used to print. This is now the only text that
+ * names it, so a nested row states both whose words these are and that they ran inside another
+ * call: the indent is the second signal, never the only one (ADR 0162, Pillar 4).
+ */
+const authorName = (kind: RowItem["kind"], nested: boolean): string =>
+	nested ? `${who[kind]}, inside a subagent call` : who[kind];
+
+/**
+ * The wrapper's shape hooks for one row. A run of calls is about its calls, so it reads as a tool
+ * row's shape and indents at its own depth; a paging head and a session run have neither.
+ */
+const rowShape = (
+	row: ChatRow,
+): {readonly role?: RowItem["kind"]; readonly nested: boolean; readonly depth: number} => {
+	if (row.kind === "item") return {role: row.item.kind, nested: row.nested, depth: row.depth};
+	if (row.kind === "tools") return {role: "tool", nested: row.nested, depth: row.depth};
+	return {nested: false, depth: 0};
+};
+
+/**
+ * What a row shows under its label. Three kinds carry a shape of their own, and all three are
+ * disclosures over this window's one `expanded` set: a tool call, a thinking row, and a compaction
+ * boundary, whose divider line is the trigger and whose summary is the panel. A session line never
+ * reaches here: `RowView` folds those
  * into the session row. Everything else, an agent reply and what the operator typed alike,
  * renders through the shared markdown block, which paints synchronously so the row's measurement
  * still holds (#8012/#8226): a fence the operator sends is the fence the agent received.
@@ -252,7 +274,15 @@ function RowBody({
 			/>
 		);
 	}
-	if (item.kind === "compaction") return <CompactionMarker text={item.text} />;
+	if (item.kind === "compaction") {
+		return (
+			<CompactionMarker
+				text={item.text}
+				expanded={expanded}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
+	}
 	// The transcript is a region inside the desk, so a `#` heading in a message is a subsection of
 	// it rather than a page title; and a transcript row is read as the lines it was typed on, so a
 	// lone newline is a break here where a document-shaped surface would fold it (#8244).
@@ -282,8 +312,12 @@ function ItemRow({
 }): ReactElement {
 	return (
 		<>
-			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
-			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
+			{/*
+			 * The visible label is gone; what carries authorship is the row's own shape plus
+			 * `data-message-role` on its wrapper. The name is announced on every row rather than on
+			 * author change, because the list is virtualized and a reader may land on any row cold.
+			 */}
+			<span className="kp-visually-hidden">{authorName(item.kind, nested)}</span>
 			<RowBody item={item} expanded={expanded} fold={fold} onToggleRow={onToggleRow} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
@@ -308,6 +342,7 @@ function RowView({
 	unfolded,
 	onToggleRow,
 	onToggleFold,
+	onViewSubagent,
 }: {
 	readonly row: ChatRow;
 	readonly interruptedId: string | null;
@@ -317,6 +352,7 @@ function RowView({
 	readonly unfolded: ReadonlySet<string>;
 	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
+	readonly onViewSubagent: ((id: string) => void) | null;
 }): ReactElement {
 	if (row.kind === "loading") {
 		return (
@@ -351,6 +387,25 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "turn") {
+		// A `Button` and not a `Collapsible`: the rows this reveals are virtualized siblings outside
+		// any content this control owns, so a primitive that wired `aria-controls` over its own panel
+		// would announce a panel while N unrelated rows appeared unannounced (#8027). Same shape and
+		// same reason as the group head's fold button, `aria-expanded` and no `aria-controls` (#8057).
+		return (
+			<Button
+				type="button"
+				variant="tertiary"
+				size="sm"
+				className="tuval-chat-turn"
+				aria-expanded={row.open}
+				onClick={() => onToggleFold(rowKey(row), !row.open)}
+			>
+				<span className="tuval-chat-turn-chevron" data-open={row.open} aria-hidden="true" />
+				{row.label}
+			</Button>
+		);
+	}
 	if (row.kind === "session") {
 		// The run's first notice is its identity, in the `expanded` set as in `rowKey`, so a notice
 		// joining the run behind it does not close a disclosure the reader opened.
@@ -362,6 +417,24 @@ function RowView({
 					run={row.items}
 					expanded={expanded.has(id)}
 					onToggle={(next) => onToggleRow(id, next)}
+					onViewSubagent={onViewSubagent}
+				/>
+			</>
+		);
+	}
+	if (row.kind === "tools") {
+		// The run's own key, not its first call's id: the two would be one string in this window's
+		// shared `expanded` set, and the run could not be opened without opening that call (`rowKey`).
+		const id = rowKey(row);
+		return (
+			<>
+				<span className="kp-visually-hidden">{authorName("tool", row.nested)}</span>
+				<ToolRunRow
+					calls={row.calls}
+					open={expanded.has(id)}
+					onToggle={(next) => onToggleRow(id, next)}
+					expanded={expanded}
+					onToggleCall={onToggleRow}
 				/>
 			</>
 		);
@@ -542,10 +615,28 @@ function ChatWindow({
 		},
 		[commit, settleScroll],
 	);
+	/**
+	 * Where focus goes when the operator leaves a worker's view (founder ruling 2026-09-08 on
+	 * #8470, the Claude Code model): the composer, always. The navigator cannot hold it — the way
+	 * back is gone with the view, and the last finished worker takes the whole region with it — so
+	 * the destination has to be a control the window keeps, and the composer is the one an operator
+	 * leaving a transcript is on their way to anyway.
+	 */
+	const composerRef = useRef<HTMLTextAreaElement>(null);
+	const [leaving, setLeaving] = useState(false);
 	const showMain = useCallback(() => {
 		settleScroll();
+		setLeaving(true);
 		commit(viewMain);
 	}, [commit, settleScroll]);
+	// Placed from here rather than from the click, because the composer is `disabled` while a view
+	// is open (#8466) and a disabled field takes no focus. Both writes above land in one render, so
+	// by the time this runs the field is enabled and the region that held focus has already gone.
+	useLayoutEffect(() => {
+		if (!leaving || viewing !== null) return;
+		setLeaving(false);
+		composerRef.current?.focus();
+	}, [leaving, viewing]);
 
 	/**
 	 * `<c-b> a`, arriving as the key that chord's command row mints (`../commands/table.ts`). The
@@ -615,6 +706,28 @@ function ChatWindow({
 	 * the follow stops dead in the middle of a streaming reply (#8174).
 	 */
 	const selfScrollRef = useRef<number | null>(null);
+
+	/**
+	 * Where the content ended, and where the scroller rested, at the last scroll event — the pair
+	 * the next event needs to tell the browser's own clamp from the reader.
+	 *
+	 * Shortening the row list — closing a fold, and every other path that drops rows — leaves the
+	 * scroller resting past the end of what is left, and the browser answers by clamping the offset
+	 * to the new end and firing one ordinary `scroll` carrying it. That offset is one the window
+	 * *caused* but never *asked* its scroller for, so `selfScrollRef` above is null and the clamp
+	 * reads as the reader moving: on a transcript barely taller than its viewport the clamped offset
+	 * is inside `topThreshold`, and a page of history nobody asked for goes out (#8643).
+	 *
+	 * The offset is half of it because the end alone does not name a clamp: a shrink under a reader
+	 * resting *above* the new end clamps nothing and fires no event at all, so the end left here is
+	 * the taller one, and the reader's next arrival at the bottom in a single event — `End`, a click
+	 * on the scrollbar track, a fling — would read as that clamp. A browser clamps only an offset
+	 * that was already past the new end, so requiring the rested offset to have been past it is what
+	 * makes this exactly as narrow as the event it names. `restingAt` above cannot serve: the commit
+	 * debounce nulls it (#8643, review round 1).
+	 */
+	const contentEndRef = useRef<number | null>(null);
+	const restedAtRef = useRef<number | null>(null);
 	const scrollToFn = useCallback<
 		NonNullable<VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"]>
 	>(
@@ -761,7 +874,8 @@ function ChatWindow({
 
 	const onScroll = useCallback(
 		(event: UIEvent<HTMLDivElement>) => {
-			const offset = event.currentTarget.scrollTop;
+			const scroller = event.currentTarget;
+			const offset = scroller.scrollTop;
 			// This event is the arrival of the offset `scrollToFn` above just asked for, so it is the
 			// window hearing its own request rather than the reader moving. Both readings below are
 			// about where the *reader* went — whether they left the newest turn, and whether they
@@ -769,11 +883,26 @@ function ChatWindow({
 			// own answers.
 			const asked = selfScrollRef.current;
 			selfScrollRef.current = null;
-			const byReader = asked === null || Math.abs(offset - asked) > 1;
+			// …and neither is a question the browser's clamp answers: the content ended further down
+			// at the last scroll event, the scroller rested past where it ends now, and this offset is
+			// exactly that new end — a list that shortened under a scroller sitting past it
+			// (`contentEndRef` above).
+			const contentEnd = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+			const endBefore = contentEndRef.current;
+			const restedAt = restedAtRef.current;
+			contentEndRef.current = contentEnd;
+			restedAtRef.current = offset;
+			const clamped =
+				endBefore !== null &&
+				endBefore > contentEnd &&
+				restedAt !== null &&
+				restedAt > contentEnd &&
+				Math.abs(offset - contentEnd) <= 1;
+			const byReader = !clamped && (asked === null || Math.abs(offset - asked) > 1);
 			// The pin is written on the transition and not through the debounce below: a turn landing
 			// inside the settle window would otherwise read a pin the operator has already left.
 			if (byReader) {
-				const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
+				const pinned = onNewest(scroller, totalSize, options.bottomThreshold);
 				commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
 			}
 			// The offset is where the transcript rests whoever moved it, so it is committed either way.
@@ -945,7 +1074,9 @@ function ChatWindow({
 		// The provider sits above the whole window, not just the composer: a design primitive the
 		// transcript mounts (a table's scroller name) reads this catalog too, and the package's own
 		// default is Turkish.
-		<DesignTranslationProvider translate={tuvalDesignTranslate}>
+		<DesignTranslationProvider
+			translate={viewing === null ? tuvalDesignTranslate : tuvalSubagentViewTranslate}
+		>
 			<section
 				className="tuval-chat"
 				aria-label="Agent chat"
@@ -1011,19 +1142,23 @@ function ChatWindow({
 						{virtualizer.getVirtualItems().map((virtual) => {
 							const row = rows[virtual.index];
 							if (row === undefined) return null;
+							const shape = rowShape(row);
 							return (
 								<div
 									key={virtual.key}
 									className="tuval-chat-row"
 									data-index={virtual.index}
 									data-kind={row.kind === "item" ? row.item.kind : row.kind}
-									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
+									// Authorship as the row's shape carries it (#8210), and the hook the bubble and
+									// prose rules in `chat.css` hang on.
+									data-message-role={shape.role}
+									data-nested={shape.nested ? "true" : undefined}
 									ref={virtualizer.measureElement}
 									style={{
 										transform: `translateY(${virtual.start}px)`,
 										// One indent step per fold the row sits inside, so a subagent's own subagent
 										// reads as a further step in rather than as another row at the same level.
-										...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
+										...(shape.depth > 0 ? {"--nest-depth": shape.depth} : {}),
 									}}
 								>
 									<RowView
@@ -1035,6 +1170,9 @@ function ChatWindow({
 										unfolded={unfolded}
 										onToggleRow={toggleRow}
 										onToggleFold={toggleFold}
+										// Only where the navigator is drawn: a jump into a worker's rows with
+										// no list above them leaves the reader no way back out (#8405).
+										onViewSubagent={options.subagentList ? showSubagent : null}
 									/>
 								</div>
 							);
@@ -1069,7 +1207,12 @@ function ChatWindow({
 							<span />
 							<span />
 						</span>
-						{interruption === null ? "Working…" : "Interrupting…"}
+						{workingTell({
+							phase,
+							failure: state?.failure ?? null,
+							interruption,
+							now: options.now(),
+						})}
 					</p>
 				) : null}
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
@@ -1081,8 +1224,15 @@ function ChatWindow({
 					onDiscard={discardSend}
 				/>
 				<AgentChatInput
+					ref={composerRef}
 					variant="focused"
 					bridge={composer.bridge}
+					// Founder ruling on #8466: while the view slot shows a subagent the composer is
+					// disabled, not re-worded. A prompt typed here would land in the transcript the
+					// operator is not reading, and there is no second session to address it to. It stays
+					// mounted — the draft is the component's own state, so unmounting it would drop text
+					// the swap must not touch — and the placeholder swapped above says why.
+					disabled={viewing !== null}
 					// The mode picker rides the composer's `settings` slot rather than the bridge: mode is
 					// this window's vocabulary, and a bridge method would make every other implementor of
 					// `AgentChatInputBridge` answer a question only this one has (#8190).

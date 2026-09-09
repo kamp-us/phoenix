@@ -204,11 +204,26 @@
 
 .tuval-command-line {
 	display: flex;
+	flex-wrap: wrap;
 	gap: var(--s-2);
 	align-items: center;
 	padding: var(--s-2) var(--s-3);
 	border-block-start: 1px solid var(--border);
 	background: var(--surface-raised);
+}
+
+.tuval-command-result {
+	flex-basis: 100%;
+	min-inline-size: 0;
+	max-block-size: 30vh;
+	overflow: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	margin: 0;
+	color: var(--text-primary);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
 }
 
 .tuval-command-line input {

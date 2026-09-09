@@ -60,7 +60,7 @@ describe("init", () => {
 		const loaded = started({
 			phase: "prompting",
 			transcript: {
-				items: [assistantItem("a1"), userItem("u2")],
+				items: [userItem("u0"), assistantItem("a1")],
 				omitted: initialState("/x").transcript.omitted,
 			},
 		});
@@ -70,6 +70,20 @@ describe("init", () => {
 		expect(state.phase).toBe("idle");
 		expect(state.interrupted).toBe("a1");
 		expect(cmds).toEqual([]);
+	});
+
+	// The same restart, over a turn that had written nothing of its own yet — the tail ends on the
+	// operator's prompt. The reply above it belongs to the turn before and is not what got cut.
+	it("marks no cut reply when the restart caught a turn that had written none", () => {
+		const loaded = started({
+			phase: "prompting",
+			transcript: {
+				items: [userItem("u0"), assistantItem("a1"), userItem("u2")],
+				omitted: initialState("/x").transcript.omitted,
+			},
+		});
+		const [state] = machine.init(loaded, {});
+		expect(state.interrupted).toBeNull();
 	});
 
 	// The rehydrate branch is the defaulting parse and nothing else, so what the store read back is
@@ -843,6 +857,22 @@ describe("interrupt", () => {
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
 	});
 
+	// Turn 1 answered in prose and settled; turn 2's content is tool calls alone, which draws no
+	// assistant row at all (#8216). The stop belongs to turn 2, so turn 1's finished reply — sitting
+	// above the operator's second prompt — must not come back badged as cut short.
+	it("marks nothing when the running turn wrote no reply of its own", () => {
+		const toolOnly = running({
+			transcript: {
+				items: [userItem("u0"), assistantItem("a1"), userItem("u2"), toolItem("t3")],
+				omitted: initialState("/x").transcript.omitted,
+			},
+		});
+		const [state, cmds] = apply(toolOnly, {type: "interrupt", at: SENT_AT});
+		expect(state.interrupted).toBeNull();
+		expect(state.interruption).toEqual({requestedAt: SENT_AT});
+		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
+	});
+
 	// The prompt waits rather than being refused (#8159), and the stop request stands over it: an
 	// outstanding interruption is still the session's answer about the turn that is running.
 	it("sends nothing new while the interruption is outstanding", () => {
@@ -871,9 +901,9 @@ describe("interrupt", () => {
 		expect(next.interruption).toEqual({requestedAt: SENT_AT});
 	});
 
-	// The refusal case as the generic contract can see it: `interrupt` declares no error channel and
-	// both layers log a refused abort, so a refusal reaches the core as nothing at all. The session
-	// must therefore stay busy with the request on the record, never fall back to ready.
+	// A second press while the first ask is still unanswered: nothing has confirmed a stop, so the
+	// session stays busy with the request on the record rather than falling back to ready. (A
+	// backend that answers by refusing is a failure event instead — `../core/fold.unit.test.ts`.)
 	it("leaves a refused abort outstanding rather than fabricating a stop", () => {
 		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
 		const [again, cmds] = apply(asked, {type: "interrupt", at: SENT_AT + 3_000});
@@ -982,6 +1012,22 @@ describe("reconnect", () => {
 	});
 });
 
+describe("openFailed", () => {
+	it("advances a failed fresh open without inventing a session subscription", () => {
+		const opening = {...initialState("/repo"), phase: "starting" as const};
+		const failure = {tag: "tuval/ai-agent/StartError", reason: "refused", detail: "not accepted"};
+		const [state, cmds] = apply(opening, {type: "openFailed", failure});
+		expect(state).toMatchObject({
+			phase: "idle",
+			sessionId: null,
+			connection: opening.connection + 1,
+			failure,
+		});
+		expect(machine.subscriptions?.(state)).toEqual([]);
+		expect(cmds).toEqual([]);
+	});
+});
+
 describe("failed", () => {
 	it("records the layer's tag and leaves the phase where the act began", () => {
 		const failure = {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "gone"};
@@ -995,13 +1041,16 @@ describe("failed", () => {
 		expect(fromReconnect.phase).toBe("idle");
 	});
 
-	it("ends a resume the backend refused at gone, never anywhere a fresh session can open", () => {
+	it.each([
+		"failed",
+		"openFailed",
+	] as const)("ends a missing session at gone through %s", (type) => {
 		const failure = {
 			tag: "tuval/ai-agent/StartError",
 			reason: "session-not-found",
 			detail: "the backend holds no session-1",
 		};
-		const [refused] = apply(started({phase: "reconnecting"}), {type: "failed", failure});
+		const [refused] = apply(started({phase: "reconnecting"}), {type, failure});
 		expect(refused).toMatchObject({phase: "gone", sessionId: "session-1", failure});
 		expect(machine.subscriptions?.(refused)).toEqual([]);
 	});
@@ -1427,6 +1476,14 @@ describe("the Cmd each Msg answers for", () => {
 		],
 		[started({phase: "prompting"}), {type: "interrupt", at: SENT_AT}, ["aiAgent.interrupt"]],
 		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
+		[
+			started({phase: "reconnecting"}),
+			{
+				type: "openFailed",
+				failure: {tag: "tuval/ai-agent/StartError", reason: "refused", detail: "not accepted"},
+			},
+			[],
+		],
 		[
 			started(),
 			{type: "failed", failure: {tag: "tuval/ai-agent/PageError", reason: null, detail: "x"}},

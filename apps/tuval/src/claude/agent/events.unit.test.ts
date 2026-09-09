@@ -14,9 +14,10 @@ import {CWD, MODES, messages, OPENED_EVENTS, on, settled} from "./fixtures/harne
 /**
  * The tool turn's four frames after `init`, folded: the call opens `running`, its answer settles it
  * `ok`, the reply lands, and the result reports spend and then ends the turn. The first assistant
- * frame carries only the `tool_use` block, so it earns no text item of its own.
+ * frame carries only the `tool_use` block, so it earns no text item of its own. `init` itself is
+ * two: the model it names and the CLI version it reports (#7955).
  */
-const TURN_EVENTS = 5;
+const TURN_EVENTS = 6;
 
 describe("events over a captured tool turn", () => {
 	it.effect("carries the turn's items and its usage in one ordered stream", () =>
@@ -28,16 +29,17 @@ describe("events over a captured tool turn", () => {
 				);
 				assert.deepStrictEqual(
 					events.map((event) => event.kind),
-					// The start's own, then the first turn's `init` — the model it names, and nothing
-					// else — then the turn, which ends on the `ready` its `result` carries.
+					// The start's own, then the first turn's `init` — the model and the CLI version it
+					// names — then the turn, which ends on the `ready` its `result` carries.
 					[
-						"phase",
 						"phase",
 						"mode",
 						"model",
 						"commands",
 						"thinking",
+						"phase",
 						"usage",
+						"version",
 						"item",
 						"item",
 						"item",
@@ -113,12 +115,13 @@ describe("every kind rides the one stream", () => {
 					[...turn, ...card, ...rest].map((event) => event.kind),
 					[
 						"phase",
-						"phase",
 						"mode",
 						"model",
 						"commands",
 						"thinking",
+						"phase",
 						"usage",
+						"version",
 						"item",
 						"item",
 						"item",

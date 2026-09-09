@@ -135,6 +135,15 @@ export interface SystemItem extends ItemBase {
 	readonly kind: "system";
 	readonly text: string;
 	readonly detail?: string;
+	/**
+	 * The subagent slot this notice reports on, when it reports on one — the id of the spawning
+	 * call, which is what `SubagentSlot` is keyed by. A window offers it as the way into that
+	 * worker's own rows, so a notice that only names an outcome still reaches the report behind it.
+	 *
+	 * Model-blind: it is the port's own slot id, not a backend's task handle, and a notice about
+	 * nothing a slot was opened for carries none.
+	 */
+	readonly subagent?: ItemId;
 }
 
 export type TranscriptItem =
@@ -235,7 +244,8 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 		case "system":
 			return (
 				typeof value.text === "string" &&
-				(value.detail === undefined || typeof value.detail === "string")
+				(value.detail === undefined || typeof value.detail === "string") &&
+				isOptionalId(value.subagent)
 			);
 		case "compaction":
 			return typeof value.text === "string";

@@ -23,3 +23,5 @@ These pages are written for a person. Each holds one Diátaxis mode.
 - **[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)**
   — the verb reference: what each command does and its exit codes.
 - **[`../skills/`](../skills/)** — one `SKILL.md` per skill: the contracts agents execute.
+
+- [Use Fabrika in Codex](codex.md): install the shared plugin and dispatch isolated lane stages.

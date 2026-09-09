@@ -1,18 +1,18 @@
 // This project's Tuval config. This file is yours: boot loads it over your global
 // ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
-// is a `Program` (src/registry/program.ts); the seven in the box today are the shell (#7558), the
+// is a `Program` (src/registry/program.ts); the eight in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
-// agy chat session (#8184) and the AI-agent session list (#8102).
+// agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
 // its row and its graph node is how you boot without a desk.
 //
 // No session is planned in `graph`, and that is the point: each row's layer stands a real agent up
-// when a process spawns — Pi's model runtime, Claude's `claude` CLI, agy's `agy` CLI — so a planned
-// node would reach for your credentials on every boot. Open one when you want one: focus an empty
-// window and pick it, or `prefix :` then `window:open pi-session` / `window:open claude-session` /
-// `window:open agy-session`.
+// when a process spawns — Pi's model runtime, Claude's `claude` CLI, agy's `agy` CLI, codex's
+// `codex` CLI — so a planned node would reach for your credentials on every boot. Open one when
+// you want one: focus an empty window and pick it, or `prefix :` then `window:open pi-session` /
+// `window:open claude-session` / `window:open agy-session` / `window:open codex-session`.
 // Either route spawns the process under the shell, and it opens in this project root, which is
 // what `projectRootOf` reads off this module's own location.
 //
@@ -25,6 +25,7 @@ import {Console} from "effect";
 import {agySessionProgram} from "../src/agy/program.ts";
 import {sessionListProgram} from "../src/ai-agent/session-list.ts";
 import {claudeSession} from "../src/claude/program.ts";
+import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
@@ -64,7 +65,9 @@ export default {
 		// one line is where you change it. The row refuses to open a session until
 		// `{"toolPermission": "proceed-in-sandbox"}` is in `~/.gemini/antigravity-cli/settings.json`.
 		agySessionProgram({cwd: projectRoot, agy: {model: "gemini-3.1-pro-high"}}),
-		// Windowed and, like the three sessions above, unplanned — nothing needs it running until you
+		// Unplanned, like Pi and Claude: opening a window starts the CLI, never booting the desk.
+		codexSession({cwd: projectRoot, scope: claudeSessionScope}),
+		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),
 	],

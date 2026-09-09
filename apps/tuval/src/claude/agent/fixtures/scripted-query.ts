@@ -14,6 +14,7 @@
  */
 
 import type {
+	AccountInfo,
 	EffortLevel,
 	ListSessionsOptions,
 	ModelInfo,
@@ -83,6 +84,18 @@ export interface ScriptedBehaviour {
 	readonly commands?: ReadonlyArray<SlashCommand>;
 	/** A `supportedCommands()` that throws — a session with no slash picker, not a failed open. */
 	readonly commandsFail?: Error;
+	/**
+	 * An `interrupt()` the CLI refuses, recorded the same way a refused `setModel` is. The SDK's own
+	 * rejection carries no account of why (`sdk.d.ts`, `Query.interrupt`), which is what makes the
+	 * layer's reading of its own turn state the input the fold routes on (ADR 0356).
+	 */
+	readonly interruptFails?: Error;
+	/**
+	 * What the handshake reports as the logged-in account. The default is the empty object, which is
+	 * the shape a login with no organization and no plan answers with — so a test that wants the
+	 * inspector's account row has to say so.
+	 */
+	readonly account?: AccountInfo;
 }
 
 export const scriptedQuery = (
@@ -122,8 +135,8 @@ export const scriptedQuery = (
 	// request (`sdk.mjs`, `performCleanup`). The `catch` is the SDK's own guard against an unhandled
 	// rejection on a query nobody asked the handshake of.
 	let refuseHandshake: ((cause: unknown) => void) | null = null;
-	const handshake = new Promise<unknown>((resolve, reject) => {
-		if (behaviour.endsAtOnce !== true) resolve({commands: [], agents: [], models: []});
+	const handshake = new Promise<{readonly account: AccountInfo}>((resolve, reject) => {
+		if (behaviour.endsAtOnce !== true) resolve({account: behaviour.account ?? {}});
 		refuseHandshake = reject;
 	});
 	handshake.catch(() => {});
@@ -176,6 +189,7 @@ export const scriptedQuery = (
 		initializationResult: () => handshake,
 		interrupt: async () => {
 			record.interrupts += 1;
+			if (behaviour.interruptFails !== undefined) throw behaviour.interruptFails;
 			return undefined;
 		},
 		setPermissionMode: async (mode: PermissionMode) => {
@@ -243,7 +257,11 @@ export interface ScriptedSdk {
 export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	/** The messages a fresh `query()` puts on its stream, in order. */
 	readonly opening: ReadonlyArray<SDKMessage>;
-	/** What `getSessionMessages` answers. Absent answers an empty session, which is the resume miss. */
+	/**
+	 * What `getSessionMessages` answers. Absent answers an empty array, which at the pin is both an
+	 * existing session with no rows and one the store does not hold — `sessions` is what tells the
+	 * two apart (#8131).
+	 */
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	/** A read that throws instead of answering. */
 	readonly readFails?: Error;
@@ -252,6 +270,12 @@ export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	 * could not spawn, which is where its `errorClass` stamps arrive (#8010).
 	 */
 	readonly openFails?: Error;
+	/**
+	 * Which open, counting from one, `openFails` throws on; absent, every open throws it. A run that
+	 * opens, tears down and then fails to reopen is the only way to reach the layer's between-sessions
+	 * state, and it needs the second open alone to fail.
+	 */
+	readonly openFailsAt?: number;
 	/** What `listSessions` answers. Absent is a store holding none, which is a truthful empty list. */
 	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
 	/** A listing that throws — a store that would not open, not a store with nothing in it. */
@@ -263,6 +287,7 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 	const opened: Array<ScriptedQuery> = [];
 	const reads: Array<{sessionId: string; dir: string | undefined}> = [];
 	const lists: Array<ListSessionsOptions | undefined> = [];
+	let opens = 0;
 	return {
 		opened,
 		reads,
@@ -270,7 +295,10 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
-				if (options.openFails !== undefined) throw options.openFails;
+				opens += 1;
+				if (options.openFails !== undefined && (options.openFailsAt ?? opens) === opens) {
+					throw options.openFails;
+				}
 				const query = scriptedQuery(params, options.opening, options);
 				opened.push(query);
 				return query;

@@ -11,7 +11,9 @@ installDomShims();
 
 // Vitest's css: false empties the component import; read the same shipped stylesheet instead.
 const entry = fileURLToPath(import.meta.resolve("@kampus/design"));
-const css = readFileSync(entry.replace(/index\.ts$/, "AgentChatInput.css"), "utf8");
+const css = ["AgentChatInput.css", "agent-chat/SettingMenu.css"]
+	.map((name) => readFileSync(entry.replace(/index\.ts$/, name), "utf8"))
+	.join("\n");
 const style = document.createElement("style");
 style.textContent = css;
 

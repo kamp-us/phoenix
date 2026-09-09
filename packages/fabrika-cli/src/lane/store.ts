@@ -36,6 +36,9 @@ export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
  */
 export const DEFAULT_ARCHIVED_LANES_ROOT = ".fabrika/lanes-archived";
 
+/** The machine document whose absence is what makes a lane absent, and nothing else. */
+export const WORKFLOW_FILE = "workflow.json";
+
 export interface LaneRef {
 	/** The lanes root — `.fabrika/lanes`, or `.fabrika/chores` for a chore key. */
 	readonly root: string;
@@ -62,7 +65,7 @@ export const loadLane = (
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
 		const dir = path.join(ref.root, ref.lane);
-		const workflowPath = path.join(dir, "workflow.json");
+		const workflowPath = path.join(dir, WORKFLOW_FILE);
 		const logPath = path.join(dir, "events.jsonl");
 
 		const workflowText = yield* Effect.result(readFile(workflowPath));
@@ -123,7 +126,7 @@ export const placeMachine = (
 			return {_tag: "Unprobeable", dir, reason: probe.failure.reason} as const;
 		}
 		if (probe.success) return {_tag: "Exists", dir} as const;
-		const workflow = path.join(dir, "workflow.json");
+		const workflow = path.join(dir, WORKFLOW_FILE);
 		const wrote = yield* Effect.result(writeFile(workflow, text));
 		if (Result.isFailure(wrote)) {
 			return {_tag: "Unwritten", path: workflow, reason: wrote.failure.reason} as const;

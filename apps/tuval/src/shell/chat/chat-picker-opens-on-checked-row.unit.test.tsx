@@ -37,7 +37,7 @@ const designCss = (name: string): string => {
 	return readFileSync(entry.replace(/index\.ts$/, name), "utf8");
 };
 
-const styles = ["Menu.css", "AgentChatInput.css"].map((name) => {
+const styles = ["Menu.css", "AgentChatInput.css", "agent-chat/SettingMenu.css"].map((name) => {
 	const style = document.createElement("style");
 	style.textContent = designCss(name);
 	return style;

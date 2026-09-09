@@ -35,19 +35,17 @@
 import {readdirSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
-import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal} from "../../ai-agent/history/index.ts";
 import type {
+	ThinkingLevel as AgentThinkingLevel,
 	Mode,
 	ModelRef,
 	PermissionDecision,
-	ThinkingLevel,
 } from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
-	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -60,7 +58,9 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
-import {PiClientService, type PiSessionRef} from "../client/index.ts";
+import {featuresDefault} from "../../features.ts";
+import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
+import {retaining} from "../diagnostics.ts";
 import {
 	agentSessionHostLayer,
 	defaultSessionDir,
@@ -69,9 +69,18 @@ import {
 	PiServerService,
 	type PiSessionHost,
 	type ServerBindFailed,
+	subagentExtensionPaths,
 } from "../server/index.ts";
+import type {ThinkingLevel} from "../wire/index.ts";
+import {
+	type ChildTranscripts,
+	readChildTranscripts,
+	subagentArtifactsDir,
+} from "./child-transcript.ts";
 import {planPageOverEntries} from "./entries.ts";
 import {
+	childEventsOf,
+	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
 	paintOf,
@@ -84,6 +93,7 @@ import {
 	promptErrorOf,
 	promptFailureOf,
 	startErrorOf,
+	storeUnlistable,
 	storeUnreadable,
 	transcriptSessionMissing,
 	transcriptUnknownCursor,
@@ -135,8 +145,20 @@ type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
  * itself to `prompting` at the send and stayed there — refusing every later message (#7897).
  */
 type FoldInput =
-	| {readonly _tag: "snapshot"; readonly snapshot: SessionSnapshot}
-	| {readonly _tag: "sent"};
+	| SessionUpdate
+	| {readonly _tag: "sent"}
+	/** What the running workers' own artifacts said when the tail last read them. */
+	| {readonly _tag: "children"; readonly children: ChildTranscripts};
+
+/**
+ * How often the tail re-reads a running worker's transcript artifact.
+ *
+ * It is a poll rather than an `fs.watch` because the parent session offers no signal to hang the
+ * read on: the child is a detached process, so nothing it appends is a session event, and the wire
+ * push that would carry it never comes. The interval is the operator's own reading speed, not the
+ * child's write rate — a slower tail costs latency on a row, never a record.
+ */
+const childTailInterval = "500 millis";
 
 /**
  * Read one session's branch out of Pi's JSONL, oldest-first.
@@ -261,12 +283,14 @@ const make = (
 			open: EventQueue,
 			feed: Queue.Queue<FoldInput>,
 			seed: SnapshotProjection,
+			artifacts: string,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
 				yield* Ref.set(projection, seed);
+				const children = yield* Ref.make<ChildTranscripts>(new Map());
 				const pushes = pi
-					.snapshots(sessionId)
-					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
+					.updates(sessionId)
+					.pipe(Stream.runForEach((update) => Queue.offer(feed, update)));
 				const folding = Stream.fromQueue(feed).pipe(
 					Stream.runForEach((input) =>
 						Effect.gen(function* () {
@@ -276,17 +300,50 @@ const make = (
 								yield* Ref.set(projection, {...previous, phase: "prompting"});
 								return yield* emit(open, [{kind: "phase", phase: "prompting"}]);
 							}
-							const folded = eventsOf(previous, input.snapshot);
+							if (input._tag === "children") {
+								yield* Ref.set(children, input.children);
+								const tailed = childEventsOf(previous, input.children);
+								yield* Ref.set(projection, tailed.next);
+								return yield* emit(open, tailed.events);
+							}
+							// The wire fold reads the same children the tail last saw, so a push
+							// landing between two reads restates the enriched slot rather than
+							// blanking the rows the operator is looking at.
+							const held = yield* Ref.get(children);
+							const folded =
+								input._tag === "snapshot"
+									? eventsOf(previous, input.snapshot, held)
+									: deltaEventsOf(previous, input.delta, held);
 							yield* Ref.set(projection, folded.next);
 							yield* emit(open, folded.events);
 						}),
 					),
 				);
+				const tailing = Effect.forever(
+					Effect.gen(function* () {
+						yield* Effect.sleep(childTailInterval);
+						const running = [...(yield* Ref.get(projection)).spawns.values()];
+						if (running.length === 0) return;
+						const read = yield* Effect.sync(() =>
+							readChildTranscripts(
+								artifacts,
+								running.map((spawn) => spawn.runId),
+							),
+						);
+						yield* Queue.offer(feed, {_tag: "children", children: read});
+					}),
+				);
 				const dropped = pi.disconnections.pipe(
 					Stream.take(1),
 					Stream.runForEach((drop) => Queue.fail(open, transportErrorOf(drop))),
 				);
-				yield* Effect.race(Effect.race(pushes, folding), dropped);
+				// `pushes` only fills `feed`, so it is not a party to the race: raced against
+				// `folding` it would interrupt the fold the moment the update stream ended, and a
+				// turn's last update — queued, unfolded — would go with it (#8554). As a child
+				// fiber it is interrupted when this effect returns, which is what the race decides.
+				yield* Effect.forkChild(pushes);
+				yield* Effect.forkChild(tailing);
+				yield* Effect.race(folding, dropped);
 			});
 
 		/**
@@ -325,10 +382,7 @@ const make = (
 			pi.setThinkingLevel(sessionId, level).pipe(
 				Effect.map((answered) => answered.thinkingLevel),
 				Effect.catch((refusal) =>
-					Effect.as(
-						Effect.logWarning(`the thinking switch was refused: ${refusal.message}`),
-						fallback,
-					),
+					Effect.as(Effect.logWarning("the Pi thinking switch was refused", refusal), fallback),
 				),
 			);
 
@@ -345,10 +399,7 @@ const make = (
 			pi.setModel(sessionId, selection).pipe(
 				Effect.map((answered) => answered.model),
 				Effect.catch((refusal) =>
-					Effect.as(
-						Effect.logWarning(`the model switch was refused: ${refusal.message}`),
-						fallback,
-					),
+					Effect.as(Effect.logWarning("the Pi model switch was refused", refusal), fallback),
 				),
 			);
 
@@ -385,19 +436,18 @@ const make = (
 					return {ref: opened, seed: emptyProjection, paint: []};
 				}
 				// Either way the lease's own snapshot is the seed, and neither reading of it costs a
-				// round trip: Pi re-sends the whole transcript on every revision, so a fold that
-				// opened on `emptyProjection` replays the session as live items on the first push
-				// after the attach (#8369). What differs is what the caller can already see.
+				// round trip. What differs is what the caller can already see.
 				const resumed = yield* pi.attachSession(resume.sessionId);
 				const lease = yield* pi.heldSnapshot(resumed.id);
 				// A restored process is looking at its own committed tail, so the seed suppresses
 				// everything through the boundary that tail reaches and emits whatever the session
 				// finished past it — or changed under it — while the socket was down (#8374).
-				if (resume.holdsTranscript) {
-					return {ref: resumed, seed: projectionOf(lease, resume.held), paint: []};
-				}
-				// A window opened out of the picker holds nothing, so the history is painted here,
-				// at the attach, while its tail is still empty.
+				const seeded = resume.holdsTranscript ? projectionOf(lease, resume.held) : null;
+				if (seeded !== null) return {ref: resumed, seed: seeded, paint: []};
+				// Nothing to seed from: a window opened out of the picker holds nothing, or the
+				// boundary the caller holds is not in this snapshot. Either way the history is
+				// painted here, at the attach, while its tail is still empty — a push carries only
+				// what changed, so waiting for one would replay nothing (#8554).
 				const painted = paintOf(lease);
 				return {ref: resumed, seed: painted.projection, paint: painted.events};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
@@ -436,7 +486,13 @@ const make = (
 			yield* Ref.set(inbox, feed);
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
-			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed, seed), scope));
+			yield* Ref.set(
+				pump,
+				yield* Effect.forkIn(
+					follow(ref.id, open, feed, seed, subagentArtifactsDir(sessionDir(options_.cwd))),
+					scope,
+				),
+			);
 			const offered = catalog.map(refOf);
 			yield* emit(open, [
 				// `StartOptions.mode` is ignored here, and this is the one layer where that is right:
@@ -484,6 +540,7 @@ const make = (
 			yield* Effect.forkIn(
 				pi.prompt(current.id, text).pipe(
 					Effect.mapError(promptErrorOf),
+					Effect.tapError((refusal) => Effect.logWarning("Pi send failed", refusal)),
 					// A send that never landed is not a turn this session has seen, so the key goes
 					// back and a retry of it is admitted.
 					Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
@@ -509,7 +566,19 @@ const make = (
 		const interrupt = Effect.gen(function* () {
 			const current = yield* Ref.get(session);
 			if (current === null) return;
+			// Read before the send, for the reason `prompt` reads it there: a `start` landing while
+			// this abort is in flight must not route the old session's answer into the new fold.
+			const feed = yield* Ref.get(inbox);
 			yield* pi.abort(current.id).pipe(
+				Effect.tapError((refusal) => Effect.logWarning("Pi interrupt failed", refusal)),
+				// The answer is read after `session.abort()` resolved (`../server/dispatch.ts`), so it
+				// carries the turn's terminal phase and transcript — and it goes into the same fold
+				// `prompt`'s answer does, because the push carrying that end can be coalesced away and
+				// then nothing else ever says the turn stopped. It forces no readiness of its own: a
+				// still-pending abort has no answer to fold and emits nothing.
+				Effect.tap((snapshot) =>
+					feed === null ? Effect.void : Queue.offer(feed, {_tag: "snapshot", snapshot}),
+				),
 				Effect.asVoid,
 				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
 				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
@@ -559,8 +628,10 @@ const make = (
 		});
 
 		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
-			level: ThinkingLevel,
+			value: AgentThinkingLevel,
 		) {
+			if (value === "ultra") return yield* new ThinkingUnsupported({level: value, available: []});
+			const level = value;
 			const catalog = yield* pi.models;
 			const current = yield* Ref.get(session);
 			// Before a session exists there is no model to read an offered set off, so the pick is
@@ -622,16 +693,22 @@ const make = (
 			query: TranscriptQuery,
 		) {
 			const stores = yield* piSessionDirs({agentDir, tuvalDir: sessionDir(query.cwd)});
+			yield* Effect.forEach(
+				stores.failures,
+				(failure) =>
+					Effect.logWarning(
+						`Pi could not enumerate the ${failure.store} store while reading a stored transcript`,
+						failure.cause,
+					),
+				{concurrency: 1, discard: true},
+			);
 			const file = yield* locateBranch(stores.dirs, query.sessionId);
 			if (file === null) {
 				// A store that would not enumerate may be the one the file was in, so a miss across the
 				// rest is not the claim that the session is gone.
 				return yield* stores.failures.length === 0
 					? transcriptSessionMissing(query.sessionId)
-					: transcriptUnreadable(
-							query.sessionId,
-							stores.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
-						);
+					: transcriptUnreadable(query.sessionId, stores.failures);
 			}
 			const entries = yield* Effect.try({
 				try: () => SessionManager.open(file, dirname(file), query.cwd).getBranch(),
@@ -675,15 +752,13 @@ const make = (
 				read.failures,
 				(failure) =>
 					Effect.logWarning(
-						`the ${failure.store} Pi session store could not be read: ${failure.detail}`,
+						`the ${failure.store} Pi session store could not be read`,
+						failure.cause,
 					),
 				{concurrency: 1, discard: true},
 			);
 			if (read.answered.length === 0) {
-				return yield* new ListError({
-					reason: "store-unreadable",
-					detail: read.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
-				});
+				return yield* storeUnlistable(read.failures);
 			}
 			return read.sessions;
 		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
@@ -701,10 +776,10 @@ const make = (
 			/**
 			 * Empty by ruling, not by omission (founder, 2026-09-05, #8060). Pi's slash commands live
 			 * inside its `AgentSession` — extension commands, skills, prompt templates — and the wire
-			 * Tuval reaches it over carries no list of them: at `@earendil-works/pi-protocol@0.84.3`
-			 * `ServerSnapshotSchema` is `{serverId, protocolVersion, revision, sessions, models}` and
-			 * `CommandSchema` is a closed nine-verb union. Filling this needs an upstream protocol
-			 * change, which is its own ticket; vendoring or forking that dep is a no-go.
+			 * Tuval reaches it over carries no list of them: Tuval's own `ServerSnapshot` is
+			 * `{serverId, protocolVersion, revision, sessions, models}` and its `Command` is a closed
+			 * nine-verb union. Filling this needs Pi to expose the catalog through `AgentSession`,
+			 * which is its own ticket; vendoring or forking that dep is a no-go.
 			 *
 			 * Only the *catalog* is missing. Running one already works: `expandPromptTemplates`
 			 * (default true, `agent-session.d.ts`) dispatches extension commands and expands skill
@@ -736,7 +811,10 @@ const transport = (
 	const client = Layer.unwrap(
 		Effect.gen(function* () {
 			const running = yield* PiServerService;
-			return PiClientService.layerWebSocket({url: Redacted.value(running.url)});
+			return PiClientService.layerWebSocket({
+				url: Redacted.value(running.url),
+				serverId: running.serverId,
+			});
 		}),
 	);
 	return Layer.provideMerge(client, server);
@@ -766,11 +844,23 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 						authPath: join(agentDir, "auth.json"),
 						modelsPath: join(agentDir, "models.json"),
 					}),
-				catch: (cause) => new ModelRuntimeUnavailable({agentDir, detail: String(cause)}),
+				catch: (cause) =>
+					retaining(
+						cause,
+						new ModelRuntimeUnavailable({
+							agentDir,
+							detail: "Pi could not initialize its model runtime",
+						}),
+					),
 			}).pipe(Effect.orDie);
+			// The `piSubagents` flag and nothing else decides this. Off — the shipped default — it is
+			// an empty list, and an empty list is the same session this layer opened before the flag
+			// existed (`../server/AgentSessionHost.ts`'s `loaderFor`).
+			const extensionPaths = subagentExtensionPaths(featuresDefault);
 			return agentSessionHostLayer({
 				modelRuntime,
 				agentDir,
+				...(extensionPaths.length === 0 ? {} : {extensionPaths}),
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
 				...(options.streamPartialText === undefined

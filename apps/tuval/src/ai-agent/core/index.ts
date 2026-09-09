@@ -71,6 +71,7 @@ export {
 	withUsageLedger,
 } from "./snapshot.ts";
 export {
+	type AgentAccount,
 	type AgentFailure,
 	type AiAgentSessionState,
 	type CheckpointField,

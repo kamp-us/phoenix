@@ -22,7 +22,10 @@
  * list is known at mount, because the agent has not started when the composer runs its loads, so
  * all three are *pushed* through the same subscription the phase is: `AgentChatInput` re-runs its
  * whole load on a new bridge identity, and rebuilding the bridge per state change would drop the
- * composer back to `loading` on every turn.
+ * composer back to `loading` on every turn. That is also why this bridge answers *whether* a
+ * catalog is known and not only what is in it: an empty offer read before the session opens is a
+ * different fact from a backend that offers nothing, and collapsing the two left Pi's faux desk
+ * saying "loading" through a whole answering session (#8425).
  *
  * Nothing here is React. It is a plain object with a setter, so its behaviour is unit-testable
  * without a DOM — which is what `composer-bridge.unit.test.ts` does.
@@ -92,18 +95,36 @@ const levelOf = (
 	offered: ReadonlyArray<ThinkingLevel>,
 ): ThinkingLevel | null => offered.find((candidate) => candidate === level) ?? null;
 
-/** The one event the composer takes its catalogs on: its `harness_status` arm. */
+/**
+ * Has the layer said what this session offers?
+ *
+ * Before the session is open it has not, and its `models`/`thinking` slices still hold the
+ * reducer's empty defaults — so an empty offered set read here is "not known yet", not "nothing
+ * offered". The phase carries the answer only because every layer owes its catalogs ahead of the
+ * `ready` that closes its open — the contract is in
+ * `.patterns/agent-layer-phase-contract.md` ("The open's `ready` ships with its catalogs"), and a
+ * layer that breaks it opens onto a picker claiming nothing is offered (#8425).
+ */
+const offerResolved = (phase: Phase): boolean => phase !== "idle" && phase !== "starting";
+
+/**
+ * The one event the composer takes its catalogs on: its `harness_status` arm. An unresolved offer
+ * omits both catalog keys rather than sending empty ones, because the composer reads an omitted key
+ * as "nothing said" and an empty array as a resolved answer.
+ */
 const catalogStatus = (
 	models: ModelState,
 	commands: ReadonlyArray<CommandRef>,
 	thinking: ThinkingState,
+	resolved: boolean,
 ): PiEvent => ({
 	type: "harness_status",
 	status: {
-		models: models.available.map(composerModel),
 		commands: commands.map(composerCommand),
+		...(resolved
+			? {models: models.available.map(composerModel), thinkingLevels: thinking.available}
+			: {}),
 		...(models.current === null ? {} : {model: composerModel(models.current)}),
-		thinkingLevels: thinking.available,
 		...(thinking.current === null ? {} : {thinkingLevel: thinking.current}),
 	},
 });
@@ -147,8 +168,10 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 				...(thinking.current === null ? {} : {thinkingLevel: thinking.current}),
 			}),
 		loadPiCommands: () => Promise.resolve(commands.map(composerCommand)),
-		loadPiModels: () => Promise.resolve(models.available.map(composerModel)),
-		loadPiThinkingLevels: () => Promise.resolve(thinking.available),
+		loadPiModels: () =>
+			Promise.resolve(offerResolved(phase) ? models.available.map(composerModel) : undefined),
+		loadPiThinkingLevels: () =>
+			Promise.resolve(offerResolved(phase) ? thinking.available : undefined),
 		loadPiFiles: none([]),
 		// A pick the session does not offer is dropped rather than rejected: the bridge's contract is
 		// that nothing here rejects, and the core would refuse the Msg anyway.
@@ -174,11 +197,18 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 		answerPiExtension: none(undefined),
 		subscribeToPiEvents: (onEvent) => {
 			listener = onEvent;
-			// The composer subscribes *after* its four loads resolve, so a catalog that landed in
+			// The composer subscribes *after* its four loads resolve, so anything that landed in
 			// between was pushed at a listener that did not exist yet and would be lost until the
-			// next catalog event — which, on a session nobody switches, never comes.
-			if (models.available.length > 0 || commands.length > 0 || thinking.available.length > 0) {
-				onEvent(catalogStatus(models, commands, thinking));
+			// next catalog event — which, on a session nobody switches, never comes. Resolution is
+			// one of those things: this window's own `setPhase` runs before the child's loads have
+			// settled, so a session already `ready` answered its loads as unresolved (#8425).
+			if (
+				offerResolved(phase) ||
+				models.available.length > 0 ||
+				commands.length > 0 ||
+				thinking.available.length > 0
+			) {
+				onEvent(catalogStatus(models, commands, thinking, offerResolved(phase)));
 			}
 			return () => {
 				if (listener === onEvent) listener = null;
@@ -190,22 +220,29 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 		bridge,
 		setPhase: (next) => {
 			const was = isWorking(phase);
+			const knew = offerResolved(phase);
 			phase = next;
+			// A phase carries the offer's resolution, so crossing into a resolved one is itself news
+			// the pickers need: without this push a control left saying "loading" at `starting` has
+			// nothing to correct it if the layer's catalogs never change again.
+			if (offerResolved(next) !== knew) {
+				listener?.(catalogStatus(models, commands, thinking, offerResolved(next)));
+			}
 			const now = isWorking(next);
 			if (was === now) return;
 			listener?.({type: now ? "agent_start" : "agent_settled"});
 		},
 		setModels: (next) => {
 			models = next;
-			listener?.(catalogStatus(next, commands, thinking));
+			listener?.(catalogStatus(next, commands, thinking, offerResolved(phase)));
 		},
 		setCommands: (next) => {
 			commands = next;
-			listener?.(catalogStatus(models, next, thinking));
+			listener?.(catalogStatus(models, next, thinking, offerResolved(phase)));
 		},
 		setThinking: (next) => {
 			thinking = next;
-			listener?.(catalogStatus(models, commands, next));
+			listener?.(catalogStatus(models, commands, next, offerResolved(phase)));
 		},
 	};
 };

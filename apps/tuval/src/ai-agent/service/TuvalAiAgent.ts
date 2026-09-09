@@ -13,6 +13,11 @@
  * A layer is built inside the process's Scope (#7513, ruling 4): building it acquires the
  * transport and closing the Scope tears it down. `start` is therefore the handler's call, not the
  * layer's, and restore is "rebuild the layer, then `start({cwd, resume: sessionId})`".
+ *
+ * What a layer owes on `events` beyond the items themselves is the per-turn phase pair — the one
+ * promise here that no signature can hold it to. `Phase` in `../events.ts` states it;
+ * [`.patterns/agent-layer-phase-contract.md`](../../../../../.patterns/agent-layer-phase-contract.md)
+ * is the shape.
  */
 
 import {Context, type Effect, type Stream} from "effect";

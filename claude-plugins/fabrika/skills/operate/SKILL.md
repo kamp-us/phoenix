@@ -218,7 +218,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 node <fabrika> lane brief $lane_key --task <name>
 ```
 
-Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
+For Claude, its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. For Codex, use the dispatch adapter below; it preserves this brief inside a fixed skill preload envelope. The brief
 derives every value: the state from the same fold you just read, the shell from its own routing
 table (`build` → builder, `build:ui` → ui-builder, `review` → reviewer, `review:ui` → ui-reviewer,
 `ship` → shipper), the issue and PR URLs off the
@@ -231,9 +231,22 @@ never restatements, and the brief's own `fabrika:` entrypoint for every verb rat
 binstub (now in the spawned tree). They are in the brief because a prompt written per
 dispatch is a prompt two drivers write differently.
 
-The spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
+On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
 from the inside.
+
+On Codex, run the deterministic adapter instead of the shared-workspace subagent tool:
+
+```bash
+node <fabrika> lane dispatch $lane_key --task <name> --harness codex --skills <absolute-installed-skills-directory> --worktree <absent-absolute-worktree-path>
+```
+
+Read [the Codex installation and dispatch guide](../../guide/codex.md) for prerequisites.
+The adapter creates and verifies the worktree, runs the declared dependency reconciler, selects
+stage skills by role, and sends a fixed preload envelope followed by the unchanged emitted brief.
+It preserves Codex configuration and waits for the child process. A zero exit is insufficient:
+a new task terminal and the existing artifact proof must both stand. A refused dispatch retains
+its worktree; inspect its named cause before retrying. Never replace it with a non-isolated spawn.
 
 `lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
@@ -246,7 +259,7 @@ and `11` is a ref this tree cannot read — the same three facts, and the same r
 seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
 instead. Parallel active tasks brief and spawn in parallel.
 
-**Then do nothing until a spawn returns — and never `sleep`.** A shell spawned with the Agent tool
+**Then do nothing until a spawn returns — and never `sleep`.** A Codex dispatch waits for its child process; a shell spawned with the Claude Agent tool
 returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
 [the skill conventions' "a skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md);
 the one thing it adds for you is that a timed `lane status` is the same defect wearing a fabrika
@@ -456,6 +469,61 @@ re-run's. One of those calls is now a verb: a lane whose issue is closed AND who
 replay leaves both sweeps through `node <fabrika> lane archive <lane>`, which moves its directory to
 the archived root and touches no log — an unreplayable lane is archived, never sealed in place. It
 refuses at `49` on an open issue and `50` on a log that replays, so it can never hide live work.
+
+**A lane whose own flow never reached a terminal ends through a verb too, and that verb is yours to
+run.** Two stranded shapes. An issue closed `not_planned` or `duplicate` while its lane sits
+nonterminal owes no artifact. An issue closed `completed` over a merged PR, while its lane still sits
+in `build` or `review`, was hand-shipped past the ledger. Neither is reachable by the six — `DONE`
+claims an open PR that is not there, `BLOCKED` only parks, and `UNBLOCKED` resumes work that is
+already over — which is why lane 5983 got hand-deleted, taking its whole append-only history with it.
+Record the terminal instead:
+
+```bash
+node <fabrika> lane settle <lane>
+```
+
+**You record it, and nobody else does.** The close itself is somebody else's — `triage kill` closes a
+duplicate, a founder or triager closes a wontfix, a human merges a PR by hand — and none of them
+touches a ledger, so the lane stays owed until the driver holding it runs this verb. Run it on any
+lane whose fold you find nonterminal over an issue the board has already closed, including one you
+inherit from a dead session. **Never delete a lane directory to end it**: the directory stays where
+it is, one line is appended, and `lane history <lane>` still reads the whole log.
+
+The board is the whole entitlement and the verb reads it for you. A `not_planned`/`duplicate` close
+records `CANCELLED`. A `completed` close records `LANDED` — but only alongside at least one merged
+pull request whose body links the issue, and the line carries those PR numbers and the merge commit
+as its evidence. Everything else appends nothing: an open issue refuses at `49`, and a failed read, a
+close carrying no reason, and a `completed` close naming no merged linking PR are all `11` — the
+board saying "done" while naming nothing that did it is genuinely unread, not a landing. If you hold
+the lane's claim, pass `--token <your lane-claim token>`; without it the verb refuses at `31` rather
+than end a lane another session is driving.
+
+**That last `11` has one way out, and it is a human's.** A lane's work often lands under a PR whose
+body cites some other issue, with this one closed by hand afterwards — the landing is real and no
+body names it, so the verb correctly reads it unread. Name the merge yourself:
+
+```bash
+node <fabrika> lane settle <lane> --landed-by <pr>
+```
+
+You supply the link and nothing else. The board still has to say that pull request merged, so an
+unmerged one refuses at `23`, one this repository does not hold at `22`, and an unreadable read stays
+`11` — the flag never lowers the bar on the merge, only on who connected it to this issue. A landing
+a body already proves is judged first and stays body-proven, so the flag can only fill a gap. The
+line it appends carries `assertedBy: "caller"` beside its `landed` and `sha`, which is a person's
+word standing where a body normally stands: the verb's own stdout and `lane history` show it, and a
+body-proven line carries no such field at all. **`lane view` does not show it** — the viewer page
+rebuilds every log line as `{task, event, at}` and drops the rest, `landed` and `sha` included, so
+an asserted landing and a body-proven one read identically on that screen. Read `lane history` when
+you need to tell them apart. **Use it only when you have read the merge and know it
+discharged this lane** — this is the one place in the verb where the record rests on you rather than
+on the board, so a guess here is a lie nothing downstream can catch.
+
+The lane then folds to `board:cancelled` or `board:landed`, neither of which is `complete` or
+`tripped`, so it stops holding a seat against `laneConcurrencyCap` and never appears in a stale sweep
+again. Neither event is an operator event — `lane transition` refuses both — so `DONE`'s own proof
+semantics are untouched, and a lane whose own flow really does reach its ship stage still folds to
+`shipped` through the machine it always did.
 
 The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
 because staleness was the only wrongness it could see and a coder-template lane booted on an epic
@@ -905,8 +973,8 @@ fold reads (`human:novel-park` is the named park a recipe refusal folds to), and
 caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
-**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, and a chore's
-`swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
+**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, `board:cancelled`,
+`board:landed`, and a chore's `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
 node <fabrika> lane print $lane_key | gh issue comment $lane_key --body-file -

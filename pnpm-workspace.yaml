@@ -25,12 +25,14 @@ catalog:
   '@demlik/tea': 0.12.0
   '@distilled.cloud/cloudflare': 0.27.0
   '@effect/language-service': ^0.85.1
-  # Pi 0.84.3, pinned exact: apps/tuval's loopback Pi server runs the founder's spike pin
-  # end to end, and the wire protocol's schemas are part of that contract (#7567).
-  '@earendil-works/pi-ai': 0.84.3
-  '@earendil-works/pi-client': 0.84.3
-  '@earendil-works/pi-coding-agent': 0.84.3
-  '@earendil-works/pi-protocol': 0.84.3
+  # Pi 0.85.1, pinned exact: apps/tuval's loopback Pi host speaks protocol 8 end to end, and the
+  # envelope is part of that contract (ADR 0366). The family's ninth entry, `@earendil-works/chord`,
+  # is a runtime dependency of `pi-protocol` and `pi-client` rather than a direct one, so it is
+  # pinned under `overrides:` below; all nine move in one commit.
+  '@earendil-works/pi-ai': 0.85.1
+  '@earendil-works/pi-client': 0.85.1
+  '@earendil-works/pi-coding-agent': 0.85.1
+  '@earendil-works/pi-protocol': 0.85.1
   '@effect/platform-bun': 4.0.0-beta.92
   '@effect/platform-node': 4.0.0-beta.92
   '@effect/sql-d1': 4.0.0-beta.92
@@ -43,6 +45,7 @@ catalog:
   '@manti-ui/styles': 0.9.0
   '@modelcontextprotocol/sdk': 1.30.0
   '@nkzw/fate': 1.3.1
+  '@pierre/diffs': 1.4.1
   '@playwright/test': ^1.62.1
   '@sentry/cloudflare': 10.62.0
   '@sentry/effect': 10.62.0
@@ -52,6 +55,7 @@ catalog:
   '@tanstack/react-virtual': 3.14.10
   '@testing-library/dom': ^10.4.1
   '@testing-library/react': ^16.3.0
+  '@testing-library/user-event': ^14.6.7
   '@tiptap/core': 3.30.4
   '@tiptap/markdown': 3.27.3
   '@tiptap/pm': 3.27.3
@@ -95,6 +99,14 @@ catalog:
   # the version is part of that block's safety argument. It links its own nested `marked@^16`,
   # which never crosses a type boundary with the 18.0.5 above — mermaid parses its own labels.
   mermaid: 11.17.2
+  # Pi's subagent extension (#8555), pinned exact and loaded behind a default-off flag. It ships raw
+  # TypeScript (`exports: {".": "./index.ts"}`), so Tuval never imports it — Pi's own jiti-backed
+  # extension loader reads the package directory. Its four `@earendil-works/*` peers are optional and
+  # resolve to the 0.85.1 copies the catalog and the overrides below already pin, but it also takes a
+  # HARD `@earendil-works/pi-server@0.85.0` — a tenth family member, off the 0.85.1 the other nine
+  # sit on. Nothing in the workspace declares `pi-server`, so that copy is alone in the tree and
+  # catalog-guard never sees it; re-read the lockfile for it when this pin moves.
+  'pi-subagents': 0.66.0
   react: 19.2.6
   react-dom: 19.2.6
   react-fate: 1.3.1
@@ -133,16 +145,18 @@ catalogs:
 # package.json consumes is what `cleanupUnusedCatalogs` deletes on the next install.
 overrides:
   '@effect/platform-node@4.0.0-beta.92>@effect/platform-node-shared': 4.0.0-beta.92
-  # Pi 0.84.3 is pinned end to end (#7465 no-go: no unpinning off 0.84.3). The four cataloged
-  # packages ask for their siblings by `^0.84.3`, and a caret picks the highest published
-  # patch — 0.84.4 — which put a SECOND `@earendil-works/pi-ai` in the tree beside the
-  # cataloged 0.84.3 one. The faux provider is registered into one copy and the agent loop
-  # reads the other, so the duplicate is a correctness hazard, not just weight. Re-key the
-  # whole family on the next pin bump.
-  '@earendil-works/pi-agent-core': 0.84.3
-  '@earendil-works/pi-ai': 0.84.3
-  '@earendil-works/pi-telemetry': 0.84.3
-  '@earendil-works/pi-tui': 0.84.3
+  # Pi 0.85.1 is pinned end to end (ADR 0366). The cataloged packages ask for their siblings by
+  # `^0.85.1`, and a caret picks the highest published patch — which on 0.84.x put a SECOND
+  # `@earendil-works/pi-ai` in the tree beside the cataloged one. The faux provider registered
+  # itself into one copy and the agent loop read the other, so a duplicate reached by a caret is a
+  # correctness hazard, not just weight. These entries are re-keyed with the catalog, never left
+  # behind. `chord` is the family's ninth entry, new at 0.85.1: `pi-protocol` and `pi-client` both
+  # take it at runtime by caret and nothing in the workspace depends on it directly.
+  '@earendil-works/chord': 0.85.1
+  '@earendil-works/pi-agent-core': 0.85.1
+  '@earendil-works/pi-ai': 0.85.1
+  '@earendil-works/pi-telemetry': 0.85.1
+  '@earendil-works/pi-tui': 0.85.1
 
 cleanupUnusedCatalogs: true
 
@@ -228,7 +242,6 @@ onlyBuiltDependencies:
 #    which nothing else in the repo declares any. Behavior-pinned by
 #    packages/fabrika-cli/src/excess-operand.cli.test.ts. Retire when effect honours it.
 patchedDependencies:
-  '@earendil-works/pi-protocol@0.84.3': patches/@earendil-works__pi-protocol@0.84.3.patch
   '@manti-ui/react@0.9.0': patches/@manti-ui__react@0.9.0.patch
   '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch

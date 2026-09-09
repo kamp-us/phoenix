@@ -26,8 +26,9 @@ export const MODES: ReadonlyArray<Mode> = [
 ];
 
 /**
- * What `start` itself emits: starting, ready, the mode list, the model list (#7981), then the
- * slash-command catalog (#8060) and the thinking-level set that model offers (#8062).
+ * What `start` itself emits: starting, the mode list, the model list (#7981), the slash-command
+ * catalog (#8060), the thinking-level set that model offers (#8062), and the handshake's `ready`
+ * last — behind the catalogs, never ahead of them (#8425).
  */
 export const START_EVENTS = 6;
 
@@ -59,6 +60,7 @@ export interface HarnessOptions extends ScriptedBehaviour {
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	readonly readFails?: Error;
 	readonly openFails?: Error;
+	readonly openFailsAt?: number;
 	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
 	readonly listFails?: Error;
 	readonly spawn?: SpawnClaudeCodeProcess;
@@ -110,6 +112,7 @@ export const on = <A, E>(
 			...(harness.rows === undefined ? {} : {rows: harness.rows}),
 			...(harness.readFails === undefined ? {} : {readFails: harness.readFails}),
 			...(harness.openFails === undefined ? {} : {openFails: harness.openFails}),
+			...(harness.openFailsAt === undefined ? {} : {openFailsAt: harness.openFailsAt}),
 			...(harness.sessions === undefined ? {} : {sessions: harness.sessions}),
 			...(harness.listFails === undefined ? {} : {listFails: harness.listFails}),
 			...(harness.version === undefined ? {} : {version: harness.version}),
@@ -124,6 +127,8 @@ export const on = <A, E>(
 			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
 			...(harness.commands === undefined ? {} : {commands: harness.commands}),
 			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
+			...(harness.interruptFails === undefined ? {} : {interruptFails: harness.interruptFails}),
+			...(harness.account === undefined ? {} : {account: harness.account}),
 			...(harness.effortSwitchFails === undefined
 				? {}
 				: {effortSwitchFails: harness.effortSwitchFails}),

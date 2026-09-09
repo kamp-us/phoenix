@@ -617,8 +617,72 @@ export const partialReplyEvents = (
 	};
 };
 
+/** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
+const NOTICE_SUMMARY_LIMIT = 200;
+
+const LOCAL_COMMAND_OPEN = "<local-command-stdout>";
+const LOCAL_COMMAND_CLOSE = "</local-command-stdout>";
+
+const CAVEAT_OPEN = "<local-command-caveat>";
+const CAVEAT_CLOSE = "</local-command-caveat>";
+
 /**
- * A user frame is either the operator's prompt or the results of the calls the last turn opened.
+ * The escape a command writes to colour its own output for a terminal. The captured `/model`
+ * result carries two, and left in they reach a transcript as unprintable bytes inside the line.
+ */
+const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/**
+ * What a local command printed, when this user frame is a command's output rather than a turn.
+ *
+ * The CLI records a slash command's result as a user-role message whose whole text is that one
+ * wrapper (`fixtures/local-command-turn.json`), so the frame is the operator's only in role — read
+ * as a turn it puts a system echo and its markup under YOU (#8211).
+ *
+ * The match is the captured shape and nothing looser: the text must *be* the wrapper, so a prompt
+ * quoting or explaining these tags is still the operator's own and stays one. The sibling
+ * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s; `<command-name>` is read nowhere yet.
+ */
+const localCommandOutputOf = (text: string): string | null => {
+	const trimmed = text.trim();
+	if (!trimmed.startsWith(LOCAL_COMMAND_OPEN) || !trimmed.endsWith(LOCAL_COMMAND_CLOSE)) {
+		return null;
+	}
+	const inner = trimmed.slice(LOCAL_COMMAND_OPEN.length, -LOCAL_COMMAND_CLOSE.length);
+	return inner.replaceAll(sgr, "").trim();
+};
+
+/**
+ * Whether this user frame is the caveat the CLI writes ahead of a slash command's output.
+ *
+ * Fixed boilerplate addressed to the model — "DO NOT respond to these messages" — identical on
+ * every occurrence and carrying nothing a transcript reader can use, so unlike the command's own
+ * output it becomes no row at all (#8641). Matched the same way as that output: the trimmed text
+ * must *be* the wrapper, so an operator prompt quoting the tag stays the operator's own turn.
+ */
+const isLocalCommandCaveat = (text: string): boolean => {
+	const trimmed = text.trim();
+	return trimmed.startsWith(CAVEAT_OPEN) && trimmed.endsWith(CAVEAT_CLOSE);
+};
+
+/**
+ * One command's output as the collapsed notice's two fields: the line always shown, and the whole
+ * output behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`).
+ */
+const noticeOf = (output: string): {readonly text: string; readonly detail?: string} => {
+	const first =
+		output
+			.split("\n")
+			.find((line) => line.trim().length > 0)
+			?.trim() ?? "";
+	const line =
+		first.length > NOTICE_SUMMARY_LIMIT ? `${first.slice(0, NOTICE_SUMMARY_LIMIT)}…` : first;
+	return line === output ? {text: line} : {text: line, detail: output};
+};
+
+/**
+ * A user frame is either the operator's prompt, a local command's caveat or output, or the results
+ * of the calls the last turn opened.
  *
  * A result whose call this mapping never saw is dropped and counted: the item union has no
  * name-less tool row, and inventing one would put a lie on screen. It happens only to a reader
@@ -637,16 +701,16 @@ export const userEvents = (
 	if (results.length === 0) {
 		const text = textOf(body);
 		if (text.length === 0) return skipMessage(mapping);
+		if (isLocalCommandCaveat(text)) return skipMessage(mapping);
 		const id = typeof message.uuid === "string" ? message.uuid : `user-${at}`;
 		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
 		// agent's own prose — seen live on #8400's desk run.
-		const prompt: TranscriptItem = {
-			kind: "user",
-			id: itemId(id),
-			timestamp: at,
-			text,
-			...(framedParentId === null ? {} : {parentId: itemId(framedParentId)}),
-		};
+		const tag = framedParentId === null ? {} : {parentId: itemId(framedParentId)};
+		const output = localCommandOutputOf(text);
+		const prompt: TranscriptItem =
+			output === null
+				? {kind: "user", id: itemId(id), timestamp: at, text, ...tag}
+				: {kind: "system", id: itemId(id), timestamp: at, ...noticeOf(output), ...tag};
 		const folded = foldSlots(mapping, [prompt], framedParentId, 0);
 		return {
 			mapping: {...mapping, subagents: folded.subagents},
@@ -780,10 +844,17 @@ const MODEL_ANNOUNCEMENT = "claude:model-announcement";
 export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const model = typeof message.model === "string" ? message.model : mapping.model;
+	// The CLI is not the SDK we pin, and the drift between them is the whole point of carrying it
+	// (#7580). A frame without the field emits nothing rather than a placeholder: the core's slot
+	// stays `null`, which is what says nobody has reported one (#7955).
+	const version = message.claude_code_version;
 	return {
 		mapping: {...mapping, model},
 		events: [
 			{kind: "usage", turn: MODEL_ANNOUNCEMENT, model, inputTokens: 0, outputTokens: 0, cost: 0},
+			...(typeof version === "string" && version.length > 0
+				? [{kind: "version", version} as const]
+				: []),
 		],
 	};
 };
@@ -904,10 +975,6 @@ export const compactBoundaryEvents = (
 		],
 	};
 };
-
-/** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
-const NOTICE_SUMMARY_LIMIT = 200;
-
 /** The keys every frame carries; what is left is the notice's own payload, whatever its subtype. */
 const noticeEnvelope: ReadonlySet<string> = new Set([
 	"type",
@@ -950,7 +1017,8 @@ const noticeDetailOf = (message: Record<string, unknown>): string => {
  * Read shape-blind on purpose: the SDK names some fifteen such subtypes at 0.3.259 and adds more
  * each release, so this takes the frame's own name for the line, its prose when it carries any,
  * and folds everything the envelope did not claim into `detail`. A per-subtype arm here would be
- * fifteen arms none of which a golden capture backs.
+ * fifteen arms none of which a golden capture backs — `taskNoticeEvents` below is the one that a
+ * capture and a founder ruling do back, and it is the only one.
  */
 export const systemNoticeEvents = (
 	message: unknown,
@@ -976,6 +1044,57 @@ export const systemNoticeEvents = (
 				timestamp: at,
 				text: summary,
 				...(detail.length === 0 ? {} : {detail}),
+			}),
+		],
+	};
+};
+
+/**
+ * What a settled task reads as. `SDKTaskNotificationMessage.status` is
+ * `'completed' | 'failed' | 'stopped'` (`sdk.d.ts`, 0.3.259); only the first wants a different
+ * word, and a value the union grows later is shown verbatim rather than forced into one of these.
+ * The frame is raised when a task settles, so one carrying no status at all still settled.
+ */
+const taskOutcomeOf = (status: unknown): string => {
+	if (typeof status !== "string" || status.length === 0) return "finished";
+	return status === "completed" ? "finished" : status;
+};
+
+/**
+ * A settled task's notice, as one line naming the worker and how it ended.
+ *
+ * The frame carries the worker's entire final report in `summary`, and the collapsed-notice arm
+ * above would fold that whole payload into `detail` — a second copy of a report the spawning call's
+ * own tool result already carries, in the one transcript the running list exists to keep a worker's
+ * output out of. The founder ruled "shrink it"
+ * (https://github.com/kamp-us/phoenix/issues/8475#issuecomment-5589392284): one line, the worker's
+ * name and its outcome, linking to that worker's row in the subagent list where the full report
+ * already lives. The spawning `Agent` tool result is untouched — it is not this frame.
+ *
+ * The name is the slot's, so the notice and the list row a reader jumps to say the same word about
+ * the same worker. A task holding no slot — a backgrounded `Bash` raises this frame too — falls
+ * back to the spawning call's name and carries no link, because there is no row to link to.
+ */
+export const taskNoticeEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `notice-${at}`;
+	const callId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+	const slot = callId.length === 0 ? undefined : mapping.subagents.get(callId);
+	const name = slot?.type ?? mapping.toolCalls.get(callId)?.name ?? "task";
+	return {
+		mapping,
+		events: [
+			item({
+				kind: "system",
+				id: itemId(id),
+				timestamp: at,
+				text: `${name} ${taskOutcomeOf(message.status)}`,
+				...(slot === undefined ? {} : {subagent: itemId(callId)}),
 			}),
 		],
 	};

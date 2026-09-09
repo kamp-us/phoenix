@@ -67,11 +67,17 @@ describe("composerBridge", () => {
 			(event) => seen.push(event.type),
 			() => undefined,
 		);
+		// The subscribe-time replay is another case's subject ("the offer's resolution"); what this
+		// one is about starts here.
+		seen.length = 0;
 		composer.setPhase("prompting");
 		composer.setPhase("prompting");
 		composer.setPhase("ready");
+		// The last one is not a turn boundary but an offer boundary: a session walked back to
+		// `starting` no longer knows what it offers, so the pickers are told to re-enter loading
+		// rather than keep showing a catalog from the session that ended (#8425).
 		composer.setPhase("starting");
-		expect(seen).toEqual(["agent_start", "agent_settled"]);
+		expect(seen).toEqual(["agent_start", "agent_settled", "harness_status"]);
 	});
 
 	it("stops pushing once the composer unsubscribes", () => {
@@ -81,6 +87,7 @@ describe("composerBridge", () => {
 			(event) => seen.push(event.type),
 			() => undefined,
 		);
+		seen.length = 0;
 		off();
 		composer.setPhase("prompting");
 		expect(seen).toEqual([]);
@@ -159,6 +166,18 @@ describe("composerBridge", () => {
 		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["xhigh"]]);
 	});
 
+	it("passes Codex's offered ultra level through unchanged", async () => {
+		const handlers = seam();
+		const composer = composerBridge({
+			...handlers,
+			initialPhase: "ready",
+			initialThinking: {current: "ultra", available: ["high", "ultra"]},
+		});
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual(["high", "ultra"]);
+		await composer.bridge.setPiThinkingLevel("ultra");
+		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["ultra"]]);
+	});
+
 	it("drops a level the session does not offer rather than rejecting it", async () => {
 		const handlers = seam();
 		const composer = composerBridge({
@@ -212,9 +231,10 @@ describe("composerBridge", () => {
 		composer.setThinking(effort);
 		// Pushed events, not a second bridge: the composer re-runs its whole load on a new bridge
 		// identity, so a rebuild here would drop it back into `loading` (#8062). Each push carries
-		// every catalog, so the last one is the whole picture.
-		expect(seen.length).toBe(2);
-		expect(seen[1]).toEqual({
+		// every catalog, so the last one is the whole picture. The first is the subscribe-time one
+		// that re-states the resolved-but-still-empty offer.
+		expect(seen.length).toBe(3);
+		expect(seen[2]).toEqual({
 			type: "harness_status",
 			status: {
 				models: [
@@ -227,8 +247,8 @@ describe("composerBridge", () => {
 				thinkingLevel: "medium",
 			},
 		});
-		expect((await composer.bridge.loadPiModels()).length).toBe(2);
-		expect((await composer.bridge.loadPiThinkingLevels()).length).toBe(5);
+		expect(await composer.bridge.loadPiModels()).toHaveLength(2);
+		expect(await composer.bridge.loadPiThinkingLevels()).toHaveLength(5);
 	});
 
 	it("replays a level set that landed before the composer subscribed", async () => {
@@ -264,6 +284,7 @@ describe("composerBridge", () => {
 		);
 		composer.setCommands([compact]);
 		expect(seen).toEqual([
+			{type: "harness_status", status: {models: [], commands: [], thinkingLevels: []}},
 			{
 				type: "harness_status",
 				status: {
@@ -341,5 +362,70 @@ describe("composerBridge", () => {
 			await composer.bridge.setPiModel({provider: "openai", id: "gpt", name: "GPT"}),
 		).toBeUndefined();
 		expect(handlers.onSetModel.mock.calls).toEqual([]);
+	});
+});
+
+/**
+ * Whether the session has *said* what it offers, which is a different fact from what it offers
+ * (#8425). The bridge carries it rather than leaving the composer to guess from an empty list,
+ * because Pi's faux backend offers no levels at all and read as loading forever.
+ */
+describe("the offer's resolution", () => {
+	it("withholds both catalogs until the session is past starting", async () => {
+		const composer = composerBridge({...seam(), initialPhase: "starting"});
+		expect(await composer.bridge.loadPiModels()).toBeUndefined();
+		expect(await composer.bridge.loadPiThinkingLevels()).toBeUndefined();
+
+		composer.setPhase("ready");
+		expect(await composer.bridge.loadPiModels()).toEqual([]);
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
+	});
+
+	it("answers an empty offer on a ready session rather than withholding it", async () => {
+		const composer = composerBridge({...seam(), initialPhase: "ready"});
+		// `[]`, not `undefined`: both layers emit their thinking offer in the same batch as the
+		// `ready` phase, so a ready session with no levels has answered and offers none.
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
+	});
+
+	it("omits the catalog keys from a status pushed before the offer resolves", () => {
+		const composer = composerBridge({...seam(), initialPhase: "starting"});
+		const seen: Array<unknown> = [];
+		composer.bridge.subscribeToPiEvents(
+			(event) => seen.push(event),
+			() => undefined,
+		);
+		composer.setThinking(effort);
+		// An omitted key leaves the composer's held list alone; an empty one would tell it the
+		// session had resolved and offers nothing.
+		expect(seen).toEqual([
+			{type: "harness_status", status: {commands: [], thinkingLevel: "medium"}},
+		]);
+	});
+
+	it("pushes the resolved catalogs when the phase itself is the news", () => {
+		const composer = composerBridge({...seam(), initialPhase: "starting"});
+		const seen: Array<unknown> = [];
+		composer.bridge.subscribeToPiEvents(
+			(event) => seen.push(event),
+			() => undefined,
+		);
+		// Nothing about what is offered changed here — only whether it is known. Without this push
+		// a control left on "loading" at `starting` has nothing to correct it on a backend whose
+		// catalogs never change again.
+		composer.setPhase("ready");
+		expect(seen).toEqual([
+			{type: "harness_status", status: {commands: [], models: [], thinkingLevels: []}},
+		]);
+	});
+
+	it("says nothing on subscribe while the offer is unresolved and there is no command", () => {
+		const composer = composerBridge({...seam(), initialPhase: "starting"});
+		const seen: Array<unknown> = [];
+		composer.bridge.subscribeToPiEvents(
+			(event) => seen.push(event),
+			() => undefined,
+		);
+		expect(seen).toEqual([]);
 	});
 });

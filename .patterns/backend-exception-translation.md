@@ -63,3 +63,36 @@ CLI declined), the log line takes the deliberate message **and the retained caus
 `logRefused(what, refusal)`, which passes `refusal.cause` as a second argument to
 `Effect.logWarning`. Reading `refusal.detail` alone would drop the diagnosis the translation just
 moved off it.
+
+## Pi keeps diagnostics on the local side of protocol 8
+
+Pi uses the same split in [`pi/diagnostics.ts`](../apps/tuval/src/pi/diagnostics.ts):
+`retaining` assigns the original thrown value to the JavaScript `Error.cause` slot, outside the
+schema fields. The client and session host translate exceptions into deliberate operation text;
+[`pi/ai-agent/refusals.ts`](../apps/tuval/src/pi/ai-agent/refusals.ts) translates their typed
+refusals again at the generic agent boundary. `failureOf` projects only tag, reason and message
+into checkpoint data. Listing has its own boundary: `session-list.ts` projects the typed error's
+message into `unreadable`, not its cause.
+
+At the `@earendil-works/pi-client@0.85.1` pin, `dist/errors.js` exports `ServerError` with a `code`,
+`DisconnectedError` and `ClientDisposedError`. The client adapter tests these actual classes;
+`session_locked` and `not_found` are the owned dispatch's stable codes. They preserve locked,
+missing-session and disconnected guidance. Unknown codes and arbitrary exception text earn only
+the operation sentence, never inferred authentication or billing advice.
+
+Protocol 8's opaque service payload does not make local exceptions wire data. The owned
+[`dispatch.ts`](../apps/tuval/src/pi/server/dispatch.ts) logs refused create, resume and session
+calls with their retained error, then answers only an owned code and deliberate sentence. The
+session host's working directory and original exception never become the response message.
+Framing errors follow the same split: the local classifier retains the pinned
+`@earendil-works/pi-protocol@0.85.1` `dist/framing.js` literal `Frame length … exceeds configured
+limit of …` to preserve the oversized-frame close code. The close reason is fixed text; the
+original decoder error stays in the local log. This internal framing classification adds no
+user-facing diagnosis from exception text.
+
+`StoreRead.failures` and `StoreDirs.failures` carry optional local causes. Their sole production
+consumer is `PiAiAgent.ts`: successful reads return only sessions, partial failures log locally,
+and total failures retain the diagnostic array as `ListError.cause` or `TranscriptError.cause`.
+No caller serializes the whole store result or its diagnostic array. The generic list schema,
+checkpoint projection and dispatch codec regressions pin these distinct boundaries; neither a
+schema field nor a protocol payload may acquire `cause` to transport those diagnostics.

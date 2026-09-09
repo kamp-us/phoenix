@@ -20,7 +20,8 @@ import {
 	PROOF_IN_FLIGHT,
 } from "./codes.ts";
 import {coderTemplateText, coderWorkflow} from "./fixtures.test-support.ts";
-import {runProve} from "./prove-verb.ts";
+import {proveDispatched, runProve} from "./prove-verb.ts";
+import {loadLane} from "./store.ts";
 
 const ROOT = ".fabrika/lanes";
 const WORKFLOW = `${ROOT}/5747/workflow.json`;
@@ -1580,4 +1581,34 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 		expect(out.partial).toBe(null);
 		expect(out.landed).toEqual([]);
 	});
+});
+
+it("rechecks dispatched build evidence against captured build state after the ledger moved to review", async () => {
+	const snapshot = await Effect.runPromise(
+		loadLane({root: ROOT, lane: "5747"}).pipe(Effect.provide(laneAt("build").layer)),
+	);
+	if (snapshot._tag !== "Loaded") throw new Error("fixture did not load");
+	const seams = fakeSeams([
+		[CLOSERS, closingPulls()],
+		[SEARCH, nominated()],
+		[ISSUE, issue(["type:feature"])],
+		[ISSUE_COMMENTS, comments()],
+	]);
+	const result = await Effect.runPromise(
+		proveDispatched(
+			{
+				root: ROOT,
+				lane: "5747",
+				event: "DONE",
+				task: "issue",
+				classes: null,
+				pr: null,
+				repo: "o/r",
+				cwd: "/repo",
+				env: {},
+			},
+			snapshot,
+		).pipe(Effect.provide(Layer.mergeAll(laneAt("review").layer, seams.layer))),
+	);
+	expect(result.code).toBe(PROOF_ABSENT);
 });

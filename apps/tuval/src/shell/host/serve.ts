@@ -14,6 +14,7 @@
 import {randomUUID} from "node:crypto";
 import {Context, Effect} from "effect";
 import {SpellExecutor} from "../../commands/executor.ts";
+import {SpellRegistry} from "../../commands/registry.ts";
 import type {Client} from "../../commands/scope.ts";
 import {ClientId, WorkspaceId} from "../../commands/spell.ts";
 import {Processes} from "../../process/Processes.ts";
@@ -28,7 +29,7 @@ import {type SpellChannel, serve, type TransportServer} from "../transport/serve
 export interface ServeDeskOptions {
 	/** The kernel `start`/`boot` built. Every service the socket reads comes from here. */
 	readonly kernel: Context.Context<
-		Registry | Processes | ProcessTable | ProcessTablePort | SpellExecutor
+		Registry | Processes | ProcessTable | ProcessTablePort | SpellExecutor | SpellRegistry
 	>;
 	/** `0` binds an ephemeral port — what a test wants; the bin names a real one. */
 	readonly port: number;
@@ -82,6 +83,7 @@ export const serveDesk = Effect.fn("Tuval.shell.serveDesk")(function* (options: 
 		...(options.host === undefined ? {} : {host: options.host}),
 		handles: processes.handle,
 		spells: spellChannel(options.kernel),
+		descriptions: Context.get(options.kernel, SpellRegistry).changes,
 		table: options.table,
 	}).pipe(Effect.provideContext(options.kernel), Effect.orDie);
 });

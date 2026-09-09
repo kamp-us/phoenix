@@ -1,7 +1,15 @@
 export type PiDeliveryMode = "prompt" | "steer" | "follow_up";
 export type PiStreamingBehavior = "steer" | "followUp";
 export type PiProjectTrust = "approve" | "no-approve";
-export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export type PiThinkingLevel =
+	| "off"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max"
+	| "ultra";
 
 export interface PiCommand {
 	readonly name: string;
@@ -36,8 +44,14 @@ export interface PiExtensionAnswer {
 export interface AgentChatInputBridge {
 	readonly loadPiState: () => Promise<Record<string, unknown>>;
 	readonly loadPiCommands: () => Promise<readonly PiCommand[]>;
-	readonly loadPiModels: () => Promise<readonly PiModel[]>;
-	readonly loadPiThinkingLevels: () => Promise<readonly PiThinkingLevel[]>;
+	/**
+	 * What the host offers, or `undefined` while it does not know yet. The two are different facts
+	 * and an empty array is only ever the second one: a host whose agent starts after the composer
+	 * answers `undefined` until its agent reports, and a host whose agent reports no rows answers
+	 * `[]`. Collapsing them left a backend that offers nothing reading as one still loading (#8425).
+	 */
+	readonly loadPiModels: () => Promise<readonly PiModel[] | undefined>;
+	readonly loadPiThinkingLevels: () => Promise<readonly PiThinkingLevel[] | undefined>;
 	readonly loadPiFiles: (query: string) => Promise<readonly string[]>;
 	readonly setPiModel: (model: PiModel) => Promise<void>;
 	readonly setPiThinkingLevel: (level: PiThinkingLevel) => Promise<void>;

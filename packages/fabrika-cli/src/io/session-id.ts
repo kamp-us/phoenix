@@ -2,8 +2,8 @@
  * The one session-attribution read — every verb's identity comes through here or nowhere.
  *
  * The precedence chain is `FABRIKA_SESSION_ID` → `CLAUDE_CODE_SESSION_ID` →
- * `PI_SUBAGENT_PARENT_SESSION`, and an environment carrying none of the three is refused by the
- * caller. A site that hardcodes one of the three instead fails on first contact under any harness
+ * `PI_SUBAGENT_PARENT_SESSION` → `CODEX_THREAD_ID` → `CODEX_SESSION_ID`. An environment
+ * carrying none is refused by the caller. Hardcoding one variable fails under any harness
  * that stamps another, which is why the chain is read in one place.
  *
  * The documented invariants are preserved structurally, not enforced here: the value is whatever the
@@ -15,15 +15,17 @@
  */
 
 /**
- * The consulted variables, in precedence order — the unset refusal names all three.
+ * The consulted variables, in precedence order — the unset refusal names all supported variables.
  *
  * `FABRIKA_SESSION_ID` leads as the harness-neutral override a driver exports by hand when the
- * harness it runs under stamps neither of the other two.
+ * harness it runs under stamps none of the harness variables.
  */
 export const SESSION_ID_VARS = [
 	"FABRIKA_SESSION_ID",
 	"CLAUDE_CODE_SESSION_ID",
 	"PI_SUBAGENT_PARENT_SESSION",
+	"CODEX_THREAD_ID",
+	"CODEX_SESSION_ID",
 ] as const;
 
 /** What a caller passes as the environment half of the read. */

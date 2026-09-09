@@ -16,6 +16,11 @@ export interface TuvalFeatures {
 	 * one change — a subagent's rows leaving the agent window's transcript (#8405).
 	 */
 	readonly subagentList: boolean;
+	/**
+	 * Load the `pi-subagents` extension into a Pi session, so a Pi row can spawn a subagent (#8555).
+	 * On by default since the founder desk check on 2026-09-08. Off: the row opens the session it opened before the flag existed.
+	 */
+	readonly piSubagents: boolean;
 }
 
 /**
@@ -24,4 +29,4 @@ export interface TuvalFeatures {
  * runbook pass, so a flag's entry moves from `false` to `true` in this record and nowhere else. A
  * layer that states a flag still wins over it, in either direction (`./config.ts`'s merge).
  */
-export const featuresDefault: TuvalFeatures = {subagentList: true};
+export const featuresDefault: TuvalFeatures = {subagentList: true, piSubagents: true};

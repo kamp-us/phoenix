@@ -12,6 +12,7 @@ import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {
 	assistantItem,
 	call,
+	compactionItem,
 	systemItem,
 	thinkingItem,
 	toolItem,
@@ -29,6 +30,7 @@ import {
 	rowKey,
 	subagentHeads,
 	subagentRows,
+	turnDuration,
 } from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
@@ -47,6 +49,14 @@ const stored = <Item extends TranscriptItem>(item: Item, position: number): Item
 
 const itemIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
 	rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
+
+/** Every transcript item a row carries, in list order — a run's calls included (#8612). */
+const carriedIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
+	rows.flatMap((row) => {
+		if (row.kind === "item") return [row.item.id];
+		if (row.kind === "tools") return row.calls.map((call) => call.id);
+		return [];
+	});
 
 describe("chatRows", () => {
 	it("puts one head row above the transcript while there is history behind it", () => {
@@ -136,15 +146,13 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 			atOldest: true,
 			unfolded: new Set(["agent"]),
 		});
-		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
-			"agent",
-			"child-1",
-			"child-2",
-			"own",
-		]);
-		expect(rows.flatMap((row) => (row.kind === "item" && row.nested ? [row.item.id] : []))).toEqual(
-			["child-1", "child-2"],
-		);
+		expect(carriedIds(rows)).toEqual(["agent", "child-1", "child-2", "own"]);
+		// The two worker calls are consecutive at one depth, so they are one run (#8612) — and the
+		// run is marked nested, which is what the indent and the spoken author name both read.
+		const run = rows[1];
+		expect(run?.kind).toBe("tools");
+		expect(run?.kind === "tools" && run.nested).toBe(true);
+		expect(run?.kind === "tools" && run.depth).toBe(1);
 	});
 
 	it("leaves a row whose parent is not loaded in place, marked nested and heading nothing", () => {
@@ -227,12 +235,13 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 		]);
 	});
 
-	it("leaves a transcript with no parent marked on it exactly as it was", () => {
-		const flat = [call("a"), call("b")];
+	it("leaves a transcript with no parent marked on it unnested, at depth zero", () => {
+		const flat = [call("a"), assistantItem("mid", "thinking about it"), call("b")];
 		const rows = chatRows({...base, tail: flat, atOldest: true});
 		expect(rows).toEqual([
 			{kind: "item", item: flat[0], nestedIds: [], nested: false, depth: 0},
 			{kind: "item", item: flat[1], nestedIds: [], nested: false, depth: 0},
+			{kind: "item", item: flat[2], nestedIds: [], nested: false, depth: 0},
 		]);
 	});
 });
@@ -519,7 +528,7 @@ describe("a live tail carrying an exchange the bounds cannot hold", () => {
 			loading: false,
 			atOldest: true,
 		});
-		const ids = rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
+		const ids = carriedIds(rows);
 		expect(ids).toEqual(history.map((item) => item.id));
 		expect(new Set(ids).size).toBe(ids.length);
 	});
@@ -664,6 +673,8 @@ describe("subagentRows", () => {
 	const under = (head: string) => ({parentId: ItemId.make(head)});
 
 	it("reads the worker's own rows at depth zero, not as rows nested under a head it lacks", () => {
+		// The worker's turn is settled, so its own summary row folds the trailing call away (#8614);
+		// opened, all three of its rows are back in the list and the depth is what this is about.
 		const rows = subagentRows(
 			subagentSlot("agent", {
 				items: [
@@ -672,9 +683,10 @@ describe("subagentRows", () => {
 					call("t1", {parentId: "agent"}),
 				],
 			}),
+			new Set(["turn:u1"]),
 		);
 		expect(itemIds(rows)).toEqual(["u1", "a1", "t1"]);
-		expect(rows.every((row) => row.kind === "item" && !row.nested && row.depth === 0)).toBe(true);
+		expect(rows.every((row) => row.kind !== "item" || (!row.nested && row.depth === 0))).toBe(true);
 	});
 
 	it("has no head row: a subagent's rows arrive with its slot, and nothing older can be asked for", () => {
@@ -704,5 +716,454 @@ describe("subagentRows", () => {
 		const open = subagentRows(slot, new Set(["t1"]));
 		expect(itemIds(open)).toEqual(["t1", "nested"]);
 		expect(open[1]?.kind === "item" && open[1].depth).toBe(1);
+	});
+});
+
+/**
+ * The run scan (#8612). Six reads are one line saying "Read 6 files", not six labelled blocks — so
+ * what has to be proven here is where a run *ends*, because a boundary the scan misses is two
+ * unrelated stretches of work read as one sentence.
+ */
+describe("chatRows collapses a run of consecutive tool calls", () => {
+	const runAt = (rows: ReadonlyArray<ChatRow>, index: number) => {
+		const row = rows[index];
+		return row?.kind === "tools" ? row.calls.map((item) => item.id) : null;
+	};
+
+	it("groups a maximal span into one row carrying the calls in order", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			// Unfolded, because the turn is settled and the run is what its summary hides (#8614).
+			unfolded: new Set(["turn:u"]),
+			tail: [userItem("u", "go"), call("t1"), call("t2"), call("t3"), assistantItem("a", "done")],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "turn", "tools", "item"]);
+		expect(runAt(rows, 2)).toEqual(["t1", "t2", "t3"]);
+	});
+
+	it("leaves a span of one as the tool row it was, disclosure and all", () => {
+		const rows = chatRows({...base, atOldest: true, tail: [call("t1"), assistantItem("a")]});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "item"]);
+	});
+
+	it("breaks on a compaction row, so two contexts never read as one run", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [call("t1"), call("t2"), compactionItem("c1"), call("t3"), call("t4")],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+		expect(runAt(rows, 0)).toEqual(["t1", "t2"]);
+		expect(runAt(rows, 2)).toEqual(["t3", "t4"]);
+	});
+
+	it("breaks on a session notice, which keeps its own row untouched", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [call("t1"), call("t2"), systemItem("s1"), call("t3"), call("t4")],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["tools", "session", "tools"]);
+	});
+
+	it("breaks on a spawning call, and never absorbs one", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				call("t1"),
+				call("t2"),
+				call("agent", {name: "Agent"}),
+				call("child", {parentId: "agent"}),
+				call("t3"),
+				call("t4"),
+			],
+		});
+		// The spawning call stays an item row: its fold, its `aria-expanded` and the rows it reveals
+		// are a second disclosure a sentence has no room for (#8027/#8057).
+		expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+		expect(rows[1]?.kind === "item" && rows[1].item.id).toBe("agent");
+		expect(rows[1]?.kind === "item" && rows[1].nestedIds).toEqual(["child"]);
+	});
+
+	it("never absorbs a spawning call whose worker rows left the window entirely", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+			tail: [
+				call("t1"),
+				call("agent", {name: "Agent"}),
+				call("child", {parentId: "agent"}),
+				call("t2"),
+			],
+		});
+		// With the worker's rows gone the call heads nothing, so the slot is the only thing left
+		// saying it spawned — and the scan has to read that rather than the now-empty `nestedIds`.
+		expect(carriedIds(rows)).toEqual(["t1", "agent", "t2"]);
+		expect(rows.every((row) => row.kind === "item")).toBe(true);
+	});
+
+	it("breaks on a reply, a thought and the operator's own turn between calls", () => {
+		for (const between of [assistantItem("a", "done"), thinkingItem("th"), userItem("u", "go")]) {
+			const rows = chatRows({
+				...base,
+				atOldest: true,
+				tail: [call("t1"), call("t2"), between, call("t3"), call("t4")],
+			});
+			expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+		}
+	});
+
+	it("breaks on a depth change, so a worker's calls and the agent's are two runs", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			unfolded: new Set(["agent"]),
+			tail: [
+				call("agent", {name: "Agent"}),
+				call("child-1", {parentId: "agent"}),
+				call("child-2", {parentId: "agent"}),
+				call("own-1"),
+				call("own-2"),
+			],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "tools", "tools"]);
+		expect(rows[1]?.kind === "tools" && rows[1].depth).toBe(1);
+		expect(rows[2]?.kind === "tools" && rows[2].depth).toBe(0);
+	});
+
+	it("keys the run apart from every call's own row id, so one `expanded` set holds both", () => {
+		const first = call("t1");
+		const calls = [first, call("t2")];
+		const rows = chatRows({...base, atOldest: true, tail: calls});
+		const key = rowKey(rows[0] as ChatRow);
+		expect(key).toBe("tools:t1");
+		expect(key).not.toBe(
+			rowKey({kind: "item", item: first, nestedIds: [], nested: false, depth: 0}),
+		);
+		expect(calls.map((item) => String(item.id))).not.toContain(key);
+	});
+
+	it("carries the page cursor and the prepend anchor like any other row", () => {
+		const rows = chatRows({...base, atOldest: true, tail: [call("t1"), call("t2")]});
+		expect(oldestLoadedId(rows)).toBe("t1");
+		// Membership, not the run's key: an anchor may name a call buried mid-run.
+		expect(rowIndexOfItem(rows, "t2")).toBe(0);
+	});
+});
+
+/**
+ * The turn fold (#8614). What a finished turn leaves on screen is its prompt, its reply, and one
+ * line saying how long the work between them took — so what has to be proven here is *which* rows
+ * that line stands for, and the four cases where it must not be drawn at all.
+ *
+ * The rule is T3's (`MessagesTimeline.logic.ts:575-723` at `pingdotgg/t3code@0fe4c99`), read against
+ * Tuval's own item union: `partial` is its streaming marker, `AssistantItem.interrupted` its
+ * cut-short one, and the timings are the items' own epoch-ms `timestamp`.
+ */
+describe("chatRows folds a settled turn", () => {
+	const AT = 1_756_000_000_000;
+
+	/** A finished turn: a thought and a call before the reply, four point two seconds end to end. */
+	const settledTurn: ReadonlyArray<TranscriptItem> = [
+		userItem("u", "go", AT),
+		thinkingItem("k", "weighing it", AT + 100),
+		toolItem("t", "ok", AT + 200),
+		assistantItem("a", "done", AT + 4_200),
+	];
+
+	const turnRow = (rows: ReadonlyArray<ChatRow>) => {
+		const row = rows.find((candidate) => candidate.kind === "turn");
+		return row?.kind === "turn" ? row : null;
+	};
+
+	const hiddenIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
+		carriedIds(turnRow(rows)?.hidden ?? []);
+
+	it("puts one summary where the work was and leaves the prompt and the reply standing", () => {
+		const rows = chatRows({...base, atOldest: true, tail: settledTurn});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "turn", "item"]);
+		expect(carriedIds(rows)).toEqual(["u", "a"]);
+		expect(hiddenIds(rows)).toEqual(["k", "t"]);
+		expect(turnRow(rows)?.label).toBe("Worked for 4.2s");
+	});
+
+	it("shows the rows again, in place, once its own key is in the unfolded set", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			unfolded: new Set(["turn:u"]),
+			tail: settledTurn,
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "turn", "item", "item", "item"]);
+		expect(carriedIds(rows)).toEqual(["u", "k", "t", "a"]);
+		expect(turnRow(rows)?.open).toBe(true);
+		// The key is the turn's, not the opening prompt's: the two share the one `unfolded` set.
+		expect(rowKey(turnRow(rows) as ChatRow)).toBe("turn:u");
+	});
+
+	it("folds every reply before the terminal one and leaves that one visible", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				assistantItem("a1", "first", AT + 100),
+				assistantItem("a2", "final", AT + 900),
+			],
+		});
+		expect(carriedIds(rows)).toEqual(["u", "a2"]);
+		expect(hiddenIds(rows)).toEqual(["a1"]);
+	});
+
+	it("does not fold a turn holding a streaming reply, nor one holding a running call", () => {
+		const streaming = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				thinkingItem("k", "weighing it", AT + 100),
+				{...assistantItem("a", "typ", AT + 300), partial: true},
+			],
+		});
+		expect(turnRow(streaming)).toBeNull();
+
+		const running = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				assistantItem("a", "on it", AT + 100),
+				call("t", {status: "running"}),
+			],
+		});
+		expect(turnRow(running)).toBeNull();
+	});
+
+	it("does not fold a turn that has produced no reply yet — the one still running", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [userItem("u", "go", AT), thinkingItem("k", "weighing it", AT + 100)],
+		});
+		expect(turnRow(rows)).toBeNull();
+		expect(carriedIds(rows)).toEqual(["u", "k"]);
+	});
+
+	it("takes one harmless trailing call into the fold", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				thinkingItem("k", "weighing it", AT + 100),
+				assistantItem("a", "done", AT + 400),
+				toolItem("t", "ok", AT + 600),
+			],
+		});
+		expect(carriedIds(rows)).toEqual(["u", "a"]);
+		expect(hiddenIds(rows)).toEqual(["k", "t"]);
+	});
+
+	// T3's own spec case (`MessagesTimeline.logic.test.ts:1401-1484`): three trailing commands stay
+	// out of the fold and render as the summary row they already are.
+	it("leaves three trailing calls visible, as the run row they collapse into", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				toolItem("before", "ok", AT + 100),
+				assistantItem("a", "I could not finish the task.", AT + 500),
+				call("x0"),
+				call("x1"),
+				call("x2"),
+			],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "turn", "item", "tools"]);
+		expect(hiddenIds(rows)).toEqual(["before"]);
+	});
+
+	it("leaves a single trailing call visible when it failed", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				toolItem("before", "ok", AT + 100),
+				assistantItem("a", "done", AT + 500),
+				call("x", {status: "error"}),
+			],
+		});
+		expect(carriedIds(rows)).toEqual(["u", "a", "x"]);
+		expect(hiddenIds(rows)).toEqual(["before"]);
+	});
+
+	it("draws no summary for a turn with nothing to hide", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [userItem("u", "go", AT), assistantItem("a", "done", AT + 100)],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "item"]);
+	});
+
+	it("draws no summary when the only thing it would hide is a compaction row", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				assistantItem("a", "done", AT + 100),
+				compactionItem("c", "context compacted", AT + 200),
+			],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "item", "item"]);
+	});
+
+	it("takes the compaction row into a fold that already hides work, and closes the turn on it", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				thinkingItem("k", "weighing it", AT + 100),
+				assistantItem("a", "done", AT + 400),
+				compactionItem("c", "context compacted", AT + 500),
+				toolItem("after", "ok", AT + 900),
+			],
+		});
+		// `after` sits past the compaction row, so it belongs to no turn and folds into none.
+		expect(carriedIds(rows)).toEqual(["u", "a", "after"]);
+		expect(hiddenIds(rows)).toEqual(["k", "c"]);
+	});
+
+	it("never folds a spawning call, whichever way this list knows it is one", () => {
+		const bySlot = chatRows({
+			...base,
+			atOldest: true,
+			subagents: new Set(["s"]),
+			tail: [
+				userItem("u", "go", AT),
+				call("s", {name: "Agent"}),
+				assistantItem("a", "done", AT + 1),
+			],
+		});
+		expect(turnRow(bySlot)).toBeNull();
+		expect(carriedIds(bySlot)).toEqual(["u", "s", "a"]);
+
+		const byFold = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				call("s", {name: "Agent"}),
+				call("w", {parentId: "s"}),
+				assistantItem("a", "done", AT + 1),
+			],
+		});
+		expect(turnRow(byFold)).toBeNull();
+		expect(carriedIds(byFold)).toEqual(["u", "s", "a"]);
+	});
+
+	it("never folds a session notice into a turn summary", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				systemItem("s1", "hook fired", AT + 100),
+				thinkingItem("k", "weighing it", AT + 200),
+				assistantItem("a", "done", AT + 400),
+			],
+		});
+		expect(rows.map((row) => row.kind)).toEqual(["item", "session", "turn", "item"]);
+		expect(hiddenIds(rows)).toEqual(["k"]);
+	});
+
+	it("says the operator stopped it, beside the marker the interrupted reply still renders", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				thinkingItem("k", "weighing it", AT + 100),
+				assistantItem("a", "half an ans", AT + 2_000, true),
+			],
+		});
+		expect(turnRow(rows)?.label).toBe("You stopped after 2.0s");
+		// The reply itself is the terminal row and stays visible, so its marker and Resend do too.
+		expect(carriedIds(rows)).toEqual(["u", "a"]);
+	});
+
+	it("falls back to the bare verb when the items do not say how long it took", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go", AT),
+				thinkingItem("k", "weighing it", AT + 100),
+				{...assistantItem("a", "done", AT), timestamp: Number.NaN},
+			],
+		});
+		expect(turnRow(rows)?.label).toBe("Worked");
+	});
+
+	it("formats a duration the way T3 does", () => {
+		expect(turnDuration(400)).toBe("400ms");
+		expect(turnDuration(4_200)).toBe("4.2s");
+		expect(turnDuration(9_960)).toBe("10s");
+		expect(turnDuration(12_400)).toBe("12s");
+		expect(turnDuration(64_000)).toBe("1m 4s");
+		expect(turnDuration(3_600_000)).toBe("1h");
+		expect(turnDuration(Number.NaN)).toBeNull();
+	});
+
+	it("holds still as a late upsert of the same reply lands", () => {
+		const growing = chatRows({
+			...base,
+			atOldest: true,
+			tail: [...settledTurn.slice(0, 3), {...assistantItem("a", "don", AT + 4_200), partial: true}],
+		});
+		expect(turnRow(growing)).toBeNull();
+
+		const folded = chatRows({...base, atOldest: true, tail: settledTurn});
+		const again = chatRows({
+			...base,
+			atOldest: true,
+			tail: [...settledTurn.slice(0, 3), assistantItem("a", "done, and then some", AT + 4_200)],
+		});
+		expect(hiddenIds(again)).toEqual(hiddenIds(folded));
+		expect(turnRow(again)?.label).toBe(turnRow(folded)?.label);
+	});
+
+	it("renders a turn whose opening prompt is older than the pages walked back to", () => {
+		const rows = chatRows({...base, atOldest: true, tail: settledTurn.slice(1)});
+		expect(turnRow(rows)).toBeNull();
+		expect(carriedIds(rows)).toEqual(["k", "t", "a"]);
+	});
+
+	it("does not re-cut a loaded turn's fold when an older page prepends", () => {
+		const older = [
+			userItem("u0", "first", AT - 9_000),
+			thinkingItem("k0", "weighing it", AT - 8_900),
+			assistantItem("a0", "answered", AT - 8_000),
+		];
+		const before = chatRows({...base, atOldest: true, tail: settledTurn});
+		const after = chatRows({...base, atOldest: true, older, tail: settledTurn});
+		expect(after.map((row) => row.kind)).toEqual(["item", "turn", "item", "item", "turn", "item"]);
+		expect(carriedIds(after.slice(3))).toEqual(carriedIds(before));
+		expect(hiddenIds(after.slice(3))).toEqual(hiddenIds(before));
+	});
+
+	it("keeps the page cursor and the prepend anchor reachable through the summary", () => {
+		const rows = chatRows({...base, atOldest: true, tail: settledTurn});
+		expect(oldestLoadedId(rows)).toBe("u");
+		// The anchor names a row the fold is hiding, and the summary standing in for it is where the
+		// viewport lands — without this a prepend mid-turn would have nothing to restore onto.
+		expect(rowIndexOfItem(rows, "t")).toBe(1);
+		expect(rowIndexOfItem(rows, "a")).toBe(2);
 	});
 });

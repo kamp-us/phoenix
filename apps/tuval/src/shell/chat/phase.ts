@@ -105,3 +105,18 @@ export const statusLine = (status: Status): string => {
  * this, and so does the phase line's own status role.
  */
 export const isWorking = (phase: Phase): boolean => phase === "prompting";
+
+/**
+ * The word under the transcript while a turn runs — the visual tell, not the announced surface.
+ *
+ * It reads the same three states `statusLine` does, off the same `Status`, because the two rendered
+ * side by side are one readout: a tell still saying "Interrupting…" beside a bar saying the agent
+ * refused to stop tells the operator an abort is in flight that the backend has already declined
+ * (#8007). The full sentence stays on the bar; this is the tail's short form of it.
+ */
+export const workingTell = (status: Status): string => {
+	if (status.phase === "prompting" && status.failure?.tag === INTERRUPT_ERROR) {
+		return "Interrupt refused — still working…";
+	}
+	return status.interruption === null ? "Working…" : "Interrupting…";
+};

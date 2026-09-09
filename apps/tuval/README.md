@@ -31,6 +31,14 @@ pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's
 
 ### Paint proofs
 
+`pnpm proof:pi-window` also serves `/inspector.html`: the production agent inspector over an
+in-memory process. `window.inspectorProof.update(cost, input, output)` commits a usage snapshot
+through its normal subscription, so a browser can compare repeated digit substitutions and
+digit-count growth at a narrow viewport. The fixture opens no backend or model. Cost and token
+rows use tabular figures; session/directory text keeps its wrapping and ordinary typography.
+Equal digit advances stabilize same-length substitutions, not the total width of a growing number
+or a currency value whose existing formatter changes its fraction length.
+
 Both test tiers run in jsdom, which has no layout: a claim about what the chat window *paints* —
 a diff column's width, a disclosure indicator's size, whether a portaled listbox resolves its
 tokens — cannot be made there, and a report of a browser run whose harness was thrown away cannot
@@ -39,6 +47,12 @@ be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
 kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
 when the default is taken.
+
+The same server's `/session-refusal` fixture mounts the production read-only transcript with a
+missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep
+Back usable and omit the composer. The refused read's existing retry lands an empty readable
+transcript, which offers the composer again. The fixture supplies answers locally; it opens no
+kernel or agent. Session-open and page transcript tests cover send plans and socket-read recovery.
 
 The same harness has four paging routes: `/paging-local`, `/paging-partial`, `/paging-completed`
 and `/paging-prepended`. Each scrolls the real `ChatWindow` with shipped styles. The last route
@@ -175,6 +189,21 @@ result, and the Effect that runs it — so the same definition is what the comma
 against, what a key binding compiles to, and what a program calls over the wire. The kernel
 registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
 `process send`, `process read`), and boot reports the total beside the program count.
+
+Open the palette with Cmd+K or Ctrl+K to discover registered program and core commands alongside
+shell shortcuts such as `window close`. Tab completes a selection; Enter runs it through the
+attached kernel. Success closes the palette and a refusal stays beneath its input. Escape closes
+it and returns focus. The `<c-b> :` command line also runs registered paths and keeps their actual
+result or refusal visible. Existing shell names such as `window:open log` retain their behavior.
+
+Use the program's registered prefix when asking for help: `help shell window close`,
+`help "shell window close"` and `help shell.window.close` describe the same command.
+`spell describe` accepts those three path forms too. Discovery follows committed catalogue
+replacements and reconnection without reloading the page.
+
+The ordinary-program browser proof runs with `pnpm test:browser commands.spec.ts` from this
+package. Its deterministic counter has proof-only tick/read/refuse commands; it verifies real
+state changes through both surfaces and captures results, refusals and help descriptions.
 
 A program row declares its own in a `spells` field, and each one is registered under the program's
 id, so `echo`'s `repeat` is `echo repeat` and no program can collide with another or with the
@@ -700,13 +729,46 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. Two layers fill it today: `PiAiAgent.layer` was the first, and
-`ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) is the second — a
+`layer`, `cwd` and the identity. Three backends fill it today: `PiAiAgent.layer`,
+`CodexAiAgent.layer`, and `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`). Claude is a
 `Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
 the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
+
+## Codex
+
+`codex-session` implements the same `TuvalAiAgent` interface as Pi and Claude. It uses
+Tuval's shared chat window, inspector, session list and kernel spawn/send/read tools.
+The tracked config registers it without launching it at boot. Open it from the picker
+or run `window:open codex-session` in the palette.
+
+Install the Codex CLI and use its existing login. This implementation was tested against
+**codex-cli 0.153.4**. Custom configs import `codexSession` from `src/codex/program.ts`
+and supply the same `cwd` and `scope` values as the Claude row. Its optional `codex`
+settings include `mode`, `model` and `streamPartialReplies`.
+
+Modes are `read-only` and `workspace-write`, both with approvals enabled. Codex's own
+catalog supplies models and thinking levels, including `ultra` where offered. Permanent
+permission grants and terminal slash-command discovery are not advertised. Partial
+replies are off by default.
+
+New sessions use legacy history because the installed CLI refuses its paginated-history
+methods. Existing paginated sessions can fail to load rather than show false empty history:
+[8464](https://github.com/kamp-us/phoenix/issues/8464). A new legacy session has no persisted
+history before its first user message.
+
+```bash
+pnpm exec vitest run --project unit src/codex
+pnpm exec vitest run --project integration src/codex
+TUVAL_CODEX_PROTOCOL_TEST=1 pnpm exec vitest run --project integration src/codex/codex-cli.integration.test.ts
+```
+
+The last command runs the installed CLI with a temporary `CODEX_HOME`. It checks settings,
+empty history and Tuval tool calls without model generation or your credentials. Real model
+replies, approvals and nonempty history still need a live check.
+See [tuval-codex.md](../../.patterns/tuval-codex.md) for the protocol and lifetime rules.
 
 ## The Pi loopback server
 

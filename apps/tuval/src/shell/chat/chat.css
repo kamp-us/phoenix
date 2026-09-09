@@ -276,6 +276,27 @@
 	color: var(--text-secondary);
 }
 
+/*
+ * The turn shape (#8210), on the T3 Code model the founder ruled on 2026-09-08: with no author
+ * label, the operator's turn is a bubble pulled to the end of the row and the agent's reply is plain
+ * full-width prose. `data-message-role` is what says which, and `ChatWindow` writes it on every item
+ * row.
+ *
+ * Authorship never rides the shape alone: the row also carries a visually-hidden author name
+ * (ADR 0162, Pillar 4).
+ */
+.tuval-chat-row[data-message-role="user"] {
+	align-items: flex-end;
+}
+
+.tuval-chat-row[data-message-role="user"] .tuval-chat-markdown {
+	max-inline-size: 80%;
+	padding: var(--s-2) var(--s-3);
+	border-radius: var(--r-lg);
+	background: var(--surface-raised);
+	color: var(--text-primary);
+}
+
 .tuval-chat-row[data-kind="session"] .tuval-chat-text {
 	color: var(--text-muted);
 	font: var(--t-body-sm);
@@ -340,6 +361,13 @@
 	text-overflow: ellipsis;
 }
 
+/* The way into the rows a settled worker's notice names (#8475). Aligned to the start rather than
+   stretched, so the control is the size of its own label and not of the row it sits in. */
+.tuval-chat-session-link {
+	flex: none;
+	align-self: flex-start;
+}
+
 .tuval-chat-session-count {
 	flex: none;
 	font: var(--t-micro);
@@ -383,14 +411,56 @@
 /*
  * The compaction marker: its line, then a rule running out to the edge, because the operator's
  * question here is *where* the earlier turns went rather than what the session said about it.
+ *
+ * Two rows in a grid, and the disclosure is `display: contents` so its own two boxes take places in
+ * that grid: the trigger sits beside the rule on the divider's line, and the panel spans the whole
+ * width beneath both. Nesting the rule inside the trigger would be the simpler markup and is not
+ * available — a `Collapsible` trigger is a `button`, which takes phrasing content only.
  */
 .tuval-chat-compaction {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto 1fr;
 	align-items: center;
-	gap: var(--s-2);
+	column-gap: var(--s-2);
+	min-inline-size: 0;
 }
 
+.tuval-chat-compaction-disclosure {
+	display: contents;
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="trigger"] {
+	grid-row: 1;
+	grid-column: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+	min-inline-size: 0;
+	min-block-size: var(--tap-min);
+	text-align: start;
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="indicator"] svg {
+	inline-size: 14px;
+	block-size: 14px;
+	color: var(--text-muted);
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="content"] {
+	grid-row: 2;
+	grid-column: 1 / -1;
+	min-inline-size: 0;
+}
+
+/*
+ * The divider's own line: micro uppercase, and never wrapping against the rule beside it. It clips
+ * because it is a preview of a payload with no length bound — the summary itself wraps in the panel
+ * below, where `.tuval-chat-markdown` styles it like any other row (#8608).
+ */
 .tuval-chat-compaction-label {
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	font: var(--t-micro);
 	color: var(--text-muted);
 	text-transform: uppercase;
@@ -398,8 +468,16 @@
 	white-space: nowrap;
 }
 
+.tuval-chat-compaction-summary {
+	padding-block-start: var(--s-2);
+	color: var(--text-secondary);
+	white-space: normal;
+	text-transform: none;
+}
+
 .tuval-chat-compaction-rule {
-	flex: 1;
+	grid-row: 1;
+	grid-column: 2;
 	margin: 0;
 	border: 0;
 	block-size: 1px;
@@ -435,6 +513,149 @@
 	align-self: flex-start;
 }
 
+/*
+ * A settled turn's scaffolding behind one line (#8614). The chevron is decoration — `aria-hidden`,
+ * and the label beside it is the whole accessible name — so the rotation never carries the state
+ * alone (ADR 0162, Pillar 4). The button keeps the 36px hit area and the shared focus ring the
+ * `Button` primitive already paints.
+ */
+.tuval-chat-turn {
+	align-self: flex-start;
+	gap: var(--s-2);
+	min-block-size: var(--tap-min);
+	color: var(--text-muted);
+}
+
+.tuval-chat-turn-chevron {
+	flex: none;
+	inline-size: 0;
+	block-size: 0;
+	border-block-start: 4px solid transparent;
+	border-block-end: 4px solid transparent;
+	border-inline-start: 6px solid currentcolor;
+}
+
+/* Rotated, not animated: the rows the button reveals arrive in the same commit, so a transition
+   here would only trail the state change the list itself already shows. */
+.tuval-chat-turn-chevron[data-open="true"] {
+	rotate: 90deg;
+}
+
+/*
+ * A run of consecutive calls as one line (#8612): a status dot, the sentence, and the status as a
+ * word for a run that failed or is still going. The dot is a state marker rather than an icon —
+ * `aria-hidden`, and it never carries the state alone: the word beside it does, which is also what
+ * survives the reduced-motion collapse of the shimmer below (ADR 0162, Pillar 4).
+ */
+.tuval-chat-tool-run {
+	font: var(--t-body-sm);
+}
+
+.tuval-chat-tool-run-head {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	min-inline-size: 0;
+}
+
+/*
+ * The calls an opened run lists. No marker and no indent of its own: each row already carries a
+ * chevron — or the blank that holds a chevron's place — and a second glyph beside it would read as
+ * two affordances on one line.
+ */
+.tuval-chat-tool-calls {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0 0 0 var(--s-3);
+	list-style: none;
+}
+
+.tuval-chat-tool-call {
+	min-inline-size: 0;
+	font: var(--t-mono);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-tool-call-label {
+	color: var(--text-primary);
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/*
+ * A call with nothing beyond its label is not a control, so it gets the trigger's box without the
+ * trigger's affordance: the same 36px line and the same blank where the chevron sits, so the labels
+ * of the rows around it still line up.
+ */
+.tuval-chat-tool-call-flat {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	inline-size: 100%;
+	min-block-size: var(--tap-min);
+}
+
+.tuval-chat-tool-call-blank {
+	flex: none;
+	inline-size: 14px;
+	block-size: 14px;
+}
+
+.tuval-chat-tool-run-dot {
+	flex: none;
+	align-self: center;
+	inline-size: 6px;
+	block-size: 6px;
+	border-radius: 50%;
+	background: var(--text-muted);
+}
+
+.tuval-chat-tool-run-dot[data-status="error"] {
+	background: var(--danger);
+}
+
+.tuval-chat-tool-run-dot[data-status="running"] {
+	background: var(--accent);
+}
+
+.tuval-chat-tool-run-line {
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-run-status {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-tool-run-status[data-status="error"] {
+	color: var(--danger);
+}
+
+.tuval-chat-tool-run-status[data-status="running"] {
+	color: var(--accent);
+}
+
+/* A single class, so the reduced-motion override below ties on specificity and wins on source
+   order — the compound form would silently lose and keep pulsing (see #8121, and the sheet's own
+   note at the block). */
+.tuval-chat-tool-run-shimmer {
+	animation: tuval-chat-tool-run-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tuval-chat-tool-run-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.55;
+	}
+}
+
 .tuval-chat-tool-detail {
 	display: flex;
 	flex-direction: column;
@@ -467,42 +688,6 @@
 	/* Meaning, so it sits on `--text-muted` and never on `--text-faint` (Pillar 4). */
 	font: var(--t-micro);
 	color: var(--text-muted);
-}
-
-.tuval-chat-diff {
-	border-collapse: collapse;
-	inline-size: 100%;
-	font: var(--t-mono);
-}
-
-/*
- * `width: 1%` plus `nowrap` is the shrink-to-fit idiom for an auto-layout table: the marker column
- * takes exactly its own text and the line column takes the rest. A `table-layout: fixed` with an
- * explicit `9ch` was tried first and a real browser split the row evenly down the middle anyway.
- */
-.tuval-chat-diff-kind {
-	width: 1%;
-	white-space: nowrap;
-	padding-inline-end: var(--s-2);
-	text-align: start;
-	vertical-align: top;
-	font: var(--t-micro);
-	font-weight: 400;
-	color: var(--text-muted);
-}
-
-.tuval-chat-diff-text {
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-	color: var(--text-secondary);
-}
-
-.tuval-chat-diff [data-line="removed"] .tuval-chat-diff-text {
-	background: color-mix(in oklab, var(--danger) 14%, transparent);
-}
-
-.tuval-chat-diff [data-line="added"] .tuval-chat-diff-text {
-	background: color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
 /* The phase line and the mode control are one header row above the transcript. */
@@ -792,7 +977,8 @@
    is carried here to tie, and the tie goes to this rule because it comes later. */
 @media (prefers-reduced-motion: reduce) {
 	.tuval-chat-phase[data-phase] .tuval-chat-phase-dot,
-	.tuval-chat-working-dots span {
+	.tuval-chat-working-dots span,
+	.tuval-chat-tool-run-shimmer {
 		animation: none;
 		opacity: 1;
 	}

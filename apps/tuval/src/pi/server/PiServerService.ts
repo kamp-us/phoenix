@@ -16,16 +16,21 @@ import {randomUUID} from "node:crypto";
 import {createServer, type Server as HttpServer, type IncomingMessage} from "node:http";
 import type {AddressInfo} from "node:net";
 import type {Duplex} from "node:stream";
-import {
-	type ClientMessage,
-	ClientMessageDecoder,
-	encodeServerMessage,
-	PROTOCOL_VERSION,
-	type ServerMessage,
-} from "@earendil-works/pi-protocol";
 import {Context, Effect, FiberSet, Layer, Queue, Redacted, type Scope} from "effect";
 import {type WebSocket, WebSocketServer} from "ws";
+import {retaining} from "../diagnostics.ts";
 import {boundedTeardown} from "../teardown.ts";
+import {
+	type ClientMessage,
+	createClientMessageDecoder,
+	encodeServerMessage,
+	nextPush,
+	PROTOCOL_VERSION,
+	SESSION_SUBSCRIPTION_ID,
+	type ServerEvent,
+	type ServerMessage,
+	type SessionSnapshot,
+} from "../wire/index.ts";
 import {dispatch} from "./dispatch.ts";
 import {FrameRefused, MessageNotEncodable, ServerBindFailed} from "./errors.ts";
 import {
@@ -61,6 +66,12 @@ export interface PiServerConfig {
 
 export interface PiServerApi {
 	readonly address: PiServerAddress;
+	/**
+	 * This server's logical identity, a canonical lowercase UUIDv4 as protocol 8 requires. A client
+	 * must know it before dialling: `pi-client`'s `Client` takes it as an option and fails the
+	 * handshake when the `hello` names another.
+	 */
+	readonly serverId: string;
 	/** The dial URL, token included — redacted so it cannot reach a log or the checkpoint. */
 	readonly url: Redacted.Redacted<string>;
 	readonly token: Redacted.Redacted<string>;
@@ -80,7 +91,14 @@ export class PiServerService extends Context.Service<PiServerService, PiServerAp
 const listen = (server: HttpServer, host: string): Effect.Effect<AddressInfo, ServerBindFailed> =>
 	Effect.callback<AddressInfo, ServerBindFailed>((resume) => {
 		const onError = (error: Error): void => {
-			resume(Effect.fail(new ServerBindFailed({host, detail: error.message})));
+			resume(
+				Effect.fail(
+					retaining(
+						error,
+						new ServerBindFailed({host, detail: "the loopback listener could not be opened"}),
+					),
+				),
+			);
 		};
 		server.once("error", onError);
 		server.listen({host, port: 0}, () => {
@@ -186,7 +204,7 @@ const make = (
 		function serveConnection(ws: WebSocket): Effect.Effect<void> {
 			return Effect.gen(function* () {
 				const connection: ConnectionId = randomUUID();
-				const decoder = new ClientMessageDecoder({maxFrameLength: limits.maxInboundFrameLength});
+				const decoder = createClientMessageDecoder({maxFrameLength: limits.maxInboundFrameLength});
 				const frames = yield* Queue.unbounded<Uint8Array>();
 				const closed = yield* Queue.unbounded<void>();
 				const requests = yield* FiberSet.make();
@@ -206,7 +224,11 @@ const make = (
 				const write = (message: ServerMessage): Effect.Effect<void> =>
 					Effect.try({
 						try: () => encodeServerMessage(message),
-						catch: (cause) => new MessageNotEncodable({detail: detailOf(cause)}),
+						catch: (cause) =>
+							retaining(
+								cause,
+								new MessageNotEncodable({detail: "the Pi response could not be encoded"}),
+							),
 					}).pipe(
 						Effect.flatMap((frame) =>
 							Effect.sync(() => {
@@ -242,33 +264,49 @@ const make = (
 						try: () => decoder.push(bytes),
 						catch: (cause) => {
 							const detail = detailOf(cause);
-							return new FrameRefused({
-								detail,
-								overLengthBound:
-									detail.toLowerCase().includes("length") ||
-									detail.toLowerCase().includes("exceeds"),
-							});
+							return retaining(
+								cause,
+								new FrameRefused({
+									detail: "the Pi client frame could not be decoded",
+									overLengthBound:
+										detail.toLowerCase().includes("length") ||
+										detail.toLowerCase().includes("exceeds"),
+								}),
+							);
 						},
 					});
 
 				yield* FiberSet.run(requests, outbound.run);
 
-				const snapshotFor = (sessionId: string) =>
+				const publish = (event: ServerEvent): Effect.Effect<void> =>
+					write({type: "service_update", subscriptionId: SESSION_SUBSCRIPTION_ID, update: event});
+
+				/**
+				 * The last whole value this connection was sent per session, which is what the next
+				 * revision is diffed against. One writer per session — `followSession` runs one
+				 * fiber each — so the read-diff-store round has no second writer to interleave with.
+				 */
+				const sent = new Map<string, SessionSnapshot>();
+
+				const pushFor = (sessionId: string) =>
 					Effect.gen(function* () {
 						const record = records.get(sessionId);
 						if (record === undefined) return;
 						const view = yield* record.handle.read;
-						yield* write({
-							type: "event",
-							event: {
-								type: "session_snapshot",
-								snapshot: sessionSnapshot(record, view, connection),
-							},
-						});
+						const snapshot = sessionSnapshot(record, view, connection);
+						const push = nextPush(sent.get(sessionId), snapshot);
+						sent.set(sessionId, snapshot);
+						if (push._tag === "Unchanged") return;
+						yield* publish(
+							push._tag === "Snapshot"
+								? {type: "session_snapshot", snapshot: push.snapshot}
+								: {type: "session_delta", delta: push.delta},
+						);
 					});
 
 				const context = {
 					connection,
+					serverId,
 					records,
 					host,
 					now: () => Date.now(),
@@ -280,28 +318,29 @@ const make = (
 
 				/**
 				 * A session's own pushes: the host says it changed, the record's revision advances and
-				 * the owner sees the new snapshot. Forked once per session this connection touches,
-				 * over the handle rather than the id so a drained table cannot strand the loop.
+				 * the owner sees what moved. Forked once per session this connection touches, over the
+				 * handle rather than the id so a drained table cannot strand the loop.
+				 *
+				 * A streamed turn signals per token, so this loop runs per token and what it sends has
+				 * to cost per token: the first pass sends the whole value, every later one sends only
+				 * the items and scalars that changed (#8554).
 				 */
 				const followSession = (handle: PiSessionHandle) =>
 					Effect.forever(
 						handle.changes.pipe(
 							Effect.andThen(Effect.sync(() => records.bump(handle.id, Date.now()))),
-							Effect.andThen(snapshotFor(handle.id)),
+							Effect.andThen(pushFor(handle.id)),
 						),
 					);
 
 				const models = yield* host.models;
-				yield* write({
-					type: "hello",
-					version: PROTOCOL_VERSION,
-					connectionId: connection,
-					snapshot: serverSnapshot({
-						serverId,
-						revision: 0,
-						records: records.list(),
-						models,
-					}),
+				// Protocol 8's `hello` carries the server's identity and nothing else, so the server
+				// snapshot the 0.84.3 handshake inlined follows it as the session stream's first
+				// update — sent unasked, on the one subscription this connection has.
+				yield* write({type: "hello", version: PROTOCOL_VERSION, serverId});
+				yield* publish({
+					type: "server_snapshot",
+					snapshot: serverSnapshot({serverId, revision: 0, records: records.list(), models}),
 				});
 
 				const followed = new Set<string>();
@@ -317,7 +356,11 @@ const make = (
 									},
 								});
 					}
-					return dispatch(context, message.request).pipe(
+					// A `cancel` withdraws a request, and protocol 8 asks for no answer to one. Every
+					// Tuval command is answered from the fiber that took it, so withdrawing the answer
+					// would not stop the work; stopping a turn is the `abort` command's job.
+					if (message.type === "cancel") return Effect.void;
+					return dispatch(context, message.target, message.request).pipe(
 						Effect.tap((answer) =>
 							Effect.gen(function* () {
 								if (!answer.ok) return;
@@ -350,6 +393,7 @@ const make = (
 									discard: true,
 								}),
 							),
+							Effect.tapError((error) => Effect.logWarning("Pi client frame rejected", error)),
 							Effect.catch((error: FrameRefused) =>
 								Effect.sync(() => {
 									closeWith(
@@ -370,6 +414,7 @@ const make = (
 
 		return {
 			address: {host: address.address, port: address.port},
+			serverId,
 			url: Redacted.make(`ws://${bindHost}:${address.port}/?token=${Redacted.value(token)}`),
 			token,
 			openConnections: Effect.sync(() => connections.size),

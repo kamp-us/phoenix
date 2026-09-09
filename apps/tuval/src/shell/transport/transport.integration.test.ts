@@ -8,8 +8,21 @@
 
 import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Exit, Fiber, Layer, Option, Queue, Redacted, Scope, Stream} from "effect";
+import {
+	Context,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Logger,
+	Option,
+	Queue,
+	Redacted,
+	Scope,
+	Stream,
+} from "effect";
 import {Socket} from "effect/unstable/socket";
+import {WebSocket as NodeWebSocket} from "ws";
 import type {SpellPath} from "../../commands/spell.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
@@ -27,7 +40,7 @@ import {
 } from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import {scriptedSpellChannel} from "../host/fixtures.ts";
+import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import type {DispatchResult, ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
@@ -191,6 +204,7 @@ const served = Effect.fn("test.served")(function* (
 		table: defaultPrefixTable,
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 		spells: yield* scriptedSpellChannel(),
+		descriptions: scriptedDescriptions,
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
 });
@@ -239,6 +253,54 @@ const rawSocket = (url: string) =>
 	});
 
 describe("the page-to-kernel transport", () => {
+	it.live(
+		"an abruptly terminated page stays quiet in the actual socket-server reporter and reattaches",
+		() => {
+			const logs: unknown[] = [];
+			return Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				yield* Effect.callback<void, Error>((resume) => {
+					const socket = new NodeWebSocket(app.server.launchUrl);
+					socket.on("open", () =>
+						socket.send(
+							JSON.stringify({kind: "tuval/transport/attach/v1", processId: shellProcess}),
+						),
+					);
+					socket.on("message", (data) => {
+						const frame = JSON.parse(data.toString());
+						if (
+							frame.kind === "tuval/transport/process-state/v1" &&
+							frame.processId === shellProcess
+						)
+							socket.terminate();
+					});
+					socket.on("close", () => resume(Effect.void));
+					socket.on("error", (error) => resume(Effect.fail(error)));
+					return Effect.sync(() => socket.terminate());
+				});
+				const reconnected = yield* page(app.server.launchUrl);
+				const shell = yield* reconnected.attachProcess<DeskState, DeskMsg>(shellProcess);
+				const result = yield* shell.dispatch({type: "split", window: "after-drop"});
+				assert.deepStrictEqual(answered(result), {windows: ["root", "after-drop"]});
+				const unhandled = logs.filter(
+					(message) =>
+						Array.isArray(message) && message.includes("Unhandled error in SocketServer"),
+				);
+				assert.deepStrictEqual(unhandled, []);
+			}).pipe(
+				Effect.scoped,
+				Effect.provide(
+					Logger.layer([
+						Logger.make(({message}) => {
+							logs.push(message);
+						}),
+					]),
+				),
+			);
+		},
+		TIMEOUT,
+	);
+
 	it.live(
 		"a dispatch from the page reaches the named process and its next state comes back over the socket",
 		() =>
@@ -322,6 +384,7 @@ describe("the page-to-kernel transport", () => {
 								: Option.fromNullishOr(built.handles.get(id)),
 						),
 					spells: yield* scriptedSpellChannel(),
+					descriptions: scriptedDescriptions,
 				}).pipe(Effect.provideContext(built.context), Effect.orDie);
 
 				const attached = yield* page(server.launchUrl);

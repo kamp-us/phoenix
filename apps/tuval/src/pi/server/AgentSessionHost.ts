@@ -15,12 +15,15 @@ import {join} from "node:path";
 import {
 	type AgentSession,
 	createAgentSession,
+	DefaultResourceLoader,
 	type ModelRuntime,
+	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type {ModelMetadata, ModelRef, ThinkingLevel} from "@earendil-works/pi-protocol";
-import {Effect, Layer, Queue} from "effect";
+import {Effect, Layer, Predicate, Queue} from "effect";
+import {retaining} from "../diagnostics.ts";
+import type {JsonValue, ModelMetadata, ModelRef, ThinkingLevel} from "../wire/index.ts";
 import {projectModelCost, type SourceModelCost} from "./cost.ts";
 import {SessionCallFailed, SessionOpenFailed} from "./errors.ts";
 import {type PiSessionHandle, PiSessionHost, type PiSessionView} from "./PiSessionHost.ts";
@@ -47,6 +50,12 @@ export interface AgentSessionHostOptions {
 	 * it: a snapshot carrying a partial reply is a shape no client above this host reads yet.
 	 */
 	readonly streamPartialText?: boolean;
+	/**
+	 * Extension packages every session this host opens loads, as directories Pi's own loader reads
+	 * (`./subagents.ts`). Empty or absent builds no resource loader at all, which leaves
+	 * `createAgentSession` building exactly the one it built before this option existed.
+	 */
+	readonly extensionPaths?: ReadonlyArray<string>;
 }
 
 const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
@@ -58,9 +67,6 @@ const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
 	"xhigh",
 	"max",
 ];
-
-const detailOf = (error: unknown): string =>
-	error instanceof Error ? error.message : String(error);
 
 /**
  * Where a session's JSONL lands. Exported because it is a convention two modules share: this host
@@ -114,6 +120,53 @@ export const streamingMessage = (
 		? (state.streamingMessage as SourceMessage | undefined)
 		: undefined;
 
+/**
+ * The run one progressive tool update names, or `null` for every update that names none.
+ *
+ * A spawned subagent's transcript artifact is named by its `runId` and by nothing else — the id is
+ * a fresh `randomUUID()` (`pi-subagents` `src/runs/foreground/subagent-executor.ts:6670`) and is
+ * never derived from the call — so an update carrying no run id is an ordinary tool reporting
+ * progress and nothing here is worth keeping. Narrowed to that one key rather than kept whole,
+ * which is also what keeps a `details` field off every other tool's row.
+ */
+export const runDetails = (
+	event: unknown,
+): {readonly toolCallId: string; readonly details: JsonValue} | null => {
+	if (!Predicate.isObject(event) || event.type !== "tool_execution_update") return null;
+	if (typeof event.toolCallId !== "string") return null;
+	const partial = event.partialResult;
+	if (!Predicate.isObject(partial)) return null;
+	const carried = partial.details;
+	if (!Predicate.isObject(carried) || typeof carried.runId !== "string") return null;
+	return {toolCallId: event.toolCallId, details: {runId: carried.runId}};
+};
+
+/**
+ * Pi's resource loader with this host's extension packages added, or `undefined` when there are
+ * none — and `undefined` is the whole point of the branch: `createAgentSession` builds its own
+ * `DefaultResourceLoader({cwd, agentDir, settingsManager})` when handed no loader
+ * (`dist/core/sdk.js`), so a host with no extension paths opens the session it always opened.
+ *
+ * `reload()` is what loads them: the loader discovers nothing until it runs, and
+ * `createAgentSession` never calls it on a loader the caller supplied.
+ */
+export const extensionLoader = async (
+	paths: ReadonlyArray<string>,
+	cwd: string,
+	agentDir: string,
+	settingsManager: SettingsManager,
+): Promise<ResourceLoader | undefined> => {
+	if (paths.length === 0) return undefined;
+	const loader = new DefaultResourceLoader({
+		cwd,
+		agentDir,
+		settingsManager,
+		additionalExtensionPaths: [...paths],
+	});
+	await loader.reload();
+	return loader;
+};
+
 const call = <A>(
 	session: AgentSession,
 	name: string,
@@ -124,11 +177,14 @@ const call = <A>(
 			await run();
 		},
 		catch: (error) =>
-			new SessionCallFailed({
-				sessionId: session.sessionId,
-				call: name,
-				detail: detailOf(error),
-			}),
+			retaining(
+				error,
+				new SessionCallFailed({
+					sessionId: session.sessionId,
+					call: name,
+					detail: "the Pi session did not complete the operation",
+				}),
+			),
 	});
 
 /**
@@ -156,12 +212,21 @@ const handleOf = (
 ): Effect.Effect<PiSessionHandle> =>
 	Effect.gen(function* () {
 		const changes = yield* Queue.make<void>({capacity: 1, strategy: "sliding"});
+		const details = new Map<string, JsonValue>();
 		/**
 		 * Every session event coalesces into one pending change. The server reads the session's
 		 * state when it wakes, so a burst of deltas costs one snapshot rather than one per event —
 		 * and a slow reader can never fall behind by more than a revision.
+		 *
+		 * The one thing kept off the event itself is the run correlation, because the snapshot the
+		 * reader takes cannot recover it: `pi-subagents` stamps the spawned run's id onto every
+		 * progressive update it reports (`src/runs/foreground/subagent-executor.ts:6904`,
+		 * `details: {...r.details, runId}`), and that update is the only place the id is ever
+		 * stated — Pi's messages carry none.
 		 */
-		const unsubscribe = session.subscribe(() => {
+		const unsubscribe = session.subscribe((event) => {
+			const carried = runDetails(event);
+			if (carried !== null) details.set(carried.toolCallId, carried.details);
 			Queue.offerUnsafe(changes, undefined);
 		});
 		const createdAt = Date.now();
@@ -181,6 +246,7 @@ const handleOf = (
 					transcript: projectTranscript(
 						session.messages as ReadonlyArray<SourceMessage>,
 						streamingMessage(options, session.state),
+						details,
 					),
 					name: session.sessionName,
 					queuedSteer: session.getSteeringMessages(),
@@ -246,8 +312,15 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 						: options.modelRuntime.getModel(request.model.provider, request.model.id);
 
 				const session = yield* Effect.tryPromise({
-					try: () =>
-						createAgentSession({
+					try: async () => {
+						const settingsManager = SettingsManager.create(request.cwd, options.agentDir);
+						const resourceLoader = await extensionLoader(
+							options.extensionPaths ?? [],
+							request.cwd,
+							options.agentDir,
+							settingsManager,
+						);
+						const result = await createAgentSession({
 							cwd: request.cwd,
 							...(model === undefined ? {} : {model}),
 							...(request.thinkingLevel === undefined
@@ -255,10 +328,17 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 								: {thinkingLevel: request.thinkingLevel}),
 							modelRuntime: options.modelRuntime,
 							sessionManager: SessionManager.create(request.cwd, sessionDir),
-							settingsManager: SettingsManager.create(request.cwd, options.agentDir),
+							settingsManager,
+							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
-						}).then((result) => result.session),
-					catch: (error) => new SessionOpenFailed({cwd: request.cwd, detail: detailOf(error)}),
+						});
+						return result.session;
+					},
+					catch: (error) =>
+						retaining(
+							error,
+							new SessionOpenFailed({cwd: request.cwd, detail: "Pi could not create the session"}),
+						),
 				});
 
 				if (request.name !== undefined) session.setSessionName(request.name);
@@ -285,20 +365,30 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 				const refuse = (detail: string) => new SessionOpenFailed({cwd, detail});
 				const file = yield* Effect.try({
 					try: () => sessionFile(dir, sessionId),
-					catch: (error) => refuse(detailOf(error)),
+					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
 				});
-				if (file === undefined) return yield* refuse(`no session file for ${sessionId} in ${dir}`);
+				if (file === undefined) return yield* refuse("Pi could not find the stored session file");
 
 				const session = yield* Effect.tryPromise({
-					try: () =>
-						createAgentSession({
+					try: async () => {
+						const settingsManager = SettingsManager.create(cwd, options.agentDir);
+						const resourceLoader = await extensionLoader(
+							options.extensionPaths ?? [],
+							cwd,
+							options.agentDir,
+							settingsManager,
+						);
+						const result = await createAgentSession({
 							cwd,
 							modelRuntime: options.modelRuntime,
 							sessionManager: SessionManager.open(file, dir, cwd),
-							settingsManager: SettingsManager.create(cwd, options.agentDir),
+							settingsManager,
+							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
-						}).then((result) => result.session),
-					catch: (error) => refuse(detailOf(error)),
+						});
+						return result.session;
+					},
+					catch: (error) => retaining(error, refuse("Pi could not reopen the stored session")),
 				});
 				return yield* handleOf(options, session, cwd);
 			}),

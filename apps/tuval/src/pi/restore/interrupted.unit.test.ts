@@ -43,6 +43,10 @@ const cutMidReply: AiAgentSessionState = {
 	interrupted: null,
 	interruption: null,
 	usage: {model: "faux/faux-1", turns: {"item-1": {inputTokens: 10, outputTokens: 4, cost: 0}}},
+	agentVersion: "0.42.0",
+	// Pi reports no account: it is a Claude handshake fact, and the slot stays empty for a layer
+	// that has no such thing to say.
+	account: null,
 	permissions: {},
 	permissionsRaised: 0,
 	modes: {current: null, available: []},
