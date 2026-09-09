@@ -514,6 +514,34 @@
 }
 
 /*
+ * A settled turn's scaffolding behind one line (#8614). The chevron is decoration — `aria-hidden`,
+ * and the label beside it is the whole accessible name — so the rotation never carries the state
+ * alone (ADR 0162, Pillar 4). The button keeps the 36px hit area and the shared focus ring the
+ * `Button` primitive already paints.
+ */
+.tuval-chat-turn {
+	align-self: flex-start;
+	gap: var(--s-2);
+	min-block-size: var(--tap-min);
+	color: var(--text-muted);
+}
+
+.tuval-chat-turn-chevron {
+	flex: none;
+	inline-size: 0;
+	block-size: 0;
+	border-block-start: 4px solid transparent;
+	border-block-end: 4px solid transparent;
+	border-inline-start: 6px solid currentcolor;
+}
+
+/* Rotated, not animated: the rows the button reveals arrive in the same commit, so a transition
+   here would only trail the state change the list itself already shows. */
+.tuval-chat-turn-chevron[data-open="true"] {
+	rotate: 90deg;
+}
+
+/*
  * A run of consecutive calls as one line (#8612): a status dot, the sentence, and the status as a
  * word for a run that failed or is still going. The dot is a state marker rather than an icon —
  * `aria-hidden`, and it never carries the state alone: the word beside it does, which is also what

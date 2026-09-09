@@ -387,6 +387,25 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "turn") {
+		// A `Button` and not a `Collapsible`: the rows this reveals are virtualized siblings outside
+		// any content this control owns, so a primitive that wired `aria-controls` over its own panel
+		// would announce a panel while N unrelated rows appeared unannounced (#8027). Same shape and
+		// same reason as the group head's fold button, `aria-expanded` and no `aria-controls` (#8057).
+		return (
+			<Button
+				type="button"
+				variant="tertiary"
+				size="sm"
+				className="tuval-chat-turn"
+				aria-expanded={row.open}
+				onClick={() => onToggleFold(rowKey(row), !row.open)}
+			>
+				<span className="tuval-chat-turn-chevron" data-open={row.open} aria-hidden="true" />
+				{row.label}
+			</Button>
+		);
+	}
 	if (row.kind === "session") {
 		// The run's first notice is its identity, in the `expanded` set as in `rowKey`, so a notice
 		// joining the run behind it does not close a disclosure the reader opened.

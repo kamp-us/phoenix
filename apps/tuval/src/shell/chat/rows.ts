@@ -50,6 +50,9 @@ export type SessionRun = readonly [SystemItem, ...ReadonlyArray<SystemItem>];
  */
 export type ToolRun = readonly [ToolCall, ToolCall, ...ReadonlyArray<ToolCall>];
 
+/** The operator's own turn, off the union for the same width reason `ToolCall` is. */
+type UserTurn = Extract<RowItem, {readonly kind: "user"}>;
+
 export type ChatRow =
 	/** There is more history behind this point; `items` is what the live-tail bound already dropped. */
 	| {readonly kind: "older"; readonly items: number}
@@ -72,6 +75,21 @@ export type ChatRow =
 			readonly nested: boolean;
 			/** How many folds deep the run sits. Every call in it sits at this one depth. */
 			readonly depth: number;
+	  }
+	/**
+	 * One settled turn's scaffolding behind a single "Worked for …" line (#8614). The rows it stands
+	 * for travel with it rather than being dropped, so the anchor lookup below still finds an item
+	 * the fold is hiding and a prepend can restore the viewport onto it.
+	 */
+	| {
+			readonly kind: "turn";
+			/** The opening `user` item's id — this row's identity in the window's `unfolded` set. */
+			readonly id: ItemId;
+			/** `Worked for 4.2s`, or `You stopped after 4.2s` on a turn the operator cut short. */
+			readonly label: string;
+			readonly open: boolean;
+			/** The rows behind this summary, in list order. Emitted after it while `open`. */
+			readonly hidden: ReadonlyArray<ChatRow>;
 	  }
 	| {
 			readonly kind: "item";
@@ -149,8 +167,34 @@ export const rowKey = (row: ChatRow): string => {
 	// Its own prefix rather than the first call's `item:` key: the two would otherwise be one string
 	// in the window's shared `expanded` set, and a run could not be opened without opening that call.
 	if (row.kind === "tools") return `tools:${row.calls[0].id}`;
+	// Prefixed for the same reason a run is: the key is what the window's `unfolded` set holds, and
+	// a bare item id would put the turn and its opening `user` row under one string.
+	if (row.kind === "turn") return `turn:${row.id}`;
 	return row.kind;
 };
+
+/**
+ * The transcript items one row carries, in list order. A turn summary carries none of its own: what
+ * it stands for is `hidden`, and `listItems` below is what reads through it.
+ */
+const rowItems = (row: ChatRow): ReadonlyArray<TranscriptItem> => {
+	if (row.kind === "item") return [row.item];
+	if (row.kind === "session") return row.items;
+	if (row.kind === "tools") return row.calls;
+	return [];
+};
+
+/**
+ * Every item the list holds, in list order, **including the ones a turn summary is hiding**. The
+ * page cursor and the prepend anchor are questions about the transcript, not about what is on
+ * screen: a fold that dropped its rows out of this walk would move the cursor as it closed.
+ *
+ * An open summary's rows are emitted beside it, so reading them again here would double them.
+ */
+const listItems = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<TranscriptItem> =>
+	rows.flatMap((row) =>
+		row.kind === "turn" ? (row.open ? [] : listItems(row.hidden)) : rowItems(row),
+	);
 
 /**
  * How many still-unconfirmed turns `held` carries per text — the budget a page's own copies of
@@ -344,6 +388,191 @@ const collapseToolRuns = (
 };
 
 /**
+ * How long a turn took, in the words the summary row says it. `null` is "the items do not say" —
+ * a timestamp that is not a finite number — and the label falls back to the bare verb.
+ *
+ * The thresholds are T3's `formatDuration` (`packages/shared/src/orchestrationTiming.ts` at
+ * `pingdotgg/t3code@0fe4c99`): sub-second in whole milliseconds, under ten seconds to one decimal,
+ * under a minute in whole seconds, and above that the non-zero `1h 2m 4s` parts.
+ */
+export const turnDuration = (elapsedMs: number): string | null => {
+	if (!Number.isFinite(elapsedMs)) return null;
+	const elapsed = Math.max(0, elapsedMs);
+	if (elapsed < 1_000) return `${Math.max(1, Math.round(elapsed))}ms`;
+	if (elapsed < 10_000) {
+		const tenths = Math.round(elapsed / 100) / 10;
+		return tenths >= 10 ? "10s" : `${tenths.toFixed(1)}s`;
+	}
+	if (elapsed < 60_000) return `${Math.round(elapsed / 1_000)}s`;
+	const total = Math.round(elapsed / 1_000);
+	const parts: Array<string> = [];
+	const hours = Math.floor(total / 3_600);
+	const minutes = Math.floor((total % 3_600) / 60);
+	const seconds = total % 60;
+	if (hours > 0) parts.push(`${hours}h`);
+	if (minutes > 0) parts.push(`${minutes}m`);
+	if (seconds > 0) parts.push(`${seconds}s`);
+	return parts.join(" ");
+};
+
+/** One top-level row with the rows an open fold nested under it, so a fold hides a head with its own. */
+interface Block {
+	readonly head: ChatRow;
+	readonly rows: ReadonlyArray<ChatRow>;
+}
+
+/** A row's own indent step; a paging head, a session run and a turn summary all sit at the top. */
+const rowDepth = (row: ChatRow): number =>
+	row.kind === "item" || row.kind === "tools" ? row.depth : 0;
+
+/**
+ * Cut the list into blocks: each top-level row, plus the deeper rows an open group fold put after
+ * it. Hiding a block is what keeps a folded group head and the rows it revealed one decision — a
+ * head folded away without them would leave its children behind as orphans.
+ */
+const blocksOf = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<Block> => {
+	const out: Array<{head: ChatRow; rows: Array<ChatRow>}> = [];
+	for (const row of rows) {
+		const open = out[out.length - 1];
+		if (rowDepth(row) > 0 && open !== undefined) open.rows.push(row);
+		else out.push({head: row, rows: [row]});
+	}
+	return out;
+};
+
+/** The item a block leads with, when the block leads with one at all. */
+const blockItem = (block: Block): RowItem | null =>
+	block.head.kind === "item" ? block.head.item : null;
+
+/** A turn: the operator's prompt, and the blocks the agent produced before the next prompt. */
+interface Turn {
+	readonly user: UserTurn;
+	readonly body: ReadonlyArray<Block>;
+}
+
+/**
+ * Cut the blocks into turns. A `user` item opens one and the next `user` item closes it; a
+ * compaction row closes one too, and belongs to the turn it closes — which is what makes "a fold
+ * whose only hidden content is a compaction row is not drawn" a rule about something rather than a
+ * rule about nothing.
+ *
+ * The opening prompt is the turn's head and never its body: what folds away is what the agent did,
+ * never what the operator asked. Blocks before the first prompt belong to no turn — a page walked
+ * back past a turn's opening `user` item leaves its rows headless, and those rows stay exactly as
+ * they render today rather than vanishing behind a summary nothing opened.
+ */
+const turnsOf = (blocks: ReadonlyArray<Block>): ReadonlyArray<Turn> => {
+	const out: Array<{user: UserTurn; body: Array<Block>}> = [];
+	let open: {user: UserTurn; body: Array<Block>} | null = null;
+	for (const block of blocks) {
+		const item = blockItem(block);
+		if (item?.kind === "user") {
+			open = {user: item, body: []};
+			out.push(open);
+			continue;
+		}
+		if (open === null) continue;
+		open.body.push(block);
+		if (item?.kind === "compaction") open = null;
+	}
+	return out;
+};
+
+/** Still moving: text or reasoning mid-stream, or a call that has not reported back. */
+const unsettled = (item: TranscriptItem): boolean =>
+	((item.kind === "assistant" || item.kind === "thinking") && item.partial === true) ||
+	(item.kind === "tool" && item.status === "running");
+
+/**
+ * A call that spawns a subagent, which never folds: the work outlives the turn that launched it,
+ * and this row is the only route into the worker's transcript — its own fold when the worker's rows
+ * are in this list, its slot when they have left it. T3 skips its `agentSpawn` entries the same way.
+ */
+const spawning = (block: Block, subagents: ReadonlySet<string>): boolean => {
+	const head = block.head;
+	if (head.kind !== "item" || head.item.kind !== "tool") return false;
+	return head.nestedIds.length > 0 || subagents.has(head.item.id);
+};
+
+/**
+ * Fold each settled turn's scaffolding behind one summary row (#8614).
+ *
+ * What folds is everything the agent produced **before** its terminal reply; the reply itself stays
+ * visible, and so does everything after it — except a single harmless trailing call, which joins the
+ * fold rather than dangling under a summary as one orphan line. Two of them, or a failing one, stay
+ * out and read as the run row they already are.
+ *
+ * **A turn with no terminal reply does not fold**, and that one rule is what keeps a running turn
+ * open without the window having to tell this pure function what the session's phase is: a turn
+ * mid-flight has either no reply yet, a `partial` one, or a call still running.
+ *
+ * A session notice never folds — it is an open founder decision (#8475) and reads as its own row —
+ * and neither does a spawning call. A fold hiding nothing, or hiding only a compaction row, is not
+ * drawn at all.
+ */
+const foldTurns = (
+	rows: ReadonlyArray<ChatRow>,
+	unfolded: ReadonlySet<string>,
+	subagents: ReadonlySet<string>,
+): ReadonlyArray<ChatRow> => {
+	const blocks = blocksOf(rows);
+	const summaries = new Map<Block, ChatRow>();
+	/** Every folded block, against whether its summary is showing them. */
+	const folds = new Map<Block, boolean>();
+	for (const turn of turnsOf(blocks)) {
+		const items = turn.body.flatMap((block) => block.rows.flatMap(rowItems));
+		if (items.some(unsettled)) continue;
+		const terminal = turn.body.findLastIndex((block) => blockItem(block)?.kind === "assistant");
+		if (terminal === -1) continue;
+		const folded = turn.body.filter((block, index) => {
+			if (index === terminal || block.head.kind === "session") return false;
+			if (spawning(block, subagents)) return false;
+			if (blockItem(block)?.kind === "compaction") return true;
+			if (index <= terminal) return true;
+			// The one trailing call that joins the fold: alone after the reply, and not a failure.
+			const call = blockItem(block);
+			return (
+				turn.body.length === terminal + 2 &&
+				call?.kind === "tool" &&
+				call.status !== "error" &&
+				block.rows.length === 1
+			);
+		});
+		const first = folded[0];
+		if (first === undefined) continue;
+		// A compaction boundary folds away with the work around it, never on its own.
+		if (folded.every((block) => blockItem(block)?.kind === "compaction")) continue;
+		const ends = [turn.user.timestamp, ...items.map((item) => item.timestamp)];
+		const duration = turnDuration(Math.max(...ends) - turn.user.timestamp);
+		const stopped = items.some((item) => item.kind === "assistant" && item.interrupted === true);
+		const open = unfolded.has(`turn:${turn.user.id}`);
+		summaries.set(first, {
+			kind: "turn",
+			id: turn.user.id,
+			label: stopped
+				? duration === null
+					? "You stopped this response"
+					: `You stopped after ${duration}`
+				: duration === null
+					? "Worked"
+					: `Worked for ${duration}`,
+			open,
+			hidden: folded.flatMap((block) => block.rows),
+		});
+		for (const block of folded) folds.set(block, open);
+	}
+	if (summaries.size === 0) return rows;
+	const out: Array<ChatRow> = [];
+	for (const block of blocks) {
+		const summary = summaries.get(block);
+		if (summary !== undefined) out.push(summary);
+		// Absent from `folds` is "no summary stands for this block"; `false` is "its summary is shut".
+		if (folds.get(block) !== false) out.push(...block.rows);
+	}
+	return out;
+};
+
+/**
  * The list the window renders. The tail wins on a collision: an item that reached the live stream is
  * the newer copy of itself, and a page that happens to overlap the tail must not double it. The
  * collision is `unheld`'s — id, then text against a turn the tail still holds as `local` — so the
@@ -421,7 +650,7 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	for (const item of items) {
 		if (!reachable.has(item.id)) emit(item, 1);
 	}
-	return collapseToolRuns(rows, subagents);
+	return foldTurns(collapseToolRuns(rows, subagents), unfolded, subagents);
 };
 
 /**
@@ -445,15 +674,9 @@ export const subagentRows = (
 		...(unfolded === undefined ? {} : {unfolded}),
 	});
 
-/** The prepend anchor: the visually oldest item, including a local echo. */
-export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null => {
-	for (const row of rows) {
-		if (row.kind === "item") return row.item.id;
-		if (row.kind === "session") return row.items[0].id;
-		if (row.kind === "tools") return row.calls[0].id;
-	}
-	return null;
-};
+/** The prepend anchor: the oldest item the list holds, including a local echo and a folded one. */
+export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null =>
+	listItems(rows)[0]?.id ?? null;
 
 /** The stored cursor and visual anchor are different id spaces when the oldest row is local. */
 export const olderPageRequest = (
@@ -461,23 +684,19 @@ export const olderPageRequest = (
 ): {readonly before: string; readonly anchor: string} | null => {
 	const anchor = oldestLoadedId(rows);
 	if (anchor === null) return null;
-	const items = rows.flatMap((row): ReadonlyArray<TranscriptItem> => {
-		if (row.kind === "item") return [row.item];
-		if (row.kind === "session") return row.items;
-		if (row.kind === "tools") return row.calls;
-		return [];
-	});
-	const cursor = pageCursor(items, anchor);
+	const cursor = pageCursor(listItems(rows), anchor);
 	return cursor.kind === "page" && cursor.before !== null ? {before: cursor.before, anchor} : null;
 };
 
-/** Membership rather than the row's key: an anchor may name a notice or a call buried mid-run. */
-const holds = (row: ChatRow, id: string): boolean => {
-	if (row.kind === "item") return row.item.id === id;
-	if (row.kind === "session") return row.items.some((item) => item.id === id);
-	if (row.kind === "tools") return row.calls.some((call) => call.id === id);
-	return false;
-};
+/**
+ * Membership rather than the row's key: an anchor may name a notice, a call buried mid-run, or a
+ * row a turn summary is folding away — and that last one is what keeps a prepend anchored. The
+ * viewport lands on the summary standing in for the row, rather than on nothing at all.
+ */
+const holds = (row: ChatRow, id: string): boolean =>
+	row.kind === "turn"
+		? !row.open && row.hidden.some((held) => holds(held, id))
+		: rowItems(row).some((item) => item.id === id);
 
 /** Where the row carrying `id` sits, or `-1`. The anchor a prepend restores the viewport onto. */
 export const rowIndexOfItem = (rows: ReadonlyArray<ChatRow>, id: string | null): number =>
