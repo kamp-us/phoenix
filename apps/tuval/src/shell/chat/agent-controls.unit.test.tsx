@@ -1,9 +1,10 @@
 /**
  * @vitest-environment jsdom
  *
- * The five agent controls the window adds on top of the transcript: the collapsible tool row, the
- * permission cards, the mode switch, and the composer's model and slash-command pickers. Same test
- * double as the transcript's own tests (`../window/fixtures.ts`) — no kernel, no socket, no layer.
+ * The agent controls the window adds on top of the transcript: the collapsible tool row, the
+ * permission cards, the mode switch, the composer's model and slash-command pickers, and what the
+ * composer's off state inside a subagent view is announced as. Same test double as the transcript's
+ * own tests (`../window/fixtures.ts`) — no kernel, no socket, no layer.
  *
  * Every control here is Manti-backed, so a click and a same-tick read prove nothing: Zag defers the
  * transition by at least one microtask (`.patterns/zag-machine-interaction-tests.md`). Each
@@ -15,6 +16,9 @@ import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {ItemId} from "../../ai-agent/ports/index.ts";
+import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
@@ -32,7 +36,8 @@ import {
 	userItem,
 	withTranscript,
 } from "./chat.testing.ts";
-import {initialChatView} from "./view.ts";
+import {composerStateAnnouncement, subagentViewPlaceholder} from "./copy.ts";
+import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -587,5 +592,70 @@ describe("two windows over one process", () => {
 			}
 		});
 		expect(TEST_VIEWPORT.height).toBe(1_000);
+	});
+});
+
+describe("the composer's off state inside a subagent view", () => {
+	const reviewerItems: ReadonlyArray<TranscriptItem> = [
+		{...assistantItem("r-out", "the fold looks right"), parentId: ItemId.make("agent")},
+	];
+
+	const session = (): AiAgentSessionState =>
+		withTranscript([userItem("u1", "go"), call("agent", {name: "Agent"}), ...reviewerItems], {
+			subagents: {
+				agent: subagentSlot("agent", {
+					type: "reviewer",
+					items: reviewerItems,
+					lastLine: "wrote 4 rows",
+				}),
+			},
+		});
+
+	const openWithNavigator = async (): Promise<HTMLElement> => {
+		const process = await Effect.runPromise(
+			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, session()),
+		);
+		const opened: ChatView = {...initialChatView, atOldest: true};
+		const host = await Effect.runPromise(process.window(WindowId.make("w1"), opened));
+		const {container} = render(
+			chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined, subagentList: true}).render(
+				host,
+			) as ReactElement,
+		);
+		await within(container).findByRole("log", {name: /^Transcript/});
+		return container;
+	};
+
+	// The window draws a second `role="status"` for the turn phase, so this reads the one under the
+	// navigator — the view slot's own live region.
+	const announced = (root: ParentNode): string =>
+		root.querySelector<HTMLElement>('.tuval-chat-subagents + p[role="status"]')?.textContent ?? "";
+
+	/** Click the navigator row whose visible text starts with `label`. */
+	const pick = async (root: ParentNode, label: string): Promise<void> => {
+		const row = Array.from(
+			root.querySelectorAll<HTMLButtonElement>(".tuval-chat-subagent-pick"),
+		).find((candidate) => (candidate.textContent ?? "").startsWith(label));
+		expect(row, `no navigator row for "${label}"`).toBeTruthy();
+		await click(row as HTMLElement);
+	};
+
+	it("announces the composer is off and where prompts go, and drops it on the way back", async () => {
+		const root = await openWithNavigator();
+		const field = () => root.querySelector<HTMLTextAreaElement>("textarea");
+		expect(announced(root)).toContain(composerStateAnnouncement(false));
+
+		await pick(root, "reviewer");
+
+		// The field is out of the tab order here, so this region is the only surface that can say so.
+		expect(field()?.disabled).toBe(true);
+		expect(announced(root)).toContain("The composer is off here.");
+		expect(announced(root)).toContain(subagentViewPlaceholder);
+
+		await pick(root, "Back to the agent transcript");
+
+		expect(field()?.disabled).toBe(false);
+		expect(announced(root)).not.toContain("The composer is off here.");
+		expect(announced(root)).toContain(composerStateAnnouncement(false));
 	});
 });

@@ -146,6 +146,18 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 export const subagentViewPlaceholder =
 	"Prompts go to the main agent — go back to its transcript to send (the row above, or Escape).";
 
+/**
+ * What the view slot's live region says about the composer (#8635).
+ *
+ * The placeholder above is the reason the field gives for being off, and a disabled textarea is
+ * neither focusable nor in the tab order — so a screen-reader operator never reaches it and hears
+ * the composer vanish with no reason given. This sentence carries the same reason on the one
+ * surface that is announced, and takes the composer's own `disabled` predicate so the two cannot
+ * say different things.
+ */
+export const composerStateAnnouncement = (disabled: boolean): string =>
+	disabled ? `The composer is off here. ${subagentViewPlaceholder}` : "The composer is on.";
+
 const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**

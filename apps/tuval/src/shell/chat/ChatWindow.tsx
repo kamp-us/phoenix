@@ -51,7 +51,11 @@ import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
-import {tuvalDesignTranslate, tuvalSubagentViewTranslate} from "./copy.ts";
+import {
+	composerStateAnnouncement,
+	tuvalDesignTranslate,
+	tuvalSubagentViewTranslate,
+} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
@@ -580,6 +584,12 @@ function ChatWindow({
 	 */
 	const viewing = options.subagentList ? view.viewing : null;
 	const viewedSlot = viewing === null ? undefined : state?.subagents[viewing.id];
+
+	/**
+	 * One predicate behind the composer's `disabled` prop and behind what the view slot's live region
+	 * says about it, so an operator who cannot see the field still hears its state (#8635).
+	 */
+	const composerDisabled = viewing !== null;
 
 	/** The scroll offset `onScroll` is holding for its settle window, and the timer holding it. */
 	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1120,7 +1130,8 @@ function ChatWindow({
 									: "Showing a subagent whose transcript is not in this session's state."
 								: viewedSlot.status === "finished"
 									? `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Finished: ${viewedSlot.lastLine}`
-									: `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Still running.`}
+									: `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Still running.`}{" "}
+							{composerStateAnnouncement(composerDisabled)}
 						</p>
 					</>
 				) : null}
@@ -1234,8 +1245,9 @@ function ChatWindow({
 					// disabled, not re-worded. A prompt typed here would land in the transcript the
 					// operator is not reading, and there is no second session to address it to. It stays
 					// mounted — the draft is the component's own state, so unmounting it would drop text
-					// the swap must not touch — and the placeholder swapped above says why.
-					disabled={viewing !== null}
+					// the swap must not touch. The placeholder swapped above says why, and the view slot's
+					// live region says the same for a reader the disabled field never lets in (#8635).
+					disabled={composerDisabled}
 					initialValue={view.draft}
 					onDraftChange={(draft) =>
 						commit((current) => (current.draft === draft ? current : {...current, draft}))
