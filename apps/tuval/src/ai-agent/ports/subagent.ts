@@ -35,8 +35,13 @@ export type SubagentStatus = "running" | "finished";
 export interface SubagentSlot {
 	/** The spawning call's item id: one tool row, one worker, one slot. */
 	readonly id: ItemId;
-	/** What kind of worker this is, in the backend's own words — a label, never a type tag. */
-	readonly type: string;
+	/**
+	 * What kind of worker this is, in the backend's own words — a label, never a type tag. `null`
+	 * means no name is known: the spawning call named none and nothing resolved one. An empty string
+	 * is not that fact and stays refused, so a surface can phrase the nameless row once instead of
+	 * reading a placeholder back out (#8680).
+	 */
+	readonly type: string | null;
 	/** The newest line the worker wrote, whatever kind of item carried it. */
 	readonly lastLine: string;
 	/** Epoch milliseconds, so the window computes elapsed without a backend clock type. */
@@ -57,7 +62,7 @@ export const isSubagentSlot = (value: unknown): value is SubagentSlot =>
 	Predicate.isObject(value) &&
 	typeof value.id === "string" &&
 	value.id.length > 0 &&
-	typeof value.type === "string" &&
+	(value.type === null || (typeof value.type === "string" && value.type.length > 0)) &&
 	typeof value.lastLine === "string" &&
 	Number.isFinite(value.startedAt) &&
 	isNonNegativeInteger(value.tokens) &&

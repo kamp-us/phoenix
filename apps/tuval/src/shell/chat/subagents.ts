@@ -17,9 +17,18 @@ import type {ItemId, SubagentSlot, SubagentStatus} from "../../ai-agent/ports/in
 /** How many rows the list shows before the tail collapses into one "more" row (Q3). */
 export const SUBAGENT_ROW_CAP = 5;
 
+/**
+ * How a worker is named inside a sentence that already says "subagent" — the slot's own label, or
+ * the bare word when no name is known. One phrase for the footer, the live region and the
+ * transcript label, so none of them can double the word (#8680).
+ */
+export const subagentPhrase = (type: string | null): string =>
+	type === null ? "subagent" : `${type} subagent`;
+
 export interface SubagentRow {
 	readonly id: ItemId;
-	readonly type: string;
+	/** The slot's label as-is, `null` included: a row with no name draws none. */
+	readonly type: string | null;
 	readonly lastLine: string;
 	/** Epoch milliseconds, so the row's elapsed is the reader's own clock minus this. */
 	readonly startedAt: number;

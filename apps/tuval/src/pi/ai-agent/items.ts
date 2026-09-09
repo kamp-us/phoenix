@@ -191,9 +191,6 @@ const namedAgent = (input: unknown): string | null => {
 	return typeof agent === "string" && agent !== "" ? agent : null;
 };
 
-/** What the row is labelled once nothing better is left: the tool's own name. */
-const subagentType = (agent: string | null): string => agent ?? "subagent";
-
 /**
  * Whether the call detached. A detached run emits no `tool_execution_update`, so its row carries no
  * run id and the tool-call index is the only address it has (`async-spawn.ts`) — which is why it is
@@ -293,7 +290,7 @@ const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<Transcrip
 /** A still-running worker's slot, off its own artifact — the shape both folds below agree on. */
 const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlot => ({
 	id: spawn.id,
-	type: subagentType(spawn.agent ?? spawn.resolved?.agent ?? null),
+	type: spawn.agent ?? spawn.resolved?.agent ?? null,
 	lastLine: child.lastLine,
 	startedAt: spawn.startedAt,
 	tokens: countOf(child.tokens),
@@ -345,9 +342,7 @@ export const subagentSlotsOf = (
 				? [
 						{
 							id: itemId(part.toolCallId),
-							type: subagentType(
-								namedAgent(part.input) ?? held?.get(part.toolCallId)?.resolved?.agent ?? null,
-							),
+							type: namedAgent(part.input) ?? held?.get(part.toolCallId)?.resolved?.agent ?? null,
 							lastLine: "",
 							startedAt: item.timestamp,
 							tokens: 0,
@@ -367,7 +362,7 @@ export const subagentSlotsOf = (
 			return [
 				{
 					id,
-					type: subagentType(namedAgent(item.input)),
+					type: namedAgent(item.input),
 					lastLine: "",
 					startedAt: item.timestamp,
 					tokens: 0,
@@ -385,7 +380,7 @@ export const subagentSlotsOf = (
 	return [
 		{
 			id,
-			type: subagentType(namedAgent(item.input) ?? carried?.resolved?.agent ?? null),
+			type: namedAgent(item.input) ?? carried?.resolved?.agent ?? null,
 			lastLine: child?.lastLine || lastLineOf(boundToolResult(textOf(item.content)).text),
 			startedAt: item.timestamp,
 			// The child's own spend where the artifact reported one, else what the result says it
