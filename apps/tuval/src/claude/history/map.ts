@@ -16,12 +16,14 @@
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {boundToolOutput} from "../../ai-agent/history/index.ts";
-import type {
-	CommandRef,
-	ItemId,
-	JsonValue,
-	SubagentSlot,
-	TranscriptItem,
+import {
+	boundToolResult,
+	byteLength,
+	type CommandRef,
+	type ItemId,
+	type JsonValue,
+	type SubagentSlot,
+	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import {
 	isRecord,
@@ -620,6 +622,31 @@ export const partialReplyEvents = (
 /** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
 const NOTICE_SUMMARY_LIMIT = 200;
 
+/**
+ * How many bytes of a notice's body ride `detail`, marker included.
+ *
+ * A different budget from `NOTICE_SUMMARY_LIMIT`'s, which guards the always-visible line: this one
+ * guards `TRANSCRIPT_WINDOW_BYTE_LIMIT`, the live tail's. `itemBytes` counts the whole item with
+ * `detail` in it, so an unbounded body — a skill frame's is some ten kilobytes — spends the tail's
+ * budget and pushes older groups out of the operator's history (#8765). Sized like a tool result's
+ * own allowance, because a notice's body spends that budget the same way; its own constant rather
+ * than that one, so a change to what a tool result may spend does not silently move this ceiling.
+ */
+const NOTICE_DETAIL_BYTE_LIMIT = 8_000;
+
+/** What an opened disclosure reads at the cut, so the panel never passes a part off as the whole. */
+const NOTICE_DETAIL_CUT = "\n\n… cut to fit the transcript window; the rest is not here.";
+
+/**
+ * A notice's body bounded before the item is minted, cut on a code-point boundary by the same
+ * `boundToolResult` a tool row's output goes through. `SystemItem.detail` has no field to carry an
+ * omission count, so the cut says so inside the string it returns.
+ */
+const boundNoticeDetail = (detail: string): string => {
+	const bound = boundToolResult(detail, NOTICE_DETAIL_BYTE_LIMIT - byteLength(NOTICE_DETAIL_CUT));
+	return bound.omitted.bytes === 0 ? bound.text : `${bound.text}${NOTICE_DETAIL_CUT}`;
+};
+
 const LOCAL_COMMAND_OPEN = "<local-command-stdout>";
 const LOCAL_COMMAND_CLOSE = "</local-command-stdout>";
 
@@ -711,12 +738,15 @@ const localCommandInvocationOf = (
 	if (rest.length > 0 && !parts.has(SKILL_FORMAT)) return null;
 	const args = parts.get("command-args") ?? "";
 	const line = args.length === 0 ? name : `${name} ${args}`;
-	return rest.length === 0 ? {text: line} : {text: line, detail: rest.replaceAll(sgr, "")};
+	return rest.length === 0
+		? {text: line}
+		: {text: line, detail: boundNoticeDetail(rest.replaceAll(sgr, ""))};
 };
 
 /**
- * One command's output as the collapsed notice's two fields: the line always shown, and the whole
- * output behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`).
+ * One command's output as the collapsed notice's two fields: the line always shown, and the output
+ * behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`), bounded
+ * at `NOTICE_DETAIL_BYTE_LIMIT`.
  */
 const noticeOf = (output: string): {readonly text: string; readonly detail?: string} => {
 	const first =
@@ -726,7 +756,7 @@ const noticeOf = (output: string): {readonly text: string; readonly detail?: str
 			?.trim() ?? "";
 	const line =
 		first.length > NOTICE_SUMMARY_LIMIT ? `${first.slice(0, NOTICE_SUMMARY_LIMIT)}…` : first;
-	return line === output ? {text: line} : {text: line, detail: output};
+	return line === output ? {text: line} : {text: line, detail: boundNoticeDetail(output)};
 };
 
 /**
