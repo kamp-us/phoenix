@@ -55,6 +55,7 @@ import {
 	spawned,
 	stopped,
 } from "./effect.ts";
+import {compileTakesKeys, KEY_EVENT, type KeyEvent} from "./keys.ts";
 import {
 	type AnyPortDecl,
 	compilePorts,
@@ -87,7 +88,8 @@ export type ArrivingPortNames<D extends PortDecls> = {
 
 /**
  * The author's `update`: a cell per event, keyed by the event's type. Every arriving port owes one
- * and gets that port's decoded payload; the author's own events take the cells beside them.
+ * and gets that port's decoded payload; the author's own events take the cells beside them, and a
+ * `key` cell — optional, and the whole keyboard opt-in (`./keys.ts`) — gets the forwarded keystroke.
  *
  * One mapped type over `keyof U | <arriving ports>` rather than an intersection of the two halves,
  * because an intersection whose other half is an index signature contextually types every cell's
@@ -95,9 +97,11 @@ export type ArrivingPortNames<D extends PortDecls> = {
  * Measured at this pin: under the intersection a port cell's `event` accepted a `string`.
  */
 export type UpdateTable<S, D extends PortDecls, U> = {
-	[K in keyof U | ArrivingPortNames<D>]: K extends ArrivingPortNames<D>
-		? EventHandler<S, ArrivalEvent<K & string, PortPayload<D[K & keyof D]>>>
-		: EventHandler<S, any>;
+	[K in keyof U | ArrivingPortNames<D>]: K extends typeof KEY_EVENT
+		? EventHandler<S, KeyEvent>
+		: K extends ArrivingPortNames<D>
+			? EventHandler<S, ArrivalEvent<K & string, PortPayload<D[K & keyof D]>>>
+			: EventHandler<S, any>;
 };
 
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
@@ -304,6 +308,7 @@ export const FIELD_COMPILERS = {
 	handlers: () => HANDLERS,
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	spells: (authored) => compileCommands(authored.commands, HANDLERS),
+	takesKeys: (authored) => compileTakesKeys(authored),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
