@@ -21,7 +21,9 @@ import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
 import type {ProgramId} from "../registry/program.ts";
+import {ProcessBoard} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
+import {openProcessMsg} from "../shell/core/machine.ts";
 import type {
 	AnyInspectorRenderer,
 	AnyStatusRenderer,
@@ -60,6 +62,12 @@ export interface AttachedDeskProps {
 	readonly inspectors?: Readonly<Record<string, AnyInspectorRenderer>>;
 	readonly statuses?: Readonly<Record<string, AnyStatusRenderer>>;
 	readonly reducedMotion: boolean;
+	/**
+	 * Draw the process board over the desk — the page's half of `features.processBoard`
+	 * (`../features.ts`), off by default. Off, this component renders exactly the tree it rendered
+	 * before the flag existed: no board, and no wrapper around the desk (#8723).
+	 */
+	readonly board?: boolean;
 	/**
 	 * Why the page stopped re-attaching, if it has. Set means the desk below is frozen for good and
 	 * says so; `null` means the lifecycle is still working, whatever the socket is doing right now.
@@ -149,6 +157,7 @@ export function AttachedDesk({
 	inspectors = EMPTY_RENDERERS,
 	statuses = EMPTY_RENDERERS,
 	reducedMotion,
+	board = false,
 	refusal,
 	windowTitles = false,
 }: AttachedDeskProps): ReactElement {
@@ -354,6 +363,14 @@ export function AttachedDesk({
 
 	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
 
+	// The board's own two operands. The rows are re-listed rather than handed the map's iterator: an
+	// iterator is a fresh object on every render, and the board memoizes its tile model on this value.
+	const boardRows = useMemo(() => [...rows.values()], [rows]);
+	const openProcess = useCallback(
+		(processId: ProcessId) => dispatch(openProcessMsg(processId)),
+		[dispatch],
+	);
+
 	// The half of a `DeskSnapshot` the shell state does not carry. Everything here is already on the
 	// page for the windows' sake; this is the same two frames read for the desk's own regions.
 	const deskTables = useMemo<DeskTables>(() => {
@@ -384,23 +401,37 @@ export function AttachedDesk({
 		);
 	}
 
+	const deskElement = (
+		<Desk
+			state={desk}
+			dispatch={dispatch}
+			press={press}
+			resolveMount={resolveMount}
+			entries={entries}
+			table={attachment.table}
+			deskTables={deskTables}
+			reducedMotion={reducedMotion}
+			call={page.call}
+			registry={spells}
+			commandsConnected={attachment.status === "attached" && refusal === null}
+			windowTitles={windowTitles}
+		/>
+	);
+
 	return (
 		<>
 			<ConnectionBanner status={attachment.status} reason={attachment.lastDrop} refusal={refusal} />
-			<Desk
-				state={desk}
-				dispatch={dispatch}
-				press={press}
-				resolveMount={resolveMount}
-				entries={entries}
-				table={attachment.table}
-				deskTables={deskTables}
-				reducedMotion={reducedMotion}
-				call={page.call}
-				registry={spells}
-				commandsConnected={attachment.status === "attached" && refusal === null}
-				windowTitles={windowTitles}
-			/>
+			{board ? (
+				// The desk is `block-size: 100%` of this column, so it is the item that gives the board
+				// its room back (`../shell/board/board.css`). Flag off, there is no wrapper at all and
+				// the page is the tree it was before the board existed.
+				<div className="tuval-surface tuval-board-page" data-scheme="dark">
+					<ProcessBoard rows={boardRows} onOpen={openProcess} reducedMotion={reducedMotion} />
+					{deskElement}
+				</div>
+			) : (
+				deskElement
+			)}
 		</>
 	);
 }

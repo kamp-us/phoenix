@@ -1,0 +1,31 @@
+/*
+ * The page around the board, and nothing the board itself paints — a harness rule must never be
+ * mistaken for one the product ships (`../board.css` is the board's own paint).
+ */
+
+html,
+body {
+	block-size: 100%;
+	margin: 0;
+	background: var(--page-backdrop);
+}
+
+#proof {
+	block-size: 100%;
+}
+
+/* The desk's seat: the flex child that gives the board its room back on the real page. */
+.proof-desk {
+	flex: 1 1 auto;
+	min-block-size: 0;
+	align-items: center;
+	justify-content: center;
+}
+
+.proof-desk-note {
+	margin: 0;
+	color: var(--text-muted);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+}

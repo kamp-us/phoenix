@@ -39,6 +39,12 @@ export interface TuvalFeatures {
 	 * and the inspector carries no id line.
 	 */
 	readonly windowTitles: boolean;
+	/**
+	 * The process board over the desk: one tile per process from the kernel row and the two generic
+	 * ports, children nested in their parent's tile (#8723). Off: the page is the desk alone, as it
+	 * is today.
+	 */
+	readonly processBoard: boolean;
 }
 
 /**
@@ -53,4 +59,5 @@ export const featuresDefault: TuvalFeatures = {
 	piKernelTools: false,
 	kernelChildren: false,
 	windowTitles: false,
+	processBoard: false,
 };
