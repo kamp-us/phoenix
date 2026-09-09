@@ -22,6 +22,7 @@ import type {
 	SessionSnapshot,
 } from "../wire/index.ts";
 import {
+	childEventsOf,
 	deltaEventsOf,
 	emptyProjection,
 	eventsOf,
@@ -967,5 +968,125 @@ describe("a turn with nothing to read", () => {
 				text: "Turn failed: the provider could not complete the response. Check your provider account or try again later.",
 			},
 		]);
+	});
+});
+
+/**
+ * The worker's own rows, off the JSONL artifact it appends to while it runs. The spawn is a
+ * detached child process (#8555), so nothing it writes is a session event: the wire states the run
+ * once, on the running tool row's `details`, and everything after that arrives out of band.
+ */
+describe("a running subagent filled from its own transcript artifact", () => {
+	const input = {agent: "reviewer", task: "read it"};
+
+	const running: PiTranscriptItem = {
+		id: "item-2",
+		role: "tool",
+		toolCallId: "call-9",
+		toolName: "subagent",
+		input,
+		content: [],
+		details: {runId: "run-1"},
+		timestamp: 11,
+		status: "running",
+		isError: false,
+	};
+
+	const child = {
+		items: [
+			{kind: "assistant" as const, id: itemId("child-0"), timestamp: 12, text: "reading src/a.ts"},
+		],
+		lastLine: "reading src/a.ts",
+		tokens: 42,
+	};
+
+	const childRow = {
+		kind: "assistant",
+		id: "call-9:child-0",
+		parentId: "call-9",
+		timestamp: 12,
+		text: "reading src/a.ts",
+	};
+
+	const opened = eventsOf(emptyProjection, snapshot([running], "turn"));
+
+	const tailed = () => childEventsOf(opened.next, new Map([["run-1", child]]));
+
+	it("tracks the run the running row names", () => {
+		expect([...opened.next.spawns.values()]).toEqual([
+			{id: "call-9", runId: "run-1", type: "reviewer", startedAt: 11},
+		]);
+	});
+
+	it("fills the slot's items, last line and tokens off the artifact", () => {
+		expect(tailed().events).toEqual([
+			{
+				kind: "subagent",
+				slot: {
+					id: "call-9",
+					type: "reviewer",
+					lastLine: "reading src/a.ts",
+					startedAt: 11,
+					tokens: 42,
+					items: [childRow],
+					status: "running",
+				},
+			},
+		]);
+	});
+
+	it("emits nothing while the artifact has not moved", () => {
+		expect(childEventsOf(tailed().next, new Map([["run-1", child]])).events).toEqual([]);
+	});
+
+	// A wire push landing between two reads must restate what the tail already showed, or every
+	// silent revision blanks the rows the operator is reading.
+	it("does not blank the slot when a later push refolds the same row", () => {
+		const pushed = deltaEventsOf(
+			tailed().next,
+			{id: "session-8663", revision: 2, updatedAt: 200, items: [running]},
+			new Map([["run-1", child]]),
+		);
+		expect(pushed.events).toEqual([]);
+	});
+
+	it("stops tracking the run once the call answers, keeping the rows it read", () => {
+		const answered: PiTranscriptItem = {
+			...running,
+			content: [{type: "text", text: "done: 3 findings"}],
+			timestamp: 13,
+			status: "complete",
+			isError: false,
+		};
+		const ended = deltaEventsOf(
+			opened.next,
+			{id: "session-8663", revision: 2, updatedAt: 200, items: [answered]},
+			new Map([["run-1", child]]),
+		);
+		expect(ended.next.spawns.size).toBe(0);
+		expect(ended.events).toContainEqual({
+			kind: "subagent",
+			slot: {
+				id: "call-9",
+				type: "reviewer",
+				lastLine: "reading src/a.ts",
+				startedAt: 13,
+				tokens: 42,
+				items: [childRow],
+				status: "finished",
+			},
+		});
+	});
+
+	// The keying is the spawning call's id and nothing else, so a parallel spawn stays exactly the
+	// 1:N it already is.
+	it("keys the slot on the spawning call, not on the run", () => {
+		expect(tailed().events.map((event) => event.kind === "subagent" && event.slot.id)).toEqual([
+			"call-9",
+		]);
+	});
+
+	it("leaves the slot empty when the artifact is not readable yet", () => {
+		expect(childEventsOf(opened.next, new Map()).events).toEqual([]);
 	});
 });

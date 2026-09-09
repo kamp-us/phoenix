@@ -36,6 +36,7 @@ import type {
 	SessionPhase,
 	SessionSnapshot,
 } from "../wire/index.ts";
+import type {ChildTranscript, ChildTranscripts} from "./child-transcript.ts";
 import {providerFailureText} from "./provider-failure.ts";
 
 /** `ItemId` is an opaque string brand, minted here so no call site writes its own cast. */
@@ -195,19 +196,79 @@ const countOf = (tokens: number | undefined): number =>
 	tokens === undefined || !Number.isFinite(tokens) ? 0 : Math.max(0, Math.trunc(tokens));
 
 /**
+ * The run a spawning call's row names, off the `details` the session stamped onto it
+ * (`../server/AgentSessionHost.ts`). It is the whole address of the worker's own transcript, so a
+ * row carrying none is a spawn this process cannot read rows for — not an error, just a slot that
+ * shows what the parent knows.
+ */
+const runIdOf = (item: PiTranscriptItem): string | null => {
+	if (item.role !== "tool") return null;
+	const details = item.details;
+	return Predicate.isObject(details) && typeof details.runId === "string" ? details.runId : null;
+};
+
+/**
+ * A worker still writing, as the child-artifact tail tracks it. Held on the projection because the
+ * artifact grows without the parent session changing at all: the wire says a spawn started, and
+ * everything after that arrives out of band (`childEventsOf`).
+ */
+export interface RunningSpawn {
+	readonly id: ItemId;
+	readonly runId: string;
+	readonly type: string;
+	readonly startedAt: number;
+}
+
+/** The spawn a running tool row names, or `null` for every row that starts no worker. */
+export const runningSpawnOf = (item: PiTranscriptItem): RunningSpawn | null => {
+	if (item.role !== "tool" || item.status !== "running" || !spawns(item.toolName, item.input))
+		return null;
+	const runId = runIdOf(item);
+	return runId === null
+		? null
+		: {
+				id: itemId(item.toolCallId),
+				runId,
+				type: subagentType(item.input),
+				startedAt: item.timestamp,
+			};
+};
+
+/** One worker's own rows under the call that spawned it, so a window can tell whose they are. */
+const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<TranscriptItem> =>
+	child.items.map((item) => ({...item, id: itemId(`${id}:${item.id}`), parentId: id}));
+
+/** A still-running worker's slot, off its own artifact — the shape both folds below agree on. */
+const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlot => ({
+	id: spawn.id,
+	type: spawn.type,
+	lastLine: child.lastLine,
+	startedAt: spawn.startedAt,
+	tokens: countOf(child.tokens),
+	items: childItems(spawn.id, child),
+	status: "running",
+});
+
+/**
  * The subagent slots one wire item is worth — the model-blind row the running list already draws
  * (`../../ai-agent/ports/subagent.ts`), so a Pi worker lands in the same surface a Claude one does.
  *
- * Two items carry one worker: the assistant turn whose `toolCall` part started it, and the tool
- * result that ends it. The call is the `running` slot, the result the `finished` one, and both are
- * keyed on the call id — so the second supersedes the first in the state's own record
+ * Three items can carry one worker: the assistant turn whose `toolCall` part started it, the
+ * running tool row the session's own run correlation puts on the transcript, and the result that
+ * ends it. All are keyed on the call id, so each supersedes the last in the state's own record
  * (`../../ai-agent/core/fold.ts`) instead of drawing a second row.
  *
- * `items` is empty and `tokens` is what the result reports, not what the worker spent: the spawn
- * is a detached child process with its own `ModelRuntime` (#8555), so none of the child's turns
- * reach this transcript and there is nothing else here to read them off.
+ * `items`, `lastLine` and `tokens` are the child's own, read off the JSONL artifact it appends to
+ * while it runs (`child-transcript.ts`) and matched to the row by the `runId` the session stamped
+ * on it. The spawn is a detached child process with its own `ModelRuntime` (#8555), so none of its
+ * turns reach this transcript — the artifact is the only channel, and a slot whose artifact has not
+ * been read yet falls back to what the parent knows: nothing while it runs, the tool result's own
+ * text and usage once it is over.
  */
-export const subagentSlotsOf = (item: PiTranscriptItem): ReadonlyArray<SubagentSlot> => {
+export const subagentSlotsOf = (
+	item: PiTranscriptItem,
+	children?: ChildTranscripts | undefined,
+): ReadonlyArray<SubagentSlot> => {
 	if (item.role === "assistant") {
 		return item.content.flatMap((part) =>
 			part.type === "toolCall" && spawns(part.toolName, part.input)
@@ -226,14 +287,39 @@ export const subagentSlotsOf = (item: PiTranscriptItem): ReadonlyArray<SubagentS
 		);
 	}
 	if (item.role !== "tool" || !spawns(item.toolName, item.input)) return [];
+	const runId = runIdOf(item);
+	const child = runId === null ? undefined : children?.get(runId);
+	const id = itemId(item.toolCallId);
+	if (item.status === "running") {
+		const spawn = runningSpawnOf(item);
+		// One shape for both folds, so a wire push and an artifact tail cannot fingerprint the same
+		// worker differently and repaint the row between them.
+		return [
+			spawn === null
+				? {
+						id,
+						type: subagentType(item.input),
+						lastLine: "",
+						startedAt: item.timestamp,
+						tokens: 0,
+						items: [],
+						status: "running",
+					}
+				: runningSlotOf(spawn, child ?? {items: [], lastLine: "", tokens: 0}),
+		];
+	}
 	return [
 		{
-			id: itemId(item.toolCallId),
+			id,
 			type: subagentType(item.input),
-			lastLine: lastLineOf(boundToolResult(textOf(item.content)).text),
+			lastLine: child?.lastLine || lastLineOf(boundToolResult(textOf(item.content)).text),
 			startedAt: item.timestamp,
-			tokens: countOf(item.usage?.totalTokens),
-			items: [],
+			// The child's own spend where the artifact reported one, else what the result says it
+			// cost the parent — the two count different things and neither is a bound on the other.
+			tokens: countOf(
+				child === undefined || child.tokens === 0 ? item.usage?.totalTokens : child.tokens,
+			),
+			items: child === undefined ? [] : childItems(id, child),
 			status: "finished",
 		},
 	];
@@ -290,6 +376,12 @@ export interface SnapshotProjection {
 	 * re-folded assistant turn push its `running` back over the `finished` that superseded it.
 	 */
 	readonly subagents: ReadonlyMap<string, string>;
+	/**
+	 * The workers still writing, by the call each was spawned under. It is carried rather than
+	 * derived because the artifact those workers append to grows while the parent session stands
+	 * still: the wire states a spawn once, and every row after that arrives out of band.
+	 */
+	readonly spawns: ReadonlyMap<string, RunningSpawn>;
 	readonly phase: Phase | null;
 	readonly revision: number;
 }
@@ -298,6 +390,7 @@ export const emptyProjection: SnapshotProjection = {
 	items: new Map(),
 	usage: new Map(),
 	subagents: new Map(),
+	spawns: new Map(),
 	phase: null,
 	revision: -1,
 };
@@ -326,12 +419,17 @@ const stale = (previous: SnapshotProjection): Folded => ({events: [], next: prev
  * whole value is also the answer to a transcript that was rewritten: a row this snapshot no longer
  * carries has to leave the projection with it.
  */
-export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot): Folded => {
+export const eventsOf = (
+	previous: SnapshotProjection,
+	snapshot: SessionSnapshot,
+	children?: ChildTranscripts | undefined,
+): Folded => {
 	if (snapshot.revision <= previous.revision) return stale(previous);
 	const events: Array<AgentEvent> = [];
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
 	const subagents = new Map<string, string>();
+	const spawns = new Map<string, RunningSpawn>();
 
 	for (const source of snapshot.transcript) {
 		for (const item of itemsOf(source)) {
@@ -339,12 +437,14 @@ export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
-		for (const slot of subagentSlotsOf(source)) {
+		for (const slot of subagentSlotsOf(source, children)) {
 			const key = slotKey(slot);
 			const mark = fingerprint(slot);
 			subagents.set(key, mark);
 			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
+		const spawn = runningSpawnOf(source);
+		if (spawn !== null) spawns.set(spawn.id, spawn);
 	}
 
 	for (const source of snapshot.transcript) {
@@ -358,7 +458,7 @@ export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot
 	const phase = phaseOf(snapshot.phase);
 	if (previous.phase !== phase) events.push({kind: "phase", phase});
 
-	return {events, next: {items, usage, subagents, phase, revision: snapshot.revision}};
+	return {events, next: {items, usage, subagents, spawns, phase, revision: snapshot.revision}};
 };
 
 /**
@@ -369,12 +469,17 @@ export const eventsOf = (previous: SnapshotProjection, snapshot: SessionSnapshot
  * and folding a token costs one item rather than the transcript (#8554). An absent scalar means
  * unchanged, so an absent `phase` leaves the phase line where it stands.
  */
-export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta): Folded => {
+export const deltaEventsOf = (
+	previous: SnapshotProjection,
+	delta: SessionDelta,
+	children?: ChildTranscripts | undefined,
+): Folded => {
 	if (delta.revision <= previous.revision) return stale(previous);
 	const events: Array<AgentEvent> = [];
 	const items = new Map(previous.items);
 	const usage = new Map(previous.usage);
 	const subagents = new Map(previous.subagents);
+	const spawns = new Map(previous.spawns);
 	const changed = delta.items ?? [];
 
 	for (const source of changed) {
@@ -383,12 +488,17 @@ export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta)
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
-		for (const slot of subagentSlotsOf(source)) {
+		for (const slot of subagentSlotsOf(source, children)) {
 			const key = slotKey(slot);
 			const mark = fingerprint(slot);
 			subagents.set(key, mark);
 			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
+		const spawn = runningSpawnOf(source);
+		if (spawn !== null) spawns.set(spawn.id, spawn);
+		// A tool row that stopped running is a worker with nothing left to append, so the tail
+		// stops reading its artifact here rather than on a clock of its own.
+		else if (source.role === "tool") spawns.delete(source.toolCallId);
 	}
 
 	for (const source of changed) {
@@ -402,7 +512,33 @@ export const deltaEventsOf = (previous: SnapshotProjection, delta: SessionDelta)
 	const phase = delta.phase === undefined ? previous.phase : phaseOf(delta.phase);
 	if (phase !== null && previous.phase !== phase) events.push({kind: "phase", phase});
 
-	return {events, next: {items, usage, subagents, phase, revision: delta.revision}};
+	return {events, next: {items, usage, subagents, spawns, phase, revision: delta.revision}};
+};
+
+/**
+ * Fold what the running workers' own artifacts now say, out of band from the wire.
+ *
+ * A spawned child appends to its transcript file while the parent session sits still — it is a
+ * detached process, and nothing it writes is a session event — so the wire push that would carry it
+ * never comes. This is the other half of the tail: the reader hands over what it just read, and the
+ * slots the projection is already tracking are rebuilt off it.
+ *
+ * It leaves `revision` alone, because a child's own progress is not a revision of the parent's
+ * transcript and bumping it would make the parent's next real push read as stale.
+ */
+export const childEventsOf = (previous: SnapshotProjection, children: ChildTranscripts): Folded => {
+	const events: Array<AgentEvent> = [];
+	const subagents = new Map(previous.subagents);
+	for (const spawn of previous.spawns.values()) {
+		const child = children.get(spawn.runId);
+		if (child === undefined) continue;
+		const slot = runningSlotOf(spawn, child);
+		const key = slotKey(slot);
+		const mark = fingerprint(slot);
+		subagents.set(key, mark);
+		if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
+	}
+	return {events, next: {...previous, subagents}};
 };
 
 /**
@@ -459,10 +595,13 @@ export const projectionOf = (
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
 	const subagents = new Map<string, string>();
+	const spawns = new Map<string, RunningSpawn>();
 	let reached = false;
 	for (const source of snapshot.transcript) {
 		if (reached) break;
 		for (const slot of subagentSlotsOf(source)) subagents.set(slotKey(slot), fingerprint(slot));
+		const spawn = runningSpawnOf(source);
+		if (spawn !== null) spawns.set(spawn.id, spawn);
 		const rows = itemsOf(source);
 		const cut = rows.findIndex((item) => item.id === through);
 		reached = cut !== -1;
@@ -477,7 +616,9 @@ export const projectionOf = (
 		const event = !moved && seeded.length === rows.length ? usageEventOf(source) : null;
 		if (event !== null) usage.set(source.id, fingerprint(event));
 	}
-	return reached ? {items, usage, subagents, phase: null, revision: snapshot.revision} : null;
+	return reached
+		? {items, usage, subagents, spawns, phase: null, revision: snapshot.revision}
+		: null;
 };
 
 /**

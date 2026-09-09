@@ -21,9 +21,9 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import {Effect, Layer, Queue} from "effect";
+import {Effect, Layer, Predicate, Queue} from "effect";
 import {retaining} from "../diagnostics.ts";
-import type {ModelMetadata, ModelRef, ThinkingLevel} from "../wire/index.ts";
+import type {JsonValue, ModelMetadata, ModelRef, ThinkingLevel} from "../wire/index.ts";
 import {projectModelCost, type SourceModelCost} from "./cost.ts";
 import {SessionCallFailed, SessionOpenFailed} from "./errors.ts";
 import {type PiSessionHandle, PiSessionHost, type PiSessionView} from "./PiSessionHost.ts";
@@ -121,6 +121,27 @@ export const streamingMessage = (
 		: undefined;
 
 /**
+ * The run one progressive tool update names, or `null` for every update that names none.
+ *
+ * A spawned subagent's transcript artifact is named by its `runId` and by nothing else — the id is
+ * a fresh `randomUUID()` (`pi-subagents` `src/runs/foreground/subagent-executor.ts:6670`) and is
+ * never derived from the call — so an update carrying no run id is an ordinary tool reporting
+ * progress and nothing here is worth keeping. Narrowed to that one key rather than kept whole,
+ * which is also what keeps a `details` field off every other tool's row.
+ */
+export const runDetails = (
+	event: unknown,
+): {readonly toolCallId: string; readonly details: JsonValue} | null => {
+	if (!Predicate.isObject(event) || event.type !== "tool_execution_update") return null;
+	if (typeof event.toolCallId !== "string") return null;
+	const partial = event.partialResult;
+	if (!Predicate.isObject(partial)) return null;
+	const carried = partial.details;
+	if (!Predicate.isObject(carried) || typeof carried.runId !== "string") return null;
+	return {toolCallId: event.toolCallId, details: {runId: carried.runId}};
+};
+
+/**
  * Pi's resource loader with this host's extension packages added, or `undefined` when there are
  * none — and `undefined` is the whole point of the branch: `createAgentSession` builds its own
  * `DefaultResourceLoader({cwd, agentDir, settingsManager})` when handed no loader
@@ -191,12 +212,21 @@ const handleOf = (
 ): Effect.Effect<PiSessionHandle> =>
 	Effect.gen(function* () {
 		const changes = yield* Queue.make<void>({capacity: 1, strategy: "sliding"});
+		const details = new Map<string, JsonValue>();
 		/**
 		 * Every session event coalesces into one pending change. The server reads the session's
 		 * state when it wakes, so a burst of deltas costs one snapshot rather than one per event —
 		 * and a slow reader can never fall behind by more than a revision.
+		 *
+		 * The one thing kept off the event itself is the run correlation, because the snapshot the
+		 * reader takes cannot recover it: `pi-subagents` stamps the spawned run's id onto every
+		 * progressive update it reports (`src/runs/foreground/subagent-executor.ts:6904`,
+		 * `details: {...r.details, runId}`), and that update is the only place the id is ever
+		 * stated — Pi's messages carry none.
 		 */
-		const unsubscribe = session.subscribe(() => {
+		const unsubscribe = session.subscribe((event) => {
+			const carried = runDetails(event);
+			if (carried !== null) details.set(carried.toolCallId, carried.details);
 			Queue.offerUnsafe(changes, undefined);
 		});
 		const createdAt = Date.now();
@@ -216,6 +246,7 @@ const handleOf = (
 					transcript: projectTranscript(
 						session.messages as ReadonlyArray<SourceMessage>,
 						streamingMessage(options, session.state),
+						details,
 					),
 					name: session.sessionName,
 					queuedSteer: session.getSteeringMessages(),
