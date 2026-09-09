@@ -15,12 +15,17 @@
 import {Effect} from "effect";
 import {PortNotWired, ProcessPorts} from "../../ports/index.ts";
 import {ProcessSelf} from "../../process/self.ts";
+import {STATUS_PORT, TITLE_PORT} from "../../process/self-report.ts";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
 import type {ModePayload, PermissionPayload, TranscriptPayload} from "../ports/index.ts";
 
 /**
  * The row's port keys. A two-way kind is played from both ends by one program, and a kernel `ports`
  * record holds one direction per key, so each end is named locally — `compile` matches the kind.
+ *
+ * The last two are the kernel's own key names rather than local ones: the latch that keeps a
+ * process's newest title reads `ports["title@1"]` off the row (`../../process/self-report.ts`), so
+ * a program renaming its end publishes to a board that never looks there.
  */
 export const aiAgentPortNames = {
 	transcript: "transcript",
@@ -31,6 +36,8 @@ export const aiAgentPortNames = {
 	permissionDecision: "permissionDecision",
 	modeState: "modeState",
 	modeSet: "modeSet",
+	title: TITLE_PORT,
+	status: STATUS_PORT,
 } as const;
 
 export const transcriptOf = (state: AiAgentSessionState): TranscriptPayload => state.transcript;

@@ -27,19 +27,8 @@ import {inspectorRenderer} from "../../shell/desk/index.ts";
 import type {AnyWindowHost} from "../../shell/window/index.ts";
 import {type AgentAccount, type AiAgentSessionState, usageTotals} from "../core/index.ts";
 import {isAiAgentSessionState} from "../core/snapshot.ts";
+import {agentCost} from "../self-report.ts";
 import "./ai-agent-inspector.css";
-
-/**
- * The SDK and Pi's adapter both report a currency amount already scaled to dollars, so `cost` needs
- * no conversion here. Four fraction digits because a single turn routinely costs well under a cent,
- * and a session that reads `$0.00` after ten turns says nothing.
- */
-const money = new Intl.NumberFormat("en-US", {
-	style: "currency",
-	currency: "USD",
-	minimumFractionDigits: 2,
-	maximumFractionDigits: 4,
-});
 
 const tokens = new Intl.NumberFormat("en-US");
 
@@ -68,7 +57,7 @@ const inspectorRows = (
 	const usage = usageTotals(state.usage);
 	const account = accountLine(state.account);
 	return [
-		["Cost", money.format(usage.cost), "tuval-agent-inspector-number"],
+		["Cost", agentCost(usage.cost), "tuval-agent-inspector-number"],
 		["Input tokens", tokens.format(usage.inputTokens), "tuval-agent-inspector-number"],
 		["Output tokens", tokens.format(usage.outputTokens), "tuval-agent-inspector-number"],
 		["Session", state.sessionId ?? NO_SESSION_YET, "tuval-agent-inspector-wrap"],

@@ -1,8 +1,14 @@
 /**
- * The five ports that make a process a Tuval AI agent. Each declares one nominal kind, one payload
- * predicate and one queue bound (#7512, #7371); a program spreads the direction it plays into its
- * own `ports` record and the kernel's `compile` refuses a route between two different kinds before
- * any process exists.
+ * The five ports that make a process a Tuval AI agent, plus the two generic ones it fills like any
+ * other program. Each declares one nominal kind, one payload predicate and one queue bound (#7512,
+ * #7371); a program spreads the direction it plays into its own `ports` record and the kernel's
+ * `compile` refuses a route between two different kinds before any process exists.
+ *
+ * `title` and `status` are not of this interface: they are the kernel's own `title@1`/`status@1`
+ * (`../../process/self-report.ts`), which any program may declare and which say nothing about what
+ * kind of program is talking (founder ruling R8.1 on #8715). They are listed here so a row builds
+ * its whole `ports` record from one place, and they carry the kernel's kind and predicate rather
+ * than a copy — a second copy of the kind string is how a title stops routing to a board.
  *
  * The bound rides the definition rather than the call site so every program admits the same depth
  * on a port — a window that queues a thousand prompts behind a stuck agent is the failure #7371
@@ -15,6 +21,7 @@
  * direction's predicate, so the kernel refuses a wrong-direction payload at the send (#8235).
  */
 
+import {statusPort, titlePort} from "../../process/self-report.ts";
 import type {InPort, OutPort, PortBound} from "../../registry/program.ts";
 import {
 	isModePayload,
@@ -157,12 +164,34 @@ export const mode = defineTwoWayPort<ModePayload, {set: ModeSet; state: ModeStat
 	{set: isModeSet, state: isModeState},
 );
 
-/** The whole interface, in declaration order, for a consumer that wants to walk it. */
-export const agentPorts = [transcript, transcriptPage, prompt, permission, mode] as const;
+/** The kernel's generic out-port, in this file's shape, so `agentPorts` is one list to walk. */
+const generic = <P>(name: string, port: OutPort<P>, bound: PortBound): AgentPort<P> => ({
+	name,
+	...end(port.kind, bound, port.accepts),
+});
+
+/** `program · model · cwd`, re-said whenever one of the three changes (R3.1/R4.1 on #8715). */
+export const title = generic("title", titlePort, snapshot);
+
+/** One short line about how the process is doing. This program fills it from `../self-report.ts`. */
+export const status = generic("status", statusPort, snapshot);
+
+/** Every port a row built here declares, in declaration order, for a consumer walking them. */
+export const agentPorts = [
+	transcript,
+	transcriptPage,
+	prompt,
+	permission,
+	mode,
+	title,
+	status,
+] as const;
 
 export type AgentPortPayload =
 	| TranscriptPayload
 	| TranscriptPagePayload
 	| PromptPayload
 	| PermissionPayload
-	| ModePayload;
+	| ModePayload
+	/** What `title` and `status` carry: one line, and nothing else (`../../process/self-report.ts`). */
+	| string;

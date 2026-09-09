@@ -5,9 +5,19 @@ import {compile} from "../../ports/compile.ts";
 import {IncompatibleRoute} from "../../ports/errors.ts";
 import type {Graph} from "../../ports/graph.ts";
 import {NodeId} from "../../ports/graph.ts";
+import {statusPort, titlePort} from "../../process/self-report.ts";
 import {ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
-import {agentPorts, mode, permission, prompt, transcript, transcriptPage} from "./ports.ts";
+import {
+	agentPorts,
+	mode,
+	permission,
+	prompt,
+	status,
+	title,
+	transcript,
+	transcriptPage,
+} from "./ports.ts";
 
 const rows = [agentSide, windowSide];
 const registry = Registry.layer(rows);
@@ -27,16 +37,27 @@ const refusal = (graph: Graph) => Effect.flip(Effect.provide(compile(graph), reg
 const endsOf = (port: (typeof agentPorts)[number]) =>
 	"ends" in port ? Object.values(port.ends) : [port];
 
-describe("the five AI agent ports", () => {
-	it("declares five ports, each with its own kind", () => {
+describe("the ports a Tuval AI agent row declares", () => {
+	it("declares seven ports, each with its own kind", () => {
 		expect(agentPorts.map((port) => port.name)).toEqual([
 			"transcript",
 			"transcript-page",
 			"prompt",
 			"permission",
 			"mode",
+			"title",
+			"status",
 		]);
-		expect(new Set(agentPorts.map((port) => port.kind)).size).toBe(5);
+		expect(new Set(agentPorts.map((port) => port.kind)).size).toBe(7);
+	});
+
+	// The two generic ones are the kernel's, carried rather than restated: a copied kind string is
+	// how one program's title stops routing to a board that takes every other program's (#8715).
+	it("carries the kernel's own kind and predicate onto title and status", () => {
+		expect(title.kind).toBe(titlePort.kind);
+		expect(status.kind).toBe(statusPort.kind);
+		expect(title.outbound().accepts("claude-session · Opus 5 · phoenix")).toBe(true);
+		expect(status.is(42)).toBe(false);
 	});
 
 	it("declares a bounded queue on every end of every port, inbound and by default", () => {

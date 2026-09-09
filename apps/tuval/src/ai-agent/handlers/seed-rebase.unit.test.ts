@@ -67,7 +67,11 @@ describe("the prompt handler's re-seed", () => {
 						}),
 					);
 
-				const row = aiAgentHandlers({layer: ScriptedAiAgent.layer(script), cwd: CWD});
+				const row = aiAgentHandlers({
+					layer: ScriptedAiAgent.layer(script),
+					program: "seed-rebase",
+					cwd: CWD,
+				});
 
 				yield* provide(
 					row.handlers["aiAgent.start"]({

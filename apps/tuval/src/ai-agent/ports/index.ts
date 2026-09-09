@@ -49,7 +49,9 @@ export {
 	type PortEnd,
 	permission,
 	prompt,
+	status,
 	type TwoWayPort,
+	title,
 	transcript,
 	transcriptPage,
 } from "./ports.ts";
