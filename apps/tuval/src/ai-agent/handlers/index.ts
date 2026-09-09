@@ -29,6 +29,7 @@ import {
 	type AiAgentEventsSub,
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
+	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	foldEvent,
 	initialState,
@@ -38,6 +39,7 @@ import {
 import {isRefusal, pageCursor, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
 import {SessionOpening} from "../opening.ts";
 import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
+import {agentStatus, agentTitle} from "../self-report.ts";
 import {
 	type ResumeTarget,
 	type StartOptions,
@@ -72,6 +74,8 @@ export type AiAgentHandlerServices<RIn = never> = ProcessSelf | ProcessPorts | R
 
 export interface AiAgentHandlerOptions<RIn = never> extends WindowLimits {
 	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
+	/** What `title@1` calls this program — the row's `identity.program` (`../program.ts`). */
+	readonly program: string;
 	/** The working directory the Sub's projection falls back to when nothing is checkpointed. */
 	readonly cwd: string;
 	/** Declared data, read by `start` and the reconnect that repeats it (#7371). */
@@ -180,6 +184,19 @@ export const aiAgentHandlers = <RIn = never>(
 		return {kind: "page", items: planned.items, omitted: planned.omitted, next};
 	};
 
+	/**
+	 * The two generic out-ports, said together (`../self-report.ts`).
+	 *
+	 * Together rather than one per cause because the pair is cheap and the alternative is a matrix
+	 * of "which event moves which line" that a new event kind silently falls out of — and the value
+	 * a reader is left with then is the stale one the kernel latched.
+	 */
+	const selfReport = (state: AiAgentSessionState) =>
+		Effect.gen(function* () {
+			yield* emit(aiAgentPortNames.title, agentTitle(options.program, state));
+			yield* emit(aiAgentPortNames.status, agentStatus(state));
+		});
+
 	const handlers: AiAgentHandlerSet<RIn>["handlers"] = {
 		// The one handler that calls nothing. It answers the fresh `init`'s Cmd with the Msg that
 		// opens the session, and the `start` cell does the rest — including refusing a second open.
@@ -242,6 +259,7 @@ export const aiAgentHandlers = <RIn = never>(
 				yield* emit(aiAgentPortNames.transcript, transcriptOf(seeded));
 				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
 				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
+				yield* selfReport(seeded);
 				return nothing;
 			}),
 
@@ -345,7 +363,8 @@ export const aiAgentHandlers = <RIn = never>(
 			const agent = yield* slot.current;
 			if (agent === null) return;
 			const seed = yield* readSession;
-			yield* projection.seed(seed ?? initialState(options.cwd));
+			// The Sub opens on `started`, so this is the started session saying what it is (R3.1).
+			yield* selfReport(yield* projection.seed(seed ?? initialState(options.cwd)));
 
 			yield* Stream.runForEach(agent.events, (event) =>
 				Effect.gen(function* () {
@@ -363,6 +382,7 @@ export const aiAgentHandlers = <RIn = never>(
 						yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
 					}
 					if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));
+					yield* selfReport(next);
 				}),
 			).pipe(
 				Effect.catchIf(
