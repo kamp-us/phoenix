@@ -20,6 +20,7 @@ import {
 	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {Effect, Layer, Predicate, Queue} from "effect";
 import {retaining} from "../diagnostics.ts";
@@ -56,6 +57,12 @@ export interface AgentSessionHostOptions {
 	 * `createAgentSession` building exactly the one it built before this option existed.
 	 */
 	readonly extensionPaths?: ReadonlyArray<string>;
+	/**
+	 * Tools every session this host opens registers beside Pi's built-ins, straight through to
+	 * `createAgentSession`'s `customTools`. Empty or absent passes no option at all, which leaves
+	 * `createAgentSession` opening exactly the session it opened before this option existed.
+	 */
+	readonly customTools?: ReadonlyArray<ToolDefinition>;
 }
 
 const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
@@ -166,6 +173,21 @@ export const extensionLoader = async (
 	await loader.reload();
 	return loader;
 };
+
+/**
+ * `createAgentSession`'s `customTools` for this host, or nothing to pass at all.
+ *
+ * The empty case is a missing key rather than an empty array on purpose: `createAgentSession` reads
+ * `customTools` to decide whether any custom tool is registered at all (`dist/core/sdk.js`), so a
+ * host with none opens exactly the session it opened before this option existed. Pi's own type is a
+ * mutable `ToolDefinition[]`, so the readonly list is copied rather than cast.
+ */
+export const customToolsOption = (
+	options: Pick<AgentSessionHostOptions, "customTools">,
+): {customTools?: ToolDefinition[]} =>
+	options.customTools === undefined || options.customTools.length === 0
+		? {}
+		: {customTools: [...options.customTools]};
 
 const call = <A>(
 	session: AgentSession,
@@ -331,6 +353,7 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 							settingsManager,
 							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
+							...customToolsOption(options),
 						});
 						return result.session;
 					},
@@ -385,6 +408,7 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 							settingsManager,
 							...(resourceLoader === undefined ? {} : {resourceLoader}),
 							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
+							...customToolsOption(options),
 						});
 						return result.session;
 					},

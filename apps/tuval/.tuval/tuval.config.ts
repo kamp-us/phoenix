@@ -57,6 +57,7 @@ export default {
 		piSessionProgram({
 			cwd: projectRoot,
 			pi: {model: {provider: "openai-codex", id: "gpt-5.6-luna"}},
+			scope: claudeSessionScope,
 		}),
 		claudeSession({cwd: projectRoot, scope: claudeSessionScope}),
 		// The stated default for the third row: a Gemini 3.x id out of `agy models`, because the point

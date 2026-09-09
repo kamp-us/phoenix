@@ -58,6 +58,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
+import {KernelBridge} from "../../ai-agent/tools/KernelBridge.ts";
 import {featuresDefault} from "../../features.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
@@ -71,6 +72,7 @@ import {
 	type ServerBindFailed,
 	subagentExtensionPaths,
 } from "../server/index.ts";
+import {piKernelTools} from "../tools.ts";
 import type {SessionSnapshot, ThinkingLevel} from "../wire/index.ts";
 import {type AsyncSpawns, asyncRunRoot, readAsyncSpawns} from "./async-spawn.ts";
 import {
@@ -897,9 +899,10 @@ const transport = (
 /**
  * Pi's model runtime and the session host over it, created inside this layer's own Scope.
  *
- * This is what keeps ruling 4's `R` empty. The call site supplies `authPath` and `modelsPath` and
- * nothing further, so the strings on `PiAiAgentOptions` are the whole of what a process gives Pi
- * and no Pi value ever crosses back out to it. `CreateModelRuntimeOptions` does declare three
+ * This is what keeps every Pi value inside the layer. The call site supplies `authPath` and
+ * `modelsPath` and nothing further, so the strings on `PiAiAgentOptions` are the whole of what a
+ * process gives Pi and no Pi value ever crosses back out to it. The one thing in `R` is Tuval's own
+ * `KernelBridge`, which the row provides exactly as the Claude and Codex rows do (#8720). `CreateModelRuntimeOptions` does declare three
  * options that are neither a path nor a flag — `credentials`, `modelsStore` and `signal` — and
  * leaving all three unset is what keeps this seam string-only at 0.84.3
  * (`dist/core/model-runtime.d.ts:3-18`). The two paths are Pi's own, rebased on `agentDir` so an
@@ -908,9 +911,13 @@ const transport = (
  * runtime holds nothing to release — it declares no `dispose` or `close` — so it is created rather
  * than acquired.
  */
-const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
+const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost, never, KernelBridge> =>
 	Layer.unwrap(
 		Effect.gen(function* () {
+			const bridge = yield* KernelBridge;
+			// The handlers are plain `async` functions Pi calls; Effect runs inside them, over the
+			// services this layer was built with, so a tool call keeps the caller's spans and loggers.
+			const services = yield* Effect.context<never>();
 			const agentDir = options.agentDir ?? getAgentDir();
 			const modelRuntime = yield* Effect.tryPromise({
 				try: () =>
@@ -931,10 +938,18 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 			// an empty list, and an empty list is the same session this layer opened before the flag
 			// existed (`../server/AgentSessionHost.ts`'s `loaderFor`).
 			const extensionPaths = subagentExtensionPaths(featuresDefault);
+			// The `piKernelTools` flag and nothing else decides this. Off — the shipped default — the
+			// list is empty, and an empty list is no `customTools` key at all, which is the session
+			// this layer opened before the flag existed (`../server/AgentSessionHost.ts`'s
+			// `customToolsOption`).
+			const customTools = featuresDefault.piKernelTools
+				? piKernelTools(bridge, Effect.runPromiseWith(services))
+				: [];
 			return agentSessionHostLayer({
 				modelRuntime,
 				agentDir,
 				...(extensionPaths.length === 0 ? {} : {extensionPaths}),
+				...(customTools.length === 0 ? {} : {customTools}),
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
 				...(options.streamPartialText === undefined
@@ -972,12 +987,14 @@ export const PiAiAgent = {
 	/**
 	 * Ruling 4's layer (#7570): building it inside the process's Scope stands up Pi's model runtime,
 	 * the session host, the loopback server and the client, and closing that Scope tears all four
-	 * down. `R` is empty and `E` is `never`, so a process hands this to `aiAgentProgram` and holds no
-	 * Pi value of its own. A bind failure dies rather than riding the error channel: the layer is
+	 * down. `E` is `never` and `R` is `KernelBridge` and nothing else — no Pi type reaches it, so a
+	 * process hands this to `aiAgentProgram` and holds no Pi value of its own; the row provides the
+	 * bridge from its own scope the way the Claude and Codex rows do (ruling R9.1 on #8715). A bind
+	 * failure dies rather than riding the error channel: the layer is
 	 * built before any handler runs, so there is no caller to hand a `ServerBindFailed` to and
 	 * nothing that could act on one — a loopback port this process cannot bind is a broken host, not
 	 * a case the row models.
 	 */
-	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent> =>
+	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent, never, KernelBridge> =>
 		aiAgentOverHost(options).pipe(Layer.provide(host(options))),
 } as const;
