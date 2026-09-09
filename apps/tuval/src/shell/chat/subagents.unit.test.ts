@@ -5,7 +5,13 @@
 
 import {describe, expect, it} from "vitest";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
-import {elapsedLabel, runningSubagents, SUBAGENT_ROW_CAP, tokenLabel} from "./subagents.ts";
+import {
+	elapsedLabel,
+	runningSubagents,
+	SUBAGENT_ROW_CAP,
+	shownSubagents,
+	tokenLabel,
+} from "./subagents.ts";
 
 const slots = (...entries: ReadonlyArray<ReturnType<typeof subagentSlot>>) =>
 	Object.fromEntries(entries.map((slot) => [slot.id, slot]));
@@ -166,5 +172,31 @@ describe("tokenLabel", () => {
 	it("reads millions compactly too", () => {
 		expect(tokenLabel(1_250_000)).toBe("1.3M");
 		expect(tokenLabel(4_000_000)).toBe("4M");
+	});
+});
+
+describe("shownSubagents", () => {
+	const worker = subagentSlot("a");
+	const child = subagentSlot("b", {process: "p-9"});
+
+	it("leaves the kernel children out while their flag is off", () => {
+		expect(Object.keys(shownSubagents(slots(worker, child), false))).toEqual(["a"]);
+	});
+
+	it("shows both once the flag is on, and hands the set back untouched", () => {
+		const all = slots(worker, child);
+		expect(shownSubagents(all, true)).toBe(all);
+	});
+});
+
+describe("a kernel child's row", () => {
+	it("carries the process the slot named, so the row knows what activating it opens", () => {
+		const model = runningSubagents(slots(subagentSlot("a", {process: "p-9"})));
+		expect(model.rows[0]?.process).toBe("p-9");
+	});
+
+	it("carries no process for a worker the backend spawned, which is the other fact", () => {
+		const model = runningSubagents(slots(subagentSlot("a")));
+		expect(model.rows[0]).not.toHaveProperty("process");
 	});
 });

@@ -65,6 +65,7 @@ const DeclaredFeatures = Schema.Struct({
 	 * one change — a subagent's rows leaving the agent window's transcript (#8405).
 	 */
 	subagentList: Schema.optionalKey(Schema.Boolean),
+	kernelChildren: Schema.optionalKey(Schema.Boolean),
 });
 
 export {featuresDefault, type TuvalFeatures} from "./features.ts";

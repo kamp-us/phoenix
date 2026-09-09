@@ -239,6 +239,51 @@ describe("shell core: windows", () => {
 		expect(apply(empty, {type: "window.unbind", windowId: "window-nope"})[0]).toBe(empty);
 	});
 
+	it("window.attach with no split takes the target window over", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {scroll: 7}});
+		const target = active(state).focused;
+
+		const [after, cmds] = apply(state, {type: "window.attach", processId: "p-9"});
+
+		expect(windowIds(active(after))).toEqual(windowIds(active(state)));
+		expect(cmds).toEqual([
+			{type: "attachProcess", windowId: target, processId: "p-9", view: {scroll: 7}},
+		]);
+	});
+
+	// The sub-agent list's kernel row (#8719): the row promises its own window, so the attach must
+	// not land on the window whose list was activated — that is the parent's own transcript.
+	it("window.attach with a split lands the process in a fresh window, not the target's", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {scroll: 7}});
+		const parent = active(state).focused;
+
+		const [after, cmds] = apply(state, {
+			type: "window.attach",
+			processId: "p-9",
+			split: "horizontal",
+		});
+
+		const opened = active(after).focused;
+		expect(opened).not.toBe(parent);
+		expect(windowIds(active(after))).toEqual([parent, opened]);
+		// No `view`: the fresh window holds no slot, so the child does not inherit the parent's.
+		expect(cmds).toEqual([{type: "attachProcess", windowId: opened, processId: "p-9"}]);
+		// The parent keeps its own window and its own view slot.
+		expect(after.views[parent]).toEqual({scroll: 7});
+	});
+
+	it("window.attach refuses a window this workspace does not hold, split or not", () => {
+		const state = initialState();
+		for (const msg of [
+			{type: "window.attach", processId: "p-9", windowId: "window-nope"},
+			{type: "window.attach", processId: "p-9", windowId: "window-nope", split: "horizontal"},
+		] satisfies readonly ShellMsg[]) {
+			const [after, cmds] = apply(state, msg);
+			expect(after).toEqual(state);
+			expect(cmds).toEqual([]);
+		}
+	});
+
 	it("window.setView writes the focused window's slot and refuses an unknown window", () => {
 		const state = initialState();
 		const [viewed] = apply(state, {type: "window.setView", view: {scroll: 3, wrap: true}});

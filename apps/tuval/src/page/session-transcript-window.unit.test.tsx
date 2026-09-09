@@ -145,7 +145,7 @@ const hostFor = (window: string): WindowHost<SessionListState> => ({
 });
 
 const mount = (window = "w-1"): ReactElement => {
-	const entry = pageRenderers(call)[SESSION_LIST_WINDOW_REF.ref];
+	const entry = pageRenderers(call, () => undefined)[SESSION_LIST_WINDOW_REF.ref];
 	if (entry === undefined) throw new Error("the page's table has no session-list renderer");
 	return <>{entry.render(hostFor(window))}</>;
 };

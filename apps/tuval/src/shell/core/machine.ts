@@ -171,7 +171,20 @@ export type ShellMsg =
 			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
 			readonly session?: OpenSession;
 	  }
-	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
+	| {
+			readonly type: "window.attach";
+			readonly processId: string;
+			readonly windowId?: WindowId;
+			/**
+			 * Give the process a window of its own rather than the target's: split the target on this
+			 * orientation and attach into the window that split mints. Absent, the process takes over
+			 * the target window, which is what the picker and the `window:attach` command line both
+			 * want. A caller that means "open this child *beside* its parent" — the sub-agent list's
+			 * kernel row (#8719) — cannot say it any other way: without the split the attach lands on
+			 * the focused window, which is the parent's own.
+			 */
+			readonly split?: Orientation;
+	  }
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
 	| {
@@ -186,6 +199,18 @@ export type ShellMsg =
 	  }
 	| {readonly type: "prefix.repeatLapsed"}
 	| DeskMsg;
+
+/**
+ * Open a process as a window of its own — what a sub-agent list's kernel row asks for when it is
+ * activated (#8719). It lives here rather than at the page that dispatches it so the row's promise
+ * and the Msg that keeps it are one thing a test can drive end to end: the split is the whole
+ * difference between "its own window" and "the parent's".
+ */
+export const openProcessMsg = (processId: string): ShellMsg => ({
+	type: "window.attach",
+	processId,
+	split: "horizontal",
+});
 
 /** What every cell returns: the state that follows, and what the host is asked to do. */
 export type Step = readonly [ShellState, readonly ShellCmd[]];
@@ -510,6 +535,23 @@ const viewOf = (state: ShellState, windowId: WindowId): {readonly view?: ViewSta
  * The cells, closed over the table the key router reads. A table is configuration, not state: it
  * holds `Duration.Duration` values, and the shell's state is checkpointed JSON.
  */
+/**
+ * Where a `window.attach` lands, and the state it lands in. Without a split that is the target
+ * window and the process takes it over. With one, the target splits and the process lands in the
+ * window that split minted — the only way a caller can say "a window of its own" rather than "the
+ * one I am already looking at" (#8719). A split the layout refused leaves the state untouched and
+ * the target as the home, so the attach still lands somewhere rather than being dropped.
+ */
+const attachHome = (
+	state: ShellState,
+	target: WindowId,
+	split: Orientation | undefined,
+): readonly [ShellState, WindowId] => {
+	if (split === undefined) return [state, target];
+	const [next] = splitWindow(state, {type: "window.split", orientation: split, windowId: target});
+	return [next, activeWorkspace(next)?.focused ?? target];
+};
+
 export const cellsFor = (table: PrefixTable): ShellCells => {
 	const apply = (state: ShellState, msg: ShellMsg): Step => runCell(cells, state, msg);
 
@@ -603,19 +645,12 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		},
 		"window.attach": (state, msg) => {
 			const target = targetWindow(state, msg.windowId);
-			return target === null
-				? [state, NO_CMDS]
-				: [
-						state,
-						[
-							{
-								type: "attachProcess",
-								windowId: target,
-								processId: msg.processId,
-								...viewOf(state, target),
-							},
-						],
-					];
+			if (target === null) return [state, NO_CMDS];
+			const [next, home] = attachHome(state, target, msg.split);
+			return [
+				next,
+				[{type: "attachProcess", windowId: home, processId: msg.processId, ...viewOf(next, home)}],
+			];
 		},
 		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
 		// resolves the name through the command table, so routing a row's own Msg back through it
