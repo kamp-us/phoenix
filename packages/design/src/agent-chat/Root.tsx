@@ -24,6 +24,11 @@ import type {
 } from "../agent-chat-bridge";
 import {useDesignT} from "../i18n";
 import {thinkingLevelKeys} from "./catalog";
+import {
+	type AgentChatDeliveryRule,
+	deliveryRuleForVariant,
+	requestedDelivery as resolveRequestedDelivery,
+} from "./delivery";
 import {fileAsImage, MAX_IMAGE_BYTES} from "./image";
 import {mockCommands, mockFiles, mockModels, mockThinkingLevels} from "./mock-harness";
 import {
@@ -48,7 +53,23 @@ export interface AgentChatInputProps {
 	readonly bridge?: AgentChatInputBridge;
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
+	/**
+	 * Styling only. It picks the composer's border, layout and which controls sit behind the
+	 * disclosure; `deliveryRule` decides how a send goes out. #8669 retires this prop.
+	 */
 	readonly variant?: "harness" | "focused";
+	/**
+	 * How a send is delivered.
+	 *
+	 * - `as-picked` — send exactly what the delivery picker holds, whatever the harness is doing.
+	 * - `queue-while-working` — the picker only applies while the harness is working, and a `prompt`
+	 *   picked there queues as a `follow_up` instead of interrupting the run. A send at any other
+	 *   connection state is always a fresh `prompt`.
+	 *
+	 * Unset, it is derived from `variant` — `focused` means `queue-while-working`, `harness` means
+	 * `as-picked` — so a host that never named it keeps the delivery it has today.
+	 */
+	readonly deliveryRule?: AgentChatDeliveryRule;
 	readonly mockWhenUnavailable?: boolean;
 	/**
 	 * Called with the composer's text whenever an edit changes it — a keystroke, an accepted
@@ -80,6 +101,7 @@ export interface AgentChatInputProps {
 export interface AgentChatInputContextValue {
 	readonly disabled: boolean;
 	readonly variant: "harness" | "focused";
+	readonly deliveryRule: AgentChatDeliveryRule;
 	readonly settings: ReactNode;
 	readonly fieldRef: Ref<HTMLTextAreaElement> | undefined;
 	readonly inputId: string;
@@ -136,6 +158,7 @@ export function AgentChatInputRoot({
 	initialValue = "",
 	disabled = false,
 	variant = "harness",
+	deliveryRule,
 	mockWhenUnavailable = false,
 	onDraftChange,
 	settings,
@@ -143,6 +166,7 @@ export function AgentChatInputRoot({
 	children,
 }: AgentChatInputProps & {readonly children: ReactNode}) {
 	const activeBridge = bridge ?? unavailableBridge;
+	const rule = deliveryRule ?? deliveryRuleForVariant(variant);
 	const t = useDesignT();
 	const inputId = useId();
 	const suggestionsId = `${inputId}-suggestions`;
@@ -428,14 +452,7 @@ export function AgentChatInputRoot({
 			return;
 		}
 		try {
-			const requestedDelivery =
-				variant === "focused"
-					? connection === "working"
-						? delivery === "prompt"
-							? "follow_up"
-							: delivery
-						: "prompt"
-					: delivery;
+			const requestedDelivery = resolveRequestedDelivery(rule, connection, delivery);
 			const streamedPrompt = connection === "working" && requestedDelivery === "prompt";
 			await activeBridge.sendPiPrompt({
 				type: requestedDelivery,
@@ -648,6 +665,7 @@ export function AgentChatInputRoot({
 	const value: AgentChatInputContextValue = {
 		disabled,
 		variant,
+		deliveryRule: rule,
 		settings,
 		fieldRef: ref,
 		inputId,

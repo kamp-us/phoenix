@@ -1,4 +1,5 @@
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {createRef} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AgentChatInput} from "./AgentChatInput";
 import type {AgentChatInputBridge} from "./agent-chat-bridge";
@@ -597,5 +598,15 @@ describe("AgentChatInput", () => {
 			"GPT-5",
 			"GPT-5.6",
 		]);
+	});
+
+	// A host's only way to focus the composer, and it travels as an ordinary prop through the
+	// spread onto Root. Nothing throws when it stops attaching — focus just never moves (#8688).
+	it("lands a host's ref on the prompt field", async () => {
+		const {bridge} = installHarnessFetch();
+		const field = createRef<HTMLTextAreaElement>();
+		render(<AgentChatInput bridge={bridge} ref={field} />);
+
+		expect(await screen.findByLabelText("Pi'ye mesaj yaz")).toBe(field.current);
 	});
 });
