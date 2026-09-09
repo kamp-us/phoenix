@@ -13,28 +13,39 @@ import {join} from "node:path";
 import type {Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
+import type {Features} from "../../feature-flags.ts";
 import type {PiServerService, PiSessionHost, ServerBindFailed} from "../server/index.ts";
 import {PiAiAgent} from "./index.ts";
 
 /**
- * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is empty: the
- * ruled `Scope` is the scoped layer's own and is not a requirement a `Layer` type carries, so a
- * process provides this layer nothing and holds no Pi value of its own.
+ * Mutual assignability, and it is the whole point of this file: `extends` alone admits `never` on
+ * either side, so a one-way `[A, E, R] extends [TuvalAiAgent, never, Features]` reads `true` for a
+ * layer requiring `Features` and for one requiring nothing at all. Under that check the whole pin
+ * survived reverting the `host` line back to `featuresDefault` (#8595).
+ */
+type Exactly<X, Y> = [X] extends [Y] ? ([Y] extends [X] ? true : false) : false;
+
+/**
+ * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is `Features`
+ * and nothing else: the ruled `Scope` is the scoped layer's own and is not a requirement a `Layer`
+ * type carries, and the one open requirement is the merged flag record the kernel hands over at
+ * spawn (#8595). It is a kernel service, so the boundary this file guards still holds: no Pi value
+ * crosses out and no Pi type is named in `R`.
  */
 type RuledShape<L> =
 	L extends Layer.Layer<infer A, infer E, infer R>
-		? [A, E, R] extends [TuvalAiAgent, never, never]
-			? true
-			: false
+		? Exactly<[A, E, R], [TuvalAiAgent, never, Features]>
 		: false;
 
 const surface: RuledShape<ReturnType<typeof PiAiAgent.layer>> = true;
 
 /** The control: a layer that published the server would publish the token with it. */
-const leaksTheServer: RuledShape<Layer.Layer<TuvalAiAgent | PiServerService>> = false;
+const leaksTheServer: RuledShape<Layer.Layer<TuvalAiAgent | PiServerService, never, Features>> =
+	false;
 
 /** The second control: a departure this test used to pin, now red on the error channel. */
-const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed>> = false;
+const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed, Features>> =
+	false;
 
 /**
  * The third control: the departure round 1 shipped. A `PiSessionHost` in `R` is a Pi-typed
@@ -43,14 +54,23 @@ const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFaile
  */
 const requiresTheHost: RuledShape<Layer.Layer<TuvalAiAgent, never, PiSessionHost>> = false;
 
+/**
+ * The fourth control, and the one the exact check exists for: a layer requiring nothing is not the
+ * ruled shape. It is what `host` reading `featuresDefault` again would make `PiAiAgent.layer`, so
+ * `surface` above reds at typecheck on that revert — which is what binds the node-side flag route
+ * to the real consumer's type rather than to a test's own stand-in (#8595).
+ */
+const dropsTheFlagRequirement: RuledShape<Layer.Layer<TuvalAiAgent, never, never>> = false;
+
 describe("the Pi AI agent layer's surface", () => {
 	it("is the ruled shape and provides the interface and nothing else", () => {
-		expect([surface, leaksTheServer, raisesTheBindFailure, requiresTheHost]).toEqual([
-			true,
-			false,
-			false,
-			false,
-		]);
+		expect([
+			surface,
+			leaksTheServer,
+			raisesTheBindFailure,
+			requiresTheHost,
+			dropsTheFlagRequirement,
+		]).toEqual([true, false, false, false, false]);
 	});
 
 	it("publishes one layer and its own options", () => {

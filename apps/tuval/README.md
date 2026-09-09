@@ -840,14 +840,18 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 
 ## The Pi AI agent layer
 
-`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
-requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
-building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
-one loopback server and one client, and closing that scope closes the client, the server and every
-session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
-plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
-type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
-no event, no method's answer and no log line.
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
+`Layer<TuvalAiAgent, never, Features>`, never-failing, asking only for the merged feature-flag
+record the row's spawner provides — the same shape the Claude layer has, one service open and it is
+a Tuval one. Founder ruling 4 ([#7570](https://github.com/kamp-us/phoenix/issues/7570)) is what puts
+the runtime inside the layer, and it required nothing at all until the node-side flag route landed
+([#8595](https://github.com/kamp-us/phoenix/issues/8595)); what the ruling guards is unchanged,
+since no Pi type is named in either channel. Building it inside the process's scope stands up Pi's
+model runtime, the `PiSessionHost` over it, one loopback server and one client, and closing that
+scope closes the client, the server and every session exactly once. A process therefore holds no Pi
+value of its own — `PiAiAgentOptions` carries plain strings, and `agentDir` is the only path it
+usually sets. Nothing on that surface is a Pi type, and the per-launch token is unwrapped once, into
+the transport factory's closure, and reaches no event, no method's answer and no log line.
 
 `start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
 `start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped

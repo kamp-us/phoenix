@@ -58,7 +58,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
-import {featuresDefault} from "../../features.ts";
+import {Features} from "../../feature-flags.ts";
 import {PiClientService, type PiSessionRef, type SessionUpdate} from "../client/index.ts";
 import {retaining} from "../diagnostics.ts";
 import {
@@ -897,9 +897,10 @@ const transport = (
 /**
  * Pi's model runtime and the session host over it, created inside this layer's own Scope.
  *
- * This is what keeps ruling 4's `R` empty. The call site supplies `authPath` and `modelsPath` and
- * nothing further, so the strings on `PiAiAgentOptions` are the whole of what a process gives Pi
- * and no Pi value ever crosses back out to it. `CreateModelRuntimeOptions` does declare three
+ * This is what keeps every Pi type out of ruling 4's `R`, which holds one service and it is a
+ * Tuval one: `Features`, the merged flag record (#8595). The call site supplies `authPath` and
+ * `modelsPath` and nothing further, so the strings on `PiAiAgentOptions` are the whole of what a
+ * process gives Pi and no Pi value ever crosses back out to it. `CreateModelRuntimeOptions` does declare three
  * options that are neither a path nor a flag — `credentials`, `modelsStore` and `signal` — and
  * leaving all three unset is what keeps this seam string-only at 0.84.3
  * (`dist/core/model-runtime.d.ts:3-18`). The two paths are Pi's own, rebased on `agentDir` so an
@@ -908,7 +909,7 @@ const transport = (
  * runtime holds nothing to release — it declares no `dispose` or `close` — so it is created rather
  * than acquired.
  */
-const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
+const host = (options: PiAiAgentOptions) =>
 	Layer.unwrap(
 		Effect.gen(function* () {
 			const agentDir = options.agentDir ?? getAgentDir();
@@ -927,10 +928,11 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 						}),
 					),
 			}).pipe(Effect.orDie);
-			// The `piSubagents` flag and nothing else decides this. Off — the shipped default — it is
-			// an empty list, and an empty list is the same session this layer opened before the flag
-			// existed (`../server/AgentSessionHost.ts`'s `loaderFor`).
-			const extensionPaths = subagentExtensionPaths(featuresDefault);
+			// The `piSubagents` flag and nothing else decides this, read off the merged config rather
+			// than the defaults: a layer that states it wins, in either direction (#8595). Off is an
+			// empty list, which is the same session this layer opened before the flag existed
+			// (`../server/AgentSessionHost.ts`'s `loaderFor`).
+			const extensionPaths = subagentExtensionPaths(yield* Features);
 			return agentSessionHostLayer({
 				modelRuntime,
 				agentDir,
@@ -972,12 +974,18 @@ export const PiAiAgent = {
 	/**
 	 * Ruling 4's layer (#7570): building it inside the process's Scope stands up Pi's model runtime,
 	 * the session host, the loopback server and the client, and closing that Scope tears all four
-	 * down. `R` is empty and `E` is `never`, so a process hands this to `aiAgentProgram` and holds no
-	 * Pi value of its own. A bind failure dies rather than riding the error channel: the layer is
+	 * down. `E` is `never` and `R` is `Features` alone — the merged flag record a spawn hands over
+	 * (#8595) — so a process hands this to `aiAgentProgram` and holds no Pi value of its own.
+	 *
+	 * The shape is inferred rather than annotated on purpose, and `boundary.unit.test.ts` pins it: an
+	 * annotation would declare `Features` in `R` even after a body stopped reading it, which is how a
+	 * revert to `featuresDefault` passed every gate in the round that added this.
+	 *
+	 * A bind failure dies rather than riding the error channel: the layer is
 	 * built before any handler runs, so there is no caller to hand a `ServerBindFailed` to and
 	 * nothing that could act on one — a loopback port this process cannot bind is a broken host, not
 	 * a case the row models.
 	 */
-	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent> =>
+	layer: (options: PiAiAgentOptions = {}) =>
 		aiAgentOverHost(options).pipe(Layer.provide(host(options))),
 } as const;
