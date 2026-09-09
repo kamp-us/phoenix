@@ -43,6 +43,7 @@ import type {
 	Receiver,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
+import {type AnyArgRefs, argKeys} from "./args.ts";
 import {type CommandArgTypes, type CommandTable, compileCommands} from "./commands.ts";
 import {
 	type AskEffect,
@@ -117,6 +118,8 @@ export interface AuthoredProgram<
 	 */
 	readonly init: () => S;
 	readonly update: U & UpdateTable<S, D, U>;
+	/** The args the config hands a process, as `programArgs` declared them (`./args.ts`). */
+	readonly args?: AnyArgRefs;
 	/**
 	 * The commands this program offers, compiled into the row's spells (`./commands.ts`). The key
 	 * is the command's own path and never carries a prefix: the group is the program id, and the
@@ -299,6 +302,7 @@ export const FIELD_COMPILERS = {
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
 	handlers: () => HANDLERS,
+	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	spells: (authored) => compileCommands(authored.commands, HANDLERS),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
