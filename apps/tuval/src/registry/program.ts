@@ -224,6 +224,13 @@ export interface Program<
 	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	/**
+	 * The service keys this program's args are read through, one per arg the author declared, keyed
+	 * by the arg's name (#8716 R15.1). Data only: an arg's value never rides the row — it rides the
+	 * row's existing `R`, provided by the Layer the config call builds when it fills the args
+	 * (`src/authoring/args.ts`). A row whose program declares none omits the field.
+	 */
+	readonly args?: Readonly<Record<string, string>>;
+	/**
 	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only
 	 * `true` or absent: a row that never asked for keys is never sent one, so a keystroke landing on
 	 * a window outside its composer cannot reach a program with no cell for it (#7973). The row

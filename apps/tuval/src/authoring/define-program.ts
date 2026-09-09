@@ -43,6 +43,7 @@ import type {
 	Receiver,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
+import {type AnyArgRefs, argKeys} from "./args.ts";
 import {
 	type AskEffect,
 	type EmitEffect,
@@ -111,6 +112,8 @@ export interface AuthoredProgram<S, D extends PortDecls, U> {
 	 */
 	readonly init: () => S;
 	readonly update: U & UpdateTable<S, D, U>;
+	/** The args the config hands a process, as `programArgs` declared them (`./args.ts`). */
+	readonly args?: AnyArgRefs;
 	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
 	/**
@@ -287,6 +290,7 @@ export const FIELD_COMPILERS = {
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
 	handlers: () => HANDLERS,
+	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
