@@ -2087,13 +2087,9 @@ describe("the view slot's writer, under StrictMode", () => {
 	it("composes batched commits off the last committed value", async () => {
 		const {writes, view} = await openWindow(
 			// A reply between the calls: consecutive ones collapse into one run (#8612), and this case
-			// needs two rows with a disclosure each to batch two toggles.
-			withTranscript([
-				userItem("a", "do it"),
-				call("c"),
-				assistantItem("b", "next"),
-				call("d", {name: "grep"}),
-			]),
+			// needs two rows with a disclosure each to batch two toggles. No opening `user` item, so
+			// these rows head no turn and the turn fold leaves them where they are (#8614).
+			withTranscript([call("c"), assistantItem("b", "next"), call("d", {name: "grep"})]),
 			{},
 			undefined,
 			{strict: true},
