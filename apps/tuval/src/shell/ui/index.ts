@@ -31,6 +31,13 @@ export {
 	statusFrame,
 	zoomedWindow,
 } from "./frame.ts";
+export {
+	INITIAL_INPUT_MODALITY,
+	INPUT_MODALITY_ATTRIBUTE,
+	type InputModality,
+	inputModalityAround,
+	inputModalityHandlers,
+} from "./input-modality.ts";
 export {LayoutView, type LayoutViewProps} from "./LayoutView.tsx";
 export {
 	boundMount,
