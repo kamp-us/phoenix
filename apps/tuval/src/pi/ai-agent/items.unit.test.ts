@@ -1014,7 +1014,7 @@ describe("a running subagent filled from its own transcript artifact", () => {
 
 	it("tracks the run the running row names", () => {
 		expect([...opened.next.spawns.values()]).toEqual([
-			{id: "call-9", runId: "run-1", type: "reviewer", startedAt: 11},
+			{id: "call-9", toolCallId: "call-9", runIds: ["run-1"], agent: "reviewer", startedAt: 11},
 		]);
 	});
 
@@ -1088,5 +1088,119 @@ describe("a running subagent filled from its own transcript artifact", () => {
 
 	it("leaves the slot empty when the artifact is not readable yet", () => {
 		expect(childEventsOf(opened.next, new Map()).events).toEqual([]);
+	});
+});
+
+/**
+ * A detached spawn (`async: true`, which every `workflowScript` run is) emits no
+ * `tool_execution_update`, so its row carries no run id and its workers write under ids of their
+ * own. The tool-call index is the only address left, and the tail hands its answer to the fold
+ * (#8679).
+ */
+describe("a detached subagent filled through the tool-call index", () => {
+	const running: PiTranscriptItem = {
+		id: "item-3",
+		role: "tool",
+		toolCallId: "call-async",
+		toolName: "subagent",
+		input: {async: true, context: "fresh", workflowScript: "runs.run('lane')"},
+		content: [],
+		timestamp: 21,
+		status: "running",
+		isError: false,
+	};
+
+	const child = {
+		items: [
+			{kind: "assistant" as const, id: itemId("child-0"), timestamp: 22, text: "cutting the lane"},
+		],
+		lastLine: "cutting the lane",
+		tokens: 17,
+	};
+
+	const opened = eventsOf(emptyProjection, snapshot([running], "turn"));
+	const resolved = new Map([["call-async", {runIds: ["worker-1"], agent: "builder"}]]);
+	const tailed = () => childEventsOf(opened.next, new Map([["worker-1", child]]), resolved);
+
+	it("tracks the call with no workers until the index answers", () => {
+		expect([...opened.next.spawns.values()]).toEqual([
+			{id: "call-async", toolCallId: "call-async", runIds: [], agent: null, startedAt: 21},
+		]);
+	});
+
+	it("draws an empty running slot while nothing has resolved", () => {
+		expect(opened.events).toContainEqual({
+			kind: "subagent",
+			slot: {
+				id: "call-async",
+				type: "subagent",
+				lastLine: "",
+				startedAt: 21,
+				tokens: 0,
+				items: [],
+				status: "running",
+			},
+		});
+	});
+
+	it("fills the slot off the resolved worker's artifact and names it after the step", () => {
+		expect(tailed().events).toEqual([
+			{
+				kind: "subagent",
+				slot: {
+					id: "call-async",
+					type: "builder",
+					lastLine: "cutting the lane",
+					startedAt: 21,
+					tokens: 17,
+					items: [
+						{
+							kind: "assistant",
+							id: "call-async:child-0",
+							parentId: "call-async",
+							timestamp: 22,
+							text: "cutting the lane",
+						},
+					],
+					status: "running",
+				},
+			},
+		]);
+	});
+
+	// The resolution is the projection's now, so a wire push landing between two reads restates the
+	// filled slot rather than blanking the rows the operator is looking at.
+	it("keeps the resolution when a later push refolds the same row", () => {
+		const pushed = deltaEventsOf(
+			tailed().next,
+			{id: "session-8679", revision: 2, updatedAt: 200, items: [running]},
+			new Map([["worker-1", child]]),
+		);
+		expect(pushed.events).toEqual([]);
+		expect([...pushed.next.spawns.values()]).toEqual([
+			{
+				id: "call-async",
+				toolCallId: "call-async",
+				runIds: ["worker-1"],
+				agent: "builder",
+				startedAt: 21,
+			},
+		]);
+	});
+
+	it("leaves the slot alone when the index resolves nothing", () => {
+		expect(childEventsOf(opened.next, new Map(), new Map()).events).toEqual([]);
+	});
+
+	it("keeps the agent the call named over the one its steps report", () => {
+		const named = eventsOf(
+			emptyProjection,
+			snapshot([{...running, input: {async: true, agent: "reviewer"}}], "turn"),
+		);
+		expect(
+			childEventsOf(named.next, new Map([["worker-1", child]]), resolved).events.map(
+				(event) => event.kind === "subagent" && event.slot.type,
+			),
+		).toEqual(["reviewer"]);
 	});
 });

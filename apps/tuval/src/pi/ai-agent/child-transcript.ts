@@ -266,6 +266,24 @@ export const readChildTranscript = (dir: string, runId: string): ChildTranscript
 	};
 };
 
+/**
+ * Several runs' transcripts as one slot's rows. An async spawn is one call over as many workers as
+ * its `steps[]` names, and the slot stays keyed on the call (#8664 owns how a fan-out is laid out),
+ * so their rows are concatenated in the order the steps were resolved and re-keyed apart.
+ */
+export const joinChildTranscripts = (parts: ReadonlyArray<ChildTranscript>): ChildTranscript => {
+	if (parts.length === 1) return parts[0] as ChildTranscript;
+	const items = parts.flatMap((part, at) =>
+		part.items.map((item) => ({...item, id: childItemId(`run-${at}-${item.id}`)})),
+	);
+	const last = items.at(-1);
+	return {
+		items,
+		lastLine: last === undefined ? "" : lineOf(last),
+		tokens: parts.reduce((sum, part) => sum + part.tokens, 0),
+	};
+};
+
 /** Every named run's artifact, read fresh — the tail step the watcher repeats while a slot runs. */
 export const readChildTranscripts = (
 	dir: string,

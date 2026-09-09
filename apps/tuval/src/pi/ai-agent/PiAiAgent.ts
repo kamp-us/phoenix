@@ -72,6 +72,7 @@ import {
 	subagentExtensionPaths,
 } from "../server/index.ts";
 import type {ThinkingLevel} from "../wire/index.ts";
+import {type AsyncSpawns, asyncRunRoot, readAsyncSpawns} from "./async-spawn.ts";
 import {
 	type ChildTranscripts,
 	readChildTranscripts,
@@ -148,7 +149,12 @@ type FoldInput =
 	| SessionUpdate
 	| {readonly _tag: "sent"}
 	/** What the running workers' own artifacts said when the tail last read them. */
-	| {readonly _tag: "children"; readonly children: ChildTranscripts};
+	| {
+			readonly _tag: "children";
+			readonly children: ChildTranscripts;
+			/** The detached spawns the same read resolved through the tool-call index. */
+			readonly resolved: AsyncSpawns;
+	  };
 
 /**
  * How often the tail re-reads a running worker's transcript artifact.
@@ -302,7 +308,7 @@ const make = (
 							}
 							if (input._tag === "children") {
 								yield* Ref.set(children, input.children);
-								const tailed = childEventsOf(previous, input.children);
+								const tailed = childEventsOf(previous, input.children, input.resolved);
 								yield* Ref.set(projection, tailed.next);
 								return yield* emit(open, tailed.events);
 							}
@@ -324,13 +330,23 @@ const make = (
 						yield* Effect.sleep(childTailInterval);
 						const running = [...(yield* Ref.get(projection)).spawns.values()];
 						if (running.length === 0) return;
-						const read = yield* Effect.sync(() =>
-							readChildTranscripts(
-								artifacts,
-								running.map((spawn) => spawn.runId),
-							),
-						);
-						yield* Queue.offer(feed, {_tag: "children", children: read});
+						const read = yield* Effect.sync(() => {
+							// A detached spawn's row carries no run id, so its workers are looked up by
+							// the call id through the tool-call index before anything is tailed.
+							const resolved = readAsyncSpawns(
+								asyncRunRoot(),
+								running
+									.filter((spawn) => spawn.runIds.length === 0)
+									.map((spawn) => spawn.toolCallId),
+							);
+							const runIds = running.flatMap((spawn) =>
+								spawn.runIds.length > 0
+									? spawn.runIds
+									: (resolved.get(spawn.toolCallId)?.runIds ?? []),
+							);
+							return {children: readChildTranscripts(artifacts, runIds), resolved};
+						});
+						yield* Queue.offer(feed, {_tag: "children", ...read});
 					}),
 				);
 				const dropped = pi.disconnections.pipe(

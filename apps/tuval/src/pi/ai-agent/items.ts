@@ -36,7 +36,12 @@ import type {
 	SessionPhase,
 	SessionSnapshot,
 } from "../wire/index.ts";
-import type {ChildTranscript, ChildTranscripts} from "./child-transcript.ts";
+import type {AsyncSpawn, AsyncSpawns} from "./async-spawn.ts";
+import {
+	type ChildTranscript,
+	type ChildTranscripts,
+	joinChildTranscripts,
+} from "./child-transcript.ts";
 import {providerFailureText} from "./provider-failure.ts";
 
 /** `ItemId` is an opaque string brand, minted here so no call site writes its own cast. */
@@ -177,13 +182,25 @@ const spawns = (toolName: string, input: unknown): boolean =>
 /**
  * What kind of worker the call started, in the extension's own words: the `agent` argument, which
  * names one of the configured agents (`pi-subagents` `src/extension/schemas.ts:283`). A spawn that
- * names none — a `workflowScript`, which picks its own children — is labelled by the tool, because
- * the row has to say something and that is the only true thing left.
+ * names none — a `workflowScript`, which picks its own children — is `null`, so the row can be
+ * named later off the workers that actually started (`async-spawn.ts`) rather than being stamped
+ * with a fallback nothing can improve on.
  */
-const subagentType = (input: unknown): string => {
+const namedAgent = (input: unknown): string | null => {
 	const agent = Predicate.isObject(input) ? (input as {readonly agent?: unknown}).agent : undefined;
-	return typeof agent === "string" && agent !== "" ? agent : "subagent";
+	return typeof agent === "string" && agent !== "" ? agent : null;
 };
+
+/** What the row is labelled once nothing better is left: the tool's own name. */
+const subagentType = (agent: string | null): string => agent ?? "subagent";
+
+/**
+ * Whether the call detached. A detached run emits no `tool_execution_update`, so its row carries no
+ * run id and the tool-call index is the only address it has (`async-spawn.ts`) — which is why it is
+ * tracked as a spawn with no workers yet rather than dropped like a row that names none.
+ */
+const detached = (input: unknown): boolean =>
+	Predicate.isObject(input) && (input as {readonly async?: unknown}).async === true;
 
 /** The newest thing the worker wrote, off a result already bounded by `boundToolResult`. */
 const lastLineOf = (text: string): string => {
@@ -214,8 +231,12 @@ const runIdOf = (item: PiTranscriptItem): string | null => {
  */
 export interface RunningSpawn {
 	readonly id: ItemId;
-	readonly runId: string;
-	readonly type: string;
+	/** The call's own id — the key a detached run is resolved by, once nothing else addresses it. */
+	readonly toolCallId: string;
+	/** Whose artifacts this slot reads. Empty for a detached run the index has not answered yet. */
+	readonly runIds: ReadonlyArray<string>;
+	/** The agent the call named, or `null` for a spawn that names none. */
+	readonly agent: string | null;
 	readonly startedAt: number;
 }
 
@@ -224,15 +245,28 @@ export const runningSpawnOf = (item: PiTranscriptItem): RunningSpawn | null => {
 	if (item.role !== "tool" || item.status !== "running" || !spawns(item.toolName, item.input))
 		return null;
 	const runId = runIdOf(item);
-	return runId === null
-		? null
-		: {
-				id: itemId(item.toolCallId),
-				runId,
-				type: subagentType(item.input),
-				startedAt: item.timestamp,
-			};
+	if (runId === null && !detached(item.input)) return null;
+	return {
+		id: itemId(item.toolCallId),
+		toolCallId: item.toolCallId,
+		runIds: runId === null ? [] : [runId],
+		agent: namedAgent(item.input),
+		startedAt: item.timestamp,
+	};
 };
+
+/**
+ * One spawn plus whatever has since been resolved for it — the tool-call index's answer, or the
+ * projection's own earlier one when a wire push rebuilds the row from scratch.
+ *
+ * A spawn that already knows its workers keeps them: the wire's run id is the call's own, and the
+ * index answers only for runs it has not released yet. The name is filled only where the call named
+ * none, so an explicit `agent` is never overwritten by what the workers turned out to be.
+ */
+const filled = (spawn: RunningSpawn, held: AsyncSpawn | RunningSpawn | undefined): RunningSpawn =>
+	held === undefined || spawn.runIds.length > 0
+		? spawn
+		: {...spawn, runIds: held.runIds, agent: spawn.agent ?? held.agent};
 
 /** One worker's own rows under the call that spawned it, so a window can tell whose they are. */
 const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<TranscriptItem> =>
@@ -241,13 +275,27 @@ const childItems = (id: ItemId, child: ChildTranscript): ReadonlyArray<Transcrip
 /** A still-running worker's slot, off its own artifact — the shape both folds below agree on. */
 const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlot => ({
 	id: spawn.id,
-	type: spawn.type,
+	type: subagentType(spawn.agent),
 	lastLine: child.lastLine,
 	startedAt: spawn.startedAt,
 	tokens: countOf(child.tokens),
 	items: childItems(spawn.id, child),
 	status: "running",
 });
+
+const emptyChild: ChildTranscript = {items: [], lastLine: "", tokens: 0};
+
+/** The rows the named runs have written, or `undefined` while no artifact of theirs has been read. */
+const childOf = (
+	children: ChildTranscripts | undefined,
+	runIds: ReadonlyArray<string>,
+): ChildTranscript | undefined => {
+	const read = runIds.flatMap((runId) => {
+		const child = children?.get(runId);
+		return child === undefined ? [] : [child];
+	});
+	return read.length === 0 ? undefined : joinChildTranscripts(read);
+};
 
 /**
  * The subagent slots one wire item is worth — the model-blind row the running list already draws
@@ -259,15 +307,19 @@ const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlo
  * (`../../ai-agent/core/fold.ts`) instead of drawing a second row.
  *
  * `items`, `lastLine` and `tokens` are the child's own, read off the JSONL artifact it appends to
- * while it runs (`child-transcript.ts`) and matched to the row by the `runId` the session stamped
- * on it. The spawn is a detached child process with its own `ModelRuntime` (#8555), so none of its
- * turns reach this transcript — the artifact is the only channel, and a slot whose artifact has not
- * been read yet falls back to what the parent knows: nothing while it runs, the tool result's own
- * text and usage once it is over.
+ * while it runs (`child-transcript.ts`). The spawn is a detached child process with its own
+ * `ModelRuntime` (#8555), so none of its turns reach this transcript — the artifact is the only
+ * channel, and a slot whose artifact has not been read yet falls back to what the parent knows:
+ * nothing while it runs, the tool result's own text and usage once it is over.
+ *
+ * A foreground row is matched to its artifact by the `runId` the session stamped on it. A detached
+ * one carries none, so `held` — the workers the tail resolved through the tool-call index — is what
+ * matches it, and it also supplies the name for a call that named no `agent` (#8679).
  */
 export const subagentSlotsOf = (
 	item: PiTranscriptItem,
 	children?: ChildTranscripts | undefined,
+	held?: ReadonlyMap<string, RunningSpawn> | undefined,
 ): ReadonlyArray<SubagentSlot> => {
 	if (item.role === "assistant") {
 		return item.content.flatMap((part) =>
@@ -275,7 +327,9 @@ export const subagentSlotsOf = (
 				? [
 						{
 							id: itemId(part.toolCallId),
-							type: subagentType(part.input),
+							type: subagentType(
+								namedAgent(part.input) ?? held?.get(part.toolCallId)?.agent ?? null,
+							),
 							lastLine: "",
 							startedAt: item.timestamp,
 							tokens: 0,
@@ -287,31 +341,33 @@ export const subagentSlotsOf = (
 		);
 	}
 	if (item.role !== "tool" || !spawns(item.toolName, item.input)) return [];
-	const runId = runIdOf(item);
-	const child = runId === null ? undefined : children?.get(runId);
 	const id = itemId(item.toolCallId);
+	const carried = held?.get(item.toolCallId);
 	if (item.status === "running") {
 		const spawn = runningSpawnOf(item);
+		if (spawn === null)
+			return [
+				{
+					id,
+					type: subagentType(namedAgent(item.input)),
+					lastLine: "",
+					startedAt: item.timestamp,
+					tokens: 0,
+					items: [],
+					status: "running",
+				},
+			];
 		// One shape for both folds, so a wire push and an artifact tail cannot fingerprint the same
 		// worker differently and repaint the row between them.
-		return [
-			spawn === null
-				? {
-						id,
-						type: subagentType(item.input),
-						lastLine: "",
-						startedAt: item.timestamp,
-						tokens: 0,
-						items: [],
-						status: "running",
-					}
-				: runningSlotOf(spawn, child ?? {items: [], lastLine: "", tokens: 0}),
-		];
+		const resolved = filled(spawn, carried);
+		return [runningSlotOf(resolved, childOf(children, resolved.runIds) ?? emptyChild)];
 	}
+	const runId = runIdOf(item);
+	const child = childOf(children, runId === null ? (carried?.runIds ?? []) : [runId]);
 	return [
 		{
 			id,
-			type: subagentType(item.input),
+			type: subagentType(namedAgent(item.input) ?? carried?.agent ?? null),
 			lastLine: child?.lastLine || lastLineOf(boundToolResult(textOf(item.content)).text),
 			startedAt: item.timestamp,
 			// The child's own spend where the artifact reported one, else what the result says it
@@ -437,14 +493,14 @@ export const eventsOf = (
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
-		for (const slot of subagentSlotsOf(source, children)) {
+		for (const slot of subagentSlotsOf(source, children, previous.spawns)) {
 			const key = slotKey(slot);
 			const mark = fingerprint(slot);
 			subagents.set(key, mark);
 			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
 		const spawn = runningSpawnOf(source);
-		if (spawn !== null) spawns.set(spawn.id, spawn);
+		if (spawn !== null) spawns.set(spawn.id, filled(spawn, previous.spawns.get(spawn.id)));
 	}
 
 	for (const source of snapshot.transcript) {
@@ -488,14 +544,14 @@ export const deltaEventsOf = (
 			items.set(item.id, mark);
 			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
 		}
-		for (const slot of subagentSlotsOf(source, children)) {
+		for (const slot of subagentSlotsOf(source, children, previous.spawns)) {
 			const key = slotKey(slot);
 			const mark = fingerprint(slot);
 			subagents.set(key, mark);
 			if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 		}
 		const spawn = runningSpawnOf(source);
-		if (spawn !== null) spawns.set(spawn.id, spawn);
+		if (spawn !== null) spawns.set(spawn.id, filled(spawn, previous.spawns.get(spawn.id)));
 		// A tool row that stopped running is a worker with nothing left to append, so the tail
 		// stops reading its artifact here rather than on a clock of its own.
 		else if (source.role === "tool") spawns.delete(source.toolCallId);
@@ -525,20 +581,31 @@ export const deltaEventsOf = (
  *
  * It leaves `revision` alone, because a child's own progress is not a revision of the parent's
  * transcript and bumping it would make the parent's next real push read as stale.
+ *
+ * `resolved` is the other half of the same read: a detached spawn learns its workers and its name
+ * from the tool-call index rather than the wire, so the answer is folded onto the projection here
+ * and carried by every later wire fold (#8679).
  */
-export const childEventsOf = (previous: SnapshotProjection, children: ChildTranscripts): Folded => {
+export const childEventsOf = (
+	previous: SnapshotProjection,
+	children: ChildTranscripts,
+	resolved?: AsyncSpawns | undefined,
+): Folded => {
 	const events: Array<AgentEvent> = [];
 	const subagents = new Map(previous.subagents);
+	const spawns = new Map(previous.spawns);
 	for (const spawn of previous.spawns.values()) {
-		const child = children.get(spawn.runId);
+		const found = filled(spawn, resolved?.get(spawn.toolCallId));
+		spawns.set(found.id, found);
+		const child = childOf(children, found.runIds);
 		if (child === undefined) continue;
-		const slot = runningSlotOf(spawn, child);
+		const slot = runningSlotOf(found, child);
 		const key = slotKey(slot);
 		const mark = fingerprint(slot);
 		subagents.set(key, mark);
 		if (previous.subagents.get(key) !== mark) events.push({kind: "subagent", slot});
 	}
-	return {events, next: {...previous, subagents}};
+	return {events, next: {...previous, subagents, spawns}};
 };
 
 /**
