@@ -29,6 +29,7 @@ import type {
 	SubagentSlot,
 	ThinkingLevel,
 	TranscriptItem,
+	TurnResult,
 } from "./ports/index.ts";
 
 /**
@@ -48,13 +49,35 @@ import type {
  * full, and every other phase is `promptRefused`. The queue's head is admitted by `settleQueue`,
  * and only when the session comes back to `ready`. So a turn left at `prompting` never refuses
  * outright — it silently swallows each later prompt into a queue that never drains, then answers
- * `promptQueueFull` for the rest of the session. Nothing types it: `AgentEvent` carries no "turn over" shape, so the
+ * `promptQueueFull` for the rest of the session. Nothing types it: `ResultEvent` below names a
+ * turn's end, but no signature makes a layer send either that or this phase, so the
  * omission compiles and passes every generic test — #7963 (Claude sent no turn-end phase at all)
  * and #7897 (Pi sent it and the host's queue coalesced it away) are the two that shipped. The
  * shape a layer holds it with is in
  * [`.patterns/agent-layer-phase-contract.md`](../../../../.patterns/agent-layer-phase-contract.md).
  */
 export type Phase = "idle" | "starting" | "ready" | "prompting" | "reconnecting" | "gone";
+
+/**
+ * One turn is over, and this is what it came to (#8724).
+ *
+ * The turn-end `ready` says a turn ended; it does not say what the turn *answered*, and a consumer
+ * outside the window has no transcript to read it off. So the layer owes this beside that phase,
+ * once per finished turn however the turn ended — a failed or interrupted turn lands here with
+ * `ok: false` rather than not landing at all. The program folds it and publishes it on `result`
+ * (`./ports/ports.ts`).
+ *
+ * It rides ahead of the phase that closes the turn, so a `session-reset` — which is one turn's end
+ * and the conversation swap in a single event — still carries this turn's answer under the id it
+ * was run on.
+ *
+ * `withTurnResult` in `./service/turn-result.ts` derives it from the events a layer already emits,
+ * which is how every layer pays this without five copies of the same bookkeeping.
+ */
+export interface ResultEvent {
+	readonly kind: "result";
+	readonly result: TurnResult;
+}
 
 /** A transcript item arrived or changed. Same `item.id` twice means the later one supersedes. */
 export interface ItemEvent {
@@ -253,6 +276,7 @@ export interface UsageEvent {
 export type AgentEvent =
 	| ItemEvent
 	| PhaseEvent
+	| ResultEvent
 	| PermissionEvent
 	| PermissionResolvedEvent
 	| ModeEvent

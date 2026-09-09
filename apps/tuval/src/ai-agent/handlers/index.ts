@@ -57,6 +57,7 @@ import {
 	modeStateOf,
 	pendingOf,
 	readSession,
+	resultOf,
 	transcriptOf,
 } from "./publish.ts";
 import {agentSlot} from "./session.ts";
@@ -259,6 +260,11 @@ export const aiAgentHandlers = <RIn = never>(
 				yield* emit(aiAgentPortNames.transcript, transcriptOf(seeded));
 				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
 				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
+				// Only once there is one: `result` carries a finished turn, and a session that has
+				// finished none has nothing to say on it — an empty payload would read as a turn
+				// that answered nothing.
+				const answer = resultOf(state);
+				if (answer !== null) yield* emit(aiAgentPortNames.result, answer);
 				yield* selfReport(seeded);
 				return nothing;
 			}),
@@ -382,6 +388,7 @@ export const aiAgentHandlers = <RIn = never>(
 						yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));
 					}
 					if (event.kind === "mode") yield* emit(aiAgentPortNames.modeState, modeStateOf(next));
+					if (event.kind === "result") yield* emit(aiAgentPortNames.result, event.result);
 					yield* selfReport(next);
 				}),
 			).pipe(

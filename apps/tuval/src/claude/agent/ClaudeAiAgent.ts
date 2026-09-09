@@ -60,6 +60,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
+import {withTurnResult} from "../../ai-agent/turn-result.ts";
 import {
 	commandsOf,
 	emptyMapping,
@@ -1026,7 +1027,9 @@ const make = (
 			sessionTranscript,
 			subagentTranscript,
 			listSessions,
-			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
+			events: withTurnResult(
+				Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
+			),
 		};
 	});
 

@@ -1,14 +1,32 @@
 import {describe, it} from "@effect/vitest";
-import {Deferred, Effect, Exit, Fiber, Stream} from "effect";
+import {Deferred, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
 import {expect} from "vitest";
 import {foldEvent} from "../ai-agent/core/fold.ts";
 import {initialState} from "../ai-agent/core/state.ts";
 import {Mode} from "../ai-agent/ports/index.ts";
-import {TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
+import {type AgentEvent, TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
 import {itemMessage, modelRows, onCodex, opened, thread, turn, turnMessage} from "./fixtures.ts";
 
 const take = (agent: TuvalAiAgentApi, count: number) =>
 	agent.events.pipe(Stream.take(count), Stream.runCollect);
+
+const isReady = (event: AgentEvent): boolean => event.kind === "phase" && event.phase === "ready";
+
+/** Every event up to and including the first one `found` accepts, off one subscription. */
+const collectTo = (
+	events: Queue.Dequeue<AgentEvent, unknown>,
+	what: string,
+	found: (event: AgentEvent) => boolean,
+) =>
+	Effect.gen(function* () {
+		const seen: Array<AgentEvent> = [];
+		while (true) {
+			const next = yield* Queue.take(events).pipe(Effect.orDie, Effect.timeoutOption("5 seconds"));
+			if (Option.isNone(next)) return yield* Effect.die(`timed out waiting for ${what}`);
+			seen.push(next.value);
+			if (found(next.value)) return seen;
+		}
+	});
 const start = (agent: TuvalAiAgentApi) =>
 	agent.start({cwd: thread.cwd}).pipe(Effect.andThen(take(agent, 6)));
 const approval = {
@@ -605,6 +623,40 @@ describe("Codex implements TuvalAiAgent", () => {
 					current: "ultra",
 					available: ["ultra"],
 				});
+			}),
+		),
+	);
+
+	/**
+	 * The per-turn `result` this layer owes beside its turn-end phase (#8724).
+	 *
+	 * One subscription for the whole turn, unlike the takes above: the tracker behind
+	 * `withTurnResult` is per subscription, so a turn read across two of them has no bracket to
+	 * close. That is the shape the host runs in — one `runForEach` over `events` per connection.
+	 */
+	it.live("owes one result per finished turn, ahead of the phase that closes it", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* agent.start({cwd: thread.cwd});
+				const opening = yield* collectTo(events, "the opened session's ready", isReady);
+				expect(opening.filter((event) => event.kind === "result")).toEqual([]);
+
+				yield* agent.prompt("hello");
+				yield* fake.push(
+					itemMessage("completed", {type: "agentMessage", id: "reply-1", text: "Hi"}),
+				);
+				yield* fake.push(turnMessage("completed"));
+
+				const turn = yield* collectTo(events, "the turn's ready", isReady);
+				const results = turn.filter((event) => event.kind === "result");
+				expect(results).toMatchObject([
+					{
+						kind: "result",
+						result: {text: "Hi", items: [{kind: "assistant", text: "Hi"}], ok: true},
+					},
+				]);
+				expect(turn.indexOf(results[0]!)).toBe(turn.length - 2);
 			}),
 		),
 	);

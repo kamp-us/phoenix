@@ -1,5 +1,5 @@
 /**
- * The five ports that make a process a Tuval AI agent, plus the two generic ones it fills like any
+ * The six ports that make a process a Tuval AI agent, plus the two generic ones it fills like any
  * other program. Each declares one nominal kind, one payload predicate and one queue bound (#7512,
  * #7371); a program spreads the direction it plays into its own `ports` record and the kernel's
  * `compile` refuses a route between two different kinds before any process exists.
@@ -35,6 +35,7 @@ import {
 	isTranscriptPageReply,
 	isTranscriptPageRequest,
 	isTranscriptPayload,
+	isTurnResult,
 	type ModePayload,
 	type ModeSet,
 	type ModeState,
@@ -46,6 +47,7 @@ import {
 	type TranscriptPageReply,
 	type TranscriptPageRequest,
 	type TranscriptPayload,
+	type TurnResult,
 } from "./payloads.ts";
 
 /**
@@ -164,6 +166,16 @@ export const mode = defineTwoWayPort<ModePayload, {set: ModeSet; state: ModeStat
 	{set: isModeSet, state: isModeState},
 );
 
+/**
+ * `result` — one payload per finished turn, for whatever consumes an agent's answer.
+ *
+ * `snapshot` rather than `request`: a turn's result supersedes the one before it, so a slow reader
+ * should see the newest answer rather than hold the agent behind a queue of stale ones. That bound
+ * is also what makes the kernel's `read` answer the *last* finished turn (`../../commands/core/
+ * process.ts` keeps one value per out-port).
+ */
+export const result = definePort("result", "tuval/ai-agent/result@1", snapshot, isTurnResult);
+
 /** The kernel's generic out-port, in this file's shape, so `agentPorts` is one list to walk. */
 const generic = <P>(name: string, port: OutPort<P>, bound: PortBound): AgentPort<P> => ({
 	name,
@@ -183,6 +195,7 @@ export const agentPorts = [
 	prompt,
 	permission,
 	mode,
+	result,
 	title,
 	status,
 ] as const;
@@ -193,5 +206,6 @@ export type AgentPortPayload =
 	| PromptPayload
 	| PermissionPayload
 	| ModePayload
+	| TurnResult
 	/** What `title` and `status` carry: one line, and nothing else (`../../process/self-report.ts`). */
 	| string;

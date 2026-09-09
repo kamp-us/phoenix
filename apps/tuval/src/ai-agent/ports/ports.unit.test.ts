@@ -13,6 +13,7 @@ import {
 	mode,
 	permission,
 	prompt,
+	result,
 	status,
 	title,
 	transcript,
@@ -38,17 +39,18 @@ const endsOf = (port: (typeof agentPorts)[number]) =>
 	"ends" in port ? Object.values(port.ends) : [port];
 
 describe("the ports a Tuval AI agent row declares", () => {
-	it("declares seven ports, each with its own kind", () => {
+	it("declares eight ports, each with its own kind", () => {
 		expect(agentPorts.map((port) => port.name)).toEqual([
 			"transcript",
 			"transcript-page",
 			"prompt",
 			"permission",
 			"mode",
+			"result",
 			"title",
 			"status",
 		]);
-		expect(new Set(agentPorts.map((port) => port.kind)).size).toBe(7);
+		expect(new Set(agentPorts.map((port) => port.kind)).size).toBe(8);
 	});
 
 	// The two generic ones are the kernel's, carried rather than restated: a copied kind string is
@@ -87,6 +89,8 @@ describe("the ports a Tuval AI agent row declares", () => {
 		).toBe(true);
 		expect(prompt.inbound().accepts({text: "go", key: "k1", timestamp: 1})).toBe(true);
 		expect(prompt.inbound().accepts({items: []})).toBe(false);
+		expect(result.outbound().accepts({text: "done", items: [], ok: true})).toBe(true);
+		expect(result.outbound().accepts({text: "done", items: []})).toBe(false);
 	});
 });
 

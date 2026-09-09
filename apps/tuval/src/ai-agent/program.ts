@@ -43,6 +43,7 @@ import {
 	type PromptPayload,
 	permission,
 	prompt,
+	result,
 	status,
 	type TranscriptPageRequest,
 	title,
@@ -106,13 +107,15 @@ export type AiAgentProgram<RIn = never> = Program<
 > & {readonly aiAgent: AiAgentBackend<RIn>};
 
 /**
- * Seven kinds, ten keys: a kind whose protocol runs both ways is played from both ends by this one
- * program, and a kernel `ports` record holds one direction per key, so each end is named locally and
- * `compile` matches on the kind (`ports/ports.ts`).
+ * Eight kinds, eleven keys: a kind whose protocol runs both ways is played from both ends by this
+ * one program, and a kernel `ports` record holds one direction per key, so each end is named locally
+ * and `compile` matches on the kind (`ports/ports.ts`).
  *
- * The last two are the kernel's generic pair, declared here exactly as a demo counter would declare
- * them (#8715 R8.1). Declaring them is what arms the kernel's latch: it records a line only for a
- * port the row says it plays out (`../process/self-report.ts`).
+ * `result` is the out-port a consumer of an agent's answer reads — one payload per finished turn
+ * (#8724, R19.3 on #8715) — and the last two are the kernel's generic pair, declared here exactly
+ * as a demo counter would declare them (#8715 R8.1). Declaring them is what arms the kernel's
+ * latch: it records a line only for a port the row says it plays out
+ * (`../process/self-report.ts`).
  */
 const portsOf = (): Readonly<Record<string, PortSchema>> => ({
 	[aiAgentPortNames.transcript]: transcript.outbound(),
@@ -123,6 +126,7 @@ const portsOf = (): Readonly<Record<string, PortSchema>> => ({
 	[aiAgentPortNames.permissionDecision]: permission.ends.decision.inbound(),
 	[aiAgentPortNames.modeState]: mode.ends.state.outbound(),
 	[aiAgentPortNames.modeSet]: mode.ends.set.inbound(),
+	[aiAgentPortNames.result]: result.outbound(),
 	[aiAgentPortNames.title]: title.outbound(),
 	[aiAgentPortNames.status]: status.outbound(),
 });
