@@ -73,6 +73,8 @@ describe("ProcessTablePort", () => {
 					"ports",
 					"programId",
 					"stateSummary",
+					"status",
+					"title",
 				]);
 				assert.strictEqual(row.programId, counterId);
 				assert.deepStrictEqual(row.parentId, Option.some(root.id));

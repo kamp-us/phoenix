@@ -87,13 +87,15 @@ export interface SpellCallFrame {
 
 export type ClientFrame = AttachFrame | DetachFrame | DispatchFrame | SpellCallFrame;
 
-/** A table row as JSON: `parentId`'s `Option` is a nullable field, and nothing else changes. */
+/** A table row as JSON: every `Option` on it is a nullable field, and nothing else changes. */
 export interface WireRow {
 	readonly id: ProcessId;
 	readonly programId: ProgramId;
 	readonly parentId: ProcessId | null;
 	readonly ports: Readonly<Record<string, PortDeclaration>>;
 	readonly stateSummary: {readonly lifecycle: Lifecycle; readonly revision: number};
+	readonly title: string | null;
+	readonly status: string | null;
 }
 
 export interface TableFrame {
@@ -266,7 +268,9 @@ export const isWireRow = (value: unknown): value is WireRow =>
 	(value.parentId === null || typeof value.parentId === "string") &&
 	Predicate.isObjectOrArray(value.ports) &&
 	Object.values(value.ports).every(isPortDeclaration) &&
-	isSummary(value.stateSummary);
+	isSummary(value.stateSummary) &&
+	(value.title === null || typeof value.title === "string") &&
+	(value.status === null || typeof value.status === "string");
 
 export const isAttachFrame = (value: unknown): value is AttachFrame =>
 	Predicate.isObject(value) && value.kind === ATTACH_KIND && isProcessIdString(value.processId);
@@ -484,6 +488,8 @@ export const toWireRow = (row: TableRow): WireRow => ({
 	parentId: Option.getOrNull(row.parentId),
 	ports: row.ports,
 	stateSummary: row.stateSummary,
+	title: Option.getOrNull(row.title),
+	status: Option.getOrNull(row.status),
 });
 
 export const fromWireRow = (row: WireRow): TableRow => ({
@@ -492,6 +498,8 @@ export const fromWireRow = (row: WireRow): TableRow => ({
 	parentId: Option.fromNullishOr(row.parentId),
 	ports: row.ports,
 	stateSummary: row.stateSummary,
+	title: Option.fromNullishOr(row.title),
+	status: Option.fromNullishOr(row.status),
 });
 
 export const tableFrame = (event: TableEvent): TableFrame => ({

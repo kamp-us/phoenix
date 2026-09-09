@@ -95,6 +95,8 @@ const counterRow: TableRow = {
 	parentId: Option.none(),
 	ports: {},
 	stateSummary: {lifecycle: "running", revision: 1},
+	title: Option.none(),
+	status: Option.none(),
 };
 
 const live = <S,>(state: S, revision = 1): ProcessView<S> => ({
