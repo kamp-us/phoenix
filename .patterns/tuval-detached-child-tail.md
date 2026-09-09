@@ -20,6 +20,31 @@ onto the tool row as `details`, so the id crosses the wire on the row it belongs
 of one agent kind started in the same second are indistinguishable, and the artifact's own id is
 already in the process.
 
+**When the launch emits no event, correlate through the backend's own on-disk index.** A
+`pi-subagents` call with `async: true` — every `workflowScript` run — detaches without a
+`tool_execution_update`, so part 1's route never fires and the row's only remaining key is its own
+`toolCallId` ([#8679](https://github.com/kamp-us/phoenix/issues/8679)). The backend writes one:
+`updateActiveRunIndex` drops an alias file at
+`<asyncRunRoot>/.active-runs/tool-calls/<encoded toolCallId>/<asyncRunId>` while the run is queued or
+running, and each run's `status.json` names its `toolCallId` and its `steps[]` — the worker run ids
+and agent names. `apps/tuval/src/pi/ai-agent/async-spawn.ts` reads that chain.
+
+**The alias is a hint; the status is the proof.** An alias is a filename and survives a crash, so a
+run is trusted only when its own `status.toolCallId` is the one being asked for. Never parse a run id
+out of the tool result's prose — the text says "Async workflow [id]", and reading it would make a
+display string load-bearing. Everything on this path is total: a missing marker, an unreadable status
+or a mismatched claim all answer "no workers yet", which leaves the slot exactly as an unresolved one
+looks.
+
+**Resolve on every tick, not once.** `steps[]` is declared up front and each step gains its `runId`
+only when it launches, so a sequential lane — builder, then reviewer, then shipper — publishes its
+workers one at a time. A run resolved once and never re-read keeps the first worker forever: the row
+sits on that worker's last line, labelled with its agent, looking live while it is stale. So the tail
+re-reads the index for every detached spawn it is still tracking, and the fresh answer replaces the
+held one whole (the status read already carries every step launched so far). A read that resolves
+nothing leaves the held answer standing — a tick that finds nothing must never blank a slot someone
+is reading.
+
 **2. Reimplement the artifact's parse; do not import the backend's reader.** `pi-subagents`' own
 `readFleetTranscript` lives under `src/tui/` and pulls `@earendil-works/pi-tui`, which the paths-only
 rule in `apps/tuval/src/pi/server/subagents.ts` refuses. The grammar is versioned and small, so
@@ -42,5 +67,7 @@ take the same child transcripts the tail last handed over
 
 The slot stays keyed on the spawning call's id. One call can start several children, so the slot is
 already 1:N against a parallel spawn; reading the artifacts does not change that and must not be used
-as an excuse to re-key. Rows the artifact does not carry are absent rather than guessed — the child's
-initial prompt is written as `PROMPT_REDACTED`, and no reasoning row is written at all.
+as an excuse to re-key. A detached run's `steps[]` make that plural explicit — the workers' rows are
+concatenated into the one slot and the row is named after the agents the steps report, which is the
+most a single row can say. Rows the artifact does not carry are absent rather than guessed — the
+child's initial prompt is written as `PROMPT_REDACTED`, and no reasoning row is written at all.
