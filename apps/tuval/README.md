@@ -590,12 +590,19 @@ state here may be carried by colour alone.
 
 **A window's title is its process's own line.** `windowTitle` (`src/shell/ui/window-title.ts`) reads
 the newest value the process published on its generic `title@1` out-port, latched by the kernel and
-carried on the process row, and renders it as-is: a Claude session reads `claude · fable · phoenix`
-because the AI-agent program published that string, not because the shell composed it — the shell
-reads nothing AI-specific (ruling R8.1 on
-[#8715](https://github.com/kamp-us/phoenix/issues/8715)). A program re-emitting `title@1` mid-turn
-moves the title with no remount, a process that published no title is named by its program, and the
-empty and gone windows keep the strings they have. The process id moved to the desk inspector's
+carried on the process row, and renders it as-is: a Claude session reads
+`claude-session · Opus 5 · phoenix` because the AI-agent program published that string, not because
+the shell composed it — the shell reads nothing AI-specific (ruling R8.1 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715)). The AI-agent program composes it as
+`program · model · cwd` (`src/ai-agent/self-report.ts`, ruling R3.1), leaving out any segment it
+cannot fill — a session that has not heard its model yet reads `claude-session · phoenix`. The
+program segment is the row's `identity.program`, which defaults to the row id, so it is the id and
+not a display name: nothing on a row carries a shorter one, and `label` (`src/registry/program.ts`)
+is the picker's name and is not read here
+([#8722](https://github.com/kamp-us/phoenix/issues/8722) narrowed it there deliberately). A program
+re-emitting `title@1` mid-turn moves the title with no remount, a process that published no title is
+named by its program, and the empty and gone windows keep the strings they have. The process id
+moved to the desk inspector's
 heading (ruling R3.1). All of it ships behind the default-off `windowTitles` flag
 ([#8721](https://github.com/kamp-us/phoenix/issues/8721)); off, every window is `process <uuid>`
 again and the inspector carries no id.
@@ -749,10 +756,12 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. Three backends fill it today: `PiAiAgent.layer`,
-`CodexAiAgent.layer`, and `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`). All three are
-a `Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools
-bridge the row provides. The `claude-session` row that wires it into the config
+`layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
+`CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) and
+`AgyAiAgent.layer` (`src/agy/ai-agent/AgyAiAgent.ts`). The first three are a
+`Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools bridge
+the row provides; agy reaches no kernel tool, so its layer asks for nothing
+(`src/agy/program.ts`). The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
@@ -909,9 +918,10 @@ through a user's config module (`desk.ts`) with `ScriptedAiAgent.layer` where th
 and `pi-session` beside it on Pi's own faux provider. It calls no model API and spends nothing, so
 `pnpm test:integration` runs it and so does CI. Five cases: the picker opening a Claude chat under
 the shell with a tool row that runs and settles, one permission card answered and one mode switched;
-Pi and Claude side by side with process-table rows that differ only by program id and state summary;
-a restart that brings the transcript back with the cut turn interrupted; a dropped socket re-attached;
-and a child spawned through the three kernel tools, prompted with `send` and read back with `read`.
+Pi and Claude side by side with process-table rows that differ only by program id, state summary and
+self-report; a restart that brings the transcript back with the cut turn interrupted; a dropped
+socket re-attached; and a child spawned through the three kernel tools, prompted with `send` and
+read back with `read`.
 
 `pnpm proof:claude-real` is the real-CLI variant, and it is **local only — the founder's own run, on
 their own Claude Code login, spending real tokens.** No workflow reaches it and none may: it boots
