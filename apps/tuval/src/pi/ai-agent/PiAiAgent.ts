@@ -916,7 +916,8 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost, never, Kern
 		Effect.gen(function* () {
 			const bridge = yield* KernelBridge;
 			// The handlers are plain `async` functions Pi calls; Effect runs inside them, over the
-			// services this layer was built with, so a tool call keeps the caller's spans and loggers.
+			// services this layer was built with — captured once here, so every tool call runs under
+			// the process's own spans and loggers rather than the calling turn's.
 			const services = yield* Effect.context<never>();
 			const agentDir = options.agentDir ?? getAgentDir();
 			const modelRuntime = yield* Effect.tryPromise({
@@ -939,9 +940,9 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost, never, Kern
 			// existed (`../server/AgentSessionHost.ts`'s `loaderFor`).
 			const extensionPaths = subagentExtensionPaths(featuresDefault);
 			// The `piKernelTools` flag and nothing else decides this. Off — the shipped default — the
-			// list is empty, and an empty list is no `customTools` key at all, which is the session
-			// this layer opened before the flag existed (`../server/AgentSessionHost.ts`'s
-			// `customToolsOption`).
+			// list is empty, so the host passes no `customTools` key, which at this pin is the same
+			// session an empty array would open and the same one this layer opened before the flag
+			// existed (`../server/AgentSessionHost.ts`'s `customToolsOption`).
 			const customTools = featuresDefault.piKernelTools
 				? piKernelTools(bridge, Effect.runPromiseWith(services))
 				: [];

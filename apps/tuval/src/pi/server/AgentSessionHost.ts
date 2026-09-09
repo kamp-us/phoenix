@@ -177,10 +177,11 @@ export const extensionLoader = async (
 /**
  * `createAgentSession`'s `customTools` for this host, or nothing to pass at all.
  *
- * The empty case is a missing key rather than an empty array on purpose: `createAgentSession` reads
- * `customTools` to decide whether any custom tool is registered at all (`dist/core/sdk.js`), so a
- * host with none opens exactly the session it opened before this option existed. Pi's own type is a
- * mutable `ToolDefinition[]`, so the readonly list is copied rather than cast.
+ * An empty array and a missing key open the same session at this pin: `sdk.js:260` passes the option
+ * straight through and `agent-session.js:144` reads `config.customTools ?? []`, the only consumer, so
+ * nothing branches on the key being there. The key is dropped anyway so the call site says what it
+ * means — a host with no custom tools passes no custom-tools option. Pi's own type is a mutable
+ * `ToolDefinition[]`, so the readonly list is copied rather than cast.
  */
 export const customToolsOption = (
 	options: Pick<AgentSessionHostOptions, "customTools">,

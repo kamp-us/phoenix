@@ -240,9 +240,9 @@ describe("Pi's kernel tools", () => {
 });
 
 describe("the customTools option the host passes on", () => {
-	// The flag off is an empty list, and an empty list must be no key at all: `createAgentSession`
-	// reads `customTools` to decide whether any custom tool is registered, so a present-but-empty
-	// array is a different session from the one Pi opened before this child.
+	// The flag off is an empty list, and the host then passes no key at all. Both spellings open the
+	// same session at this pin — `agent-session.js:144` reads `config.customTools ?? []` and nothing
+	// branches on the key — so what this pins is the call site's shape, not a behaviour difference.
 	it("passes no key at all when the flag left the list empty", () => {
 		assert.deepStrictEqual(customToolsOption({}), {});
 		assert.deepStrictEqual(customToolsOption({customTools: []}), {});

@@ -9,7 +9,7 @@
  *
  * A `ToolDefinition.execute` is a plain `async` function, so Effect runs *inside* it, through the
  * `runPromise` the calling process built once over its own services — the same seam Claude's
- * handlers use, so a tool call keeps the caller's spans and loggers.
+ * handlers use, so a tool call runs under that process's spans and loggers.
  *
  * **A refusal is thrown, and that is Pi's only tool-error channel.** `AgentToolResult` at this pin
  * carries `content`, `details`, `usage`, `addedToolNames` and `terminate` and no error flag
@@ -126,9 +126,9 @@ export const piKernelToolHandlers = (
 /**
  * The three definitions `createAgentSession` takes on `customTools`, in registration order.
  *
- * `ToolDefinition` is generic in its parameter schema, and an array literal would widen each
- * entry's params to the base `TSchema`; the definitions are therefore built one at a time and
- * collected, which is what `defineTool` exists for at this pin (`dist/core/extensions/types.d.ts`).
+ * `ToolDefinition` is generic in its parameter schema, so each entry carries its own
+ * `satisfies ToolDefinition<typeof …>`: the entry is checked against the schema it actually declares
+ * while the array itself stays the `ReadonlyArray<ToolDefinition>` the caller wants.
  */
 export const piKernelTools = (
 	bridge: KernelBridge["Service"],
