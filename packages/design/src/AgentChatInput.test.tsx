@@ -227,6 +227,17 @@ function ComposedComposer() {
 const GENERATED_IDS =
 	/\s(id|for|aria-controls|aria-activedescendant|aria-labelledby|aria-describedby|data-uid|data-controls)="[^"]*"/g;
 
+/**
+ * The composer paints before its catalog resolves, and the model and thinking labels are the last
+ * thing the four bridge loads move. Reading the markup before they land compares half-settled
+ * trees, which goes red on timing rather than on a difference.
+ */
+async function settledComposerMarkup(container: HTMLElement): Promise<string> {
+	await screen.findAllByText("GPT-5");
+	await screen.findAllByText("orta");
+	return composerMarkup(container);
+}
+
 function composerMarkup(container: HTMLElement): string {
 	const composer = container.querySelector('[data-testid="agent-chat-input"]');
 	if (!composer) throw new Error("no composer rendered");
@@ -640,9 +651,7 @@ describe("AgentChatInput", () => {
 		it("assemble into the tree the plain export renders", async () => {
 			const {bridge} = installHarnessFetch();
 			const plain = render(<AgentChatInput bridge={bridge} variant={variant} />);
-			await screen.findByLabelText("Pi'ye mesaj yaz");
-			await waitFor(() => expect(composerMarkup(plain.container)).toContain("kp-agent-chat__hint"));
-			const expected = composerMarkup(plain.container);
+			const expected = await settledComposerMarkup(plain.container);
 			plain.unmount();
 
 			const composed = render(
@@ -650,7 +659,7 @@ describe("AgentChatInput", () => {
 					<ComposedComposer />
 				</AgentChatInput.Root>,
 			);
-			await screen.findByLabelText("Pi'ye mesaj yaz");
+			await settledComposerMarkup(composed.container);
 			await waitFor(() => expect(composerMarkup(composed.container)).toBe(expected));
 		});
 	});
