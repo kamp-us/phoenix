@@ -77,7 +77,19 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 	// (`./renderers.tsx`): a table held across a re-attach would send this desk's next read down a
 	// socket the page has already thrown away.
 	const renderers = useMemo<RendererTable | null>(
-		() => (link === null || loaded === null ? null : {...pageRenderers(link.page.call), ...loaded}),
+		() =>
+			link === null || loaded === null
+				? null
+				: {
+						// A renderer has no route to the shell, so the page hands it one: the same Msg the
+						// desk's `window:attach` row builds (`../shell/commands/table.ts`), #8719.
+						...pageRenderers(
+							link.page.call,
+							(processId) =>
+								void Effect.runFork(link.shell.dispatch({type: "window.attach", processId})),
+						),
+						...loaded,
+					},
 		[link, loaded],
 	);
 

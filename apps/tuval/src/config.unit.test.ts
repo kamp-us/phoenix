@@ -120,6 +120,7 @@ describe("the feature flags", () => {
 				subagentList: true,
 				piSubagents: true,
 				piKernelTools: false,
+				kernelChildren: false,
 			});
 		}),
 	);
@@ -134,18 +135,21 @@ describe("the feature flags", () => {
 				subagentList: false,
 				piSubagents: true,
 				piKernelTools: false,
+				kernelChildren: false,
 			});
 			const project = yield* layered(fixture("two-rows"), fixture("features-off"));
 			assert.deepStrictEqual(project.features, {
 				subagentList: false,
 				piSubagents: true,
 				piKernelTools: false,
+				kernelChildren: false,
 			});
 			const overGlobalOn = yield* layered(fixture("features-on"), fixture("features-off"));
 			assert.deepStrictEqual(overGlobalOn.features, {
 				subagentList: false,
 				piSubagents: true,
 				piKernelTools: false,
+				kernelChildren: false,
 			});
 		}),
 	);
@@ -159,7 +163,7 @@ describe("loadLayeredConfig", () => {
 				const config = yield* layered(fixture("global-layer"), fixture("project-layer"));
 				assert.deepStrictEqual(config, {
 					programs: [{id: "a"}, {id: "b", core: "project"}],
-					features: {subagentList: true, piSubagents: true, piKernelTools: false},
+					features: {subagentList: true, piSubagents: true, piKernelTools: false, kernelChildren: false},
 					moduleRenderers: [],
 					graph: {
 						nodes: [
@@ -181,7 +185,7 @@ describe("loadLayeredConfig", () => {
 			const missing = fixture("does-not-exist");
 			assert.deepStrictEqual(yield* layered(missing, fixture("with-graph")), {
 				programs: [{id: "a"}],
-				features: {subagentList: true, piSubagents: true, piKernelTools: false},
+				features: {subagentList: true, piSubagents: true, piKernelTools: false, kernelChildren: false},
 				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
@@ -189,7 +193,7 @@ describe("loadLayeredConfig", () => {
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
-				features: {subagentList: true, piSubagents: true, piKernelTools: false},
+				features: {subagentList: true, piSubagents: true, piKernelTools: false, kernelChildren: false},
 				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
@@ -197,7 +201,7 @@ describe("loadLayeredConfig", () => {
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
-				features: {subagentList: true, piSubagents: true, piKernelTools: false},
+				features: {subagentList: true, piSubagents: true, piKernelTools: false, kernelChildren: false},
 				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [],

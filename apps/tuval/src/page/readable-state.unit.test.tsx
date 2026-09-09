@@ -28,7 +28,10 @@ import type {ReadableRenderer} from "./readable-state.tsx";
 import {pageRenderers} from "./renderers.tsx";
 
 /** The table over a socket that answers nothing: this file judges the entries, never their answers. */
-const renderers = pageRenderers(() => Effect.never);
+const renderers = pageRenderers(
+	() => Effect.never,
+	() => undefined,
+);
 
 installDomShims();
 

@@ -344,12 +344,20 @@ export const settlePartialItems = (state: AiAgentSessionState): AiAgentSessionSt
 			}
 		: state;
 
+/**
+ * A worker this session is the one writing the lines of. A kernel child is not one: it is its own
+ * process on the kernel's table, so nothing in this session moves its slot and this session's turn
+ * ending says nothing about whether it is done (#8715).
+ */
+const ownWorker = (slot: SubagentSlot): boolean => slot.process === undefined;
+
 /** Is any subagent still writing? Its slot moves on every line the worker produces. */
 export const holdsRunningSubagent = (state: AiAgentSessionState): boolean =>
-	Object.values(state.subagents).some((slot) => slot.status === "running");
+	Object.values(state.subagents).some((slot) => ownWorker(slot) && slot.status === "running");
 
 /**
- * Mark every running subagent finished, keeping its rows.
+ * Mark every running worker of this session's own finished, keeping its rows. A kernel child is
+ * left alone (`ownWorker`): its process outlives the turn that spawned it.
  *
  * A worker runs inside its parent's turn, so the turn ending is the worker ending — whatever the
  * turn came to. Without this a slot the layer never closed stays `running` for the rest of the
@@ -363,7 +371,9 @@ export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessi
 				subagents: Object.fromEntries(
 					Object.entries(state.subagents).map(([id, slot]) => [
 						id,
-						slot.status === "running" ? {...slot, status: "finished" as const} : slot,
+						ownWorker(slot) && slot.status === "running"
+							? {...slot, status: "finished" as const}
+							: slot,
 					]),
 				),
 			}

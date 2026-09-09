@@ -15,7 +15,7 @@
  */
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {boundToolOutput} from "../../ai-agent/history/index.ts";
+import {boundToolOutput, kernelSpawnOf} from "../../ai-agent/history/index.ts";
 import type {
 	CommandRef,
 	ItemId,
@@ -761,9 +761,31 @@ export const userEvents = (
 		subagents = new Map(subagents).set(one.id, finished);
 		ended.push({kind: "subagent", slot: finished});
 	}
+	// A kernel child's slot opens here rather than at its call, and after the loop above rather than
+	// before it: the process id is on the *answer*, and a spawn spell answers the instant the child
+	// lands, so a slot opened at the call would have no process to name and one opened before the
+	// loop would be marked finished by its own spawning call settling.
+	const opened: Array<AgentEvent> = [];
+	for (const one of settled) {
+		if (one.kind !== "tool") continue;
+		const spawn = kernelSpawnOf(one);
+		if (spawn === null || subagents.has(one.id)) continue;
+		const slot: SubagentSlot = {
+			id: one.id,
+			type: spawn.program,
+			lastLine: "",
+			startedAt: one.timestamp,
+			tokens: 0,
+			items: [],
+			status: "running",
+			process: spawn.process,
+		};
+		subagents = new Map(subagents).set(one.id, slot);
+		opened.push({kind: "subagent", slot});
+	}
 	return {
 		mapping: {...mapping, toolCalls, subagents, skipped},
-		events: [...events, ...folded.events, ...ended],
+		events: [...events, ...folded.events, ...ended, ...opened],
 	};
 };
 

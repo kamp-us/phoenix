@@ -283,41 +283,57 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
  * Nothing here reaches `../config.ts` at runtime: the flags arrive as generated source and the
  * shape arrives as a type (`./assets.d.ts`), so the page's Node-free walk is unaffected.
  */
-const chatOptions: ThinChatWindowOptions = {subagentList: features.subagentList};
+const chatOptions = (openProcess: OpenProcess): ThinChatWindowOptions => ({
+	subagentList: features.subagentList,
+	kernelChildren: features.kernelChildren,
+	openProcess,
+});
 
-const claudeWindow = claudeChatWindow(chatOptions);
-const codexWindow = codexChatWindow(chatOptions);
-const piWindow = piChatWindow(chatOptions);
-const agyWindow = agyChatWindow(chatOptions);
+/**
+ * How a window opens a process that is not its own — the desk's `window:attach`, which is a shell
+ * Msg and not a spell, so it arrives from the page's own shell attachment (`./boot.tsx`) rather
+ * than from anything a renderer can reach on its host (`../shell/window/host.ts`).
+ */
+export type OpenProcess = (processId: string) => void;
 
 /**
  * Every renderer the page knows, by the reference a program row names it with — each bound to the
  * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
  * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
  */
-export const pageRenderers = (call: SpellCaller): Readonly<Record<string, ReadableRenderer>> => ({
-	"tuval/demo/counter": readsState(
-		isCounterState,
-		windowRenderer("host-native", (host: WindowHost<CounterState>) => (
-			<CounterRenderer host={host} />
-		)),
-	),
-	"tuval/demo/log": readsState(
-		isLogState,
-		windowRenderer("host-native", (host: WindowHost<LogState>) => <LogRenderer host={host} />),
-	),
-	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, piWindow),
-	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
-	[AGY_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, agyWindow),
-	[CODEX_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, codexWindow),
-	[SESSION_LIST_WINDOW_REF.ref]: readsState(
-		isSessionListState,
-		sessionListWindow({
-			useAnswer: sessionListSource(call),
-			useTranscript: sessionTranscriptSource(call),
-		}),
-	),
-});
+export const pageRenderers = (
+	call: SpellCaller,
+	openProcess: OpenProcess,
+): Readonly<Record<string, ReadableRenderer>> => {
+	const options = chatOptions(openProcess);
+	const claudeWindow = claudeChatWindow(options);
+	const codexWindow = codexChatWindow(options);
+	const piWindow = piChatWindow(options);
+	const agyWindow = agyChatWindow(options);
+	return {
+		"tuval/demo/counter": readsState(
+			isCounterState,
+			windowRenderer("host-native", (host: WindowHost<CounterState>) => (
+				<CounterRenderer host={host} />
+			)),
+		),
+		"tuval/demo/log": readsState(
+			isLogState,
+			windowRenderer("host-native", (host: WindowHost<LogState>) => <LogRenderer host={host} />),
+		),
+		[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, piWindow),
+		[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
+		[AGY_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, agyWindow),
+		[CODEX_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, codexWindow),
+		[SESSION_LIST_WINDOW_REF.ref]: readsState(
+			isSessionListState,
+			sessionListWindow({
+				useAnswer: sessionListSource(call),
+				useTranscript: sessionTranscriptSource(call),
+			}),
+		),
+	};
+};
 
 /**
  * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is

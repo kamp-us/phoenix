@@ -11,7 +11,12 @@ import {
 	Stream,
 } from "effect";
 import type {AgentEvent} from "../ai-agent/events.ts";
-import {isRefusal, planTranscriptPage} from "../ai-agent/history/index.ts";
+import {
+	isRefusal,
+	KERNEL_TOOL_SERVER,
+	kernelSpawnOf,
+	planTranscriptPage,
+} from "../ai-agent/history/index.ts";
 import {
 	ItemId,
 	isThinkingLevel,
@@ -301,6 +306,27 @@ const make = (options: CodexAiAgentOptions) =>
 					});
 					if (item.kind !== "assistant" || item.partial !== true || settings.streamPartialReplies)
 						yield* emit(current, {kind: "item", item});
+					// A kernel child's row opens off its spawning call settling, because the process id is
+					// on that call's answer. It is the parent's own row and not a nested frame, so it
+					// belongs here beside the collab arms rather than inside `NativeSubagents`, which
+					// speaks for the children Codex spawns itself.
+					if (method === "item/completed" && item.kind === "tool") {
+						const spawn = kernelSpawnOf(item);
+						if (spawn !== null)
+							yield* emit(current, {
+								kind: "subagent",
+								slot: {
+									id: item.id,
+									type: spawn.program,
+									lastLine: "",
+									startedAt: item.timestamp,
+									tokens: 0,
+									items: [],
+									status: "running",
+									process: spawn.process,
+								},
+							});
+					}
 					const head = yield* Wire.decode(Wire.WireItem, value.item);
 					if (head.type === "collabAgentToolCall") {
 						const updates = yield* Effect.try({
@@ -473,7 +499,12 @@ const make = (options: CodexAiAgentOptions) =>
 							sandbox: selectedMode,
 							approvalPolicy: "on-request",
 							approvalsReviewer: "user",
-							config: {"mcp_servers.tuval": {...tools, enabled: true, required: true}},
+							// The server name is what a settled spawn row is named by on this wire
+							// (`<server>.<tool>`, `./history.ts`), so it is the mapper's constant and not a
+							// second spelling of it (`../ai-agent/history/kernel-spawn.ts`).
+							config: {
+								[`mcp_servers.${KERNEL_TOOL_SERVER}`]: {...tools, enabled: true, required: true},
+							},
 							...(model === null
 								? settings.model === undefined
 									? {}

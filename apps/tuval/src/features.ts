@@ -27,6 +27,12 @@ export interface TuvalFeatures {
 	 * Off: the session carries no custom tools, which is the session Pi opened before this flag.
 	 */
 	readonly piKernelTools: boolean;
+	/**
+	 * Show a process the agent spawned through the kernel as a marked row in its parent's sub-agent
+	 * list, openable as its own window (#8719). Off: the list is exactly the list of the backend's
+	 * own workers, as it is today.
+	 */
+	readonly kernelChildren: boolean;
 }
 
 /**
@@ -39,4 +45,5 @@ export const featuresDefault: TuvalFeatures = {
 	subagentList: true,
 	piSubagents: true,
 	piKernelTools: false,
+	kernelChildren: false,
 };

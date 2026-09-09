@@ -171,6 +171,16 @@
 	color: var(--text-primary);
 }
 
+/*
+ * A kernel child's mark. The word "process" is the mark and this only sets it apart from the row's
+ * prose; nothing here is load-bearing, so a reader who sees no colour still reads the word.
+ */
+.tuval-chat-subagent-kernel {
+	color: var(--text-secondary);
+	font-variant: all-small-caps;
+	letter-spacing: 0.04em;
+}
+
 /* The one field that may be any length, so it is the one that truncates. */
 .tuval-chat-subagent-line {
 	flex: 1 1 auto;

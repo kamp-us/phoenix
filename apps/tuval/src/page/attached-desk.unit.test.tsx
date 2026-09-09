@@ -25,7 +25,10 @@ import {AttachedDesk} from "./AttachedDesk.tsx";
 import {pageRenderers} from "./renderers.tsx";
 
 /** The table over a socket that answers no call: this file judges mounting, never a spell. */
-const renderers = pageRenderers(() => Effect.never);
+const renderers = pageRenderers(
+	() => Effect.never,
+	() => undefined,
+);
 
 installDomShims();
 

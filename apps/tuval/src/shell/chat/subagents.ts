@@ -40,6 +40,12 @@ export interface SubagentRow {
 	readonly status: SubagentStatus;
 	/** This row's transcript is the one the window is showing.  */
 	readonly current: boolean;
+	/**
+	 * The kernel process this row is for, when the slot named one. Absent is a harness-native
+	 * worker, and the two are activated differently: a process is opened as its own window, a
+	 * worker swaps the window's view slot (founder rulings R1.1 and R2.1 on #8715).
+	 */
+	readonly process?: string;
 }
 
 export interface SubagentListModel {
@@ -56,7 +62,23 @@ const rowOf = (slot: SubagentSlot, current: boolean): SubagentRow => ({
 	tokens: slot.tokens,
 	status: slot.status,
 	current,
+	...(slot.process === undefined ? {} : {process: slot.process}),
 });
+
+/**
+ * The slots a window may draw, with the kernel children left out while their flag is off.
+ *
+ * The flag is contained here rather than in a mapper: a slot written while it was on must not keep
+ * a row — or a hidden transcript row, since the same set feeds `subagentHeads` — once it is off,
+ * which is the containment `subagentList` already holds itself to (#8405).
+ */
+export const shownSubagents = (
+	slots: Readonly<Record<string, SubagentSlot>>,
+	kernelChildren: boolean,
+): Readonly<Record<string, SubagentSlot>> =>
+	kernelChildren
+		? slots
+		: Object.fromEntries(Object.entries(slots).filter(([, slot]) => slot.process === undefined));
 
 /**
  * The list the window draws, oldest-first and capped, plus the viewed worker wherever it is.
