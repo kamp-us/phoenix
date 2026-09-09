@@ -71,7 +71,7 @@ export function AgentChatField() {
 					onChange={(event) => typeDraft(event.currentTarget.value)}
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}
-					rows={3}
+					rows={1}
 					resize="none"
 					spellCheck
 					fullWidth

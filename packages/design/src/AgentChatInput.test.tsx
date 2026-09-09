@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Paperclip} from "lucide-react";
 import {createRef, useRef} from "react";
@@ -729,5 +731,42 @@ describe("AgentChatInput", () => {
 		render(<AgentChatInput bridge={bridge} ref={field} />);
 
 		expect(await screen.findByLabelText("Pi'ye mesaj yaz")).toBe(field.current);
+	});
+});
+
+/**
+ * The compact shape #8669 ruled: one row that grows to a cap, and a hint that reserves no room
+ * until the empty field is focused. jsdom runs no layout engine and Vitest's default `css: false`
+ * drops the component's own `import "./AgentChatInput.css"`, so the height rules are read off the
+ * shipped sheet's own bytes rather than off a computed box.
+ */
+describe("the compact composer", () => {
+	const sheet = readFileSync(fileURLToPath(import.meta.resolve("./AgentChatInput.css")), "utf8");
+
+	it("opens the prompt field at one row", async () => {
+		const {bridge} = installHarnessFetch();
+		render(<AgentChatInput bridge={bridge} />);
+
+		const field = (await screen.findByLabelText("Pi'ye mesaj yaz")) as HTMLTextAreaElement;
+		expect(field.rows).toBe(1);
+	});
+
+	it("grows the field to a cap instead of standing on a min-height floor", () => {
+		expect(sheet).not.toContain("min-height: calc(var(--s-8) * 2)");
+		expect(sheet).toContain("field-sizing: content");
+		expect(sheet).toContain("max-height: calc(var(--s-8) * 5)");
+	});
+
+	it("keeps the hint out of layout until the empty field is focused", () => {
+		expect(sheet).toContain(".kp-agent-chat__hint {\n\tdisplay: none;");
+		expect(sheet).toContain(
+			".kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)",
+		);
+	});
+
+	// Pillar 4 owns the tap target and #8669 does not spend it: the height win is the field and the
+	// hint, never a control shrunk under the floor.
+	it("leaves every toolbar control on the tap-target floor", () => {
+		expect(sheet.match(/var\(--tap-min\)/g) ?? []).toHaveLength(5);
 	});
 });

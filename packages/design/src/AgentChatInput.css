@@ -119,11 +119,25 @@
 	border-radius: 0;
 }
 
-.kp-agent-chat__textarea [data-part="input"]:is(textarea) {
-	min-height: calc(var(--s-8) * 2);
+/*
+ * One line at rest, growing with what is typed until the cap. `field-sizing: content` is what
+ * tracks the content without a resize listener; it lands in Chrome 123, Firefox 152 and Safari
+ * 26.2 (mdn/browser-compat-data `css/properties/field-sizing.json`), and where it is missing the
+ * `rows={1}` attribute still opens the field at one line and the box scrolls instead of growing.
+ *
+ * `min-height: 0` is the load-bearing one: Form.css floors every textarea at 80px, which is the
+ * same 80px this rule used to restate, so dropping the restated floor alone left the composer
+ * exactly as tall as it was. The selector carries `[data-scope="field"]` to outrank that rule
+ * whatever order the two sheets load in.
+ */
+.kp-agent-chat__textarea [data-scope="field"][data-part="input"]:is(textarea) {
+	field-sizing: content;
+	min-height: 0;
+	max-height: calc(var(--s-8) * 5);
 	padding: 0;
 	font: var(--t-body);
 	line-height: 1.5;
+	overflow-y: auto;
 	resize: none;
 }
 
@@ -253,9 +267,20 @@
 	color: var(--text-secondary);
 }
 
+/*
+ * The hint reserves no room at rest — it is the second half of #8669's height win. It surfaces on
+ * the one state that asks for it, an empty field with the caret in it, and the flex column drops
+ * its gap with it because `display: none` takes the box out of layout entirely.
+ */
 .kp-agent-chat__hint {
+	display: none;
 	color: var(--text-muted);
 	font: var(--t-meta);
+}
+
+.kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)
+	.kp-agent-chat__hint {
+	display: block;
 }
 
 .kp-agent-chat__inspector:where([data-scope="collapsible"][data-part="root"]) {
