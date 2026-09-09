@@ -25,7 +25,7 @@ import type {AssistantItem, TranscriptItem, TurnResult} from "./ports/index.ts";
 /** A turn the bracket has opened and nothing has closed yet. `null` is "between turns". */
 export interface RunningTurn {
 	readonly items: ReadonlyArray<TranscriptItem>;
-	/** Nothing has refused this turn so far. */
+	/** Nothing this turn has drawn so far reads as cut short. A refusal closes the turn instead. */
 	readonly ok: boolean;
 	/** The layer emitted its own result for this turn, so the fold owes none. */
 	readonly answered: boolean;
@@ -70,16 +70,22 @@ export const turnResult = (turn: RunningTurn, ok: boolean): TurnResult => {
 };
 
 /**
- * Does this refusal end the turn on its own?
+ * Does this failure end the turn on its own, with no closing phase behind it?
  *
- * Only the refused interrupt does, and only away from `turn-running` — that is the one case where
- * the backend says there is nothing left to stop, and `foldInterruptRefusal` (`core/fold.ts`) walks
- * the session to `ready` off it with no phase event to follow. Mirrored here so the turn it closes
- * still gets its one result; `turn-running` closes nothing, and is not even a mark against the turn,
- * because it names the interrupt call rather than the turn.
+ * Every one but the `turn-running` interrupt refusal does, because that is what the core does with
+ * it: a failure while the session is `prompting` reaches `phaseAfterFailure` (`core/fold.ts`), which
+ * walks it to `ready`, and an interrupt refusal reaches `foldInterruptRefusal` beside it, which
+ * walks it to `ready` for every reason but `turn-running`. This fold only ever holds a turn while
+ * the session is `prompting` — the bracket opens on that phase — so mirroring the two is the whole
+ * rule. A layer that emits a closing phase behind its failure changes nothing: the turn is already
+ * closed and shut when the phase lands, so it adds no second result.
+ *
+ * `turn-running` is the one exception the core makes and the one this makes: the reply is still
+ * streaming, and the refusal names the interrupt call rather than the turn, so it is not even a mark
+ * against it.
  */
 const endsTheTurn = (failure: AgentFailure): boolean =>
-	failure.tag === INTERRUPT_ERROR && failure.reason !== "turn-running";
+	!(failure.tag === INTERRUPT_ERROR && failure.reason === "turn-running");
 
 /** The phases that close a turn a layer opened. `starting`/`reconnecting` are the core's own. */
 const closesTheTurn = (phase: Phase): boolean => phase === "ready" || phase === "gone";
@@ -124,7 +130,7 @@ export const trackTurn = (
 		case "failure":
 			if (turn === null) return [null, [event]];
 			if (endsTheTurn(event.failure)) return close(false);
-			return [event.failure.reason === "turn-running" ? turn : {...turn, ok: false}, [event]];
+			return [turn, [event]];
 		case "result":
 			return [turn === null ? null : {...turn, answered: true}, [event]];
 		default:

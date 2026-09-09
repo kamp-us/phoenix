@@ -94,7 +94,28 @@ describe("the turn a layer brackets", () => {
 });
 
 describe("a turn that did not end well", () => {
-	it("marks a turn a refusal landed in", () => {
+	/**
+	 * The failure itself is the turn's end, with no phase behind it: `phaseAfterFailure`
+	 * (`core/fold.ts`) walks a `prompting` session to `ready` off any non-interrupt failure and
+	 * emits nothing on the layer's stream, so a turn left open here has its half-written answer
+	 * dropped by the next `prompting`. Two shipped layers reach it — a Pi send the backend refused
+	 * (`pi/ai-agent/PiAiAgent.ts`) and Codex's `error` with `willRetry: false`.
+	 */
+	it("answers for a turn the failure alone ended, with no closing phase behind it", () => {
+		assert.deepStrictEqual(
+			resultsIn([
+				prompting,
+				{kind: "item", item: reply("half")},
+				{
+					kind: "failure",
+					failure: {tag: "tuval/ai-agent/PromptError", reason: "refused", detail: "no"},
+				},
+			]),
+			[{kind: "result", result: {text: "half", items: [reply("half")], ok: false}}],
+		);
+	});
+
+	it("answers once for a turn whose layer emits its own phase behind the failure", () => {
 		assert.deepStrictEqual(
 			resultsIn([
 				prompting,
@@ -116,9 +137,8 @@ describe("a turn that did not end well", () => {
 	});
 
 	/**
-	 * The one refusal that ends a turn with no phase behind it: the backend answering that there is
-	 * nothing left to stop, which `foldInterruptRefusal` walks to `ready` on its own. A turn left
-	 * open here would have its answer dropped by the next turn's `prompting`.
+	 * The interrupt refusal takes the other route through the core — `foldInterruptRefusal` rather
+	 * than `phaseAfterFailure` — and lands the same way for every reason but `turn-running`.
 	 */
 	it("closes a turn on the interrupt refusal that says the turn is already over", () => {
 		assert.deepStrictEqual(

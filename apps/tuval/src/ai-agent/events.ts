@@ -71,7 +71,7 @@ export type Phase = "idle" | "starting" | "ready" | "prompting" | "reconnecting"
  * and the conversation swap in a single event — still carries this turn's answer under the id it
  * was run on.
  *
- * `withTurnResult` in `./service/turn-result.ts` derives it from the events a layer already emits,
+ * `withTurnResult` in `./turn-result.ts` derives it from the events a layer already emits,
  * which is how every layer pays this without five copies of the same bookkeeping.
  */
 export interface ResultEvent {

@@ -11,7 +11,7 @@ written down ([#7963](https://github.com/kamp-us/phoenix/issues/7963),
 
 ## What the layer owes
 
-Per turn, exactly two `phase` events:
+Per turn, exactly three events — the two `phase` events and the `result` between them:
 
 | Moment | Event | Who |
 |---|---|---|
@@ -149,7 +149,13 @@ together:
 
 - **Once per finished turn, however the turn ended.** A failed turn, an interrupted one and a turn a
   local command ended all owe one — marked, not skipped. A consumer told nothing about a failed turn
-  waits for an answer that is never coming, which is the same wedge a missing `ready` is.
+  waits for an answer that is never coming, which is the same wedge a missing `ready` is. A failure
+  is a turn's end whether or not a phase follows it, because that is what the core does with one:
+  `phaseAfterFailure` in [`core/fold.ts`](../apps/tuval/src/ai-agent/core/fold.ts) walks a
+  `prompting` session to `ready` off any failure, emitting nothing on the layer's stream, and
+  `foldInterruptRefusal` beside it does the same for every interrupt refusal but `turn-running` —
+  the one case where the reply is still being written. So the fold closes the turn on the failure
+  itself, and a layer that does emit its own closing phase behind one adds no second result.
 - **Ahead of the event that closes the turn**, never behind it. `session-reset` is a turn's end and
   a conversation swap in one event, and the core's events Sub is keyed on the session id
   (`core/messages.ts`) — so a result pushed after the swap is dropped by the machine's own identity
