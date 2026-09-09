@@ -181,7 +181,7 @@ export function SessionTranscriptView({
 			{body}
 			{sendable ? (
 				<DesignTranslationProvider translate={tuvalDesignTranslate}>
-					<AgentChatInput variant="focused" bridge={composer.bridge} />
+					<AgentChatInput bridge={composer.bridge} />
 				</DesignTranslationProvider>
 			) : null}
 		</section>

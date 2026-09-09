@@ -95,7 +95,7 @@ it("names the held pick on the button when the reconnect left no catalog behind 
 							render(
 								(
 									<DesignTranslationProvider translate={tuvalDesignTranslate}>
-										<AgentChatInput bridge={composer.bridge} variant="focused" />
+										<AgentChatInput bridge={composer.bridge} />
 									</DesignTranslationProvider>
 								) as ReactElement,
 							);

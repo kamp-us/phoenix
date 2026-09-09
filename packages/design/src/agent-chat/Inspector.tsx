@@ -7,15 +7,14 @@ import {Icon} from "./Icon";
 import {useAgentChatInput} from "./Root";
 
 /**
- * What the harness is doing under the composer: the focused variant folds it behind a disclosure
- * that counts the activities, the harness variant lays it out flat.
+ * What the harness is doing under the composer, folded behind a disclosure that counts the
+ * activities.
  */
 export function AgentChatInspector() {
-	const {variant, widget, assistantText, activities, inspectorOpen, setInspectorOpen} =
-		useAgentChatInput();
+	const {widget, assistantText, activities, inspectorOpen, setInspectorOpen} = useAgentChatInput();
 	const t = useDesignT();
 
-	return variant === "focused" ? (
+	return (
 		<Collapsible
 			className="kp-agent-chat__inspector"
 			open={inspectorOpen}
@@ -36,7 +35,5 @@ export function AgentChatInspector() {
 				<AgentActivity assistantText={assistantText} activities={activities} />
 			</div>
 		</Collapsible>
-	) : (
-		<AgentActivity assistantText={assistantText} activities={activities} />
 	);
 }

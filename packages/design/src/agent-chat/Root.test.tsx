@@ -9,8 +9,8 @@ import type {ConnectionState} from "./types";
 type SentPrompt = Parameters<AgentChatInputBridge["sendPiPrompt"]>[0];
 
 function Part() {
-	const {variant, connection} = useAgentChatInput();
-	return <p>{`${variant}/${connection}`}</p>;
+	const {connection} = useAgentChatInput();
+	return <p>{connection}</p>;
 }
 
 /**
@@ -70,16 +70,11 @@ function Composer({picked}: {readonly picked: PiDeliveryMode}) {
 async function send(options: {
 	readonly connection: ConnectionState;
 	readonly picked: PiDeliveryMode;
-	readonly variant?: "harness" | "focused";
 	readonly deliveryRule?: AgentChatDeliveryRule;
 }): Promise<SentPrompt[]> {
 	const {bridge, sent} = bridgeAt(options.connection);
 	render(
-		<AgentChatInput.Root
-			bridge={bridge}
-			variant={options.variant}
-			deliveryRule={options.deliveryRule}
-		>
+		<AgentChatInput.Root bridge={bridge} deliveryRule={options.deliveryRule}>
 			<Composer picked={options.picked} />
 		</AgentChatInput.Root>,
 	);
@@ -95,50 +90,27 @@ async function send(options: {
 const deliveries: readonly PiDeliveryMode[] = ["prompt", "steer", "follow_up"];
 
 /**
- * What each variant delivered before the rule was its own prop, at every connection state crossed
- * with every picker value. `undefined` is a send the composer refuses. Written out rather than
- * derived, so the table is a check on the rule and not a second copy of it.
+ * What the default rule delivers, at every connection state crossed with every picker value.
+ * `undefined` is a send the composer refuses. Written out rather than derived, so the table is a
+ * check on the rule and not a second copy of it.
  */
-const legacy: Record<
-	"focused" | "harness",
-	Record<ConnectionState, Record<PiDeliveryMode, SentPrompt | undefined>>
-> = {
-	focused: {
-		loading: {
-			prompt: {type: "prompt", message: "Ship it."},
-			steer: {type: "prompt", message: "Ship it."},
-			follow_up: {type: "prompt", message: "Ship it."},
-		},
-		ready: {
-			prompt: {type: "prompt", message: "Ship it."},
-			steer: {type: "prompt", message: "Ship it."},
-			follow_up: {type: "prompt", message: "Ship it."},
-		},
-		working: {
-			prompt: {type: "follow_up", message: "Ship it."},
-			steer: {type: "steer", message: "Ship it."},
-			follow_up: {type: "follow_up", message: "Ship it."},
-		},
-		unavailable: {prompt: undefined, steer: undefined, follow_up: undefined},
+const byDefault: Record<ConnectionState, Record<PiDeliveryMode, SentPrompt | undefined>> = {
+	loading: {
+		prompt: {type: "prompt", message: "Ship it."},
+		steer: {type: "prompt", message: "Ship it."},
+		follow_up: {type: "prompt", message: "Ship it."},
 	},
-	harness: {
-		loading: {
-			prompt: {type: "prompt", message: "Ship it."},
-			steer: {type: "steer", message: "Ship it."},
-			follow_up: {type: "follow_up", message: "Ship it."},
-		},
-		ready: {
-			prompt: {type: "prompt", message: "Ship it."},
-			steer: {type: "steer", message: "Ship it."},
-			follow_up: {type: "follow_up", message: "Ship it."},
-		},
-		working: {
-			prompt: {type: "prompt", message: "Ship it.", streamingBehavior: "steer"},
-			steer: {type: "steer", message: "Ship it."},
-			follow_up: {type: "follow_up", message: "Ship it."},
-		},
-		unavailable: {prompt: undefined, steer: undefined, follow_up: undefined},
+	ready: {
+		prompt: {type: "prompt", message: "Ship it."},
+		steer: {type: "prompt", message: "Ship it."},
+		follow_up: {type: "prompt", message: "Ship it."},
 	},
+	working: {
+		prompt: {type: "follow_up", message: "Ship it."},
+		steer: {type: "steer", message: "Ship it."},
+		follow_up: {type: "follow_up", message: "Ship it."},
+	},
+	unavailable: {prompt: undefined, steer: undefined, follow_up: undefined},
 };
 
 describe("AgentChatInput.Root", () => {
@@ -175,58 +147,41 @@ describe("AgentChatInput.Root", () => {
 
 	it("provides its state to a part rendered inside it", () => {
 		render(
-			<AgentChatInput.Root variant="focused">
+			<AgentChatInput.Root>
 				<Part />
 			</AgentChatInput.Root>,
 		);
-		expect(screen.getByText("focused/loading")).toBeTruthy();
+		expect(screen.getByText("loading")).toBeTruthy();
 	});
 });
 
 describe("the send-delivery rule", () => {
 	describe.each([
-		"focused",
-		"harness",
-	] as const)("with deliveryRule unset on variant=%s", (variant) => {
-		describe.each([
-			"loading",
-			"ready",
-			"working",
-			"unavailable",
-		] as const)("while %s", (connection) => {
-			it.each(deliveries)("delivers a picked %s as it did before the prop", async (picked) => {
-				const sent = await send({connection, picked, variant});
-				const expected = legacy[variant][connection][picked];
-				expect(sent).toEqual(expected ? [expected] : []);
-			});
+		"loading",
+		"ready",
+		"working",
+		"unavailable",
+	] as const)("with deliveryRule unset while %s", (connection) => {
+		it.each(deliveries)("delivers a picked %s under the default rule", async (picked) => {
+			const sent = await send({connection, picked});
+			const expected = byDefault[connection][picked];
+			expect(sent).toEqual(expected ? [expected] : []);
 		});
 	});
 
-	it("takes an explicit as-picked over the focused variant's default", async () => {
+	it("takes an explicit as-picked over the default", async () => {
 		const sent = await send({
 			connection: "working",
 			picked: "prompt",
-			variant: "focused",
 			deliveryRule: "as-picked",
 		});
 		expect(sent).toEqual([{type: "prompt", message: "Ship it.", streamingBehavior: "steer"}]);
-	});
-
-	it("takes an explicit queue-while-working over the harness variant's default", async () => {
-		const sent = await send({
-			connection: "working",
-			picked: "prompt",
-			variant: "harness",
-			deliveryRule: "queue-while-working",
-		});
-		expect(sent).toEqual([{type: "follow_up", message: "Ship it."}]);
 	});
 
 	it("leaves an idle send a fresh prompt under queue-while-working", async () => {
 		const sent = await send({
 			connection: "ready",
 			picked: "follow_up",
-			variant: "harness",
 			deliveryRule: "queue-while-working",
 		});
 		expect(sent).toEqual([{type: "prompt", message: "Ship it."}]);

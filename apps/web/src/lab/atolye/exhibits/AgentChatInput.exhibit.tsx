@@ -11,15 +11,6 @@ export const agentChatInputExhibit = defineExhibit<React.ComponentProps<typeof A
 	component: AgentChatInput,
 	fixedProps: {bridge: agentChatInputBridge, mockWhenUnavailable: true},
 	knobs: {
-		variant: {
-			kind: "enum",
-			label: "Varyant",
-			default: "focused",
-			options: [
-				{value: "focused", label: "Odaklı"},
-				{value: "harness", label: "Harness"},
-			],
-		},
 		initialValue: {
 			kind: "string",
 			label: "Başlangıç istemi",
@@ -36,11 +27,9 @@ export const agentChatInputExhibit = defineExhibit<React.ComponentProps<typeof A
  * does with its mode picker.
  */
 function AgentChatInputParts({
-	variant,
 	initialValue,
 	disabled,
 }: {
-	readonly variant?: "harness" | "focused";
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
 }) {
@@ -48,7 +37,6 @@ function AgentChatInputParts({
 		<AgentChatInput.Root
 			bridge={agentChatInputBridge}
 			mockWhenUnavailable
-			variant={variant}
 			initialValue={initialValue}
 			disabled={disabled}
 		>
@@ -76,15 +64,6 @@ export const agentChatInputPartsExhibit = defineExhibit<
 		"Aynı besteci, tek parça yerine bileşik parçalarından kurulmuş: Root durumu taşır, her parça onu okur.",
 	component: AgentChatInputParts,
 	knobs: {
-		variant: {
-			kind: "enum",
-			label: "Varyant",
-			default: "focused",
-			options: [
-				{value: "focused", label: "Odaklı"},
-				{value: "harness", label: "Harness"},
-			],
-		},
 		initialValue: {
 			kind: "string",
 			label: "Başlangıç istemi",

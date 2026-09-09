@@ -11,11 +11,6 @@ import type {ConnectionState} from "./types";
  */
 export type AgentChatDeliveryRule = "as-picked" | "queue-while-working";
 
-/** The rule a `variant` implied before the rule was its own prop. */
-export function deliveryRuleForVariant(variant: "harness" | "focused"): AgentChatDeliveryRule {
-	return variant === "focused" ? "queue-while-working" : "as-picked";
-}
-
 export function requestedDelivery(
 	rule: AgentChatDeliveryRule,
 	connection: ConnectionState,
