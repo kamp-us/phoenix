@@ -131,7 +131,7 @@
 
 .kp-divan__decisions-title {
 	margin: 0;
-	font: var(--t-heading-sm, var(--t-body));
+	font: var(--t-h-feed);
 	color: var(--text-primary);
 }
 
