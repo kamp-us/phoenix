@@ -580,6 +580,18 @@ renderer, the picker for an empty window, a placeholder for a gone process. The 
 marked twice over — a heavier border, and a glyph plus `aria-current` in its title row — because no
 state here may be carried by colour alone.
 
+**A window's title is its process's own line.** `windowTitle` (`src/shell/ui/window-title.ts`) reads
+the newest value the process published on its generic `title@1` out-port, latched by the kernel and
+carried on the process row, and renders it as-is: a Claude session reads `claude · fable · phoenix`
+because the AI-agent program published that string, not because the shell composed it — the shell
+reads nothing AI-specific (ruling R8.1 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715)). A program re-emitting `title@1` mid-turn
+moves the title with no remount, a process that published no title is named by its program, and the
+empty and gone windows keep the strings they have. The process id moved to the desk inspector's
+heading (ruling R3.1). All of it ships behind the default-off `windowTitles` flag
+([#8721](https://github.com/kamp-us/phoenix/issues/8721)); off, every window is `process <uuid>`
+again and the inspector carries no id.
+
 There is one **application-level** keyboard listener, on the document, and it is the only thing that
 dispatches `keys.press`. Two elements read their own keys and neither is a second shell listener:
 the command line's input, and each `Separator`, whose arrow-key resizing the library attaches per

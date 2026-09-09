@@ -285,6 +285,7 @@ const composerEverywhere: MountResolver = (windowId, processId) =>
 		? empty
 		: {
 				_tag: "Bound",
+				name: null,
 				host: {
 					windowId,
 					processId: ProcessId.make(processId),

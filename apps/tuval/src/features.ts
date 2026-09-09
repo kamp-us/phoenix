@@ -33,6 +33,12 @@ export interface TuvalFeatures {
 	 * own workers, as it is today.
 	 */
 	readonly kernelChildren: boolean;
+	/**
+	 * Title a window by the line its process published on `title@1`, and show the process id under
+	 * the desk inspector's heading instead (#8721). Off: every window is `process <uuid>`, as it was,
+	 * and the inspector carries no id line.
+	 */
+	readonly windowTitles: boolean;
 }
 
 /**
@@ -46,4 +52,5 @@ export const featuresDefault: TuvalFeatures = {
 	piSubagents: true,
 	piKernelTools: false,
 	kernelChildren: false,
+	windowTitles: false,
 };

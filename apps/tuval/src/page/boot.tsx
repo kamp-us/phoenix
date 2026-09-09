@@ -16,6 +16,7 @@
  * (`./proof/no-recovery.tsx`).
  */
 
+import features from "virtual:tuval/features";
 import moduleLoaders from "virtual:tuval/module-renderers";
 import {Effect} from "effect";
 import {StrictMode, useEffect, useMemo, useState} from "react";
@@ -107,6 +108,7 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 			renderers={renderers}
 			inspectors={pageInspectors}
 			reducedMotion={reducedMotion}
+			windowTitles={features.windowTitles}
 		/>
 	);
 };

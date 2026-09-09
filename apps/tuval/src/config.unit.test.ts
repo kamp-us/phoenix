@@ -121,6 +121,7 @@ describe("the feature flags", () => {
 				piSubagents: true,
 				piKernelTools: false,
 				kernelChildren: false,
+				windowTitles: false,
 			});
 		}),
 	);
@@ -136,6 +137,7 @@ describe("the feature flags", () => {
 				piSubagents: true,
 				piKernelTools: false,
 				kernelChildren: false,
+				windowTitles: false,
 			});
 			const project = yield* layered(fixture("two-rows"), fixture("features-off"));
 			assert.deepStrictEqual(project.features, {
@@ -143,6 +145,7 @@ describe("the feature flags", () => {
 				piSubagents: true,
 				piKernelTools: false,
 				kernelChildren: false,
+				windowTitles: false,
 			});
 			const overGlobalOn = yield* layered(fixture("features-on"), fixture("features-off"));
 			assert.deepStrictEqual(overGlobalOn.features, {
@@ -150,6 +153,7 @@ describe("the feature flags", () => {
 				piSubagents: true,
 				piKernelTools: false,
 				kernelChildren: false,
+				windowTitles: false,
 			});
 		}),
 	);
@@ -168,6 +172,7 @@ describe("loadLayeredConfig", () => {
 						piSubagents: true,
 						piKernelTools: false,
 						kernelChildren: false,
+						windowTitles: false,
 					},
 					moduleRenderers: [],
 					graph: {
@@ -195,6 +200,7 @@ describe("loadLayeredConfig", () => {
 					piSubagents: true,
 					piKernelTools: false,
 					kernelChildren: false,
+					windowTitles: false,
 				},
 				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
@@ -208,6 +214,7 @@ describe("loadLayeredConfig", () => {
 					piSubagents: true,
 					piKernelTools: false,
 					kernelChildren: false,
+					windowTitles: false,
 				},
 				moduleRenderers: [],
 				graph: {nodes: []},
@@ -221,6 +228,7 @@ describe("loadLayeredConfig", () => {
 					piSubagents: true,
 					piKernelTools: false,
 					kernelChildren: false,
+					windowTitles: false,
 				},
 				moduleRenderers: [],
 				graph: {nodes: []},
