@@ -98,7 +98,7 @@ export interface AgentChatInputProps {
  * What Root provides and every composer part reads. Root owns the bridge and the draft; a part is
  * then a component that reads this and returns markup, which is what makes it movable.
  */
-export interface AgentChatInputContextValue {
+export interface AgentChatInputState {
 	readonly disabled: boolean;
 	readonly variant: "harness" | "focused";
 	readonly deliveryRule: AgentChatDeliveryRule;
@@ -115,6 +115,8 @@ export interface AgentChatInputContextValue {
 	readonly thinkingLevels: readonly PiThinkingLevel[] | undefined;
 	readonly projectTrust: PiProjectTrust;
 	readonly settingsChanging: boolean;
+	/** Whether a settings control may be operated: read by the fieldset and by the overflow menu. */
+	readonly settingsDisabled: boolean;
 	readonly images: readonly PiImage[];
 	readonly error: string | undefined;
 	readonly assistantText: string;
@@ -126,6 +128,15 @@ export interface AgentChatInputContextValue {
 	readonly extensionStatus: string | undefined;
 	readonly widget: readonly string[] | undefined;
 	readonly inspectorOpen: boolean;
+}
+
+/**
+ * What a part can ask Root to do. Held apart from the state above only so Root can publish one
+ * identity for the whole set: every entry closes over the current render's state, so rebuilding
+ * the object each render would make the context value change on every keystroke for parts that
+ * read nothing but these.
+ */
+export interface AgentChatInputActions {
 	readonly setInspectorOpen: (open: boolean) => void;
 	readonly setDelivery: (delivery: PiDeliveryMode) => void;
 	/** An edit made in the field: it notifies the consumer and re-opens a dismissed completion. */
@@ -142,6 +153,8 @@ export interface AgentChatInputContextValue {
 	readonly onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
 	readonly onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
 }
+
+export interface AgentChatInputContextValue extends AgentChatInputState, AgentChatInputActions {}
 
 const AgentChatInputContext = createContext<AgentChatInputContextValue | undefined>(undefined);
 
@@ -312,6 +325,7 @@ export function AgentChatInputRoot({
 	}, [commands, completion, completionDismissed, files]);
 	const activeSuggestionId =
 		suggestions.length > 0 ? `${suggestionsId}-${activeSuggestion}` : undefined;
+	const settingsDisabled = disabled || settingsChanging || connection !== "ready";
 
 	useEffect(() => setActiveSuggestion(0), [completion?.kind, completion?.query]);
 
@@ -662,34 +676,11 @@ export function AgentChatInputRoot({
 		}
 	}
 
-	const value: AgentChatInputContextValue = {
-		disabled,
-		variant,
-		deliveryRule: rule,
-		settings,
-		fieldRef: ref,
-		inputId,
-		suggestionsId,
-		draft,
-		delivery,
-		connection,
-		harnessState: state,
-		commands,
-		models,
-		thinkingLevels,
-		projectTrust,
-		settingsChanging,
-		images,
-		error,
-		assistantText,
-		activities,
-		suggestions,
-		activeSuggestion,
-		activeSuggestionId,
-		extension,
-		extensionStatus,
-		widget,
-		inspectorOpen,
+	// Every handler above closes over this render's state, so publishing them directly would hand
+	// each part a new context value on every keystroke. The stable object below forwards into the
+	// current render's handler through a ref, which is what lets the value memo hold across a
+	// re-render that changed nothing a part reads.
+	const handlers: AgentChatInputActions = {
 		setInspectorOpen,
 		setDelivery,
 		typeDraft,
@@ -705,6 +696,92 @@ export function AgentChatInputRoot({
 		onPaste,
 		onKeyDown,
 	};
+	const handlersRef = useRef(handlers);
+	handlersRef.current = handlers;
+	const actions = useMemo<AgentChatInputActions>(
+		() => ({
+			setInspectorOpen: (open) => handlersRef.current.setInspectorOpen(open),
+			setDelivery: (mode) => handlersRef.current.setDelivery(mode),
+			typeDraft: (value) => handlersRef.current.typeDraft(value),
+			selectSuggestion: (suggestion) => handlersRef.current.selectSuggestion(suggestion),
+			removeImage: (image) => handlersRef.current.removeImage(image),
+			addImage: (file) => handlersRef.current.addImage(file),
+			submit: () => handlersRef.current.submit(),
+			stop: () => handlersRef.current.stop(),
+			changeModel: (value) => handlersRef.current.changeModel(value),
+			changeThinkingLevel: (value) => handlersRef.current.changeThinkingLevel(value),
+			changeProjectTrust: (value) => handlersRef.current.changeProjectTrust(value),
+			answerExtension: (answer) => handlersRef.current.answerExtension(answer),
+			onPaste: (event) => handlersRef.current.onPaste(event),
+			onKeyDown: (event) => handlersRef.current.onKeyDown(event),
+		}),
+		[],
+	);
+
+	const value = useMemo<AgentChatInputContextValue>(
+		() => ({
+			disabled,
+			variant,
+			deliveryRule: rule,
+			settings,
+			fieldRef: ref,
+			inputId,
+			suggestionsId,
+			draft,
+			delivery,
+			connection,
+			harnessState: state,
+			commands,
+			models,
+			thinkingLevels,
+			projectTrust,
+			settingsChanging,
+			settingsDisabled,
+			images,
+			error,
+			assistantText,
+			activities,
+			suggestions,
+			activeSuggestion,
+			activeSuggestionId,
+			extension,
+			extensionStatus,
+			widget,
+			inspectorOpen,
+			...actions,
+		}),
+		[
+			actions,
+			activeSuggestion,
+			activeSuggestionId,
+			activities,
+			assistantText,
+			commands,
+			connection,
+			delivery,
+			disabled,
+			draft,
+			error,
+			extension,
+			extensionStatus,
+			images,
+			inputId,
+			inspectorOpen,
+			models,
+			projectTrust,
+			ref,
+			rule,
+			settings,
+			settingsChanging,
+			settingsDisabled,
+			state,
+			suggestions,
+			suggestionsId,
+			thinkingLevels,
+			variant,
+			widget,
+		],
+	);
 
 	return <AgentChatInputContext.Provider value={value}>{children}</AgentChatInputContext.Provider>;
 }

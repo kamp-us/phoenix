@@ -114,7 +114,7 @@ const tempScopeId = (): string => {
 	return `home-${sanitizeScopeSegment(homedir())}`;
 };
 
-/** `TEMP_ROOT_DIR` (`src/shared/types.ts:2733-2737`) — the parent both roots below hang off. */
+/** `TEMP_ROOT_DIR` (`src/shared/types.ts:2730-2733`) — the parent both roots below hang off. */
 const tempRoot = (): string => {
 	const configured = process.env.PI_SUBAGENTS_TEMP_ROOT?.trim();
 	return configured ? resolve(configured) : join(tmpdir(), `pi-subagents-${tempScopeId()}`);
@@ -122,14 +122,14 @@ const tempRoot = (): string => {
 
 /**
  * Where detached runs keep their status directories — `ASYNC_DIR`
- * (`src/shared/types.ts:2739`). It is process-scoped rather than session-scoped, so it is read
+ * (`src/shared/types.ts:2735`). It is process-scoped rather than session-scoped, so it is read
  * off the same environment the extension runs in: this process spawns the children.
  */
 export const asyncRunRoot = (): string => join(tempRoot(), "async-subagent-runs");
 
 /**
  * Where a finished run's result payload and its indexes live — `RESULTS_DIR`
- * (`src/shared/types.ts:2738`), the sibling of the run root under the same temp scope.
+ * (`src/shared/types.ts:2734`), the sibling of the run root under the same temp scope.
  */
 export const asyncResultsRoot = (): string => join(tempRoot(), "async-subagent-results");
 

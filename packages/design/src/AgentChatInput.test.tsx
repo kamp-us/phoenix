@@ -2,7 +2,9 @@ import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {createRef} from "react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AgentChatInput} from "./AgentChatInput";
+import {useAgentChatInput} from "./agent-chat/Root";
 import type {AgentChatInputBridge} from "./agent-chat-bridge";
+import {Form} from "./Form";
 import {type DesignTranslate, DesignTranslationProvider, defaultDesignTranslate} from "./i18n";
 
 function response(body: unknown): Response {
@@ -195,6 +197,51 @@ function collidingCatalogBridge(): {
 		subscribeToPiEvents: () => () => undefined,
 	};
 	return {bridge, picks};
+}
+
+/**
+ * The composer assembled from its compound parts, in the order the export assembles them. Two
+ * renders never draw the same generated ids — React's `useId` and Manti's own `data-uid` both
+ * count up per render — so the comparison below reads the markup with every id-carrying attribute
+ * blanked.
+ */
+function ComposedComposer() {
+	const {submit} = useAgentChatInput();
+	return (
+		<AgentChatInput.Surface>
+			<Form
+				className="kp-agent-chat__form"
+				onSubmit={(event) => {
+					event.preventDefault();
+					void submit();
+				}}
+			>
+				<AgentChatInput.Field />
+				<AgentChatInput.Toolbar />
+			</Form>
+			<AgentChatInput.Hint />
+		</AgentChatInput.Surface>
+	);
+}
+
+const GENERATED_IDS =
+	/\s(id|for|aria-controls|aria-activedescendant|aria-labelledby|aria-describedby|data-uid|data-controls)="[^"]*"/g;
+
+/**
+ * The composer paints before its catalog resolves, and the model and thinking labels are the last
+ * thing the four bridge loads move. Reading the markup before they land compares half-settled
+ * trees, which goes red on timing rather than on a difference.
+ */
+async function settledComposerMarkup(container: HTMLElement): Promise<string> {
+	await screen.findAllByText("GPT-5");
+	await screen.findAllByText("orta");
+	return composerMarkup(container);
+}
+
+function composerMarkup(container: HTMLElement): string {
+	const composer = container.querySelector('[data-testid="agent-chat-input"]');
+	if (!composer) throw new Error("no composer rendered");
+	return composer.innerHTML.replace(GENERATED_IDS, ' $1="*"');
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -598,6 +645,48 @@ describe("AgentChatInput", () => {
 			"GPT-5",
 			"GPT-5.6",
 		]);
+	});
+
+	describe.each(["harness", "focused"] as const)("the %s composer's compound parts", (variant) => {
+		it("assemble into the tree the plain export renders", async () => {
+			const {bridge} = installHarnessFetch();
+			const plain = render(<AgentChatInput bridge={bridge} variant={variant} />);
+			const expected = await settledComposerMarkup(plain.container);
+			plain.unmount();
+
+			const composed = render(
+				<AgentChatInput.Root bridge={bridge} variant={variant}>
+					<ComposedComposer />
+				</AgentChatInput.Root>,
+			);
+			await settledComposerMarkup(composed.container);
+			await waitFor(() => expect(composerMarkup(composed.container)).toBe(expected));
+		});
+	});
+
+	it("keeps the settings slot rendering inside the fieldset", async () => {
+		const {bridge} = installHarnessFetch();
+		render(<AgentChatInput bridge={bridge} settings={<button type="button">Ajan kipi</button>} />);
+
+		const slotted = await screen.findByRole("button", {name: "Ajan kipi"});
+		expect(slotted.closest("fieldset")?.className).toContain("kp-agent-chat__settings");
+		expect(screen.getByRole("combobox", {name: "Pi modeli"})).toBeTruthy();
+	});
+
+	it("lets Settings children stand in for the controls it owns, slot untouched", async () => {
+		const {bridge} = installHarnessFetch();
+		render(
+			<AgentChatInput.Root bridge={bridge} settings={<button type="button">Ajan kipi</button>}>
+				<AgentChatInput.Settings>
+					<button type="button">Yalnız bu</button>
+				</AgentChatInput.Settings>
+			</AgentChatInput.Root>,
+		);
+
+		const own = await screen.findByRole("button", {name: "Yalnız bu"});
+		expect(own.closest("fieldset")?.className).toContain("kp-agent-chat__settings");
+		expect(screen.queryByRole("combobox", {name: "Pi modeli"})).toBeNull();
+		expect(screen.queryByRole("button", {name: "Ajan kipi"})).toBeNull();
 	});
 
 	// A host's only way to focus the composer, and it travels as an ordinary prop through the

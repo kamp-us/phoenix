@@ -525,3 +525,64 @@ describe("a notice naming a worker", () => {
 		rendered.unmount();
 	});
 });
+
+/**
+ * #8680: three sentences and one list field name the worker, and all three sentences already carry
+ * the word "subagent". A slot whose call named no agent and whose steps resolved none has
+ * `type: null`, and each surface phrases that absence instead of reading a placeholder back out.
+ */
+describe("naming the worker a view is open on", () => {
+	const nameless = () =>
+		subagentSlot("agent", {type: null, items: reviewerItems, lastLine: "wrote 4 rows"});
+
+	const openOnFirstRow = async (slot: SubagentSlot) => {
+		const opened = await openOne(agentSession(slot), {}, atOldest());
+		await act(async () => {
+			dom(opened.rendered.container).picks()[0]?.click();
+		});
+		return opened;
+	};
+
+	// The window draws a second `role="status"` for the turn phase, so this is scoped to the one
+	// that sits under the navigator — the view slot's own live region.
+	const status = (root: ParentNode) =>
+		root.querySelector<HTMLElement>('.tuval-chat-subagents + p[role="status"]')?.textContent ?? "";
+
+	const typeField = (root: ParentNode) =>
+		root.querySelector<HTMLElement>('.tuval-chat-subagent-type[data-field="type"]');
+
+	it("says the word once when no name is known", async () => {
+		const {rendered} = await openOnFirstRow(nameless());
+		const root = rendered.container;
+
+		expect(dom(root).end()).toBe("The subagent is still running.");
+		expect(status(root)).toBe("Showing the subagent's transcript. Still running.");
+		expect(within(root).getByRole("log", {name: "Transcript: subagent"})).toBeTruthy();
+		rendered.unmount();
+	});
+
+	it("draws no name field in the navigator row for that worker", async () => {
+		const {rendered} = await openOne(agentSession(nameless()), {}, atOldest());
+		const root = rendered.container;
+
+		expect(typeField(root)).toBeNull();
+		expect(dom(root).picks()[0]?.textContent).toContain("wrote 4 rows");
+		rendered.unmount();
+	});
+
+	it("keeps a named worker's phrasing on every one of those surfaces", async () => {
+		const named = subagentSlot("agent", {
+			type: "builder",
+			items: reviewerItems,
+			lastLine: "wrote 4 rows",
+		});
+		const {rendered} = await openOnFirstRow(named);
+		const root = rendered.container;
+
+		expect(dom(root).end()).toBe("The builder subagent is still running.");
+		expect(status(root)).toBe("Showing the builder subagent's transcript. Still running.");
+		expect(within(root).getByRole("log", {name: "Transcript: builder subagent"})).toBeTruthy();
+		expect(typeField(root)?.textContent).toBe("builder");
+		rendered.unmount();
+	});
+});
