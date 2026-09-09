@@ -873,6 +873,57 @@ describe("interrupt", () => {
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
 	});
 
+	const abortedItem = (id: string, text = ""): AiAgentSessionMsg => ({
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "item", item: assistantItem(id, text, undefined, true)},
+	});
+
+	const cutBeforeAnyText = (): AiAgentSessionState =>
+		running({
+			transcript: {
+				items: [userItem("u0"), assistantItem("a1"), userItem("u2")],
+				omitted: initialState("/x").transcript.omitted,
+			},
+		});
+
+	// The other half of the case above: the stop had no row to mark, so the `aborted` row the
+	// backend pushes afterwards is the only thing that ever names the cut turn's reply (#8584).
+	it("takes the marker from the aborted row when the stop had no reply to name", () => {
+		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
+		const [landed] = apply(asked, abortedItem("a3"));
+		expect(landed.interrupted).toBe("a3");
+		// The phase line settles after the item within one revision (`../../pi/ai-agent/items.ts`),
+		// so the marker the row supplied is what the window reads once the turn is over.
+		const [over] = apply(landed, phaseEvent("ready"));
+		expect(over.interrupted).toBe("a3");
+		expect(over.interruption).toBeNull();
+	});
+
+	it("keeps the reply the stop already named rather than following a later aborted row", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [landed] = apply(asked, abortedItem("a3"));
+		expect(landed.interrupted).toBe("a1");
+	});
+
+	// A snapshot replaying an old interruption's row, or a session that has since moved on: no
+	// request is outstanding, so nothing here is the answer to one and the resend stays unoffered.
+	it("ignores an aborted row that arrives under no outstanding request", () => {
+		const [landed] = apply(started(), abortedItem("a3"));
+		expect(landed.interrupted).toBeNull();
+		const [after] = apply(cutBeforeAnyText(), abortedItem("a3"));
+		expect(after.interrupted).toBeNull();
+	});
+
+	// The resend is a fresh send, and the row it belonged to is two turns back by then.
+	it("drops the row-supplied marker when the operator sends again", () => {
+		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
+		const [landed] = apply(asked, abortedItem("a3"));
+		const [over] = apply(landed, phaseEvent("ready"));
+		const [next] = apply(over, {type: "prompt", text: "again", key: "k9", timestamp: SENT_AT + 1});
+		expect(next.interrupted).toBeNull();
+	});
+
 	// The prompt waits rather than being refused (#8159), and the stop request stands over it: an
 	// outstanding interruption is still the session's answer about the turn that is running.
 	it("sends nothing new while the interruption is outstanding", () => {

@@ -162,7 +162,6 @@ describe("AgentChatInput.Root", () => {
 		["Attach", () => <AgentChatInput.Attach />],
 		["Settings", () => <AgentChatInput.Settings />],
 		["Pickers", () => <AgentChatInput.Pickers />],
-		["Hint", () => <AgentChatInput.Hint />],
 		["Error", () => <AgentChatInput.Error />],
 		["Inspector", () => <AgentChatInput.Inspector />],
 		["ExtensionDialog", () => <AgentChatInput.ExtensionDialog />],

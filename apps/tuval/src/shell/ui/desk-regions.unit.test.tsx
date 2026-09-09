@@ -233,7 +233,7 @@ describe("the composed status bar", () => {
 		render(<Harness initial={threeWindowDesk()} />);
 		expect(group("Workspace").textContent).toContain("workspace-0");
 		expect(group("Shell").textContent).toContain("2 processes");
-		expect(group("Shell").textContent).toContain("rev 7");
+		expect(group("Shell").textContent).not.toContain("rev");
 		expect(group("Program").textContent).toBe("12 lines");
 		// The program reached the middle and nothing else on the bar.
 		expect(group("Workspace").textContent).not.toContain("12 lines");

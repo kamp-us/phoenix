@@ -428,6 +428,28 @@ export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | 
 	return null;
 };
 
+/**
+ * Where the cut-turn marker stands once one more item has landed.
+ *
+ * `lastAssistantId` answers `null` for a turn cut before it wrote anything, so on that path the
+ * marker is set here instead — by the `aborted` row the backend pushes afterwards, which is the
+ * only thing that ever names that turn's reply (#8584). Without it the row rendered plain: no
+ * break, no resend, for the one turn the operator definitely stopped.
+ *
+ * The outstanding `interruption` is the whole gate. It is the operator's request with no event
+ * against it yet, so an `aborted` row arriving under one is that request's answer; a historical
+ * abort replayed by a snapshot arrives under none and leaves the marker alone. A marker already set
+ * stands, so this never re-points the resend away from the row `interrupt` or `restore` chose.
+ */
+export const cutReplyAfterItem = (
+	state: AiAgentSessionState,
+	item: TranscriptItem,
+): ItemId | null => {
+	if (state.interrupted !== null) return state.interrupted;
+	if (state.interruption === null) return null;
+	return item.kind === "assistant" && item.interrupted === true ? item.id : null;
+};
+
 /** The cut-short turn, marked in the tail so a window renders the break off the transcript alone. */
 const markInterrupted = (
 	items: ReadonlyArray<TranscriptItem>,

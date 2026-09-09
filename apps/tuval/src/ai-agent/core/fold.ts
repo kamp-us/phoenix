@@ -28,6 +28,7 @@ import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} f
 import {
 	type AiAgentSessionState,
 	closeOfferedCatalogs,
+	cutReplyAfterItem,
 	emptyOmission,
 	lastAssistantId,
 	settleTurn,
@@ -269,7 +270,11 @@ export const foldEvent = (
 ): AiAgentSessionState => {
 	switch (event.kind) {
 		case "item":
-			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
+			return {
+				...state,
+				interrupted: cutReplyAfterItem(state, event.item),
+				transcript: foldItem(state.transcript, event.item, limits),
+			};
 		// The phase line is also where a send in flight learns it crossed, and it takes two events
 		// to say so: the layer narrating the backend *starting* a turn, and then that turn ending.
 		//

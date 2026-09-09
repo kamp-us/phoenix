@@ -47,8 +47,7 @@
 }
 
 .kp-agent-chat__status,
-.kp-agent-chat__scope,
-.kp-agent-chat__hint {
+.kp-agent-chat__scope {
 	margin: 0;
 }
 
@@ -271,22 +270,6 @@
 	--manti-button-padding-x: var(--s-2);
 	min-width: 0;
 	color: var(--text-secondary);
-}
-
-/*
- * The hint reserves no room at rest — it is the second half of #8669's height win. It surfaces on
- * the one state that asks for it, an empty field with the caret in it, and the flex column drops
- * its gap with it because `display: none` takes the box out of layout entirely.
- */
-.kp-agent-chat__hint {
-	display: none;
-	color: var(--text-muted);
-	font: var(--t-meta);
-}
-
-.kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)
-	.kp-agent-chat__hint {
-	display: block;
 }
 
 .kp-agent-chat__inspector:where([data-scope="collapsible"][data-part="root"]) {
