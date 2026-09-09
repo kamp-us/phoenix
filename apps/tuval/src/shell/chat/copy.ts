@@ -152,6 +152,17 @@ export const subagentViewPlaceholder =
 export const composerStateAnnouncement = (disabled: boolean): string =>
 	disabled ? `The composer is off here. ${subagentViewPlaceholder}` : "The composer is on.";
 
+/**
+ * What a slot's label says about the workers it holds, or `null` when there is nothing to say.
+ *
+ * A fan-out is one slot over many workers (founder ruling 2026-09-09 on #8664), and this count is
+ * the only thing on the row telling a reader that its line, its elapsed and its tokens are all of
+ * them together. One worker draws nothing: a "1 workers" on every ordinary row would be noise on
+ * the common case to serve the rare one.
+ */
+export const workerCountLabel = (workers: number): string | null =>
+	workers <= 1 ? null : `${workers} workers`;
+
 const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**

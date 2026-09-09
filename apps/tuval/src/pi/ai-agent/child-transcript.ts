@@ -295,8 +295,14 @@ export const readChildTranscript = (dir: string, runId: string): ChildTranscript
 
 /**
  * Several runs' transcripts as one slot's rows. An async spawn is one call over as many workers as
- * its `steps[]` names, and the slot stays keyed on the call (#8664 owns how a fan-out is laid out),
- * so their rows are concatenated in the order the steps were resolved and re-keyed apart.
+ * its `steps[]` names, and the slot stays keyed on the call, so their rows are concatenated in the
+ * order the steps were resolved and re-keyed apart.
+ *
+ * That merge is the shape the founder ruled on #8664 (2026-09-09), over one slot per worker: the
+ * rows, the `lastLine` and the summed `tokens` are every worker's together, and the slot's own
+ * `workers` count is what says so on the surface that draws it. This layer is unchanged by that
+ * ruling — it merged before it and merges after — and so is `readChildTranscript`'s within-run
+ * merge one layer down.
  *
  * The re-key runs even for a single run, matching `readChildTranscript`'s own `child-<at>-` prefix:
  * a step that launches later must not renumber the ids of the rows already on screen.

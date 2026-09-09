@@ -241,6 +241,37 @@ export const withUsageLedger = (raw: unknown): unknown => {
 };
 
 /**
+ * A checkpoint written before a slot counted its workers, read with the count it implied (#8664).
+ *
+ * A repair rather than a default, for the same reason `withUsageLedger` is one: `subagents` is
+ * present and well-formed, it is the per-slot shape that grew a field. Every slot the old shape
+ * could write held one spawning call and said nothing about a fan-out, so `1` is what it meant —
+ * and without this the predicate refuses the whole checkpoint and the desk comes back `gone`.
+ *
+ * It fills only an absent count. A slot carrying a `workers` of the wrong type stays wrong, and
+ * `parseSessionState` still refuses it.
+ */
+export const withSubagentWorkers = (raw: unknown): unknown => {
+	if (
+		!Predicate.isObject(raw) ||
+		!Predicate.isObject(raw.subagents) ||
+		Array.isArray(raw.subagents)
+	)
+		return raw;
+	const slots = Object.entries(raw.subagents);
+	if (!slots.some(([, slot]) => Predicate.isObject(slot) && slot.workers === undefined)) return raw;
+	return {
+		...raw,
+		subagents: Object.fromEntries(
+			slots.map(([key, slot]) => [
+				key,
+				Predicate.isObject(slot) && slot.workers === undefined ? {...slot, workers: 1} : slot,
+			]),
+		),
+	};
+};
+
+/**
  * The checkpoint read, as the defaulting and the predicate composed once: the session, or `null`.
  *
  * One function rather than two call sites of the same pair, because `loadCheckpoint` wants the
@@ -248,7 +279,7 @@ export const withUsageLedger = (raw: unknown): unknown => {
  * different verdict than the one the window renders would hold the wrong bytes (#8112).
  */
 export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState | null =>
-	parseSessionState(withUsageLedger(withCheckpointDefaults(loaded, cwd)));
+	parseSessionState(withSubagentWorkers(withUsageLedger(withCheckpointDefaults(loaded, cwd))));
 
 /**
  * What the store loaded, read as a session — or the refusal, when it is not one. The machine's

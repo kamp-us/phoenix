@@ -113,7 +113,8 @@ describe("the running-subagent list", () => {
 		expect(list()).not.toBeNull();
 		const rows = rowsOf();
 		expect(rows).toHaveLength(3);
-		// Four fields and only four: a fifth would be the count Q1 answered "no" to.
+		// Four fields and only four: a fifth would be the count of *rows* Q1 answered "no" to. The
+		// worker count below is a different field and only a fan-out draws it.
 		expect(fieldsOf(rows[0] as HTMLElement)).toEqual({
 			type: "reviewer",
 			line: "reading rows.ts",
@@ -126,6 +127,32 @@ describe("the running-subagent list", () => {
 			elapsed: "elapsed 3s",
 			tokens: "4k tokens",
 		});
+		rendered.unmount();
+	});
+
+	// The founder ruled a fan-out stays one slot (2026-09-09 on #8664), so the count is the only
+	// thing on the row saying its line, elapsed and tokens are several workers' together.
+	it("says how many workers a fan-out slot holds, and says nothing on a single one", async () => {
+		vi.useFakeTimers({now: STARTED_AT + 3_000, shouldAdvanceTime: true});
+		const {rendered} = await openWindow(
+			withTranscript([userItem("u1", "go")], {
+				subagents: slots(
+					subagentSlot("a", {type: "explorer", lastLine: "grep", tokens: 4_000, workers: 3}),
+					subagentSlot("b", {type: "builder", lastLine: "writing", tokens: 900, workers: 1}),
+				),
+			}),
+			{subagentList: true},
+		);
+
+		const rows = rowsOf();
+		expect(fieldsOf(rows[0] as HTMLElement)).toEqual({
+			type: "explorer",
+			workers: "3 workers",
+			line: "grep",
+			elapsed: "elapsed 3s",
+			tokens: "4k tokens",
+		});
+		expect(fieldsOf(rows[1] as HTMLElement)).not.toHaveProperty("workers");
 		rendered.unmount();
 	});
 

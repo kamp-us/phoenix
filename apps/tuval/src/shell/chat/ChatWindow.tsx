@@ -1129,8 +1129,8 @@ function ChatWindow({
 									? "Showing the agent's own transcript."
 									: "Showing a subagent whose transcript is not in this session's state."
 								: viewedSlot.status === "finished"
-									? `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Finished: ${viewedSlot.lastLine}`
-									: `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Still running.`}{" "}
+									? `Showing the ${subagentPhrase(viewedSlot.type, viewedSlot.workers)}'s transcript. Finished: ${viewedSlot.lastLine}`
+									: `Showing the ${subagentPhrase(viewedSlot.type, viewedSlot.workers)}'s transcript. Still running.`}{" "}
 							{composerStateAnnouncement(composerDisabled)}
 						</p>
 					</>
@@ -1145,7 +1145,7 @@ function ChatWindow({
 					aria-label={
 						viewedSlot === undefined
 							? "Transcript"
-							: `Transcript: ${subagentPhrase(viewedSlot.type)}`
+							: `Transcript: ${subagentPhrase(viewedSlot.type, viewedSlot.workers)}`
 					}
 					// The scroll container is the only way to older turns on a plain transcript, so a
 					// keyboard user must be able to focus it (axe scrollable-region-focusable).
@@ -1207,7 +1207,7 @@ function ChatWindow({
 								{viewedSlot.lastLine}
 							</>
 						) : (
-							`The ${subagentPhrase(viewedSlot.type)} is still running.`
+							`The ${subagentPhrase(viewedSlot.type, viewedSlot.workers)} is still running.`
 						)}
 					</p>
 				)}

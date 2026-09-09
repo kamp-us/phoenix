@@ -22,6 +22,7 @@ import {Predicate} from "effect";
 import {
 	type ItemId,
 	isNonNegativeInteger,
+	isPositiveInteger,
 	isTranscriptItems,
 	type TranscriptItem,
 } from "./transcript-item.ts";
@@ -33,7 +34,12 @@ import {
 export type SubagentStatus = "running" | "finished";
 
 export interface SubagentSlot {
-	/** The spawning call's item id: one tool row, one worker, one slot. */
+	/**
+	 * The spawning call's item id: one tool row, one slot, however many workers that call started.
+	 * A fan-out keeps this keying and merges its workers into the one slot — founder ruling
+	 * 2026-09-09 on #8664, which took that shape over one slot per worker and left this identity
+	 * standing. `workers` is what the merged slot says about the count.
+	 */
 	readonly id: ItemId;
 	/**
 	 * What kind of worker this is, in the backend's own words — a label, never a type tag. `null`
@@ -47,6 +53,15 @@ export interface SubagentSlot {
 	/** Epoch milliseconds, so the window computes elapsed without a backend clock type. */
 	readonly startedAt: number;
 	readonly tokens: number;
+	/**
+	 * How many workers the spawning call started, at least one. A call that started one is `1` and
+	 * says nothing more; above that the slot's rows, `lastLine` and `tokens` are all of them
+	 * together, and a surface that draws the count is the only thing telling a reader so.
+	 *
+	 * A count and not a list of worker ids: the ruling keyed the slot on the call, so there is no
+	 * per-worker row to address, and an id nothing can open is a field that only invites one.
+	 */
+	readonly workers: number;
 	/**
 	 * Every item the worker produced, in arrival order. Every kind, not the assistant and tool ones
 	 * alone: a worker's inbound turn arrives parent-tagged too, so a slot admitting less would drop
@@ -66,6 +81,7 @@ export const isSubagentSlot = (value: unknown): value is SubagentSlot =>
 	typeof value.lastLine === "string" &&
 	Number.isFinite(value.startedAt) &&
 	isNonNegativeInteger(value.tokens) &&
+	isPositiveInteger(value.workers) &&
 	isTranscriptItems(value.items) &&
 	typeof value.status === "string" &&
 	statuses.has(value.status);

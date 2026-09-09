@@ -68,6 +68,7 @@ export {
 	readCheckpoint,
 	SPENT_BEFORE_LEDGER,
 	withCheckpointDefaults,
+	withSubagentWorkers,
 	withUsageLedger,
 } from "./snapshot.ts";
 export {

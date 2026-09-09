@@ -132,6 +132,13 @@
 	color: var(--text-primary);
 }
 
+/* Short and fixed, so it never gives way to the line beside it. */
+.tuval-chat-subagent-workers {
+	flex: 0 0 auto;
+	color: var(--text-secondary);
+	white-space: nowrap;
+}
+
 /* The one field that may be any length, so it is the one that truncates. */
 .tuval-chat-subagent-line {
 	flex: 1 1 auto;

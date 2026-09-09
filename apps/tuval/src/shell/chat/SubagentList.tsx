@@ -35,6 +35,7 @@ import {
 } from "react";
 import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
 import {prefixArmedAround} from "../window/index.ts";
+import {workerCountLabel} from "./copy.ts";
 import {
 	elapsedLabel,
 	runningSubagents,
@@ -105,6 +106,7 @@ function Line({
 }
 
 function RowFields({row, at}: {readonly row: SubagentRow; readonly at: number}): ReactElement {
+	const workers = workerCountLabel(row.workers);
 	return (
 		<MetaRow as="span" className="tuval-chat-subagent">
 			{/* A row whose worker named itself nothing draws no name field — and no dot for one. */}
@@ -112,6 +114,15 @@ function RowFields({row, at}: {readonly row: SubagentRow; readonly at: number}):
 				<>
 					<span className="tuval-chat-subagent-type" data-field="type">
 						{row.type}
+					</span>
+					<MetaRow.Dot />
+				</>
+			)}
+			{/* The count sits beside the name, because it qualifies whose line and spend follow it. */}
+			{workers === null ? null : (
+				<>
+					<span className="tuval-chat-subagent-workers" data-field="workers">
+						{workers}
 					</span>
 					<MetaRow.Dot />
 				</>
