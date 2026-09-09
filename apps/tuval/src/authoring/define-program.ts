@@ -43,6 +43,7 @@ import type {
 	Receiver,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
+import {type CommandArgTypes, type CommandTable, compileCommands} from "./commands.ts";
 import {
 	type AskEffect,
 	type EmitEffect,
@@ -99,7 +100,12 @@ export type UpdateTable<S, D extends PortDecls, U> = {
 };
 
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
-export interface AuthoredProgram<S, D extends PortDecls, U> {
+export interface AuthoredProgram<
+	S,
+	D extends PortDecls,
+	U,
+	C extends CommandArgTypes = Record<string, never>,
+> {
 	readonly id: string;
 	/** What a surface calls this program; absent falls through to `identity.program`. */
 	readonly label?: string;
@@ -111,6 +117,12 @@ export interface AuthoredProgram<S, D extends PortDecls, U> {
 	 */
 	readonly init: () => S;
 	readonly update: U & UpdateTable<S, D, U>;
+	/**
+	 * The commands this program offers, compiled into the row's spells (`./commands.ts`). The key
+	 * is the command's own path and never carries a prefix: the group is the program id, and the
+	 * spell registry composes it from the row's id (#8716 R16.1).
+	 */
+	readonly commands?: CommandTable<C>;
 	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
 	/**
@@ -123,7 +135,7 @@ export interface AuthoredProgram<S, D extends PortDecls, U> {
 	readonly placement?: Placement;
 }
 
-export type AnyAuthoredProgram = AuthoredProgram<any, any, any>;
+export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any>;
 
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */
 export interface CompileContext {
@@ -287,6 +299,7 @@ export const FIELD_COMPILERS = {
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
 	handlers: () => HANDLERS,
+	spells: (authored) => compileCommands(authored.commands, HANDLERS),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
@@ -296,8 +309,13 @@ export const FIELD_COMPILERS = {
  * Compile one authored program into the registry row. The row is a plain object, so every field
  * this layer does not sugar is still reachable by spread.
  */
-export const defineProgram = <S, D extends PortDecls = Record<string, never>, U = unknown>(
-	authored: AuthoredProgram<S, D, U>,
+export const defineProgram = <
+	S,
+	D extends PortDecls = Record<string, never>,
+	U = unknown,
+	C extends CommandArgTypes = Record<string, never>,
+>(
+	authored: AuthoredProgram<S, D, U, C>,
 ): AnyProgram => {
 	const id = ProgramId.make(authored.id);
 	const context: CompileContext = {id, ports: compilePorts(id, authored.ports ?? {})};
