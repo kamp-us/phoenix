@@ -53,17 +53,14 @@
 }
 
 .tuval-inspector-process-label {
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
 
 .tuval-inspector-process code {
-	font:
-		var(--t-meta) ui-monospace,
-		monospace;
+	font: var(--t-meta);
+	font-family: var(--font-mono);
 	/* The id is one long token and the column is 320px: it wraps rather than pushing the panel wide. */
 	overflow-wrap: anywhere;
 }

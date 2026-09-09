@@ -18,7 +18,7 @@ import {ProcessId} from "../../../process/process.ts";
 import {ProgramId} from "../../../registry/program.ts";
 import type {PortDeclaration, TableRow} from "../../../table/row.ts";
 import {ProcessBoard} from "../ProcessBoard.tsx";
-import "../../ui/tokens.css";
+import "../../../page/styles.ts";
 import "./proof.css";
 
 const out = (kind: string): PortDeclaration => ({kind, direction: "out"});

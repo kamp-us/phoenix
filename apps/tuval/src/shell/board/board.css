@@ -21,9 +21,7 @@
 
 .tuval-board-heading {
 	margin: 0;
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
@@ -98,9 +96,7 @@
 }
 
 .tuval-board-tile-heading {
-	font:
-		var(--t-body) system-ui,
-		sans-serif;
+	font: var(--t-body);
 	font-weight: 600;
 	color: var(--text-primary);
 	overflow-wrap: anywhere;
@@ -113,9 +109,7 @@
 }
 
 .tuval-board-tile-status {
-	font:
-		var(--t-body-sm) system-ui,
-		sans-serif;
+	font: var(--t-body-sm);
 	color: var(--text-secondary);
 	overflow-wrap: anywhere;
 }
