@@ -641,7 +641,8 @@ const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
  *
  * The match is the captured shape and nothing looser: the text must *be* the wrapper, so a prompt
  * quoting or explaining these tags is still the operator's own and stays one. The sibling
- * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s; `<command-name>` is read nowhere yet.
+ * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s, and the `<command-name>` frame
+ * between them is `localCommandInvocationOf`'s.
  */
 const localCommandOutputOf = (text: string): string | null => {
 	const trimmed = text.trim();
@@ -666,6 +667,54 @@ const isLocalCommandCaveat = (text: string): boolean => {
 };
 
 /**
+ * One tag of the invocation record, matched at the head of what is left. The set is open rather
+ * than the three the plain slash command writes, because a plugin or skill invocation carries
+ * siblings of its own — `<skill-format>` on every one (`fixtures/local-command-skill-turn.json`).
+ */
+const COMMAND_TAG = /^<([a-z][a-z-]*)>([\s\S]*?)<\/\1>/;
+
+/** The CLI's marker that this frame is a skill's, and that the skill's own body follows its tags. */
+const SKILL_FORMAT = "skill-format";
+
+/**
+ * The command a slash-command invocation names, with its arguments, when this user frame is the
+ * CLI's record of that invocation rather than a turn.
+ *
+ * The middle of the three frames one slash command writes: the caveat, this record, then the
+ * output. Unlike the caveat it carries something a reader wants — which command ran — so it becomes
+ * its own notice rather than nothing (#8665). `<command-message>` restates the name and is dropped.
+ *
+ * Order is not fixed and the tag set is not closed: a plain command writes `<command-name>` first,
+ * a plugin command writes `<command-message>` first, and a skill's frame adds `<skill-format>` and
+ * then the whole skill body. So the read is the tags themselves — every one consumed in turn, each
+ * at most once, and `<command-name>` required. What is left over decides the rest: on a skill frame
+ * it is the body and rides the notice's `detail`, and anywhere else it means an operator wrote
+ * about the markup, which stays their own turn.
+ */
+const localCommandInvocationOf = (
+	text: string,
+): {readonly text: string; readonly detail?: string} | null => {
+	let rest = text.trim();
+	const parts = new Map<string, string>();
+	while (rest.length > 0) {
+		const match = COMMAND_TAG.exec(rest);
+		if (match === null) break;
+		const [whole, tag, inner] = match;
+		if (tag === undefined || inner === undefined || parts.has(tag)) return null;
+		parts.set(tag, inner.replaceAll(sgr, "").trim());
+		rest = rest.slice(whole.length).trimStart();
+	}
+	const name = parts.get("command-name") ?? "";
+	if (name.length === 0) return null;
+	// A skill's own body follows its tags in the same frame, and only there: without the CLI's
+	// `<skill-format>` marker, text past the tags is an operator writing about the markup.
+	if (rest.length > 0 && !parts.has(SKILL_FORMAT)) return null;
+	const args = parts.get("command-args") ?? "";
+	const line = args.length === 0 ? name : `${name} ${args}`;
+	return rest.length === 0 ? {text: line} : {text: line, detail: rest.replaceAll(sgr, "")};
+};
+
+/**
  * One command's output as the collapsed notice's two fields: the line always shown, and the whole
  * output behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`).
  */
@@ -681,8 +730,24 @@ const noticeOf = (output: string): {readonly text: string; readonly detail?: str
 };
 
 /**
- * A user frame is either the operator's prompt, a local command's caveat or output, or the results
- * of the calls the last turn opened.
+ * What one user frame stands for: the operator's own turn, or one of the two slash-command frames
+ * the CLI writes under the operator's role — the invocation record and the command's output. Each
+ * is read off its own text alone, so nothing has to survive between the frames of one command.
+ */
+const promptItemOf = (
+	text: string,
+	base: {readonly id: ItemId; readonly timestamp: number; readonly parentId?: ItemId},
+): TranscriptItem => {
+	const output = localCommandOutputOf(text);
+	if (output !== null) return {kind: "system", ...base, ...noticeOf(output)};
+	const invocation = localCommandInvocationOf(text);
+	if (invocation !== null) return {kind: "system", ...base, ...invocation};
+	return {kind: "user", ...base, text};
+};
+
+/**
+ * A user frame is either the operator's prompt, a local command's caveat, invocation record or
+ * output, or the results of the calls the last turn opened.
  *
  * A result whose call this mapping never saw is dropped and counted: the item union has no
  * name-less tool row, and inventing one would put a lie on screen. It happens only to a reader
@@ -706,11 +771,7 @@ export const userEvents = (
 		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
 		// agent's own prose — seen live on #8400's desk run.
 		const tag = framedParentId === null ? {} : {parentId: itemId(framedParentId)};
-		const output = localCommandOutputOf(text);
-		const prompt: TranscriptItem =
-			output === null
-				? {kind: "user", id: itemId(id), timestamp: at, text, ...tag}
-				: {kind: "system", id: itemId(id), timestamp: at, ...noticeOf(output), ...tag};
+		const prompt = promptItemOf(text, {id: itemId(id), timestamp: at, ...tag});
 		const folded = foldSlots(mapping, [prompt], framedParentId, 0);
 		return {
 			mapping: {...mapping, subagents: folded.subagents},
