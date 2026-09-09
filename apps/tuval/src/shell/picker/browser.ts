@@ -54,7 +54,9 @@ export {
 	highlighted,
 	mountPicker,
 	type PickerKeyAnswer,
+	type PickerPointer,
 	type PickerView,
 	pickerKey,
+	pickerPointer,
 	withRefusal,
 } from "./view.ts";

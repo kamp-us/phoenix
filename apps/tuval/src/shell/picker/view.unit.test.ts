@@ -3,7 +3,7 @@ import type {PickerEntries} from "./entries.ts";
 import {noEntries, programEntries} from "./entries.ts";
 import {processId, programId, programRow, windowId} from "./fixtures.ts";
 import {unknownProgram} from "./refusal.ts";
-import {highlighted, mountPicker, pickerKey, withRefusal} from "./view.ts";
+import {highlighted, mountPicker, pickerKey, pickerPointer, withRefusal} from "./view.ts";
 
 const window = windowId("window-1");
 
@@ -144,5 +144,58 @@ describe("picker keyboard", () => {
 			_tag: "Moved",
 			view: {cursor: 1, refusal: null, previous: null},
 		});
+	});
+});
+
+describe("picker pointer", () => {
+	it("a pointer landing on a row moves the same cursor an arrow key moves", () => {
+		expect(pickerPointer(window, entries, mountPicker(), 2, "hover")).toEqual({
+			_tag: "Moved",
+			view: {cursor: 2, refusal: null, previous: null},
+		});
+		expect(pickerPointer(window, entries, mountPicker(), 2, "hover")).toEqual(
+			pickerKey(window, entries, press(mountPicker(), "j"), "j"),
+		);
+	});
+
+	it("a click commits the row under it to the same intent Enter would run", () => {
+		expect(pickerPointer(window, entries, mountPicker(), 0, "click")).toEqual({
+			_tag: "Chose",
+			intent: {_tag: "OpenProgram", windowId: window, programId: "counter"},
+		});
+		expect(pickerPointer(window, entries, mountPicker(), 2, "click")).toEqual({
+			_tag: "Chose",
+			intent: {_tag: "AttachProcess", windowId: window, processId: "p-1"},
+		});
+	});
+
+	it("the row the pointer last landed on is the row Enter then chooses", () => {
+		const hovered = pickerPointer(window, entries, mountPicker(), 2, "hover");
+		if (hovered._tag !== "Moved") throw new Error("a hover onto a row must answer Moved");
+		expect(highlighted(entries, hovered.view)).toEqual(entries.processes[0]);
+		expect(pickerKey(window, entries, hovered.view, "<enter>")).toEqual({
+			_tag: "Chose",
+			intent: {_tag: "AttachProcess", windowId: window, processId: "p-1"},
+		});
+	});
+
+	it("a pointer move onto another row clears the refusal, as a keyboard move does", () => {
+		const refused = withRefusal(mountPicker(), unknownProgram("nope"));
+		expect(pickerPointer(window, entries, refused, 1, "hover")).toEqual({
+			_tag: "Moved",
+			view: {cursor: 1, refusal: null, previous: null},
+		});
+		// Landing on the row already under the cursor is not moving on from anything — the answer
+		// `movedTo` gives a keyboard press that cannot move either.
+		expect(pickerPointer(window, entries, refused, 0, "hover")).toEqual({
+			_tag: "Moved",
+			view: {cursor: 0, refusal: unknownProgram("nope"), previous: null},
+		});
+	});
+
+	it("a gesture on a row the list no longer offers is ignored, never clamped", () => {
+		expect(pickerPointer(window, entries, mountPicker(), 9, "hover")).toEqual({_tag: "Ignored"});
+		expect(pickerPointer(window, entries, mountPicker(), 9, "click")).toEqual({_tag: "Ignored"});
+		expect(pickerPointer(window, noEntries, mountPicker(), 0, "click")).toEqual({_tag: "Ignored"});
 	});
 });
