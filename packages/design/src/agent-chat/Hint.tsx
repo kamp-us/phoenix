@@ -2,7 +2,11 @@ import {Kbd} from "../atoms";
 import {useDesignT} from "../i18n";
 import {useAgentChatInput} from "./Root";
 
-/** The line under the composer naming what the field accepts. */
+/**
+ * The line under the composer naming what the field accepts. It stays in the DOM and out of
+ * layout, surfacing only while an empty field holds the caret — the sheet owns that, not a state
+ * branch here (#8669).
+ */
 export function AgentChatHint() {
 	const {variant, commands} = useAgentChatInput();
 	const t = useDesignT();

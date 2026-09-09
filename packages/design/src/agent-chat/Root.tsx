@@ -54,8 +54,9 @@ export interface AgentChatInputProps {
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
 	/**
-	 * Styling only. It picks the composer's border, layout and which controls sit behind the
-	 * disclosure; `deliveryRule` decides how a send goes out. #8669 retires this prop.
+	 * Which chrome the composer carries — the status row, the attach button, the overflow menu —
+	 * and the border it wears; `deliveryRule` decides how a send goes out. It is **not** a size
+	 * prop: the compact shape #8669 ruled is unconditional under both arms.
 	 */
 	readonly variant?: "harness" | "focused";
 	/**

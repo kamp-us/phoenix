@@ -119,11 +119,31 @@
 	border-radius: 0;
 }
 
-.kp-agent-chat__textarea [data-part="input"]:is(textarea) {
-	min-height: calc(var(--s-8) * 2);
+/*
+ * One line at rest, growing with what is typed until the cap. `field-sizing: content` is what
+ * tracks the content without a resize listener; it lands in Chrome 123, Firefox 152 and Safari
+ * 26.2 (mdn/browser-compat-data `css/properties/field-sizing.json`), and where it is missing the
+ * `rows={1}` attribute still opens the field at one line and the box scrolls instead of growing.
+ *
+ * The floor is `--tap-min`, not zero. `padding: 0` here and the zeroed padding and border on
+ * `[data-part="control"]` leave the box exactly one 14px/1.5 line — 23px, under Pillar 4's 36px
+ * hit area — and nothing around it recovers the area: the label part is `display: none` and no
+ * ancestor forwards a click to the field, so the textarea's own box is the whole target (#8714).
+ *
+ * Two things make the floor the right shape rather than the old one. It is a *floor*, so
+ * `field-sizing` still grows past it; and it outranks Form.css's own 80px textarea floor, which
+ * this rule used to restate at the same value — dropping the restated floor alone left the
+ * composer exactly as tall as it was, because the two selectors tied and Form.css won on order.
+ * The `[data-scope="field"]` in the selector is what breaks that tie.
+ */
+.kp-agent-chat__textarea [data-scope="field"][data-part="input"]:is(textarea) {
+	field-sizing: content;
+	min-height: var(--tap-min);
+	max-height: calc(var(--s-8) * 5);
 	padding: 0;
 	font: var(--t-body);
 	line-height: 1.5;
+	overflow-y: auto;
 	resize: none;
 }
 
@@ -253,9 +273,20 @@
 	color: var(--text-secondary);
 }
 
+/*
+ * The hint reserves no room at rest — it is the second half of #8669's height win. It surfaces on
+ * the one state that asks for it, an empty field with the caret in it, and the flex column drops
+ * its gap with it because `display: none` takes the box out of layout entirely.
+ */
 .kp-agent-chat__hint {
+	display: none;
 	color: var(--text-muted);
 	font: var(--t-meta);
+}
+
+.kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)
+	.kp-agent-chat__hint {
+	display: block;
 }
 
 .kp-agent-chat__inspector:where([data-scope="collapsible"][data-part="root"]) {

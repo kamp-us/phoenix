@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Paperclip} from "lucide-react";
 import {createRef, useRef} from "react";
@@ -729,5 +731,58 @@ describe("AgentChatInput", () => {
 		render(<AgentChatInput bridge={bridge} ref={field} />);
 
 		expect(await screen.findByLabelText("Pi'ye mesaj yaz")).toBe(field.current);
+	});
+});
+
+/**
+ * The compact shape #8669 ruled: one row that grows to a cap, and a hint that reserves no room
+ * until the empty field is focused. jsdom runs no layout engine and Vitest's default `css: false`
+ * drops the component's own `import "./AgentChatInput.css"`, so the height rules are read off the
+ * shipped sheet's own bytes rather than off a computed box.
+ */
+describe("the compact composer", () => {
+	const sheet = readFileSync(fileURLToPath(import.meta.resolve("./AgentChatInput.css")), "utf8");
+	const fieldRule =
+		sheet
+			.split('.kp-agent-chat__textarea [data-scope="field"][data-part="input"]:is(textarea) {')[1]
+			?.split("}")[0] ?? "";
+
+	it("has a prompt-field rule to read", () => {
+		expect(fieldRule).not.toBe("");
+	});
+
+	it("opens the prompt field at one row", async () => {
+		const {bridge} = installHarnessFetch();
+		render(<AgentChatInput bridge={bridge} />);
+
+		const field = (await screen.findByLabelText("Pi'ye mesaj yaz")) as HTMLTextAreaElement;
+		expect(field.rows).toBe(1);
+	});
+
+	it("grows the field to a cap, off the old 80px floor", () => {
+		expect(sheet).not.toContain("min-height: calc(var(--s-8) * 2)");
+		expect(fieldRule).toContain("field-sizing: content");
+		expect(fieldRule).toContain("max-height: calc(var(--s-8) * 5)");
+	});
+
+	it("keeps the hint out of layout until the empty field is focused", () => {
+		expect(sheet).toContain(".kp-agent-chat__hint {\n\tdisplay: none;");
+		expect(sheet).toContain(
+			".kp-agent-chat__composer:has(.kp-agent-chat__textarea textarea:focus:placeholder-shown)",
+		);
+	});
+
+	/*
+	 * Pillar 4's floor is absolute, and the first cut of #8669 spent it: the field landed at 23px
+	 * because it dropped its floor to zero, and the sheet-wide count below could not see it — a
+	 * control that never names `--tap-min` is invisible to a count of `--tap-min` (#8714). So the
+	 * field is asserted at its own rule, and the count stays as the tripwire for the other five.
+	 */
+	it("floors the prompt field at the tap target", () => {
+		expect(fieldRule).toContain("min-height: var(--tap-min)");
+	});
+
+	it("leaves every toolbar control on the tap-target floor", () => {
+		expect(sheet.match(/var\(--tap-min\)/g) ?? []).toHaveLength(6);
 	});
 });
