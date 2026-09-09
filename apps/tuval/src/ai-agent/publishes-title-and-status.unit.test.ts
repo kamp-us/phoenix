@@ -83,6 +83,22 @@ const onASpawn = <A, E>(body: (handle: ProcessHandle, log: Log) => Effect.Effect
 const ready = (handle: ProcessHandle) =>
 	eventually("the spawned session to reach ready", () => sessionOf(handle).phase === "ready");
 
+/**
+ * `ready` is not enough to dispatch `setModel` behind, and this is the gate that is.
+ *
+ * The phase reaches `ready` on the `started` Msg the `aiAgent.start` Cmd answers with, while the
+ * offered model set arrives one path over — the layer emits `model` at start, and the events Sub
+ * folds it and dispatches it. `setModel`'s own guard reads `state.models.available`
+ * (`core/machine.ts`), so a switch dispatched in the gap between the two is refused outright: no
+ * Cmd, no layer call, no event, and the title never moves. That is a permanent false, not a slow
+ * one, which is why waiting longer is the wrong fix.
+ */
+const offering = (handle: ProcessHandle) =>
+	eventually(
+		"the session to offer the models its layer reported",
+		() => sessionOf(handle).models.available.length > 0,
+	);
+
 describe("an AI-agent process on the kernel's generic out-ports", () => {
 	it.live("publishes a title of program, model and folder once the session is up", () =>
 		onASpawn((handle, log) =>
@@ -104,6 +120,7 @@ describe("an AI-agent process on the kernel's generic out-ports", () => {
 		onASpawn((handle, log) =>
 			Effect.gen(function* () {
 				yield* ready(handle);
+				yield* offering(handle);
 				const other = models.available.find((model) => model.id !== models.current.id);
 				assert.isDefined(other);
 				yield* handle.dispatch({type: "setModel", model: other!});
