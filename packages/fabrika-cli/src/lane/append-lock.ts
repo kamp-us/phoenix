@@ -43,10 +43,18 @@ export const LOCK_DIR_NAME = "events.lock";
 /**
  * A held lock older than this is presumed crashed, not slow, and is stolen.
  *
- * It is a margin over how long a legitimate holder can take, and that is bounded: everything inside
- * the lock is local IO — load, fold, validate, append — because each verb's board read runs before
- * it. Ten seconds is two orders of magnitude over a hold that measures in milliseconds, which is
- * the honest reading of "this process is gone", while staying inside a wait a shell can afford.
+ * It is a margin over how long a legitimate holder can take, and that is bounded only because **no
+ * caller reads the board under the lock**: every appending verb judges against its board read
+ * first, then takes the lock and re-loads, re-folds and appends, so the hold is local IO measured
+ * in milliseconds. Ten seconds is two orders of magnitude over that — the honest reading of "this
+ * process is gone", inside a wait a shell can afford.
+ *
+ * The bound is therefore a property of the callers, and it is the one thing a new caller can break:
+ * a single `yield*` on an HTTP read inside {@link withLedgerLock} puts the hold on the network's
+ * clock instead, where one stalled exchange costs `DEFAULT_HTTP_TIMEOUT_SECONDS` (60s in
+ * `io/gh-api.ts`) and a paginated read costs a multiple of it. A holder that slow is read as
+ * crashed and has its live lock stolen, which is the silent double-append the lock exists to
+ * refuse. `lane settle` shipped exactly that shape and was moved out.
  */
 const STALE_LOCK_MS = 10_000;
 
@@ -164,6 +172,10 @@ export const releaseLedgerLock = (
  * Run one verb body inside the lane's write lock. The inner effect sees the bytes as they are when
  * the lock is already held, so its validation cannot race another writer's append. Release runs on
  * every exit, refusal included.
+ *
+ * **The body is local IO only.** A board read belongs before this call, with the body re-loading and
+ * re-deriving under the lock — the shape every appending verb takes, and what {@link STALE_LOCK_MS}
+ * is a margin over.
  *
  * Two refusals, two seats. `onLocked` is {@link CONCURRENT_WRITE}'s — "retry this same event once
  * the holder clears" — and it belongs only to a lock a live writer holds. `onAbsent` is the lane's
