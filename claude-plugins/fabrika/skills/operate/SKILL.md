@@ -321,9 +321,10 @@ replay cannot move onto its own replayed range is exit `54` with nothing merged 
 `--cause worktree-holds-branch`, whose clearance `recipe unpark` already owns.
 Which event each exit is, is single-homed in
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s `integrate` row and nowhere else —
-read it there rather than from this paragraph. Only `42`, `43` and `44` are the `FAIL` that re-enters
-`build` under the retry budget, which is why a cross-child collision resolves inside this run instead
-of at a merge queue.
+read it there rather than from this paragraph. `43`, `44` and the no-replay arm of `42` are the
+`FAIL` that re-enters `build` under the retry budget — the replay arm of `42` is the park above and
+spends none of it, which is why a cross-child collision resolves inside this run instead of at a
+merge queue.
 
 **Between the merge and those checks it reconciles the merged tree's dependencies**, running the
 repo's declared `dependencyReconciler` in the assembly worktree. That step is not housekeeping:
@@ -334,10 +335,11 @@ spending a lane retry on stale worktree state. It stays fail-closed at both ends
 install that cannot honour the merged lockfile is exit `43` and a `FAIL`, and so is one that
 *rewrites* it, because an assembly branch never carries an install's own repair.
 
-Read which `FAIL` you have off the exit code, because they take different repairs: `42` the child
-conflicts and nothing was installed, `43` the merged lockfile does not install or the install
-changed a tracked file, `44` the merged tree failed a validator — the semantic collision, two ranges
-that each passed alone and do not hold together. Those three are the whole `FAIL` set: they are the
+Read which `FAIL` you have off the exit code, because they take different repairs: `42` with no
+replay attempted, the child conflicts and nothing was installed; `43` the merged lockfile does not
+install or the install changed a tracked file; `44` the merged tree failed a validator — the
+semantic collision, two ranges that each passed alone and do not hold together. Those three are the
+whole `FAIL` set — `42`'s replay arm is the park, not a fourth — and they are the
 only exits that judge the merged tree, and every other one says something about the lane record, the
 worktrees or this checkout, which is never the child's to repair. **Exit `45` is the one that looks
 like a `FAIL` and is not**: the seat already held modified tracked files, so the merge was never
@@ -825,14 +827,18 @@ different next moves, and the verdict line is what tells them apart:
 | --- | --- | --- |
 | `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
 | `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends a wait rather than a retry |
-| `42` | the child conflicts and was not replayed, or the replay hit a hunk that is not a plain keep-both | `FAIL` |
+| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL` |
+| `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `BLOCKED --cause replay-conflict` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
 | `44` | the merged tree failed a code validator | `FAIL` |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
-The bottom row is the whole reason this table is closed. Only `42`/`43`/`44` judge the child's
-content, so only those three may spend its retry budget; a `41` (no tree holds `epic/<n>`, placed
+The bottom row is the whole reason this table is closed. Only `42`'s no-replay arm, `43` and `44`
+judge the child's content, so only those three may spend its retry budget. `42`'s other arm is the
+line to read twice: a replay that hit a hunk it may not resolve is the machinery failing, not the
+child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
+forbids, in the one table a driver routes off. A `41` (no tree holds `epic/<n>`, placed
 with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
 branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat
 already held modified tracked files, so the merge was never attempted — clean the seat and integrate
@@ -1016,7 +1022,7 @@ binds a cause whose route is `founder`, and a cause-less park, which routes `fou
 A driver-routed cause is yours by the two paragraphs above, and reaching for the park comment on one
 of those hands the founder an engine failure that was never theirs.
 
-**`human:budget-spent` is the one park you clear yourself, and it is the only one** — on a lane
+**`human:budget-spent` is the one park you clear by typing the grant yourself** — on a lane
 emitted before the rename it wears an older name, `frozen` on a task and `human:epic-review` on an
 epic tail, and those are the same park, cleared here the same way. Its cause routes
 to you, and the authority is a recorded decision in the repository's own corpus — the one that rules
@@ -1033,8 +1039,11 @@ node packages/fabrika-cli/src/bin.ts lane transition <lane> UNBLOCKED --task <ta
 
 `lane clear` derives the round — one call, one round — and refuses a blank rationale, because that
 line is the whole audit the weekly machinery review reads. Decide what the task actually needs first:
-another round is one answer, and a re-scope or a founder ask is often the better one. Every other
-`human:*` park is somebody else's to clear and stays exactly as it reads above.
+another round is one answer, and a re-scope or a founder ask is often the better one. It is the one
+you *type*, not the only one that is yours: every driver-routed park is yours too, and those come
+back as exit `23` above, where `recipe unpark --rationale` clears them and the verb records the
+`UNBLOCKED` for you. What is somebody else's is the founder-routed park and the cause-less one —
+exit `12`, the park comment, and no clear from this seat.
 
 A founder-cleared repair round is recorded with `build clear` instead, where the lane has a pull
 request carrying the grant. Either verb appends the same

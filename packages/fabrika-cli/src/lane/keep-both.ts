@@ -35,6 +35,12 @@ const not = (reason: string): KeepBoth => ({_tag: "NotKeepBoth", reason});
 
 const UNTERMINATED = "a conflict block runs to the end of the file unterminated";
 
+const MARKER_SURVIVED =
+	"the kept text still carries a conflict marker — a side holds a line shaped like one, so what closed a section was content rather than the marker";
+
+const isMarker = (line: string): boolean =>
+	isOurs(line) || isBase(line) || isTheirs(line) || isEnd(line);
+
 /**
  * Read one conflicted file and answer whether keeping both sides is the whole resolution.
  *
@@ -109,5 +115,11 @@ export const resolveKeepBoth = (text: string): KeepBoth => {
 			"the file carries no conflict markers — a delete/modify or a binary collision, which no textual resolution reaches",
 		);
 	}
+	// The `ours` and `base` sections are validated by what closes them, and `theirs` cannot be: it
+	// ends at the first line matching `isEnd`, so a content line shaped like an end marker closes the
+	// hunk early and the real marker falls through the outer loop into `out` as ordinary text. That is
+	// a wrong acceptance rather than a wrong refusal — the caller stages and commits a live marker —
+	// so the answer is refused unless the text it carries is marker-free.
+	if (out.some(isMarker)) return not(MARKER_SURVIVED);
 	return {_tag: "KeepBoth", text: out.join("\n"), hunks};
 };

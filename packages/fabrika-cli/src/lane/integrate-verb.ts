@@ -19,7 +19,9 @@
  * a repo declaring nothing gets the refusal byte for byte. The replay also moves the child's branch
  * onto the range it replayed, and refuses on exit 54 rather than merging when it cannot: the branch
  * is where every later read takes the child's range from, so one left on superseded commits sends
- * the child's next integrate into a collision with this one's own landing.
+ * the child's next integrate into a collision with this one's own landing. A refusal below the merge
+ * puts that branch back too, so a replay this verb did not keep leaves the graded range where its
+ * reviewer left it — see {@link restore}.
  *
  * On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED` or, after a replay,
  * `INTEGRATE-VERDICT: REPLAYED` — the line above it the merged head either way, and above that, on a
@@ -92,6 +94,14 @@ const headOf = (path: string) =>
 			: ({_tag: "Unreadable", reason: read.reason} as const),
 	);
 
+/** Where one branch points, read the same way and answered in the same three shapes as {@link headOf}. */
+const revisionOf = (path: string, branch: string) =>
+	Effect.map(execCapture("git", ["-C", path, "rev-parse", branch]), (read) =>
+		read.ok
+			? ({_tag: "Read", sha: read.stdout.trim()} as const)
+			: ({_tag: "Unreadable", reason: read.reason} as const),
+	);
+
 type TrackedChanges =
 	| {readonly _tag: "Read"; readonly paths: ReadonlyArray<string>}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
@@ -129,12 +139,21 @@ const trackedChanges = (
  * path passes the captured sha instead: `git cherry-pick` writes no `ORIG_HEAD`, so on that path the
  * ref names whatever the last thing that did wrote, and resetting to it would be a guess. The proof
  * is the same either way.
+ *
+ * `reseat` is the replay path's other half, and without it the restore was only half a restore. A
+ * replay moves the child's branch onto the replayed range **before** the merge, which is right while
+ * the merge stands: the replayed commits are the child's range then, and a branch left on the
+ * originals collides with this run's own landing. When a refusal below the merge takes the merge
+ * away, that stops being true — the assembly branch goes back and the child would be left naming
+ * commits no reviewer graded and nothing carries, with no event to say so, because a refusal writes
+ * no stdout. So the branch goes back too, and the graded range never moved at all.
  */
 const restore = (
 	path: string,
 	to: string,
 	head: string,
 	outcome: VerbOutcome,
+	reseat: Reseat = null,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const reset = yield* execCapture("git", ["-C", path, "reset", "--hard", to]);
@@ -153,11 +172,36 @@ const restore = (
 				outcome.stderr,
 			);
 		}
+		const back = [...outcome.stderr, `${VERB}: reset ${path} back to ${head}; nothing was pushed.`];
+		if (reseat === null) return {...outcome, stderr: back};
+
+		const moved = yield* execCapture("git", [
+			"-C",
+			path,
+			"branch",
+			"--force",
+			reseat.child,
+			reseat.to,
+		]);
+		const seated = yield* revisionOf(path, reseat.child);
+		if (seated._tag === "Unreadable" || seated.sha !== reseat.to) {
+			return refuse(
+				APPEND_UNKNOWN,
+				`${VERB}: ${path} went back to ${head} and ${reseat.child} was NOT put back on ${reseat.to}${moved.ok ? "" : `: ${moved.reason}`} — the child's branch still names the replayed range no reviewer graded, so what its next integrate would merge is UNKNOWN.`,
+				back,
+			);
+		}
 		return {
 			...outcome,
-			stderr: [...outcome.stderr, `${VERB}: reset ${path} back to ${head}; nothing was pushed.`],
+			stderr: [
+				...back,
+				`${VERB}: put ${reseat.child} back on ${reseat.to} — the merge is gone, so the graded range never moved and no review round is owed.`,
+			],
 		};
 	});
+
+/** A child branch to put back where the replay found it, or `null` on a path that replayed nothing. */
+type Reseat = {readonly child: string; readonly to: string} | null;
 
 /** What the merge itself wrote, and what the merge and validator paths reset back through. */
 const ORIG_HEAD = "ORIG_HEAD";
@@ -472,6 +516,16 @@ export const runIntegrate = (
 			);
 		}
 
+		// Read before anything moves: on the replay path this is the revision the child's reviewer
+		// graded, and it is what {@link restore} puts the branch back on when the merge comes off.
+		const graded = yield* revisionOf(path, options.child);
+		if (graded._tag === "Unreadable") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read where ${options.child} points in ${path}: ${graded.reason} — nothing was merged, because a replay would have nowhere proven to put the branch back.`,
+			);
+		}
+
 		const before = yield* headOf(path);
 		if (before._tag === "Unreadable") {
 			return refuse(
@@ -500,6 +554,7 @@ export const runIntegrate = (
 		if (landing._tag === "Refused") return landing.outcome;
 		const {resetRef, replay} = landing;
 		const notes = [...landing.notes];
+		const reseat: Reseat = replay === null ? null : {child: options.child, to: graded.sha};
 
 		const source = loadConfig(yield* readConfigSource(path));
 		const reconciler = resolve(source, dependencyReconcilerKey);
@@ -513,14 +568,18 @@ export const runIntegrate = (
 					`${VERB}: cannot read \`${DEPENDENCY_RECONCILER}\` from ${CONFIG_PATH} (${reconciler.reason}) — how the merged tree's dependencies are reconciled is UNKNOWN, so no validator ran.`,
 					notes,
 				),
+				reseat,
 			);
 		}
 		const reconciled = yield* reconcile(path, reconciler.value);
 		if (reconciled._tag === "Refused") {
-			return yield* restore(path, resetRef, head, {
-				...reconciled.outcome,
-				stderr: [...notes, ...reconciled.outcome.stderr],
-			});
+			return yield* restore(
+				path,
+				resetRef,
+				head,
+				{...reconciled.outcome, stderr: [...notes, ...reconciled.outcome.stderr]},
+				reseat,
+			);
 		}
 		notes.push(reconciled.note);
 
@@ -535,6 +594,7 @@ export const runIntegrate = (
 					`${VERB}: cannot read \`${CODE_VALIDATORS}\` from ${CONFIG_PATH} (${declared.reason}) — which commands judge the merged tree is UNKNOWN, never green.`,
 					notes,
 				),
+				reseat,
 			);
 		}
 		if (declared.value.length === 0) {
@@ -547,11 +607,18 @@ export const runIntegrate = (
 					`${VERB}: ${CONFIG_PATH} declares no \`${CODE_VALIDATORS}\` — the merged tree was never judged, so the integration is UNKNOWN, never green and never red.`,
 					notes,
 				),
+				reseat,
 			);
 		}
 		const red = yield* validate(path, declared.value);
 		if (red !== null) {
-			return yield* restore(path, resetRef, head, {...red, stderr: [...notes, ...red.stderr]});
+			return yield* restore(
+				path,
+				resetRef,
+				head,
+				{...red, stderr: [...notes, ...red.stderr]},
+				reseat,
+			);
 		}
 
 		const landed = yield* headOf(path);

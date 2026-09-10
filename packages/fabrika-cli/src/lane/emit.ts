@@ -105,7 +105,11 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  * wrong — `integrate --WIP--> review --PASS--> integrate` is a closed cycle, and a plain target sits
  * in no wait park, so nothing counted its turns. Its spent-budget fallthrough is
  * `human:replay-stall` rather than `human:budget-spent` because a replay that will not settle is a
- * collision between two children a person reads, not a child that failed its review.
+ * collision between two children a person reads, not a child that failed its review. Its own row in
+ * `report.ts`'s `STRUCTURAL_PARK_CAUSES` is what keeps it a door rather than a dead end: a `WIP`
+ * may carry no `--cause`, so without one the leaf folds causeless, `routeForCause` reads `founder`
+ * and `recipe unpark` refuses it forever — a machinery failure spending a person, which is the whole
+ * defect this region was rewritten to remove.
  *
  * `frozen` survives as the boot state {@link initialFor} seats an abandoned child in, and nothing
  * transitions into it any more: a spent repair budget lands on `human:budget-spent` instead, which

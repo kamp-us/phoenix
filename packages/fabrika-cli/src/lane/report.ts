@@ -417,6 +417,28 @@ export const PARK_CAUSES = {
 		route: "driver",
 		remedy: null,
 	},
+	/**
+	 * The child's replays spent its whole wait budget: `lane integrate` kept resolving the collision
+	 * and the re-review it owes kept landing back on another one, so the range never settled.
+	 *
+	 * Distinct from `replay-conflict`, which is one replay refusing a hunk it may not resolve. This is
+	 * every replay succeeding and the cycle never closing — two children's ranges chasing each other
+	 * — so what it owes is a person's read of the pair, not a judgment about one hunk.
+	 *
+	 * Typed by no recorder, exactly as `repair-budget-spent` is: the fallthrough arrives as a `WIP`,
+	 * which carries no `--cause`, so it is bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}.
+	 *
+	 * No remedy: nothing a verb reruns proves two colliding ranges reconciled.
+	 *
+	 * Route `driver`: reconciling two children of this repo's own code is machinery, and a lap budget
+	 * running out does not turn it into a product call.
+	 */
+	"replay-budget-spent": {
+		meaning:
+			"a child's replays spent its whole wait budget without the range settling, so the collision owes a driver's diagnosis",
+		route: "driver",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
@@ -452,11 +474,13 @@ export const machineryCause = (token: string): ParkCause | null =>
  * which `routeForCause` reads `founder` and `classifyPark` reads `Novel`. That is the no-door dead
  * end a driver route replaces.
  *
- * Only a leaf a single transition can produce belongs here. The one below is reached by the
- * spent-budget fallthrough of a guarded `FAIL` array and by nothing else.
+ * Only a leaf a single transition can produce belongs here. Each row below is reached by the
+ * spent-budget fallthrough of one guarded array and by nothing else — `human:budget-spent` by the
+ * `FAIL` array's, `human:replay-stall` by the `WIP` array's out of `integrate`.
  */
 export const STRUCTURAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"human:budget-spent": "repair-budget-spent",
+	"human:replay-stall": "replay-budget-spent",
 };
 
 /** The cause a park leaf carries on its own, or `null` for a leaf that owes its recorder one. */

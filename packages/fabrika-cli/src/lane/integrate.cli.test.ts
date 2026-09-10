@@ -269,13 +269,18 @@ describe("a cross-child collision over a real assembly worktree", {
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
 	});
 
-	it("puts the branch back when the replayed tree fails a validator", () => {
+	it("puts both branches back when the replayed tree fails a validator", () => {
 		const tree = collision("on", "exit 1\n");
+		const graded = git(tree.seat, "rev-parse", CHILD);
 
 		const {code} = integrate(tree);
 
 		expect(code).toBe(ASSEMBLY_RED);
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+		// The child's branch is the other half. The replay moved it onto the replayed range before
+		// the merge; with the merge reset away, a branch left there names commits no reviewer graded,
+		// and a refusal writes no stdout, so nothing would carry the move to a reader.
+		expect(git(tree.seat, "rev-parse", CHILD)).toBe(graded);
 	});
 });

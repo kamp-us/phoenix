@@ -29,6 +29,8 @@ const MAIN = "/checkout/repo";
 const SEAT = `${MAIN}/.claude/worktrees/epic-${EPIC}`;
 const BEFORE = "aaaa111";
 const AFTER = "bbbb222";
+/** Where the child's branch points before a replay moves it — the revision its reviewer graded. */
+const GRADED = "eeee555";
 
 const INSTALL = "pnpm install --frozen-lockfile";
 const TYPECHECK = "pnpm typecheck --force";
@@ -49,6 +51,7 @@ const MERGE = /^git -C .* merge --no-ff /;
 const ABORT = /^git -C .* merge --abort$/;
 const RESET = /^git -C .* reset --hard ORIG_HEAD$/;
 const STATUS = /^git -C .* status --porcelain --untracked-files=no$/;
+const CHILD_REV = new RegExp(`^git -C .* rev-parse ${CHILD}$`);
 const RECONCILE = /^pnpm install --frozen-lockfile$/;
 const VALIDATE = /^pnpm typecheck --force$/;
 
@@ -76,6 +79,7 @@ const HAS_CHILD = okOut(`main\n${BRANCH}\n${CHILD}\n`);
 const upToMerge = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[LIST, SEATED],
 	[BRANCHES, HAS_CHILD],
+	[once(CHILD_REV), okOut(GRADED)],
 	[once(HEAD), okOut(BEFORE)],
 	[once(STATUS), okOut("")],
 ];
@@ -269,6 +273,7 @@ describe("runIntegrate", () => {
 		const {outcome, calls} = await run([
 			[LIST, SEATED],
 			[BRANCHES, HAS_CHILD],
+			[CHILD_REV, okOut(GRADED)],
 			[HEAD, okOut(BEFORE)],
 			[STATUS, okOut(" M pnpm-lock.yaml\n M packages/app/package.json\n")],
 		]);
@@ -474,6 +479,8 @@ describe("runIntegrate", () => {
 					...replayScript([[VALIDATE, errOut("src/x.ts(3,1): error TS2345")]]),
 					[RESET_TO_HEAD, okOut("")],
 					[once(HEAD), okOut(BEFORE)],
+					[NAME_REPLAY, okOut("")],
+					[CHILD_REV, okOut(GRADED)],
 				],
 				REPLAY_FILES,
 			);
@@ -484,6 +491,28 @@ describe("runIntegrate", () => {
 			// thing that did wrote — the captured sha is the only proven place to go back to.
 			expect(calls).toContain(`git -C ${SEAT} reset --hard ${BEFORE}`);
 			expect(calls).not.toContain(`git -C ${SEAT} reset --hard ORIG_HEAD`);
+			// The other half of the restore. The replay moved the child's branch onto the replayed
+			// range before the merge; the merge is gone now, so a branch left there names commits no
+			// reviewer graded and nothing carries — and a refusal writes no stdout, so no consumer
+			// would ever be told.
+			expect(calls).toContain(`git -C ${SEAT} branch --force ${CHILD} ${GRADED}`);
+			expect(outcome.stderr.join("\n")).toContain(`put ${CHILD} back on ${GRADED}`);
+		});
+
+		it("is UNKNOWN, not a red, when the child's branch will not go back", async () => {
+			const {outcome} = await run(
+				[
+					...replayScript([[VALIDATE, errOut("src/x.ts(3,1): error TS2345")]]),
+					[RESET_TO_HEAD, okOut("")],
+					[once(HEAD), okOut(BEFORE)],
+					[NAME_REPLAY, errOut("fatal: cannot force update the current branch")],
+					[CHILD_REV, okOut(REPLAY)],
+				],
+				REPLAY_FILES,
+			);
+
+			expect(outcome.code).toBe(APPEND_UNKNOWN);
+			expect(outcome.stderr.join("\n")).toContain("was NOT put back");
 		});
 
 		it("is UNKNOWN, never a FAIL, when that restore leaves the replay on the branch", async () => {

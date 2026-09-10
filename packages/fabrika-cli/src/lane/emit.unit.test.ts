@@ -347,6 +347,15 @@ describe("emitMachine", () => {
 		const parked = statesOf(compiled, driveLog(compiled, spun)).issue_4301;
 		expect(parked?.waits).toBe(WAIT_BUDGET);
 		expect(parked?.retries).toBe(0);
+
+		// The leaf is reached by a `WIP`, which may carry no `--cause`. Without a structural row it
+		// would fold causeless, route to the founder and refuse `recipe unpark` forever — a machinery
+		// failure spending a person, which is the dead end this region was rewritten to remove.
+		expect(classifyPark("human:replay-stall", null)).toMatchObject({
+			_tag: "Novel",
+			cause: "replay-budget-spent",
+		});
+		expect(routeForCause("replay-budget-spent")).toBe("driver");
 	});
 
 	// A collided child used to exhaust into `frozen`, which `recipe/parks.ts` reads as no park at all
