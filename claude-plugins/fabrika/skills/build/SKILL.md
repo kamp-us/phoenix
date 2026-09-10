@@ -633,6 +633,17 @@ that same lane with `fabrika build resume-child <n> --token <token>`. **The toke
 re-run** — a bare `resume-child <n>` over a held claim mints a second one, loses the earliest-wins
 tiebreak to your own prior claim and refuses on `15`.
 
+**A `type:decision` child is repaired through the same entry, and it needs its ruling named.** The
+claim step's type axis binds here exactly as it binds a fresh claim, so an uncited decision child
+stops the entry at `30` — pass the ruling on `fabrika build resume-child <n> --cites <url>` and the
+entry carries it to that step and nowhere else. The refusal's own line prints the grammar, the URL
+has to name this repository and this child, and citing one buys nothing but that type: a malformed
+or foreign URL is `1` at the claim step, and no citation makes an epic or an out-of-scope child
+admissible. **Never assemble the five steps by hand to get a citation in** — that is the ordering
+hazard this entry retired, and the flag is the whole reason it no longer forces the choice. On a
+`--token` continuation you drop the citation: the claim answers off the standing marker, so the
+ruling is asked for on first entry only.
+
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
 step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the
 branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
