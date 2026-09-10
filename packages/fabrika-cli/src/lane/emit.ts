@@ -244,7 +244,12 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 	},
 });
 
-const taskId = (child: number): string => `issue_${child}`;
+/**
+ * A child's task id in its parent epic's machine — the one spelling, read back by
+ * [`child-membership.ts`](child-membership.ts) when `lane open` asks whether the parent lane
+ * actually holds a task for a child the board links to it.
+ */
+export const childTaskId = (child: number): string => `issue_${child}`;
 
 /**
  * One task's seeded context. The lap pair is appended rather than interleaved, so an emission with
@@ -316,14 +321,14 @@ export const emitMachine = (
 	const states: Record<string, unknown> = {};
 	for (const [index, phase] of order.entries()) {
 		const members = ascending(phases.get(phase) ?? []);
-		for (const child of members) context[taskId(child)] = taskContext(machinery);
+		for (const child of members) context[childTaskId(child)] = taskContext(machinery);
 		const next = order[index + 1];
 		states[phaseName(phase)] = {
 			type: "parallel",
 			states: Object.fromEntries(
 				members.map((child) => [
-					taskId(child),
-					region(taskId(child).toUpperCase(), initialOf(child), machinery),
+					childTaskId(child),
+					region(childTaskId(child).toUpperCase(), initialOf(child), machinery),
 				]),
 			),
 			onDone: [

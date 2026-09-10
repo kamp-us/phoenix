@@ -10,6 +10,7 @@ import {
 	LANE_UNREADABLE,
 	SHAPE_MISMATCH,
 } from "./codes.ts";
+import {emitMachine} from "./emit.ts";
 import type {ExpectationRead} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
@@ -23,6 +24,27 @@ const TEMPLATE = "/pkg/src/lane/templates/coder.workflow.json";
 
 const reads = (read: ExpectationRead) => () => Effect.succeed(read);
 const childless = reads({_tag: "Read", expectation: {_tag: "Single"}});
+
+const PARENT = 4304;
+const PARENT_DIR = `${ROOT}/${PARENT}`;
+const PARENT_WORKFLOW = `${PARENT_DIR}/workflow.json`;
+
+const childOf = (parent: number | null) =>
+	reads({_tag: "Read", expectation: {_tag: "Child", parent}});
+
+/**
+ * The parent epic's lane as `lane emit` would have written it — the real emitter, so the task ids
+ * the refusal looks for are spelled by the code that spells them in production rather than by hand.
+ */
+const parentMachine = (...children: ReadonlyArray<number>): string => {
+	const emitted = emitMachine(
+		PARENT,
+		["## Dependencies", "", `- phase 1: ${children.map((n) => `#${n}`).join(", ")}`].join("\n"),
+		children.map((number) => ({number, state: "open" as const, stateReason: null})),
+	);
+	if (emitted._tag !== "Emitted") throw new Error(`fixture did not emit: ${emitted._tag}`);
+	return emitted.text;
+};
 
 /** No cap declared — the cap's own arms live in [`concurrency.unit.test.ts`](concurrency.unit.test.ts). */
 const UNCAPPED = {_tag: "Value", value: null, note: "test"} as const;
@@ -156,35 +178,82 @@ describe("lane open", () => {
 		expect(out.stderr.join("\n")).toContain("no sub-issue links");
 	});
 
-	it("refuses an epic's child, naming the parent's lane as the one to drive", async () => {
-		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
-		const out = await run(
-			fs,
-			runOpen({
-				...OPTIONS,
-				expectation: reads({_tag: "Read", expectation: {_tag: "Child", parent: 4304}}),
-			}),
-		);
+	it("refuses a child its parent's machine holds, naming the parent's lane as the one to drive", async () => {
+		const fs = fakeFs({
+			files: {[TEMPLATE]: coderTemplateText(), [PARENT_WORKFLOW]: parentMachine(42, 43)},
+		});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: childOf(PARENT)}));
 
 		expect(out.code).toBe(LANE_IS_CHILD);
 		expect(fs.written.size).toBe(0);
-		expect(out.stderr.join("\n")).toContain("#42 hangs under #4304");
-		expect(out.stderr.join("\n")).toContain("fabrika lane status 4304");
+		const said = out.stderr.join("\n");
+		expect(said).toContain("#42 hangs under #4304");
+		expect(said).toContain("carries it as task `issue_42`");
+		expect(said).toContain("fabrika lane status 4304");
+		expect(said).not.toContain("fabrika lane amend");
 	});
 
-	it("refuses a child whose parent number the board did not carry", async () => {
-		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
-		const out = await run(
-			fs,
-			runOpen({
-				...OPTIONS,
-				expectation: reads({_tag: "Read", expectation: {_tag: "Child", parent: null}}),
-			}),
-		);
+	it("names the amend route for a child linked after its parent's lane was emitted", async () => {
+		const fs = fakeFs({
+			files: {[TEMPLATE]: coderTemplateText(), [PARENT_WORKFLOW]: parentMachine(43, 44)},
+		});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: childOf(PARENT)}));
 
 		expect(out.code).toBe(LANE_IS_CHILD);
 		expect(fs.written.size).toBe(0);
-		expect(out.stderr.join("\n")).toContain("hangs under a parent issue");
+		const said = out.stderr.join("\n");
+		expect(said).toContain("holds no task `issue_42`");
+		expect(said).toContain("`## Dependencies`");
+		expect(said).toContain("fabrika lane amend 4304");
+		expect(said).not.toContain("carries it as task");
+	});
+
+	it("refuses fail-closed when the parent lane is not on disk — UNKNOWN, never proven absence", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: childOf(PARENT)}));
+
+		expect(out.code).toBe(LANE_IS_CHILD);
+		expect(fs.written.size).toBe(0);
+		const said = out.stderr.join("\n");
+		expect(said).toContain("UNKNOWN");
+		expect(said).toContain(`no lane is on disk at ${PARENT_DIR}`);
+		expect(said).not.toContain("holds no task");
+		expect(said).not.toContain("carries it as task");
+	});
+
+	it("reads an unreadable parent machine as UNKNOWN, naming the path", async () => {
+		const fs = fakeFs({
+			files: {[TEMPLATE]: coderTemplateText(), [PARENT_WORKFLOW]: parentMachine(42)},
+			unreadable: [PARENT_WORKFLOW],
+		});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: childOf(PARENT)}));
+
+		expect(out.code).toBe(LANE_IS_CHILD);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+		expect(out.stderr.join("\n")).toContain(PARENT_WORKFLOW);
+	});
+
+	it("reads a malformed parent machine as UNKNOWN rather than as an empty task set", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText(), [PARENT_WORKFLOW]: "{"}});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: childOf(PARENT)}));
+
+		expect(out.code).toBe(LANE_IS_CHILD);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+		expect(out.stderr.join("\n")).toContain("does not compile");
+	});
+
+	it("refuses a child whose parent number the board did not carry, with no lane to look in", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: childOf(null)}));
+
+		expect(out.code).toBe(LANE_IS_CHILD);
+		expect(fs.written.size).toBe(0);
+		const said = out.stderr.join("\n");
+		expect(said).toContain("hangs under a parent issue");
+		expect(said).toContain("UNKNOWN");
+		expect(said).toContain("no parent number that reads");
 	});
 
 	it("boots a parentless issue, unchanged by the child guard", async () => {
