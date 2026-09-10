@@ -123,6 +123,16 @@ git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
 
+Those three are git facts, and a fourth one is not, because git has nothing to say about it. An
+operator or reviewer **seat** drives its lane without ever committing and usually without editing a
+file, so its HEAD sits on the trunk and its status is clean for its whole life — the exact shape the
+git facts read as "carries nothing", and the shape a sweep removed mid-drive. So a tree also has to
+read **quiet**: its own directory untouched for 24h. Any live signal keeps it, the KEEP line names
+which signal held, and a liveness read that failed keeps it too. Read "untouched" narrowly: a
+directory's mtime moves only when an entry is added, removed or renamed directly in it, so for a seat
+that never edits, that timestamp is the tree's provisioning time and the window is a bound on a
+seat's life rather than on its idle gap.
+
 The one place `retire` borrows that polarity is ADR
 [0342](../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)'s third license, for the lane
 **nobody** holds — no authorized claim marker on the number carries the branch's lane nonce, because

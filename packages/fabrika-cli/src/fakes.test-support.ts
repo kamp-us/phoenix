@@ -38,10 +38,15 @@ const denied = (method: string, path: string) =>
 		}),
 	);
 
-/** Only `type` is read by anything under test; the rest of `File.Info` is filler the shape demands. */
-const info = (type: "File" | "Directory"): FileSystem.File.Info => ({
+/**
+ * `type` and `mtime` are what anything under test reads; the rest is filler the shape demands.
+ *
+ * An unset `mtime` is `Option.none()` rather than a default instant, because a platform that does
+ * not report one is a real case and reads UNKNOWN — a default would hide it.
+ */
+const info = (type: "File" | "Directory", mtime?: Date): FileSystem.File.Info => ({
 	type,
-	mtime: Option.none(),
+	mtime: mtime === undefined ? Option.none() : Option.some(mtime),
 	atime: Option.none(),
 	birthtime: Option.none(),
 	dev: 0,
@@ -72,6 +77,8 @@ export interface FakeFsOptions {
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
 	readonly unprobeable?: ReadonlyArray<string>;
+	/** Path → the modification time `stat` reports. An unlisted path reports none at all. */
+	readonly mtimes?: Readonly<Record<string, Date>>;
 	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
 	readonly real?: Readonly<Record<string, string>>;
 	/**
@@ -137,9 +144,12 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 						),
 			stat: (path: string) => {
 				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
-				if (directories.has(path) || dirs[path] != null) return Effect.succeed(info("Directory"));
+				const mtime = options.mtimes?.[path];
+				if (directories.has(path) || dirs[path] != null) {
+					return Effect.succeed(info("Directory", mtime));
+				}
 				return Object.hasOwn(files, path) && files[path] !== null
-					? Effect.succeed(info("File"))
+					? Effect.succeed(info("File", mtime))
 					: notFound("stat", path);
 			},
 			makeDirectory: (path: string) => {

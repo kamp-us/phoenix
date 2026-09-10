@@ -9,7 +9,10 @@
  * `build retire` does not cover this: that verb targets the trees holding ONE number's lane branch
  * and needs a board statement about that number to release them. A finished agent tree usually holds
  * no lane branch at all — the harness detaches it — so there is no number to ask the board about.
- * This verb asks git instead, and reclaims only what git can prove.
+ * This verb asks git instead, and reclaims only what git can prove — plus one non-git question on the
+ * same fail-safe polarity: is the tree still in use? Git cannot answer it, because an operator or
+ * reviewer seat drives its lane without committing or editing, so `./reap.ts`'s {@link Liveness}
+ * carries the tree's own recency and any live or unreadable reading is a KEEP.
  *
  * The order is the contract:
  *
@@ -17,9 +20,9 @@
  *   2. Every registration is read whole (`./git.ts`) and narrowed to the agent population.
  *   3. The trunk is derived from `origin/HEAD`, never spelled — a wrong ref resolves to nothing and
  *      would make every tree look unlanded.
- *   4. Each tree's uncommitted count and its HEAD's landing are read, and {@link classify} seats it.
- *      **Every read that fails is a KEEP**, per-tree: a sweep of seventy trees must not lose its
- *      whole answer to one unreadable directory.
+ *   4. Each tree's uncommitted count, its HEAD's landing and its liveness are read, and
+ *      {@link classify} seats it. **Every read that fails is a KEEP**, per-tree: a sweep of seventy
+ *      trees must not lose its whole answer to one unreadable directory.
  *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
  *   6. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
  *      path — and every one is read back off a second `worktree list`.
@@ -27,7 +30,7 @@
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
  * checkout, it does not delete a ref.
  */
-import {Effect} from "effect";
+import {Effect, FileSystem, Option, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {containmentOf} from "../io/containment.ts";
 import {originHeadRef} from "../io/git.ts";
@@ -38,6 +41,8 @@ import {
 	classify,
 	isAgentWorktree,
 	type License,
+	type Liveness,
+	QUIET_WINDOW_SECONDS,
 	type TreeFacts,
 	type Uncommitted,
 	unprovenAmong,
@@ -52,7 +57,7 @@ export interface ReapOptions {
 	readonly execute: boolean;
 }
 
-type Deps = ChildProcessSpawner.ChildProcessSpawner;
+type Deps = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem;
 
 export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never, Deps> =>
 	Effect.gen(function* () {
@@ -99,6 +104,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				prunable: tree.prunable,
 				uncommitted: yield* uncommittedIn(tree.path, tree.prunable),
 				landing: yield* containmentOf(tree.head, trunk.value),
+				liveness: yield* livenessOf(tree.path, tree.prunable),
 			};
 			seated.push({facts, verdict: classify(facts, trunk.value, selfPaths)});
 		}
@@ -218,11 +224,59 @@ const branchOf = (facts: TreeFacts): string =>
  * A registration git already calls prunable has no directory to read, so it is not asked: the
  * failure would be noise on a tree {@link classify} keeps for a different reason anyway.
  */
-const uncommittedIn = (path: string, prunable: boolean): Effect.Effect<Uncommitted, never, Deps> =>
+const uncommittedIn = (
+	path: string,
+	prunable: boolean,
+): Effect.Effect<Uncommitted, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		if (prunable) return {_tag: "Unknown" as const, reason: "its directory is gone"};
 		const dirty = yield* worktreeStatusPaths(path);
 		return dirty._tag === "Failure"
 			? {_tag: "Unknown" as const, reason: dirty.reason}
 			: {_tag: "Read" as const, paths: dirty.value};
+	});
+
+/**
+ * Whether one tree still reads as in use, or the reason that is UNKNOWN.
+ *
+ * The signal is the worktree root's own mtime, and that tracks the root's **entry list** — a create,
+ * delete or rename directly in it — not a write to a file inside it. So for a seat that drives
+ * without editing, this reads the tree's provisioning time, and a young tree is one provisioned
+ * recently rather than one somebody was recently active in; {@link QUIET_WINDOW_SECONDS} carries the
+ * ground for that and what it costs. It is still the only liveness reading available without asking
+ * the OS for process cwds.
+ *
+ * A clock skew that puts the mtime in the future reads Live, not Quiet: the arm's whole polarity is
+ * that an answer it cannot trust must not license a removal.
+ */
+const livenessOf = (
+	path: string,
+	prunable: boolean,
+): Effect.Effect<Liveness, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		if (prunable) return {_tag: "Unknown" as const, reason: "its directory is gone"};
+		const fs = yield* FileSystem.FileSystem;
+		const stat = yield* Effect.result(fs.stat(path));
+		if (Result.isFailure(stat)) {
+			return {
+				_tag: "Unknown" as const,
+				reason: `its directory could not be read: ${stat.failure.message}`,
+			};
+		}
+		const mtime = stat.success.mtime;
+		if (Option.isNone(mtime)) {
+			return {
+				_tag: "Unknown" as const,
+				reason: "this platform reported no modification time for it",
+			};
+		}
+		const ageSeconds = Math.floor((Date.now() - mtime.value.getTime()) / 1000);
+		return ageSeconds >= QUIET_WINDOW_SECONDS
+			? {_tag: "Quiet" as const}
+			: {
+					_tag: "Live" as const,
+					signals: [
+						{_tag: "RecentActivity" as const, ageSeconds, windowSeconds: QUIET_WINDOW_SECONDS},
+					],
+				};
 	});
