@@ -327,7 +327,7 @@ const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, Effect
  * What a compiled command needs — `EffectServices` without `ProcessPorts`, because a command may
  * not declare `emit` (ADR 0372) and `emitHandler` is the only reader of that service.
  */
-export type CommandEffectServices = ProcessSelf | SpawnedProcesses | Processes;
+export type CommandEffectServices = Exclude<EffectServices, ProcessPorts>;
 
 /** The same handlers minus `emit`, so no command's spell can reach a process out-port. */
 const COMMAND_HANDLERS: CommandHandlers<EffectFailure, CommandEffectServices> = {

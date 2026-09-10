@@ -22,10 +22,11 @@ export type CommandArgs<A> = Schema.Codec<A, any, never, unknown>;
 /**
  * The effects a command may ask for: every one an `update` cell may, less `emit`.
  *
- * `emit` announces on **a running process's** out-port, and a spell call is not a process step —
- * the `Scope` it runs under names a workspace and a client, never a process, so there is no
- * out-port an emitted payload would leave by. Excluding it here makes that a refusal the checker
- * states where the command is written (ADR 0372).
+ * `emit` announces on **a running process's** out-port, and a spell call is not a process step. The
+ * `Scope` it runs under names a workspace and a client, and the `process` it may carry is the
+ * *caller's* — so with none there is no out-port at all, and with one the out-port is somebody
+ * else's. Neither case leaves an out-port that is the declaring program's to announce on. Excluding
+ * `emit` here makes that a refusal the checker states where the command is written (ADR 0372).
  */
 export type CommandEffect = Exclude<ProgramEffect, EmitEffect>;
 

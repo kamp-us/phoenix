@@ -76,10 +76,10 @@ const capturingSends = (sent: Array<readonly [string, unknown]>) =>
 					sent.push([portName, payload]);
 					return {delivered: true, evicted: 0};
 				}),
-			spawn: unreachable("spawn") as never,
-			ask: unreachable("ask") as never,
-			answer: unreachable("answer") as never,
-			read: unreachable("read") as never,
+			spawn: unreachable("spawn"),
+			ask: unreachable("ask"),
+			answer: unreachable("answer"),
+			read: unreachable("read"),
 		}),
 	);
 
@@ -133,8 +133,8 @@ describe("authoring.commands", () => {
 			commands: {
 				announce: {
 					args: Schema.Number,
-					// @ts-expect-error `emit` is not a `CommandEffect`: a spell call runs under no process,
-					// so there is no out-port for the payload to leave by.
+					// @ts-expect-error `emit` is not a `CommandEffect`: a spell call's `Scope` carries no
+					// process of the declaring program's, so no out-port here is its to announce on.
 					run: (n: number) => [emit("announced", n)],
 				},
 			},

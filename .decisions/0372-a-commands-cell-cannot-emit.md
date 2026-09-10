@@ -50,8 +50,9 @@ and with one there is an out-port belonging to somebody else.
 3. **The narrowing is carried by the handler table, not by a runtime check.** `COMMAND_HANDLERS` in
    [`apps/tuval/src/authoring/define-program.ts`](../apps/tuval/src/authoring/define-program.ts) is
    the spine's five command-reachable handlers, typed
-   `CommandHandlers<EffectFailure, CommandEffectServices>` where
-   `CommandEffectServices = ProcessSelf | SpawnedProcesses | Processes`. `emitHandler` is the only
+   `CommandHandlers<EffectFailure, CommandEffectServices>` where `CommandEffectServices` is
+   `Exclude<EffectServices, ProcessPorts>`, so it stays in lockstep as the spine's service set
+   grows. `emitHandler` is the only
    reader of `ProcessPorts`, and it is unreachable from a compiled spell, so no spell requires that
    service. `HANDLERS` and `EffectServices` keep all six for the `update` path.
 4. **A spell that runs *inside* a process is a different call site and is untouched.** Such a spell
