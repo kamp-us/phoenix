@@ -11,6 +11,7 @@ import {
 	BARE_AT_PATH,
 	EMPTY_STDIN,
 	LEAKED_PATH,
+	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
@@ -50,9 +51,24 @@ const APPENDED = `Build the thing.
 ${ROW}
 `;
 
+const BASE = "9f2c1ab";
+const TIP = "03135b9";
+const RANGED_ROW = `- [ ] ${TEXT} <!-- ac:review range:${BASE}..${TIP} round:1 -->`;
+
+const RANGE_APPENDED = `Build the thing.
+
+### Acceptance criteria
+
+- [ ] the first retry delay equals \`base\`
+- [x] the retry guide documents the delay table
+${RANGED_ROW}
+`;
+
 const options = {
 	issue: 4287,
-	pr: 4321,
+	pr: 4321 as number | null,
+	base: null as string | null,
+	tip: null as string | null,
 	round: 1,
 	repo: null,
 	json: false,
@@ -359,6 +375,119 @@ ${ROW}
 			rows: 3,
 			round: 1,
 			acl: "write",
+		});
+	});
+
+	/**
+	 * The no-PR form. An epic child is reviewed over a range and has no pull request until the tail
+	 * (ADR 0285), so the range is the subject the round was judged over and the tag names it.
+	 */
+	describe("over a range, with no PR", () => {
+		const ranged = {pr: null, base: BASE, tip: TIP};
+
+		const rangeHappy = (): ReadonlyArray<Scripted> => [
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue())],
+			[ISSUE, served(issue(RANGE_APPENDED))],
+			[PATCH, {status: 200, body: "{}"}],
+		];
+
+		it("appends one row whose tag names the range, not a PR", async () => {
+			const shell = fakeSeams(rangeHappy());
+			const out = await Effect.runPromise(
+				Effect.provide(runAppendCriterion({...options, ...ranged}), shell.layer),
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("appended\t4287\t3\n");
+			const write = patched(shell);
+			expect(write).toContain(RANGED_ROW);
+			expect(write).not.toContain("ac:review pr:#");
+		});
+
+		it("runs the ACL, block and read-back fences unchanged", async () => {
+			const belowWrite = fakeSeams([
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[PERMISSION, {status: 200, body: JSON.stringify({permission: "read"})}],
+			]);
+			const denied = await Effect.runPromise(
+				Effect.provide(runAppendCriterion({...options, ...ranged}), belowWrite.layer),
+			);
+			expect(denied.code).toBe(ACL_DENIED);
+			expect(belowWrite.requests.some((request) => PATCH.test(request))).toBe(false);
+
+			const noBlock = await run(
+				[
+					[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+					[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+					[ISSUE, served(issue("no block here"))],
+				],
+				ranged,
+			);
+			expect(noBlock.code).toBe(ZERO_SCOPE);
+
+			const readBack = await run(
+				[
+					[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+					[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+					[once(ISSUE), served(issue())],
+					[ISSUE, served(issue())],
+					[PATCH, {status: 200, body: "{}"}],
+				],
+				ranged,
+			);
+			expect(readBack.code).toBe(READBACK_MISMATCH);
+		});
+
+		it("escalates at the freeze, naming the range there is no PR to name", async () => {
+			const shell = fakeSeams([
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+				[ISSUE, served(issue())],
+				[
+					COMMENT,
+					{status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})},
+				],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runAppendCriterion({...options, ...ranged, round: CAP_ROUND}), shell.layer),
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe(`escalated-frozen\t4287\t${CAP_ROUND}\n`);
+			expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
+			const escalation = String(
+				JSON.parse(
+					shell.bodies[shell.requests.findIndex((request) => COMMENT.test(request))] ?? "{}",
+				).body ?? "",
+			);
+			expect(escalation).toContain(`the range ${BASE}..${TIP}'s round ${CAP_ROUND}`);
+			expect(escalation).not.toContain("PR #");
+		});
+
+		it("refuses on 10 when the flags name no subject, or two", async () => {
+			const none = await run(happy(), {pr: null});
+			expect(none.code).toBe(OFF_VOCABULARY);
+			expect(none.stderr.at(-1)).toContain("name the subject the round was judged over");
+
+			const both = await run(happy(), {pr: 4321, base: BASE, tip: TIP});
+			expect(both.code).toBe(OFF_VOCABULARY);
+			expect(both.stderr.at(-1)).toContain("--pr does not combine with --base/--tip");
+
+			const loneBase = await run(happy(), {pr: null, base: BASE});
+			expect(loneBase.code).toBe(OFF_VOCABULARY);
+			expect(loneBase.stderr.at(-1)).toContain("a range has two ends");
+
+			const notARevision = await run(happy(), {pr: null, base: "main", tip: TIP});
+			expect(notARevision.code).toBe(OFF_VOCABULARY);
+			expect(notARevision.stderr.at(-1)).toContain("is not a revision");
+		});
+
+		it("writes nothing on a flag refusal — the subject is read before the ACL", async () => {
+			const shell = fakeSeams(happy());
+			await Effect.runPromise(
+				Effect.provide(runAppendCriterion({...options, pr: null}), shell.layer),
+			);
+			expect(shell.log).toEqual([]);
 		});
 	});
 });

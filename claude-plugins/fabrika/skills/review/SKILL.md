@@ -255,6 +255,18 @@ a regression test covers qty > 1
 EOF
 ```
 
+**On an epic child, name the range instead of a PR.** There is no PR mid-run (§6), so the subject
+is the same `--base`/`--tip` pair your verdict was posted over, the positional is the child issue,
+and the tag reads `range:<base>..<tip>` rather than `pr:#<n>`. Every fence runs unchanged, so the
+route this step names is open on a child exactly as it is on a PR — a finding that ends up as prose
+in the verdict body instead enters no cycle.
+
+```bash
+fabrika review append-criterion $child_issue --base 9f2c1ab --tip 03135b9 --round 1 <<'EOF'
+a regression test covers the widened union
+EOF
+```
+
 **Trivial mode.** A bounded-trivial diff (one concern, `harness: false` in scope — blast radius,
 never the governance obligation, which is §6's `governance` token — no new surface,
 truthful `None.`) skips the fan-out only — fewer dimensions, **not** a lowered bar; any ambiguity
@@ -312,7 +324,10 @@ undisclosed that this gate could see"* — never "no deviations exist".
   same range appends exactly as the PR path does** — the prior verdict is retired below the fence,
   the answer's sixth field reads `superseded`, and a polarity flip over that range is exit `17`
   until `--supersede` says so. It matters more here than on a PR: a child's comment is the
-  whole record of that child's review, with no PR surface holding a second copy. Deferring the
+  whole record of that child's review, with no PR surface holding a second copy. **§4's
+  append takes the same pair** — `fabrika review append-criterion <child-issue> --base <b> --tip <t>
+  --round <n>` — so an in-scope finding on a child binds the next round through the fences rather
+  than surviving as prose. Deferring the
   namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
   exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
   range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
