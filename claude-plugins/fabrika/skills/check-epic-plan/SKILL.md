@@ -142,8 +142,10 @@ signal plus its enforcement, composed, not rivals.
 `ready-for:agent`, and this gate is that flip's only owner.** Under the single-PR model the operator
 picks the epic up, so the epic's own audience label decides whether the epic is pickable at all. The
 planner never writes it — an ungated plan would become pickable. The operator never writes it — it
-would be admitting itself. Only this gate has already proven the floor clean, so only this gate may
-write it, and the verb writes it **last**, after every child's re-read proves it moved: an epic that
+would be admitting itself. Triage never writes it either — on an epic sent to the agent audience
+`triage apply` stamps no audience label at all, and its own contract carries why a second writer
+made the label ambiguous. Only this gate has proven the floor clean, so only this gate may write it,
+and the verb writes it **last**, after every child's re-read proves it moved: an epic that
 became pickable over a half-flipped ledger is exactly the failure the ordering removes. You never
 write the label by hand; the verb writes it and reads it back.
 
