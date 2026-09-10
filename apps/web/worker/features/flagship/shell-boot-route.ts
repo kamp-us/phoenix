@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {type BootUser, SHELL_FLAG_KEYS, type ShellFlagKey} from "../../../src/flags/shell-keys.ts";
+import {privateResponse} from "../../http/cache-policy.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {resolveMeUser} from "../pasaport/trusted-user.ts";
 import type {User} from "../pasaport/views.ts";
@@ -114,7 +115,7 @@ export const handleShellBoot = Effect.gen(function* () {
 	});
 
 	const response = yield* withNeverHangFallback(resolveAndInject, assetResponse);
-	return toWebResponse(response);
+	return privateResponse(toWebResponse(response));
 });
 
 export const shellBootRoute = HttpRouter.add("*", "/*", handleShellBoot);

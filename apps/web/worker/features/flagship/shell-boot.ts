@@ -36,8 +36,7 @@ export const bootScriptTag = (payload: BootPayload): string =>
 
 /**
  * Appends the `__BOOT__` script to `<head>` so it runs before the deferred app module reads
- * it. The response carries **no `Cache-Control`** (ADR 0179 / ADR 0170): the injected shell
- * is viewer-dependent, so the asset binding's directive is stripped and none is added.
+ * it. The shell route applies the private, no-store response policy (ADR 0179).
  */
 export const injectBootScript = (assetResponse: Response, payload: BootPayload): Response => {
 	// The drift guard covers the boolean flag members only — `user` is a typed field (ADR
@@ -45,18 +44,11 @@ export const injectBootScript = (assetResponse: Response, payload: BootPayload):
 	const flagKeys = Object.keys(payload).filter((key) => key !== "user");
 	assertShellBootKeysSingleSourced(flagKeys, [...BOOT_MEMBER_KEYS]);
 	const script = bootScriptTag(payload);
-	const rewritten = new HTMLRewriter()
+	return new HTMLRewriter()
 		.on("head", {
 			element(element) {
 				element.append(script, {html: true});
 			},
 		})
 		.transform(assetResponse);
-	const headers = new Headers(rewritten.headers);
-	headers.delete("cache-control");
-	return new Response(rewritten.body, {
-		status: rewritten.status,
-		statusText: rewritten.statusText,
-		headers,
-	});
 };

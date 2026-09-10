@@ -259,7 +259,7 @@ export function encodeFrame(frame: DeliverFrame): string {
 }
 
 export const SSE_HEADERS = {
-	"cache-control": "no-cache",
+	"cache-control": "private, no-store",
 	connection: "keep-alive",
 	"content-type": "text/event-stream; charset=utf-8",
 } as const;

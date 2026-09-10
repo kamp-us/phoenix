@@ -614,6 +614,7 @@ const refresh = leafCommand(
 			),
 		),
 		onReview: Flag.boolean("on-review").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated.",
 			),

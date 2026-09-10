@@ -1,14 +1,14 @@
 # HTTP routing
 
-> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+> Derived from `alchemy@2.0.0-beta.77` and `effect@4.0.0-rc.112` — re-verify on pin bump.
 
 How requests are routed without Hono. The short answer: the worker's `fetch` is an `HttpRouter` compiled with `HttpRouter.toHttpEffect`. The typed JSON endpoint (`GET /api/health`) is an `HttpApiBuilder` group; raw-`Request` and SSE endpoints (`/fate`, `/api/auth/*`, `/fate/live`, …) are imperative `HttpRouter.add` routes that reach the raw request via `Cloudflare.Request` and return `HttpServerResponse.fromWeb`. All raw routes live in one manifest (`worker/http/worker-routes.ts`) that also derives the `runWorkerFirst` globs, so a route and its SPA-shadow glob can't drift.
 
-Everything here is `@effect/platform` (`effect/unstable/http`), the model alchemy's worker already speaks — so routes drop straight into `fetch` with no adapter.
+Routing uses `effect/unstable/http` and `effect/unstable/httpapi`, the model Alchemy's worker accepts.
 
 ## The shape of `fetch`
 
-The worker returns `{fetch}`. alchemy's slot accepts an `HttpEffect` — `Effect<HttpServerResponse, HttpServerError | HttpBodyError, HttpServerRequest | Scope | …>` — **or an Effect that yields one** (`alchemy@2.0.0-beta.59 — src/Http.ts` and `src/Cloudflare/Workers/HttpServer.ts`, `makeRequestEffect`'s `HttpEffect<Req> | Effect<HttpEffect<Req>>`). `HttpRouter.toHttpEffect(layer)` produces exactly the latter from a layer of routes:
+The worker returns `{fetch}`. Alchemy accepts an `HttpEffect` or an Effect yielding one; see beta.77's [Http.ts](https://unpkg.com/alchemy@2.0.0-beta.77/src/Http.ts) and [makeRequestEffect](https://unpkg.com/alchemy@2.0.0-beta.77/src/Cloudflare/Workers/HttpServer.ts). `HttpRouter.toHttpEffect(layer)` produces the latter from a layer of routes:
 
 ```ts
 return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
@@ -60,12 +60,12 @@ export const healthApiLayer = HttpApiBuilder.layer(HealthApi).pipe(
 fate's `handleRequest`, better-auth's handler, and the live SSE route all want the **raw** `Request`/`Response`, not a schema. Register them imperatively. The raw request is available as the `Cloudflare.Request` service (`src/Cloudflare/Workers/Request.ts` — a `Context.Service` over the web `Request`); hand its result back with `HttpServerResponse.fromWeb`:
 
 ```ts
-// e.g. worker/features/pasaport/route.ts
-export const authRoute = HttpRouter.add("*", "/api/auth/*", Effect.gen(function* () {
-  const raw = yield* Cloudflare.Request;
-  const res = yield* Pasaport.handleAuth(raw);   // returns a web Response
-  return HttpServerResponse.fromWeb(res);
-}));
+// worker/features/pasaport/route.ts
+export const handleAuth = Effect.gen(function* () {
+  const betterAuth = yield* BetterAuth.BetterAuth;
+  return yield* betterAuth.fetch;
+});
+export const authRoute = HttpRouter.add("*", "/api/auth/*", handleAuth);
 ```
 
 `HttpRouter.add(method, path, handler)` takes `"*"` for all methods, supports `:param` and `*` wildcards in the path, and accepts either an `Effect<HttpServerResponse, …>` or a `(request) => Effect<…>`. It returns a `Layer`, so it merges with the rest.
@@ -82,10 +82,15 @@ Each raw route lives in its feature (`features/fate/route.ts`, `features/fate-li
 // worker/http/app.ts
 const rawRoutes = Layer.mergeAll(...rawWorkerRouteLayers).pipe(
   HttpRouter.provideRequest(
-    Layer.mergeAll(fateLayer, liveLayer, betterAuthLayer, flagsLayer, runtimeContextLayer),
+    Layer.mergeAll(
+      options.fateLayer,
+      options.liveLayer,
+      options.betterAuthLayer,
+      Layer.succeed(RuntimeContext)(options.runtimeContext),
+    ),
   ),
 );
-return Layer.mergeAll(typedJson, rawRoutes);
+return Layer.mergeAll(typedJson, rawRoutes, CachePolicyLive);
 ```
 
 `provideRequest` builds its layer **per request** — which is why everything passed in must already be init-resolved and dependency-free (`Layer.succeed` wrappers over clients resolved once in worker init), never a constructing layer like `BetterAuthLive`; the property contracts on `makeAppLive`'s options spell this out ([fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md)).
@@ -116,7 +121,7 @@ Under the service, addressing is `connectionOf(live, connectionId).fetch(request
 
 ## Assembling `fetch`
 
-`makeAppLive({fateLayer, liveLayer, betterAuthLayer, flagshipLayer, runtimeContext, environment})` merges the typed group and the raw routes and returns `AppLive`; the worker body compiles it:
+[`makeAppLive`](../apps/web/worker/http/app.ts) accepts `fateLayer`, `liveLayer`, `betterAuthLayer`, `flagshipLayer` and `runtimeContext`. It merges the typed group, raw routes and global cache policy; the worker body compiles the result:
 
 ```ts
 const AppLive = makeAppLive({…});
@@ -126,6 +131,16 @@ return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 > **`AppLive` mixes `HttpApiBuilder` groups and imperative `HttpRouter.add` routes in one app.** Both produce `Layer`s feeding the same router, so the composition type-checks and runs — the typed-JSON group (health) and the imperative raw-Request routes merge into the single `AppLive` the worker's `fetch` compiles from. The route-precedence / 404-catch-all / OPTIONS interplay between the two styles holds in the live worker.
 
 CORS, when needed, is a layer too: `HttpRouter.cors({allowedOrigins, allowedMethods, allowedHeaders})` provided onto `AppLive`.
+
+## Response cache policy
+
+[`CachePolicyLive`](../apps/web/worker/http/cache-policy.ts) adds `Cache-Control: private, no-store` to route responses without an explicit cache policy. It is global router middleware, included by `makeAppLive`, so typed health responses and raw routes use the same default. Explicit public policies remain intact. Failed effects whose responses are generated outside this middleware retain the framework's behavior.
+
+Auth responses, personalized HTML and SSE always opt out. The [auth bridge](../apps/web/worker/features/pasaport/auth-bridge.ts) and [shell route](../apps/web/worker/features/flagship/shell-boot-route.ts) apply `privateResponse`, which also removes inherited CDN cache directives and `Expires`. The [live protocol](../apps/web/worker/features/fate-live/protocol.ts) sets private, no-store on streams. A route returning viewer-dependent data must not inherit an asset's public policy.
+
+The [public Pano feed](../apps/web/worker/features/pano/base-feed-route.ts) deliberately supplies its public TTL and cache tag. Cloudflare consumes the tag and removes it before the client sees the response; the [origin-handler test](../apps/web/worker/features/pano/base-feed-route.unit.test.ts) checks the tag, while the [deployed test](../apps/web/tests/integration/pano-base-feed.test.ts) checks cache hits and post-write visibility. [Cache isolation coverage](../apps/web/tests/integration/cache-isolation.test.ts) checks the same session and HTML URLs across anonymous requests, two users and logout.
+
+With Workers Cache enabled, missing headers do not prevent storage: a headerless 200 response gets a two-hour default TTL. [Cloudflare's cache configuration](https://developers.cloudflare.com/workers/cache/configuration/) defines that behavior. The [worker config](../apps/web/worker/index.ts) sets only `cache: {enabled: true}`; it does not enable cross-version caching. Under Cloudflare's default, each new Worker version starts with an empty cache and cannot serve cached anonymous sessions from the previous version. See the source-grounded corrections in [ADR 0170](../.decisions/0170-workers-cache-via-alchemy-effect-pnpm-patch.md) and [ADR 0179](../.decisions/0179-edge-resolved-shell-state-boot-contract.md).
 
 ## Assets and worker-first precedence
 

@@ -103,8 +103,7 @@ const phoenixProps =
 				headSamplingRate: 1,
 				logs: {enabled: true, invocationLogs: true},
 			},
-			// Inert on its own — Workers Caching caches a GET/HEAD response ONLY when the
-			// worker stamps `Cache-Control` (ADR 0170).
+			// CachePolicyLive excludes responses without an explicit cache policy (ADR 0170).
 			cache: {enabled: true},
 		};
 
