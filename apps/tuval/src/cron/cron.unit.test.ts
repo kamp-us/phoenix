@@ -11,7 +11,7 @@ import {Effect, Option, Result} from "effect";
 import {describe, expect, it} from "vitest";
 import config from "../../.tuval/tuval.config.ts";
 import {fillArgs, programArgs} from "../authoring/args.ts";
-import {emit, spawn} from "../authoring/effect.ts";
+import {emit, spawn, stop} from "../authoring/effect.ts";
 import {Program, type ShapeSource, shapeOf} from "../authoring/shape.ts";
 import {testProgram} from "../authoring/test-program.ts";
 import {claudeSession} from "../claude/program.ts";
@@ -106,12 +106,12 @@ describe("cron, woken", () => {
 });
 
 describe("cron, reporting", () => {
+	/** A whole run: the answer ends it, so the history and the tile are settled at `result`. */
 	const finished = (ok: boolean) =>
 		testProgram(cronProgram(options))
 			.event({type: "tick"})
 			.event({type: "spawned", process: child, program: "cron-job"})
-			.event({type: "result", payload: turn("five lines\nand the rest", ok)})
-			.event({type: "stopped", process: child});
+			.event({type: "result", payload: turn("five lines\nand the rest", ok)});
 
 	it("keeps the first line of an ok turn and says so", () => {
 		const run = finished(true);
@@ -124,6 +124,45 @@ describe("cron, reporting", () => {
 		const run = finished(false);
 		expect(run.effects).toContainEqual(emit(STATUS_PORT, "last run 07:00 · failed"));
 		expect(run.state.child).toBeNull();
+	});
+
+	it("stops the job it started once the answer lands, so the session does not outlive its turn", () => {
+		const run = testProgram(cronProgram(options))
+			.event({type: "tick"})
+			.event({type: "spawned", process: child, program: "cron-job"})
+			.event({type: "result", payload: turn("done", true)});
+		expect(run.effects).toContainEqual(stop(child));
+		expect(run.state.child).toBeNull();
+		expect(run.state.startedAt).toBeNull();
+	});
+
+	it("spawns again on the next tick, because the answer already freed the child", () => {
+		const run = testProgram(cronProgram(options))
+			.event({type: "tick"})
+			.event({type: "spawned", process: child, program: "cron-job"})
+			.event({type: "result", payload: turn("done", true)})
+			.event({type: "stopped", process: child})
+			.event({type: "tick"});
+		expect(run.state.ticks).toBe(2);
+		expect(run.effects).toContainEqual(spawn(jobRef, {on: {result: "result"}}));
+	});
+
+	it("takes the `stopped` answering its own `stop` as nothing, so one turn is one run", () => {
+		const run = finished(true).event({type: "stopped", process: child});
+		expect(run.state.runs).toHaveLength(1);
+		expect(run.effects).toEqual([]);
+	});
+
+	it("records a failed run when the job dies before it answers, and clears the child", () => {
+		const run = testProgram(cronProgram(options))
+			.event({type: "tick"})
+			.event({type: "spawned", process: child, program: "cron-job"})
+			.event({type: "stopped", process: child});
+		expect(run.state.runs).toEqual([
+			{startedAt: SEVEN, ok: false, summary: "ended without answering"},
+		]);
+		expect(run.state.child).toBeNull();
+		expect(run.effects).toContainEqual(emit(STATUS_PORT, "last run 07:00 · failed"));
 	});
 
 	it("bounds the history at ten runs, newest first", () => {

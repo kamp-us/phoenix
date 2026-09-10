@@ -25,7 +25,7 @@ import type {DepKeyedSub} from "@demlik/tea";
 import {Schema} from "effect";
 import {programArgs} from "../authoring/args.ts";
 import {type Answer, type AuthoredEvent, defineProgram} from "../authoring/define-program.ts";
-import {type Reply, type Spawned, type Stopped, send, spawn} from "../authoring/effect.ts";
+import {type Reply, type Spawned, type Stopped, send, spawn, stop} from "../authoring/effect.ts";
 import {port} from "../authoring/port.ts";
 import {Program, type ShapeSource} from "../authoring/shape.ts";
 import type {ProcessId} from "../process/process.ts";
@@ -95,6 +95,10 @@ const cadence = (everyMs: number | null): string =>
 /** The first line of the job's answer, which is the whole of what a one-line tile can hold. */
 const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
 
+/** The history with one more run at its head, bounded. Both cells that record a run agree here. */
+const recorded = (runs: ReadonlyArray<CronRun>, run: CronRun): ReadonlyArray<CronRun> =>
+	[run, ...runs].slice(0, HISTORY);
+
 /** The timer, as Demlik's dep-keyed Sub. Re-keyed on `everyMs`, so nothing restarts it per tick. */
 const timer = (
 	everyMs: number | null,
@@ -144,20 +148,42 @@ export const cronProgram = (options: CronOptions) => {
 					],
 				];
 			},
-			/** The job answered. One entry at the head of the history, oldest dropped past `HISTORY`. */
+			/**
+			 * The job answered. One entry at the head of the history, oldest dropped past `HISTORY` —
+			 * and then the child is *stopped*, not waited on. An AI-agent session outlives its turn: it
+			 * stays up holding a transcript, so a cron that cleared `child` only on `stopped` would
+			 * never see one, drop every later tick, and leave the session to be restored on the next
+			 * boot. The run is over when the answer lands, so cron ends it — and clears `child` here
+			 * rather than on the `stopped` this `stop` answers with, so the very next tick may spawn.
+			 */
 			result: (state: CronState, event: Reply<"result", TurnResult>): Answer<CronState> => {
 				const run: CronRun = {
 					startedAt: state.startedAt ?? now(),
 					ok: event.payload.ok,
 					summary: firstLine(event.payload.text),
 				};
-				return [{...state, runs: [run, ...state.runs].slice(0, HISTORY)}, []];
+				return [
+					{...state, child: null, startedAt: null, runs: recorded(state.runs, run)},
+					state.child === null ? [] : [stop(state.child)],
+				];
 			},
-			/** The job ended. Nothing is running now, whether or not a `result` ever arrived. */
-			stopped: (state: CronState, _event: Stopped): Answer<CronState> => [
-				{...state, child: null, startedAt: null},
-				[],
-			],
+			/**
+			 * A process ended. The child cron itself stopped is already off `child` by the time this
+			 * lands, so what is left is the other case: the job died before it answered. That is a run,
+			 * and a failed one — without it a crashed job would leave the tile reading the run before
+			 * it, and `child` set forever.
+			 */
+			stopped: (state: CronState, event: Stopped): Answer<CronState> => {
+				if (state.child === null || event.process !== state.child) {
+					return [state, []];
+				}
+				const run: CronRun = {
+					startedAt: state.startedAt ?? now(),
+					ok: false,
+					summary: "ended without answering",
+				};
+				return [{...state, child: null, startedAt: null, runs: recorded(state.runs, run)}, []];
+			},
 		},
 		commands: {
 			/**
