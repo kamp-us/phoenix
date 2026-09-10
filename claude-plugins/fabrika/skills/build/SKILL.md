@@ -227,7 +227,17 @@ parent and cuts an epic child off the run's assembly branch `epic/<parent>`, a p
 issue off `origin/main`, and refuses rather than guessing when either read fails — so never hand it
 `--base` to "make sure" a child lands on the epic branch. It says which base it used and where that
 came from on stderr; read that line instead of re-deriving it. Pass `--base` only when you mean a
-ref the derivation would not pick, and expect it to be honoured verbatim.
+ref the derivation would not pick, and expect it to be honoured verbatim — qualified against `origin`
+when it names no remote, because every base is fetched and none is read off a local ref.
+
+**The answer names the commit, so prove the cut off it rather than off a `git merge-base` of your
+own.** A create-mode success prints a second line — `cut build/… off origin/epic/7497 at <sha>.`, or
+`… already existed and carries origin/epic/7497 at <sha>` on a re-run — and those two lines together
+are the whole proof that this branch stands where the lane needs it. A re-run over a branch that does
+**not** carry the base refuses on `36` instead of switching to it, naming the commit the two actually
+share: that branch was cut off something else, or the base has moved since, and either way it is
+rebased onto the base or retired, never built on. Four builders on one epic run each caught a wrong
+base by hand because the verb named none; none of that is yours to redo.
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
 invalid states unrepresentable. Before the first `build branch` cut, re-run

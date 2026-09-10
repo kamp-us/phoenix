@@ -1466,13 +1466,17 @@ fabrika build branch 9 --resume-lane --token <token>
 |---|---|---|---|---|
 | `<number>` | positional integer | yes (create mode) | — | the claimed issue the branch serves |
 | `--slug` | string | yes (create mode) | — | kebab-case, ≤5 words, must not begin with `-` |
-| `--base` | string | no | *derived* | the base ref, **fetched before the branch is cut**, honoured verbatim on every lane. Absent, create mode derives it — see below |
+| `--base` | string | no | *derived* | the base ref, **fetched from a remote before the branch is cut**, honoured verbatim on every lane. A ref with no `<remote>/` half is qualified against `origin`, never read locally. Absent, create mode derives it — see below |
 | `--resume` | integer | exclusive with the positional | — | a PR number whose head branch to switch to, for repair |
 | `--resume-lane` | boolean | no | `false` | child-repair mode: take over the local branch a prior lane built `<number>` on. Exclusive with `--resume` and with `--slug` |
 | `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking. Not a claim token, or one carrying another session id, is `1` |
 
 
-**Output** — machine. One line, the checked-out lane branch's name, newline-terminated.
+**Output** — machine. One line, the checked-out lane branch's name, newline-terminated. Create mode
+also names the **base commit** it ended on, on stderr beside the base note — `cut <branch> off
+<base> at <sha>.` on a fresh cut, `<branch> already existed and carries <base> at <sha> — re-run is
+idempotent, nothing was cut.` on a re-run. Four builders on one epic run had to prove their base
+with a `git merge-base` of their own, because the answer named the branch and nothing else.
 
 **Lane identity, defined once here and consumed by every code-`14` check.** A lane branch's name
 carries the lane: `build/<number>-<slug>-<nonce>` in create mode, `build/pr-<pr>-<nonce>` in
@@ -1507,10 +1511,31 @@ So with no `--base`, create mode reads `<number>`'s parent through GitHub's own 
 endpoint and derives from it. Both endpoints are derived, never taken from the caller, the way
 `readAssembly` derives them: the parent from that endpoint, the branch name from the parent number
 through `epicBranch`. A **`Present`** parent gives the assembly branch `epic/<parent>` —
-`origin/epic/<parent>` when origin carries it, the bare local name when only this clone does, and
-either spelling goes through the same `fetchBase`, so a stale local `epic/<n>` is never the cut. A
+`origin/epic/<parent>` when origin carries it, the bare local name when only this clone does. A
 parent **proven `Absent`** (the endpoint's own 404) leaves a standalone lane exactly as it stood:
 `origin/main`, with no epic base invented from a signal nobody read.
+
+**Every base is fetched from a remote, and the local-ref read is a constructed exception.** A base
+used to be a string, and `fetchBase` split it on the first `/`: a left half naming a configured
+remote fetched `<remote> <ref>` and read `FETCH_HEAD`, and anything else ran a bare `git fetch` and
+`rev-parse <base>^{commit}`. A clone with exactly one remote, `origin`, gives `epic/7497` the
+second arm — and a bare fetch under the default refspec writes remote-tracking refs while
+leaving `refs/heads/epic/7497` where it was, which `rev-parse` then resolves ahead of
+`refs/remotes/`. The base was whatever this clone last integrated (measured against real git in
+`packages/fabrika-cli/src/build/base-ref.git.test.ts`). So a base is now a **`BaseRef`**, not a
+string: `Remote` is fetched and read off `FETCH_HEAD`, `Commit` is already exact, and `LocalOnly` —
+the one arm that reads `refs/heads/` — is constructible only where `remoteSha` has **proven** origin
+carries no such branch, which is the one case where a local ref cannot be behind a published one. A
+`--base` naming no configured remote is qualified against `origin` rather than read locally, and a
+clone with no `origin` to qualify against refuses on `10`.
+
+**A re-run proves the branch it is about to switch to.** The nonce is a function of the claim, so a
+second run resolves the same name — and the old shortcut switched to it without looking at the base
+at all, which is why the idempotent re-run could not be the recovery for a wrong first cut. Create
+mode now reads the branch's merge base with the base it just fetched and refuses on `36` unless that
+merge base **is** the base commit: the branch was cut off something else, or the base has moved since
+it was cut, and either way building on it silently reproduces the incident. Bases that agree keep the
+re-run idempotent, and a merge base that could not be **read** is `11`, never `36`.
 
 Both halves of the ruling are refusals, and they are split on evidence. A parent read that **failed**
 is `11` naming the read — never a fall back to `origin/main`, because that fallback is the defect. A
@@ -1559,9 +1584,10 @@ number, which is the number repair mode claims.
 | Code | Trigger |
 |---|---|
 | `7` | `--resume`'s PR is proven absent, closed, or merged; `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>`; or the derived assembly branch `epic/<parent>` is proven absent from both origin and this clone |
-| `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; or `--resume-lane` was given beside `--resume` or `--slug` |
-| `11` | the fetch failed, the claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
+| `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; `--resume-lane` was given beside `--resume` or `--slug`; or `--base` names no configured remote and this clone has no `origin` to qualify it against |
+| `11` | the fetch failed, the claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, an existing lane branch's merge base with the resolved base could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
 | `15` | proven: the claim on `<number>` is foreign |
+| `36` | proven: the lane branch already exists and does not carry the base this run resolved — it was cut off a different one, or the base moved since |
 
 **Errors**
 
@@ -1569,6 +1595,9 @@ number, which is the number repair mode claims.
 |---|---|---|
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
+| `build branch: --base "<value>" names no configured remote and this clone has none to qualify it against. Nothing was cut.` | 10 | refusal |
+| `build branch: <branch> already exists and does not carry <base> at <sha> — the two share only <sha>, so this branch was cut off a different base, or <base> has moved since it was cut. Rebase it onto <base>, or retire it with "fabrika build retire-branch <n>" and re-run. Nothing was changed.` | 36 | refusal |
+| `build branch: <branch> already exists and what it was cut from could not be read: <reason> — whether it carries <base> is UNKNOWN; nothing was changed.` | 11 | refusal |
 | `build branch: cannot read #<n>'s parent through GitHub's issue-parent endpoint: <reason> — whether this is an epic child is UNKNOWN, and cutting off origin/main anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.` | 11 | refusal |
 | `build branch: #<n> is a child of epic #<p>, and whether origin carries its assembly branch epic/<p> could not be read: <reason> — which base this child belongs on is UNKNOWN. Nothing was cut.` | 11 | refusal |
 | `build branch: #<n> is a child of epic #<p>, whose assembly branch epic/<p> is proven absent — origin holds no refs/heads/epic/<p> and neither does this clone. Place the run's branch with "fabrika lane assembly <p>" before building a child on it. Nothing was cut.` | 7 | refusal |
@@ -1590,13 +1619,23 @@ number, which is the number repair mode claims.
 ```
 $ fabrika build branch 4 --slug editor-focus-loss --token <token>
 build branch: base origin/main — #4 is proven standalone (its parent endpoint answered 404), so no epic base was derived.
+build branch: cut build/4-editor-focus-loss-c1a4d6f8 off origin/main at 4f1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e.
 build/4-editor-focus-loss-c1a4d6f8
 ```
 
 ```
 $ fabrika build branch 9 --slug prove-requires-review-ui --token <token>
 build branch: base origin/epic/5 — derived from #9's parent epic #5; --base was not given.
+build branch: cut build/9-prove-requires-review-ui-99345500 off origin/epic/5 at 1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f.
 build/9-prove-requires-review-ui-99345500
+```
+
+```
+$ fabrika build branch 9 --slug prove-requires-review-ui --token <token>
+build branch: base origin/epic/5 — derived from #9's parent epic #5; --base was not given.
+build branch: build/9-prove-requires-review-ui-99345500 already exists and does not carry origin/epic/5 at 1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f — the two share only 0e1d2c3b4a5968778695a4b3c2d1e0f1c2b3a49f, so this branch was cut off a different base, or origin/epic/5 has moved since it was cut. Rebase it onto origin/epic/5, or retire it with "fabrika build retire-branch 9" and re-run. Nothing was changed.
+$ echo $?
+36
 ```
 
 ```
@@ -1615,8 +1654,11 @@ $ echo $?
 
 **Grounding**
 
-- Branch off `FETCH_HEAD` after a real fetch; a stale local `origin/main` is the recurring wrong
-  base.
+- Branch off `FETCH_HEAD` after a real fetch of a named remote and ref; a stale local ref —
+  `origin/main` or `epic/<n>` — is the recurring wrong base, and a base spelling that could reach one
+  is removed rather than documented against.
+- Name the base commit in the answer and re-prove it on a re-run: a cut nobody can read back is a
+  cut four builders proved by hand.
 - The verb derives an epic child's base rather than trusting prose to make a builder pass it — a
   guard made of prose fails exactly where a builder does not follow prose.
 - A slug that looks like a flag is refused, so a slug can never be read as an option.

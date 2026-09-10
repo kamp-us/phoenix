@@ -218,3 +218,15 @@ export const SURVIVOR_UNATTESTED = 34;
  * would send an author to re-read a shape that was never wrong.
  */
 export const DISCLOSURE_INCOMPLETE = 35;
+/**
+ * Proven: a lane branch that already exists does not contain the base this run resolved.
+ *
+ * A *proven* refusal about two commits both read in full — the fetched base and the branch's merge
+ * base with it — so it never borrows {@link PRECONDITION_UNKNOWN}. Its own seat rather than
+ * {@link WRONG_LANE}'s: `14` says the checked-out branch belongs to another lane, and this says the
+ * branch is this lane's own and was cut somewhere else. The remedy is unlike any neighbour's —
+ * rebase the branch onto the base, or retire it — and the fact it states is the one an epic child
+ * cut off the trunk had nobody to state: the idempotent re-run cannot be the recovery when the
+ * re-run is what hides the wrong base.
+ */
+export const BASE_MISMATCH = 36;

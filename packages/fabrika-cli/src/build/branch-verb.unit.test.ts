@@ -2,7 +2,13 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {runBranch} from "./branch-verb.ts";
-import {CLAIM_NOT_MINE, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	BASE_MISMATCH,
+	CLAIM_NOT_MINE,
+	OFF_VOCABULARY,
+	PRECONDITION_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {
 	comments,
 	GH_TOKEN_ENV,
@@ -26,6 +32,7 @@ const FETCH = /^git fetch --quiet origin main$/;
 const RESOLVE = /^git rev-parse --verify --quiet FETCH_HEAD/;
 const VERIFY_BRANCH = /^git rev-parse --verify --quiet refs\/heads\//;
 const SWITCH_NEW = /^git switch -c /;
+const MERGE_BASE = /^git merge-base \S+ refs\/heads\/build\//;
 
 const MINE = comments({id: 1, body: marker("s-9f2e", LANE_UUID)});
 
@@ -95,6 +102,7 @@ describe("runBranch — create mode", () => {
 			[FETCH, okOut("")],
 			[RESOLVE, okOut(`${HEAD}\n`)],
 			[VERIFY_BRANCH, okOut(`${HEAD}\n`)],
+			[MERGE_BASE, okOut(`${HEAD}\n`)],
 			[/^git switch build\//, okOut("")],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
@@ -516,6 +524,7 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 			[FETCH_EPIC, okOut("")],
 			[RESOLVE, okOut(`${EPIC_TIP}\n`)],
 			[VERIFY_LANE, okOut(`${EPIC_TIP}\n`)],
+			[MERGE_BASE, okOut(`${EPIC_TIP}\n`)],
 			[/^git switch build\//, okOut("")],
 		]);
 		const out = await Effect.runPromise(
@@ -524,5 +533,118 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`build/4312-editor-focus-loss-${NONCE}\n`);
 		expect(shell.calls.some((line) => SWITCH_NEW.test(line))).toBe(false);
+		expect(out.stderr.at(-1)).toBe(
+			`build branch: build/4312-editor-focus-loss-${NONCE} already existed and carries origin/epic/6505 at ${EPIC_TIP} — re-run is idempotent, nothing was cut.`,
+		);
+	});
+});
+
+/**
+ * The three mechanisms this fix closes, each read at the seam it lived on: the base spelling that fetched
+ * nothing, the success that named no commit, and the re-run that switched to a branch cut elsewhere.
+ */
+describe("runBranch — create mode proves the base it cut from", () => {
+	const EPIC_TIP = "1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f";
+	const TRUNK_FORK = "0e1d2c3b4a5968778695a4b3c2d1e0f1c2b3a49f";
+
+	it("fetches a --base naming a local branch from origin, never reading the unmoved local ref", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[/^git fetch --quiet origin epic\/7497$/, okOut("")],
+			[RESOLVE, okOut(`${EPIC_TIP}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, base: "epic/7497"}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain("git fetch --quiet origin epic/7497");
+		expect(shell.calls.some((line) => /^git fetch --quiet$/.test(line))).toBe(false);
+		expect(shell.calls.some((line) => /^git rev-parse .*epic\/7497\^\{commit\}/.test(line))).toBe(
+			false,
+		);
+		expect(shell.calls).toContain(
+			`git switch -c build/4312-editor-focus-loss-${NONCE} ${EPIC_TIP}`,
+		);
+	});
+
+	it("names the base commit it cut from, so nobody needs their own git merge-base", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[FETCH, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stderr.at(-1)).toBe(
+			`build branch: cut build/4312-editor-focus-loss-${NONCE} off origin/main at ${HEAD}.`,
+		);
+	});
+
+	it("refuses on 36 when the existing lane branch was cut off a different base", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[/^git fetch --quiet origin epic\/7497$/, okOut("")],
+			[RESOLVE, okOut(`${EPIC_TIP}\n`)],
+			[VERIFY_BRANCH, okOut(`${HEAD}\n`)],
+			[MERGE_BASE, okOut(`${TRUNK_FORK}\n`)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, base: "epic/7497"}), shell.layer),
+		);
+		expect(out.code).toBe(BASE_MISMATCH);
+		expect(out.stderr.at(-1)).toContain(`does not carry origin/epic/7497 at ${EPIC_TIP}`);
+		expect(out.stderr.at(-1)).toContain(`share only ${TRUNK_FORK}`);
+		expect(shell.calls.some((line) => /^git switch/.test(line))).toBe(false);
+	});
+
+	it("refuses an unreadable merge base on 11, never on 36 — an unread branch proves nothing", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[FETCH, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, okOut(`${HEAD}\n`)],
+			[MERGE_BASE, errOut("fatal: Not a valid object name")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("is UNKNOWN; nothing was changed");
+		expect(shell.calls.some((line) => /^git switch/.test(line))).toBe(false);
+	});
+
+	it("reads the assembly branch locally only where origin is proven to hold none", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[/^GET \S+\/repos\/o\/r\/issues\/4312\/parent$/, served({number: 6505})],
+			[/^git ls-remote origin refs\/heads\/epic\/6505$/, okOut("")],
+			[/^git rev-parse --verify --quiet refs\/heads\/epic\/6505/, okOut(`${EPIC_TIP}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, base: null}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls.some((line) => /^git fetch/.test(line))).toBe(false);
+		expect(out.stderr).toContain(
+			"build branch: base epic/6505 — derived from #4312's parent epic #6505; --base was not given.",
+		);
+	});
+
+	it("refuses a --base this clone cannot qualify against any remote, cutting nothing", async () => {
+		const shell = fakeSeams([...CLAIMED, [REMOTES, okOut("")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, base: "epic/7497"}), shell.layer),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("this clone has none to qualify it against");
+		expect(shell.calls.some((line) => /^git (fetch|switch)/.test(line))).toBe(false);
 	});
 });

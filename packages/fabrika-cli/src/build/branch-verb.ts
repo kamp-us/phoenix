@@ -16,8 +16,12 @@
  * cutting a second one off it, because two branches carrying one child's commits is the underivable
  * range `lane prove` refuses on, and that refusal cannot be cleared from inside a worktree.
  *
- * A re-run is idempotent: the nonce is a function of the claim, so the second run resolves the same
- * name and switches to it instead of failing on a branch that is already there.
+ * A re-run is idempotent, **and proves the base before it takes the shortcut**: the nonce is a
+ * function of the claim, so the second run resolves the same name — and then reads that branch's
+ * merge base with the base it just fetched, refusing on `36` unless the branch carries it. Switching
+ * blind is what made the idempotent re-run unable to be the recovery for a wrong first cut. Either
+ * way create mode names the base commit it ended on, so a builder proves the cut off this verb's own
+ * output rather than off a `git merge-base` of their own.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -26,11 +30,15 @@ import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
-import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {BASE_MISMATCH, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
+	type BaseRef,
+	baseLabel,
 	branchExists,
+	classifyBase,
 	currentBranch,
 	fetchBase,
+	mergeBaseOf,
 	remoteSha,
 	renameBranch,
 	setUpstream,
@@ -78,10 +86,10 @@ export interface BranchOptions {
 }
 
 /** The trunk a lane with no parent epic and no operator-named base is cut from. */
-const TRUNK = "origin/main";
+const TRUNK: BaseRef = {_tag: "Remote", remote: "origin", ref: "main"};
 
 type ResolvedBase =
-	| {readonly _tag: "Resolved"; readonly base: string; readonly note: string}
+	| {readonly _tag: "Resolved"; readonly base: BaseRef; readonly note: string}
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
 /**
@@ -110,11 +118,20 @@ const resolveBase = (
 > =>
 	Effect.gen(function* () {
 		if (named !== null) {
-			return {
-				_tag: "Resolved" as const,
-				base: named,
-				note: `${VERB}: base ${named} — named by the operator with --base; no epic derivation ran.`,
-			};
+			const classified = yield* classifyBase(named);
+			return classified._tag === "Failure"
+				? {
+						_tag: "Refused" as const,
+						outcome: refuse(
+							OFF_VOCABULARY,
+							`${VERB}: --base ${classified.reason}. Nothing was cut.`,
+						),
+					}
+				: {
+						_tag: "Resolved" as const,
+						base: classified.value,
+						note: `${VERB}: base ${baseLabel(classified.value)} — named by the operator with --base; no epic derivation ran.`,
+					};
 		}
 		const parent = yield* getParent(env, repo, issue);
 		if (parent._tag === "Unknown") {
@@ -122,7 +139,7 @@ const resolveBase = (
 				_tag: "Refused" as const,
 				outcome: refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off ${TRUNK} anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
+					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off ${baseLabel(TRUNK)} anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
 				),
 			};
 		}
@@ -130,7 +147,7 @@ const resolveBase = (
 			return {
 				_tag: "Resolved" as const,
 				base: TRUNK,
-				note: `${VERB}: base ${TRUNK} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
+				note: `${VERB}: base ${baseLabel(TRUNK)} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
 			};
 		}
 		const assembly = epicBranch(parent.value);
@@ -153,17 +170,26 @@ const resolveBase = (
 				),
 			};
 		}
-		// The published spelling when origin carries it, the bare local one when only this clone does;
-		// either way `fetchBase` fetches before it resolves, so a stale local `epic/<n>` is never the cut.
-		const base = published.value === null ? assembly : `origin/${assembly}`;
+		// `LocalOnly` is constructible only here, and only past the `remoteSha` read above proving
+		// origin carries no `refs/heads/<assembly>` — the one case where reading the local ref cannot
+		// be reading a stale copy, because there is no published tip for it to be behind.
+		const base: BaseRef =
+			published.value === null
+				? {_tag: "LocalOnly", ref: assembly}
+				: {_tag: "Remote", remote: "origin", ref: assembly};
 		return {
 			_tag: "Resolved" as const,
 			base,
-			note: `${VERB}: base ${base} — derived from #${issue}'s parent epic #${parent.value}; --base was not given.`,
+			note: `${VERB}: base ${baseLabel(base)} — derived from #${issue}'s parent epic #${parent.value}; --base was not given.`,
 		};
 	});
 
-/** Check the branch out, whether or not it already exists — the idempotent half. */
+/**
+ * Check the branch out, whether or not it already exists — resume mode's idempotent half.
+ *
+ * Create mode does not use this: it proves an existing branch carries the base it resolved before it
+ * switches, and a blind switch there is the wrong base surviving its own re-run.
+ */
 const checkout = (name: string, start: string) =>
 	Effect.gen(function* () {
 		return (yield* branchExists(name)) ? yield* switchTo(name) : yield* switchToNew(name, start);
@@ -242,7 +268,7 @@ export const runBranch = (
 					held.notes,
 				);
 			}
-			const fetched = yield* fetchBase(`origin/${head.value.ref}`);
+			const fetched = yield* fetchBase({_tag: "Remote", remote: "origin", ref: head.value.ref});
 			if (fetched._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
@@ -373,21 +399,54 @@ export const runBranch = (
 		const {base} = resolvedBase;
 		const notes = [...held.notes, resolvedBase.note];
 
+		const label = baseLabel(base);
+
 		const fetched = yield* fetchBase(base);
 		if (fetched._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot fetch ${base}: ${fetched.reason} — refusing to cut a branch off a stale base.`,
+				`${VERB}: cannot fetch ${label}: ${fetched.reason} — refusing to cut a branch off a stale base.`,
 				notes,
 			);
 		}
+		const at = fetched.value;
 		const name = createBranchName(issue, slug as string, nonce);
-		const switched = yield* checkout(name, fetched.value);
+
+		if (yield* branchExists(name)) {
+			const shared = yield* mergeBaseOf(at, `refs/heads/${name}`);
+			if (shared._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${name} already exists and what it was cut from could not be read: ${shared.reason} — whether it carries ${label} is UNKNOWN; nothing was changed.`,
+					notes,
+				);
+			}
+			if (shared.value !== at) {
+				return refuse(
+					BASE_MISMATCH,
+					`${VERB}: ${name} already exists and does not carry ${label} at ${at} — the two share only ${shared.value}, so this branch was cut off a different base, or ${label} has moved since it was cut. Rebase it onto ${label}, or retire it with "fabrika build retire-branch ${issue}" and re-run. Nothing was changed.`,
+					notes,
+				);
+			}
+			const switched = yield* switchTo(name);
+			return switched._tag === "Failure"
+				? refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot check out ${name}: ${switched.reason} — nothing was changed.`,
+						notes,
+					)
+				: answer(name, [
+						...notes,
+						`${VERB}: ${name} already existed and carries ${label} at ${at} — re-run is idempotent, nothing was cut.`,
+					]);
+		}
+
+		const switched = yield* switchToNew(name, at);
 		return switched._tag === "Failure"
 			? refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot cut ${name} off ${base}: ${switched.reason} — nothing was changed.`,
+					`${VERB}: cannot cut ${name} off ${label}: ${switched.reason} — nothing was changed.`,
 					notes,
 				)
-			: answer(name, notes);
+			: answer(name, [...notes, `${VERB}: cut ${name} off ${label} at ${at}.`]);
 	});
