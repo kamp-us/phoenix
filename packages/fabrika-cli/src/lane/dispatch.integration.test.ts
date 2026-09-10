@@ -15,6 +15,8 @@ import {NodeServices} from "@effect/platform-node";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {execCapture} from "../io/exec.ts";
+import {readUsageLedger} from "../spend/usage-ledger.ts";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {answer, refuse} from "../verb.ts";
 import {read as readBrief} from "../wire/lane-brief.ts";
 import {runBrief} from "./brief-verb.ts";
@@ -37,6 +39,7 @@ const fixture = (mode = "report") => {
 	git(cwd, "config", "user.name", "fixture");
 	git(cwd, "config", "user.email", "fixture@example.test");
 	writeFileSync(join(cwd, "tracked.txt"), "primary bytes\n");
+	writeFileSync(join(cwd, ".gitignore"), ".fabrika/\n");
 	git(cwd, "add", ".");
 	git(cwd, "commit", "-m", "fixture");
 	writeFileSync(join(root, "8617", "workflow.json"), coderTemplateText());
@@ -49,9 +52,17 @@ const fixture = (mode = "report") => {
 		"---\nname: build\ndescription: Fixture.\n---\nBuild.\n",
 	);
 	const fake = join(bin, "codex");
+	const codexHome = join(seat, "codex-home");
+	mkdirSync(join(codexHome, "sessions"), {recursive: true});
 	writeFileSync(
 		fake,
-		`#!${process.execPath}\nconst fs = require('node:fs');\nconst input = fs.readFileSync(0, 'utf8');\nfs.writeFileSync('observed.json', JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),input,identity:process.env.FABRIKA_SESSION_ID,model:process.env.FIXTURE_MODEL}));\nif(process.env.FIXTURE_MODE === 'fail') process.exit(9);\nif(process.env.FIXTURE_MODE === 'report') fs.appendFileSync(process.env.FIXTURE_LOG, JSON.stringify({task:'issue',event:'ISSUE.DONE',at:'2026-09-08T00:01:00Z',pr:'https://example.test/pr/1'})+'\\n');\n`,
+		`#!${process.execPath}\nconst fs = require('node:fs');\nconst input = fs.readFileSync(0, 'utf8');\nfs.writeFileSync('observed.json', JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),input,identity:process.env.FABRIKA_SESSION_ID,model:process.env.FIXTURE_MODEL}));
+const usage={input_tokens:100,cached_input_tokens:20,cache_write_input_tokens:5,output_tokens:10,reasoning_output_tokens:3,total_tokens:110};
+for(const [id,parent] of [['native-root',null],['native-child','native-root'],['native-grandchild','native-child']]) {
+const rows=[{type:'session_meta',payload:{id,parent_thread_id:parent,session_id:'native-root',cwd:process.cwd(),cli_version:'0.154.0',model_provider:'openai'}},{type:'turn_context',payload:{turn_id:'turn',model:'native-model'}},{type:'event_msg',payload:{type:'token_usage_record',thread_id:id,session_id:'native-root',turn_id:'turn',root_turn_id:'turn',response_id:'response',usage,turn_token_usage:usage,thread_token_usage:usage}}];
+fs.writeFileSync(process.env.CODEX_HOME+'/sessions/'+id+'.jsonl',rows.map(row=>JSON.stringify(row)).join('\\n')+'\\n');
+}
+if(process.env.FIXTURE_MODE === 'fail') process.exit(9);\nif(process.env.FIXTURE_MODE === 'report') fs.appendFileSync(process.env.FIXTURE_LOG, JSON.stringify({task:'issue',event:'ISSUE.DONE',at:'2026-09-08T00:01:00Z',pr:'https://example.test/pr/1'})+'\\n');\n`,
 	);
 	chmodSync(fake, 0o755);
 	return {
@@ -68,6 +79,7 @@ const fixture = (mode = "report") => {
 			...process.env,
 			PATH: `${bin}:${process.env.PATH}`,
 			CODEX_THREAD_ID: "codex-thread",
+			CODEX_HOME: codexHome,
 			CODEX_SESSION_ID: undefined,
 			FABRIKA_SESSION_ID: undefined,
 			CLAUDE_CODE_SESSION_ID: undefined,
@@ -94,7 +106,9 @@ const briefFor = (options: ReturnType<typeof fixture>) =>
 		ground: {_tag: "Pull", pr: null},
 	});
 
-describe("Codex dispatch against real git and a fake child process", () => {
+describe("Codex dispatch against real git and a fake child process", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("isolates actual child cwd, preloads the role, preserves brief and configuration, and proves the report", async () => {
 		const options = fixture();
 		const original = git(options.cwd, "rev-parse", "HEAD");
@@ -130,6 +144,18 @@ describe("Codex dispatch against real git and a fake child process", () => {
 		expect(git(options.cwd, "branch", "--show-current")).toBe("main");
 		expect(git(options.cwd, "status", "--porcelain")).toBe("");
 		expect(readFileSync(join(options.cwd, "tracked.txt"), "utf8")).toBe("primary bytes\n");
+		const usage = readUsageLedger(
+			readFileSync(join(options.cwd, ".fabrika", "spend-ledger.jsonl"), "utf8"),
+		).records.filter((row) => row.kind === "measurement" && row.basis.kind === "response");
+		expect(usage).toHaveLength(3);
+		expect(
+			usage.every((row) => row.work.issue === 8617 && row.work.run === "lane:8617:issue"),
+		).toBe(true);
+		expect(usage.map((row) => row.agent.session).sort()).toEqual([
+			"native-child",
+			"native-grandchild",
+			"native-root",
+		]);
 	});
 	it.each([
 		"fail",
@@ -151,6 +177,12 @@ describe("Codex dispatch against real git and a fake child process", () => {
 		expect(result.stdout).toBe("");
 		expect(proved).toBe(false);
 		expect(existsSync(join(options.worktree, "observed.json"))).toBe(true);
+		const records = readUsageLedger(
+			readFileSync(join(options.cwd, ".fabrika", "spend-ledger.jsonl"), "utf8"),
+		).records;
+		expect(
+			records.filter((row) => row.kind === "measurement" && row.basis.kind === "response"),
+		).toHaveLength(3);
 	});
 	it("refuses an unproven terminal despite a successful reporting child", async () => {
 		const options = fixture();

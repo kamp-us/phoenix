@@ -14,6 +14,18 @@ codex plugin add fabrika@kampus
 Start a new session. Use `/plugins` to inspect the installed plugin. Re-run the install command
 after updating the marketplace checkout and restart the session to use updated cached skills.
 
+## Enable interactive usage collection
+
+In a source checkout, merge the event entries from
+[codex-hooks.json](../../../packages/fabrika-cli/docs/codex-hooks.json) into the repository's
+`.codex/hooks.json`. Create that file if absent; retain any existing hooks. This uses Codex's
+supported repository hook path and writes no per-user configuration.
+
+Restart Codex, trust the repository, then review and trust these definitions with `/hooks`.
+Start Fabrika work normally. The hook binds the issue when Fabrika reads or claims it and replays
+usage at later callbacks. See [collection details](../../../packages/fabrika-cli/docs/codex-usage.md)
+for supported versions, missing coverage and recovery. Lane dispatch also collects without hooks.
+
 ## Dispatch a lane task
 
 Ask Codex to use the shared `operate` skill. Its Codex route runs `fabrika lane dispatch` for

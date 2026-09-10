@@ -1,0 +1,86 @@
+{
+	"hooks": {
+		"PreToolUse": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\""
+					}
+				]
+			}
+		],
+		"PostToolUse": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\""
+					}
+				]
+			}
+		],
+		"SessionStart": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\""
+					}
+				]
+			}
+		],
+		"SubagentStart": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\""
+					}
+				]
+			}
+		],
+		"SubagentStop": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\""
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\""
+					}
+				]
+			}
+		],
+		"Interrupt": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\"",
+						"timeout": 3
+					}
+				]
+			}
+		],
+		"SessionEnd": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts\"",
+						"timeout": 3
+					}
+				]
+			}
+		]
+	}
+}
