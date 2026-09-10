@@ -8,6 +8,7 @@
 
 import {type Registration, register} from "./key-group.ts";
 import {assemblyRefreshKey} from "./keys/assembly-refresh.ts";
+import {assemblyReplayKey} from "./keys/assembly-replay.ts";
 import {auditCatalogsKey} from "./keys/audit-catalogs.ts";
 import {boardVocabularyKey} from "./keys/board-vocabulary.ts";
 import {campaignAuthorsKey} from "./keys/campaign-authors.ts";
@@ -30,6 +31,7 @@ import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
 export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(assemblyRefreshKey),
+	register(assemblyReplayKey),
 	register(auditCatalogsKey),
 	register(boardVocabularyKey),
 	register(campaignAuthorsKey),
