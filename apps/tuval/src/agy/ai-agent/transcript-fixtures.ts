@@ -1,6 +1,7 @@
 /**
- * Captured agy v1.1.27 `transcript.jsonl` lines, and the `transcript_full.jsonl` counterparts of the
- * clipped ones.
+ * Captured agy `transcript.jsonl` lines, and the `transcript_full.jsonl` counterparts of the clipped
+ * ones: single lines from the v1.1.27 census below, and a whole v1.1.28 multi-call turn read off
+ * disk at the bottom of this file.
  *
  * Every line keeps the exact key set, value types and `source`/`type`/`status` vocabulary of the
  * files agy wrote under `$HOME/.gemini/antigravity-cli/brain/<cid>/.system_generated/logs/` — which
@@ -10,6 +11,9 @@
  * clipped pair below is a *constructed* pair rather than a captured one: the real full counterpart
  * of a clipped `content` runs to 8,605 characters.
  */
+
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 
 const CID = "9dcbb5a5-9a5f-4f9c-989b-ede03e790bbf";
 
@@ -30,6 +34,32 @@ export const toolResult =
 /** A tool still in flight: agy writes the `GENERIC` line before the tool has finished. */
 export const toolResultRunning =
 	'{"step_index":2,"source":"MODEL","type":"GENERIC","status":"RUNNING","created_at":"2026-09-03T09:32:29Z","content":"Created At: 2026-09-03T02:32:29-07:00\\nTool is running as a background task with task id: task-86"}';
+
+/**
+ * The whole multi-call capture, read off disk rather than restated here.
+ *
+ * `fixtures/multi-call-transcript.jsonl` and its `_full` counterpart are the two files agy **v1.1.28**
+ * wrote for one driven turn whose prompt forced two `view_file` calls into one planner step — the
+ * capture #8689's ruling asked for, and the evidence that a batch's outcomes are per-call and in
+ * order. They are the real files, not a reconstruction: the only edit is the workspace path, which
+ * reads `/Users/founder/agyprobe` so nothing machine-local lands in the repo.
+ *
+ * Two things in them are worth knowing before reading a case over them. The outcome of the first
+ * call sits at file position 1 while its own call line sits at position 2, so the file's order is
+ * not the conversation's — `step_index` is. And the full file's `args` values are plain strings
+ * where `transcript.jsonl`'s are JSON text, which is a second shape agy's two files disagree on and
+ * a reason `restore` replaces only the fields `truncated_fields` names.
+ */
+const capture = (name: string): ReadonlyArray<string> =>
+	readFileSync(fileURLToPath(import.meta.resolve(`./fixtures/${name}`)), "utf8")
+		.split("\n")
+		.filter((line) => line.trim().length > 0);
+
+export const multiCallLines = capture("multi-call-transcript.jsonl");
+export const multiCallFullLines = capture("multi-call-transcript_full.jsonl");
+
+/** The conversation the capture above was driven as. Its own `step_index` values, not `CID`'s. */
+export const multiCallConversationId = "c25acb51-24fc-45a1-a152-4859e934a53d";
 
 /** The reply. A `PLANNER_RESPONSE` carries `content`, `tool_calls`, or both. */
 export const assistantReply =
