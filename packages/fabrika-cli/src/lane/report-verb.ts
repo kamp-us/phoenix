@@ -15,7 +15,12 @@
  * `merge:partial` arm. It rides at both polarities — a closing merge records `partial: false` — so
  * the line says the closure was read rather than leaving a later sweep to read it again. `landed`
  * is that read's evidence and rides beside it: the merged PRs the closure judged, so a recorded
- * `false` says which reader wrote it and not only which way it fell.
+ * `false` says which reader wrote it and not only which way it fell. `diagnosis` is the third and
+ * rides a `DONE` out of build: it says this terminal was proven off a diagnosis comment rather than
+ * a pull request, which is what the machine's `done:diagnosis` arm carries an investigation to its
+ * own terminal on instead of the review it opened nothing for. It rides at `true` only, because the
+ * three builder terminals that reach this verb all report one `DONE` and only the prover can tell
+ * them apart.
  *
  * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
  * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
@@ -210,6 +215,7 @@ export const runReport = <R>(
 					classed.classes,
 					null,
 					proved.partial,
+					proved.diagnosis ? true : null,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);
@@ -243,6 +249,7 @@ export const runReport = <R>(
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 							...(proved.partial === null ? {} : {partial: proved.partial}),
+							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 						},
 						null,

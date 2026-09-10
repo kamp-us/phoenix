@@ -763,6 +763,57 @@ describe("the partial merge a ship DONE carries", () => {
 	});
 });
 
+describe("the diagnosis a build DONE carries", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
+
+	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
+		expect(parseLog(line(`,"diagnosis":true`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", diagnosis: true}],
+		});
+		expect(parseLog(line(`,"diagnosis":"yes"`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a PR-backed DONE's line without the field, folding to `review` as it always did", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+
+		expect(log.at(-1)).not.toHaveProperty("diagnosis");
+		expect(statusOf(compiled, log)).toMatchObject({
+			stateValue: {pipeline: {issue: "review"}},
+			status: "active",
+		});
+	});
+
+	// The whole defect: this lane used to reach `review`, whose brief needs a PR an investigation
+	// never opens, and the only move left was a park that read as a fault.
+	it("names the diagnosis finish as itself, distinct from `complete` and from every park", () => {
+		const compiled = lane(coderWorkflow());
+		const states = statesOf(compiled, [entry("issue", "WIP")]);
+		const applied = applyEvent(
+			compiled,
+			states,
+			"issue",
+			"DONE",
+			"2026-08-16T00:00:00.000Z",
+			null,
+			null,
+			null,
+			true,
+		);
+		if (applied._tag !== "Applied") throw new Error(applied.reason);
+
+		expect(applied.entry).toMatchObject({diagnosis: true});
+		expect(statusOf(compiled, [entry("issue", "WIP"), applied.entry])).toMatchObject({
+			stateValue: "diagnosed",
+			status: "done",
+		});
+	});
+});
+
 describe("the park cause a BLOCKED carries", () => {
 	const caused = (task: string, event: string, cause: string): LogEntry => ({
 		...entry(task, event),

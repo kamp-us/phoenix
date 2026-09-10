@@ -2,25 +2,29 @@
  * The lane compiler — one `workflow.json` machine document in, one flat tea Transitions machine
  * per task out, everything a nested state library carried reduced to data.
  *
- * Structural recognitions replace every name-driven mechanism, and **two guard spellings are read**:
- * a `guard`/`actions` string is otherwise inert data.
+ * Structural recognitions replace every name-driven mechanism, and **three guard spellings are
+ * read**: a `guard`/`actions` string is otherwise inert data.
  *
  *   - An **array on an event** means guarded: `[taken-when-the-guard-holds, else-fallthrough]`, and
  *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`) — except
- *     under the two routing spellings below, whose fallthrough is the ordinary path and carries no
- *     error. The first arm's own spelling picks the guard, and only three kinds exist.
+ *     under the three routing spellings below, whose fallthrough is the ordinary path and carries no
+ *     error. The first arm's own spelling picks the guard, and only four kinds exist.
  *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
  *     nothing: it picks which shell serves the round, and picking is not repairing.
  *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
  *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
- *     than folding to a terminal over an issue the board still calls buildable. Every
+ *     than folding to a terminal over an issue the board still calls buildable.
+ *     {@link DIAGNOSIS_GUARD} reads whether the `DONE` this event reports was proven off a diagnosis
+ *     comment instead of a pull request, and spends nothing either: an investigation opens no PR, so
+ *     the review its `DONE` used to reach could never be walked. Every
  *     other spelling is the budget guard, one inline counter comparison in the compiled cell, and
  *     **which counter it spends is the event's own polarity**: `FAIL` is a repair round and spends
  *     `retries`, {@link MACHINERY_EVENT} is the pipeline's own machinery failing and spends `laps`,
  *     every other event is a wait and spends `waits`. A queue dwell must not eat the
  *     budget a later repair draws on, and neither must a child collision at integrate; reading that
- *     off the event keeps it structural — beyond the two routing spellings, no guard name is
- *     consulted.
+ *     off the event keeps it structural — no guard NAME is consulted beyond the three routing
+ *     spellings, and a fourth spelled with their namespace is refused at compile rather than read as
+ *     the budget guard, which is what closes the set.
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -204,6 +208,15 @@ export interface LaneMsg {
 	 * the second merge's answer and not the first's.
 	 */
 	readonly partial?: boolean;
+	/**
+	 * Whether the `DONE` this event reports was proven off a diagnosis comment rather than a pull
+	 * request — the `done:diagnosis` guard's whole input, relayed off `lane prove`'s no-PR arm.
+	 *
+	 * Not sticky and folded into no state field, for {@link LaneMsg.partial}'s reason: it is a fact
+	 * about *this* terminal. A lane that answered an investigation and then went round again on a
+	 * PR-bearing build must read the second terminal's answer and not the first's.
+	 */
+	readonly diagnosis?: boolean;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -254,6 +267,16 @@ export interface CompiledTask {
 	 * falls out of the compilation rather than being restated as a special case.
 	 */
 	readonly partialStates: ReadonlyMap<string, ReadonlySet<string>>;
+	/**
+	 * The finals a {@link DIAGNOSIS_GUARD}-guarded arm targets — where a `DONE` proven off a
+	 * diagnosis comment lands.
+	 *
+	 * Carried so {@link deriveStatus} can name such a terminal instead of collapsing it into the
+	 * workflow's `complete`, which is what makes an investigation's finish readable as itself rather
+	 * than as the shipped one. Empty on every document declaring no such arm, so their status is
+	 * byte for byte what it always was.
+	 */
+	readonly diagnosisFinals: ReadonlySet<string>;
 	/**
 	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours.
 	 * Carried so a refusal can name the repair — re-record each as a `CLEARED` event — rather than
@@ -310,6 +333,39 @@ export const PARTIAL_GUARD = "merge:partial";
 const partialGuarded = (arm: unknown): boolean => isRecord(arm) && arm.guard === PARTIAL_GUARD;
 
 /**
+ * The third: the arm a `DONE` proven off a diagnosis comment takes ({@link LaneMsg.diagnosis}).
+ *
+ * An investigation opens no pull request, so the `review` its `DONE` used to fold into asked for an
+ * artifact that structurally could not exist — `lane brief` refused at 20 and the lane's only move
+ * left was a park that read as a fault. This arm carries such a `DONE` to a terminal of its own
+ * instead, and reads the prover's answer rather than the shell's word: `SHIPPED-PR` and
+ * `BUILT-NO-PR` map to the same `DONE` event, and only the no-PR arm of `lane prove` sets this.
+ *
+ * Namespaced for {@link PARTIAL_GUARD}'s reason: a bare word falls through to the budget guard,
+ * where a typo compiles, matches nothing and folds the lane down the very arm this diverts it from.
+ */
+export const DIAGNOSIS_GUARD = "done:diagnosis";
+
+const diagnosisGuarded = (arm: unknown): boolean => isRecord(arm) && arm.guard === DIAGNOSIS_GUARD;
+
+/** The three routing spellings, for the refusal below to name — every other guard is the budget. */
+const ROUTING_GUARDS = ["class:<name>", PARTIAL_GUARD, DIAGNOSIS_GUARD] as const;
+
+/**
+ * A guard spelled like a routing one and recognised as none of them.
+ *
+ * The namespace is what makes the closed set enforceable: a bare word is the budget guard by design
+ * and always was, but a colon spelling is a reach for a routing arm, and reading a typo of one as
+ * the budget guard is exactly the silent fallthrough the namespacing exists to prevent — it
+ * compiles, matches nothing, spends a counter and folds the event down the arm being diverted from.
+ * So it is a defect at compile rather than a lane that half-routes.
+ */
+const routingSpelling = (arm: unknown): string | undefined => {
+	if (!isRecord(arm) || typeof arm.guard !== "string" || !arm.guard.includes(":")) return undefined;
+	return arm.guard;
+};
+
+/**
  * Fold the payloads an event carried into the state before any guard reads them — the classes a
  * `class:<name>` arm routes on, and the waits the event grants.
  *
@@ -361,6 +417,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const lapStates = new Set<string>();
 	const waitParks = new Map<string, Set<string>>();
 	const partialStates = new Map<string, Set<string>>();
+	const diagnosisFinals = new Set<string>();
 	for (const [name, node] of Object.entries(states)) {
 		if (isBoardTerminalState(name)) {
 			defects.push(
@@ -430,6 +487,18 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					};
 					continue;
 				}
+				if (diagnosisGuarded(transition[0])) {
+					// Recorded before the cell, and off `states` rather than `finals`, because `finals` is
+					// still being filled as the states are walked — a document declaring the arm above the
+					// state it targets would otherwise leave the terminal unnamed.
+					if (nodeType(states[taken]) === "final") diagnosisFinals.add(taken);
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						const target = m.diagnosis === true ? taken : fallthrough;
+						return [{...c, type: target, was: c.type}, []];
+					};
+					continue;
+				}
 				if (partialGuarded(transition[0])) {
 					const reads = partialStates.get(stateName) ?? new Set<string>();
 					reads.add(msg);
@@ -439,6 +508,13 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 						const target = m.partial === true ? taken : fallthrough;
 						return [{...c, type: target, was: c.type}, []];
 					};
+					continue;
+				}
+				const misspelled = routingSpelling(transition[0]);
+				if (misspelled !== undefined) {
+					defects.push(
+						`task "${taskId}": "${eventName}" is guarded on "${misspelled}", which is namespaced like a routing guard and matches none of them (${ROUTING_GUARDS.join("/")}) — it would compile as the budget guard, match nothing and fold this event down the arm the routing exists to divert it from`,
+					);
 					continue;
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
@@ -600,6 +676,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			lapStates,
 			waitParks,
 			partialStates,
+			diagnosisFinals,
 			staleGrants,
 			extras,
 		},
