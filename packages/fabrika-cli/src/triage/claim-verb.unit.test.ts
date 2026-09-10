@@ -1,5 +1,5 @@
 import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {composeClaimToken, markerBody} from "./claim.ts";
 import {runClaim} from "./claim-verb.ts";
@@ -460,5 +460,72 @@ describe("runClaim — preconditions", () => {
 
 	it("refuses at 1 on a non-issue number", async () => {
 		expect((await run([], {issue: 0})).outcome.code).toBe(1);
+	});
+});
+
+/**
+ * The rule this verb enforces held over the comments it was handed; the comments were wrong.
+ *
+ * The post-write read once returned this lane's zero-second-old marker and not a competitor's
+ * that had been live for three minutes, so the earliest surviving marker looked like this lane's and
+ * `won` was printed for a lane that had lost. The read now reconciles against the count the
+ * issue declares for itself, so the short list is a fact rather than an answer.
+ */
+describe("runClaim — the read the claim resolves over", () => {
+	const declaring = (count: number): HttpReply => ({
+		status: 200,
+		body: JSON.stringify({
+			number: 4312,
+			title: "t",
+			body: "b",
+			state: "open",
+			labels: [],
+			html_url: "https://example.test/issues/4312",
+			comments: count,
+		}),
+	});
+
+	const noDelay = {FABRIKA_COMMENT_SCAN_DELAY_MS: process.env.FABRIKA_COMMENT_SCAN_DELAY_MS};
+
+	beforeEach(() => {
+		process.env.FABRIKA_COMMENT_SCAN_DELAY_MS = "0";
+	});
+
+	afterEach(() => {
+		if (noDelay.FABRIKA_COMMENT_SCAN_DELAY_MS === undefined) {
+			delete process.env.FABRIKA_COMMENT_SCAN_DELAY_MS;
+		} else {
+			process.env.FABRIKA_COMMENT_SCAN_DELAY_MS = noDelay.FABRIKA_COMMENT_SCAN_DELAY_MS;
+		}
+	});
+
+	it("does not answer won off a post-write read that omits a live competitor", async () => {
+		const {outcome} = await run([
+			[once(ISSUE), issue("open")],
+			[once(ISSUE), declaring(1)],
+			[ISSUE, declaring(2)],
+			[POST, posted(5001)],
+			[once(LIST), comments(THEIR_MARKER)],
+			// the stale page the incident resolved over: this lane's brand-new marker, and not theirs
+			[once(LIST), comments(MY_MARKER)],
+			[LIST, comments(THEIR_MARKER, MY_MARKER)],
+			[DELETE, DELETED],
+		]);
+		expect(outcome.stdout).toBe(`lost\t${THEIRS}\n`);
+	});
+
+	it("refuses rather than resolving when the shortfall survives every re-read", async () => {
+		const {outcome} = await run([
+			[once(ISSUE), issue("open")],
+			[once(ISSUE), declaring(1)],
+			[ISSUE, declaring(2)],
+			[POST, posted(5001)],
+			[once(LIST), comments(THEIR_MARKER)],
+			[LIST, comments(MY_MARKER)],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain("received 1 of 2 declared comment(s)");
+		expect(outcome.stderr.join("\n")).toContain('never "won"');
 	});
 });
