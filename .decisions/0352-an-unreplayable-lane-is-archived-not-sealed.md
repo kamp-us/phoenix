@@ -75,3 +75,21 @@ without the `UNBLOCKED` that cap exists to force. That is the guard, not an over
 - `lane migrate`'s unsafe refusal now names `lane archive` as the route for a closed, unreplayable
   lane, in place of "decide each unsafe lane's state by hand".
 - Two exit codes are added to the lane table: `49` the issue is open, `50` the log replays.
+
+## Amendment — 2026-09-10: a generated machine is not UNKNOWN, it is the only machine
+
+[#7947](https://github.com/kamp-us/phoenix/issues/7947). This record's line "a machine no candidate
+can be built for is UNKNOWN at exit `11`" was written wider than the fact under it, and every
+finished epic lane met the wide half: `lane emit` generates a per-epic machine that binds no
+committed template, so `graftContext` answers `Foreign` and no candidate exists — and the verb read
+that as UNKNOWN and refused at `11` on a log its own machine had just folded cleanly.
+
+A `Foreign` answer is a proven fact, not a gap: it says this lane has exactly one machine, and the
+fold that already ran is the whole judgement. So a generated machine that folds its log answers
+`Replays` and is refused at `50` — nothing to move — and one that refuses its log stays
+`Unreplayable` through `current` and stays archivable. UNKNOWN at `11` now covers only a template
+that could not be grafted, a grafted candidate that does not compile, and the reads (lane, template,
+destination, board) that could fail.
+
+Neither gate moves. Both still hold or nothing moves, and no lane's archivability changed — only the
+sentence the operator is handed for a lane that was never archivable.
