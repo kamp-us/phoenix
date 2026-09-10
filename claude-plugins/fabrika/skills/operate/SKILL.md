@@ -782,8 +782,11 @@ route out while its issue was open — repair needs the replay that is broken an
 board closure — so its `laneConcurrencyCap` seat stayed held until somebody deleted the directory by
 hand. Archive it, and the lane re-lanes from the boot gates. The archive retracts the issue's live
 `lane-claim` marker on the way out, so pass `--token <your lane-claim token>` when you are the driver
-holding it; a claim you do not name refuses at `31`, and a dead seat's claim goes through
-`node <fabrika> lane adopt <lane> --session <dead-session> --reason "<why>"` first.
+holding it; a claim you do not name refuses at `31`. A dead seat's claim takes two verbs, not one:
+`node <fabrika> lane adopt <lane> --session <dead-session> --reason "<why>"`, then
+`node <fabrika> lane release <lane> --token <the token adopt printed>`, which is the step that
+deletes the marker — adopt alone mints a successor token beside the standing claim, so an archive run
+after it refuses at `31` again.
 
 **A lane whose own flow never reached a terminal ends through a verb too, and that verb is yours to
 run.** Two stranded shapes. An issue closed `not_planned` or `duplicate` while its lane sits

@@ -26,7 +26,9 @@
  * foreign holder and refuses on a lane that is no longer there. So the marker is retracted here,
  * before the move, and a claim this caller does not name refuses on {@link CLAIM_NOT_MINE} rather
  * than being swept out from under its driver — the guard `lane settle` already holds, one act
- * further on. Retract-then-move is the safe order: a retraction that lands over a move that does not
+ * further on. Ownership is raw token equality against the winning claimant, so a dead seat leaves
+ * through `lane adopt` and then `lane release`: adopt mints a successor token beside the standing
+ * claim, and release is what deletes the marker. Retract-then-move is the safe order: a retraction that lands over a move that does not
  * leaves an unclaimed lane where it was, which the next run archives; the reverse leaves a claim on
  * a lane nothing can release.
  */
@@ -171,7 +173,7 @@ export const runArchive = <R = never>(
 			if (holder !== null && holder.token !== options.token) {
 				return refuse(
 					CLAIM_NOT_MINE,
-					`${VERB}: #${issue} carries the live lane claim ${holder.token} — archiving retracts that claim, and a lane another driver holds is not one to take out from under it. Pass --token ${holder.token} if that driver is you, or clear the seat through \`fabrika lane adopt ${ref.lane} --session ${holder.session} --reason "<why>"\` then re-run. Nothing was moved.`,
+					`${VERB}: #${issue} carries the live lane claim ${holder.token} — archiving retracts that claim, and a lane another driver holds is not one to take out from under it. Pass --token ${holder.token} if that driver is you, or take a dead seat back through succession — \`fabrika lane adopt ${ref.lane} --session ${holder.session} --reason "<why>"\`, then \`fabrika lane release ${ref.lane} --token <the token adopt printed>\`, which deletes the marker — then re-run. Adopt alone does not clear it: it mints a successor token beside the standing claim, so an archive re-run refuses here again. Nothing was moved.`,
 				);
 			}
 			if (holder !== null) {

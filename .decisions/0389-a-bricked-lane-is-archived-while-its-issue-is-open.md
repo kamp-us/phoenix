@@ -68,7 +68,9 @@ retracts the marker itself — every `lane-claim` comment carrying the holder's 
 releasable and does not outlive it.
 
 **A claim the caller does not name is refused, not swept.** `--token` names it, exactly as `lane
-settle` already demands, and a dead seat's claim goes through `lane adopt` first. Sweeping another
+settle` already demands, and it is compared against the winning claimant's token as raw equality, so
+a dead seat's claim goes through `lane adopt` and then `lane release` — adopt mints the successor
+token, release is what deletes the marker. Sweeping another
 driver's marker is the one write the claim protocol must never make
 (`packages/fabrika-cli/src/lane/claim-verb.ts`), and being about to delete a lane does not buy a
 verb that permission. Exit `31` `CLAIM_NOT_MINE`.

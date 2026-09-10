@@ -451,6 +451,7 @@ describe("lane archive", () => {
 		expect(deleted).toEqual([]);
 		expect(fs.written.size).toBe(0);
 		expect(out.stderr.join("\n")).toContain("fabrika lane adopt 6037 --session session-a");
+		expect(out.stderr.join("\n")).toContain("fabrika lane release 6037 --token");
 	});
 
 	it("refuses a retraction that failed, and never moves over the UNKNOWN it leaves", async () => {
