@@ -1694,7 +1694,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build resume-child 9 [--token <token>]
+fabrika build resume-child 9 [--cites <url>] [--token <token>]
 ```
 
 **Inputs**
@@ -1703,6 +1703,7 @@ fabrika build resume-child 9 [--token <token>]
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic child whose standing-`FAIL` repair lane this opens |
 | `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing. Omitting it on a re-run over a held claim is not a shorter spelling of the same run: the claim step mints a second marker, loses the earliest-wins tiebreak to this lane's own prior claim and refuses on `15` |
+| `--cites` | string | no | — | the founder ruling comment a `type:decision` child's repair transcribes, as `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>`. Carried to the claim step unchanged and read by no other step here; `build claim` binds it to this repository and this child and opens its type axis with it. Needed on a first entry only — a `--token` continuation answers off the standing marker, so the citation is not asked for twice |
 
 **Output** — machine. One JSON object:
 
@@ -1718,7 +1719,9 @@ established in sequence, and each step needs what the one before it produced:
 
 1. `build claim <n> --resume` — the repair claim. `--resume` is checked against the child's own
    range-scoped verdicts, so a child holding no standing `FAIL` refuses on `31` here, before any
-   marker is written.
+   marker is written. `--cites` rides here too, and only here: a `type:decision` child otherwise
+   refuses on `30`, which would leave a ruled decision the epic already built and a reviewer already
+   failed with no route through the one entry the skill sanctions.
 2. `build confirm <n> --token <won>` — the claim re-proved, before any mutation.
 3. `build tree --require-clean` — **unarmed**. No lane branch is checked out yet, so there is no lane
    identity to prove; this asserts only that the generic isolated checkout carries no unauthored hunk.
@@ -1734,7 +1737,10 @@ parking a whole epic without changing a file, while reading a `SKILL.md` that st
 order. A documented order is a claim about what an agent will do; this is a claim about what
 the tool does.
 
-**It sequences and derives nothing.** Every step is the same `run*` function the CLI leaf calls, so a
+**It sequences and derives nothing** — `--cites` included. The flag is carried to the claim step and
+judged only there, so a URL naming another repository or another issue is that step's `1`, an
+uncited decision child is still its `30`, and a citation admits no type `build claim` would not have
+admitted itself. Every step is the same `run*` function the CLI leaf calls, so a
 refusal keeps its own exit code, its own words and its own fail-closed reading. This verb adds one
 stderr line naming the step that stopped, and — once a claim has landed — one line spelling out both
 ways forward from a held claim, each with the won token already in it: the `--token` re-run that
@@ -1745,6 +1751,7 @@ branch is re-keyed only once the claim and cleanliness steps have passed.
 
 | Code | Trigger |
 |---|---|
+| `1` | `--cites` is malformed, or names another repository or another issue — `build claim`'s own refusal, at the claim step, before any marker |
 | `7` | the child is proven absent or closed, or no branch in this clone's refs was cut for it |
 | `10` | a composed usage refusal |
 | `11` | a read is UNKNOWN, several prior branches name the child, another worktree still holds the branch, or a composed verb answered outside its documented shape |
@@ -1774,6 +1781,18 @@ $ fabrika build resume-child 9
 {"answer":"resumed","issue":9,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/9-search-index-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":9,"nonce":"c1a4d6f8"}}
 ```
 
+A ruled `type:decision` child, whose repair the type axis refuses without the ruling it transcribes:
+
+```
+$ fabrika build resume-child 9
+build resume-child: stopped at the claim step on exit 30; the steps after it did not run.
+build claim: type: type:decision — the type axis binds a build claim against an issue.
+build claim: type not buildable — this issue carries type:decision, whose deliverable is not a pull request an agent build lane produces; a decision is /adr's lane unless the choice is already recorded on it, in which case pass --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id> naming that founder ruling comment.
+$ fabrika build resume-child 9 --cites https://github.com/<owner>/<repo>/issues/9#issuecomment-5335398768
+build claim: type: type:decision — admitted as transcription of the founder ruling at https://github.com/<owner>/<repo>/issues/9#issuecomment-5335398768; the deliverable is that ruling written down, nothing more.
+{"answer":"resumed","issue":9,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/9-search-index-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":9,"nonce":"c1a4d6f8"}}
+```
+
 ```
 $ fabrika build resume-child 9
 build resume-child: stopped at the clean-tree step on exit 13; the steps after it did not run.
@@ -1784,7 +1803,9 @@ $ echo $?
 ```
 
 The continuation that stop line names, after the tree was cleaned. The claim step answers off the
-standing marker and writes nothing, and the run goes on to the branch it stopped short of:
+standing marker and writes nothing — so a decision lane that stopped mid-sequence continues on this
+same command, with no citation and no second marker — and the run goes on to the branch it stopped
+short of:
 
 ```
 $ fabrika build resume-child 9 --token build:s-9f2e:c1a4d6f8-…

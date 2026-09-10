@@ -400,13 +400,20 @@ const resumeChild = leafCommand(
 				"the repair claim this lane already holds, when it is re-running — the claim step then answers off the standing marker and writes nothing; omit it on a first entry, but NOT on a re-run, where a tokenless claim mints a second marker and refuses on 15",
 			),
 		),
+		cites: Flag.string("cites").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`the founder ruling comment a ${DECISION_TYPE_LABEL} child's repair transcribes, as ${CITATION_GRAMMAR} — forwarded unchanged to the claim step, which is the only step that reads it; needed on a first entry, never on a --token continuation`,
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, token, repo}) {
+	Effect.fn(function* ({number, token, cites, repo}) {
 		yield* emit(
 			yield* runResumeChild({
 				issue: number,
 				token: Option.getOrNull(token),
+				cites: Option.getOrNull(cites),
 				repo: Option.getOrNull(repo),
 				cwd: process.cwd(),
 				env: process.env,
@@ -418,7 +425,7 @@ const resumeChild = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open an epic child's standing-FAIL repair lane in one operation."),
 	Command.withDescription(
-		'Open the repair lane of an epic child carrying a standing FAIL, running the five ordered steps as one operation so their order is not a builder\'s to preserve (see claude-plugins/fabrika/skills/build/contract.md): "build claim <n> --resume" (which refuses on 31 unless a gate holds a standing FAIL over the child), "build confirm", the UNARMED "build tree --require-clean" over the generic checkout, "build branch <n> --resume-lane" — the one mutation, which re-keys the single prior build/<n>-<slug>-<nonce> branch to this claim\'s nonce and checks it out — and finally the ARMED "build tree --issue <n>". Each step is the verb itself, so its refusal keeps its own exit code and its own words, and no step after a refusal runs; the branch is re-keyed only once the claim and cleanliness steps have passed. Prints {"answer":"resumed","issue":n,"token":"…","branch":"build/<n>-<slug>-<nonce>","root":"<absolute>","claim":{"number":n,"nonce":"…"}}. On any stop past the claim it prints the won token and the exact continuation, "fabrika build resume-child <n> --token <token>"; that is the whole way to continue the same lane, and a re-run WITHOUT --token mints a second claim, loses the earliest-wins tiebreak to this lane\'s own prior one and refuses on 15. Exits are the stopping step\'s: 7 (the child is absent or closed, or no local branch was cut for it), 10 (a composed usage refusal), 11 (a read is UNKNOWN, several prior branches exist, or another worktree holds the branch — an operator\'s act to release), 13 (the generic checkout is dirty), 14 (the armed proof reads the wrong lane), 15 (the claim is foreign), 20/21/30/32 (the admission test), 31 (the child holds no standing FAIL, so there is nothing to repair). Example: fabrika build resume-child 7162',
+		`Open the repair lane of an epic child carrying a standing FAIL, running the five ordered steps as one operation so their order is not a builder's to preserve (see claude-plugins/fabrika/skills/build/contract.md): "build claim <n> --resume" (which refuses on 31 unless a gate holds a standing FAIL over the child), "build confirm", the UNARMED "build tree --require-clean" over the generic checkout, "build branch <n> --resume-lane" — the one mutation, which re-keys the single prior build/<n>-<slug>-<nonce> branch to this claim's nonce and checks it out — and finally the ARMED "build tree --issue <n>". Each step is the verb itself, so its refusal keeps its own exit code and its own words, and no step after a refusal runs; the branch is re-keyed only once the claim and cleanliness steps have passed. Prints {"answer":"resumed","issue":n,"token":"…","branch":"build/<n>-<slug>-<nonce>","root":"<absolute>","claim":{"number":n,"nonce":"…"}}. --cites ${CITATION_GRAMMAR} is carried to the claim step unchanged and read by no other step: it opens that step's type axis on a ${DECISION_TYPE_LABEL} child whose choice a founder already recorded on it, so the one type a ruled child can carry is repairable through this entry rather than only by hand. It judges nothing itself — the URL must name this repository and this child, an omitted one on a decision is still 30, and a citation admits no other type. On any stop past the claim it prints the won token and the exact continuation, "fabrika build resume-child <n> --token <token>"; that is the whole way to continue the same lane, it needs no second citation because the claim answers off the standing marker, and a re-run WITHOUT --token mints a second claim, loses the earliest-wins tiebreak to this lane's own prior one and refuses on 15. Exits are the stopping step's: 1 (--cites is malformed, or names another repository or issue), 7 (the child is absent or closed, or no local branch was cut for it), 10 (a composed usage refusal), 11 (a read is UNKNOWN, several prior branches exist, or another worktree holds the branch — an operator's act to release), 13 (the generic checkout is dirty), 14 (the armed proof reads the wrong lane), 15 (the claim is foreign), 20/21/30/32 (the admission test), 31 (the child holds no standing FAIL, so there is nothing to repair). Example: fabrika build resume-child 7162`,
 	),
 );
 
