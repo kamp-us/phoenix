@@ -235,11 +235,22 @@ fabrika ship reconcile $pr_number
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
 queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite and
-mergeable** `mergeable_state` before it arms: `11` if the value stays indefinite, `16` if the read
-definitely says not mergeable. GitHub happily arms a conflicted PR and parks the intent, so neither
-an unknown read nor a proven conflict is green. Neither refusal is a stall and nothing was armed —
-on `11` say mergeability is unknown, on `16` route to repair; the PR needs a rebase before any of
-this runs again. `reconcile`'s terminals are
+mergeable** `mergeable_state` before it arms: `11` if the value stays indefinite, and on a definite
+not-mergeable read it splits by cause. GitHub happily arms a conflicted PR and parks the intent, so
+neither an unknown read nor a proven conflict is green.
+
+**A `mergeable_state: dirty` is handled inside the verb, not routed out of it.** It is a fact about
+the base, not a verdict on the head, so `enqueue` rebases the PR's head branch onto its base,
+publishes it, re-reads mergeability and arms the replayed head — the whole round stays here, so you
+report no failure and the lane spends no retry. **No re-review is owed for that**: a verdict binds to
+the head's content and not to its SHA (`packages/fabrika-cli/src/review/head-content.ts`), so a
+clean replay leaves every PASS bound. The answer's `<sha>` is then the replayed
+head, not your `--sha` — read it off the line rather than from your own operand.
+
+Every other definite not-mergeable read still refuses `16`, and so does a replay that **cannot
+apply**: resolving conflict hunks changes content, which makes it a new head like any other. On `11`
+say mergeability is unknown; on `16` route to repair — the PR needs a rebase a human resolves before
+any of this runs again. Neither refusal is a stall and nothing was armed. `reconcile`'s terminals are
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
 routing is to repair and the *charge* is not: see the ejection row below for which token records it,
@@ -270,7 +281,8 @@ verb's section (`fabrika wire doc-section --heading "ship release" < <skill-base
 
 <!-- anchor: CAPABILITIES --> Capability set: a shell and a repo-scoped token; writes used —
 merge-queue enqueue/disarm, the direct merge on an unqueued base (`ship merge`, and only through
-that verb), PR comments (`note`, thread rationale), thread resolution, the
+that verb), the rebase `ship enqueue` publishes to a PR's own head branch when its base moved under
+it (that verb, that branch, nothing else), PR comments (`note`, thread rationale), thread resolution, the
 close→reopen nudge, one label (`status:awaiting-release`), and one append to the driver's lane
 ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
 push, no local git mutation, no

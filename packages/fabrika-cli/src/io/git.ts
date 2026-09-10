@@ -97,6 +97,29 @@ export const fetchRef = (remote: string, ref: string): Shell<Attempt<void>> =>
 	});
 
 /**
+ * The SHA a remote's ref points at, read from the remote itself — a push's independent witness.
+ *
+ * `git push`'s own report is not evidence: a push that died mid-hook read as sent, and every stage
+ * downstream assumed a branch that was not there. `null` is a proven absence — the remote holds no
+ * such ref — and is never fused with a read that failed.
+ *
+ * It sits here rather than beside one group's push because two groups now publish: the lane verbs
+ * (`../build/git.ts` re-exports it) and `ship`'s rebase (`../ship/rebase.ts`). A second copy of this
+ * parse is a second reading of what counts as a ref row.
+ */
+export const remoteSha = (remote: string, ref: string): Shell<Attempt<string | null>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["ls-remote", remote, `refs/heads/${ref}`]);
+		if (!r.ok) return fail(r.reason);
+		const first = r.stdout.split("\n").find((line) => line.trim() !== "");
+		if (first === undefined) return ok(null);
+		const sha = (first.split(/\s+/)[0] ?? "").trim();
+		return isObjectName(sha)
+			? ok(sha)
+			: fail(`\`git ls-remote\` printed "${first}", not a ref row`);
+	});
+
+/**
  * Resolve `rev` to the full object name of a commit, from the object database.
  *
  * `^{commit}` is what makes the answer a commit rather than whatever object the name happens to
