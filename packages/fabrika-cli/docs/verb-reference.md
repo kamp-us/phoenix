@@ -131,6 +131,9 @@ Captured envelopes and their capture methods live under
 by the consuming repository; the plugin's [hook declarations](../../../claude-plugins/fabrika/hooks.json)
 are a separate installation concern.
 
+Model-selection history is recorded in the
+[retirement decision](../../../.decisions/0374-retire-unused-model-vocabulary.md).
+
 ## The `lane` group
 
 Drive a workflow from its local event log. Each command replays the log; lane state stays local and

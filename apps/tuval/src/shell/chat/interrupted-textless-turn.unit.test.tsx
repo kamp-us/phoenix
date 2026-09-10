@@ -1,9 +1,10 @@
 /**
  * @vitest-environment jsdom
  *
- * #8584's rendered half: a turn the operator cut before the model wrote anything. The stop has no
- * assistant row to name, so the marker comes from the `aborted` row the backend pushes afterwards
- * — and the window has to draw the break and the resend off it like any other cut turn.
+ * #8584's rendered half, re-anchored by #8699: a turn the operator cut before the model wrote
+ * anything. The stop has no assistant row to name, so the marker rides the operator's own prompt and
+ * is there from the press — the window draws the break and the resend off it like any other cut
+ * turn, including on a turn that never draws an assistant row at all.
  *
  * The state is folded by the real machine over events the Pi mapper produced, rather than written
  * by hand: the defect was the window and the core disagreeing about which row was cut, so a
@@ -97,17 +98,39 @@ const abortedTextlessTurn: PiTranscriptItem = {
 	stopReason: "aborted",
 };
 
-/** Prompt sent, Escape pressed, then the backend's report of the turn it stopped. */
-const cutBeforeAnyText = (): AiAgentSessionState => {
+/**
+ * The same turn as Pi reports it when its content was tool calls alone: `complete`, and with not one
+ * token of text — which `emptyReply` (`../../pi/ai-agent/items.ts`) suppresses, so the tail holds no
+ * assistant row for this turn at all and never will.
+ */
+const toolOnlyTurn: PiTranscriptItem = {
+	id: "item-1",
+	role: "assistant",
+	content: [{type: "toolCall", toolCallId: "call-0", toolName: "read", input: {path: "README"}}],
+	model: {provider: "faux", id: "faux-1"},
+	timestamp: 11,
+	status: "complete",
+	stopReason: "toolUse",
+};
+
+/** Prompt sent, Escape pressed, and nothing from the backend yet. */
+const atThePress = (): AiAgentSessionState => {
 	const sent = apply(sessionState({sessionId: SESSION}), {
 		type: "prompt",
 		text: "rewrite the README",
 		key: "k1",
 		timestamp: SENT_AT,
 	});
-	const asked = apply(sent, {type: "interrupt", at: SENT_AT + 500});
-	return pushed(asked, [prompt, abortedTextlessTurn], "idle", 1);
+	return apply(sent, {type: "interrupt", at: SENT_AT + 500});
 };
+
+/** Prompt sent, Escape pressed, then the backend's report of the turn it stopped. */
+const cutBeforeAnyText = (): AiAgentSessionState =>
+	pushed(atThePress(), [prompt, abortedTextlessTurn], "idle", 1);
+
+/** The same, for a turn whose only content was a call — so no reply row ever lands. */
+const cutWithToolCallsOnly = (): AiAgentSessionState =>
+	pushed(atThePress(), [prompt, toolOnlyTurn], "idle", 1);
 
 const openWindow = async (
 	state: AiAgentSessionState,
@@ -123,10 +146,30 @@ const openWindow = async (
 };
 
 describe("a turn cut before the model wrote anything", () => {
+	// #8699: the affordance is the operator's own act rendered back, so it is there on the press and
+	// owes nothing to a row the backend may send later — or never.
+	it("offers the resend from the press, with nothing yet heard from the backend", async () => {
+		await openWindow(atThePress());
+		expect(screen.getByText("interrupted")).toBeTruthy();
+		expect(screen.getByRole("button", {name: /Resend/})).toBeTruthy();
+	});
+
 	it("draws the break and offers the resend", async () => {
 		await openWindow(cutBeforeAnyText());
 		expect(screen.getByText("interrupted")).toBeTruthy();
 		expect(screen.getByRole("button", {name: /Resend/})).toBeTruthy();
+	});
+
+	// The turn that drew no reply row at all, and the case #8747's anchor had no answer for: its only
+	// content was a call, so `emptyReply` suppresses the assistant row and nothing the backend ever
+	// sends will name this turn's reply.
+	it("offers the resend on a turn whose content was tool calls alone", async () => {
+		const process = await openWindow(cutWithToolCallsOnly());
+		expect(screen.getByRole("button", {name: /Resend/})).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", {name: /Resend/}));
+		expect(process.inbox()).toEqual([
+			expect.objectContaining({type: "prompt", text: "rewrite the README"}),
+		]);
 	});
 
 	it("resends the prompt that turn was answering, not some other one", async () => {

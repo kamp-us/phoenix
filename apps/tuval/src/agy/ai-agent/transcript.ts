@@ -8,22 +8,30 @@
  * `conversations/<cid>.db` is SQLite carrying protobuf blobs whose enum mappings are unknown, and
  * nothing here reads it.
  *
- * Three facts about the file drive the shape below, each a census of the two files agy v1.1.27 wrote
- * for one 7,671-line conversation (`transcript-wire.ts` holds the rest of that census):
+ * Four facts about the file drive the shape below (`transcript-wire.ts` holds the rest of the
+ * census behind them):
  *
  * - **A tool call and its result are two lines, not one.** A `MODEL`/`PLANNER_RESPONSE` carries
- *   `tool_calls[]` with `name` and `args` and never an output; the immediately following
- *   `MODEL`/`GENERIC` line carries that output as its `content`. In the census: 3,534 call lines, of
- *   which 3,491 are immediately followed by a `GENERIC`; 0 `GENERIC` lines carry `tool_calls` of
- *   their own; and only 4 `GENERIC` lines follow something that is not a call. So the pair is read
- *   as one `ToolItem` — a reader that emitted the call with an empty result and the output as a
- *   loose row would render every tool row as permanently pending. A call with no `GENERIC` after it
- *   keeps `running`, which is what the `GENERIC`'s own `status: RUNNING` means when the tool is
- *   still in flight.
- * - **`step_index` is very nearly, but not actually, monotonic.** In the census it decreases at 5 of
- *   7,670 steps and repeats a value twice, which a resumed conversation restarting its counter
- *   explains. Ordering is therefore a *stable* sort by `step_index`: the epic's contract is honoured
- *   and the file's own order breaks every tie, so no pair of lines is ever reordered on a guess.
+ *   `tool_calls[]` with `name` and `args` and never an output; a following `MODEL`/`GENERIC` line
+ *   carries that output as its `content`. So the pair is read as one `ToolItem` — a reader that
+ *   emitted the call with an empty result and the output as a loose row would render every tool row
+ *   as permanently pending. A call with no `GENERIC` of its own keeps `running`, which is what the
+ *   `GENERIC`'s own `status: RUNNING` means when the tool is still in flight.
+ * - **A batch of N calls on one `PLANNER_RESPONSE` gets N `GENERIC` lines, one per call, in call
+ *   order** — not one merged outcome for the batch. Measured rather than assumed (#8689): across 95
+ *   transcripts on this machine, 67 of 73 multi-call lines are followed, in `step_index` order, by
+ *   exactly as many `GENERIC` lines as they carry calls, and on all 21 of those whose calls name
+ *   distinct file paths the k-th `GENERIC` echoes the k-th call's path — 21 of 21 identity, no
+ *   permutation. A capture driven against v1.1.28 for this issue reproduces it in the small:
+ *   `fixtures/multi-call-transcript.jsonl`. Attribution is therefore by **position**, and there is
+ *   no batch-level outcome to render.
+ * - **`step_index` orders the file; the file's own order does not.** The results of a batch routinely
+ *   land *before* their own call line on disk — in the v1.1.28 capture the planner line sits at file
+ *   position 2 while its first call's result sits at position 1 — so pairing by file adjacency pairs
+ *   a call with another call's outcome. The fold therefore walks a *stable* sort by `step_index`
+ *   (file position breaks every tie, because `step_index` is not unique and not monotonic: in the
+ *   census it decreases at 5 of 7,670 steps and repeats a value twice, which a resumed conversation
+ *   restarting its counter explains).
  * - **`truncated_fields` names fields clipped out of this line**, and their whole values live in the
  *   counterpart line of `transcript_full.jsonl` — same line count, same `step_index` sequence, and
  *   the full file marks nothing as truncated. Ignoring it would serve a clipped transcript that
@@ -150,30 +158,39 @@ interface Placed {
 	readonly ordinal: number;
 }
 
+/** One call's own `GENERIC` line, read. Absent means agy has written no outcome for that call yet. */
+interface CallOutcome {
+	readonly text: string;
+	readonly status: string;
+	/** Whether *this* outcome's `content` was clipped — a fact about this row and no other (#8877). */
+	readonly clipped: boolean;
+}
+
 /**
- * Every call on one `PLANNER_RESPONSE` line carries the *same* result text, because agy writes one
- * `MODEL`/`GENERIC` line for the whole batch and attributes nothing per call — there is no id on
- * either side to pair them by. So a multi-call line renders N rows repeating one outcome, which
- * over-reports rather than drops. Tracked as #8476 pending a captured multi-call transcript.
+ * One `PLANNER_RESPONSE`'s calls → their rows, each carrying its own outcome.
+ *
+ * agy writes one `GENERIC` per call in call order (see the module note), so the k-th outcome is the
+ * k-th call's and position is the pairing. A call agy has written no outcome for keeps `running`
+ * with an empty result rather than borrowing a neighbour's.
  */
 const toolItemsOf = (
 	id: string,
 	timestamp: number,
 	calls: ReadonlyArray<AgyToolCall>,
-	result: string,
-	status: string,
-	clipped: boolean,
+	outcomes: ReadonlyArray<CallOutcome>,
+	callsClipped: boolean,
 ): ReadonlyArray<TranscriptItem> =>
-	calls.map((call, index) =>
-		toolItem({
+	calls.map((call, index) => {
+		const outcome = outcomes[index];
+		return toolItem({
 			id: `${id}:${index}`,
 			timestamp,
 			name: call.name,
 			input: call.args,
-			result: marked(result, clipped),
-			status: toolStatusOf(status),
-		}),
-	);
+			result: marked(outcome?.text ?? "", callsClipped || (outcome?.clipped ?? false)),
+			status: toolStatusOf(outcome?.status ?? "RUNNING"),
+		});
+	});
 
 /**
  * The unrecognised arm's row. Nothing is dropped and nothing throws: the combination is named so a
@@ -207,7 +224,17 @@ export const transcriptItems = (
 	const push = (source: Located, item: TranscriptItem) =>
 		placed.push({item, stepIndex: source.line.step_index, ordinal: source.ordinal});
 
-	lines.forEach((raw, ordinal) => {
+	// The fold's own order, not the file's: a batch's outcomes routinely sit before their call line on
+	// disk, so adjacency there pairs a call with another call's result. File position breaks the tie.
+	const order = lines
+		.map((line, ordinal) => ({line, ordinal}))
+		.sort((left, right) =>
+			left.line.step_index === right.line.step_index
+				? left.ordinal - right.ordinal
+				: left.line.step_index - right.line.step_index,
+		);
+
+	order.forEach(({ordinal, line: raw}, position) => {
 		if (consumed.has(ordinal)) return;
 		const {line, clipped} = restore(raw, counterpartOf(full, byStep, ordinal, raw));
 		const here: Located = {ordinal, line};
@@ -225,22 +252,23 @@ export const transcriptItems = (
 			if (content.length > 0)
 				push(here, assistantItem(id, timestamp, marked(content, clipped.has("content"))));
 			if (calls === undefined || calls.length === 0) return;
-			// The result line, if agy wrote one: physically the next line, and consumed here so it
-			// never also renders as a row of its own.
-			const next = lines[ordinal + 1];
-			const pairs = next !== undefined && next.source === "MODEL" && next.type === "GENERIC";
-			const outcome = pairs
-				? restore(next, counterpartOf(full, byStep, ordinal + 1, next))
-				: undefined;
-			if (pairs) consumed.add(ordinal + 1);
-			for (const item of toolItemsOf(
-				id,
-				timestamp,
-				calls,
-				outcome?.line.content ?? "",
-				outcome?.line.status ?? "RUNNING",
-				clipped.has("tool_calls") || (outcome?.clipped.has("content") ?? false),
-			))
+			// One `GENERIC` per call, taken in step order and consumed here so none also renders as a
+			// row of its own. The run stops at the first line that is not one: a batch agy is still
+			// working through has written fewer than it will.
+			const outcomes: Array<CallOutcome> = [];
+			for (let step = position + 1; step < order.length && outcomes.length < calls.length; step++) {
+				const entry = order[step];
+				if (entry === undefined) break;
+				if (entry.line.source !== "MODEL" || entry.line.type !== "GENERIC") break;
+				const read = restore(entry.line, counterpartOf(full, byStep, entry.ordinal, entry.line));
+				outcomes.push({
+					text: read.line.content ?? "",
+					status: read.line.status,
+					clipped: read.clipped.has("content"),
+				});
+				consumed.add(entry.ordinal);
+			}
+			for (const item of toolItemsOf(id, timestamp, calls, outcomes, clipped.has("tool_calls")))
 				push(here, item);
 			return;
 		}
@@ -253,8 +281,8 @@ export const transcriptItems = (
 		push(here, systemItem(id, timestamp, marked(unrecognisedText(line), clipped.has("content"))));
 	});
 
-	// Stable by construction: `sort` is not guaranteed stable across every engine for the comparator
-	// alone, so the file position is the explicit second key rather than an assumption about it.
+	// The fold already walks this order, but a batch's rows are all pushed from their call line's
+	// `step_index`, so this is what keeps them together rather than interleaved with their outcomes'.
 	return placed
 		.slice()
 		.sort((left, right) =>

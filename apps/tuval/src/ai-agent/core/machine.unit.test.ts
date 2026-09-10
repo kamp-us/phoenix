@@ -73,13 +73,18 @@ describe("init", () => {
 		// `idle`, not `reconnecting`: a booted process holds no transport, and `idle` is the phase a
 		// `reconnect` Msg is admissible from (`../restore/checkpoint.ts`).
 		expect(state.phase).toBe("idle");
-		expect(state.interrupted).toBe("a1");
+		// The marker rides the prompt, and the reply the restart cut carries the flag its fold label
+		// is read off (#8699).
+		expect(state.interrupted).toBe("u0");
+		const cut = state.transcript.items.at(-1);
+		expect(cut?.kind === "assistant" && cut.interrupted === true).toBe(true);
 		expect(cmds).toEqual([]);
 	});
 
 	// The same restart, over a turn that had written nothing of its own yet — the tail ends on the
-	// operator's prompt. The reply above it belongs to the turn before and is not what got cut.
-	it("marks no cut reply when the restart caught a turn that had written none", () => {
+	// operator's prompt. The reply above it belongs to the turn before, so nothing is badged as cut
+	// short, and the marker still lands: that prompt is what the operator gets back (#8699).
+	it("marks no cut reply when the restart caught a turn that had written none, and still offers it back", () => {
 		const loaded = started({
 			phase: "prompting",
 			transcript: {
@@ -88,7 +93,12 @@ describe("init", () => {
 			},
 		});
 		const [state] = machine.init(loaded, {});
-		expect(state.interrupted).toBeNull();
+		expect(state.interrupted).toBe("u2");
+		expect(
+			state.transcript.items.every(
+				(item) => item.kind !== "assistant" || item.interrupted !== true,
+			),
+		).toBe(true);
 	});
 
 	// The rehydrate branch is the defaulting parse and nothing else, so what the store read back is
@@ -885,14 +895,15 @@ describe("interrupt", () => {
 		const [state, cmds] = apply(running(), {type: "interrupt", at: SENT_AT});
 		expect(state.phase).toBe("prompting");
 		expect(state.interruption).toEqual({requestedAt: SENT_AT});
-		expect(state.interrupted).toBe("a1");
+		expect(state.interrupted).toBe("u0");
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
 	});
 
-	// Turn 1 answered in prose and settled; turn 2's content is tool calls alone, which draws no
-	// assistant row at all (#8216). The stop belongs to turn 2, so turn 1's finished reply — sitting
-	// above the operator's second prompt — must not come back badged as cut short.
-	it("marks nothing when the running turn wrote no reply of its own", () => {
+	// #8699's whole case, and the one the old anchor had no answer for: turn 1 answered in prose and
+	// settled; turn 2's content is tool calls alone, which draws no assistant row at all (#8216).
+	// Reading the reply answered `null` here — turn 1's finished reply must not come back badged as
+	// cut short — and the operator got no Resend. The prompt is there either way.
+	it("marks the prompt of a running turn that wrote no reply of its own", () => {
 		const toolOnly = running({
 			transcript: {
 				items: [userItem("u0"), assistantItem("a1"), userItem("u2"), toolItem("t3")],
@@ -900,9 +911,24 @@ describe("interrupt", () => {
 			},
 		});
 		const [state, cmds] = apply(toolOnly, {type: "interrupt", at: SENT_AT});
-		expect(state.interrupted).toBeNull();
+		expect(state.interrupted).toBe("u2");
 		expect(state.interruption).toEqual({requestedAt: SENT_AT});
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
+	});
+
+	// The same press over a transcript whose tail *is* the prompt: no assistant item exists at all,
+	// and none is needed to get the marker (#8699).
+	it("marks a turn whose tail is the prompt, with no assistant item anywhere", () => {
+		const [state] = apply(
+			running({
+				transcript: {
+					items: [userItem("u0")],
+					omitted: initialState("/x").transcript.omitted,
+				},
+			}),
+			{type: "interrupt", at: SENT_AT},
+		);
+		expect(state.interrupted).toBe("u0");
 	});
 
 	const abortedItem = (id: string, text = ""): AiAgentSessionMsg => ({
@@ -919,36 +945,42 @@ describe("interrupt", () => {
 			},
 		});
 
-	// The other half of the case above: the stop had no row to mark, so the `aborted` row the
-	// backend pushes afterwards is the only thing that ever names the cut turn's reply (#8584).
-	it("takes the marker from the aborted row when the stop had no reply to name", () => {
+	// The marker is the operator's act, already recorded at the press, so the `aborted` row the
+	// backend pushes afterwards has nothing left to supply and may not re-point it. #8747 let it,
+	// which is how a replayed abort could steal the marker (#8753).
+	it("leaves the marker on the prompt when the aborted row lands afterwards", () => {
 		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
 		const [landed] = apply(asked, abortedItem("a3"));
-		expect(landed.interrupted).toBe("a3");
+		expect(landed.interrupted).toBe("u2");
 		// The phase line settles after the item within one revision (`../../pi/ai-agent/items.ts`),
-		// so the marker the row supplied is what the window reads once the turn is over.
+		// so that is still what the window reads once the turn is over.
 		const [over] = apply(landed, phaseEvent("ready"));
-		expect(over.interrupted).toBe("a3");
+		expect(over.interrupted).toBe("u2");
 		expect(over.interruption).toBeNull();
 	});
 
-	it("keeps the reply the stop already named rather than following a later aborted row", () => {
-		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
-		const [landed] = apply(asked, abortedItem("a3"));
-		expect(landed.interrupted).toBe("a1");
-	});
-
-	// A snapshot replaying an old interruption's row, or a session that has since moved on: no
-	// request is outstanding, so nothing here is the answer to one and the resend stays unoffered.
-	it("ignores an aborted row that arrives under no outstanding request", () => {
+	// A snapshot replaying an old interruption's row, or a session that has since moved on: no press
+	// of the operator's stands here, so no marker does either.
+	it("marks nothing for an aborted row that answers no press of the operator's", () => {
 		const [landed] = apply(started(), abortedItem("a3"));
 		expect(landed.interrupted).toBeNull();
-		const [after] = apply(cutBeforeAnyText(), abortedItem("a3"));
-		expect(after.interrupted).toBeNull();
 	});
 
-	// The resend is a fresh send, and the row it belonged to is two turns back by then.
-	it("drops the row-supplied marker when the operator sends again", () => {
+	// #8753's path, closed by construction: a compaction re-emits the whole transcript as item events
+	// under a phase that still reads as `prompting`, so an *older* aborted row folds first. With the
+	// marker on the prompt there is no first-wins race left for it to win.
+	it("lets a replayed older aborted row take nothing, however many fold under the open request", () => {
+		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
+		const replayed = [abortedItem("older-1"), abortedItem("older-2"), abortedItem("a3")].reduce(
+			(carried, msg) => apply(carried, msg)[0],
+			asked,
+		);
+		expect(replayed.interrupted).toBe("u2");
+		expect(replayed.interruption).toEqual({requestedAt: SENT_AT});
+	});
+
+	// The resend is a fresh send, and the turn it belonged to is behind the operator by then.
+	it("drops the marker when the operator sends again", () => {
 		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
 		const [landed] = apply(asked, abortedItem("a3"));
 		const [over] = apply(landed, phaseEvent("ready"));
@@ -1001,7 +1033,7 @@ describe("interrupt", () => {
 		const [confirmed] = apply(asked, phaseEvent("ready"));
 		expect(confirmed.phase).toBe("ready");
 		expect(confirmed.interruption).toBeNull();
-		expect(confirmed.interrupted).toBe("a1");
+		expect(confirmed.interrupted).toBe("u0");
 	});
 
 	it("settles the request on a failed turn too, since that turn has stopped as well", () => {

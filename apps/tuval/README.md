@@ -26,6 +26,7 @@ pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback
 pnpm typecheck
 pnpm proof:board      # the process board in a real browser, on fixture rows — see "Paint proofs"
 pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
+pnpm proof:picker     # the window picker, open and filtering, in a real browser — see "Paint proofs"
 pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
 pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
 ```
@@ -55,6 +56,14 @@ and a stopping shell — nested three deep, so the tile rhythm, the nesting and 
 line wraps are visible somewhere a jsdom test cannot look. It is the page the design gate captures
 as the `tuval-board` surface. The rows are a still life: a board that spawned a process on a timer
 would capture differently on every run, and what the entry animation *does* is the unit tier's.
+
+`pnpm proof:picker` serves `src/shell/picker/proof/`: two empty windows through the real
+`WindowView`, one holding the picker as `<c-b> w` leaves it and one holding the same picker with
+`co` already in its `/` filter, so both sections are narrowed and the match count is on the page.
+It is the page the design gate captures as the `tuval-picker` surface, and it exists because the
+picker is two gestures deep on the real desk while `fabrika ui render` drives a bare route — without
+it the gate cannot reach the state it is asked to judge (#8450). No kernel, no registry, no socket:
+the entries are literals, and what the keys *do* is the unit tier's.
 
 The same server's `/session-refusal` fixture mounts the production read-only transcript with a
 missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep

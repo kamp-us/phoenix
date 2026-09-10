@@ -132,11 +132,15 @@ catalog:
 # sits on beta.92. A named catalog declares one version per consumer set, and that is a claim about
 # the manifests only: it does not reach what those declared packages pull in underneath. One such
 # transitive edge did cross over, and the `overrides` block below is what holds it.
+#
+# `fzf` (fzf-for-js) rides here rather than in the root catalog because apps/tuval is its only
+# consumer — the picker's type-to-filter matcher, founder-ruled on #8450.
 catalogs:
   tuval:
     '@effect/platform-node': 4.0.0-rc.112
     '@effect/vitest': 4.0.0-rc.112
     effect: 4.0.0-rc.112
+    fzf: 0.5.2
 
 # `@effect/platform-node@4.0.0-beta.92` asks for `@effect/platform-node-shared` by a caret range, and
 # a caret over a prerelease picks the highest version present in the workspace. So the moment

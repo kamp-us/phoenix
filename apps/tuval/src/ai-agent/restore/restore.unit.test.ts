@@ -219,7 +219,7 @@ describe("a restored agent session", () => {
 			yield* resume(stores, script(), starts, (restored) =>
 				Effect.sync(() => {
 					assert.strictEqual(restored.sessionId, SESSION_ID);
-					assert.strictEqual(restored.interrupted, "a1");
+					assert.strictEqual(restored.interrupted, "u1");
 					assert.deepStrictEqual(
 						restored.transcript.items.map((item) => item.id),
 						["u1", "a1"],

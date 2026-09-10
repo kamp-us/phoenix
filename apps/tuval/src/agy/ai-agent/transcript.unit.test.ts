@@ -50,6 +50,17 @@ const kinds = (items: ReadonlyArray<TranscriptItem>) => items.map((item) => item
 const texts = (items: ReadonlyArray<TranscriptItem>) =>
 	items.map((item) => (item.kind === "tool" ? item.result.text : item.text));
 
+/** The driven v1.1.28 capture, read through the reader exactly as it sits on disk. */
+const capturedMultiCall = (): ReadonlyArray<TranscriptItem> => {
+	const items = transcriptItems(
+		fixtures.multiCallConversationId,
+		transcriptLines(fixtures.multiCallLines.join("\n")),
+		transcriptLines(fixtures.multiCallFullLines.join("\n")),
+	);
+	expect(isTranscriptItems(items)).toBe(true);
+	return items;
+};
+
 const homes: Array<string> = [];
 
 /** A disposable `$HOME` with agy's own directory shape under it. */
@@ -165,6 +176,101 @@ describe("the agy transcript reader", () => {
 
 	it("spends the result line on its call rather than also rendering it as a row", () => {
 		expect(kinds(itemsOf([fixtures.toolCall, fixtures.toolResult]))).toEqual(["tool"]);
+	});
+
+	/**
+	 * The regression #8689 fixed, over the driven v1.1.28 capture rather than a constructed pair: one
+	 * outcome was copied onto each of N rows, so every row claimed to be the result of that call. agy
+	 * writes one `GENERIC` per call in call order, so each row now carries its own — and the capture
+	 * is the evidence, because its first outcome sits *before* its call line in the file, which is
+	 * what makes the pairing a `step_index` question rather than an adjacency one.
+	 */
+	it("pairs each call of a captured two-call batch with its own outcome, by position", () => {
+		const items = capturedMultiCall();
+		expect(kinds(items)).toEqual(["user", "tool", "tool", "assistant"]);
+		const [first, second] = items.slice(1, 3) as ReadonlyArray<ToolItem>;
+		expect([first?.name, second?.name]).toEqual(["view_file", "view_file"]);
+		expect(first?.input).toMatchObject({AbsolutePath: '"/Users/founder/agyprobe/one.txt"'});
+		expect(second?.input).toMatchObject({AbsolutePath: '"/Users/founder/agyprobe/two.txt"'});
+
+		// The one.txt outcome is the file's *second* line and the two.txt outcome its fourth, while the
+		// call line is its third — so file adjacency would have handed row 0 the two.txt result.
+		expect(first?.result.text).toContain("one.txt");
+		expect(first?.result.text).toContain("1: alpha");
+		expect(first?.result.text).not.toContain("two.txt");
+		expect(second?.result.text).toContain("two.txt");
+		expect(second?.result.text).toContain("1: bir");
+		expect(second?.result.text).not.toContain("one.txt");
+		expect([first?.status, second?.status]).toEqual(["ok", "ok"]);
+	});
+
+	it("spends every outcome of a captured batch on a call rather than also on a loose row", () => {
+		// Four lines in, four items out: nothing is dropped and no `GENERIC` renders twice.
+		expect(capturedMultiCall()).toHaveLength(4);
+		expect(fixtures.multiCallLines).toHaveLength(5);
+	});
+
+	it("keeps a call running when agy has written an outcome for its neighbour and not for it", () => {
+		// The second `GENERIC` cut off, which is what a batch agy is still working through looks like.
+		const items = itemsOf([
+			...fixtures.multiCallLines.slice(0, 3),
+		]) as ReadonlyArray<TranscriptItem>;
+		const [first, second] = items.slice(1, 3) as ReadonlyArray<ToolItem>;
+		expect([first?.status, second?.status]).toEqual(["ok", "running"]);
+		expect(first?.result.text).toContain("1: alpha");
+		expect(second?.result.text).toBe("");
+	});
+
+	it("keeps a one-call batch's outcome on its row, where the attribution is unambiguous", () => {
+		const items = itemsOf([fixtures.toolCall, fixtures.toolResult]);
+		expect(kinds(items)).toEqual(["tool"]);
+		expect(texts(items)[0]).toContain('{"name":"README.md", "isDir":false}');
+	});
+
+	/**
+	 * #8877: the clip of one outcome's `content` was ORed into every row of the batch, so a row whose
+	 * own result arrived whole still read as clipped. Each outcome is its own row's now, so each clip
+	 * lands on the row whose field was cut.
+	 */
+	it("marks only the row whose own outcome content agy clipped", () => {
+		const clippedSecond = JSON.stringify({
+			...(JSON.parse(fixtures.multiCallLines[3] ?? "{}") as Record<string, unknown>),
+			content: "Created At: 2026-09-09T22:21:28-07:00\nFile Path: `file:///Users/founder/agy",
+			truncated_fields: ["content"],
+		});
+		const lines = [...fixtures.multiCallLines];
+		lines[3] = clippedSecond;
+		const [first, second] = itemsOf(lines).slice(1, 3) as ReadonlyArray<ToolItem>;
+		expect(first?.result.text).not.toContain(CLIPPED_MARK);
+		expect(first?.result.text).toContain("1: alpha");
+		expect(second?.result.text).toContain(CLIPPED_MARK);
+	});
+
+	it("keeps the clip mark on a multi-call row whose own tool_calls were cut short", () => {
+		const clippedCalls = JSON.stringify({
+			step_index: 1,
+			source: "MODEL",
+			type: "PLANNER_RESPONSE",
+			status: "DONE",
+			created_at: "2026-09-03T04:17:43Z",
+			tool_calls: [
+				{name: "list_dir", args: {}},
+				{name: "read_file", args: {}},
+			],
+			truncated_fields: ["tool_calls"],
+		});
+		const items = itemsOf([clippedCalls]) as ReadonlyArray<ToolItem>;
+		expect(items.map((item) => item.result.text)).toEqual([CLIPPED_MARK, CLIPPED_MARK]);
+	});
+
+	it("leaves every row of a multi-call line agy has written no outcome for yet running", () => {
+		const items = itemsOf([fixtures.multiCallLines[2] ?? ""]);
+		expect(kinds(items)).toEqual(["tool", "tool"]);
+		expect((items as ReadonlyArray<ToolItem>).map((item) => item.status)).toEqual([
+			"running",
+			"running",
+		]);
+		expect((items as ReadonlyArray<ToolItem>).map((item) => item.result.text)).toEqual(["", ""]);
 	});
 
 	it("renders a GENERIC line that follows no call, so nothing is dropped", () => {

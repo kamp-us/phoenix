@@ -1,0 +1,46 @@
+/*
+ * The two seats the desk would give these windows, and nothing the picker itself paints — that is
+ * `../../ui/tokens.css`. The separation is the point: a rule that belongs to the harness must never
+ * be mistaken for one the product ships.
+ *
+ * `.tuval-surface` is a flex *column* (`../../ui/tokens.css`), so the row direction is re-declared
+ * at equal specificity and wins on order. It wraps back to a column under the narrow viewport the
+ * design gate also captures at, because two picker lists side by side at 390px are two columns of
+ * broken words.
+ */
+
+html,
+body {
+	block-size: 100%;
+	margin: 0;
+	background: var(--page-backdrop);
+}
+
+#proof {
+	block-size: 100%;
+}
+
+.proof-desk {
+	flex-direction: row;
+	flex-wrap: wrap;
+	min-block-size: 0;
+}
+
+.proof-pane {
+	display: flex;
+	flex: 1 1 24rem;
+	min-inline-size: 0;
+	min-block-size: 0;
+	padding: var(--s-3, 12px);
+	border-inline-end: 1px solid var(--border);
+}
+
+.proof-pane:last-child {
+	border-inline-end: 0;
+}
+
+.proof-pane > * {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	min-block-size: 0;
+}
