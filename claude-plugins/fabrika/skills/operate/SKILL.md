@@ -772,10 +772,18 @@ node <fabrika> lane migrate           # migrate the ones the swap provably does 
 
 It writes only where the lane's own event log folds to the same state through both machines. Exit
 `37` names the lanes it would have moved and leaves them alone — that is a human's call, not a
-re-run's. One of those calls is now a verb: a lane whose issue is closed AND whose log will never
-replay leaves both sweeps through `node <fabrika> lane archive <lane>`, which moves its directory to
-the archived root and touches no log — an unreplayable lane is archived, never sealed in place. It
-refuses at `49` on an open issue and `50` on a log that replays, so it can never hide live work.
+re-run's. One of those calls is now a verb: a lane whose log will never replay leaves both sweeps
+through `node <fabrika> lane archive <lane>`, which moves its directory to the archived root and
+touches no log — an unreplayable lane is archived, never sealed in place. It refuses at `50` on a log
+that replays, so it can never hide live work.
+
+**The issue does not have to be closed.** A bricked ledger is the one shape that had no
+route out while its issue was open — repair needs the replay that is broken and `lane settle` needs a
+board closure — so its `laneConcurrencyCap` seat stayed held until somebody deleted the directory by
+hand. Archive it, and the lane re-lanes from the boot gates. The archive retracts the issue's live
+`lane-claim` marker on the way out, so pass `--token <your lane-claim token>` when you are the driver
+holding it; a claim you do not name refuses at `31`, and a dead seat's claim goes through
+`node <fabrika> lane adopt <lane> --session <dead-session> --reason "<why>"` first.
 
 **A lane whose own flow never reached a terminal ends through a verb too, and that verb is yours to
 run.** Two stranded shapes. An issue closed `not_planned` or `duplicate` while its lane sits

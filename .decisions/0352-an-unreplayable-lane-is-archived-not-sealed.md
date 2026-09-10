@@ -93,3 +93,24 @@ destination, board) that could fail.
 
 Neither gate moves. Both still hold or nothing moves, and no lane's archivability changed — only the
 sentence the operator is handed for a lane that was never archivable.
+
+## Amendment — 2026-09-10: the closed-issue gate is retired
+
+[#8922](https://github.com/kamp-us/phoenix/issues/8922), ruled by the founder and recorded as ADR
+[0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md). The closed-issue gate above —
+and this record's line that it "is not negotiable" — is retired. A lane whose log will never replay
+and whose issue is still open had **no** route out: repair needs the replay that is broken, `lane
+settle` needs a board closure, and this verb refused. The seat stayed held and the only remedy left
+was hand-deleting an append-only log.
+
+The replay gate already carries what the closure gate was protecting. A log no machine can fold is a
+lane nobody can drive — every verb refuses it at exit `4` — so an archive can never hide live work
+whatever the issue reads. `lane archive` now turns on the replay judgement alone, and 0389 adds what
+the open-issue arm needs beside it: the issue's live `lane-claim` marker is retracted as part of the
+move, and a claim the caller does not name refuses at `31` rather than being swept.
+
+Two consequences here move with it. Exit `49` is now `lane settle`'s alone, and the chore-lane
+refusal at `19` goes with the gate that produced it — a chore key names no issue, so it had nothing
+to prove and now has nothing to refuse. Nothing else in this record moves: the archive still moves
+the record aside and never rewrites it, the archived root is still a sibling of the swept one, and
+`50` still refuses a replaying log.

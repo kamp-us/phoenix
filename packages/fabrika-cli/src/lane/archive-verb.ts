@@ -9,24 +9,38 @@
  * would let a lane at its retry cap ship with no unblock. So the lane leaves the sweep's scope by
  * moving, and the log is never touched.
  *
- * **Both gates hold or nothing moves**, and that is what keeps a genuinely broken lane visible: a
- * lane whose issue is still open, or whose log replays, is refused with the directory where it was.
- * The archived root is a SIBLING of the swept one, so no sweep learns a skip rule — `reconcile` and
- * `migrate` read the roots they are handed, and the archived one is not among them.
+ * **The unreplayable log is the whole entitlement**, and it is what keeps a genuinely broken lane
+ * visible: a lane whose log replays is refused with the directory where it was. The archived root is
+ * a SIBLING of the swept one, so no sweep learns a skip rule — `reconcile` and `migrate` read the
+ * roots they are handed, and the archived one is not among them.
  *
- * The order of the two gates is a cost decision: the replay judgement is local and free, the closure
- * read is one request, so a replaying lane is refused before the board is ever asked.
+ * **An open issue is no longer a refusal.** A bricked ledger whose issue is still open had
+ * no route at all: repair needs the replay that is broken, `settle` needs a board closure, and the
+ * archive's own closed-issue gate refused it — so the seat stayed held and the lane could only be
+ * deleted by hand, which is the thing an append-only log exists to prevent. The replay judgement
+ * already carries what the closure gate was protecting: a log no machine can fold is a lane nobody
+ * can drive, whatever the issue says.
+ *
+ * **The claim dies with the lane, and this verb kills it.** A lane that leaves the swept root while
+ * its issue carries a live `lane-claim` marker strands that issue — the next `lane claim` reads a
+ * foreign holder and refuses on a lane that is no longer there. So the marker is retracted here,
+ * before the move, and a claim this caller does not name refuses on {@link CLAIM_NOT_MINE} rather
+ * than being swept out from under its driver — the guard `lane settle` already holds, one act
+ * further on. Retract-then-move is the safe order: a retraction that lands over a move that does not
+ * leaves an unclaimed lane where it was, which the next run archives; the reverse leaves a claim on
+ * a lane nothing can release.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type Claimants, readClaimants} from "../build/claim.ts";
 import {exists, readFile, rename} from "../io/fs.ts";
-import {getIssue, resolveRepo} from "../io/issues.ts";
+import {deleteComment, resolveRepo} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {judgeArchive} from "./archive.ts";
+import {LANE_CLAIM} from "./claim.ts";
 import {
 	APPEND_UNKNOWN,
-	ISSUE_LIVE,
-	ISSUE_UNRESOLVED,
+	CLAIM_NOT_MINE,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
 	LOG_REPLAYS,
@@ -37,52 +51,53 @@ import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane archive";
 
-/** Whether the issue this lane drives is closed on the board. A read that failed is `Unknown`. */
-export type ClosureState =
-	| {readonly _tag: "Closed"; readonly reason: string | null}
-	| {readonly _tag: "Open"}
-	| {readonly _tag: "Unknown"; readonly reason: string};
+export type ClaimsReader<R> = (issue: number) => Effect.Effect<Claimants, never, R>;
 
-export type ClosedReader<R> = (issue: number) => Effect.Effect<ClosureState, never, R>;
+/** The retraction of one marker comment. A write that failed is `Failed`, never a silent success. */
+export type Retraction =
+	| {readonly _tag: "Retracted"}
+	| {readonly _tag: "Failed"; readonly reason: string};
 
-/**
- * The board-backed reader: one `getIssue`, and its `state` is the whole answer.
- *
- * A reader the caller passes rather than a seam this verb reaches through on its own, the shape
- * `lane open` and `lane migrate` established — so every refusal above is testable without a network,
- * and an unreadable board is `Unknown`, never an open issue and never a closed one.
- */
-export const closedReader = (
+export type ClaimRetractor<R> = (
+	issue: number,
+	commentId: number,
+) => Effect.Effect<Retraction, never, R>;
+
+/** Both board seams, resolving the repo once between them, in the shape `lane settle` established. */
+export const boardClaimSeams = (
 	repo: string | null,
 	env: Readonly<Record<string, string | undefined>>,
-): ClosedReader<ChildProcessSpawner.ChildProcessSpawner> => {
+): {
+	readonly claims: ClaimsReader<ChildProcessSpawner.ChildProcessSpawner>;
+	readonly retract: ClaimRetractor<ChildProcessSpawner.ChildProcessSpawner>;
+} => {
 	let resolved: string | null = null;
-	return (issue) =>
-		Effect.gen(function* () {
-			if (resolved === null) {
-				const attempt = yield* resolveRepo(repo, env);
-				if (attempt._tag === "Failure") {
-					return {
-						_tag: "Unknown" as const,
-						reason: "no target repo resolves — set CLAUDE_PIPELINE_REPO, or pass --repo owner/name",
-					};
-				}
-				resolved = attempt.value;
-			}
-			const record = yield* getIssue(resolved, issue);
-			if (record._tag !== "Present") {
-				return {
-					_tag: "Unknown" as const,
-					reason:
-						record._tag === "Absent"
-							? `#${issue} is not present on ${resolved}`
-							: `cannot read #${issue}: ${record.reason}`,
-				};
-			}
-			return record.value.state === "closed"
-				? {_tag: "Closed" as const, reason: record.value.stateReason}
-				: {_tag: "Open" as const};
-		});
+	const target = Effect.gen(function* () {
+		if (resolved !== null) return resolved;
+		const attempt = yield* resolveRepo(repo, env);
+		if (attempt._tag === "Failure") return null;
+		resolved = attempt.value;
+		return resolved;
+	});
+	const unresolved =
+		"no target repo resolves — set CLAUDE_PIPELINE_REPO, or pass --repo owner/name";
+	return {
+		claims: (issue) =>
+			Effect.gen(function* () {
+				const name = yield* target;
+				if (name === null) return {_tag: "Unknown" as const, reason: unresolved};
+				return yield* readClaimants(name, issue, LANE_CLAIM);
+			}),
+		retract: (_issue, commentId) =>
+			Effect.gen(function* () {
+				const name = yield* target;
+				if (name === null) return {_tag: "Failed" as const, reason: unresolved};
+				const deleted = yield* deleteComment(name, commentId);
+				return deleted._tag === "Failure"
+					? {_tag: "Failed" as const, reason: deleted.reason}
+					: {_tag: "Retracted" as const};
+			}),
+	};
 };
 
 export interface ArchiveOptions<R = never> {
@@ -91,9 +106,12 @@ export interface ArchiveOptions<R = never> {
 	readonly archivedRoot: string;
 	/** The committed templates this root's lanes may have booted from; the lane's `id` picks. */
 	readonly templatePaths: ReadonlyArray<string>;
-	/** The issue this lane drives, or `null` for a key that names none. */
+	/** The issue this lane drives, or `null` for a key that names none — a chore has no claim thread. */
 	readonly issue: number | null;
-	readonly closed: ClosedReader<R>;
+	/** The lane-claim token, when the driver holding this lane is the one archiving it. */
+	readonly token: string | null;
+	readonly claims: ClaimsReader<R>;
+	readonly retract: ClaimRetractor<R>;
 }
 
 export const runArchive = <R = never>(
@@ -102,12 +120,6 @@ export const runArchive = <R = never>(
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
 		const {ref, issue} = options;
-		if (issue === null) {
-			return refuse(
-				ISSUE_UNRESOLVED,
-				`${VERB}: "${ref.lane}" names no issue, and an archive turns on that issue reading closed — a chore lane can never satisfy it, so there is nothing here to prove. Nothing was moved.`,
-			);
-		}
 
 		const loaded = yield* loadLane(ref);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
@@ -146,18 +158,49 @@ export const runArchive = <R = never>(
 			);
 		}
 
-		const closure = yield* options.closed(issue);
-		if (closure._tag === "Unknown") {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: cannot establish whether #${issue} is closed: ${closure.reason} — refusing to move over UNKNOWN.`,
-			);
-		}
-		if (closure._tag === "Open") {
-			return refuse(
-				ISSUE_LIVE,
-				`${VERB}: #${issue} is open, so this lane is live work — an archived lane is beyond every sweep, and a live one belongs where the sweeps can see it. Drive the lane, or close the issue first. Nothing was moved.`,
-			);
+		const retracted: number[] = [];
+		if (issue !== null) {
+			const claimed = yield* options.claims(issue);
+			if (claimed._tag === "Unknown") {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: cannot establish whether #${issue} carries a live lane claim: ${claimed.reason} — UNKNOWN, never "unclaimed", and nothing was moved.`,
+				);
+			}
+			const holder = claimed.holder;
+			if (holder !== null && holder.token !== options.token) {
+				return refuse(
+					CLAIM_NOT_MINE,
+					`${VERB}: #${issue} carries the live lane claim ${holder.token} — archiving retracts that claim, and a lane another driver holds is not one to take out from under it. Pass --token ${holder.token} if that driver is you, or clear the seat through \`fabrika lane adopt ${ref.lane} --session ${holder.session} --reason "<why>"\` then re-run. Nothing was moved.`,
+				);
+			}
+			if (holder !== null) {
+				// Every marker carrying the holder's token, and the succession that authorized it: an
+				// adopt exists only to make one claim releasable, so it does not outlive the claim.
+				const ids = [
+					...new Set([
+						...claimed.claimants
+							.filter((claimant) => claimant.token === holder.token)
+							.map((claimant) => claimant.commentId),
+						...claimed.adopts
+							.filter((adopt) => adopt.adopted === holder.session)
+							.map((adopt) => adopt.commentId),
+					]),
+				];
+				for (const commentId of ids) {
+					const gone = yield* options.retract(issue, commentId);
+					if (gone._tag === "Failed") {
+						return refuse(
+							APPEND_UNKNOWN,
+							`${VERB}: the retraction of marker comment ${commentId} on #${issue} failed: ${gone.reason} — whether #${issue} still carries a lane claim is UNKNOWN, and nothing was moved.`,
+							retracted.map(
+								(done) => `${VERB}: marker comment ${done} was already retracted by this run.`,
+							),
+						);
+					}
+					retracted.push(commentId);
+				}
+			}
 		}
 
 		const destination = path.join(options.archivedRoot, ref.lane);
@@ -199,9 +242,13 @@ export const runArchive = <R = never>(
 				to: destination,
 				through: judged.through,
 				defects: judged.defects,
+				retracted,
 			}),
 			[
-				`${VERB}: moved ${loaded.dir} to ${destination}; #${issue} is closed${closure.reason === null ? "" : ` (${closure.reason})`} and the log does not replay through the ${judged.through === "current" ? "lane's own machine" : "committed template"}.`,
+				`${VERB}: moved ${loaded.dir} to ${destination}; the log does not replay through the ${judged.through === "current" ? "lane's own machine" : "committed template"}.`,
+				retracted.length === 0
+					? `${VERB}: ${issue === null ? `"${ref.lane}" names no issue, so there was no lane claim to retract` : `#${issue} carried no live lane claim, so there was none to retract`}.`
+					: `${VERB}: retracted the lane claim on #${issue} — marker comment(s) ${retracted.join(", ")}. The issue is claimable again, and \`fabrika lane open ${ref.lane}\` decides whether it re-lanes.`,
 				`${VERB}: read it back with \`fabrika lane history ${ref.lane} --root ${options.archivedRoot}\`.`,
 			],
 		);
