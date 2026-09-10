@@ -8,6 +8,11 @@
  * later phase, which is the whole point. So the rule here binds a narrower set — **the tasks that
  * carry history, plus the ones the lane already landed** — and leaves the rest free to move.
  *
+ * A **deferral** is the one door through that history rule, and it opens only where the caller
+ * names the task it is dropping. Naming it is what turns a silent drop into a recorded plan change:
+ * the amendment carries the name, the bound and the reason on its own line, so the ledger still
+ * accounts for every entry the dropped task recorded. See [`deferral.ts`](deferral.ts).
+ *
  * Nothing here reads disk or the board: two compiled machines and the log go in, one verdict comes
  * out, and the verb writes only on the accepting one.
  */
@@ -27,13 +32,17 @@ export type AmendVerdict =
 			readonly tasks: ReadonlyArray<string>;
 			readonly added: ReadonlyArray<string>;
 			readonly dropped: ReadonlyArray<string>;
+			/** The subset of `dropped` this amendment defers — every one of them named by the caller. */
+			readonly deferred: ReadonlyArray<string>;
 	  }
 	/** The lane's own log already does not replay through the machine it is running. */
 	| {readonly _tag: "Unreplayable"; readonly defects: ReadonlyArray<string>}
 	/** The new topology drops a task the ledger proves landed. */
 	| {readonly _tag: "DropsLanded"; readonly landed: ReadonlyArray<LandedTask>}
 	/** A task carrying history cannot replay to the leaf it stands on. */
-	| {readonly _tag: "Unreachable"; readonly reasons: ReadonlyArray<string>};
+	| {readonly _tag: "Unreachable"; readonly reasons: ReadonlyArray<string>}
+	/** A named deferral does not describe this lane — see {@link judgeAmendment}. */
+	| {readonly _tag: "DeferralRefused"; readonly reasons: ReadonlyArray<string>};
 
 /**
  * Where a region ENDS clean — a final the task reached rather than fell into.
@@ -58,6 +67,7 @@ export const judgeAmendment = (
 	current: CompiledLane,
 	candidate: CompiledLane,
 	entries: ReadonlyArray<LogEntry>,
+	defers: ReadonlyArray<string> = [],
 ): AmendVerdict => {
 	const before = foldLog(current, entries);
 	if (before._tag !== "Folded") return {_tag: "Unreplayable", defects: before.defects};
@@ -74,8 +84,26 @@ export const judgeAmendment = (
 	const historied = new Set(
 		entries.filter((entry) => bareEvent(entry.event) !== AMENDED_EVENT).map((entry) => entry.task),
 	);
+
+	const deferred = new Set(defers);
+	const misnamed = [...deferred].sort().flatMap((task) => {
+		if (current.tasks[task] === undefined) {
+			return [`task "${task}" is deferred and this lane's machine holds no such task`];
+		}
+		if (candidate.tasks[task] !== undefined) {
+			return [`task "${task}" is deferred and the new topology still places it in a phase`];
+		}
+		if (!historied.has(task)) {
+			return [
+				`task "${task}" is deferred and carries no recorded history — the ordinary amendment drops it`,
+			];
+		}
+		return [];
+	});
+	if (misnamed.length > 0) return {_tag: "DeferralRefused", reasons: misnamed};
+
 	const strandedByDrop = [...historied]
-		.filter((task) => candidate.tasks[task] === undefined)
+		.filter((task) => candidate.tasks[task] === undefined && !deferred.has(task))
 		.sort()
 		.map(
 			(task) =>
@@ -83,7 +111,7 @@ export const judgeAmendment = (
 		);
 	if (strandedByDrop.length > 0) return {_tag: "Unreachable", reasons: strandedByDrop};
 
-	const after = foldLog(candidate, entries);
+	const after = foldLog(candidate, entries, defers);
 	if (after._tag !== "Folded") return {_tag: "Unreachable", reasons: after.defects};
 
 	const moved = [...historied].sort().flatMap((task) => {
@@ -103,5 +131,6 @@ export const judgeAmendment = (
 		tasks,
 		added: tasks.filter((task) => !held.has(task)),
 		dropped: [...held].filter((task) => candidate.tasks[task] === undefined).sort(),
+		deferred: [...deferred].sort(),
 	};
 };

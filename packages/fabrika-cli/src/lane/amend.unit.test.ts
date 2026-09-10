@@ -118,3 +118,107 @@ describe("judgeAmendment", () => {
 		expect(verdict._tag).toBe("Unreplayable");
 	});
 });
+
+describe("judgeAmendment with a named deferral", () => {
+	it("admits a historied drop the amendment names, which is otherwise refused", () => {
+		const current = machineOf(ONE_PHASE, [901, 902]);
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 902]);
+		const log = [line("issue_901", "WIP", AT(1)), line("issue_902", "BLOCKED", AT(2))];
+
+		expect(judgeAmendment(current, candidate, log)).toMatchObject({_tag: "Unreachable"});
+		expect(judgeAmendment(current, candidate, log, ["issue_902"])).toMatchObject({
+			_tag: "Amendable",
+			dropped: ["issue_902"],
+			deferred: ["issue_902"],
+		});
+	});
+
+	it("leaves every other historied drop refused — naming one task admits one task", () => {
+		const current = machineOf(bodyOf("- phase 1: #901, #902, #903"), [901, 902, 903]);
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 902, 903]);
+		const log = [line("issue_902", "BLOCKED", AT(1)), line("issue_903", "BLOCKED", AT(2))];
+
+		const verdict = judgeAmendment(current, candidate, log, ["issue_902"]);
+
+		expect(verdict).toMatchObject({_tag: "Unreachable"});
+		expect(verdict._tag === "Unreachable" && verdict.reasons).toEqual([
+			'task "issue_903" carries recorded history and the new topology places it in no phase',
+		]);
+	});
+
+	it("still refuses a deferred task the ledger proves landed — the landing rule reaches first", () => {
+		const current = machineOf(ONE_PHASE, [901, 902]);
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 902]);
+		const log = [
+			line("issue_902", "WIP", AT(1)),
+			line("issue_902", "DONE", AT(2)),
+			line("issue_902", "PASS", AT(3)),
+			line("issue_902", "DONE", AT(4)),
+		];
+
+		expect(judgeAmendment(current, candidate, log, ["issue_902"])).toMatchObject({
+			_tag: "DropsLanded",
+		});
+	});
+
+	it("refuses a deferral naming a task this machine never held", () => {
+		const current = machineOf(ONE_PHASE, [901, 902]);
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 902]);
+
+		const verdict = judgeAmendment(
+			current,
+			candidate,
+			[line("issue_901", "WIP", AT(1))],
+			["issue_999"],
+		);
+
+		expect(verdict).toMatchObject({_tag: "DeferralRefused"});
+		expect(verdict._tag === "DeferralRefused" && verdict.reasons[0]).toContain(
+			"this lane's machine holds no such task",
+		);
+	});
+
+	it("refuses a deferral the new topology still places", () => {
+		const current = machineOf(ONE_PHASE, [901, 902]);
+		const candidate = machineOf(TWO_PHASES, [901, 902]);
+
+		const verdict = judgeAmendment(
+			current,
+			candidate,
+			[line("issue_902", "WIP", AT(1))],
+			["issue_902"],
+		);
+
+		expect(verdict).toMatchObject({_tag: "DeferralRefused"});
+		expect(verdict._tag === "DeferralRefused" && verdict.reasons[0]).toContain(
+			"still places it in a phase",
+		);
+	});
+
+	it("refuses a deferral of a task with no history — the ordinary amendment already drops it", () => {
+		const current = machineOf(ONE_PHASE, [901, 902]);
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 902]);
+
+		const verdict = judgeAmendment(
+			current,
+			candidate,
+			[line("issue_901", "WIP", AT(1))],
+			["issue_902"],
+		);
+
+		expect(verdict).toMatchObject({_tag: "DeferralRefused"});
+		expect(verdict._tag === "DeferralRefused" && verdict.reasons[0]).toContain(
+			"carries no recorded history",
+		);
+	});
+
+	it("keeps every surviving task's leaf where it stood", () => {
+		const current = machineOf(bodyOf("- phase 1: #901, #902"), [901, 902]);
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 902]);
+		const log = [line("issue_901", "WIP", AT(1)), line("issue_902", "BLOCKED", AT(2))];
+
+		const verdict = judgeAmendment(current, candidate, log, ["issue_902"]);
+
+		expect(verdict).toMatchObject({_tag: "Amendable", tasks: ["issue_901", "epic_900"]});
+	});
+});

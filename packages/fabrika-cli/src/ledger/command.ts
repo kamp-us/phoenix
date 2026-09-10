@@ -8,10 +8,11 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * Seven leaves author a plan run. `retopology` and `digest` are the two that read no run directory
- * at all — the descope one repairs is found on epics whose run was long since cleared, and the
- * digest the other prints is the input that repair takes, so sourcing it from `ledger open` would
- * put the staged run back in a route built not to need one.
+ * Seven leaves author a plan run. `retopology`, `digest` and `defer` are the three that read no run
+ * directory at all — each belongs to the descope route, which is found on epics whose run was long
+ * since cleared: `retopology` repairs the block, `digest` prints the input that repair takes, and
+ * `defer` unlinks the child. Sourcing any of them from `ledger open` would put the staged run back
+ * in a route built not to need one.
  *
  * **`--ready-for` is optional at the parser and refused in the verb body.** A parser-required flag's
  * absence is exit `1`, indistinguishable from a typo; an absent audience is a decision nobody made,
@@ -26,6 +27,7 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
+import {runDefer} from "./defer-verb.ts";
 import {runDigest} from "./digest-verb.ts";
 import {runDraft} from "./draft-verb.ts";
 import {runEdges} from "./edges-verb.ts";
@@ -272,6 +274,39 @@ const retopology = leafCommand(
 	),
 );
 
+const defer = leafCommand(
+	"defer",
+	{
+		number: epicArg,
+		child: Flag.integer("child").pipe(
+			Flag.withDescription("the child leaving this epic's plan, and staying open"),
+		),
+		reason: Flag.string("reason").pipe(
+			Flag.withDescription("why the plan changed; posted verbatim as the journal comment"),
+		),
+		token: tokenFlag,
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, child: childNumber, reason, token, repo}) {
+		yield* emit(
+			yield* runDefer({
+				number,
+				child: childNumber,
+				reason,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Take a child out of an epic's plan and leave its issue open."),
+	Command.withDescription(
+		'Take a child out of a running epic\'s plan and leave its issue OPEN as the follow-up: comment, unlink — in that order, so the reason survives a failed unlink — then re-read and prove the child is still open and no longer a sub-issue. This is the board half of an authorized deferral; `fabrika lane amend <epic> --defer <task> --defer-reason "<why>"` is the ledger half, and neither does the other\'s work. It NEVER calls the close endpoint: a superseded child is work the plan abandoned and closes not_planned (`ledger supersede`), a deferred child is work the founder still wants out of THIS epic\'s scope, and closing it would delete the follow-up. It reads no staged plan run, because a descoped epic is found with its run cleared. Prints {"answer":"deferred","epic":n,"child":n,"comment":id,"unlinked":true,"state":"open"}. Exits 5 (the reason carries a machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed, or the child is proven absent or already closed — a deferral keeps an OPEN follow-up and there is none), 8 (a leg was attempted and its outcome could not be proven — the child is UNKNOWN), 9 (the legs landed and the child does not read back open and unlinked), 10 (not a type:epic; --child is not a sub-issue of it; or --reason says nothing), 11 (a precondition read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger defer 8892 --child 8951 --reason "deferred to a follow-up cycle by founder ruling" --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
 const supersede = leafCommand(
 	"supersede",
 	{
@@ -333,6 +368,7 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		topology,
 		write,
 		edges,
+		defer,
 		supersede,
 		retopology,
 		digest,

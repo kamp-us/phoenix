@@ -252,6 +252,21 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 export const childTaskId = (child: number): string => `issue_${child}`;
 
 /**
+ * The child number a task id names, or `null` where the id is not a child's.
+ *
+ * The epic tail's `epic_<n>` and any hand-written id answer `null` rather than a plausible number,
+ * which is what keeps a caller that has to reach the board — `lane amend --defer`, asking whether a
+ * live worker owns the child — from reading an ownership answer about the wrong issue.
+ */
+export const taskIdChild = (task: string): number | null => {
+	const matched = /^issue_(\d+)$/.exec(task);
+	const digits = matched?.[1];
+	if (digits === undefined) return null;
+	const parsed = Number(digits);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+/**
  * One task's seeded context. The lap pair is appended rather than interleaved, so an emission with
  * the axis off is the object it always was — key order included, which is what makes the byte
  * comparison a test can hold.
