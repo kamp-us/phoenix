@@ -480,16 +480,19 @@ The move that discharges both is the `WIP` §3's table records: it is the child 
 of `integrate` back into `review`, and it is a guarded array like the tail's `ship:queued`, so it
 spends a wait rather than a retry and falls into `human:replay-stall` when the waits run out.
 Recording a `DONE` instead lands the child on content nobody read.
-A hunk that is not a plain keep-both is exit `42` with the branch reset and proved back, and it parks
-on `--cause replay-conflict` — resolving content is a judgment no verb makes. A child branch the
-replay cannot move onto its own replayed range is exit `54` with nothing merged — park it on
-`--cause worktree-holds-branch`, whose clearance `recipe unpark` already owns.
+A hunk that is not a plain keep-both is exit `42` with the branch reset and proved back, and it is
+the machinery terminal `REPLAY-COLLIDED` — resolving content is a judgment no verb makes. A child
+branch the replay cannot move onto its own replayed range is exit `54` with nothing merged, and that
+is `SEAT-DIRTY`. Each carries its own cause (`replay-conflict`, `worktree-holds-branch`) with no
+`--cause` typed, and each spends a lap rather than one of the child's repair rounds — where this
+epic's machine was emitted with the lap axis on, and §3's row carries what to record when it was
+not.
 Which event each exit is, is single-homed in
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s `integrate` row and nowhere else —
 read it there rather than from this paragraph. `43`, `44` and the no-replay arm of `42` are the
-`FAIL` that re-enters `build` under the retry budget — the replay arm of `42` is the park above and
-spends none of it, which is why a cross-child collision resolves inside this run instead of at a
-merge queue.
+`FAIL` that re-enters `build` under the retry budget — the replay arm of `42` is the machinery lap
+above and spends none of it, which is why a cross-child collision resolves inside this run instead
+of at a merge queue.
 
 **Between the merge and those checks it reconciles the merged tree's dependencies**, running the
 repo's declared `dependencyReconciler` in the assembly worktree. That step is not housekeeping:
@@ -884,7 +887,8 @@ Two reads stay yours, because no shell can take them:
   reports** — each is a BLOCKED-class outcome, never something to route around, and never a
   retry-in-place: retries belong to the machine (`FAIL` spends one; `human:budget-spent` is its
   answer), and
-  you never re-spawn what the fold has not re-asked for. Record `BLOCKED`.
+  you never re-spawn what the fold has not re-asked for. Record `BLOCKED` — or, for the dead spawn
+  where the task's state holds a `LAP` cell, the `SHELL-DEAD` lap the machinery table below names.
 
 **A dead spawn's residue is yours to clear.** `BLOCKED` records where the lane stands; it
 does not clean up after the shell that died, and what a dead spawn leaves behind is an incident
@@ -919,11 +923,15 @@ this order:
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
 
-**Name that park `spawn-dead`.** A shell its provider killed before it recorded a terminal — a
-session limit, a transport drop, a `network_error` on every completion — is one park class with one
-token, whichever role the shell was playing, so `--cause spawn-dead` rides the `BLOCKED` you
-originate. Its recipe row then clears the park once the two obligations above are discharged: it
-reads that no claim stands on the issue and no working tree holds its lane branch, which is the whole
+**Name that failure `spawn-dead`.** A shell its provider killed before it recorded a terminal — a
+session limit, a transport drop, a `network_error` on every completion — is one class with one
+cause, whichever role the shell was playing. Where the task's state holds a `LAP` cell, `SHELL-DEAD`
+is how it reaches the ledger: a lap carrying that cause, which sends the task back into the stage
+the dead shell was serving rather than parking it — so your next dispatch is the whole clearance and
+no `recipe unpark` is owed. Where no such cell holds it, the record is the pre-lap `BLOCKED --cause
+spawn-dead` you originate, and its recipe row clears the park once the two obligations above are
+discharged: it reads that no claim stands on the issue and no working tree holds its lane branch,
+which is the whole
 of what would refuse the same brief being dispatched again. It never reads whether the provider is
 back — your next dispatch is that test, and a still-down provider re-parks the lane.
 
@@ -1069,6 +1077,61 @@ entered `build` — the artifact the builder's terminal names, read off the issu
 the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
 is the range's own commits — a child opens no PR to prove one against.
 
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
+belong to no shell's vocabulary — `lane report` groups them as `machinery` in
+[`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
+one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
+five map to the machine's `LAP` event, and each names exactly one park cause:
+
+| Token | The observed failure | The cause it carries |
+| --- | --- | --- |
+| `REPLAY-COLLIDED` | a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision owes a judgment about content — `lane integrate` exit `42`'s replay arm | `replay-conflict` |
+| `BASE-DRIFTED` | the PR's head is behind its base and must move before an approval is solicited | `head-behind-base` |
+| `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
+| `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
+| `SHELL-DEAD` | the shell driving this lane's stage was killed by its provider before it recorded a terminal | `spawn-dead` |
+
+Three of the five are yours because no shell observes them — the two `integrate` rows and the dead
+spawn. The other two have a shell in front of them, and where its own terminal already recorded the
+failure you record nothing second: `ship` reports `QUEUE-EJECTED` itself, and reports a base drift
+as `AWAITING-CP-APPROVAL --cause head-behind-base`, which is `BASE-DRIFTED`'s pre-lap form.
+
+**One is recorded *instead of* the stage's own `FAIL`, never beside it.** A `FAIL` is a verdict
+against the work and spends the task's repair budget; a lap says the machinery spent a round and
+spends `laps`, a counter of its own. Recording both charges the ticket for the pipeline's failure
+anyway, which is the whole thing this group exists to stop. The lap arm sends the task back to the
+stage that has to run again — `integrate`'s to `review`, a single-issue lane's `build` to `build` —
+so a lap is another pass, not a park. When the laps run out it parks on `human:machinery-stall`
+instead: a plain state with an `UNBLOCKED` door, not the repair budget's own `human:budget-spent`
+final, because nothing about the artifact was ever wrong.
+
+**Type no `--cause` on one.** `MACHINERY_CAUSES` reads the cause off the token — the third column
+above is that table — so the record lands caused with nothing typed:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token REPLAY-COLLIDED
+```
+
+Passing one still works and is checked against the same closed set, which is how a recorder that
+knows better says so: a replay that parked on `assembly-conflict` rather than `replay-conflict`
+names it. A cause outside the set is exit `35` with the log unappended, as it is on any other token.
+
+**The cell has to be there, and on an epic lane one key decides whether it is.**
+`.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
+machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
+child region's `integrate` and in the tail's `ship` and `ship:queued` — not in `build`, not in
+`review`. A single-issue lane is a different document: it boots from the committed coder template
+([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
+which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
+`review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
+`LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
+pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
+replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a
+`BLOCKED` arm carries no `incrementRetries` in either region of `emit.ts` or in the coder template,
+so it spends no repair round — it spends a person, who has to open the `UNBLOCKED` door before the
+task moves at all. The machine is fixed at emission, so flipping the key moves no lane already on
+disk.
+
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
 is the one home for that mapping — the verb exits fourteen ways and every one is here, so there is
 no code left over for a catch-all to guess at. Exit `0` takes two rows because its two verdicts owe
@@ -1079,17 +1142,19 @@ different next moves, and the verdict line is what tells them apart:
 | `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
 | `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends a wait rather than a retry |
 | `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL` |
-| `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `BLOCKED --cause replay-conflict` |
+| `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
 | `44` | the merged tree failed a code validator | `FAIL` |
-| `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `BLOCKED --cause worktree-holds-branch` |
+| `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
 The bottom row is the whole reason this table is closed. Only `42`'s no-replay arm, `43` and `44`
 judge the child's content, so only those three may spend its retry budget. `42`'s other arm is the
 line to read twice: a replay that hit a hunk it may not resolve is the machinery failing, not the
 child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
-forbids, in the one table a driver routes off. A `41` (no tree holds `epic/<n>`, placed
+forbids, in the one table a driver routes off. That is what `REPLAY-COLLIDED` and `SEAT-DIRTY`
+record instead, and neither is ever recorded beside the `FAIL` it replaces.
+A `41` (no tree holds `epic/<n>`, placed
 with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
 branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat
 already held modified tracked files, so the merge was never attempted — clean the seat and integrate
