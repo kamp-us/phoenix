@@ -1279,8 +1279,8 @@ fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1 [--r
 
 The criterion text arrives on **stdin** — one checkbox row's text, without the leading `- [ ]`.
 
-**The subject is a PR or a range, never both.** An epic child has no pull request mid-run (ADR
-0285), so `--base`/`--tip` name what the round was judged over, exactly as they do for `review post`.
+**The subject is a PR or a range, never both.** An epic child has no pull request mid-run, so
+`--base`/`--tip` name what the round was judged over, exactly as they do for `review post`.
 All four fences run identically on either form; the only thing that differs is what the provenance
 tag names.
 

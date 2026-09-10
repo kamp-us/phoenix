@@ -18,8 +18,8 @@
  * verb is the difference between a fence and a fence description.
  *
  * **The subject is a PR or a commit range, and the fences do not move between them.** An epic child
- * has no pull request mid-run (ADR 0285), so `--base`/`--tip` name what the round was judged over
- * exactly as they do for `review post`; all four fences run on that form unchanged, and the only
+ * has no pull request mid-run, so `--base`/`--tip` name what the round was judged over exactly as
+ * they do for `review post`; all four fences run on that form unchanged, and the only
  * thing that differs is what the provenance tag can name (`./append.ts`).
  */
 import {Effect} from "effect";

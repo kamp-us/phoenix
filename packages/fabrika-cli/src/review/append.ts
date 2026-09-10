@@ -19,7 +19,7 @@ import type {HeadSha} from "../wire/verdict-marker.ts";
 /**
  * What the round was judged over — the half of the provenance tag that is not the round number.
  *
- * An epic child has no pull request mid-run (ADR 0285), so the subject there is the commit range the
+ * An epic child has no pull request mid-run, so the subject there is the commit range the
  * reviewer read, spelled exactly as `range-verdict-marker.ts` spells it so a later reader resolves
  * one range against `lane prove`'s verdicts and this row with the same bytes.
  */

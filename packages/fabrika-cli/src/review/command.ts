@@ -314,7 +314,7 @@ const appendCriterion = leafCommand(
 		base: Flag.string("base").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"with --tip: the range <base>..<tip> the round was judged over, standing in for --pr on an epic child that has no PR (#5935's shape); never combined with --pr",
+				"with --tip: the range <base>..<tip> the round was judged over, standing in for --pr on an epic child that has no PR; never combined with --pr",
 			),
 		),
 		tip: Flag.string("tip").pipe(

@@ -379,8 +379,8 @@ ${ROW}
 	});
 
 	/**
-	 * The no-PR form. An epic child is reviewed over a range and has no pull request until the tail
-	 * (ADR 0285), so the range is the subject the round was judged over and the tag names it.
+	 * The no-PR form. An epic child is reviewed over a range and has no pull request until the tail,
+	 * so the range is the subject the round was judged over and the tag names it.
 	 */
 	describe("over a range, with no PR", () => {
 		const ranged = {pr: null, base: BASE, tip: TIP};
