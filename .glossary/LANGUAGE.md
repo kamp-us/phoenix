@@ -314,14 +314,8 @@ nothing but the word; name which one you mean when the context does not fix it.
 
 ### Diátaxis-lite README shape
 
-The canonical section order every `packages/*/README.md` follows — explanation (*what it is* /
-*why it exists*, citing the forcing ADR) → how-to (runnable recipes) → reference (dry,
-look-it-up, last or linked out) → a short testing tail — with two hard rules: no tutorial at
-package scale (a walkthrough moves to its own linked surface), and scope/non-goals live in the
-explanation half. A small package may satisfy it in three short sections; the order is canonical,
-the length is not. The [`diataxis`](../claude-plugins/fabrika/skills/diataxis/SKILL.md) skill is
-the single-mode classifier over any page. Pinned by
-[package-readme-shape.md](../.patterns/package-readme-shape.md).
+The name for the package README's navigation order. Its section and page-splitting
+rules belong in [package-readme-shape.md](../.patterns/package-readme-shape.md).
 
 ### The three senses of "phoenix"
 
@@ -350,14 +344,6 @@ independently; the product simply comes home to **kamp.us**. Rebirth named in En
 (*phoenix*), completed in Turkish (*anka*), landing on the repo's Turkish-for-brand /
 English-for-technical rule (§3). `anka` is a **framework name**, not user-facing product
 copy, so it lives here in sense (3) rather than as a §3 Turkish-surface brand-noun row.
-
-### Diátaxis-lite README shape
-
-The canonical section order every `packages/*/README.md` follows — explanation (`What it is` /
-`Why it exists`) → how-to → reference tail → testing — scaled down to a three-section minimum
-for small packages. No tutorial at package scale: walkthroughs live on their own linked
-surface. The pattern doc is [`.patterns/package-readme-shape.md`](../.patterns/package-readme-shape.md);
-the `diataxis` skill is the single-mode classifier over any docs page, READMEs included.
 
 ### Milestone
 

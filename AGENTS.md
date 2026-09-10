@@ -1,113 +1,69 @@
 # phoenix
 
-kamp.us, reborn.
+kamp.us, reborn. Each runnable app lives under `apps/`; shared packages live under
+`packages/`; standalone stacks live under `infra/`. Deployed apps own their stack
+and stage. Local apps have no `alchemy.run.ts` and never deploy.
 
-A multi-app repo: one runnable app per directory under `apps/` (ADR 0345). A deployed
-app is a Cloudflare Worker owning its own package + stack + stage (ADR 0057; `web` is
-the only one today); a local app (`tuval`) has no stack and never deploys. React 19 +
-Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder` (ADR 0027). Durable
-Objects authored on alchemy's Effect DO model (ADR 0028).
+## Working rules
 
-## Architecture
+- Use `pnpm`, including `pnpm dlx` instead of `npx`. Commands and formatting are
+  declared in the owning `package.json` and root Biome config.
+- Dependencies use `catalog:` or `workspace:`. Read the owning manifest,
+  [workspace catalogs and overrides](pnpm-workspace.yaml), and resolved lockfile
+  before changing a dependency. A named catalog does not isolate transitive
+  dependencies: preserve parent-scoped overrides and check crossed lockfile edges.
+  Catalog a transitive dependency at the exact version its existing parent uses.
+- Make invalid states unrepresentable. Domain logic belongs in domain objects.
+- Repository tooling uses Node and Effect CLI, with a testable decision core and a
+  thin bin. Existing shell relays tool results; it does not own those decisions.
+- Verify claims about platform and dependency behavior in authoritative source
+  or a real test, and cite the evidence. For Effect, start with upstream
+  [LLMS.md](https://github.com/Effect-TS/effect/blob/main/LLMS.md) and its examples;
+  verify APIs against the consumer's actual pin where main differs. A departure
+  from a documented idiom needs a real platform constraint, not preference.
+- Product decisions lead by default; engineering leads platform and infrastructure
+  choices ([ADR 0078](.decisions/0078-product-driven-decisions-by-default.md)).
+- Product and brand names stay Turkish; technical identifiers and prose are English.
+  Use the relevant definitions in [.glossary/LANGUAGE.md](.glossary/LANGUAGE.md)
+  and [.glossary/TERMS.md](.glossary/TERMS.md) when naming or changing a concept.
+- Comments explain a local invariant or constraint the code cannot express. Keep
+  rationale in decisions and reusable implementation guidance in patterns. Apply
+  [deslop-comments](claude-plugins/fabrika/skills/deslop-comments/SKILL.md) when
+  reviewing comment noise.
+- Follow applicable Fabrika skills when using Fabrika. Discover the current skills
+  through the installed catalog or [skill directories](claude-plugins/fabrika/skills/).
+  File deferred work through [report](claude-plugins/fabrika/skills/report/SKILL.md)
+  when it is found, unless the task explicitly excludes filing.
 
-- **One runnable app per directory.** Each `apps/<app>` is its own pnpm package. A
-  deployed app owns its own `alchemy.run.ts` stack + per-app stage, reusing the
-  account-global state store and the four CI secrets — no second bootstrap (ADR 0057);
-  `apps/web` is the only worker today. A local app carries no `alchemy.run.ts`, and that
-  absence is the marker that it never deploys (ADR 0345); `apps/tuval` is the only one.
-- **`apps/web`** serves both the SPA (via `assets` binding) and the API.
-- The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
-- Frontend is React 19 + Vite, built into `dist/client`.
-- DOs are bindings on the same worker: a single unified `LiveDO` (ADR 0037, on the Effect DO model of ADR 0028) plays both the connection and topic roles to power the fate-live SSE fan-out (ADRs 0023/0025). Add more DOs per feature.
+## Discover the context for the task
 
-```
-phoenix/
-├── apps/                    # one runnable app per directory (ADR 0345); deployed ones own a stack (ADR 0057)
-│   ├── web/                 # @kampus/web — the only worker today
-│   │   ├── worker/          # worker entry + backend code
-│   │   ├── src/             # React frontend
-│   │   └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
-│   └── tuval/               # @kampus/tuval — local app, no stack, never deploys (epic #7496)
-├── packages/                # shared internal packages
-├── infra/                   # standalone stacks: ci-credentials (one-shot CI-token provisioner), depo (internal asset store/CDN — designed, ADR 0144)
-└── pnpm-workspace.yaml
-```
+Read the owning directory's `AGENTS.md` and the nearest working code and tests.
+[.patterns/index.md](.patterns/index.md) is the one task-to-pattern map; read the
+rows relevant to the change, not every linked document. Add or extend a pattern
+only when it meets that index's admission rules.
 
-## Commands
+Verify current behavior in source. Check the governing decision before treating a
+difference between source and guidance as intended design.
 
-```bash
-pnpm install
-cp apps/web/.env.example apps/web/.env   # first run only — local dev env (gitignored)
-pnpm dev          # turbo-driven; two processes: `vite` (SPA/HMR) + `alchemy dev` (worker)
-pnpm dev:web      # just the Vite SPA dev server
-pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, real CF resources)
-pnpm build
-pnpm deploy       # pnpm build && alchemy deploy (use --stage <name> for isolation)
-pnpm typecheck
-pnpm lint         # biome check
-pnpm format       # biome check --write
-```
+| Home | Owns |
+|---|---|
+| [README.md](README.md) | Product introduction and ethos |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Setup, commands and current development state |
+| [design-system-manifest.md](design-system-manifest.md) | Rendered UI design law |
+| [.patterns/](.patterns/index.md) | Current implementation guidance and when to read it |
+| [.glossary/](.glossary/LANGUAGE.md) | Canonical terms and necessary distinctions |
+| [.decisions/](.decisions/) | Decisions, rationale and history |
+| [reports/](reports/) | Dated findings and measurements |
 
-`alchemy dev` auto-loads `apps/web/.env` (it layers a `.env` over `process.env`), so `BETTER_AUTH_SECRET` (a required `Config.redacted`, no default) and `ENVIRONMENT` come from there — copy `.env.example` → `.env` once. Production secrets are Cloudflare `secret_text` bindings set by `alchemy deploy`, never read from `.env`.
+Use resolvable Markdown links. Keep each fact in its owning document and link to it.
 
-Deploy is alchemy-managed (ADR 0026–0031): `alchemy.run.ts` is the stack, there is
-no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker + D1
-+ DOs per stage; CI uses the Cloudflare-hosted state store, local dev uses
-`Alchemy.localState()`. Only the *state store* is local — the resources it binds
-(D1, the DO namespaces) are real Cloudflare resources in your personal dev stage,
-so `alchemy dev` needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your
-environment. There is no offline emulator (ADR
-[0032](.decisions/0032-alchemy-beta45-and-dev-model.md)).
+## Decision discovery
 
-## pnpm over npm
+List `.decisions/`: filenames identify records, and each record's frontmatter gives
+its `id`, `title` and `status`. Read applicable records when changing the choice they
+govern or resolving conflicting guidance. Record new decisions with `/adr`.
 
-- All commands use `pnpm`.
-- Never use `npx ...`; use `pnpm dlx ...`.
-
-## Lineage
-
-- Tech is rebuilt from the `kamp-us/kampus` repo (worker + DO patterns).
-- Products are reborn from the `kamp-us/monorepo` repo (sozluk, pano, kampus).
-- The shape is `kampus`, the products are `monorepo`, collapsed into the `apps/web` worker.
-
-## Conventions
-
-- Biome formatting: tabs, 100 col, no bracket spacing.
-- **Node over Python for scripts/hooks.** Mechanical tooling lives as an Effect CLI package under `packages/` (the `epic-ledger` / `crabbox-manifest` / `leak-guard` idiom — `effect/unstable/cli`, run with `node src/bin.ts`), not an ad-hoc script or a Python hook. A pure, unit-tested core + a thin Effect bin; never a one-off `.py`. The tools fold into one router, `fabrika <group> <verb> …` ([`packages/fabrika-cli/`](packages/fabrika-cli/)); before hand-rolling `gh`/`jq`/`git` glue, reach for an existing verb — `fabrika --help` lists the groups, `fabrika <group> --help` the verbs under one (derived from the registry, never auto-injected). Shell that must exist anyway (a workflow `run:` block, a git hook body) follows the bash-3.2 shape in [`.patterns/skill-script-shell-shape.md`](.patterns/skill-script-shell-shape.md) — `set -uo pipefail` **never** `-e` (errexit plus a cleanup `EXIT` trap launders a `set -u` abort into exit 0, so a guard passes on the path it aborted in) — and per ADR [0228](.decisions/0228-scripts-relay-never-derive.md) such shell may relay a verb's answer, never derive the decision itself. (The sourced-orchestration-script exception that ruling carved out for the v1 `kampus-pipeline` skills retired with that plugin — fabrika skills call `fabrika` verbs directly.)
-- Effect for backend control flow; feature services are isolate-level layers, with the per-request services (`CurrentUser`, `LivePublisher`, `CurrentActor`) provided onto each handler from the validated session (ADRs 0029/0041; `CurrentActor` per ADR 0107 §7). `Auth` is a BetterAuth type alias, not the per-request session carrier — `CurrentUser` (ADR 0042) is.
-- Make invalid states unrepresentable. Domain logic in domain objects.
-- **Comments earn their place or die.** Code must not be buried between comments a reader pattern-matches as boilerplate and skips — a skipped comment is pure noise that rots unread. Not anti-comment: a load-bearing note is the point. But the *why* belongs in `.decisions/`, how-the-code-is-shaped in `.patterns/`; an inline comment is the surface of last resort, for a note with no other home that belongs at this exact line (a local invariant at its enforcement site, a workaround + its forcing constraint, a deliberate-looking-wrong guard, a pragma rationale). Cut separators, name-restaters, and narration of obvious control flow; collapse a docblock that re-derives an ADR's *why* to a pointer (`// See ADR NNNN`). A top-of-file docblock is fine when it states what the module is + the one non-obvious thing — not an essay re-deriving the code. Enforce with the [`deslop-comments` skill](claude-plugins/fabrika/skills/deslop-comments/SKILL.md) (`/skill:deslop-comments` in pi).
-- **Ground falsifiable claims about platform/runtime/dependency behavior in source, not intuition.** Any decision-driving claim about how a platform, runtime, or dependency *behaves* — D1/workerd/CF-isolate semantics, an engine's tokenizer/collation, a binding's resolution, a library's API contract — that an ADR or a diagnosis rests on must be verified against the authoritative source (the dep's source/docs, a spec, or an actual test against the real platform) and cited, never asserted from intuition. (ADR 0040 rested on the unverified "`node:sqlite` is the same engine as D1"; ADR 0082 then had to tear out the four-tier taxonomy it grew into.) The canonical instance: **ground Effect API/design decisions in [`Effect-TS/effect`](https://github.com/Effect-TS/effect) main's `LLMS.md`** (and its `ai-docs/` examples) over intuition — when the documented idiom and a "cleaner" instinct conflict, the documented idiom wins; cite it by section. Effect 4 was prototyped in a separate repo and folded back into `Effect-TS/effect` main, which is now the one live address; phoenix's `4.0.0-beta.92` pin predates the beta-to-rc cut, so where main's API has moved on, read the module source at the pin. Deviations from a grounded source must be justified by a real platform constraint (e.g. CF isolates have no shutdown hook), not preference.
-- **If you rely on a pattern not yet in `.patterns/`, add or extend a doc for it** (per the "When to add a new pattern doc" criteria in [.patterns/index.md](./.patterns/index.md)) — don't leave a load-bearing pattern undocumented.
-- In-repo docs: standard markdown links (`[text](.patterns/index.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
-- Doc surfaces: `README` = project/product front door (what kamp.us is — products + ethos; never carry retired or old-problem context a new reader has no frame for); `DEVELOPMENT.md` = current build/dev state for builders (quickstart, stack, architecture, commands, conventions, the pipeline); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped; `reports/` = dated point-in-time findings/measurements (analysis snapshots — not evergreen, distinct from `.patterns/` code-shape and `.decisions/` why+history); `.glossary/` = the canonical vocabulary (architecture terms + product/brand nouns); [`design-system-manifest.md`](./design-system-manifest.md) = the context-file-for-design — the four-pillars design law (ADR 0162) as an agent-readable manifest `write-code` reads before generating any UI (role-token annotations, component-selection rules, per-pillar prohibitions).
-- **Every `packages/*` workspace package carries a `README.md`** (what it is, why it exists, how to use it) — a package with no README has no entry point for a reader or consumer. Enforced fail-closed in CI by `fabrika guard readme-guard check` (the `readme-guard.yml` job), which scopes to real workspace members (dirs with a `package.json`) so it ignores dead-shell dirs and fails closed on zero scope (ADR 0092).
-- **A mutation over a fate-live fanned entity must publish the `/fate/live` invalidation.** A `Fate.mutation` that writes an entity in a subscribed connection (`Post` / `Comment` / `Definition`) must, after the write, publish through `WorkerLivePublisher` — omitting it silently staleness-breaks every other client's live view (the publisher's error channel is `never`, so nothing forces it; #1893–#1896 all shipped the omission). Every mutation is classified fanned/not in [`apps/web/worker/features/fate-live/fanned-mutations.ts`](apps/web/worker/features/fate-live/fanned-mutations.ts), and `fabrika guard fanout-guard check` (the `fanout-guard.yml` job) fails closed on an unclassified mutation, a fanned mutation whose feature omits the publish, or zero scope (ADR 0155/0092).
-- **`apps/web` user copy lives in the i18n catalog, never in a component.** A Turkish string literal or a run of Turkish JSX text under `apps/web/src` is copy no locale switch can reach — the English reader still sees it. Every user surface reads `t("<surface>.<thing>")` out of `apps/web/src/i18n` (ADR [0347](.decisions/0347-web-copy-behind-i18n-catalog.md); the shape is [`.patterns/i18n-catalog.md`](.patterns/i18n-catalog.md)). Enforced fail-closed in CI by `fabrika guard i18n-guard check` (the `i18n-guard.yml` job), which scans every non-test `apps/web/src/**/*.{ts,tsx}` outside `apps/web/src/i18n/` and `apps/web/src/lab/` and reds on a hit or on zero scope; comments, regex literals and unquoted object keys are not copy and are not judged. The bounded allow-list in [`apps/web/src/i18n/i18n-guard.config.json`](apps/web/src/i18n/i18n-guard.config.json) carries per-file ceilings in two buckets — `exempt` for the permanently-Turkish (a wire enum value, the sözlük alphabet, a lab surface) and `unmigrated` for tracked debt — each entry with a mandatory `why`, never a silent tolerance (ADR 0092; #7536).
-- Decisions are product-driven by default; engineering leads only on platform/infra (the pipeline, fate/DO substrate, infra primitives) — see ADR [0078](.decisions/0078-product-driven-decisions-by-default.md).
-- **Turkish for product/brand, English for technical.** Product/brand names stay Turkish and are never translated in any locale; everything technical is English — URL routes/paths, code identifiers, D1 table/column names, file names. **`apps/web` user-facing copy is Turkish *and* English**, both served from one typed i18n catalog per locale, with Turkish the default — ADR [0347](.decisions/0347-web-copy-behind-i18n-catalog.md) records that ruling, names where the catalog lives, fixes its foundation, and keeps Tuval, Fabrika and Demlik English-only. The canonical vocabulary lives in [`.glossary/LANGUAGE.md`](.glossary/LANGUAGE.md) — read it; the brand-noun list and the architecture terms (module / interface / depth / seam / …) are defined there, not duplicated here.
-- **Every dependency via `catalog:`.** Each dep in any `package.json` is sourced from the pnpm workspace `catalog:` (declared once in `pnpm-workspace.yaml`), never a hardcoded version string — one shared version per dep across the repo. When a dep is also a transitive dep of something already in the tree, catalog it at the EXACT version that parent links (don't introduce a second version). The one sanctioned exception is a named catalog (`catalog:<name>`, declared under `catalogs:` in `pnpm-workspace.yaml`) for a consumer set that must sit on a different pin: `catalogs.tuval` holds apps/tuval's Effect rc while the root catalog holds everyone else's beta. It declares one version per consumer set **in the manifests**, and that is all it does. It does not contain transitive resolution, and `catalog-guard` reads manifest values only, so nothing checks the lockfile. A second pin in the tree can therefore reach a package that only ever declared the first: `catalogs.tuval`'s rc.112 did exactly that, and `@effect/platform-node@4.0.0-beta.92` started resolving its own `@effect/platform-node-shared` to the rc copy on the apps/web deploy path. When you add a named catalog, read the lockfile diff for that leak and hold each crossed edge with a parent-scoped entry under `overrides:` in `pnpm-workspace.yaml` (`'<parent>@<version>><child>': <version>`), written as a literal version because `cleanupUnusedCatalogs` deletes a root catalog entry no `package.json` consumes. Enforced fail-closed in CI by `fabrika guard catalog-guard check` (the `catalog-guard.yml` job), which scans the root and every workspace member `package.json` (`dependencies`/`devDependencies`/`peerDependencies`) and reds on any non-`catalog:`/`workspace:` version or on zero scope; a genuinely unavoidable exception lives in the guard's explicit reasoned allowlist, never a silent tolerance (ADR 0092; #2737). Incident: PR #535 hardcoded `@distilled.cloud/cloudflare` and broke frozen-lockfile CI.
-
-## Decisions
-
-The ADRs live in [`.decisions/`](./.decisions/) — one `NNNN-slug.md` per decision, the *why* in each file's body. There is no committed index (ADR [0126](./.decisions/0126-ambient-adr-discovery.md)) and **no `SessionStart` ADR-map hook** (ADR [0129](./.decisions/0129-adr-discovery-is-the-claude-md-contract.md), dropping 0126's hook as needless indirection): discovery is *this* contract, the same in every context (session, subagent, CI). Discover ADRs by `ls .decisions/` — the `NNNN-slug` filenames are the map — plus each file's frontmatter (`id`/`title`/`status`) for the row. Open the file when you need the why. Record new decisions with `/adr`.
-
-**There is no on-demand `id · title · status` map today.** v1's `decisions-index compact` printed one and was deleted with its package (#6100); fabrika ships no replacement (`adr next` / `adr resolve` / `adr sweep` / `guard decisions-index validate` answer other questions). So `ls` plus frontmatter is the whole discovery contract until one is built — ADR [0305](./.decisions/0305-v1-cli-deletion-retires-three-git-boundary-guards.md) records the retirement and [#6332](https://github.com/kamp-us/phoenix/issues/6332) tracks the replacement. Stated rather than left silent, because ADR 0129 makes *this* section the contract, and a contract naming a command nobody ships sends its reader nowhere.
-
-## Vocabulary
-
-See [.glossary/LANGUAGE.md](./.glossary/LANGUAGE.md) — the canonical architecture vocabulary (module / interface / implementation / depth / seam / adapter / leverage / locality + the deletion test), extended with phoenix's own structural terms (the two test tiers — unit / integration, the fate loader/resolver split, the LiveDO connection/topic roles) and the product/brand nouns. This is the single source for those terms; don't redefine them inline.
-
-## Patterns
-
-See [.patterns/index.md](./.patterns/index.md) — evergreen patterns for writing phoenix backend code (services, errors, testing, layer wiring). Read before adding a new feature or service.
-
-When the docs and `apps/web/worker/` disagree, the source is authoritative — fix the doc.
-
-## Filing follow-up work
-
-The moment you spot work you won't do right now — a bug, a refactor you're not here to make, a design question, an investigation, a missing test, a confusing convention — file it as a GitHub issue with the [`report`](claude-plugins/fabrika/skills/report/SKILL.md) skill, then return to your task. Do this **autonomously and in-the-moment**: don't ask permission, don't propose-first, don't wait until you're "done" (by then the observation is gone). The skill files a type-blind issue tagged `status:needs-triage` and nothing else — classifying and prioritizing is triage's job, not yours. This is the only sanctioned way observations leave a session; a follow-up that lives only in the conversation is a follow-up that dies there.
-
-## Sözlük seed
-
-There is no seeding mechanism in the worker, and cold-start content seeding is a founder-declared v1 non-goal: the first cohort is the two founders writing as users, and new yazars arrive by vouch (kefil) + moderation — no imported/seeded corpus is planned. **Security guard (load-bearing):** no runtime seeder route may be rebuilt on the public worker — the deleted `ENVIRONMENT`-gated `/api/admin/*` seeder routes + the `import-sozluk`/`import-pano` scripts were a fail-open security hole.
+There is no committed ADR index, startup map hook, or `fabrika` compact-map command.
+Filenames plus frontmatter are the discovery contract
+([ADR 0129](.decisions/0129-adr-discovery-is-the-claude-md-contract.md), amended by
+[ADR 0305](.decisions/0305-v1-cli-deletion-retires-three-git-boundary-guards.md)).

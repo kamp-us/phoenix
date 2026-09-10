@@ -1,5 +1,10 @@
 # Testing Effect code
 
+**Scope: `apps/web`.** Its integration tier uses real remote D1. Tuval's integration
+project exercises real local sessions and sockets, with no D1 or cloud credentials.
+Use the owning app's Vitest projects; the shared tier vocabulary is in
+[LANGUAGE.md](../.glossary/LANGUAGE.md#the-two-test-tiers-unit--integration-and-seam-graduation).
+
 ## Two tiers — `unit` and `integration` ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md))
 
 Two tiers, no middle, **no faked engine**. The split is whether a test needs a database at all:
@@ -7,7 +12,7 @@ Two tiers, no middle, **no faked engine**. The split is whether a test needs a d
 | Tier | What it tests | Backed by | Examples |
 |---|---|---|---|
 | **`unit`** | Pure logic and Effect control flow — **no database, no SQL engine, no I/O**. The unit under test sits on a seam whose lower layer is substituted directly (the `Database` / `Drizzle` seam is already mockable — a `Layer.succeed(Drizzle, …)` with a recording or throwing `run`). | nothing — the seam below is substituted (`Layer.succeed(Drizzle, …)`) | `keyset.unit.test.ts`, `pasaport/errors.unit.test.ts`, `env.unit.test.ts`, `Vote.unit.test.ts`, `Drizzle.unit.test.ts`, `live-publisher.unit.test.ts`, `queries.unit.test.ts` |
-| **`integration`** | Real behavior against **real remote Cloudflare D1**, the deployed worker, the DOs, and the fate seam — black-box over HTTP | **real remote D1** + the deployed workerd, via alchemy `Test.make` (per-file isolated stage) | the suites under `tests/integration/` |
+| **`integration`** | Real behavior against **real remote Cloudflare D1**, the deployed worker, the DOs, and the fate seam — black-box over HTTP | **real remote D1** + the deployed worker; a run-scoped shared stage by default, dedicated stages where assertions require isolation | the suites under `tests/integration/` |
 
 **`unit` runs offline** in the `unit` Vitest project (default node pool, no workerd, no database). **`integration`** is the separate `integration` project — black-box HTTP against an alchemy-deployed worker, authored over the harness in [alchemy-test-harness.md](./alchemy-test-harness.md). No miniflare, no `@cloudflare/vitest-pool-workers`, no `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`. **If you're writing an integration test, stop reading here and go to that doc.**
 
@@ -16,11 +21,6 @@ Two tiers, no middle, **no faked engine**. The split is whether a test needs a d
 The litmus for tier placement (ADR 0082): **"Could this be wrong even if the database behaved perfectly?"** — yes (normalization, clamping, envelope shaping, pagination/keyset *decisions*, auth gates, cursor-miss branches, topic-key routing) → `unit`; only-wrong-if-the-real-D1-differs (FTS5 MATCH/bm25, collation/NULL/date tiebreaks in keyset *execution*, batch atomicity, `meta.changes` idempotency, the better-auth session round-trip) → `integration`. **No domain decision welded to SQL execution:** cursor resolution is a *port* (a thin DB read), but the keyset / cursor-miss *decision* and the page envelope are *pure* and unit-testable.
 
 Reach for `unit` first — only push to `integration` what the in-process algebra genuinely can't reach faithfully.
-
-**This page is `apps/web`'s.** `apps/tuval` also declares an `integration` project and it is a
-different fidelity — a real Pi session over a real loopback socket, no D1 and no credentials. The
-term is defined for both apps in [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md); nothing above
-applies to Tuval.
 
 ## The `*.unit.test.ts` naming convention
 
@@ -97,7 +97,7 @@ that constructor names the plain-member one instead of leaving it inline. Consum
 
 `unit` tests carry no per-test database to isolate, so there is no shared-handle lifecycle to manage: each test provides its own `Layer.succeed(Drizzle, …)` double inline. Module-scope a double that doesn't vary between tests; build it inside the test body when the scripted results differ per case.
 
-**`it.layer` builds the layer once per `describe` block** — fine for a stable stub, but if a test ever needed a fresh stateful resource per case, `it.layer` would share one across the block. At the `integration` tier, isolation is the per-file `Test.make` stage, not anything in this file — see [alchemy-test-harness.md](./alchemy-test-harness.md).
+**`it.layer` builds the layer once per `describe` block** — fine for a stable stub, but if a test ever needed a fresh stateful resource per case, `it.layer` would share one across the block. Integration files normally use `sharedStack()` with namespaced data; [pano-saved-posts.test.ts](../apps/web/tests/integration/pano-saved-posts.test.ts) is a working example. The shared-stage rules and the criteria for a dedicated stage belong in [alchemy-test-harness.md](./alchemy-test-harness.md).
 
 ## `@effect/vitest` and `it.effect`
 
@@ -202,11 +202,15 @@ The full service record is required — `Layer.succeed` is identity on the Tag's
 
 ## Testing the `Drizzle` service (infrastructure)
 
-`run` and `batch` (the bound methods on the `Drizzle` service value) are the trust boundary. Test them in isolation against a fake/in-memory drizzle setup. See the [feature-services.md](./feature-services.md#the-drizzle-service) testing-scope notes — scope B (smoke + semantics + composition + type inference + error propagation), ~10-15 tests.
+[`Drizzle.unit.test.ts`](../apps/web/worker/db/Drizzle.unit.test.ts) exercises the
+production `makeDrizzleAccess` with a sentinel `DrizzleDb` and a recording or rejecting
+`batch` double. It checks callback forwarding, successful values, tuple shape, type
+inference and rejection translation. No SQL engine is constructed.
 
-Tests build a `Drizzle` layer over a test-supplied `db` via the production factories (`makeDrizzleAccess` / `makeDrizzleLayer` in `worker/db/Drizzle.ts`) — the test layer is exactly the production wiring with a fake `DrizzleDb`, so the `run` / `batch` bodies under test are the ones that ship.
-
-Canonical implementation: `apps/web/worker/db/Drizzle.unit.test.ts`.
+These tests prove the wrapper's behavior, not D1 execution or batch atomicity. Real-D1
+claims need a reachable integration test through the [HTTP harness](./alchemy-test-harness.md).
+When no production operation can exercise a database property, state the coverage gap;
+do not add a public fault-injection operation or claim a unit double proves it.
 
 ## Helpers in test files
 
