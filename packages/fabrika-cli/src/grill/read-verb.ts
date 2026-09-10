@@ -1,6 +1,6 @@
 /**
  * `grill read` — the parser: per-question state, ACL-resolved, digest-checked, plus the frontier
- * token and every disregarded marker.
+ * token, every disregarded marker and the total audit-context read. Research never supplies rulings.
  *
  * <!-- anchor: READ-NEVER-REFUSES-ON-CONTENT --> **This verb never refuses on marker content.** A
  * malformed marker, an unauthorized author, or a digest binding no round are all **data** —
@@ -27,6 +27,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CommentRecord, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import * as auditContext from "../wire/audit-context.ts";
 import {read as readCameFrom, ticketOf} from "../wire/came-from.ts";
 import type {MarkerTime, QuestionId, RoundDigest} from "../wire/grill-marker.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -287,6 +288,7 @@ export const runRead = (
 		return answer(
 			JSON.stringify({
 				session,
+				auditContext: auditContext.read(found.body),
 				ticket,
 				frontier: frontierOf(questions),
 				questions,

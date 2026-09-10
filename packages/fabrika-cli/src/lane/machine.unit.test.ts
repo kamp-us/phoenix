@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {classifyPark, isPark} from "../recipe/parks.ts";
+import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	choreWorkflow,
@@ -18,11 +19,12 @@ import {
 	LANDED_EVENT,
 	LANDED_STATE,
 	type LaneMsg,
+	MACHINERY_EVENT,
 	OPERATOR_EVENTS,
 	type TaskState,
 	topology,
 } from "./machine.ts";
-import {causeForEvent, eventForToken} from "./report.ts";
+import {causeForEvent, eventForToken, routeForCause} from "./report.ts";
 
 const compiled = (workflow: unknown) => {
 	const result = compile(workflow);
@@ -128,23 +130,25 @@ const cellTable = (lane: CompiledLane, taskId: string): string => {
 	for (const [state, cells] of Object.entries(update)) {
 		for (const event of Object.keys(cells)) {
 			for (const classes of [[] as ReadonlyArray<string>, ["ui"]]) {
-				for (const retries of [0, 2]) {
-					// One "spent" axis drives both counters, so the 2/2 rows pin the fallthrough of a
-					// FAIL arm and of a wait arm alike without doubling the table again.
+				for (const retries of [0, RETRY_BUDGET]) {
+					// One "spent" axis drives all three counters, so the spent rows pin the fallthrough of a
+					// FAIL arm, a wait arm and a lap arm alike without tripling the table.
 					const from: TaskState = {
 						type: state,
 						retries,
-						maxRetries: 2,
+						maxRetries: RETRY_BUDGET,
 						cleared: [],
 						classes: [],
 						waits: retries === 0 ? 0 : WAIT_BUDGET,
 						maxWaits: WAIT_BUDGET,
+						laps: retries === 0 ? 0 : MACHINERY_LAP_BUDGET,
+						maxLaps: MACHINERY_LAP_BUDGET,
 						was: "review",
 					};
 					const [next] = defined(cells[event])(from, {type: event, classes});
 					const carried = classes.length === 0 ? "-" : classes.join(",");
 					rows.push(
-						`${state}\t${event}\t${carried}\t${retries}/2\t-> ${next.type}\t${next.retries}/2`,
+						`${state}\t${event}\t${carried}\t${retries}/${RETRY_BUDGET}\t-> ${next.type}\t${next.retries}/${RETRY_BUDGET}\t${next.laps}/${MACHINERY_LAP_BUDGET}`,
 					);
 				}
 			}
@@ -183,22 +187,28 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(lane.tasks.issue).initial).toEqual({
 			type: "queued",
 			retries: 0,
-			maxRetries: 2,
+			maxRetries: RETRY_BUDGET,
 			cleared: [],
 			classes: [],
 			waits: 0,
 			maxWaits: WAIT_BUDGET,
+			laps: 0,
+			maxLaps: MACHINERY_LAP_BUDGET,
 		});
 		// `cancelled` is the compiler's own final on every task, so it sits beside the document's two
 		// and in neither of the two derived sets: a cancellation did not trip, and it has no door out.
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual([
 			CANCELLED_STATE,
 			LANDED_STATE,
-			"frozen",
+			"human:budget-spent",
 			"shipped",
 		]);
-		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
-		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
+		// The spent-budget leaf is a final that carries a door — in `errorFinals` so the phase folds
+		// and the lane trips loud, and in `openFinals` so the door stays walkable. Renaming it out of
+		// `frozen` changed which of those sets it is in not at all; what changed is that `isPark`
+		// matches a `human:*` leaf, so a recipe can see the park it always was.
+		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["human:budget-spent"]);
+		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["human:budget-spent"]);
 		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual([
 			"review",
 			"review:ui",
@@ -221,7 +231,7 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.task_a).guardedStates]).toEqual(["checking"]);
 	});
 
-	it("leaves every final an end but `frozen`, though all of them take the injected cells", () => {
+	it("leaves every final an end but the spent-budget park, though all take the injected cells", () => {
 		const summary = topology(compiled(coderWorkflow()));
 
 		// Both injected cells are on `shipped` too, and neither must make it a park: an open final is
@@ -236,7 +246,9 @@ describe("the compiler — structural recognition", () => {
 		// movement that did not happen.
 		expect(defined(summary.tasks.issue).states[CANCELLED_STATE]).toEqual([CLEARED_EVENT]);
 		expect(defined(summary.tasks.issue).states[LANDED_STATE]).toEqual([CLEARED_EVENT]);
-		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual(["frozen"]);
+		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual([
+			"human:budget-spent",
+		]);
 	});
 
 	it("reads a guarded array as retry-or-fallthrough by shape, never by guard name", () => {
@@ -273,12 +285,14 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(summary.tasks.issue).states.review).toEqual([
 			"PASS",
 			"BLOCKED",
+			MACHINERY_EVENT,
 			"FAIL",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
 			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states.ship).toEqual([
+			MACHINERY_EVENT,
 			"DONE",
 			"WIP",
 			"BLOCKED",
@@ -288,6 +302,7 @@ describe("the compiler — structural recognition", () => {
 			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states["ship:queued"]).toEqual([
+			MACHINERY_EVENT,
 			"DONE",
 			"BLOCKED",
 			"WIP",
@@ -301,8 +316,9 @@ describe("the compiler — structural recognition", () => {
 			CANCELLED_EVENT,
 			LANDED_EVENT,
 		]);
-		// `frozen` is a final that carries a door: a park the lane trips on, not an end.
-		expect(defined(summary.tasks.issue).states.frozen).toEqual([
+		// The spent-budget fallthrough is a final that carries a door: a park the lane trips on, not an
+		// end — and the lane sits there until its driver acts.
+		expect(defined(summary.tasks.issue).states["human:budget-spent"]).toEqual([
 			"UNBLOCKED",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
@@ -311,27 +327,21 @@ describe("the compiler — structural recognition", () => {
 		expect(summary.trigger).toBeUndefined();
 	});
 
-	it("repairs on a FAIL at ship, and freezes once the retries are spent", () => {
+	it("repairs on a FAIL at ship, and parks once the retries are spent", () => {
 		const lane = compiled(coderWorkflow());
 		// Everything that still reaches ISSUE.FAIL at `ship` names repair — `ROUTED-REPAIR` and
 		// `EJECTED` — because the shipper's other refusals map to BLOCKED. `review` owns no verb that
 		// moves a branch, so routing there re-verdicted an unchanged head and spent a retry per lap
 		// — so this template routes a ship FAIL to repair rather than back to review.
 		const roundTrip = ["FAIL", "DONE", "PASS"];
+		const repairs = Array.from({length: RETRY_BUDGET}, () => roundTrip).flat();
 
-		expect(
-			leaves(lane, "issue", ["WIP", "DONE", "PASS", ...roundTrip, ...roundTrip, "FAIL"]),
-		).toEqual([
+		expect(leaves(lane, "issue", ["WIP", "DONE", "PASS", ...repairs, "FAIL"])).toEqual([
 			"build",
 			"review",
 			"ship",
-			"build",
-			"review",
-			"ship",
-			"build",
-			"review",
-			"ship",
-			"frozen",
+			...Array.from({length: RETRY_BUDGET}, () => ["build", "review", "ship"]).flat(),
+			"human:budget-spent",
 		]);
 	});
 
@@ -379,11 +389,13 @@ describe("the compiler — structural recognition", () => {
 			type: "review:ui",
 			was: "review",
 			retries: 0,
-			maxRetries: 2,
+			maxRetries: RETRY_BUDGET,
 			cleared: [],
 			classes: ["ui"],
 			waits: 0,
 			maxWaits: WAIT_BUDGET,
+			laps: 0,
+			maxLaps: MACHINERY_LAP_BUDGET,
 		});
 	});
 
@@ -401,12 +413,14 @@ describe("the compiler — structural recognition", () => {
 			classes: [],
 			waits: 0,
 			maxWaits: WAIT_BUDGET,
+			laps: 0,
+			maxLaps: MACHINERY_LAP_BUDGET,
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
 	});
 
-	it("holds the chore template to the same six events as every other lane", () => {
+	it("holds the chore template to the same operator events as every other lane", () => {
 		const summary = topology(compiled(choreWorkflow()));
 		const listened = new Set(Object.values(defined(summary.tasks.park_sweep).states).flat());
 		// Both injected cells are the compiler's on every lane, so neither is an event this document
@@ -447,7 +461,7 @@ describe("the compiler — structural recognition", () => {
 });
 
 describe("the compiler — refusals", () => {
-	it("refuses an event outside the operator's six, naming them", () => {
+	it("refuses an event outside the operator's set, naming them", () => {
 		const workflow = twoPhaseWorkflow();
 		stateNode(workflow, "task_a", "doing").on["TASK_A.MERGE"] = "checking";
 
@@ -692,12 +706,30 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 		});
 	});
 
-	it("freezes at `ship` once the repair budget is spent, leaving the frozen arm as it was", () => {
+	// The exhaustion the raised cap is only half of: the other half is where it lands. `frozen` is no
+	// park to `isPark`, so `recipe unpark` answered `NotParked` and the one door left was
+	// `build clear` — PR-keyed, and an epic child opens no PR. The leaf is a park now, and its
+	// structural cause routes it to the driver.
+	it("parks at `ship` on a driver-routed leaf once the repair budget is spent", () => {
 		const lane = compiled(coderWorkflow());
-		const spent = [...toShip, "FAIL", "DONE", "PASS", "FAIL", "DONE", "PASS", "FAIL"];
+		const spent = [
+			...toShip,
+			...Array.from({length: RETRY_BUDGET}, () => ["FAIL", "DONE", "PASS"]).flat(),
+			"FAIL",
+		];
 
-		expect(defined(leaves(lane, "issue", spent).at(-1))).toBe("frozen");
-		expect(budgets(lane, "issue", spent)).toMatchObject({type: "frozen", retries: 2});
+		const leaf = defined(leaves(lane, "issue", spent).at(-1));
+		expect(leaf).toBe("human:budget-spent");
+		expect(budgets(lane, "issue", spent)).toMatchObject({
+			type: "human:budget-spent",
+			retries: RETRY_BUDGET,
+		});
+		expect(isPark(leaf)).toBe(true);
+		expect(classifyPark(leaf, null)).toMatchObject({
+			_tag: "Novel",
+			cause: "repair-budget-spent",
+		});
+		expect(routeForCause("repair-budget-spent")).toBe("driver");
 	});
 
 	it("maps the drift stop's terminal to BLOCKED and takes its cause", () => {
@@ -705,7 +737,7 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
 
 		expect(resolved.event).toBe("BLOCKED");
-		expect(causeForEvent("head-behind-base", resolved.event)).toEqual({
+		expect(causeForEvent("head-behind-base", resolved.event, false)).toEqual({
 			_tag: "Caused",
 			cause: "head-behind-base",
 		});

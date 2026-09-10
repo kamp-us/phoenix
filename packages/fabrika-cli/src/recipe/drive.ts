@@ -1,6 +1,6 @@
 /**
  * The chore drive's two closed tables: which recipe verb a chore state applies, and which one of the
- * machine's six events a run's exit records.
+ * machine's operator events a run's exit records.
  *
  * This is `relay.ts`'s sibling one level up. `relay.ts` re-seats another *verb's* exit on this
  * group's table; this module re-seats this group's exit on the *machine's* event vocabulary — the
@@ -24,6 +24,7 @@ import {
 	PARK_HOLDS,
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
+	RATIONALE_ABSENT,
 	READBACK_MISMATCH,
 	RERUN_UNKNOWN,
 	TARGET_ABSENT,
@@ -126,6 +127,10 @@ const UNPARK_EXITS: Readonly<Record<number, Disposition>> = {
 	[PARK_NOVEL]: disposition(
 		"BLOCKED",
 		"the park's cause is outside the recipe table and nothing was written — the machine routes it to a human",
+	),
+	[RATIONALE_ABSENT]: disposition(
+		"BLOCKED",
+		"the park routes to the driver and the run named no rationale, so nothing was written — a driver clears it by re-running with one, and a chore drive carries none to add",
 	),
 	[WRITE_UNKNOWN]: disposition(
 		"FAIL",

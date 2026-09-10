@@ -11,7 +11,10 @@ import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {claimReader} from "../build/claimants-verb.ts";
+import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
 import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
+import {machineryLapsKey} from "../config/keys/machinery-laps.ts";
+import {parkCauseKey} from "../config/keys/park-cause.ts";
 import {readKey} from "../config/read-key.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {emit} from "../emit.ts";
@@ -23,6 +26,7 @@ import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {claimHoldReader} from "./claim-hold.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
+import {runClear} from "./clear-verb.ts";
 import {closureReader} from "./closure.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runDispatch} from "./dispatch-verb.ts";
@@ -38,11 +42,12 @@ import {runPrint} from "./print-verb.ts";
 import {proveDispatched, runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
+import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {boardReaders, runSettle} from "./settle-verb.ts";
-import {DEFAULT_STALE_MINUTES} from "./stale.ts";
+import {DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
 import {
@@ -181,7 +186,7 @@ const status = leafCommand(
 const causeFlag = Flag.string("cause").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		`why the lane parked, on a BLOCKED only — one of: ${PARK_CAUSE_TOKENS.join(", ")}. It is the key \`recipe unpark\` seats the park against; omit it and the park stays novel and routes to a human.`,
+		`why the lane parked, on a BLOCKED only — one of: ${PARK_CAUSE_TOKENS.join(", ")}. It is the key \`recipe unpark\` seats the park against, and each token carries a route (\`driver\` or \`founder\`) saying whose failure the park is. Omit it and the park stays novel and routes to a human — unless \`.fabrika.jsonc\` declares \`parkCause.uncaused: "refuse"\`, which refuses the cause-less park at exit 52 with the log unappended.`,
 	),
 );
 
@@ -198,6 +203,21 @@ const causeFlag = Flag.string("cause").pipe(
  * routing table that falls through on a miss is a silent miss — `--class UI` would build a plain
  * lane and never ask for the rendered-visual verdict it owed.
  */
+/**
+ * Why a park was cleared, on the one verb a driver clears one from.
+ *
+ * Free prose rather than a closed vocabulary, and deliberately: a cause is a fact about machinery
+ * that a recipe keys on, while a rationale is the judgment the driver made, which nothing downstream
+ * routes on and only a reader consumes. The verb checks the one thing it can — that it says
+ * something, on an event that is a clearance.
+ */
+const rationaleFlag = Flag.string("rationale").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"why this park was cleared, on an UNBLOCKED only — the driver's own recommendation, recorded on the line that clears the park. It is what `recipe unpark` passes when it clears a driver-routed park, and what makes that clearance reviewable afterwards; a blank one is refused at exit 53 with the log unappended.",
+	),
+);
+
 const classFlag = Flag.string("class").pipe(
 	Flag.atLeast(0),
 	Flag.withDescription(
@@ -225,8 +245,10 @@ const transition = leafCommand(
 				"waits this resume grants, on an UNBLOCKED only — the human fallback for a `human:queue-stall` whose `recipe unpark` proving read cannot run. The grant rides this same line, so the clear and the budget are one recorded event.",
 			),
 		),
+		rationale: rationaleFlag,
 	},
-	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait}) {
+	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait, rationale}) {
+		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
 		yield* emit(
 			yield* onKey("transition", lane, root, (_key, ref) =>
 				runTransition({
@@ -234,8 +256,10 @@ const transition = leafCommand(
 					event,
 					task: Option.getOrNull(task),
 					cause: Option.getOrNull(cause),
+					parkCause,
 					classes,
 					waitGrant: Option.getOrNull(grantWait),
+					rationale: Option.getOrNull(rationale),
 				}),
 			),
 		);
@@ -243,7 +267,36 @@ const transition = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
 	Command.withDescription(
-		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold, plus `waitGrant` when the resume granted waits. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED), 38 (--class is outside the closed lane-class set), 36 (a resume would restore the state and not the budget it lands on — out of an error final, record the founder's cleared round with `build clear` first and the two land in either order; out of a wait park, grant the waits on this same resume, which `recipe unpark` does once it has proven the queue moved), 47 (--grant-wait is not a whole grant of at least one wait, or rides on an event that is not UNBLOCKED), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). A cleared round is NOT recorded here: it is a `<TASK>.CLEARED` event `build clear` appends, it targets no state, and the operator's six are unchanged. An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; a BLOCKED with no cause is the bare park it always was, and routes to a human. A repeatable --class lands the lane classes standing at the event on the same line, and is the fact the machine's `class:<name>` arms route on — `--class ui` on a WIP sends the lane to `build:ui`, and it stands until another event names a different set. An optional --grant-wait lands the waits a resume buys on the same UNBLOCKED line, so one recorded event both clears the park and pays for the read the lane resumes to take; it is the human fallback for a `human:queue-stall` whose `recipe unpark` proving read cannot run, and `build clear` is not it — that buys a repair round and never a longer wait. Examples: fabrika lane transition 5673 DONE · fabrika lane transition 5673 UNBLOCKED --grant-wait 1",
+		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold, plus `waitGrant` when the resume granted waits and `rationale` when it named why the park was cleared. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's set, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set, or rides on an event that is neither BLOCKED nor the machinery LAP), 52 (a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: \"refuse\"` — name one), 38 (--class is outside the closed lane-class set), 36 (a resume would restore the state and not the budget it lands on — out of an error final, record the cleared round first and the two land in either order, `build clear` where a pull request carries the founder's grant and `lane clear` where the lane has none; out of a wait park, grant the waits on this same resume, which `recipe unpark` does once it has proven the queue moved), 47 (--grant-wait is not a whole grant of at least one wait, or rides on an event that is not UNBLOCKED), 53 (--rationale says nothing, or rides on an event that is not UNBLOCKED), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). A cleared round is NOT recorded here: it is a `<TASK>.CLEARED` event `build clear` or `lane clear` appends, it targets no state, and the operator's set is unchanged. An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; every cause also carries a route — `driver` or `founder` — saying whose failure the park is. A BLOCKED with no cause is the bare park it always was and routes to a human, unless `.fabrika.jsonc` declares `parkCause.uncaused: \"refuse\"`, which refuses it at 52 with the log unappended. A repeatable --class lands the lane classes standing at the event on the same line, and is the fact the machine's `class:<name>` arms route on — `--class ui` on a WIP sends the lane to `build:ui`, and it stands until another event names a different set. An optional --grant-wait lands the waits a resume buys on the same UNBLOCKED line, so one recorded event both clears the park and pays for the read the lane resumes to take; it is the human fallback for a `human:queue-stall` whose `recipe unpark` proving read cannot run, and `build clear` is not it — that buys a repair round and never a longer wait. An optional --rationale rides the same UNBLOCKED and says why the park was cleared — the driver's own recommendation, which `recipe unpark` passes when it clears a driver-routed park, and which `lane status` reads back as the task's standing `rationale`. Examples: fabrika lane transition 5673 DONE · fabrika lane transition 5673 UNBLOCKED --grant-wait 1",
+	),
+);
+
+const clear = leafCommand(
+	"clear",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task the grant addresses; omittable on a single-task lane"),
+		),
+		rationale: Flag.string("rationale").pipe(
+			Flag.withDescription(
+				"why this round is granted — the driver's own recommendation, recorded on the CLEARED line. Required: a grant nobody can review afterwards is not one.",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, rationale}) {
+		yield* emit(
+			yield* onKey("clear", lane, root, (_key, ref) =>
+				runClear({...ref, task: Option.getOrNull(task), rationale}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Grant one repair round to a lane with no pull request to clear."),
+	Command.withDescription(
+		"Grant one repair round on a lane whose budget is spent, by appending the `<TASK>.CLEARED` event that is the only source of a repair budget. This is the driver's seat, for the lanes `build clear` cannot reach: that verb is PR-keyed from its first line, so an epic child and a chore lane — neither of which opens a pull request — parked at their cap with a door nothing could walk. The round is DERIVED, never typed: it is the round the task's own declared cap freezes at given the grants already in its log, so one call buys exactly one round and the next round needs its own call and its own recommendation. stdout is `{answer, lane, task, round, budget, rationale}`, where `answer` is `cleared` on a grant that landed and `held` on one the log already carried — a grant is keyed by its round and set-semantic, so a re-run doubles nothing. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the round is NOT cleared), 11 (the lane could not be read), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 39 (no .git entry at or above the cwd), 47 (the task still has budget to spend, so there is no round to grant), 53 (--rationale says nothing). It grants a repair round and never a longer wait — waits ride their own resume through `lane transition --grant-wait`. Recording the grant does not move the task: the park's door is still the `UNBLOCKED`, and the two land in either order. Example: fabrika lane clear 8820 --task issue --rationale \"the three FAILs were one finding, now answered\"",
 	),
 );
 
@@ -279,6 +332,7 @@ const report = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, token, root, task, pr, comment, cause, classes, repo}) {
+		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
 		yield* emit(
 			yield* onKey("report", lane, root, (_key, ref) =>
 				runReport(
@@ -289,6 +343,7 @@ const report = leafCommand(
 						pr: Option.getOrNull(pr),
 						comment: Option.getOrNull(comment),
 						cause: Option.getOrNull(cause),
+						parkCause,
 						classes,
 						repo: Option.getOrNull(repo),
 						cwd: process.cwd(),
@@ -302,7 +357,7 @@ const report = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record a shell's terminal token, mapped to one operator event."),
 	Command.withDescription(
-		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, a reviewer's park only while no FAIL at the head says the run reached a verdict, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history), a repeatable --class lands the lane classes standing at the event (what the machine's `class:<name>` arms route on), and an optional --cause names why a BLOCKED parked, from a closed set in code — the key `recipe unpark` seats the park against, without which every BLOCKED is novel and costs a human UNBLOCKED. One more field lands on the line and it is the prover's, never a flag: `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later one — the routed `review-ui` an epic child owes its epic's tail — and is absent wherever the bar was whole. `partial` is the second of that kind and rides the ship stage's DONE: it says whether the merge behind this terminal carried `Part of #N` and left the issue open, which is what the machine's `merge:partial` arm routes on. It rides at BOTH polarities — `true` on a partial merge, `false` on a closing one — so the line records that the closure was read and `lane reconcile` never buys that read again; it is absent wherever no closure was read, which is every event but the ship stage's DONE, plus a ship DONE whose read answered `unknown`. `landed` rides beside it as that read's evidence — the merged PRs the closure judged, absent wherever `partial` is — so a recorded `false` says which reader wrote it and not only which way it fell, which is what `lane reconcile` reads to tell a real answer from the old nominator's fallthrough. --pr is what that read reads: the ref is handed to the prover as well as recorded on the line, because the closure is judged off exactly that PR. A queue wait is floored as well as counted: a WIP standing in `ship:queued` is refused at 52 unless 480s of elapsed time — the shipper's own watch horizon — have run since that task's last recorded line, so the wait budget measures how long a PR has sat rather than how fast a driver passes, and the refusal names the seconds still to run. stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the proof deferred anything, `partial` at whichever polarity the closure read answered, and `landed` where it answered at all. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS or park, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED), 38 (--class is outside the closed lane-class set), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 52 (a `ship:queued` re-fold arrived inside the elapsed-time floor, or the clock on that task's last line reads as no date — log unappended, the wait unspent, and the only remedy on the first is time). Example: fabrika lane report 5736 --token SHIPPED-PR --pr <pr-url>",
+		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's events, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, a reviewer's park only while no FAIL at the head says the run reached a verdict, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history), a repeatable --class lands the lane classes standing at the event (what the machine's `class:<name>` arms route on), and an optional --cause names why a BLOCKED parked, from a closed set in code — the key `recipe unpark` seats the park against, without which every BLOCKED is novel and costs a human UNBLOCKED; every cause carries a route beside it, `driver` or `founder`, saying whose failure the park is, and a repo that declares `parkCause.uncaused: \"refuse\"` refuses a cause-less BLOCKED at 52 rather than recording one. One more field lands on the line and it is the prover's, never a flag: `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later one — the routed `review-ui` an epic child owes its epic's tail — and is absent wherever the bar was whole. `partial` is the second of that kind and rides the ship stage's DONE: it says whether the merge behind this terminal carried `Part of #N` and left the issue open, which is what the machine's `merge:partial` arm routes on. It rides at BOTH polarities — `true` on a partial merge, `false` on a closing one — so the line records that the closure was read and `lane reconcile` never buys that read again; it is absent wherever no closure was read, which is every event but the ship stage's DONE, plus a ship DONE whose read answered `unknown`. `landed` rides beside it as that read's evidence — the merged PRs the closure judged, absent wherever `partial` is — so a recorded `false` says which reader wrote it and not only which way it fell, which is what `lane reconcile` reads to tell a real answer from the old nominator's fallthrough. --pr is what that read reads: the ref is handed to the prover as well as recorded on the line, because the closure is judged off exactly that PR. A queue wait is floored as well as counted: a WIP standing in `ship:queued` is refused at 55 unless 480s of elapsed time — the shipper's own watch horizon — have run since that task's last recorded line, so the wait budget measures how long a PR has sat rather than how fast a driver passes, and the refusal names the seconds still to run. stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the proof deferred anything, `partial` at whichever polarity the closure read answered, and `landed` where it answered at all. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS or park, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted), 35 (--cause is outside the closed park-cause set, or rides on an event that is neither BLOCKED nor the machinery LAP), 52 (a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: \"refuse\"` — name one from the closed set), 38 (--class is outside the closed lane-class set), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 55 (a `ship:queued` re-fold arrived inside the elapsed-time floor, or the clock on that task's last line reads as no date — log unappended, the wait unspent, and the only remedy on the first is time). One group of tokens belongs to no shell: the machinery group (REPLAY-COLLIDED, BASE-DRIFTED, QUEUE-EJECTED, SEAT-DIRTY, SHELL-DEAD), which a driver records about the pipeline itself. Each maps to the machine's LAP event, spending the lap budget instead of the repair one, and each carries its own cause off the same closed set with no --cause typed — pass one to override it, and a cause outside the set still refuses at 35. Examples: fabrika lane report 5736 --token SHIPPED-PR --pr <pr-url> · fabrika lane report 8810 --task issue_8819 --token REPLAY-COLLIDED",
 	),
 );
 
@@ -439,6 +494,7 @@ const emitLane = leafCommand(
 	},
 	Effect.fn(function* ({epic, root, repo}) {
 		const cap = yield* readKey(process.cwd(), laneConcurrencyCapKey);
+		const machinery = yield* readKey(process.cwd(), machineryLapsKey);
 		const resolvedRoot = yield* resolveRootOrRefuse(
 			"fabrika lane emit",
 			root,
@@ -457,6 +513,7 @@ const emitLane = leafCommand(
 					repo: Option.getOrNull(repo),
 					env: process.env,
 					cap,
+					machinery,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
 				}),
 			),
@@ -465,7 +522,7 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). Example: fabrika lane emit 5680",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `.fabrika.jsonc`'s `machineryLaps.onEmit` picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. Example: fabrika lane emit 5680",
 	),
 );
 
@@ -540,7 +597,60 @@ const integrate = leafCommand(
 		"Merge one reviewed child into an epic run's assembly and prove it holds.",
 	),
 	Command.withDescription(
-		"Merge one reviewed child's branch into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — and prove the merged tree holds together before the branch keeps it. The order is the verb: `git merge --no-ff`, then the repo's declared `dependencyReconciler` (for example `pnpm install --frozen-lockfile`) run IN that worktree so the install reads the lockfile the merge just brought, then the repo's declared `codeValidators` over the merged tree — reconciling after the merge, never before, since an assembly worktree placed before a child existed still holds the pre-merge install. Every refusal below the merge resets the assembly branch to ORIG_HEAD and reads its head back, so a recorded FAIL names a branch that never carried the bad merge; nothing is ever pushed here — that is `lane push`, and recording the DONE is the driver's. On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED` and the line above it the merged head. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (a restore or a head read-back did not land — UNKNOWN, so nothing may be recorded), 11 (the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be read, or the repo declares no `codeValidators` — UNKNOWN, never green), 22 (no branch by that name — take it off `lane prove`'s evidence), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 42 (the child conflicts; the merge was aborted and nothing was installed), 43 (the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file), 44 (the merged tree failed a code validator — the semantic collision), 45 (the assembly worktree already held modified tracked files before the merge, so nothing was merged, installed or validated — that dirt is the driver's tree and not the child's range; clean the seat and integrate again), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root). Example: fabrika lane integrate 7140 --child build/7162-app-bootstrap-5558c9a2",
+		"Merge one reviewed child's branch into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — and prove the merged tree holds together before the branch keeps it. The order is the verb: `git merge --no-ff`, then the repo's declared `dependencyReconciler` (for example `pnpm install --frozen-lockfile`) run IN that worktree so the install reads the lockfile the merge just brought, then the repo's declared `codeValidators` over the merged tree — reconciling after the merge, never before, since an assembly worktree placed before a child existed still holds the pre-merge install. Every refusal below the merge resets the assembly branch to ORIG_HEAD and reads its head back, so a recorded FAIL names a branch that never carried the bad merge; nothing is ever pushed here — that is `lane push`, and recording the DONE is the driver's. A textual collision is not always the end of the run: under `assemblyReplay.onCollision` (shipped `off`), the child's commits are replayed onto the tip, hunks that are a plain keep-both — both sides adding lines where the base had none — are kept both ways, the child's own branch is moved onto the replayed range, and that range is merged `--no-ff` like any other landing; a hunk that is not resets through the captured head, proves the reset, and names `--cause replay-conflict` as the park to record. With the key off, exit 42 is byte-identical to what it always was. On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED`, or `INTEGRATE-VERDICT: REPLAYED` after a replay; the line above it is the merged head either way, and above that a replay prints its machinery event — {event, child, replay, onto, range, resolved, commits, reReview, budget} — whose `range` is the moved range the child owes one review round over and whose `budget` reads `unspent`, because a replay is machinery working rather than the child failing. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (a restore or a head read-back did not land — UNKNOWN, so nothing may be recorded), 11 (the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be read, or the repo declares no `codeValidators` — UNKNOWN, never green), 22 (no branch by that name — take it off `lane prove`'s evidence), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 42 (the child conflicts and was not replayed — the merge was aborted and nothing was installed; or the replay hit a hunk that is not a plain keep-both, and the branch was reset and proved back), 43 (the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file), 44 (the merged tree failed a code validator — the semantic collision), 45 (the assembly worktree already held modified tracked files before the merge, so nothing was merged, installed or validated — that dirt is the driver's tree and not the child's range; clean the seat and integrate again), 54 (the replay landed and the child's branch would not follow it onto the replayed range — usually a working tree still standing on that branch; nothing was merged and the seat is back, so free the branch with `fabrika build retire` or park on `--cause worktree-holds-branch`), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root). Example: fabrika lane integrate 7140 --child build/7162-app-bootstrap-5558c9a2",
+	),
+);
+
+const refresh = leafCommand(
+	"refresh",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly branch"),
+		),
+		base: Flag.string("base").pipe(
+			Flag.withDefault("origin/main"),
+			Flag.withDescription(
+				"the trunk ref to merge in, resolved AFTER the fetch (default: origin/main)",
+			),
+		),
+		onReview: Flag.boolean("on-review").pipe(
+			Flag.withDescription(
+				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated.",
+			),
+		),
+		root: rootFlag,
+	},
+	Effect.fn(function* ({epic, base, onReview, root}) {
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane refresh",
+			root,
+			DEFAULT_LANES_ROOT,
+			process.cwd(),
+		);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
+		const assemblyRefresh = yield* readKey(process.cwd(), assemblyRefreshKey);
+		yield* emit(
+			yield* onGround("refresh", [resolvedRoot], process.cwd(), () =>
+				runRefresh({
+					epic,
+					base,
+					onReview,
+					assemblyRefresh,
+					root: resolvedRoot,
+					lane: String(epic),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Merge the trunk into an epic run's assembly branch, proving the head.",
+	),
+	Command.withDescription(
+		"Merge the trunk into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — so the tail's review binds to a head the merge queue can take. Nothing else in this package touches trunk after the first cut: `lane assembly` fetches and cuts off origin/HEAD once and a resume fetches nothing, so the branch drifts behind trunk with nothing to notice and `lane push` names \"fetch and re-merge\" as the remedy for its exit 29 without any verb performing it. The order is the verb: refuse a dirty seat, `git fetch origin`, resolve --base to a commit, answer CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge is silent and parks nothing; a conflict aborts, resets through ORIG_HEAD and PROVES the reset by re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset that will not take is exit 8, never the clean conflict refusal. Nothing is pushed and no lane log is written — publishing the refreshed head is `lane push`'s and recording the park is the driver's. On exit 0 the last stdout line is `REFRESH-VERDICT: MERGED`, `REFRESH-VERDICT: CURRENT`, or `REFRESH-VERDICT: DECLINED` under --on-review with the key off, and the line above it the head (a DECLINED prints no head, because nothing was read). Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the restore or a head read-back did not land, or the merge reported success and the head did not move — UNKNOWN, so nothing may be recorded), 11 (the working trees, the head, the seat's cleanliness or the fetch could not be read — UNKNOWN, never green), 21 (`assemblyRefresh` is malformed in .fabrika.jsonc — whether this repo refreshes on the way into review is UNKNOWN), 22 (--base names no commit after the fetch), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 45 (the assembly worktree already held modified tracked files, so nothing was fetched or merged; clean the seat and refresh again), 42 (the trunk conflicts with the assembly branch; the merge was aborted and the branch was proven back at its pre-merge head), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root). Examples: fabrika lane refresh 8810 · fabrika lane refresh 8810 --on-review",
 	),
 );
 
@@ -733,7 +843,7 @@ const stale = leafCommand(
 		olderThan: Flag.integer("older-than").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`minutes of silence before a lane something is owed on is stale (default: ${DEFAULT_STALE_MINUTES})`,
+				`override the horizon for every lane, in minutes (default: each lane's own shell budget — ${SHELL_BUDGETS.build.minutes} for a build, ${SHELL_BUDGETS.review.minutes} for a review, ${SHELL_BUDGETS.ship.minutes} for a ship, ${DISPATCH_BUDGET.minutes} for a task awaiting dispatch)`,
 			),
 		),
 		claims: Flag.boolean("claims").pipe(
@@ -768,7 +878,7 @@ const stale = leafCommand(
 			yield* onGround("stale", roots, process.cwd(), () =>
 				runStale({
 					roots,
-					olderThanMinutes: Option.getOrElse(olderThan, () => DEFAULT_STALE_MINUTES),
+					olderThanMinutes: Option.getOrNull(olderThan),
 					now: new Date().toISOString(),
 					claims: claims ? claimReader(Option.getOrNull(repo), process.env) : null,
 				}),
@@ -778,7 +888,7 @@ const stale = leafCommand(
 ).pipe(
 	Command.withShortDescription("Which lanes have gone quiet with something owed on them."),
 	Command.withDescription(
-		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever; the age here comes off the \`at\` every event line already carries — nothing new is stored. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that. Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded BUILD claim leaves through "fabrika build adopt" then "fabrika build release", and the LANE claim a killed operator seat strands on the same issue — which this sweep does not read — leaves through "fabrika lane adopt" then "fabrika lane release". "fabrika build claimants <n>" reads one issue's build claims the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane stale · fabrika lane stale --older-than 30 · fabrika lane stale --claims`,
+		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever; the age here comes off the \`at\` every event line already carries — nothing new is stored. How long a lane may be silent is its OWN horizon, not one number for the pipeline: each lane is judged against the budget of the work driving it — a build shell's, a review shell's, a ship shell's, or the dispatch budget for a task nothing has picked up — and every row reports the budgetMinutes it was judged against. --older-than overrides that for every lane; without it, olderThanMinutes in the answer is null, which says the budgets did the judging. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes, the budget it was judged against and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that. Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded BUILD claim leaves through "fabrika build adopt" then "fabrika build release", and the LANE claim a killed operator seat strands on the same issue — which this sweep does not read — leaves through "fabrika lane adopt" then "fabrika lane release". "fabrika build claimants <n>" reads one issue's build claims the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane stale · fabrika lane stale --older-than 120 · fabrika lane stale --claims`,
 	),
 );
 
@@ -1037,10 +1147,11 @@ const view = leafCommand(
 			yield* emit(resolvedRoot);
 			return;
 		}
+		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
 		yield* Effect.logInfo(listeningAt(chosen));
 		yield* emit(
 			yield* onGround("view", [resolvedRoot], process.cwd(), () =>
-				runView({root: resolvedRoot, port: chosen}),
+				runView({root: resolvedRoot, port: chosen, parkCause}),
 			),
 		);
 	}),
@@ -1049,7 +1160,7 @@ const view = leafCommand(
 		"Every lane on disk, on one screen, the ones needing a person first.",
 	),
 	Command.withDescription(
-		"Serve every lane under the root as one page and keep it current while lanes move — the fleet-wide answer to which of these needs a person, where `lane status` answers one lane and `lane stale` answers liveness. Lanes are ordered by attention: waiting on a human, then tripped, then gone quiet, then moving, then finished. Opening one shows its phases, each task's leaf, what it is waiting on, its retry budget and its region drawn with the edges the log walked. The page can send the operator's six events, and every one goes through `lane transition` — validated against the folded state and appended only if the machine accepts it, so a refusal is that verb's own words and `events.jsonl` has exactly one writer. It serves on localhost and reads the disk it was started on: nothing is uploaded and no lane leaves the machine. Runs until interrupted. Exits 11 (the root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Examples: fabrika lane view · fabrika lane view --port 6000",
+		"Serve every lane under the root as one page and keep it current while lanes move — the fleet-wide answer to which of these needs a person, where `lane status` answers one lane and `lane stale` answers liveness. Lanes are ordered by attention: waiting on a human, then tripped, then gone quiet, then moving, then finished. Opening one shows its phases, each task's leaf, what it is waiting on, its retry budget and its region drawn with the edges the log walked. The page can send the operator's events, and every one goes through `lane transition` — validated against the folded state and appended only if the machine accepts it, so a refusal is that verb's own words and `events.jsonl` has exactly one writer. It serves on localhost and reads the disk it was started on: nothing is uploaded and no lane leaves the machine. Runs until interrupted. Exits 11 (the root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Examples: fabrika lane view · fabrika lane view --port 6000",
 	),
 );
 
@@ -1057,6 +1168,7 @@ export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
 		transition,
+		clear,
 		report,
 		prove,
 		history,
@@ -1067,6 +1179,7 @@ export const laneCommand = Command.make("lane").pipe(
 		dispatch,
 		assembly,
 		integrate,
+		refresh,
 		pushLane,
 		stale,
 		migrate,
@@ -1080,6 +1193,6 @@ export const laneCommand = Command.make("lane").pipe(
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
-		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events. A lane is keyed by the issue number it drives, or by name as `chore:<name>` for a chore that has no issue number",
+		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's events. A lane is keyed by the issue number it drives, or by name as `chore:<name>` for a chore that has no issue number",
 	),
 );

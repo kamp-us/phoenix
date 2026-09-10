@@ -1,7 +1,7 @@
 ---
 id: 0371
 title: An architecture audit files only the findings a human picked, never everything it found
-status: accepted
+status: amended-in-part by [0379](0379-audit-selection-through-conversation.md)
 date: 2026-09-10
 tags: [pipeline, fabrika, architecture-audit, intake]
 ---

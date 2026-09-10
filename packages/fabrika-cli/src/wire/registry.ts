@@ -19,6 +19,8 @@
  * registered without them — which is what makes the totality law inherited rather than re-written.
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
+import * as auditContext from "./audit-context.ts";
+import {AUDIT_FIELDS} from "./audit-context-fixture.ts";
 import * as buildDeviations from "./build-deviations.ts";
 import * as cameFrom from "./came-from.ts";
 import * as capClearance from "./cap-clearance.ts";
@@ -39,6 +41,33 @@ import * as routedElsewhere from "./routed-elsewhere.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
+	{
+		key: "audit-context",
+		purpose: "complete initial audit research, distinct from question rounds and human rulings",
+		module: "packages/fabrika-cli/src/wire/audit-context.ts",
+		producers: ["architecture-audit", "grill open"],
+		consumers: ["grilling", "grill read", "grill open"],
+		emit: auditContext.emitFromFields,
+		read: auditContext.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: AUDIT_FIELDS,
+				values: ["audit-run-20260910", "F1", "Decoder already validates the image"],
+			},
+			found: [
+				{
+					shape: "authored JSON in the initial body",
+					artifact: `A session.\n\n## Audit context\n\n\`\`\`json\n${AUDIT_FIELDS}\n\`\`\`\n`,
+					values: ["audit-run-20260910", "No test ownership census"],
+				},
+			],
+			absent: "A normal topic session.",
+			malformed: [
+				{drift: "missing context fields", artifact: "## Audit context\n\n```json\n{}\n```\n"},
+			],
+		},
+		brands: brandWitnesses<auditContext.AuditContext>({runId: true}),
+	},
 	{
 		key: "acceptance-criteria",
 		purpose:

@@ -22,7 +22,6 @@ import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
-import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
@@ -342,7 +341,9 @@ const open = leafCommand(
 					lanesField(
 						yield* runStale({
 							roots,
-							olderThanMinutes: DEFAULT_STALE_MINUTES,
+							// Each lane is judged against its own shell budget; the front door has no horizon of
+							// its own to impose.
+							olderThanMinutes: null,
 							now: new Date().toISOString(),
 							// The front door renders on a cold start and must not wait on the board for it.
 							claims: null,

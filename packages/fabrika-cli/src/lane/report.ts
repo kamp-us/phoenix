@@ -2,7 +2,7 @@
  * The terminal-token map — one shell terminal in, one operator event out, in code.
  *
  * Each fabrika shell ends on a fixed token from a closed vocabulary its own skill owns; this table
- * is the one place those vocabularies meet the machine's six events, replacing the prose
+ * is the one place those vocabularies meet the machine's operator events, replacing the prose
  * translation table the operator LLM used to execute per spawn. The map is total over the tokens
  * listed and refuses everything else — an unrecognised token is a refusal, never a permissive
  * `BLOCKED` guess, because "a report you cannot parse" stops being a failure class only when
@@ -14,13 +14,14 @@
  */
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
-import type {CompiledLane, OperatorEvent, TaskState} from "./machine.ts";
+import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`). Documentation and test surface; the
- * lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus one group that belongs to no
+ * shell: `machinery`, which a driver records about the pipeline itself. Documentation and test
+ * surface; the lookup below flattens it.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -56,6 +57,21 @@ export const SHELL_VOCABULARIES = {
 		ESCALATED: "BLOCKED",
 		"BLOCKED-NO-MANIFEST": "BLOCKED",
 		"ROUTED-ELSEWHERE": "BLOCKED",
+	},
+	// The machinery group — a failure of the pipeline carrying the artifact, never a judgment of the
+	// artifact. Each token maps to the machine's own machinery event, so a collision at integrate and
+	// a reviewer's FAIL stop arriving as one indistinguishable `FAIL`, and each names exactly one row
+	// of `PARK_CAUSES` through `MACHINERY_CAUSES` — which is what makes "every machinery event
+	// carries a cause" structural rather than a recorder's discipline.
+	machinery: {
+		"REPLAY-COLLIDED": "LAP",
+		"BASE-DRIFTED": "LAP",
+		"QUEUE-EJECTED": "LAP",
+		"SEAT-DIRTY": "LAP",
+		// A shell the provider killed is machinery by the same test as the four above: nothing about
+		// the artifact was judged, so a death that spent a repair round would be charging the ticket
+		// for the pipeline's failure.
+		"SHELL-DEAD": "LAP",
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
@@ -153,6 +169,34 @@ export const eventForToken = (raw: string): TokenResolution => {
 };
 
 /**
+ * Whose failure a park is, and so who takes the next move on it.
+ *
+ * `driver` is machinery — residue a driver session owns, or a read some verb can take again — so a
+ * driver may work the park itself. `founder` is a judgment no verb may make on its own account, so
+ * the park leaves the machine. Two arms and no third: an "either" would be the guess this field
+ * exists to delete.
+ */
+export type ParkRoute = "driver" | "founder";
+
+/**
+ * One park cause: what it means, in a clause a refusal can quote, whose failure it is, and the verb
+ * that removes it.
+ */
+export interface ParkCauseEntry {
+	readonly meaning: string;
+	readonly route: ParkRoute;
+	/**
+	 * The verb that removes this cause before anything re-reads it, or `null` for a cause whose
+	 * removal is somebody else's act.
+	 *
+	 * `null` is deliberate rather than unfinished: resuming a campaign is a human's judgment and
+	 * dispatching the other gate is the driver's own move, so a verb that "removed" either would be
+	 * taking a decision it is only allowed to observe.
+	 */
+	readonly remedy: string | null;
+}
+
+/**
  * Why a lane parked, as a closed set of tokens — the field that makes a `BLOCKED` clearable.
  *
  * The token map above folds thirteen distinct shell terminals into one flat `BLOCKED`, so the event
@@ -162,7 +206,20 @@ export const eventForToken = (raw: string): TokenResolution => {
  *
  * It is a closed set for the same reason the terminal tokens are: a free-text cause is prose a
  * recipe would have to interpret, and interpreting a report is the failure class this module
- * deletes. Each entry's value is what the cause means, in the clause a refusal can quote.
+ * deletes. Each entry carries `meaning` — what the cause means, in the clause a refusal can quote —
+ * {@link ParkRoute}, whose failure the park is, and `remedy`, the verb that removes it.
+ *
+ * **The remedy is written here and nowhere else.** A `KNOWN_PARKS` row used to declare its own, so
+ * two rows keying on two causes could name the same verb and nothing compared them to the cause
+ * they were clearing; `recipe/parks.ts` now derives the field through {@link remedyForCause}, the
+ * way it already derives the route.
+ *
+ * **The route is the second field because the cause alone never said whose problem it is.** A park
+ * a driver can work through and one only the founder can answer take opposite next moves, and with
+ * both folded into one token a sweep had to guess. `driver` is machinery — residue a driver session
+ * owns, or a read a verb can take again; `founder` is a product call no verb may make on its own.
+ * Every entry records its route with a one-line reason in its own docblock, so the routing is
+ * readable at the token rather than derived somewhere else.
  *
  * A cause is seated on its own account, and a `KNOWN_PARKS` row is never its precondition.
  * Where no row covers it, `classifyPark` answers `Novel` **naming this cause** instead of the bare
@@ -175,19 +232,68 @@ export const PARK_CAUSES = {
 	 * A finished lane's worktree still holds the branch this lane must build on, so
 	 * `build branch --resume-lane` refuses at exit 11 rather than re-key a branch out from under
 	 * another tree. The whole remedy is removing that worktree, which is why it owes no decision.
+	 *
+	 * Route `driver`: the tree is a driver session's own residue, and removing it decides nothing.
 	 */
-	"worktree-holds-branch": "a working tree still holds the lane branch this build must stand on",
+	"worktree-holds-branch": {
+		meaning: "a working tree still holds the lane branch this build must stand on",
+		route: "driver",
+		remedy: "fabrika build retire",
+	},
 	/**
 	 * `ship cp-approval` stops on a head behind its base, and the head must move before
 	 * an approval is solicited. The park spends neither budget, and reporting it as
 	 * `ROUTED-REPAIR` charged a repair retry for a trip through a stage that owns no verb that can
 	 * move a branch.
 	 *
-	 * It carries no `KNOWN_PARKS` row on purpose: clearing it needs a verb that merges the base into
-	 * the head, and `build` ships none, so the sweep routes it to a human by naming this cause.
+	 * Its remedy is `lane refresh`, which merges the base into an epic run's assembly branch and
+	 * proves the head it lands on. It still carries no `KNOWN_PARKS` row: a row is what buys an
+	 * autonomous clear, and that costs a proving read of the moved head this cause does not yet have.
+	 *
+	 * Route `driver`: moving a head onto its base is machinery, and no product call is in it.
 	 */
-	"head-behind-base":
-		"the PR's head is behind its base and must move before an approval is solicited",
+	"head-behind-base": {
+		meaning: "the PR's head is behind its base and must move before an approval is solicited",
+		route: "driver",
+		remedy: "fabrika lane refresh",
+	},
+	/**
+	 * `lane refresh` found a real conflict between the trunk and an epic run's assembly branch. The
+	 * merge was aborted and the branch put back where the refresh found it, so the tail cannot bind
+	 * to a refreshed head until the two sides are reconciled.
+	 *
+	 * No remedy: resolving a conflict that is not a plain keep-both is a judgment about content, and
+	 * a verb that "removed" this cause would be making it.
+	 *
+	 * Route `driver`: reconciling two branches of this repo's own code is machinery, not a product
+	 * call.
+	 */
+	"assembly-conflict": {
+		meaning:
+			"the trunk conflicts with the epic run's assembly branch, so the tail cannot bind to a refreshed head",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * `lane integrate` replayed a colliding child onto the assembly tip and hit a hunk that is not a
+	 * plain keep-both — two sides editing one text rather than an append each. The pick was abandoned
+	 * and the seat put back, so the assembly branch carries neither the merge nor the replay.
+	 *
+	 * Distinct from `assembly-conflict`, which is the trunk against the assembly branch: this one is
+	 * one child's range against another child's, and it is the collision the replay exists for. It
+	 * carries no `KNOWN_PARKS` row and no remedy for the same reason `assembly-conflict` does not —
+	 * resolving a semantic conflict is a judgment about content, and a verb that "removed" this cause
+	 * would be making it.
+	 *
+	 * Route `driver`: reconciling two children of this repo's own code is machinery, not a product
+	 * call.
+	 */
+	"replay-conflict": {
+		meaning:
+			"a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision needs a judgment about content",
+		route: "driver",
+		remedy: null,
+	},
 	/**
 	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
 	 * that cell is the whole dispatch permission — so no stage may open against it.
@@ -195,9 +301,15 @@ export const PARK_CAUSES = {
 	 * A pause is open-ended, which is why this is a park and not a bounded wait (the merge-queue
 	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
 	 * resuming the campaign stays a human's act on `ROADMAP.md`, so the row names no remedy verb.
+	 *
+	 * Route `founder`: a campaign's lifecycle is a product call, and no driver may take it.
 	 */
-	"campaign-paused":
-		"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+	"campaign-paused": {
+		meaning:
+			"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+		route: "founder",
+		remedy: null,
+	},
 	/**
 	 * The shell driving this lane's stage was killed by its provider before it
 	 * recorded a terminal — a session limit, a transport drop, a `network_error` on every completion.
@@ -207,9 +319,20 @@ export const PARK_CAUSES = {
 	 * Its `KNOWN_PARKS` row reads the residue the dead shell left rather than the provider's health,
 	 * because no verb can spawn an agent to test the latter: the operator's next dispatch is that
 	 * test.
+	 *
+	 * **A death is noticed by the clock, not by a person.** There is no heartbeat, so what says a
+	 * shell died is its claim outliving the budget for the kind of work it took (`./shell-budget.ts`),
+	 * and the `SHELL-DEAD` machinery terminal is how that recording reaches the ledger — as a lap,
+	 * carrying this cause, leaving the repair budget alone.
+	 *
+	 * Route `driver`: the residue is the driver's own, and the re-dispatch is the driver's move.
 	 */
-	"spawn-dead":
-		"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
+	"spawn-dead": {
+		meaning:
+			"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
+		route: "driver",
+		remedy: "fabrika build retire",
+	},
 	/**
 	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
 	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
@@ -218,18 +341,30 @@ export const PARK_CAUSES = {
 	 *
 	 * Naming-only: a `KNOWN_PARKS` row would have to re-test the deployment, and that proving
 	 * read is separate work, so the sweep routes this to a human by naming the cause.
+	 *
+	 * Route `driver`: a deployment is machinery, and re-reading it needs no product call.
 	 */
-	"no-preview-render":
-		"no preview deployment stands at the PR's head, so no rendered surface can be judged",
+	"no-preview-render": {
+		meaning: "no preview deployment stands at the PR's head, so no rendered surface can be judged",
+		route: "driver",
+		remedy: null,
+	},
 	/**
 	 * The rendered gate's `BLOCKED-NO-MANIFEST`: the repo's design law covers no surface in
 	 * this diff, so the gate has nothing to judge against and routed to the front door.
 	 *
 	 * Naming-only: writing the manifest coverage is a human's act on the design law, and no verb
 	 * ships that can, exactly as `campaign-paused`'s resume stays a human's act on `ROADMAP.md`.
+	 *
+	 * Route `driver`: the design law is repo text, so widening its coverage is a diff a driver
+	 * builds — a human writes it, and that is not the same as a product call only the founder makes.
 	 */
-	"no-design-manifest":
-		"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
+	"no-design-manifest": {
+		meaning:
+			"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
+		route: "driver",
+		remedy: null,
+	},
 	/**
 	 * The rendered gate's `ROUTED-ELSEWHERE`: the diff raises no rendered delta, so the
 	 * verdict is `review`'s to give and never this gate's. The park is the route itself, which the
@@ -237,15 +372,149 @@ export const PARK_CAUSES = {
 	 *
 	 * Naming-only: clearing it means dispatching the other gate, which is the operator's act and not
 	 * a condition a recipe can read back.
+	 *
+	 * Route `driver`: dispatching the other gate is the driver's own act.
 	 */
-	"no-rendered-delta":
-		"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
-} as const;
+	"no-rendered-delta": {
+		meaning:
+			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * The merge queue ejected the PR before it merged — a sibling's red, a base that moved under the
+	 * batch, a queue timeout. The head is where the shipper left it and the verdicts still stand.
+	 *
+	 * Naming-only: re-enqueuing is `ship`'s own next dispatch, and a verb that "removed" this cause
+	 * would be taking that act rather than observing it.
+	 *
+	 * Route `driver`: a queue ejection is machinery, and nothing about the artifact was judged.
+	 */
+	"queue-ejected": {
+		meaning: "the merge queue ejected this PR before it merged, and no verdict against it changed",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * The task spent its whole repair budget on content FAILs, so the guarded FAIL arm fell through
+	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
+	 * and found it wrong `RETRY_BUDGET` times.
+	 *
+	 * It is the one cause no recorder ever types, because no `FAIL` may carry a `--cause`: it is
+	 * bound to its park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold.
+	 *
+	 * No remedy, because a remedy is a read a recipe reruns to prove the cause gone, and nothing a
+	 * verb runs makes a repeatedly-failed artifact right. The door out is a grant rather than a
+	 * remedy: `build clear` where a pull request carries the founder's, `lane clear` where the lane
+	 * has none — the seat an epic child and a chore lane were missing entirely.
+	 *
+	 * Route `driver`: deciding what a stuck task needs next — another round, a re-scope, a park a
+	 * person reads — is the driver's own diagnosis, and only a product call goes past it.
+	 */
+	"repair-budget-spent": {
+		meaning:
+			"the task spent its whole repair budget on content FAILs and owes a driver's diagnosis",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * The child's replays spent its whole wait budget: `lane integrate` kept resolving the collision
+	 * and the re-review it owes kept landing back on another one, so the range never settled.
+	 *
+	 * Distinct from `replay-conflict`, which is one replay refusing a hunk it may not resolve. This is
+	 * every replay succeeding and the cycle never closing — two children's ranges chasing each other
+	 * — so what it owes is a person's read of the pair, not a judgment about one hunk.
+	 *
+	 * Typed by no recorder, exactly as `repair-budget-spent` is: the fallthrough arrives as a `WIP`,
+	 * which carries no `--cause`, so it is bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}.
+	 *
+	 * No remedy: nothing a verb reruns proves two colliding ranges reconciled.
+	 *
+	 * Route `driver`: reconciling two children of this repo's own code is machinery, and a lap budget
+	 * running out does not turn it into a product call.
+	 */
+	"replay-budget-spent": {
+		meaning:
+			"a child's replays spent its whole wait budget without the range settling, so the collision owes a driver's diagnosis",
+		route: "driver",
+		remedy: null,
+	},
+} as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
 
+/**
+ * Each machinery terminal's own cause — the binding that makes a lap's cause structural.
+ *
+ * A `--cause` is a caller's discipline and a lap's cause is not: every machinery token names exactly
+ * one machinery failure, so the cause is read off the token here and a recorder that passes none
+ * still lands a caused line. Passing one still works and is checked against {@link PARK_CAUSES} like
+ * any other, which is how a recorder that knows better (a replay that parked on
+ * `assembly-conflict` rather than `replay-conflict`) says so.
+ */
+export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"REPLAY-COLLIDED": "replay-conflict",
+	"BASE-DRIFTED": "head-behind-base",
+	"QUEUE-EJECTED": "queue-ejected",
+	"SEAT-DIRTY": "worktree-holds-branch",
+	"SHELL-DEAD": "spawn-dead",
+};
+
+/** The cause a machinery terminal carries on its own, or `null` for every other token. */
+export const machineryCause = (token: string): ParkCause | null =>
+	MACHINERY_CAUSES[token.trim().toUpperCase()] ?? null;
+
+/**
+ * The causes a park leaf carries on its own — the second binding that makes a cause structural.
+ *
+ * {@link MACHINERY_CAUSES} reads a lap's cause off its terminal token; this reads a park's cause off
+ * the state the machine fell into. The two exist for one reason: a cause nobody can type is still a
+ * cause. {@link causeForEvent} refuses `--cause` on anything but a `BLOCKED` or a lap, and a spent
+ * repair budget arrives as a `FAIL` — so without this table every budget park folded causeless,
+ * which `routeForCause` reads `founder` and `classifyPark` reads `Novel`. That is the no-door dead
+ * end a driver route replaces.
+ *
+ * Only a leaf a single transition can produce belongs here. Each row below is reached by the
+ * spent-budget fallthrough of one guarded array and by nothing else — `human:budget-spent` by the
+ * `FAIL` array's, `human:replay-stall` by the `WIP` array's out of `integrate`.
+ */
+export const STRUCTURAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"human:budget-spent": "repair-budget-spent",
+	"human:replay-stall": "replay-budget-spent",
+};
+
+/** The cause a park leaf carries on its own, or `null` for a leaf that owes its recorder one. */
+export const structuralParkCause = (leaf: string): ParkCause | null =>
+	STRUCTURAL_PARK_CAUSES[leaf] ?? null;
+
 /** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+
+/**
+ * The route a park takes, read off the one table — the only place a route is written down.
+ *
+ * A park carrying **no** cause routes `founder`, and that is fail-closed rather than a default: a
+ * park nothing named cannot be attributed to machinery, so nothing here may claim a driver can work
+ * it. The two `KNOWN_PARKS` rows keyed by their leaf alone (`human:cp-approval`, `human:queue-stall`)
+ * take that arm, and both are already waits on somebody else's act.
+ */
+export const routeForCause = (cause: string | null): ParkRoute =>
+	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
+		? PARK_CAUSES[cause as ParkCause].route
+		: "founder";
+
+/**
+ * The verb that removes a cause, read off the one table — the only place a remedy is written down.
+ *
+ * A park carrying **no** cause has no remedy, on the same fail-closed reasoning the route takes:
+ * nothing named what went wrong, so nothing here may name the verb that undoes it. The two
+ * `KNOWN_PARKS` rows keyed by their leaf alone take that arm, and both are waits on somebody else's
+ * act rather than something a verb removes.
+ */
+export const remedyForCause = (cause: string | null): string | null =>
+	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
+		? PARK_CAUSES[cause as ParkCause].remedy
+		: null;
 
 export type ClassResolution =
 	| {readonly _tag: "Classed"; readonly classes: ReadonlyArray<string> | null}
@@ -278,25 +547,52 @@ export const classesForEvent = (raw: ReadonlyArray<string>): ClassResolution => 
 export type CauseResolution =
 	| {readonly _tag: "Uncaused"}
 	| {readonly _tag: "Caused"; readonly cause: ParkCause}
+	/** A `BLOCKED` carrying no cause, under a repo that declared cause-less parks unrecordable. */
+	| {readonly _tag: "Required"; readonly reason: string}
 	| {readonly _tag: "Rejected"; readonly reason: string};
 
 const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CAUSES, token);
 
 /**
- * Resolve one `--cause` against the event it rides on. Absent is legal and stays legal: a shell that
- * parks for a reason no recipe covers reports the bare `BLOCKED` it always did, and `classifyPark`
- * answers Novel for it exactly as before.
+ * Resolve one `--cause` against the event it rides on, under the repo's declared park-cause rule.
  *
  * A cause on a non-`BLOCKED` event is refused rather than dropped. Only a park has a cause to be
  * gone, so a `DONE` carrying one is a caller that misunderstood the field, and recording it would
  * seat a cause on a line no unpark will ever read.
+ *
+ * **An absent cause on a `BLOCKED` is the axis `requireCause` turns.** Off — the shipped default —
+ * it is `Uncaused` exactly as it always was, and the bare park routes to a human. On, it is
+ * `Required`: a park recorded with no cause folds to a `Novel` no verb can clear, so recording it
+ * spends a person to say a thing the recorder already knew.
+ *
+ * **A machinery lap requires one under every rule.** The whole difference between a lap and a repair
+ * round is which machinery spent it, and a lap recorded with none says only that the pipeline failed
+ * — which is the reading this axis exists to replace. The recorder never has to type it:
+ * {@link machineryCause} reads it off the token.
  */
-export const causeForEvent = (raw: string | null, event: OperatorEvent): CauseResolution => {
-	if (raw === null) return {_tag: "Uncaused"};
-	if (event !== "BLOCKED") {
+export const causeForEvent = (
+	raw: string | null,
+	event: OperatorEvent,
+	requireCause: boolean,
+): CauseResolution => {
+	if (raw === null) {
+		if (event === MACHINERY_EVENT) {
+			return {
+				_tag: "Required",
+				reason: `a machinery lap must name the machinery that spent it — pass --cause with one of: ${PARK_CAUSE_TOKENS.join(", ")}`,
+			};
+		}
+		return requireCause && event === "BLOCKED"
+			? {
+					_tag: "Required",
+					reason: `a park must name why it parked — pass --cause with one of: ${PARK_CAUSE_TOKENS.join(", ")}`,
+				}
+			: {_tag: "Uncaused"};
+	}
+	if (event !== "BLOCKED" && event !== MACHINERY_EVENT) {
 		return {
 			_tag: "Rejected",
-			reason: `a cause names why a lane parked, and this token maps to ${event}, not BLOCKED — drop --cause "${raw}"`,
+			reason: `a cause names why a lane parked or spent a machinery lap, and this token maps to ${event}, which is neither — drop --cause "${raw}"`,
 		};
 	}
 	const token = raw.trim().toLowerCase();
@@ -333,6 +629,40 @@ export const grantForEvent = (raw: number | null, event: OperatorEvent): GrantRe
 	return Number.isInteger(raw) && raw > 0
 		? {_tag: "Granted", grant: raw}
 		: {_tag: "Rejected", reason: `--grant-wait ${raw} is no whole grant of at least one wait`};
+};
+
+export type RationaleResolution =
+	| {readonly _tag: "Reasoned"; readonly rationale: string | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--rationale` against the event it rides on — the mirror of {@link causeForEvent},
+ * which seats why a lane parked on the `BLOCKED` that parked it.
+ *
+ * A rationale on a non-`UNBLOCKED` event is refused rather than dropped: only a resume is a
+ * clearance, so anything else carrying one is a caller that misunderstood the field, and recording
+ * it would seat an explanation on a line no unpark and no reader is looking at. A blank one is
+ * refused for the reason the field exists at all — a clearance whose recorded reason says nothing is
+ * exactly as unauditable as one that recorded none.
+ */
+export const rationaleForEvent = (
+	raw: string | null,
+	event: OperatorEvent,
+): RationaleResolution => {
+	if (raw === null) return {_tag: "Reasoned", rationale: null};
+	if (event !== "UNBLOCKED") {
+		return {
+			_tag: "Rejected",
+			reason: `a rationale names why a park was cleared, and this token maps to ${event}, not UNBLOCKED — drop --rationale`,
+		};
+	}
+	const trimmed = raw.trim();
+	return trimmed === ""
+		? {
+				_tag: "Rejected",
+				reason: "--rationale is blank, and a clearance that says nothing is one nobody can review",
+			}
+		: {_tag: "Reasoned", rationale: trimmed};
 };
 
 export type FloorResolution =

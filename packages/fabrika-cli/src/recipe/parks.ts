@@ -21,6 +21,13 @@
  * lane parked. This table is priced at a proving read; naming a park is not.
  */
 
+import {
+	type ParkRoute,
+	remedyForCause,
+	routeForCause,
+	structuralParkCause,
+} from "../lane/report.ts";
+
 /** The clearance read a recipe relays. One constructor per read, so a new recipe cannot be prose. */
 export type Clearance =
 	| "cp-approval"
@@ -41,16 +48,30 @@ export interface ParkRecipe {
 	 * different reason by reading a §CP approval nobody was waiting on.
 	 */
 	readonly cause: string | null;
+	/**
+	 * Whose failure this park is — read off `PARK_CAUSES` ([`lane/report.ts`](../lane/report.ts)),
+	 * never declared here.
+	 *
+	 * A row does not get to say: the route belongs to the cause, and a second declaration is a second
+	 * place it drifts. {@link routeForCause} is the whole derivation, and a cause-less row takes its
+	 * fail-closed `founder` arm.
+	 */
+	readonly route: ParkRoute;
 	/** The read whose answer decides whether the park's cause is gone. */
 	readonly clearance: Clearance;
 	/**
 	 * The verb the clearance runs to remove the park's cause before re-reading, or `null` for a
-	 * clearance that only waits on somebody else.
+	 * clearance that only waits on somebody else — read off `PARK_CAUSES`
+	 * ([`lane/report.ts`](../lane/report.ts)), never declared here.
 	 *
 	 * A row naming one is a row that clears itself: `branch-free` sat at exit 13 forever without one,
-	 * because reading whether a tree still holds the branch cannot make it stop. A row naming
-	 * `null` is deliberate, not unfinished — `cp-approval` waits on a human's judgment, and a recipe
-	 * that "removed" that cause would be granting the approval.
+	 * because reading whether a tree still holds the branch cannot make it stop. A row naming `null`
+	 * is deliberate, not unfinished — `cp-approval` waits on a human's judgment, and a recipe that
+	 * "removed" that cause would be granting the approval.
+	 *
+	 * A row does not get to say which verb that is, for the reason it does not get to say its route:
+	 * the remedy belongs to the cause, and a second declaration is a second place it drifts.
+	 * {@link remedyForCause} is the whole derivation, and a cause-less row takes its `null` arm.
 	 */
 	readonly remedy: string | null;
 	/** What the park is waiting on, in one clause a refusal can quote. */
@@ -102,43 +123,52 @@ export const QUEUE_MOVED_GRANT = 1;
  * the PR. What it does instead is grant: the recipe is the grantor, so the clear and the wait it buys
  * ride one recorded event and there is no bare `UNBLOCKED` into a spent budget for the fold to refuse.
  */
+/**
+ * One row, with its route and its remedy read off the cause table rather than written down a second
+ * time.
+ *
+ * The rows below hand in everything but those two — which is the point: a row that could state its
+ * own route or its own remedy could state one the cause disagrees with, and nothing would compare
+ * them.
+ */
+const row = (spec: Omit<ParkRecipe, "route" | "remedy">): ParkRecipe => ({
+	...spec,
+	route: routeForCause(spec.cause),
+	remedy: remedyForCause(spec.cause),
+});
+
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
-	{
+	row({
 		park: "human:cp-approval",
 		cause: null,
 		clearance: "cp-approval",
-		remedy: null,
 		waitingOn: "a control-plane approval at the PR's current head",
-	},
-	{
+	}),
+	row({
 		park: "human:queue-stall",
 		cause: null,
 		clearance: "queue-moved",
-		remedy: null,
 		waitingOn: "the merge queue to move this PR — to land it, or to eject it",
-	},
-	{
+	}),
+	row({
 		park: "blocked",
 		cause: "worktree-holds-branch",
 		clearance: "branch-free",
-		remedy: "fabrika build retire",
 		waitingOn: "the working tree holding this build's lane branch to be removed",
-	},
-	{
+	}),
+	row({
 		park: "blocked",
 		cause: "campaign-paused",
 		clearance: "campaign-active",
-		remedy: null,
 		waitingOn: "the campaign homing this lane's milestone to read active again",
-	},
-	{
+	}),
+	row({
 		park: "blocked",
 		cause: "spawn-dead",
 		clearance: "spawn-clear",
-		remedy: "fabrika build retire",
 		waitingOn:
 			"the dead shell's claim and working tree to be gone so the brief can be dispatched again",
-	},
+	}),
 ];
 
 /** Whether a leaf state is a park at all — the lane machine's two park shapes. */
@@ -147,7 +177,17 @@ export const isPark = (leaf: string): boolean => leaf === "blocked" || leaf.star
 export type ParkClass =
 	| {readonly _tag: "NotParked"; readonly leaf: string}
 	| {readonly _tag: "Known"; readonly recipe: ParkRecipe}
-	| {readonly _tag: "Novel"; readonly leaf: string; readonly reason: string};
+	| {
+			readonly _tag: "Novel";
+			readonly leaf: string;
+			/**
+			 * The cause the parking event named, carried through rather than only spelled into
+			 * {@link ParkClass} `reason`'s prose — a caller that routes on the cause (whose failure this
+			 * park is) would otherwise have to parse the sentence back out.
+			 */
+			readonly cause: string | null;
+			readonly reason: string;
+	  };
 
 /**
  * Classify one folded leaf state, and the cause its parking event named, against the table.
@@ -156,12 +196,18 @@ export type ParkClass =
  * for the reason it always was: the ledger recorded the event and not why, so no fixed fix keys on
  * it. A shell can name a cause, and a named cause the table does not carry is novel too — but it
  * says which cause, so the gap is a row somebody can write rather than a structural dead end.
+ *
+ * A leaf only one transition can produce carries its own cause ({@link structuralParkCause}), and
+ * that stands in for the recorder's when the parking event could not carry one — a spent repair
+ * budget arrives as a `FAIL`, which `causeForEvent` refuses a `--cause` on. A cause the event did
+ * name still wins: a recorder that knows better says so, exactly as it does on a machinery lap.
  */
 export const classifyPark = (leaf: string, cause: string | null): ParkClass => {
 	if (!isPark(leaf)) return {_tag: "NotParked", leaf};
-	const recipe = KNOWN_PARKS.find((row) => row.park === leaf && row.cause === cause);
+	const seated = cause ?? structuralParkCause(leaf);
+	const recipe = KNOWN_PARKS.find((row) => row.park === leaf && row.cause === seated);
 	if (recipe !== undefined) return {_tag: "Known", recipe};
-	return {_tag: "Novel", leaf, reason: novelReason(leaf, cause)};
+	return {_tag: "Novel", leaf, cause: seated, reason: novelReason(leaf, seated)};
 };
 
 const novelReason = (leaf: string, cause: string | null): string => {

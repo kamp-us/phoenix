@@ -7,6 +7,8 @@
  */
 
 import {type Registration, register} from "./key-group.ts";
+import {assemblyRefreshKey} from "./keys/assembly-refresh.ts";
+import {assemblyReplayKey} from "./keys/assembly-replay.ts";
 import {auditCatalogsKey} from "./keys/audit-catalogs.ts";
 import {boardVocabularyKey} from "./keys/board-vocabulary.ts";
 import {campaignAuthorsKey} from "./keys/campaign-authors.ts";
@@ -19,6 +21,8 @@ import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {laneConcurrencyCapKey} from "./keys/lane-concurrency-cap.ts";
+import {machineryLapsKey} from "./keys/machinery-laps.ts";
+import {parkCauseKey} from "./keys/park-cause.ts";
 import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
@@ -27,6 +31,8 @@ import {uiCaptureKey, uiSurfacesKey} from "./keys/ui-surfaces.ts";
 import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
 export const KEY_GROUPS: ReadonlyArray<Registration> = [
+	register(assemblyRefreshKey),
+	register(assemblyReplayKey),
 	register(auditCatalogsKey),
 	register(boardVocabularyKey),
 	register(campaignAuthorsKey),
@@ -40,6 +46,8 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(docLeakExemptKey),
 	register(governedRootsKey),
 	register(laneConcurrencyCapKey),
+	register(machineryLapsKey),
+	register(parkCauseKey),
 	register(portabilityKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),

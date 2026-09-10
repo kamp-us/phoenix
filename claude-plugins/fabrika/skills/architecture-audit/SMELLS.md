@@ -1,32 +1,26 @@
 # Smell catalog
 
 The finite list of code-shape smells the audit checks explicitly. It runs as a **coverage gate**
-after the lens passes ([SKILL.md](SKILL.md) step 5): each smell gets one row carrying `✓ checked`,
-`— N/A` or `✗ found`. What each status commits you to, and the table's shape, are the contract's:
-
-```bash
-fabrika wire doc-section --heading "The coverage gate" < <skill-base>/contract.md
-```
-
-The gate converts open-ended audit output into a **covered surface**. Two runs that surface
-different findings can still be honestly compared, because they checked the same finite list. **The
-catalog is the durable artifact; the candidate set is not.**
+after the lens passes ([SKILL.md](SKILL.md) step 4). Every smell gets an evidence row using
+`fabrika wire doc-section --heading "The coverage gate" < <skill-base>/contract.md`,
+including an explicit gap when it was not examined. The list is stable; each run's inspected reach and conclusions may differ. Comparing them
+requires both, not an assertion that searching a folder inspected every file inside it.
 
 ## Why a catalog at all
 
-Every smell below is a **qualitative predicate**, never a numeric threshold: a reader who cannot
-count tokens precisely will invent a count that clears whatever bar you set, so the bar is a shape
-you can see rather than a number you have to measure.
+The catalog checks questions organic exploration can miss. Each entry is a qualitative shape to
+investigate, not a score or an automatic defect. A confirmed shape still needs evidence of friction:
+a compatibility reader can be necessary, and a small module can hide a valuable invariant.
 
-## Why these smells
+## Why these ten
 
 They are language-neutral, and each one names friction in the architecture vocabulary the repo's own
-`.glossary/LANGUAGE.md` defines — depth, seam, locality, leverage. **The register is where those
-terms are defined**, read at run time; this file points at it and holds no copy.
+`.glossary/LANGUAGE.md` defines — depth, seam, locality, leverage. **This file does not define those
+terms and must not**: it points at the register, and the audit reads the register at run time.
 
-The shipped list is a starter, not a ceiling. A repo adds its own in the same table shape through
-the `auditCatalogs` config key, and the gate emits those rows after the shipped ones. The extension
-is add-only: nothing a repo declares can remove or replace a smell below.
+The ten are a starter, not a ceiling. A repo adds its own in the same table shape through the
+`auditCatalogs` config key, and the gate emits those rows after the shipped ones. The extension is
+add-only: nothing a repo declares can remove or replace a smell below.
 
 ## The smells
 
@@ -79,10 +73,29 @@ Symptom: "always do X" in docs, with no lint rule, type, or runtime check behind
 
 ## Reporting the gate
 
-Run the gate as a table, then promote any `✗ found` smell the lens passes missed into the finding
-set before the table goes back to the human.
+The gate is accounting on the initial grilling session, not a separate backlog issue. Only selected
+scopes become actionable reports. Account for every row after exploration. A newly
+noticed shape gets the same evidence check as a lens candidate; preserve its uncertainty or rejection
+reason. Keep the table available and summarize meaningful limits in the selection conversation:
 
-Two runs over the same code may surface different findings, and **their rows should still match** —
-that is what the gate buys. A Status column that moves between runs is itself worth looking at.
+```markdown
+| Smell | Status | Notes |
+|---|---|---|
+| 1. Shallow module | ✗ found | finding 2 (`adapt-payload`) |
+| 2. Pass-through layer | ✓ checked | traced the three request adapters; each owns error translation |
+| 3. Duplicated contract | ✗ found | finding 1 |
+| 4. Magic-string seam | ✗ found | finding 4 |
+| 5. Stale module | ✓ checked | traced request-adapter exports to current callers |
+| 6. Test surface mismatch | ✗ found | finding 3 |
+| 7. Hidden global state | ✓ checked | request adapters receive configuration explicitly |
+| 8. Shotgun surgery hotspot | ✓ checked | traced timeout-policy changes across the request adapters |
+| 9. Stale duplicate test | ? unexamined | test suite ownership was not inspected |
+| 10. Convention-over-code drift | — N/A | no convention claims in scope |
+```
 
-**Count the rows at run time**, one per smell defined above, in order.
+Two runs must account for the same catalog rows; their statuses need not match. Different inspected
+reach or new evidence can explain a changed answer. Do not claim complete coverage while a row is
+unexamined, or present a negative check as an exhaustive proof.
+
+**Never hardcode the row count.** Emit one row per smell defined above, in order, then one per smell
+in each declared repo catalog, in the order the `auditCatalogs` key lists them.
