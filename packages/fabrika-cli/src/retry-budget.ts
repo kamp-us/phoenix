@@ -13,10 +13,22 @@
  * fails closed if the committed template or an emitted epic machine drifts off {@link RETRY_BUDGET}.
  */
 
-/** The retries a failing task gets. The one declared budget; everything else derives from it. */
-export const RETRY_BUDGET = 2;
+/**
+ * The retries a failing task gets. The one declared budget; everything else derives from it.
+ *
+ * It was 2 while the pipeline was unproven and every spent budget cost a founder ask. The founder
+ * raised it on the walk that opened the driver-routing axis, on the ground that fabrika had proved
+ * itself — a tuning dial, like `MACHINERY_LAP_BUDGET` below, not a derivation.
+ */
+export const RETRY_BUDGET = 3;
 
-/** The round the budget is spent at, so the loop freezes — derived, never a second number. */
+/**
+ * The round the budget is spent at — derived, never a second number.
+ *
+ * Spending it is a park and not an end: the guarded FAIL arms fall through to `human:budget-spent`,
+ * whose cause routes to the driver, rather than to a `frozen` final no recipe could even see as a
+ * park. `lane/report.ts`'s `PARK_CAUSES` carries that cause as `repair-budget-spent`.
+ */
 export const CAP_ROUND = RETRY_BUDGET + 1;
 
 /**

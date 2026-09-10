@@ -1359,8 +1359,8 @@ appended	4287	3
 ```
 
 ```
-$ printf 'anything' | fabrika review append-criterion 4287 --pr 4321 --round 3
-escalated-frozen	4287	3
+$ printf 'anything' | fabrika review append-criterion 4287 --pr 4321 --round 4
+escalated-frozen	4287	4
 ```
 
 **Grounding**

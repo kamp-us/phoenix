@@ -206,8 +206,8 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
-| `frozen` | park — step 4. It is an error final, so it trips the phase where it sits and the fold says so; it is also a final with a door out, and walking it is a human's `UNBLOCKED`, never yours |
-| `human:epic-review` | park — step 4, and the same shape as `frozen`: a failed epic review is a park, an error final that trips the epic's tail phase and carries an `UNBLOCKED` door a human walks |
+| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. Its cause is `repair-budget-spent`, which routes to the driver, and its `UNBLOCKED` door needs no cleared round |
+| `frozen` | park — step 4. Only an emitted epic child boots here, on a board close that was never a landing. It is an error final, so it trips the phase where it sits and the fold says so; its door leads back to itself, so that child is re-emitted rather than resumed |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
 | any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
@@ -626,7 +626,8 @@ Two reads stay yours, because no shell can take them:
   a `22` is a `BLOCKED`, never the `DONE` the spawn printed;
 - **a dead or unresponsive spawn, a report you cannot parse, and a permission denial a shell
   reports** — each is a BLOCKED-class outcome, never something to route around, and never a
-  retry-in-place: retries belong to the machine (`FAIL` spends one; `frozen` is its answer), and
+  retry-in-place: retries belong to the machine (`FAIL` spends one; `human:budget-spent` is its
+  answer), and
   you never re-spawn what the fold has not re-asked for. Record `BLOCKED`.
 
 **A dead spawn's residue is yours to clear.** `BLOCKED` records where the lane stands; it
@@ -999,12 +1000,15 @@ never compose the routing: whose park it is comes off the cause table, and a `fo
 
 You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head; for `frozen` and for the epic tail's `human:epic-review`, which is a park like any
-other failed epic review, it is a founder-cleared
-repair round, recorded with `build clear`, which appends a `<TASK>.CLEARED` event to the lane's log
+current head; for `human:budget-spent` it is the driver's own diagnosis, since the cause routes to
+the driver and the door needs no grant.
+
+A founder-cleared repair round is still recorded with `build clear`, which appends a
+`<TASK>.CLEARED` event to the lane's log
 and moves the task nowhere — the door out is
-still the human's `UNBLOCKED`, and the two land in either order. Without a `CLEARED` behind it that
-`UNBLOCKED` is **refused** on exit `36`: the resume would restore the state and not the budget, so
+still the human's `UNBLOCKED`, and the two land in either order. Where a lane's own machine seals
+its spent-budget park as a FINAL — every lane emitted before the park was opened — that `UNBLOCKED`
+without a `CLEARED` behind it is **refused** on exit `36`: the resume would restore the state and not the budget, so
 every guarded route out falls straight back to the park — the retry budget is anchored to a recorded
 event, not to the state. Read that code as "the grant
 has not been recorded yet", never as an event to retype — and read *which* grant off the refusal,
@@ -1076,9 +1080,9 @@ as it reads — nothing here is yours to change — and name the two verbs that 
 line when re-run without the flag.
 
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
-`frozen` and on `human:epic-review` the run ends `LANE-PARKED` with the transcript and the need
-posted (the founder-cleared round above, which both of them need); every other error final has no
-door and ends `LANE-TERMINAL`.
+`frozen` the run ends `LANE-PARKED` with the transcript and the need posted — that child's door
+leads back to itself, so what it needs is a re-emitted machine. Every other error final has no door
+and ends `LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
@@ -1154,10 +1158,11 @@ guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPP
 `LANE-PARKED`: a park promises an `UNBLOCKED` resume, which a state this skill does not recognise
 cannot honour — and appending `BLOCKED` toward cells you do not know is exactly the guess step 2's
 routing table forbids. That resume is mechanical from `blocked` and from the `human:*` parks that
-are not error finals. From `frozen` and from `human:epic-review` — the two error finals with a door
-— it needs a recorded `CLEARED` behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the
-park-clearing paragraph in step 4 above, so their promise is "the founder grants the round, then the
-resume walks", not "the next driver records `UNBLOCKED`". A park reported as a
+are not error finals, `human:budget-spent` among them. From an error final carrying a door — a lane
+whose own machine predates the spent-budget park, and seals it as a final — it needs a recorded
+`CLEARED` behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the park-clearing
+paragraph in step 4 above, so its promise is "the founder grants the round, then the resume walks",
+not "the next driver records `UNBLOCKED`". A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

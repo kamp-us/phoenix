@@ -2,7 +2,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {MACHINERY_LAP_BUDGET} from "../retry-budget.ts";
+import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, MALFORMED_RECORD} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
@@ -36,7 +36,7 @@ describe("lane status", () => {
 			context: {
 				issue: {
 					retries: 0,
-					maxRetries: 2,
+					maxRetries: RETRY_BUDGET,
 					waits: 0,
 					maxWaits: WAIT_BUDGET,
 					laps: 0,
@@ -93,7 +93,7 @@ describe("lane print", () => {
 			tasks: {
 				issue: {
 					initial: "queued",
-					maxRetries: 2,
+					maxRetries: RETRY_BUDGET,
 					maxWaits: WAIT_BUDGET,
 					maxLaps: MACHINERY_LAP_BUDGET,
 				},

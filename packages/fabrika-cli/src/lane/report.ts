@@ -395,6 +395,27 @@ export const PARK_CAUSES = {
 		route: "driver",
 		remedy: null,
 	},
+	/**
+	 * The task spent its whole repair budget on content FAILs, so the guarded FAIL arm fell through
+	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
+	 * and found it wrong `RETRY_BUDGET` times.
+	 *
+	 * It is the one cause no recorder ever types, because no `FAIL` may carry a `--cause`: it is
+	 * bound to its park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold.
+	 *
+	 * No remedy: nothing a verb runs makes a thrice-failed artifact right, and `build clear` is not
+	 * it — that verb is PR-keyed, so an epic child, which opens no PR, could never reach it. That
+	 * dead end is what routing this to the driver replaces.
+	 *
+	 * Route `driver`: deciding what a stuck task needs next — another round, a re-scope, a park a
+	 * person reads — is the driver's own diagnosis, and only a product call goes past it.
+	 */
+	"repair-budget-spent": {
+		meaning:
+			"the task spent its whole repair budget on content FAILs and owes a driver's diagnosis",
+		route: "driver",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
@@ -419,6 +440,27 @@ export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
 /** The cause a machinery terminal carries on its own, or `null` for every other token. */
 export const machineryCause = (token: string): ParkCause | null =>
 	MACHINERY_CAUSES[token.trim().toUpperCase()] ?? null;
+
+/**
+ * The causes a park leaf carries on its own — the second binding that makes a cause structural.
+ *
+ * {@link MACHINERY_CAUSES} reads a lap's cause off its terminal token; this reads a park's cause off
+ * the state the machine fell into. The two exist for one reason: a cause nobody can type is still a
+ * cause. {@link causeForEvent} refuses `--cause` on anything but a `BLOCKED` or a lap, and a spent
+ * repair budget arrives as a `FAIL` — so without this table every budget park folded causeless,
+ * which `routeForCause` reads `founder` and `classifyPark` reads `Novel`. That is the no-door dead
+ * end a driver route replaces.
+ *
+ * Only a leaf a single transition can produce belongs here. The one below is reached by the
+ * spent-budget fallthrough of a guarded `FAIL` array and by nothing else.
+ */
+export const STRUCTURAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"human:budget-spent": "repair-budget-spent",
+};
+
+/** The cause a park leaf carries on its own, or `null` for a leaf that owes its recorder one. */
+export const structuralParkCause = (leaf: string): ParkCause | null =>
+	STRUCTURAL_PARK_CAUSES[leaf] ?? null;
 
 /** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();

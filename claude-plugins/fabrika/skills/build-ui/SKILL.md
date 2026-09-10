@@ -186,7 +186,7 @@ cross-lane signals are closed-vocabulary — kind + action + branded ref, receiv
 to re-satisfy — fix on the same branch, **re-render and re-run the look**, push with
 `--force-with-lease`, re-attach evidence at the new head (`fabrika ui evidence` again — captures
 from the old head no longer describe this one), answer findings in a
-`fabrika build note $issue_or_pr_number --token <claim-token>`. Cap at round 3 → `ESCALATED`.
+`fabrika build note $issue_or_pr_number --token <claim-token>`. The fold's own `capReached` says when the budget is spent — never a number you carry; on `true` → `ESCALATED`.
 
 ## Expectations you hold but never recompute
 

@@ -21,7 +21,12 @@
  * lane parked. This table is priced at a proving read; naming a park is not.
  */
 
-import {type ParkRoute, remedyForCause, routeForCause} from "../lane/report.ts";
+import {
+	type ParkRoute,
+	remedyForCause,
+	routeForCause,
+	structuralParkCause,
+} from "../lane/report.ts";
 
 /** The clearance read a recipe relays. One constructor per read, so a new recipe cannot be prose. */
 export type Clearance =
@@ -191,12 +196,18 @@ export type ParkClass =
  * for the reason it always was: the ledger recorded the event and not why, so no fixed fix keys on
  * it. A shell can name a cause, and a named cause the table does not carry is novel too — but it
  * says which cause, so the gap is a row somebody can write rather than a structural dead end.
+ *
+ * A leaf only one transition can produce carries its own cause ({@link structuralParkCause}), and
+ * that stands in for the recorder's when the parking event could not carry one — a spent repair
+ * budget arrives as a `FAIL`, which `causeForEvent` refuses a `--cause` on. A cause the event did
+ * name still wins: a recorder that knows better says so, exactly as it does on a machinery lap.
  */
 export const classifyPark = (leaf: string, cause: string | null): ParkClass => {
 	if (!isPark(leaf)) return {_tag: "NotParked", leaf};
-	const recipe = KNOWN_PARKS.find((row) => row.park === leaf && row.cause === cause);
+	const seated = cause ?? structuralParkCause(leaf);
+	const recipe = KNOWN_PARKS.find((row) => row.park === leaf && row.cause === seated);
 	if (recipe !== undefined) return {_tag: "Known", recipe};
-	return {_tag: "Novel", leaf, cause, reason: novelReason(leaf, cause)};
+	return {_tag: "Novel", leaf, cause: seated, reason: novelReason(leaf, seated)};
 };
 
 const novelReason = (leaf: string, cause: string | null): string => {

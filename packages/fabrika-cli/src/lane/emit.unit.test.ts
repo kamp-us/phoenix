@@ -6,12 +6,14 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
+import {classifyPark} from "../recipe/parks.ts";
 import {CAP_ROUND, MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
 import {parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
+import {routeForCause} from "./report.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.body.txt");
@@ -229,6 +231,7 @@ describe("emitMachine", () => {
 			"integrate",
 			"blocked",
 			"human:replay-stall",
+			"human:budget-spent",
 			"hist",
 			"landed",
 			"frozen",
@@ -250,7 +253,7 @@ describe("emitMachine", () => {
 						"ISSUE_4301.BLOCKED": "blocked",
 						"ISSUE_4301.FAIL": [
 							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-							{target: "frozen"},
+							{target: "human:budget-spent"},
 						],
 					},
 				},
@@ -346,7 +349,11 @@ describe("emitMachine", () => {
 		expect(parked?.retries).toBe(0);
 	});
 
-	it("trips the lane when integrate keeps colliding past the retry budget — never a landing", () => {
+	// A collided child used to exhaust into `frozen`, which trips the phase and is no park at all to
+	// `recipe/parks.ts` — so the run ended with a child nothing could resume and no PR for the one
+	// verb that grants a round. It parks on a driver-routed leaf now: the phase stays open, and the
+	// driver takes the next move off the cause.
+	it("parks the child on a driver-routed leaf when integrate keeps colliding past the budget", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		/** One collided integration: the range passes review, the merge fails, the repair rebuilds. */
 		const collide: ReadonlyArray<readonly [string, string]> = [
@@ -362,11 +369,19 @@ describe("emitMachine", () => {
 			["issue_4301", "FAIL"],
 		];
 		expect(drive(compiled, exhausted).stateValue).toMatchObject({
-			phase1: {issue_4301: "frozen"},
+			phase1: {issue_4301: "human:budget-spent"},
 		});
-		const tripped = drive(compiled, [...exhausted, ...land("issue_4302")]);
-		expect(tripped).toMatchObject({stateValue: "tripped", status: "done"});
-		expect(tripped.context.errors).toEqual(["issue_4301"]);
+		expect(classifyPark("human:budget-spent", null)).toMatchObject({
+			_tag: "Novel",
+			cause: "repair-budget-spent",
+		});
+		expect(routeForCause("repair-budget-spent")).toBe("driver");
+
+		// The phase stays open behind the park: a landed sibling does not carry the run past a child
+		// still waiting on its driver, and no tail starts over one.
+		const held = drive(compiled, [...exhausted, ...land("issue_4302")]);
+		expect(held.status).toBe("active");
+		expect(held.stateValue).toMatchObject({phase1: {issue_4301: "human:budget-spent"}});
 	});
 
 	it("carries an epic tail phase whose one region reviews the single PR, then ships it", () => {
@@ -379,7 +394,7 @@ describe("emitMachine", () => {
 						"EPIC_4300.PASS": "ship",
 						"EPIC_4300.FAIL": [
 							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-							{target: "human:epic-review"},
+							{target: "human:budget-spent"},
 						],
 					},
 				},
@@ -389,12 +404,12 @@ describe("emitMachine", () => {
 						"EPIC_4300.BLOCKED": "human:cp-approval",
 						"EPIC_4300.FAIL": [
 							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-							{target: "human:epic-review"},
+							{target: "human:budget-spent"},
 						],
 					},
 				},
 				shipped: {type: "final"},
-				"human:epic-review": {type: "final", on: {"EPIC_4300.UNBLOCKED": "hist"}},
+				"human:budget-spent": {on: {"EPIC_4300.UNBLOCKED": "hist"}},
 			},
 		});
 	});
@@ -416,55 +431,59 @@ describe("emitMachine", () => {
 
 		const spent = drive(compiled, [
 			...toShip,
-			["epic_4300", "FAIL"],
-			["epic_4300", "PASS"],
-			["epic_4300", "FAIL"],
-			["epic_4300", "PASS"],
+			...Array.from({length: RETRY_BUDGET}, () => [
+				["epic_4300", "FAIL"] as const,
+				["epic_4300", "PASS"] as const,
+			]).flat(),
 			["epic_4300", "FAIL"],
 		]);
-		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
-		expect(spent.context.errors).toEqual(["epic_4300"]);
+		expect(spent).toMatchObject({
+			stateValue: {epic: {epic_4300: "human:budget-spent"}},
+			status: "active",
+		});
+		expect(spent.context.errors).toEqual([]);
 	});
 
-	it("trips the lane when the epic review fails past its retry budget — a park, never `complete`", () => {
+	it("parks the tail when the epic review fails past its retry budget — never `complete`", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
-		const fails: ReadonlyArray<readonly [string, string]> = [
-			["epic_4300", "FAIL"],
-			["epic_4300", "FAIL"],
-		];
+		const fails = Array.from({length: RETRY_BUDGET}, () => ["epic_4300", "FAIL"] as const);
 		expect(drive(compiled, [...LAND_ALL, ...fails]).stateValue).toEqual({
 			epic: {epic_4300: "review"},
 		});
 		const spent = drive(compiled, [...LAND_ALL, ...fails, ["epic_4300", "FAIL"]]);
-		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
-		expect(spent.context.errors).toEqual(["epic_4300"]);
+		expect(spent).toMatchObject({
+			stateValue: {epic: {epic_4300: "human:budget-spent"}},
+			status: "active",
+		});
+		expect(spent.context.errors).toEqual([]);
 	});
 
-	it("walks the epic-review park back into review on a granted round", () => {
+	// The whole of the no-door fix: this park used to be a `final`, so `applyEvent` refused the resume
+	// as `unbudgeted-resume` and the only way past it was a `build clear` grant — a verb keyed on a PR
+	// an epic child does not have. The leaf is an ordinary park now, so the driver's `UNBLOCKED` walks
+	// it with no grant at all, and the spent retries stand behind it.
+	it("walks the spent-budget park back into review on the driver's own resume", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const parked = driveLog(compiled, [
 			...LAND_ALL,
 			...Array.from({length: CAP_ROUND}, () => ["epic_4300", "FAIL"] as const),
 		]);
 		expect(deriveStatus(compiled, statesOf(compiled, parked))).toMatchObject({
-			stateValue: "tripped",
-			status: "done",
+			stateValue: {epic: {epic_4300: "human:budget-spent"}},
+			status: "active",
 		});
 
-		// The door is walkable and the budget still gates it, exactly as `frozen`'s does.
-		expect(
-			applyEvent(compiled, statesOf(compiled, parked), "epic_4300", "UNBLOCKED", AT),
-		).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
-
-		const resumed = driveLog(
-			compiled,
-			[["epic_4300", "UNBLOCKED"]],
-			grant(compiled, parked, "epic_4300", CAP_ROUND),
-		);
+		const resumed = driveLog(compiled, [["epic_4300", "UNBLOCKED"]], parked);
 		expect(deriveStatus(compiled, statesOf(compiled, resumed))).toMatchObject({
 			stateValue: {epic: {epic_4300: "review"}},
 			status: "active",
 		});
+		expect(statesOf(compiled, resumed).epic_4300?.retries).toBe(RETRY_BUDGET);
+
+		// The founder grant is untouched beside it: a cleared round still raises the budget, and the
+		// resumed tail can spend it.
+		const granted = grant(compiled, parked, "epic_4300", CAP_ROUND);
+		expect(statesOf(compiled, granted).epic_4300?.maxRetries).toBe(RETRY_BUDGET + 1);
 	});
 
 	it("terminates a partly-built epic — every child closed still leaves the epic review to run", () => {

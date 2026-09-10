@@ -7,19 +7,19 @@
 		"context": {
 			"issue_4301": {
 				"retries": 0,
-				"maxRetries": 2
+				"maxRetries": 3
 			},
 			"issue_4302": {
 				"retries": 0,
-				"maxRetries": 2
+				"maxRetries": 3
 			},
 			"issue_4303": {
 				"retries": 0,
-				"maxRetries": 2
+				"maxRetries": 3
 			},
 			"epic_4300": {
 				"retries": 0,
-				"maxRetries": 2
+				"maxRetries": 3
 			}
 		},
 		"states": {
@@ -52,7 +52,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "frozen"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -78,7 +78,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "frozen"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -89,6 +89,11 @@
 								}
 							},
 							"human:replay-stall": {
+								"on": {
+									"ISSUE_4301.UNBLOCKED": "hist"
+								}
+							},
+							"human:budget-spent": {
 								"on": {
 									"ISSUE_4301.UNBLOCKED": "hist"
 								}
@@ -133,7 +138,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "frozen"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -159,7 +164,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "frozen"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -170,6 +175,11 @@
 								}
 							},
 							"human:replay-stall": {
+								"on": {
+									"ISSUE_4302.UNBLOCKED": "hist"
+								}
+							},
+							"human:budget-spent": {
 								"on": {
 									"ISSUE_4302.UNBLOCKED": "hist"
 								}
@@ -228,7 +238,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "frozen"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -254,7 +264,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "frozen"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -265,6 +275,11 @@
 								}
 							},
 							"human:replay-stall": {
+								"on": {
+									"ISSUE_4303.UNBLOCKED": "hist"
+								}
+							},
+							"human:budget-spent": {
 								"on": {
 									"ISSUE_4303.UNBLOCKED": "hist"
 								}
@@ -311,7 +326,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "human:epic-review"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -328,7 +343,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "human:epic-review"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -354,7 +369,7 @@
 											"actions": "incrementRetries"
 										},
 										{
-											"target": "human:epic-review"
+											"target": "human:budget-spent"
 										}
 									]
 								}
@@ -380,8 +395,7 @@
 							"shipped": {
 								"type": "final"
 							},
-							"human:epic-review": {
-								"type": "final",
+							"human:budget-spent": {
 								"on": {
 									"EPIC_4300.UNBLOCKED": "hist"
 								}
