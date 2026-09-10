@@ -145,11 +145,21 @@ export const agyChildrenStub = Effect.gen(function* () {
 	};
 });
 
-/** The layer under test over one stubbed child, with the platform services `make` asks for. */
-export const agyLayerOver = (child: {
-	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
-}): Layer.Layer<TuvalAiAgent> =>
-	Layer.effect(TuvalAiAgent, aiAgentOverSpawner({binary: "agy", home: "/tuval/agy-home"})).pipe(
+/**
+ * The layer under test over one stubbed child, with the platform services `make` asks for.
+ *
+ * `home` defaults to a path nothing is written under, which is all a test of the event path needs.
+ * A test of the store reads — `sessionTranscript`, whose answers turn on what is on disk under the
+ * home — hands a disposable directory instead, because the default cannot be made to hold a
+ * conversation and the real `$HOME` must never be read.
+ */
+export const agyLayerOver = (
+	child: {
+		readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
+	},
+	home = "/tuval/agy-home",
+): Layer.Layer<TuvalAiAgent> =>
+	Layer.effect(TuvalAiAgent, aiAgentOverSpawner({binary: "agy", home})).pipe(
 		Layer.provide(child.layer),
 		Layer.provide(NodeFileSystem.layer),
 		Layer.provide(NodePath.layer),

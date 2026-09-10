@@ -16,7 +16,9 @@
  *   `result.status` are typed open for the same reason.
  * - **Only the fields that route a line are required.** Every other field is optional and
  *   defaulted, because a line refused for a key this pin has not seen is content the operator
- *   never gets.
+ *   never gets. A default never aliases the unknown onto a real value a reader branches on, though:
+ *   `result.num_turns` is `number | null` and not `0`, because `0` is a turn number the usage fold
+ *   reads as a decision ([#8707](https://github.com/kamp-us/phoenix/issues/8707)).
  *
  * The envelope is nested and each payload is keyed by its own event name —
  * `{"event":"step_update","step_update":{…}}` — and `conversation_id` sits at the top level on
@@ -98,7 +100,13 @@ export interface AgyResult {
 	/** The turn's whole reply. The step deltas are lossy against this; this one is authoritative. */
 	readonly response: string;
 	readonly error?: string;
-	readonly num_turns: number;
+	/**
+	 * `null` when the line carried no `num_turns` — the unknown is kept distinct from the real value
+	 * `0`, because the mapper reads the turn number to decide whether a cumulative contains turns
+	 * this child never ran, and a missing field defaulted to a turn number picks that arm for it
+	 * ([#8707](https://github.com/kamp-us/phoenix/issues/8707)).
+	 */
+	readonly num_turns: number | null;
 	readonly usage?: AgyUsage;
 	/** Element shape unmeasured at this pin, so it stays `JsonValue` and is rendered, not parsed. */
 	readonly denied_actions?: ReadonlyArray<JsonValue>;
@@ -240,7 +248,7 @@ const readResult = (value: unknown): AgyResult | undefined => {
 		conversation_id: conversationId,
 		status,
 		response: text(source.response) ?? "",
-		num_turns: count(source.num_turns) ?? 0,
+		num_turns: count(source.num_turns) ?? null,
 		...optional("error", text(source.error)),
 		...optional("usage", readUsage(source.usage)),
 		...optional("denied_actions", denied),
