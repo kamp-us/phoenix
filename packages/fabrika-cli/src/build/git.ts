@@ -11,8 +11,8 @@
  *   a branch only this clone holds — is a *constructed* case with a proof behind it, not a string
  *   that falls through to a bare `git fetch` and a stale local read.
  * - **A push is believed only after the remote ref is read back.** `git push`'s own report is not
- *   evidence: a push that died mid-hook read as sent. `remoteSha` (`../io/git.ts`, re-exported
- *   below) asks the remote directly, and the caller compares.
+ *   evidence: a push that died mid-hook read as sent. {@link remoteSha} asks the remote
+ *   directly, and the caller compares.
  */
 import {Effect} from "effect";
 import {execCapture, execCaptureInput} from "../io/exec.ts";
@@ -411,11 +411,18 @@ export const publishTarget = (branch: string): Shell<{remote: string; ref: strin
 		return (yield* upstreamOf(branch)) ?? {remote: "origin", ref: branch};
 	});
 
-/**
- * The push's independent witness, re-exported from `../io/git.ts` where it now lives — `ship`'s
- * rebase publishes too, and one reading of a ref row serves both.
- */
-export {remoteSha} from "../io/git.ts";
+/** The SHA a remote's ref points at, read from the remote itself — the push's independent witness. */
+export const remoteSha = (remote: string, ref: string): Shell<Attempt<string | null>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["ls-remote", remote, `refs/heads/${ref}`]);
+		if (!r.ok) return fail(r.reason);
+		const first = r.stdout.split("\n").find((line) => line.trim() !== "");
+		if (first === undefined) return ok(null);
+		const sha = (first.split(/\s+/)[0] ?? "").trim();
+		return isObjectName(sha)
+			? ok(sha)
+			: fail(`\`git ls-remote\` printed "${first}", not a ref row`);
+	});
 
 /**
  * Make `sha` readable from this object database, fetching `<remote>/<ref>` once if it is not, and

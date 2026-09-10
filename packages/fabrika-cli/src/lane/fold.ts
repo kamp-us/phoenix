@@ -24,9 +24,11 @@ import {
 	isOperatorEvent,
 	LANDED_EVENT,
 	type LaneMsg,
+	MACHINERY_EVENT,
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
+import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -550,6 +552,7 @@ export const foldLog = (
 				...(entry.waitGrant === undefined ? {} : {waitGrant: entry.waitGrant}),
 				...(entry.partial === undefined ? {} : {partial: entry.partial}),
 				...(entry.diagnosis === undefined ? {} : {diagnosis: entry.diagnosis}),
+				...(entry.cause === undefined ? {} : {cause: entry.cause}),
 			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
@@ -811,6 +814,7 @@ export const applyEvent = (
 	waitGrant: number | null = null,
 	partial: boolean | null = null,
 	diagnosis: boolean | null = null,
+	cause: string | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		if (event === CLEARED_EVENT) {
@@ -859,6 +863,16 @@ export const applyEvent = (
 	}
 	const task = taskIn(lane, taskId);
 	const from = stateIn(states, taskId);
+	// A lane keeps its own copy of `workflow.json` from `lane open`, so a cell can predate a cause.
+	// An unrouted lap loops the stage, which is right for every cause but one — see
+	// `ROUTED_MACHINERY_CAUSES`.
+	if (event === MACHINERY_EVENT && cause !== null && ROUTED_MACHINERY_CAUSES.has(cause)) {
+		if (!(task.lapRoutes.get(from.type)?.has(cause) ?? false)) {
+			return refuseEvent(
+				`task "${taskId}" is in "${from.type}", whose machinery cell holds no arm for cause "${cause}" — this lane's machine was written before that cause existed and would loop the stage instead of folding it, so nothing was recorded`,
+			);
+		}
+	}
 	let next: TaskState;
 	try {
 		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
@@ -867,6 +881,7 @@ export const applyEvent = (
 			...(waitGrant === null ? {} : {waitGrant}),
 			...(partial === null ? {} : {partial}),
 			...(diagnosis === null ? {} : {diagnosis}),
+			...(cause === null ? {} : {cause}),
 		});
 	} catch (error) {
 		if (error instanceof NoCellError) {

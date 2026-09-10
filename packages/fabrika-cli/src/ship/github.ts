@@ -706,38 +706,6 @@ export const readMergeability = (repo: string, pr: number): Shell<Attempt<Mergea
 		}),
 	);
 
-/** Where a PR's head lives: the branch a push targets, and the repository holding it. */
-export interface HeadBranch {
-	readonly ref: string;
-	/** `owner/name` of the repository the head sits in — a fork is not the PR's own repository. */
-	readonly repo: string;
-}
-
-/**
- * The PR's head branch, read for a caller that means to *publish* to it.
- *
- * `PullRecord` (`../io/pulls.ts`) carries the head SHA and not the ref, because every reader before
- * `ship`'s rebase judged a head rather than moved one. The owning repository comes back beside the
- * ref for the same reason: a head on a fork is one this repository's credential cannot push, and a
- * caller that saw only the ref would discover that from a failed push instead of before one.
- */
-export const readHeadBranch = (repo: string, pr: number): Shell<Attempt<HeadBranch>> =>
-	authed((token) =>
-		Effect.map(restRead(token, "GET", `repos/${repo}/pulls/${pr}`), (outcome) => {
-			const body = bodyOf(outcome);
-			if (body._tag === "Failure") return body;
-			if (!isRecord(body.value) || !isRecord(body.value.head)) {
-				return fail("GitHub answered 200 but its output names no head");
-			}
-			const head = body.value.head;
-			const ref = str(head.ref);
-			const owner = isRecord(head.repo) ? str(head.repo.full_name) : "";
-			return ref === "" || owner === ""
-				? fail("GitHub answered 200 but named no head branch or no repository holding it")
-				: ok({ref, repo: owner});
-		}),
-	);
-
 /** One GraphQL round trip, with the endpoint's own `errors` array read as the refusal it is. */
 const graphql = (
 	token: string,

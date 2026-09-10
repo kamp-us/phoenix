@@ -10,8 +10,6 @@ import type {ExecResult} from "../io/exec.ts";
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OTHER_HEAD = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
-/** The head branch `ship enqueue`'s rebase replays and publishes. */
-export const HEAD_REF = "build/4287-a-thing";
 
 export interface PullShape {
 	readonly state?: string;
@@ -22,9 +20,6 @@ export interface PullShape {
 	readonly draft?: boolean;
 	readonly merged?: boolean;
 	readonly base?: string;
-	/** The head branch, and the repository holding it — a fork spells a repo other than `o/r`. */
-	readonly headRef?: string;
-	readonly headRepo?: string;
 	readonly autoMerge?: boolean;
 	readonly author?: string;
 	/** `null` is the platform's lazy "not computed yet" — an indefinite read, never an answer. */
@@ -43,11 +38,7 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 		JSON.stringify({
 			number: 4321,
 			state: shape.state ?? "open",
-			head: {
-				sha: shape.head ?? HEAD,
-				ref: shape.headRef ?? HEAD_REF,
-				repo: {full_name: shape.headRepo ?? "o/r"},
-			},
+			head: {sha: shape.head ?? HEAD},
 			base: {ref: shape.base ?? "main"},
 			body: shape.body ?? `does a thing\n\nFixes #${LINKED_ISSUE}\n`,
 			changed_files: shape.changedFiles ?? 2,
