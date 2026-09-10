@@ -8,6 +8,9 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
+ * Seven leaves author a plan run; `retopology` is the eighth and reads no run directory at all,
+ * because the descope it repairs is found on epics whose run was long since cleared.
+ *
  * **`--ready-for` is optional at the parser and refused in the verb body.** A parser-required flag's
  * absence is exit `1`, indistinguishable from a typo; an absent audience is a decision nobody made,
  * which must be provable as `10`. `--body-digest`, `--child` and `--title` stay
@@ -24,6 +27,7 @@ import {runChild} from "./child-verb.ts";
 import {runDraft} from "./draft-verb.ts";
 import {runEdges} from "./edges-verb.ts";
 import {runOpen} from "./open-verb.ts";
+import {runRetopology} from "./retopology-verb.ts";
 import {runSupersede} from "./supersede-verb.ts";
 import {runTopology} from "./topology-verb.ts";
 import {runWrite} from "./write-verb.ts";
@@ -222,6 +226,28 @@ const write = leafCommand(
 	),
 );
 
+const retopology = leafCommand(
+	"retopology",
+	{number: epicArg, bodyDigest: bodyDigestFlag, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, bodyDigest, token, repo}) {
+		yield* emit(
+			yield* runRetopology({
+				number,
+				bodyDigest,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Rewrite an epic's Dependencies block from its live child links."),
+	Command.withDescription(
+		'Rewrite the epic body\'s "## Dependencies" block so it names exactly the live sub-issues — the repair a founder descope owes, which without it wedges `lane emit` at 16 forever. Every ref the block names and the live child list does not leaves its phase and every requires list naming it; every surviving child keeps its declared phase and its requires edges; a phase left with no members is elided. It needs NO staged plan run — it reads no run.json, no manifest and no staged document, because a cleared run is the state a descoped epic is found in — and it closes, unlinks and comments on NOTHING: a descoped child is left open and unlinked, and retiring one stays `ledger supersede`\'s job. The block is rendered through the same renderer `ledger topology` stages with and parsed back through the shipped reader before the PATCH, and every byte outside the block — the "## Plan (plan-epic)" block, the preserved brief envelope, any amendment below a thematic break — is left where it is. Idempotent: a body whose block already names exactly the live children answers "unchanged" with no PATCH issued. Prints {"answer":"rewritten"|"unchanged","epic":n,"children":n,"phases":n,"dropped":{"count":n,"rows":["#n"],"more":0},"bodyDigest":"…","newDigest":"…","verified":true}. Exits 4 (a topology line does not parse), 7 (the epic is proven absent or closed, it carries no readable "## Dependencies" block, or it has no sub-issue links), 8 (the PATCH was issued and could not be confirmed — UNKNOWN), 9 (written and it does not read back as composed), 10 (not a type:epic, or --body-digest is not 12 lowercase hex), 11 (the epic, its children or its claim could not be read — NOTHING was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 21 (the epic body moved since the digest was taken), 22 (the "## Dependencies" region has no single meaning — a duplicated heading, or one resolving inside the preserved brief envelope), 24 (the rewritten topology is invalid: a duplicate placement, an unplaced requires subject, a live child the block places in no phase, a cycle, or a rendered block that does not parse back to what was rendered). Example: fabrika ledger retopology 5817 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
 const supersede = leafCommand(
 	"supersede",
 	{
@@ -284,9 +310,10 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		write,
 		edges,
 		supersede,
+		retopology,
 	]),
 	Command.withShortDescription("Author an epic's plan and its children."),
 	Command.withDescription(
-		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body",
+		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body — plus the one repair that needs no run, `retopology`, which rewrites a descoped epic's Dependencies block from its live child links",
 	),
 );

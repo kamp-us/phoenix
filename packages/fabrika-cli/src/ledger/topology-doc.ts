@@ -14,7 +14,7 @@
  * surfaces as the cycle it is rather than staging cleanly.
  */
 
-import {readTopology} from "../build/dependencies.ts";
+import {type Ref, readTopology} from "../build/dependencies.ts";
 
 const LINE_RE = /^#(\d+)\s+phase\s+(\S+)(?:\s+requires\s+(.+))?$/i;
 const REF_RE = /^#(\d+)$/;
@@ -57,6 +57,99 @@ export const parseLine = (text: string, index: number): LineParse => {
 			requires,
 		},
 	};
+};
+
+/**
+ * What a body's `## Dependencies` block declares, read against the epic's live child set.
+ *
+ * `Absent` fuses two facts on purpose — no heading at all, and a heading under which no `phase` line
+ * places anybody — because neither yields a topology and both take the same repair: plan the epic.
+ *
+ * `drop` is the axis `lane emit --children` and `ledger retopology` turn on, and it is the whole of
+ * the descope story: off, the first ref the child set does not name is `Foreign` and the read stops
+ * there; on, every such ref leaves its phase membership and every `requires` list naming it, a
+ * `requires` line whose subject went is dropped whole, and the refs that went are reported in
+ * `dropped` so a caller can say what the body still gets wrong.
+ */
+export type Declared =
+	| {
+			readonly _tag: "Declared";
+			readonly lines: ReadonlyArray<DeclaredLine>;
+			readonly dropped: ReadonlyArray<string>;
+	  }
+	| {readonly _tag: "Absent"}
+	| {readonly _tag: "Unparseable"; readonly line: number; readonly text: string}
+	| {readonly _tag: "Foreign"; readonly ref: string}
+	| {readonly _tag: "Duplicate"; readonly child: number}
+	| {readonly _tag: "Unplaced"; readonly child: number}
+	/** Every ref the block placed was dropped — a surviving topology with no child in it. */
+	| {readonly _tag: "Emptied"; readonly dropped: ReadonlyArray<string>};
+
+type IssueRef = Extract<Ref, {_tag: "Issue"}>;
+
+const refLabel = (ref: Ref): string => (ref._tag === "Issue" ? `#${ref.number}` : ref.id);
+
+/** Read the block and restrict it to `children`. See {@link Declared} for what `drop` decides. */
+export const readDeclared = (
+	body: string,
+	children: ReadonlySet<number>,
+	drop: boolean,
+): Declared => {
+	const topo = readTopology(body);
+	if (topo._tag === "Absent") return {_tag: "Absent"};
+	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};
+
+	const dropped: string[] = [];
+	const known = (ref: Ref): ref is IssueRef => {
+		if (ref._tag === "Issue" && children.has(ref.number)) return true;
+		const label = refLabel(ref);
+		if (!dropped.includes(label)) dropped.push(label);
+		return false;
+	};
+
+	const phases = new Map<number, number[]>();
+	const requires = new Map<number, number[]>();
+	for (const edge of topo.edges) {
+		if (!drop) {
+			const refs = edge._tag === "Phase" ? edge.members : [edge.subject, ...edge.needs];
+			for (const ref of refs) {
+				if (ref._tag !== "Issue" || !children.has(ref.number)) {
+					return {_tag: "Foreign", ref: refLabel(ref)};
+				}
+			}
+		}
+		if (edge._tag === "Phase") {
+			const members = edge.members.filter(known).map((ref) => ref.number);
+			phases.set(edge.phase, [...(phases.get(edge.phase) ?? []), ...members]);
+			continue;
+		}
+		if (!known(edge.subject)) continue;
+		const subject = edge.subject.number;
+		const needs = edge.needs.filter(known).map((ref) => ref.number);
+		requires.set(subject, [...(requires.get(subject) ?? []), ...needs]);
+	}
+	if (phases.size === 0) return {_tag: "Absent"};
+
+	const placed = new Map<number, number>();
+	for (const [phase, members] of phases) {
+		for (const child of members) {
+			if (placed.has(child)) return {_tag: "Duplicate", child};
+			placed.set(child, phase);
+		}
+	}
+	for (const [subject, needs] of requires) {
+		for (const child of [subject, ...needs]) {
+			if (!placed.has(child)) return {_tag: "Unplaced", child};
+		}
+	}
+	if (placed.size === 0) return {_tag: "Emptied", dropped};
+
+	const lines = [...placed.entries()].map(([child, phase]) => ({
+		child,
+		phase,
+		requires: requires.get(child) ?? [],
+	}));
+	return {_tag: "Declared", lines, dropped};
 };
 
 /** `[dependent, prerequisite]` — the first entry requires the second. */

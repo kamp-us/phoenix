@@ -571,7 +571,7 @@ snapshot. Lane state is local and never committed.
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
-| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, naming the parent whose lane already carries it as a task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run. `emit` reads `.fabrika.jsonc`'s `machineryLaps.onEmit`: `off` (the shipped default) writes today's bytes exactly, `on` adds the machinery `LAP` arms and seeds each task's lap counter, so a collision or a queue ejection spends laps rather than the repair budget and exhaustion parks on `human:machinery-stall` instead of freezing. The machine is fixed at emission, so the key reaches no lane already on disk |
+| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, naming the parent whose lane already carries it as a task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run. `emit --children` starts from the board's live sub-issue list — every topology ref that list does not name leaves its phase and every `requires` list naming it, an emptied phase is elided, and what went is reported on both channels — so a founder descope stops wedging the lane at `16`; the flag is opt-in because the same stale ref is a typo on the other reading, and the `16` refusal names it beside `ledger retopology`, which repairs the body instead. `emit` reads `.fabrika.jsonc`'s `machineryLaps.onEmit`: `off` (the shipped default) writes today's bytes exactly, `on` adds the machinery `LAP` arms and seeds each task's lap counter, so a collision or a queue ejection spends laps rather than the repair budget and exhaustion parks on `human:machinery-stall` instead of freezing. The machine is fixed at emission, so the key reaches no lane already on disk |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane dispatch` | run one active task through Codex in a verified worktree; [contract](./codex-dispatch.md) |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
@@ -663,12 +663,14 @@ Author an epic's plan and its children — the write half of epic planning. Cont
 | `ledger write` | the staged plan and topology spliced into the epic body |
 | `ledger edges` | the epic's declared dependencies reconciled into GitHub's native blocked_by graph |
 | `ledger supersede` | a child the re-plan no longer contains, retired |
+| `ledger retopology` | the `## Dependencies` block rewritten from the live child links — the repair a founder descope owes, without which `lane emit` refuses at `16` forever. It needs no staged plan run (no `run.json`, no manifest, no staged document), closes and unlinks nothing, preserves every byte outside the block including the plan block, the brief envelope and any amendment below a thematic break, and is idempotent: a block already naming exactly the live children answers `unchanged` with no PATCH |
 
 **Exit codes.** The shared table and the `build` lane seats (`13`–`19`), plus `20` the ground moved
 under the run · `21` the epic body moved — the recomputed digest differs from `--body-digest` ·
 `22` the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts ·
 `23` the child was created and its sub-issue link could not be proven · `24` the declared topology
-is invalid — a cycle, a dangling ref, or an unplaced child · `25` a document this verb must splice
+is invalid — a cycle, a dangling ref, an unplaced child, or (`retopology`) a rendered block that
+does not parse back to what was rendered · `25` a document this verb must splice
 was never staged in this run · `26` a child was created and the run manifest could not record it.
 
 ## The `map` group

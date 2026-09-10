@@ -144,6 +144,16 @@ Children but a `15` out of `lane emit` means the plan is there and its `## Depen
 missing or unparseable, which is `plan-epic`'s too — same `STOPPED`, different repair. Either way you
 never fall through to the template.
 
+**Exit `16` is the descope, and it is yours to clear.** The block names a ref the epic's live
+sub-issue list does not — a founder unlinked a child and the body still names it — and the refusal
+line names both escapes. Prefer the repair: `fabrika ledger retopology <epic>` rewrites that one
+block from the live child links, is refusal-first the same way `triage repair-criteria` is, and
+leaves the emit that follows needing no flag. It holds the epic's claim, so claim the epic first;
+it needs no plan run, closes and unlinks nothing, and preserves every byte outside the block.
+`lane emit <epic> --children` is the other escape and it routes *around* the stale block instead of
+fixing it — take it when the body is not yours to repair, and read the dropped refs it reports so
+the staleness is still on the record. On a refusal out of either, end `STOPPED` naming the code.
+
 **Exit `48` is the mirror: the issue is an epic's *child*, so the lane to drive is the parent's.**
 The parent epic's lane already carries this number as one of its tasks, and a second ledger booted
 over it is two documents describing one piece of work with nothing reconciling them. The `46` guard
@@ -1090,7 +1100,14 @@ re-dispatch the shell that fail-louded and record **no** `BLOCKED`: nothing park
 nothing for a human to clear. Five lanes once spent a human cycle each on this park in one night for
 a defect this verb repairs.
 
-The permission is exactly that one call and stops there. **Never edit the body yourself** — you are
+**The sanctioned body-repair set is two verbs, not one.** The other is
+`fabrika ledger retopology <epic>`, which owns an epic's `## Dependencies` block exactly as
+`triage repair-criteria` owns a criteria block: it rewrites that block from the live child links
+and nothing else, so a founder descope stops wedging `lane emit` at `16` — the boot step above is
+where you meet it. It refuses rather than guesses on every other shape, so running it never makes
+you the one choosing what the body says.
+
+The permission is exactly those two calls and stops there. **Never edit the body yourself** — you are
 type-blind, and a driven issue's body is not your artifact — so no hand-edit, no other section, and
 no second run after a refusal. A refusal is the verb's answer, not a prompt to retry.
 

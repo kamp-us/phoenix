@@ -13,6 +13,7 @@
  * byte outside it.
  */
 
+import {isThematicBreak} from "../build/dependencies.ts";
 import {unfencedLines} from "../plan/ledger.ts";
 import {MARKER_RE} from "../triage/enrich.ts";
 import {PLAN_HEADING} from "./plan-block.ts";
@@ -121,4 +122,52 @@ export const splicePlan = (input: SpliceInput): Splice => {
 	const head = before === "" ? "" : `${before}\n\n`;
 	const tail = after.trim() === "" ? "" : `\n${after}`;
 	return {_tag: "Composed", body: `${head}${composed}${tail}`};
+};
+
+export interface DependenciesSpliceInput {
+	readonly epic: number;
+	readonly body: string;
+	/** The rendered `## Dependencies` block, opening with that heading. */
+	readonly topology: string;
+}
+
+/**
+ * Replace the `## Dependencies` block alone, leaving the plan block and every other byte where they
+ * are — `ledger retopology`'s splice, and the reason it needs no staged plan run.
+ *
+ * The region ends at the next top-level heading **or at the first thematic break**, whichever comes
+ * first, which is where `build/dependencies.ts` ends the section it reads. {@link splicePlan} bounds
+ * on the heading alone and is right to: it rewrites the plan and the topology as one region, so a
+ * `---` between them is region content. Here it is not — a filed body's dated amendment is
+ * conventionally introduced by a bare `---`, and cutting through one would take an amendment out of
+ * a body this verb promised to leave alone outside the block.
+ */
+export const spliceDependencies = (input: DependenciesSpliceInput): Splice => {
+	const lines = input.body.replace(/\r\n/g, "\n").split("\n");
+	const anchors = anchorsIn(input.body, DEPENDENCIES_RE);
+	if (anchors.length !== 1) {
+		return unresolvable(headingCount(input.epic, DEPENDENCIES_HEADING, anchors.length));
+	}
+	const start = anchors[0] as number;
+	const envelope = envelopeOf(lines);
+	if (envelope !== null && start > envelope.start && start < envelope.end) {
+		return unresolvable(
+			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there.`,
+		);
+	}
+
+	let end = lines.length;
+	for (let i = start + 1; i < lines.length; i += 1) {
+		const line = lines[i] ?? "";
+		if (TOP_LEVEL_HEADING_RE.test(line.trim()) || isThematicBreak(line)) {
+			end = i;
+			break;
+		}
+	}
+
+	const before = lines.slice(0, start).join("\n").replace(/\s+$/, "");
+	const after = lines.slice(end).join("\n").replace(/^\n+/, "");
+	const head = before === "" ? "" : `${before}\n\n`;
+	const tail = after.trim() === "" ? "" : `\n${after}`;
+	return {_tag: "Composed", body: `${head}${block(input.topology)}\n${tail}`};
 };
