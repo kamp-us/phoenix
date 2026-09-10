@@ -2,7 +2,8 @@
  * `lane assembly-body` — the guard the epic run's PR body passes through on its way to `gh pr create`.
  *
  * It is a **relay**: the body arrives on stdin and a body that closes its epic leaves on stdout
- * byte-for-byte, so `operate`'s fence stays literal and pipes rather than deriving anything. A body
+ * unchanged — the same bytes, plus a trailing newline when the body lacked one, which is `answer`'s
+ * doing and not a rewrite — so `operate`'s fence stays literal and pipes rather than deriving. A body
  * that does not close the epic is refused and nothing is printed, which is what makes the refusal
  * bite — a fence piping into `gh pr create --body-file -` opens no PR when the pipe carries nothing.
  *

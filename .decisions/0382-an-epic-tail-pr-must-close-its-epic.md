@@ -40,7 +40,8 @@ to route around — it is a PR that should not be merged, and the cheap place to
 body is written.
 
 `fabrika lane assembly-body <epic>` is that seat. It reads the composed body on stdin and relays it
-byte-for-byte on stdout when a closing keyword aims at the epic; otherwise it refuses on `58` and
+unchanged on stdout when a closing keyword aims at the epic — the same bytes, plus a trailing
+newline when the body lacked one, which is `answer`'s doing; otherwise it refuses on `58` and
 prints nothing, so the `gh pr create --body-file -` it pipes into opens no PR. `operate`'s fence
 stays literal and derives nothing, which is ADR
 [0228](0228-scripts-relay-never-derive.md)'s shape.

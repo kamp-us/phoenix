@@ -414,8 +414,7 @@ things, none of them a summary you compose:
   own auto-close reads under this shape — the epic closes when every child is closed, and that fires
   on the GitHub edge after the merge, never mid-lane. **The epic's own reference must CLOSE it, not
   say `Part of`** — a tail that merges without closing its epic folds this lane to `shipped` and then
-  `complete` over an epic the board still calls open, and there is no door out (ADR
-  [0382](../../../../.decisions/0382-an-epic-tail-pr-must-close-its-epic.md)). `lane assembly-body`
+  `complete` over an epic the board still calls open, and there is no door out. `lane assembly-body`
   below is what refuses it, so you never have to check;
 - a `## Deviations` section covering **the assembly** — the merges you performed, which are the only
   thing on this PR that is yours. `None.` while every child landed on a clean merge and clean
@@ -440,18 +439,19 @@ to read it.
 node packages/fabrika-cli/src/bin.ts lane assembly-pr $lane_key --field title
 ```
 
+The body you wrote goes into `lane assembly-body`'s stdin below, not `gh`'s.
+
 ```bash
 node packages/fabrika-cli/src/bin.ts lane assembly-body $lane_key \
   | gh pr create --draft --head epic/$lane_key \
       --title "<the title lane assembly-pr printed>" --body-file -
 ```
 
-Paste the body into that first command's stdin. It is a **relay**: a body closing the epic leaves it
-byte-for-byte, so the `gh` call is the one you would have run alone, and a body that does not is
-refused on `58` with nothing printed — the pipe carries nothing and no PR opens. That refusal is the
-whole of ADR [0382](../../../../.decisions/0382-an-epic-tail-pr-must-close-its-epic.md): fix the body
-to say `Fixes #<epic>` and re-run, never route around it with a bare `gh pr create`. Its other codes
-are the ordinary stdin ones — `3` read-but-empty, `1` unread, `5`/`6` a machine-local path.
+That verb is a **relay**: a body closing the epic leaves it unchanged, so the `gh` call is the one
+you would have run alone, and a body that does not is refused on `58` with nothing printed — the
+pipe carries nothing and no PR opens. Fix the body to say `Fixes #<epic>` and re-run; never route
+around the refusal with a bare `gh pr create`. Its other codes are the ordinary stdin ones — `3`
+read-but-empty, `1` unread, `5`/`6` a machine-local path.
 
 A refusal prints nothing, and pasting nothing opens the run's one PR unnamed. Exit `56` says the
 number is not an epic — you have the wrong one — and `11` is UNKNOWN, so re-run it rather than
@@ -534,7 +534,7 @@ Relay its answer, never your own reading of the PR:
 
 | `reconcile` says | Record |
 | --- | --- |
-| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way (ADR [0382](../../../../.decisions/0382-an-epic-tail-pr-must-close-its-epic.md)) |
+| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way |
 | `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
@@ -849,9 +849,8 @@ prints next. A closing merge folds to `shipped` exactly as it always did.
 An epic's undischarged criteria are not the tail's to build — its children's phases built them, and
 the tail only reviews and ships — so there is no workable cell for a partial tail merge to return to.
 The refusal moved upstream instead: `lane assembly-body` will not relay a tail body that does not
-close its epic, so the merge such an arm would route is one this run cannot produce (ADR
-[0382](../../../../.decisions/0382-an-epic-tail-pr-must-close-its-epic.md)). The tail's `DONE` folds
-to `shipped` at both polarities.
+close its epic, so the merge such an arm would route is one this run cannot produce. The tail's
+`DONE` folds to `shipped` at both polarities.
 
 `lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
 of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit

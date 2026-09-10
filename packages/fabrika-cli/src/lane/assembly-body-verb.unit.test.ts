@@ -14,11 +14,21 @@ const piped = (text: string): StdinRead => ({_tag: "Text", text});
 const BODY = "## About this epic\n\nFixes #4301\nFixes #4300\n\n## Deviations\n\nNone.\n";
 
 describe("lane assembly-body", () => {
-	it("relays a body that closes the epic byte-for-byte", async () => {
+	it("relays a body that closes the epic unchanged", async () => {
 		const out = await run(piped(BODY));
 
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(BODY);
+	});
+
+	// The one departure from "the same bytes out", and it is `answer`'s rather than this verb's:
+	// a body with no final newline gets one. Pinned so the shipped text describing the relay stays
+	// checkable against the code, which claimed byte-for-byte and was not quite that.
+	it("terminates a relayed body that lacks a final newline", async () => {
+		const out = await run(piped("Fixes #4300"));
+
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("Fixes #4300\n");
 	});
 
 	it("refuses a body that only says `Part of` the epic, and prints nothing to open with", async () => {
@@ -37,7 +47,7 @@ describe("lane assembly-body", () => {
 	});
 
 	it("refuses a body carrying a machine-local path before it judges the link", async () => {
-		const out = await run(piped(`${BODY}\nSee /Users/someone/code/phoenix/notes.md\n`));
+		const out = await run(piped(`${BODY}\nSee /Users/someone/code/checkout/notes.md\n`));
 
 		expect(out.code).toBe(LEAKED_PATH);
 		expect(out.stdout).toBe("");

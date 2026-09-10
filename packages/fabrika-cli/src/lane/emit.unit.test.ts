@@ -456,7 +456,7 @@ describe("emitMachine", () => {
 		).toMatchObject({stateValue: "complete", status: "done"});
 	});
 
-	// ADR 0382. The tail declares no `merge:partial` arm, and that is a decision rather than the
+	// The tail declares no `merge:partial` arm, and that is a decision rather than the
 	// omission it looks like: a tail body that does not close its epic is refused where it is
 	// written (`lane assembly-body`), so the merge such an arm would route is one the run cannot
 	// produce. Both polarities are driven here so the absence stays deliberate under a later reader.

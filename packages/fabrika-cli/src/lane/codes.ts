@@ -528,7 +528,7 @@ export const ABOUT_UNSAFE = 57;
  * An epic run is one branch and one PR, so that PR is the run's landing: a tail merging as
  * `Part of #<epic>`, or closing only its children, folds the lane to `shipped` over an epic the
  * board still calls open, and an operator re-dispatched on it parks on `LANE-TERMINAL` with no door
- * out (ADR 0382). Its own seat rather than {@link MALFORMED_RECORD}'s, which is a record on disk:
+ * out. Its own seat rather than {@link MALFORMED_RECORD}'s, which is a record on disk:
  * nothing here is on disk yet, and the remedy is the author's — write `Fixes #<epic>` into the body,
  * or do not open the run's PR yet.
  */

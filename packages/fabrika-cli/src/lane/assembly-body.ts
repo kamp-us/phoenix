@@ -1,10 +1,10 @@
 /**
  * The one rule over an epic run's assembly PR body: it must close the epic.
  *
- * An epic run is one branch and one PR (ADR 0285), so that PR is the whole run's landing. A tail
- * body that reaches the epic through `Part of #<epic>` — or through nothing at all, having closed
- * only the children — merges without closing it, and the lane folds to `shipped` then `complete`
- * over an epic the board still calls open. See ADR 0382.
+ * An epic run is one branch and one PR, so that PR is the whole run's landing. A tail body that
+ * reaches the epic through `Part of #<epic>` — or through nothing at all, having closed only the
+ * children — merges without closing it, and the lane folds to `shipped` then `complete` over an
+ * epic the board still calls open.
  *
  * **The reader is `issueRefsOf`, the same one `./closure.ts` judges the merged PR with.** That is
  * the whole design: this guard refuses exactly the bodies that reader would later call `partial` or
