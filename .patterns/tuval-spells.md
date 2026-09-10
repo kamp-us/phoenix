@@ -441,6 +441,14 @@ spells as one list.
   table exposes rows and no dispatch; `send` and `read` answer `UnknownProcess` for a process this
   service did not spawn.
 
+  `SpawnedProcesses` also carries the answer path, which is not a spell and is reachable from no
+  spell's params: `ask` puts a payload on a request port and holds, against a correlation it mints,
+  where the answer goes; `answer` spends one correlation, checks the payload against that port's own
+  output schema, and hands it to the asking process; and `spawn`'s `on` record turns a named child
+  out-port into one of the spawner's own events. All three land through `deliver`
+  ([`process/inbox.ts`](../apps/tuval/src/process/inbox.ts)), which needs only a live handle — so an
+  answer reaches any process, not only one these spells spawned.
+
 ### The bridge
 
 `SpellBridge` ([`bridge/SpellBridge.ts`](../apps/tuval/src/commands/bridge/SpellBridge.ts)) is

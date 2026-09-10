@@ -27,6 +27,14 @@ export interface InPort<T = unknown> {
 	readonly direction: "in";
 	readonly accepts: (payload: unknown) => payload is T;
 	readonly bound: PortBound;
+	/**
+	 * The predicate an answer to this port must fit, present only on a port that answers its caller
+	 * — `port.request(In, Out)` in the authoring layer (#8716 R17.1). A request port arrives like any
+	 * other in-port, so it is one field here rather than a fourth `PortSchema` member every
+	 * `direction === "in"` reader would have to learn; its absence is what "this port answers
+	 * nothing" means, and an `ask` against such a port is refused (#8756).
+	 */
+	readonly answers?: (payload: unknown) => boolean;
 }
 
 export interface OutPort<T = unknown> {
