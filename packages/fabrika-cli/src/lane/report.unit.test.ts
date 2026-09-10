@@ -10,6 +10,7 @@ import {
 	PARK_CAUSE_TOKENS,
 	PARK_CAUSES,
 	type ParkCause,
+	remedyForCause,
 	routeForCause,
 	SHELL_VOCABULARIES,
 } from "./report.ts";
@@ -260,6 +261,29 @@ describe("every park cause carries a route", () => {
 		expect(KNOWN_PARKS).not.toHaveLength(0);
 		for (const recipe of KNOWN_PARKS) {
 			expect(recipe.route).toBe(routeForCause(recipe.cause));
+		}
+	});
+});
+
+describe("remedyForCause", () => {
+	// The four-year-old "clearing it needs a verb that merges the base into the head, and `build`
+	// ships none" is what `lane refresh` retires. The cause is where that verb is written down.
+	it("names lane refresh for head-behind-base, which is the verb that moves a head onto its base", () => {
+		expect(remedyForCause("head-behind-base")).toBe("fabrika lane refresh");
+	});
+
+	it("names no verb for assembly-conflict — resolving content is a judgment none may make", () => {
+		expect(remedyForCause("assembly-conflict")).toBeNull();
+	});
+
+	it.each([null, "not-a-cause"])("has no remedy for an unnamed park (%p)", (cause) => {
+		expect(remedyForCause(cause)).toBeNull();
+	});
+
+	it("carries the remedy onto every KNOWN_PARKS row, read off the same table", () => {
+		expect(KNOWN_PARKS).not.toHaveLength(0);
+		for (const recipe of KNOWN_PARKS) {
+			expect(recipe.remedy).toBe(remedyForCause(recipe.cause));
 		}
 	});
 });

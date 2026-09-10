@@ -402,6 +402,26 @@ gh pr create --draft --head epic/$lane_key \
 Every later integration pushes the same branch and **appends that child's closing reference** to the
 body, so the set of references tracks the set of landed children rather than the plan's intent.
 
+**Refresh the assembly branch before the tail enters review, so the review binds to a head the queue
+can take.** Nothing else moves this branch onto trunk: `lane assembly` fetches and cuts off
+`origin/HEAD` on a first cut only, so the branch drifts behind `main` while the children build, and
+the queue ejects the tail for it — three times on one run. Run it from the assembly worktree, before
+you dispatch the tail's review:
+
+```bash
+cd <the path lane assembly printed> && node packages/fabrika-cli/src/bin.ts lane refresh $lane_key --on-review
+```
+
+`--on-review` is what makes this the gated call: the repo's `assemblyRefresh.onReview` decides
+whether it happens, and the shipped `off` answers `REFRESH-VERDICT: DECLINED` having fetched, merged
+and read nothing — so a repo that has not turned it on takes exactly the path into review it took
+before. On `MERGED` the branch moved and there is a new head to push; on `CURRENT` it already carried
+trunk. Exit `42` is a real conflict: the merge was aborted and the branch proven back where it stood,
+so record the park the refusal names — `lane transition … BLOCKED --cause assembly-conflict` — rather
+than dispatching a review over a head the queue will reject. Every other refusal is UNKNOWN and
+nothing may be recorded against the tree. A driver may also call `lane refresh $lane_key` by hand
+with no flag at any point; only the automatic call is gated.
+
 **The draft flips ready at the tail's `PASS`, and nowhere earlier.** When the epic-level review's
 `PASS` is proven and recorded, the single PR has the verdict it was opened for — mark it ready
 before dispatching `ship`, whose write verbs refuse a draft. The number is the one `lane brief`

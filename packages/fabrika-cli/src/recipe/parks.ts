@@ -21,7 +21,7 @@
  * lane parked. This table is priced at a proving read; naming a park is not.
  */
 
-import {type ParkRoute, routeForCause} from "../lane/report.ts";
+import {type ParkRoute, remedyForCause, routeForCause} from "../lane/report.ts";
 
 /** The clearance read a recipe relays. One constructor per read, so a new recipe cannot be prose. */
 export type Clearance =
@@ -56,12 +56,17 @@ export interface ParkRecipe {
 	readonly clearance: Clearance;
 	/**
 	 * The verb the clearance runs to remove the park's cause before re-reading, or `null` for a
-	 * clearance that only waits on somebody else.
+	 * clearance that only waits on somebody else — read off `PARK_CAUSES`
+	 * ([`lane/report.ts`](../lane/report.ts)), never declared here.
 	 *
 	 * A row naming one is a row that clears itself: `branch-free` sat at exit 13 forever without one,
-	 * because reading whether a tree still holds the branch cannot make it stop. A row naming
-	 * `null` is deliberate, not unfinished — `cp-approval` waits on a human's judgment, and a recipe
-	 * that "removed" that cause would be granting the approval.
+	 * because reading whether a tree still holds the branch cannot make it stop. A row naming `null`
+	 * is deliberate, not unfinished — `cp-approval` waits on a human's judgment, and a recipe that
+	 * "removed" that cause would be granting the approval.
+	 *
+	 * A row does not get to say which verb that is, for the reason it does not get to say its route:
+	 * the remedy belongs to the cause, and a second declaration is a second place it drifts.
+	 * {@link remedyForCause} is the whole derivation, and a cause-less row takes its `null` arm.
 	 */
 	readonly remedy: string | null;
 	/** What the park is waiting on, in one clause a refusal can quote. */
@@ -114,14 +119,17 @@ export const QUEUE_MOVED_GRANT = 1;
  * ride one recorded event and there is no bare `UNBLOCKED` into a spent budget for the fold to refuse.
  */
 /**
- * One row, with its route read off the cause table rather than written down a second time.
+ * One row, with its route and its remedy read off the cause table rather than written down a second
+ * time.
  *
- * The rows below hand in everything but `route` — which is the point: a row that could state its own
- * route could state one the cause disagrees with, and nothing would compare them.
+ * The rows below hand in everything but those two — which is the point: a row that could state its
+ * own route or its own remedy could state one the cause disagrees with, and nothing would compare
+ * them.
  */
-const row = (spec: Omit<ParkRecipe, "route">): ParkRecipe => ({
+const row = (spec: Omit<ParkRecipe, "route" | "remedy">): ParkRecipe => ({
 	...spec,
 	route: routeForCause(spec.cause),
+	remedy: remedyForCause(spec.cause),
 });
 
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
@@ -129,35 +137,30 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		park: "human:cp-approval",
 		cause: null,
 		clearance: "cp-approval",
-		remedy: null,
 		waitingOn: "a control-plane approval at the PR's current head",
 	}),
 	row({
 		park: "human:queue-stall",
 		cause: null,
 		clearance: "queue-moved",
-		remedy: null,
 		waitingOn: "the merge queue to move this PR — to land it, or to eject it",
 	}),
 	row({
 		park: "blocked",
 		cause: "worktree-holds-branch",
 		clearance: "branch-free",
-		remedy: "fabrika build retire",
 		waitingOn: "the working tree holding this build's lane branch to be removed",
 	}),
 	row({
 		park: "blocked",
 		cause: "campaign-paused",
 		clearance: "campaign-active",
-		remedy: null,
 		waitingOn: "the campaign homing this lane's milestone to read active again",
 	}),
 	row({
 		park: "blocked",
 		cause: "spawn-dead",
 		clearance: "spawn-clear",
-		remedy: "fabrika build retire",
 		waitingOn:
 			"the dead shell's claim and working tree to be gone so the brief can be dispatched again",
 	}),

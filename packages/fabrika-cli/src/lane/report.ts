@@ -157,10 +157,22 @@ export const eventForToken = (raw: string): TokenResolution => {
  */
 export type ParkRoute = "driver" | "founder";
 
-/** One park cause: what it means, in a clause a refusal can quote, and whose failure it is. */
+/**
+ * One park cause: what it means, in a clause a refusal can quote, whose failure it is, and the verb
+ * that removes it.
+ */
 export interface ParkCauseEntry {
 	readonly meaning: string;
 	readonly route: ParkRoute;
+	/**
+	 * The verb that removes this cause before anything re-reads it, or `null` for a cause whose
+	 * removal is somebody else's act.
+	 *
+	 * `null` is deliberate rather than unfinished: resuming a campaign is a human's judgment and
+	 * dispatching the other gate is the driver's own move, so a verb that "removed" either would be
+	 * taking a decision it is only allowed to observe.
+	 */
+	readonly remedy: string | null;
 }
 
 /**
@@ -174,7 +186,12 @@ export interface ParkCauseEntry {
  * It is a closed set for the same reason the terminal tokens are: a free-text cause is prose a
  * recipe would have to interpret, and interpreting a report is the failure class this module
  * deletes. Each entry carries `meaning` — what the cause means, in the clause a refusal can quote —
- * and {@link ParkRoute}, whose failure the park is.
+ * {@link ParkRoute}, whose failure the park is, and `remedy`, the verb that removes it.
+ *
+ * **The remedy is written here and nowhere else.** A `KNOWN_PARKS` row used to declare its own, so
+ * two rows keying on two causes could name the same verb and nothing compared them to the cause
+ * they were clearing; `recipe/parks.ts` now derives the field through {@link remedyForCause}, the
+ * way it already derives the route.
  *
  * **The route is the second field because the cause alone never said whose problem it is.** A park
  * a driver can work through and one only the founder can answer take opposite next moves, and with
@@ -200,6 +217,7 @@ export const PARK_CAUSES = {
 	"worktree-holds-branch": {
 		meaning: "a working tree still holds the lane branch this build must stand on",
 		route: "driver",
+		remedy: "fabrika build retire",
 	},
 	/**
 	 * `ship cp-approval` stops on a head behind its base, and the head must move before
@@ -207,14 +225,33 @@ export const PARK_CAUSES = {
 	 * `ROUTED-REPAIR` charged a repair retry for a trip through a stage that owns no verb that can
 	 * move a branch.
 	 *
-	 * It carries no `KNOWN_PARKS` row on purpose: clearing it needs a verb that merges the base into
-	 * the head, and `build` ships none, so the sweep routes it to a human by naming this cause.
+	 * Its remedy is `lane refresh`, which merges the base into an epic run's assembly branch and
+	 * proves the head it lands on. It still carries no `KNOWN_PARKS` row: a row is what buys an
+	 * autonomous clear, and that costs a proving read of the moved head this cause does not yet have.
 	 *
 	 * Route `driver`: moving a head onto its base is machinery, and no product call is in it.
 	 */
 	"head-behind-base": {
 		meaning: "the PR's head is behind its base and must move before an approval is solicited",
 		route: "driver",
+		remedy: "fabrika lane refresh",
+	},
+	/**
+	 * `lane refresh` found a real conflict between the trunk and an epic run's assembly branch. The
+	 * merge was aborted and the branch put back where the refresh found it, so the tail cannot bind
+	 * to a refreshed head until the two sides are reconciled.
+	 *
+	 * No remedy: resolving a conflict that is not a plain keep-both is a judgment about content, and
+	 * a verb that "removed" this cause would be making it.
+	 *
+	 * Route `driver`: reconciling two branches of this repo's own code is machinery, not a product
+	 * call.
+	 */
+	"assembly-conflict": {
+		meaning:
+			"the trunk conflicts with the epic run's assembly branch, so the tail cannot bind to a refreshed head",
+		route: "driver",
+		remedy: null,
 	},
 	/**
 	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
@@ -230,6 +267,7 @@ export const PARK_CAUSES = {
 		meaning:
 			"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
 		route: "founder",
+		remedy: null,
 	},
 	/**
 	 * The shell driving this lane's stage was killed by its provider before it
@@ -247,6 +285,7 @@ export const PARK_CAUSES = {
 		meaning:
 			"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
 		route: "driver",
+		remedy: "fabrika build retire",
 	},
 	/**
 	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
@@ -262,6 +301,7 @@ export const PARK_CAUSES = {
 	"no-preview-render": {
 		meaning: "no preview deployment stands at the PR's head, so no rendered surface can be judged",
 		route: "driver",
+		remedy: null,
 	},
 	/**
 	 * The rendered gate's `BLOCKED-NO-MANIFEST`: the repo's design law covers no surface in
@@ -277,6 +317,7 @@ export const PARK_CAUSES = {
 		meaning:
 			"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
 		route: "driver",
+		remedy: null,
 	},
 	/**
 	 * The rendered gate's `ROUTED-ELSEWHERE`: the diff raises no rendered delta, so the
@@ -292,6 +333,7 @@ export const PARK_CAUSES = {
 		meaning:
 			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
 		route: "driver",
+		remedy: null,
 	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
@@ -312,6 +354,19 @@ export const routeForCause = (cause: string | null): ParkRoute =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
 		? PARK_CAUSES[cause as ParkCause].route
 		: "founder";
+
+/**
+ * The verb that removes a cause, read off the one table — the only place a remedy is written down.
+ *
+ * A park carrying **no** cause has no remedy, on the same fail-closed reasoning the route takes:
+ * nothing named what went wrong, so nothing here may name the verb that undoes it. The two
+ * `KNOWN_PARKS` rows keyed by their leaf alone take that arm, and both are waits on somebody else's
+ * act rather than something a verb removes.
+ */
+export const remedyForCause = (cause: string | null): string | null =>
+	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
+		? PARK_CAUSES[cause as ParkCause].remedy
+		: null;
 
 export type ClassResolution =
 	| {readonly _tag: "Classed"; readonly classes: ReadonlyArray<string> | null}

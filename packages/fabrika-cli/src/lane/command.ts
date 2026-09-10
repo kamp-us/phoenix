@@ -11,6 +11,7 @@ import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {claimReader} from "../build/claimants-verb.ts";
+import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
 import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
 import {parkCauseKey} from "../config/keys/park-cause.ts";
 import {readKey} from "../config/read-key.ts";
@@ -39,6 +40,7 @@ import {runPrint} from "./print-verb.ts";
 import {proveDispatched, runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
+import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
@@ -545,6 +547,59 @@ const integrate = leafCommand(
 	),
 	Command.withDescription(
 		"Merge one reviewed child's branch into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — and prove the merged tree holds together before the branch keeps it. The order is the verb: `git merge --no-ff`, then the repo's declared `dependencyReconciler` (for example `pnpm install --frozen-lockfile`) run IN that worktree so the install reads the lockfile the merge just brought, then the repo's declared `codeValidators` over the merged tree — reconciling after the merge, never before, since an assembly worktree placed before a child existed still holds the pre-merge install. Every refusal below the merge resets the assembly branch to ORIG_HEAD and reads its head back, so a recorded FAIL names a branch that never carried the bad merge; nothing is ever pushed here — that is `lane push`, and recording the DONE is the driver's. On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED` and the line above it the merged head. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (a restore or a head read-back did not land — UNKNOWN, so nothing may be recorded), 11 (the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be read, or the repo declares no `codeValidators` — UNKNOWN, never green), 22 (no branch by that name — take it off `lane prove`'s evidence), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 42 (the child conflicts; the merge was aborted and nothing was installed), 43 (the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file), 44 (the merged tree failed a code validator — the semantic collision), 45 (the assembly worktree already held modified tracked files before the merge, so nothing was merged, installed or validated — that dirt is the driver's tree and not the child's range; clean the seat and integrate again), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root). Example: fabrika lane integrate 7140 --child build/7162-app-bootstrap-5558c9a2",
+	),
+);
+
+const refresh = leafCommand(
+	"refresh",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly branch"),
+		),
+		base: Flag.string("base").pipe(
+			Flag.withDefault("origin/main"),
+			Flag.withDescription(
+				"the trunk ref to merge in, resolved AFTER the fetch (default: origin/main)",
+			),
+		),
+		onReview: Flag.boolean("on-review").pipe(
+			Flag.withDescription(
+				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated.",
+			),
+		),
+		root: rootFlag,
+	},
+	Effect.fn(function* ({epic, base, onReview, root}) {
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane refresh",
+			root,
+			DEFAULT_LANES_ROOT,
+			process.cwd(),
+		);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
+		const assemblyRefresh = yield* readKey(process.cwd(), assemblyRefreshKey);
+		yield* emit(
+			yield* onGround("refresh", [resolvedRoot], process.cwd(), () =>
+				runRefresh({
+					epic,
+					base,
+					onReview,
+					assemblyRefresh,
+					root: resolvedRoot,
+					lane: String(epic),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Merge the trunk into an epic run's assembly branch, proving the head.",
+	),
+	Command.withDescription(
+		"Merge the trunk into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — so the tail's review binds to a head the merge queue can take. Nothing else in this package touches trunk after the first cut: `lane assembly` fetches and cuts off origin/HEAD once and a resume fetches nothing, so the branch drifts behind trunk with nothing to notice and `lane push` names \"fetch and re-merge\" as the remedy for its exit 29 without any verb performing it. The order is the verb: refuse a dirty seat, `git fetch origin`, resolve --base to a commit, answer CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge is silent and parks nothing; a conflict aborts, resets through ORIG_HEAD and PROVES the reset by re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset that will not take is exit 8, never the clean conflict refusal. Nothing is pushed and no lane log is written — publishing the refreshed head is `lane push`'s and recording the park is the driver's. On exit 0 the last stdout line is `REFRESH-VERDICT: MERGED`, `REFRESH-VERDICT: CURRENT`, or `REFRESH-VERDICT: DECLINED` under --on-review with the key off, and the line above it the head (a DECLINED prints no head, because nothing was read). Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the restore or a head read-back did not land, or the merge reported success and the head did not move — UNKNOWN, so nothing may be recorded), 11 (the working trees, the head, the seat's cleanliness or the fetch could not be read — UNKNOWN, never green), 21 (`assemblyRefresh` is malformed in .fabrika.jsonc — whether this repo refreshes on the way into review is UNKNOWN), 22 (--base names no commit after the fetch), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 45 (the assembly worktree already held modified tracked files, so nothing was fetched or merged; clean the seat and refresh again), 42 (the trunk conflicts with the assembly branch; the merge was aborted and the branch was proven back at its pre-merge head), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root). Examples: fabrika lane refresh 8810 · fabrika lane refresh 8810 --on-review",
 	),
 );
 
@@ -1069,6 +1124,7 @@ export const laneCommand = Command.make("lane").pipe(
 		dispatch,
 		assembly,
 		integrate,
+		refresh,
 		pushLane,
 		stale,
 		migrate,
