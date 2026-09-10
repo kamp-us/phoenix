@@ -143,7 +143,7 @@ as the sibling contracts do):
 | `ledger open` | prove the ground fresh, allocate the run, read what already exists, rank duplicate candidates | fetch + freshness proof + a registered ranker — no judgment; *whether a candidate really is this work* stays in the skill |
 | `ledger draft` | validate and stage the model-authored plan block | a total grammar check over a closed section set; *whether the plan is any good* is irreducibly the skill's |
 | `ledger child` | mint one child with every birth attribute in one create, link it, re-read it, record it | a guarded write with a read-back; *what the child should contain* is the skill's, taken as input |
-| `ledger topology` | validate the declared edges against the recorded children, prove every out-of-epic prerequisite, and render the block | a total function from edges to a verdict over one boundary read per external ref — cycles, non-child subjects, orphans and an absent external target are all decidable; *which slices may run in parallel* is the skill's |
+| `ledger topology` | validate the declared edges against the recorded children, prove every out-of-epic prerequisite, and render the block | a total function from edges to a verdict over one boundary read per external ref — cycles, non-child subjects, a prerequisite naming the epic itself, orphans and an absent external target are all decidable; *which slices may run in parallel* is the skill's |
 | `ledger write` | splice the staged plan and topology into the epic body, byte-verified | anchor resolution + a guarded PATCH with a round-trip diff — no judgment |
 | `ledger edges` | write the epic's written `## Dependencies` block into the native `blocked_by` graph, reconciling rather than replacing | a total derivation from the block to the pairs it owes, plus a guarded write with a read-back — no judgment; *what the topology should be* was decided at `ledger topology` |
 | `ledger supersede` | retire a child the re-plan no longer contains | an ordered three-leg write with a read-back; *which child to retire* is the skill's |
@@ -921,6 +921,15 @@ dangling — so `#6 phase 2 requires #4, #9` stages with `#9` outside the manife
 carries that reference verbatim, and `ledger edges` writes the `#6 → #9` pair like any other.
 `external` counts those out-of-manifest prerequisites.
 
+**The one prerequisite refused outright is the epic's own number.** `#6 phase 2 requires #3` under
+`ledger topology 3` is `24` before any boundary read: the epic exists, so proving the target would
+answer Present and the line would stage, and `ledger edges` would then write `#6` `blocked_by` its
+own parent — an edge that can never clear, because an epic closes only once its children close, and
+`build`'s gates read that graph and nothing else. The refusal is pure and reaches the **immediate**
+parent alone; a grandparent epic that transitively contains the child is neither this epic's number
+nor a manifest child, so nothing separates it from the sanctioned cross-epic edge without walking
+the child's parent chain, which is a boundary read this verb does not take.
+
 **Each external target is proven at the boundary before anything is staged**, through the same
 `repos/{o}/{r}/issues/<n>` read `ledger edges` resolves an id with. Proven absent is `24`; an
 unread target is `11`; and a number that resolves to a **pull request** is `24`, because that
@@ -947,7 +956,7 @@ skill carries, and the verb does not pretend otherwise.
 | `10` | the issue is not a `type:epic`, or a phase number is not a positive integer |
 | `11` | the run manifest, the epic, or an external prerequisite could not be read |
 | `15` | this lane does not hold the epic's claim |
-| `24` | the topology is proven invalid: a cycle, a subject that is not a child, a manifest child placed nowhere, a rendered block that does not parse back to the declared edges, or an external prerequisite proven absent or resolving to a pull request |
+| `24` | the topology is proven invalid: a cycle, a subject that is not a child, a prerequisite naming the epic itself, a manifest child placed nowhere, a rendered block that does not parse back to the declared edges, or an external prerequisite proven absent or resolving to a pull request |
 
 **Errors**
 
@@ -957,6 +966,7 @@ skill carries, and the verb does not pretend otherwise.
 | `ledger topology: line <l> does not parse: "<text>" — want "#<ref> phase <n> [requires #<a>]".` | 4 | refusal |
 | `ledger topology: cycle: #<a> → #<b> → #<a>` | 24 | refusal |
 | `ledger topology: #<n> is placed in a phase but is not a child of #<e>.` | 24 | refusal |
+| `ledger topology: #<n> requires #<e>, the epic that owns it — an epic closes only once its children close, so that edge can never clear and #<n> would never be claimable.` | 24 | refusal |
 | `ledger topology: #<n> is named as an external prerequisite and is proven absent — no edge can point at it.` | 24 | refusal |
 | `ledger topology: #<n> is named as an external prerequisite and is a pull request — a blocking pull request is named by the issue its merge closes.` | 24 | refusal |
 | `ledger topology: child #<n> is placed in no phase.` | 24 | refusal |
@@ -994,6 +1004,13 @@ $ echo $?
 ```
 $ fabrika ledger topology 3 --token <claim-token> < topo.txt
 ledger topology: #9 is named as an external prerequisite and is proven absent — no edge can point at it.
+$ echo $?
+24
+```
+
+```
+$ fabrika ledger topology 3 --token <claim-token> < topo.txt
+ledger topology: #6 requires #3, the epic that owns it — an epic closes only once its children close, so that edge can never clear and #6 would never be claimable.
 $ echo $?
 24
 ```
