@@ -252,28 +252,42 @@ const transition = leafCommand(
 			),
 		),
 		rationale: rationaleFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name the proof reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
 	},
-	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait, rationale}) {
+	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait, rationale, repo}) {
 		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
 		yield* emit(
 			yield* onKey("transition", lane, root, (_key, ref) =>
-				runTransition({
-					...ref,
-					event,
-					task: Option.getOrNull(task),
-					cause: Option.getOrNull(cause),
-					parkCause,
-					classes,
-					waitGrant: Option.getOrNull(grantWait),
-					rationale: Option.getOrNull(rationale),
-				}),
+				runTransition(
+					{
+						...ref,
+						event,
+						task: Option.getOrNull(task),
+						cause: Option.getOrNull(cause),
+						parkCause,
+						classes,
+						waitGrant: Option.getOrNull(grantWait),
+						rationale: Option.getOrNull(rationale),
+						repo: Option.getOrNull(repo),
+						cwd: process.cwd(),
+						env: process.env,
+					},
+					runProve,
+				),
 			),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
+	Command.withShortDescription(
+		"Record one operator event, proven first, refused unappended otherwise.",
+	),
 	Command.withDescription(
-		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold, plus `waitGrant` when the resume granted waits and `rationale` when it named why the park was cleared. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's set, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set, or rides on an event that is neither BLOCKED nor the machinery LAP), 52 (a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: \"refuse\"` — name one), 38 (--class is outside the closed lane-class set), 36 (a resume would restore the state and not the budget it lands on — out of an error final, record the cleared round first and the two land in either order, `build clear` where a pull request carries the founder's grant and `lane clear` where the lane has none; out of a wait park, grant the waits on this same resume, which `recipe unpark` does once it has proven the queue moved), 47 (--grant-wait is not a whole grant of at least one wait, or rides on an event that is not UNBLOCKED), 53 (--rationale says nothing, or rides on an event that is not UNBLOCKED), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). A cleared round is NOT recorded here: it is a `<TASK>.CLEARED` event `build clear` or `lane clear` appends, it targets no state, and the operator's set is unchanged. An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; every cause also carries a route — `driver` or `founder` — saying whose failure the park is. A BLOCKED with no cause is the bare park it always was and routes to a human, unless `.fabrika.jsonc` declares `parkCause.uncaused: \"refuse\"`, which refuses it at 52 with the log unappended. A repeatable --class lands the lane classes standing at the event on the same line, and is the fact the machine's `class:<name>` arms route on — `--class ui` on a WIP sends the lane to `build:ui`, and it stands until another event names a different set. An optional --grant-wait lands the waits a resume buys on the same UNBLOCKED line, so one recorded event both clears the park and pays for the read the lane resumes to take; it is the human fallback for a `human:queue-stall` whose `recipe unpark` proving read cannot run, and `build clear` is not it — that buys a repair round and never a longer wait. An optional --rationale rides the same UNBLOCKED and says why the park was cleared — the driver's own recommendation, which `recipe unpark` passes when it clears a driver-routed park, and which `lane status` reads back as the task's standing `rationale`. Examples: fabrika lane transition 5673 DONE · fabrika lane transition 5673 UNBLOCKED --grant-wait 1",
+		"Record one operator event on the lane's append-only log — after the machine accepts it, never before, and after `lane prove`'s own read proves the artifact behind it. The proof is this verb's, not a command a driver is told to run first: a DONE and a PASS reach the log only with their artifact behind them, a reviewer's park only while no FAIL at the head says the run reached a verdict, and every other event answers not-required without a board read; a refusal comes back on the prover's own code with the log byte-identical, and the remedies are `lane prove`'s, unchanged. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold, plus `waitGrant` when the resume granted waits, `rationale` when it named why the park was cleared, and the prover's own `deferred`/`partial`/`landed`/`diagnosis` where the read answered them — the same fields `lane report` records, so the driver's line and a shell's carry the same facts. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's set, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS or park, several candidates — log unappended, remedies unchanged), 35 (--cause is outside the closed park-cause set, or rides on an event that is neither BLOCKED nor the machinery LAP), 52 (a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: \"refuse\"` — name one), 38 (--class is outside the closed lane-class set), 36 (a resume would restore the state and not the budget it lands on — out of an error final, record the cleared round first and the two land in either order, `build clear` where a pull request carries the founder's grant and `lane clear` where the lane has none; out of a wait park, grant the waits on this same resume, which `recipe unpark` does once it has proven the queue moved), 47 (--grant-wait is not a whole grant of at least one wait, or rides on an event that is not UNBLOCKED), 53 (--rationale says nothing, or rides on an event that is not UNBLOCKED), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). A cleared round is NOT recorded here: it is a `<TASK>.CLEARED` event `build clear` or `lane clear` appends, it targets no state, and the operator's set is unchanged. An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; every cause also carries a route — `driver` or `founder` — saying whose failure the park is. A BLOCKED with no cause is the bare park it always was and routes to a human, unless `.fabrika.jsonc` declares `parkCause.uncaused: \"refuse\"`, which refuses it at 52 with the log unappended. A repeatable --class lands the lane classes standing at the event on the same line, and is the fact the machine's `class:<name>` arms route on — `--class ui` on a WIP sends the lane to `build:ui`, and it stands until another event names a different set. An optional --grant-wait lands the waits a resume buys on the same UNBLOCKED line, so one recorded event both clears the park and pays for the read the lane resumes to take; it is the human fallback for a `human:queue-stall` whose `recipe unpark` proving read cannot run, and `build clear` is not it — that buys a repair round and never a longer wait. An optional --rationale rides the same UNBLOCKED and says why the park was cleared — the driver's own recommendation, which `recipe unpark` passes when it clears a driver-routed park, and which `lane status` reads back as the task's standing `rationale`. Examples: fabrika lane transition 5673 DONE · fabrika lane transition 5673 UNBLOCKED --grant-wait 1",
 	),
 );
 
@@ -1269,7 +1283,17 @@ const view = leafCommand(
 		yield* Effect.logInfo(listeningAt(chosen));
 		yield* emit(
 			yield* onGround("view", [resolvedRoot], process.cwd(), () =>
-				runView({root: resolvedRoot, port: chosen, parkCause}),
+				runView(
+					{
+						root: resolvedRoot,
+						port: chosen,
+						parkCause,
+						repo: null,
+						cwd: process.cwd(),
+						env: process.env,
+					},
+					runProve,
+				),
 			),
 		);
 	}),
@@ -1278,7 +1302,7 @@ const view = leafCommand(
 		"Every lane on disk, on one screen, the ones needing a person first.",
 	),
 	Command.withDescription(
-		"Serve every lane under the root as one page and keep it current while lanes move — the fleet-wide answer to which of these needs a person, where `lane status` answers one lane and `lane stale` answers liveness. Lanes are ordered by attention: waiting on a human, then tripped, then gone quiet, then moving, then finished. Opening one shows its phases, each task's leaf, what it is waiting on, its retry budget and its region drawn with the edges the log walked. The page can send the operator's events, and every one goes through `lane transition` — validated against the folded state and appended only if the machine accepts it, so a refusal is that verb's own words and `events.jsonl` has exactly one writer. It serves on localhost and reads the disk it was started on: nothing is uploaded and no lane leaves the machine. Runs until interrupted. Exits 11 (the root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Examples: fabrika lane view · fabrika lane view --port 6000",
+		"Serve every lane under the root as one page and keep it current while lanes move — the fleet-wide answer to which of these needs a person, where `lane status` answers one lane and `lane stale` answers liveness. Lanes are ordered by attention: waiting on a human, then tripped, then gone quiet, then moving, then finished. Opening one shows its phases, each task's leaf, what it is waiting on, its retry budget and its region drawn with the edges the log walked. The page can send the operator's events, and every one goes through `lane transition` — validated against the folded state, proven against the artifact it claims, and appended only if both pass, so a refusal is that verb's own words and `events.jsonl` has exactly one writer. It serves on localhost and reads the disk it was started on: nothing is uploaded and no lane leaves the machine. Runs until interrupted. Exits 11 (the root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Examples: fabrika lane view · fabrika lane view --port 6000",
 	),
 );
 

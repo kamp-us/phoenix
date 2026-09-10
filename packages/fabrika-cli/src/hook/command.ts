@@ -15,7 +15,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
-import {runWorktreeCreate} from "./worktree-create-verb.ts";
+import {type CliEntry, runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
@@ -47,6 +47,20 @@ const codes = leafCommand(
 	),
 );
 
+/**
+ * The way back into this same build of the CLI, for the sweep the provisioner runs as a child.
+ *
+ * `argv[1]` rather than a resolved package path: it is the entry module this process was actually
+ * started from, so a checkout and an installed copy each re-enter themselves. Absent it, the sweep
+ * is skipped and said so — never guessed at.
+ */
+const cliEntry = (): CliEntry | null => {
+	const entry = globalThis.process.argv[1];
+	return entry === undefined || entry.trim() === ""
+		? null
+		: {node: globalThis.process.execPath, entry};
+};
+
 const worktreeCreate = leafCommand(
 	"worktree-create",
 	{
@@ -60,13 +74,14 @@ const worktreeCreate = leafCommand(
 				stdin: Effect.sync(readStdin),
 				dryRun,
 				env: globalThis.process.env,
+				cli: cliEntry(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Provision the isolation worktree a WorktreeCreate envelope names."),
 	Command.withDescription(
-		"Create the `isolation: worktree` tree the WorktreeCreate envelope on STDIN names, with its deps installed, and print its absolute path on stdout — the path the harness adopts. Fetches the base into a per-spawn ref and resolves it to a commit id — never the shared `FETCH_HEAD`, which a sibling spawn's fetch truncates mid-read — then runs `git worktree add --detach` at that id under a PATH that resolves the toolchain so lefthook's post-checkout install runs, and refuses unless the tree exists and its virtual store landed. The fetch and the add each recover from the two sibling-worktree faults a parallel spawn causes — a fetch reading a half-built `worktrees/<name>/HEAD`, an add reading a half-built `worktrees/<name>/commondir` — by pruning dead worktree entries and re-attempting, bounded to five attempts and up to 3s of delay per command, taking no lock; any other diagnostic refuses on the first attempt. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge), 15 (the envelope names no creatable worktree), 16 (the base could not be fetched), 17 (`git worktree add` failed), 18 (the tree was created dep-less). Every non-zero exit blocks the spawn. Example: fabrika hook worktree-create",
+		"Create the `isolation: worktree` tree the WorktreeCreate envelope on STDIN names, with its deps installed, and print its absolute path on stdout — the path the harness adopts. REAPS BEFORE IT PROVISIONS: it runs `fabrika build reap --execute --limit 4` as a child in the repository the envelope named, before the fetch and the add, because whatever creates a worktree is what bounds how many accumulate and the failure it prevents is a full volume refusing the add — freeing the disk after that refusal is a spawn too late. It is a child rather than a call so the sweep runs in that repository rather than in the hook's own cwd, it is bounded by --limit and by a 120s timeout so the fetch and the add still fit in the hook's 600s budget, and NOTHING IT ANSWERS CAN REFUSE THE SPAWN — a reclaimer that could block one would turn a housekeeping miss into the total stop it exists to end, so a failed or cut-off sweep is a stderr line and the provisioning proceeds. Fetches the base into a per-spawn ref and resolves it to a commit id — never the shared `FETCH_HEAD`, which a sibling spawn's fetch truncates mid-read — then runs `git worktree add --detach` at that id under a PATH that resolves the toolchain so lefthook's post-checkout install runs, and refuses unless the tree exists and its virtual store landed. The fetch and the add each recover from the two sibling-worktree faults a parallel spawn causes — a fetch reading a half-built `worktrees/<name>/HEAD`, an add reading a half-built `worktrees/<name>/commondir` — by pruning dead worktree entries and re-attempting, bounded to five attempts and up to 3s of delay per command, taking no lock; any other diagnostic refuses on the first attempt. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge), 15 (the envelope names no creatable worktree), 16 (the base could not be fetched), 17 (`git worktree add` failed), 18 (the tree was created dep-less). Every non-zero exit blocks the spawn. Example: fabrika hook worktree-create",
 	),
 );
 

@@ -13,10 +13,10 @@
  * other way: it asserts the run reached no verdict, so a still-binding `FAIL` refuses it and every
  * unreadable half lets it through (`proveParkUncontradicted`).
  *
- * **It writes nothing.** The proof sits beside `lane transition` rather than inside it so the
- * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is its
- * two callers, which each run it first and record only on its exit 0 — `operate` step 3 for the
- * operator's own append, and `lane report` for a shell recording its own terminal token.
+ * **It writes nothing**, and it is not optional. Both appending verbs run this read themselves and
+ * refuse on its codes with the log byte-identical — `lane report` for a shell recording its own
+ * terminal token, `lane transition` for the driver's own records. It stays a verb of its own so a
+ * caller can ask what the proof says without recording anything.
  *
  * Every refusal names what it looked for, and the failing readings stay on their own codes because
  * their remedies are opposite: nothing there, not finished yet, says the other thing, several

@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, refuse} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
@@ -16,9 +16,8 @@ import {
 	TOKEN_UNRECOGNISED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
-import type {ProveOptions} from "./prove-verb.ts";
 import {PARK_CAUSE_TOKENS, SHELL_VOCABULARIES} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 
@@ -37,29 +36,6 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 	// takes the class-guarded arm into the rendered gate's own cell.
 	"review:ui": logLine("WIP", ["ui"]) + logLine("DONE") + logLine("PASS"),
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
-};
-
-/**
- * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
- * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
- * at exit 0 for an event that claims no artifact.
- */
-const fakeProver = (
-	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
-	deferred: ReadonlyArray<string> = [],
-	partial: boolean | null = null,
-	landed: ReadonlyArray<number> = [],
-	diagnosis = false,
-) => {
-	const asked: ProveOptions[] = [];
-	return {
-		asked,
-		prove: (options: ProveOptions) =>
-			Effect.sync(() => {
-				asked.push(options);
-				return {...outcome, deferred, partial, landed, diagnosis};
-			}),
-	};
 };
 
 const run = (
