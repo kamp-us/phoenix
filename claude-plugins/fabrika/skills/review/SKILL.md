@@ -245,6 +245,14 @@ the rollup. Each token routes on its own:
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
 so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
 
+**Give the call a caller-side deadline above `--budget-seconds`, or the budget decides nothing.**
+The verb owns the loop only for as long as its process lives: a shell that wraps this call in a
+timeout shorter than the budget kills the CLI mid-poll, so none of the four `settle` tokens comes
+back and the class ends `UNKNOWN` with the head unread. One reviewer shell did exactly that with a
+120-second timeout over the 600-second default, and was killed at 120s with CI still running. Use
+**1800 seconds**, and raise it again whenever you raise `--budget-seconds`. It is a practical value with headroom for the `gh`
+reads, not a guaranteed CLI maximum — the verb promises only that it stops polling at its budget.
+
 **On a `governance: required` diff, fire §6's governance skill before you wait on CI.** The floor
 check-run at the head cannot go green until a governance verdict binds there, and you are the shell
 that owes it — so a `--wait` run first is a wait on yourself. The verb names that rather than

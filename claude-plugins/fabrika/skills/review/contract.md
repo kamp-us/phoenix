@@ -595,6 +595,12 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
+**A `--wait` call must be invoked with a caller-side timeout above `--budget-seconds`.** The budget
+bounds the verb, not the process around it: a shell timeout below the budget kills the CLI mid-poll,
+no `settle` token is printed, and the caller has an `UNKNOWN` instead of an answer. Against the `600`
+default, use `1800` seconds — headroom for the `gh` reads, and a practical value rather than a
+guaranteed CLI maximum, so a raised budget needs a raised caller deadline too.
+
 **Output** — machine channel. Under `--wait`, a first line
 `settle\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`; without it that
 line is absent. Then
