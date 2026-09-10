@@ -169,6 +169,28 @@ describe("runEdges", () => {
 		expect(outcome.stderr.at(-1)).toContain("cannot be confirmed");
 	});
 
+	/**
+	 * The idempotent path owes no confirming read, so a blip on one cannot seat `8`: that code means
+	 * "edges were POSTed and cannot be confirmed", and here nothing was POSTed.
+	 */
+	it("answers off the before-read when nothing is missing, so a failing re-read cannot seat 8", async () => {
+		const {outcome, requests} = await run([
+			...ground(),
+			[once(GRAPH(4302)), blockers(4301)],
+			[GRAPH(4302), {status: 502, body: '{"message":"Bad gateway"}'}],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			answer: "reconciled",
+			epic: 4300,
+			required: 1,
+			already: 1,
+			written: 0,
+			verified: true,
+		});
+		expect(requests.filter((line) => GRAPH(4302).test(line))).toHaveLength(1);
+	});
+
 	it("refuses 24 on a prerequisite proven absent — no edge can point at it", async () => {
 		const {outcome} = await run([
 			...ground(),

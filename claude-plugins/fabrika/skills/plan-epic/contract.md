@@ -1224,15 +1224,18 @@ Order of operations:
    issue number ([`io/edges.ts`](../../../../packages/fabrika-cli/src/io/edges.ts)'s
    `EDGE-BODY-TAKES-AN-INTERNAL-ID`). A prerequisite proven absent is `24`: the topology is wrong,
    and no edge can point at it.
-5. **Re-read every dependent's list and prove each required pair**. A POST's own response is not
-   evidence: a refused write and a write whose response was lost look identical at the client, and
-   only the graph tells them apart. An unread re-read is `8`; a pair that does not read back is `9`.
+5. **Re-read every dependent's list and prove each required pair** — but only when a POST was
+   issued. A POST's own response is not evidence: a refused write and a write whose response was
+   lost look identical at the client, and only the graph tells them apart. With nothing missing
+   there is nothing to prove, step 3's read having already proved every pair present, so the verb
+   answers off that read; re-reading anyway would let a transient blip seat `8` over zero writes.
+   An unread re-read is `8`; a pair that does not read back is `9`.
 
 **Reconcile, never replace.** Only missing edges are written. An edge the block does not name is
 left alone, because a `blocked_by` list may carry edges no ledger authored — a human's, another
 epic's — and deleting one would unblock work on the strength of a document that was never the
-carrier. The verb is therefore idempotent: a second run over a reconciled epic writes nothing and
-answers `written: 0`.
+carrier. The verb is therefore idempotent: a second run over a reconciled epic writes nothing,
+issues no confirming read, and answers `written: 0`.
 
 **Exit status** (beyond the universal four)
 
@@ -1240,7 +1243,7 @@ answers `written: 0`.
 |---|---|
 | `4` | the `## Dependencies` block is unparseable |
 | `7` | the epic is proven absent or closed, or it declares no topology — zero scope |
-| `8` | edges were POSTed and the graph could not be re-read — UNKNOWN |
+| `8` | edges were POSTed and the graph could not be re-read — UNKNOWN; unreachable when zero were POSTed |
 | `9` | the graph does not read back carrying every required edge |
 | `10` | the issue is not a `type:epic` |
 | `11` | a read failed before any write — **nothing was written** |
@@ -1253,16 +1256,16 @@ answers `written: 0`.
 |---|---|---|
 | `ledger edges: #<n>'s ## Dependencies block is unparseable at line <k>: <text>` | 4 | refusal |
 | `ledger edges: #<n> declares no topology — refusing to answer over zero scope.` | 7 | refusal |
-| `ledger edges: <k> edge(s) were POSTed and cannot be confirmed — cannot read <what>: <reason>.` | 8 | refusal |
+| `ledger edges: <k> edge(s) were POSTed and cannot be confirmed — cannot read <what>: <reason>.` (`<k>` is never 0) | 8 | refusal |
 | `ledger edges: <k> edge(s) do not read back on the graph — it needs a human eye.` | 9 | refusal |
 | `ledger edges: #<n> is not a type:epic — refusing to write edges for it.` | 10 | refusal |
 | `ledger edges: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `ledger edges: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger edges: #<n> is named as a prerequisite and is proven absent — no edge can point at it.` | 24 | refusal |
 
-**Scope** — one epic body read, one `blocked_by` read per dependent, one POST per missing edge, and
-one confirming read per dependent. The scanned line names the required-edge count, so an answer over
-a surprising scope is auditable without re-running.
+**Scope** — one epic body read, one `blocked_by` read per dependent, one POST per missing edge, and,
+only when at least one edge was POSTed, one confirming read per dependent. The scanned line names
+the required-edge count, so an answer over a surprising scope is auditable without re-running.
 
 **Examples**
 
@@ -1270,6 +1273,14 @@ a surprising scope is auditable without re-running.
 $ fabrika ledger edges 3 --token <claim-token>
 ledger edges: scanned 3 required edges.
 {"answer":"reconciled","epic":3,"required":3,"already":1,"written":2,"verified":true}
+```
+
+The idempotent re-run — nothing missing, so nothing is POSTed and no confirming read is issued:
+
+```
+$ fabrika ledger edges 3 --token <claim-token>
+ledger edges: scanned 3 required edges.
+{"answer":"reconciled","epic":3,"required":3,"already":3,"written":0,"verified":true}
 ```
 
 ```

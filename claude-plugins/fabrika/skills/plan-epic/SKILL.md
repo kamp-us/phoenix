@@ -395,7 +395,8 @@ fabrika ledger edges $epic_number --token <claim-token>
 
 It reads the epic's own block, writes every edge it requires, and proves each one by re-reading the
 graph. Done when it answers `reconciled` with `verified: true`. It is idempotent and reconciles
-rather than replaces, so re-running it writes nothing and an edge no ledger authored is left alone.
+rather than replaces, so re-running it writes nothing, re-reads nothing, and an edge no ledger
+authored is left alone.
 
 `9` means an edge was POSTed and does not read back, and `8` means the graph could not be re-read
 after a POST — both leave the graph UNKNOWN and need a human eye; say the epic body **is** written,
