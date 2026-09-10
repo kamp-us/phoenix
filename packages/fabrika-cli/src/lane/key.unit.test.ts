@@ -1,6 +1,6 @@
 /** The lane key — which kind an argument names, where it lands, and the names it refuses. */
 import {describe, expect, it} from "vitest";
-import {CHORE_NAME_LIMIT, laneRef, parseKey, templateFile} from "./key.ts";
+import {CHORE_NAME_LIMIT, keyIssue, laneRef, parseKey, rawKeyIssue, templateFile} from "./key.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
 const key = (raw: string) => {
@@ -60,5 +60,33 @@ describe("the lane key", () => {
 
 	it("refuses an empty key rather than resolving it to the root itself", () => {
 		expect(reasonFor("")).toContain("empty");
+	});
+});
+
+describe("the issue a lane key drives", () => {
+	it("reads a bare numeric key as the issue itself", () => {
+		expect(keyIssue(key("8012"))).toBe(8012);
+		expect(rawKeyIssue("8012")).toBe(8012);
+	});
+
+	it("reads the leading segment of a quarantined key, not the whole directory name", () => {
+		expect(keyIssue(key("8012.frozen-deadlock-20260905T194736"))).toBe(8012);
+		expect(rawKeyIssue("7981.frozen-deadlock-1788645453")).toBe(7981);
+	});
+
+	it("resolves a chore key to no issue at all", () => {
+		expect(keyIssue(key("chore:park-sweep"))).toBeNull();
+		expect(rawKeyIssue("chore:park-sweep")).toBeNull();
+	});
+
+	it("resolves a key with no leading numeric segment to no issue", () => {
+		for (const raw of ["frozen-deadlock", "8012abc", ".8012", "8012."]) {
+			expect(rawKeyIssue(raw)).toBeNull();
+		}
+	});
+
+	it("resolves a malformed key to no issue rather than throwing", () => {
+		expect(rawKeyIssue("")).toBeNull();
+		expect(rawKeyIssue("chore:Park Sweep")).toBeNull();
 	});
 });
