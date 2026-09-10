@@ -101,6 +101,28 @@ export const loadLane = (
 		return {_tag: "Loaded", lane: compiled.lane, entries: parsed.entries, dir, logPath} as const;
 	});
 
+export type LanePresence =
+	| {readonly _tag: "Present"; readonly dir: string}
+	| {readonly _tag: "Absent"; readonly dir: string}
+	| {readonly _tag: "Unprobeable"; readonly dir: string; readonly reason: string};
+
+/**
+ * Whether a lane directory is already there — the probe {@link placeMachine} refuses on, split out
+ * so a caller can ask before it spends a board read on a lane that needs no boot at all.
+ */
+export const probeLane = (
+	ref: LaneRef,
+): Effect.Effect<LanePresence, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const dir = path.join(ref.root, ref.lane);
+		const probe = yield* Effect.result(exists(dir));
+		if (Result.isFailure(probe)) {
+			return {_tag: "Unprobeable", dir, reason: probe.failure.reason} as const;
+		}
+		return probe.success ? ({_tag: "Present", dir} as const) : ({_tag: "Absent", dir} as const);
+	});
+
 export type Placement =
 	| {readonly _tag: "Placed"; readonly dir: string; readonly workflow: string}
 	| {readonly _tag: "Exists"; readonly dir: string}
@@ -120,12 +142,12 @@ export const placeMachine = (
 ): Effect.Effect<Placement, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const dir = path.join(ref.root, ref.lane);
-		const probe = yield* Effect.result(exists(dir));
-		if (Result.isFailure(probe)) {
-			return {_tag: "Unprobeable", dir, reason: probe.failure.reason} as const;
+		const presence = yield* probeLane(ref);
+		const {dir} = presence;
+		if (presence._tag === "Unprobeable") {
+			return {_tag: "Unprobeable", dir, reason: presence.reason} as const;
 		}
-		if (probe.success) return {_tag: "Exists", dir} as const;
+		if (presence._tag === "Present") return {_tag: "Exists", dir} as const;
 		const workflow = path.join(dir, WORKFLOW_FILE);
 		const wrote = yield* Effect.result(writeFile(workflow, text));
 		if (Result.isFailure(wrote)) {
