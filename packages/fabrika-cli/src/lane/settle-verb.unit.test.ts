@@ -65,6 +65,7 @@ const pull = (over: Partial<NominatedPull> = {}): NominatedPull => ({
 	merged: true,
 	linkedIssues: [ISSUE],
 	linkKind: "fixes",
+	referencedIssues: over.linkedIssues ?? [ISSUE],
 	htmlUrl: "https://example.test/o/r/pull/6874",
 	...over,
 });
