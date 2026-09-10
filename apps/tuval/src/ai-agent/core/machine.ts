@@ -53,8 +53,8 @@ import {loadCheckpoint} from "./snapshot.ts";
 import {
 	type AgentFailure,
 	type AiAgentSessionState,
+	cutPromptId,
 	initialState,
-	lastAssistantId,
 	settleTurn,
 } from "./state.ts";
 
@@ -433,6 +433,12 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			 * long the interruption has been outstanding, and that clock starts when they first
 			 * asked.
 			 *
+			 * It is anchored on the operator's own prompt (`cutPromptId`), so it lands at the press on
+			 * every turn — including one cut before the model wrote a token, and one whose content was
+			 * tool calls alone and so never draws a reply row at all. Anchored on the reply it left
+			 * those turns with no way back, and left every other one waiting on a backend row to render
+			 * the affordance the operator had just asked for (#8699).
+			 *
 			 * The queue goes, because an operator asking a turn to stop is not asking the next queued
 			 * one to start. It is released rather than dropped, so every word is still theirs to take
 			 * back (`./queue.ts`).
@@ -443,7 +449,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 					: [
 							{
 								...state,
-								interrupted: state.interrupted ?? lastAssistantId(state.transcript.items),
+								interrupted: state.interrupted ?? cutPromptId(state.transcript.items),
 								interruption: state.interruption ?? {requestedAt: msg.at},
 								queued: [],
 								sends: releaseQueued(

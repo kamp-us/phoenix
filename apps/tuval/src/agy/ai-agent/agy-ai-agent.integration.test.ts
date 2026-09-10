@@ -183,6 +183,31 @@ describe("the agy layer over a scripted binary", () => {
 		expect(assistant.at(-1)).toBe("you said list the files");
 	});
 
+	it("carries each call of a multi-call step its own result, over a real pipe", async () => {
+		const collectedItems = await drive((collected) =>
+			Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: "/repo"});
+				yield* agent.prompt("tools: read both files");
+				yield* until(collected, turnEnded);
+				return [...collected];
+			}),
+		);
+		// A call crosses twice, `running` then settled; the settled pair is what a reader ends up on.
+		const tools = collectedItems.flatMap((event) =>
+			event.kind === "item" && event.item.kind === "tool" && event.item.status === "ok"
+				? [event.item]
+				: [],
+		);
+		// Two rows with two distinct results: the live wire serialises a batch one `tool` step per
+		// call, so a row borrowing its neighbour's output is a mapping defect, not a wire ambiguity.
+		expect(tools.map((item) => item.name)).toEqual(["view_file", "view_file"]);
+		expect(tools[0]?.result.text).toContain("1: alpha");
+		expect(tools[0]?.result.text).not.toContain("1: bir");
+		expect(tools[1]?.result.text).toContain("1: bir");
+		expect(tools[1]?.result.text).not.toContain("1: alpha");
+	});
+
 	it("refuses a malformed turn before it reaches stdin", async () => {
 		const refusal = await drive(() =>
 			Effect.gen(function* () {
@@ -334,7 +359,7 @@ describe("the agy layer over a scripted binary", () => {
 		expect(refusal._tag).toBe("tuval/ai-agent/UnknownRequest");
 	});
 
-	it("interrupts with SIGINT, and marks the cut turn rather than failing it", async () => {
+	it("interrupts with SIGINT, marks the cut turn, and comes back on the same conversation", async () => {
 		const collectedEvents = await drive((collected) =>
 			Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
@@ -344,15 +369,12 @@ describe("the agy layer over a scripted binary", () => {
 				);
 				yield* agent.prompt("something long");
 				yield* agent.interrupt;
-				yield* until(collected, (events) =>
-					events.some((event) => event.kind === "phase" && event.phase === "gone"),
-				);
 				return [...collected];
 			}),
 		);
 		// The wire names the stop (`error: "interrupted"`, #8694), so the turn is marked rather than
-		// failed — and the child is really gone, which the window has to be told: the exit watch used
-		// to lose a race to stdout's own EOF and the session read `ready` over a dead process (#8693).
+		// failed — and the stop is not the end of the session: the child it killed is relaunched on the
+		// same conversation id, so the window is left able to send again (#8709).
 		expect(
 			collectedEvents.flatMap((event) => (event.kind === "failure" ? [event.failure] : [])),
 		).toEqual([]);
@@ -365,7 +387,13 @@ describe("the agy layer over a scripted binary", () => {
 		const phases = collectedEvents.flatMap((event) =>
 			event.kind === "phase" ? [event.phase] : [],
 		);
-		expect(phases.at(-1)).toBe("gone");
+		expect(phases).not.toContain("gone");
+		expect(phases.at(-1)).toBe("ready");
+		// Two launches, and the second reopens what the first opened: the relaunch is the `respawn`
+		// the three switches take, not a fresh session.
+		const composed = launches();
+		expect(composed).toHaveLength(2);
+		expect(composed[1]?.join(" ")).toContain("--conversation=fake-0000-1111-2222");
 	});
 
 	it("pages history out of agy's own transcript.jsonl", async () => {

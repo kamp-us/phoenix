@@ -551,7 +551,8 @@ created and arrived dep-less.
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human
-  call; [`src/models.ts`](../src/models.ts) survives as the model vocabulary only, enforcing nothing.
+  call. The unused model vocabulary and its tests are also retired (ADR
+  [0374](../../../.decisions/0374-retire-unused-model-vocabulary.md)).
 
 ## The `lane` group
 

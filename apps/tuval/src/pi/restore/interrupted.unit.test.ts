@@ -68,7 +68,7 @@ describe("a pi-session checkpoint written mid-reply", () => {
 	it("comes back idle, with the cut turn marked so a window can offer the resend", () => {
 		const restored = restoreSession(cutMidReply);
 		assert.strictEqual(restored.phase, "idle");
-		assert.strictEqual(restored.interrupted, "item-1" as ItemId);
+		assert.strictEqual(restored.interrupted, "item-0" as ItemId);
 		const cut = restored.transcript.items.at(-1);
 		assert.isTrue(
 			cut?.kind === "assistant" && cut.interrupted === true,

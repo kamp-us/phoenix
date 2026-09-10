@@ -280,16 +280,20 @@ describe("folding a failure and a `gone` under two sends in flight", () => {
 /**
  * ADR 0356's two halves. The tag is routed before `phaseAfterFailure`, so neither of these is the
  * walk-to-`ready` every other failure gets — one of them stays put, and the other lands there for a
- * different reason and marks the turn on the way.
+ * different reason, settling the turn and its send on the way.
  */
 describe("folding a refused interrupt", () => {
 	const limits: WindowLimits = {};
 	const refusal = (reason: string, detail: string) => ({tag: INTERRUPT_ERROR, reason, detail});
+	const cutPrompt = userItem("u0");
 	const reply = assistantItem("a1");
+	// As the press leaves it: the marker is already on the operator's prompt, so neither half of this
+	// fold has an anchor to choose (#8699).
 	const prompting: AiAgentSessionState = {
 		...initialState("/repo"),
 		phase: "prompting",
-		transcript: {items: [reply], omitted: {items: 0, bytes: 0, reason: "none"}},
+		transcript: {items: [cutPrompt, reply], omitted: {items: 0, bytes: 0, reason: "none"}},
+		interrupted: cutPrompt.id,
 		interruption: {requestedAt: 1_700_000_000_000},
 		sends: [{key: "first", state: "pending", turn: "running"}],
 	};
@@ -300,7 +304,7 @@ describe("folding a refused interrupt", () => {
 		expect(refused.phase).toBe("prompting");
 		expect(refused.failure).toEqual(failure);
 		expect(refused.interruption).toEqual(prompting.interruption);
-		expect(refused.interrupted).toBeNull();
+		expect(refused.interrupted).toBe(cutPrompt.id);
 	});
 
 	// The turn goes on, so the send it is about goes on too: this failure names the interrupt call
@@ -317,7 +321,7 @@ describe("folding a refused interrupt", () => {
 		const failure = refusal("no-live-turn", "Operation aborted");
 		const refused = foldEvent(prompting, {kind: "failure", failure}, limits);
 		expect(refused.phase).toBe("ready");
-		expect(refused.interrupted).toBe(reply.id);
+		expect(refused.interrupted).toBe(cutPrompt.id);
 		expect(refused.interruption).toBeNull();
 		expect(refused.failure).toEqual(failure);
 	});

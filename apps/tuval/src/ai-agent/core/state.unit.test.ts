@@ -19,6 +19,7 @@ import {
 	type AiAgentSessionState,
 	checkpointFields,
 	checkpointWorthy,
+	cutPromptId,
 	initialState,
 	lastAssistantId,
 	phases,
@@ -263,6 +264,21 @@ describe("reading the tail", () => {
 		expect(
 			lastAssistantId([userItem("i0"), assistantItem("i1"), userItem("i2"), toolItem("i3")]),
 		).toBeNull();
+	});
+
+	// The resend anchor (#8699). It answers on every tail the reply-scan above answers `null` for,
+	// which is the whole point: no assistant item is needed to get a marker.
+	it("names the newest prompt, whatever the turn above it wrote", () => {
+		expect(cutPromptId([userItem("i0"), assistantItem("i1"), toolItem("i2")])).toBe("i0");
+		expect(cutPromptId([userItem("i0"), assistantItem("i1"), userItem("i2"), toolItem("i3")])).toBe(
+			"i2",
+		);
+		expect(cutPromptId([userItem("i0")])).toBe("i0");
+	});
+
+	it("answers nothing only for a tail holding no prompt at all", () => {
+		expect(cutPromptId([])).toBeNull();
+		expect(cutPromptId([assistantItem("i1"), toolItem("i2")])).toBeNull();
 	});
 });
 

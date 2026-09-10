@@ -1485,6 +1485,47 @@ describe("an interrupted turn", () => {
 		});
 	});
 
+	// A resend over a transport that has gone is the case this bookkeeping exists for: the core
+	// refuses a prompt at any phase but `ready`, and a resend holding no copy of its text had nothing
+	// for that refusal to settle — no unsent row, no Restore, no trace at all (#8709).
+	it("holds the resent text under its key, so a resend nobody took is recoverable", async () => {
+		const {process, keys, view} = await openWindow(interrupted);
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", {name: /Resend/}));
+		});
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "go"}]));
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({
+					...interrupted,
+					phase: "gone",
+					sends: [
+						{
+							key,
+							state: "refused",
+							failure: {
+								tag: PROMPT_ERROR,
+								reason: "refused",
+								detail: "the session is not accepting prompts",
+							},
+						},
+					],
+				}),
+			);
+		});
+
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		const unsent = within(screen.getByRole("list", {name: "Unsent messages"}));
+		expect(unsent.getByText("go")).toBeDefined();
+		await act(async () => {
+			fireEvent.click(unsent.getByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(view().draft).toBe("go"));
+		expect(view().outgoing).toEqual([]);
+	});
+
 	it("resends on Alt+R from the composer, and on nothing else", async () => {
 		const {process} = await openWindow(interrupted);
 		await act(async () => {

@@ -435,13 +435,37 @@ export const checkpointWorthy = (state: AiAgentSessionState): boolean =>
 	!holdsPartialItem(state) && !holdsRunningSubagent(state);
 
 /**
- * The reply row of the turn in flight, which is the one an interrupt or a restart can have cut.
+ * The operator's prompt for the turn in flight: the row a cut turn's Resend is anchored on.
  *
- * Scoped to the newest `user` row deliberately: a turn whose content was tool calls alone draws no
- * assistant row at all (`../pi/items.ts` suppresses it), so a scan that walked past the operator's
- * prompt would answer with the *previous* turn's finished reply and badge it as cut short (#8216).
- * `null` is the right answer there — the turn has no row to mark, and `state.interruption` plus the
- * `aborted` row the backend pushes already carry the indication.
+ * The anchor is the prompt rather than the reply because Escape must always leave a way back, and
+ * the reply is the one row that may not exist yet — or ever. A turn cut before the model wrote a
+ * token has no assistant row at the press, and a turn whose content was tool calls alone draws none
+ * at all (`../pi/items.ts` suppresses it), so an anchor read off the reply is missing in exactly the
+ * case the operator stopped fastest (#8699). The prompt is in the tail from the send: the `prompt`
+ * cell folds a local echo of it before the layer is called, and `planTranscriptWindow` admits the
+ * newest turn's group whole whatever the bounds, so at `prompting` this answers.
+ *
+ * `null` therefore means the tail holds no prompt at all — no turn here to offer back.
+ */
+export const cutPromptId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		const item = items[index];
+		if (item?.kind === "user") return item.id;
+	}
+	return null;
+};
+
+/**
+ * The reply row of the turn in flight: the row a cut turn's "You stopped this response" fold label
+ * is read off, once `markInterrupted` has flagged it.
+ *
+ * This names the *mark*, never the resend anchor — `cutPromptId` owns that. Scoped to the newest
+ * `user` row deliberately: a turn whose content was tool calls alone draws no assistant row at all
+ * (`../pi/items.ts` suppresses it), so a scan that walked past the operator's prompt would answer
+ * with the *previous* turn's finished reply and badge it as cut short (#8216). `null` is still the
+ * right answer there — that turn has no row to mark, and badging another turn's reply is the defect.
+ * What `null` no longer costs is the resend, which rides the prompt and lands whether a reply does
+ * or not.
  */
 export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
 	for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -450,28 +474,6 @@ export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | 
 		if (item?.kind === "assistant") return item.id;
 	}
 	return null;
-};
-
-/**
- * Where the cut-turn marker stands once one more item has landed.
- *
- * `lastAssistantId` answers `null` for a turn cut before it wrote anything, so on that path the
- * marker is set here instead — by the `aborted` row the backend pushes afterwards, which is the
- * only thing that ever names that turn's reply (#8584). Without it the row rendered plain: no
- * break, no resend, for the one turn the operator definitely stopped.
- *
- * The outstanding `interruption` is the whole gate. It is the operator's request with no event
- * against it yet, so an `aborted` row arriving under one is that request's answer; a historical
- * abort replayed by a snapshot arrives under none and leaves the marker alone. A marker already set
- * stands, so this never re-points the resend away from the row `interrupt` or `restore` chose.
- */
-export const cutReplyAfterItem = (
-	state: AiAgentSessionState,
-	item: TranscriptItem,
-): ItemId | null => {
-	if (state.interrupted !== null) return state.interrupted;
-	if (state.interruption === null) return null;
-	return item.kind === "assistant" && item.interrupted === true ? item.id : null;
 };
 
 /** The cut-short turn, marked in the tail so a window renders the break off the transcript alone. */
@@ -541,7 +543,11 @@ const markInterrupted = (
  * reconnect is a Msg the spawner dispatches (`../restore/checkpoint.ts`), never one scheduled here.
  */
 export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
-	const cut = loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null;
+	const interrupted = loaded.phase === "prompting";
+	// Two rows, one cut turn: the reply carries the mark its fold label is read off, the prompt
+	// carries the resend — and a turn that wrote no reply has only the second of them (#8699).
+	const reply = interrupted ? lastAssistantId(loaded.transcript.items) : null;
+	const cut = interrupted ? cutPromptId(loaded.transcript.items) : null;
 	const settled =
 		loaded.phase === "gone"
 			? closeOfferedCatalogs(settleRunningSubagents(loaded))
@@ -549,7 +555,7 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	return {
 		...settled,
 		phase: loaded.phase === "gone" ? "gone" : "idle",
-		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
+		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, reply)},
 		interrupted: cut ?? loaded.interrupted,
 		interruption: null,
 		agentVersion: null,

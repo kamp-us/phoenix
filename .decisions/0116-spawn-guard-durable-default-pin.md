@@ -80,4 +80,8 @@ fresh-clone / CI / cron spawn.
   masking under the default, preserving the "a misconfigured pin can't smuggle a bad model"
   guarantee.
 
-> Amendment 2026-08-19: the v1 spawn-guard at `packages/pipeline-cli/src/tools/spawn-guard/` is deleted (ADR [0282](0282-spawn-guard-retired.md)), but this decision still binds — fabrika reimplements it (ADR [0238](0238-fabrika-reimplements-v1-never-calls-it.md)): `DEFAULT_PIN`/`ALLOWLIST`/`canonicalModel` live in [`packages/fabrika-cli/src/models.ts`](../packages/fabrika-cli/src/models.ts) and the unset-inherit vs present-but-off-allowlist split lived in `packages/fabrika-cli/src/hook/spawn.ts` (`effectivePin = configured ?? DEFAULT_PIN`) — retired unlinked by ADR [0331](0331-fabrika-spawn-hook-retired.md); read it at its pinned commit.
+> Amendment 2026-08-19: the v1 spawn-guard at `packages/pipeline-cli/src/tools/spawn-guard/` is deleted (ADR [0282](0282-spawn-guard-retired.md)), but this decision still binds — fabrika reimplements it (ADR [0238](0238-fabrika-reimplements-v1-never-calls-it.md)): `DEFAULT_PIN`/`ALLOWLIST`/`canonicalModel` live in [`packages/fabrika-cli/src/models.ts`](https://github.com/kamp-us/phoenix/blob/16d3d2d12d686b01670f9bd6e88a1d66f4f4afc0/packages/fabrika-cli/src/models.ts) and the unset-inherit vs present-but-off-allowlist split lived in `packages/fabrika-cli/src/hook/spawn.ts` (`effectivePin = configured ?? DEFAULT_PIN`) — retired unlinked by ADR [0331](0331-fabrika-spawn-hook-retired.md); read it at its pinned commit.
+
+> Retirement note 2026-09-10: ADR [0374](0374-retire-unused-model-vocabulary.md) deletes the remaining
+> model vocabulary and its tests. The amendment above is history; its model-table link now points
+> to the earlier source in git.
