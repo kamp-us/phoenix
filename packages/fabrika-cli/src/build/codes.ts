@@ -224,9 +224,12 @@ export const DISCLOSURE_INCOMPLETE = 35;
  * A *proven* refusal about two commits both read in full — the fetched base and the branch's merge
  * base with it — so it never borrows {@link PRECONDITION_UNKNOWN}. Its own seat rather than
  * {@link WRONG_LANE}'s: `14` says the checked-out branch belongs to another lane, and this says the
- * branch is this lane's own and was cut somewhere else. The remedy is unlike any neighbour's —
- * rebase the branch onto the base, or retire it — and the fact it states is the one an epic child
- * cut off the trunk had nobody to state: the idempotent re-run cannot be the recovery when the
- * re-run is what hides the wrong base.
+ * branch is this lane's own and was cut somewhere else. The remedy is unlike any neighbour's, and it
+ * is a git act rather than a verb: rebase the branch onto the base, or delete it when it carries
+ * nothing worth keeping. `build retire-branch` is NOT the route — it renames *superseded* branches
+ * out of `build/`, so over the one branch a `36` describes it answers `none` and renames nothing,
+ * and over two it seats the survivor on the nonce the live claim carries, which is the offending
+ * branch itself. The fact this code states is the one an epic child cut off the trunk had nobody to
+ * state: the idempotent re-run cannot be the recovery when the re-run is what hides the wrong base.
  */
 export const BASE_MISMATCH = 36;

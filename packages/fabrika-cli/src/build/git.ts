@@ -108,6 +108,19 @@ export const mergeBaseOf = (a: string, b: string): Shell<Attempt<string>> =>
 		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base between ${a} and ${b}`);
 	});
 
+/**
+ * Whether both revisions resolve to commits here — how a caller splits {@link mergeBaseOf}'s
+ * failure back into the two facts git spent one exit status on.
+ *
+ * `merge-base A B` exits `1` on "these share no history", which is a *proven* answer, and `128` on a
+ * revision it could not read, which is an UNKNOWN. Reading the operands back is the only thing that
+ * tells them apart without asking `merge-base` for a status {@link execCapture} does not carry.
+ */
+export const bothResolve = (a: string, b: string): Shell<boolean> =>
+	Effect.gen(function* () {
+		return (yield* resolveCommit(a))._tag === "Ok" && (yield* resolveCommit(b))._tag === "Ok";
+	});
+
 export const branchExists = (name: string): Shell<boolean> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);

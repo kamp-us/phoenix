@@ -33,6 +33,8 @@ const RESOLVE = /^git rev-parse --verify --quiet FETCH_HEAD/;
 const VERIFY_BRANCH = /^git rev-parse --verify --quiet refs\/heads\//;
 const SWITCH_NEW = /^git switch -c /;
 const MERGE_BASE = /^git merge-base \S+ refs\/heads\/build\//;
+/** The read-back that splits a merge base git proves absent from one it could not compute. */
+const RESOLVE_SHA = /^git rev-parse --verify --quiet [0-9a-f]{40}\^/;
 
 const MINE = comments({id: 1, body: marker("s-9f2e", LANE_UUID)});
 
@@ -601,6 +603,42 @@ describe("runBranch — create mode proves the base it cut from", () => {
 		expect(out.code).toBe(BASE_MISMATCH);
 		expect(out.stderr.at(-1)).toContain(`does not carry origin/epic/7497 at ${EPIC_TIP}`);
 		expect(out.stderr.at(-1)).toContain(`share only ${TRUNK_FORK}`);
+		expect(shell.calls.some((line) => /^git switch/.test(line))).toBe(false);
+	});
+
+	it("names the git that clears a 36 — never build retire-branch, which retires the wrong branch", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[FETCH, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, okOut(`${HEAD}\n`)],
+			[MERGE_BASE, okOut(`${TRUNK_FORK}\n`)],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		const said = out.stderr.at(-1) ?? "";
+		expect(out.code).toBe(BASE_MISMATCH);
+		expect(said).toContain(
+			`git rebase --onto ${HEAD} ${TRUNK_FORK} build/4312-editor-focus-loss-${NONCE}`,
+		);
+		expect(said).toContain(`git branch -D build/4312-editor-focus-loss-${NONCE}`);
+		expect(said).not.toContain("retire-branch");
+	});
+
+	it("calls a merge base git PROVES absent a 36, not an 11 — both revisions read back fine", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[FETCH, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, okOut(`${HEAD}\n`)],
+			[RESOLVE_SHA, okOut(`${HEAD}\n`)],
+			[MERGE_BASE, errOut("")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
+		expect(out.code).toBe(BASE_MISMATCH);
+		expect(out.stderr.at(-1)).toContain("shares no history with origin/main");
+		expect(out.stderr.at(-1)).toContain("no merge base to rebase from");
 		expect(shell.calls.some((line) => /^git switch/.test(line))).toBe(false);
 	});
 

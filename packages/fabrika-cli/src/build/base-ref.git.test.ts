@@ -108,3 +108,43 @@ describe("a base naming a branch this clone also holds", {
 		expect(git(clone, "rev-parse", `refs/heads/${ASSEMBLY}`)).toBe(stale);
 	});
 });
+
+/**
+ * What `git merge-base` does over two roots that share nothing — the claim the `36` split rests on.
+ *
+ * It is a *proven* "no merge base", and git spends the same non-zero exit on it that it spends on a
+ * revision it could not read, with empty stdout either way. `execCapture` carries neither status, so
+ * `branch-verb.ts` reads both revisions back instead; this measures that the read-back can tell them
+ * apart at all — the unrelated pair resolves, the unreadable name does not.
+ */
+describe("merge-base over unrelated roots", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	const openUnrelatedPair = (): {repo: string; a: string; b: string} => {
+		const repo = mkdtempSync(join(tmpdir(), "fabrika-unrelated-"));
+		roots.push(repo);
+		git(undefined, "init", "--quiet", "-b", "main", repo);
+		writeFileSync(join(repo, "a.txt"), "a");
+		git(repo, "add", "-A");
+		git(repo, "commit", "--quiet", "-m", "root one");
+		const a = git(repo, "rev-parse", "HEAD");
+		git(repo, "checkout", "--quiet", "--orphan", "other");
+		git(repo, "rm", "--quiet", "-rf", ".");
+		writeFileSync(join(repo, "b.txt"), "b");
+		git(repo, "add", "-A");
+		git(repo, "commit", "--quiet", "-m", "root two");
+		return {repo, a, b: git(repo, "rev-parse", "HEAD")};
+	};
+
+	it("exits non-zero with no merge base, while both revisions still resolve", () => {
+		const {repo, a, b} = openUnrelatedPair();
+		expect(() => git(repo, "merge-base", a, b)).toThrow();
+		expect(git(repo, "rev-parse", "--verify", "--quiet", `${a}^{commit}`)).toBe(a);
+		expect(git(repo, "rev-parse", "--verify", "--quiet", `${b}^{commit}`)).toBe(b);
+	});
+
+	it("exits non-zero the same way when a revision cannot be read, and that one does NOT resolve", () => {
+		const {repo, a} = openUnrelatedPair();
+		const absent = "refs/heads/never-cut";
+		expect(() => git(repo, "merge-base", a, absent)).toThrow();
+		expect(() => git(repo, "rev-parse", "--verify", "--quiet", `${absent}^{commit}`)).toThrow();
+	});
+});

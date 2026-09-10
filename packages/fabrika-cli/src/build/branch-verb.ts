@@ -34,6 +34,7 @@ import {BASE_MISMATCH, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from ".
 import {
 	type BaseRef,
 	baseLabel,
+	bothResolve,
 	branchExists,
 	classifyBase,
 	currentBranch,
@@ -405,7 +406,9 @@ export const runBranch = (
 		if (fetched._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot fetch ${label}: ${fetched.reason} — refusing to cut a branch off a stale base.`,
+				base._tag === "Remote"
+					? `${VERB}: cannot fetch ${label}: ${fetched.reason} — refusing to cut a branch off a stale base.`
+					: `${VERB}: cannot resolve ${label}: ${fetched.reason} — refusing to cut a branch off a base this clone cannot read.`,
 				notes,
 			);
 		}
@@ -415,16 +418,26 @@ export const runBranch = (
 		if (yield* branchExists(name)) {
 			const shared = yield* mergeBaseOf(at, `refs/heads/${name}`);
 			if (shared._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: ${name} already exists and what it was cut from could not be read: ${shared.reason} — whether it carries ${label} is UNKNOWN; nothing was changed.`,
-					notes,
-				);
+				// `merge-base` spends its failure exit on two different facts — the revisions share no
+				// history, and a revision could not be read — and `execCapture` folds them into one.
+				// Asking whether both operands resolve is what splits a proven answer back out of the
+				// UNKNOWN, which this group refuses to fuse anywhere else.
+				return (yield* bothResolve(at, `refs/heads/${name}`))
+					? refuse(
+							BASE_MISMATCH,
+							`${VERB}: ${name} already exists and shares no history with ${label} at ${at} — the two were cut from unrelated roots, so there is no merge base to rebase from. Delete it with "git branch -D ${name}" and re-run, or move the commits you need onto ${label} by hand first. Nothing was changed.`,
+							notes,
+						)
+					: refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: ${name} already exists and what it was cut from could not be read: ${shared.reason} — whether it carries ${label} is UNKNOWN; nothing was changed.`,
+							notes,
+						);
 			}
 			if (shared.value !== at) {
 				return refuse(
 					BASE_MISMATCH,
-					`${VERB}: ${name} already exists and does not carry ${label} at ${at} — the two share only ${shared.value}, so this branch was cut off a different base, or ${label} has moved since it was cut. Rebase it onto ${label}, or retire it with "fabrika build retire-branch ${issue}" and re-run. Nothing was changed.`,
+					`${VERB}: ${name} already exists and does not carry ${label} at ${at} — the two share only ${shared.value}, so this branch was cut off a different base, or ${label} has moved since it was cut. Move it onto the base with "git rebase --onto ${at} ${shared.value} ${name}", or delete it with "git branch -D ${name}" when it carries nothing you need, then re-run. Nothing was changed.`,
 					notes,
 				);
 			}

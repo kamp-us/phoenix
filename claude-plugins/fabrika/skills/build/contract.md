@@ -1535,7 +1535,18 @@ at all, which is why the idempotent re-run could not be the recovery for a wrong
 mode now reads the branch's merge base with the base it just fetched and refuses on `36` unless that
 merge base **is** the base commit: the branch was cut off something else, or the base has moved since
 it was cut, and either way building on it silently reproduces the incident. Bases that agree keep the
-re-run idempotent, and a merge base that could not be **read** is `11`, never `36`.
+re-run idempotent, and a merge base that could not be **read** is `11`, never `36` — a merge base git
+proves does not *exist* (two unrelated roots) is a `36` of its own, split from the UNKNOWN by reading
+both revisions back, because `merge-base` spends one failure exit on both facts.
+
+**A `36` is cleared with git, not with a verb.** The refusal spells out the `git rebase --onto <base>
+<shared> <branch>` that moves the branch's commits onto the base, and deleting the branch is the
+other way out when it carries nothing worth keeping; the name is a function of the claim, so a
+re-run after either resolves the same name and cuts afresh. **`build retire-branch` is not the
+route**, though it reads like it: it renames *superseded* branches out of `build/`, so over the one
+branch a `36` describes it answers `none` and renames nothing, and over two it seats the survivor on
+the nonce the live claim carries — which is the offending branch itself. It was named here as the
+remedy for one review round, and following it lands back on the same `36`.
 
 Both halves of the ruling are refusals, and they are split on evidence. A parent read that **failed**
 is `11` naming the read — never a fall back to `origin/main`, because that fallback is the defect. A
@@ -1584,7 +1595,7 @@ number, which is the number repair mode claims.
 | Code | Trigger |
 |---|---|
 | `7` | `--resume`'s PR is proven absent, closed, or merged; `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>`; or the derived assembly branch `epic/<parent>` is proven absent from both origin and this clone |
-| `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; `--resume-lane` was given beside `--resume` or `--slug`; or `--base` names no configured remote and this clone has no `origin` to qualify it against |
+| `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; `--resume-lane` was given beside `--resume` or `--slug`; or `--base` names no configured remote and this clone has no `origin` to qualify it against — a clone with no remotes at all and a clone with several and no `origin` are the same refusal in two spellings |
 | `11` | the fetch failed, the claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, an existing lane branch's merge base with the resolved base could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
 | `15` | proven: the claim on `<number>` is foreign |
 | `36` | proven: the lane branch already exists and does not carry the base this run resolved — it was cut off a different one, or the base moved since |
@@ -1596,7 +1607,10 @@ number, which is the number repair mode claims.
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
 | `build branch: --base "<value>" names no configured remote and this clone has none to qualify it against. Nothing was cut.` | 10 | refusal |
-| `build branch: <branch> already exists and does not carry <base> at <sha> — the two share only <sha>, so this branch was cut off a different base, or <base> has moved since it was cut. Rebase it onto <base>, or retire it with "fabrika build retire-branch <n>" and re-run. Nothing was changed.` | 36 | refusal |
+| `build branch: --base "<value>" names none of this clone's remotes (<names>) and there is no origin to qualify it against — spell it <remote>/<ref>. Nothing was cut.` | 10 | refusal |
+| `build branch: cannot resolve <base>: <reason> — refusing to cut a branch off a base this clone cannot read.` | 11 | refusal |
+| `build branch: <branch> already exists and does not carry <base> at <sha> — the two share only <sha>, so this branch was cut off a different base, or <base> has moved since it was cut. Move it onto the base with "git rebase --onto <sha> <sha> <branch>", or delete it with "git branch -D <branch>" when it carries nothing you need, then re-run. Nothing was changed.` | 36 | refusal |
+| `build branch: <branch> already exists and shares no history with <base> at <sha> — the two were cut from unrelated roots, so there is no merge base to rebase from. Delete it with "git branch -D <branch>" and re-run, or move the commits you need onto <base> by hand first. Nothing was changed.` | 36 | refusal |
 | `build branch: <branch> already exists and what it was cut from could not be read: <reason> — whether it carries <base> is UNKNOWN; nothing was changed.` | 11 | refusal |
 | `build branch: cannot read #<n>'s parent through GitHub's issue-parent endpoint: <reason> — whether this is an epic child is UNKNOWN, and cutting off origin/main anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.` | 11 | refusal |
 | `build branch: #<n> is a child of epic #<p>, and whether origin carries its assembly branch epic/<p> could not be read: <reason> — which base this child belongs on is UNKNOWN. Nothing was cut.` | 11 | refusal |
@@ -1633,7 +1647,7 @@ build/9-prove-requires-review-ui-99345500
 ```
 $ fabrika build branch 9 --slug prove-requires-review-ui --token <token>
 build branch: base origin/epic/5 — derived from #9's parent epic #5; --base was not given.
-build branch: build/9-prove-requires-review-ui-99345500 already exists and does not carry origin/epic/5 at 1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f — the two share only 0e1d2c3b4a5968778695a4b3c2d1e0f1c2b3a49f, so this branch was cut off a different base, or origin/epic/5 has moved since it was cut. Rebase it onto origin/epic/5, or retire it with "fabrika build retire-branch 9" and re-run. Nothing was changed.
+build branch: build/9-prove-requires-review-ui-99345500 already exists and does not carry origin/epic/5 at 1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f — the two share only 0e1d2c3b4a5968778695a4b3c2d1e0f1c2b3a49f, so this branch was cut off a different base, or origin/epic/5 has moved since it was cut. Move it onto the base with "git rebase --onto 1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f 0e1d2c3b4a5968778695a4b3c2d1e0f1c2b3a49f build/9-prove-requires-review-ui-99345500", or delete it with "git branch -D build/9-prove-requires-review-ui-99345500" when it carries nothing you need, then re-run. Nothing was changed.
 $ echo $?
 36
 ```
