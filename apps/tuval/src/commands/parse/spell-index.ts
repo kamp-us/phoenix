@@ -8,26 +8,40 @@
  * founder's 2026-09-03 walk on #7639). A `RegistryTable` would carry richer types and the page
  * cannot hold one: it has descriptions, never the spells' closures.
  *
- * `SpellDescription.params` is `Schema.Unknown` on the wire, and what actually arrives is the
- * spell's `params` as JSON Schema. Two properties of that rendering are load-bearing and both were
+ * `SpellDescription.params` is a `JsonSchemaDocument` on the wire: the spell's `params` as the
+ * JSON Schema document `Schema.toJsonSchemaDocument` emits. Two properties of that rendering are
+ * load-bearing and both were
  * read off `Schema.toJsonSchemaDocument` at the `catalogs.tuval` pin (effect 4.0.0-rc.112): the
  * `properties` object's key order is the declaration order of `Schema.Struct`, which is the
  * positional order of the parameters, and a `Schema.Literals` parameter arrives as
  * `{"type": "string", "enum": [...]}`. A third followed from the same reading: a `Schema.Class` or
  * an identifier-annotated struct renders its root as `{"$ref": "#/$defs/<name>"}` with the object
  * itself under the document's `definitions`, so the root ref is followed once before the properties
- * are read. Everything else is read defensively — this module is total.
+ * are read. Invalid explicit rest declarations throw `InvalidRestParameter`; registration runs
+ * this validation before publishing descriptions. Unannotated input retains its defensive reads.
  */
 
+import {Predicate, Schema} from "effect";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
+import {REST_PARAMETER_ANNOTATION} from "../rest-parameter.ts";
 import type {SpellPath} from "../spell.ts";
 
 /** One parameter of a spell, as the parser binds it and the palette describes it. */
 export interface ParamSpec {
 	readonly name: string;
 	readonly required: boolean;
+	readonly rest?: true;
 	/** The literal choices when the parameter is an enum; a value outside them is refused. */
 	readonly literals?: ReadonlyArray<string>;
+}
+
+export class InvalidRestParameter extends Schema.TaggedError<InvalidRestParameter>()(
+	"tuval/commands/InvalidRestParameter",
+	{name: Schema.String, reason: Schema.String},
+) {
+	override get message(): string {
+		return `rest parameter "${this.name}" ${this.reason}`;
+	}
 }
 
 export interface IndexedSpell {
@@ -51,10 +65,12 @@ export interface SpellIndex {
 export const describeExpected = (param: ParamSpec): string =>
 	param.literals === undefined ? `<${param.name}>` : param.literals.join("|");
 
+/**
+ * A JSON Schema node read as a record, or nothing. `Predicate.isObject` excludes arrays, which is
+ * what every caller here wants: an `enum` array is read as an array, never walked for properties.
+ */
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+	Predicate.isObject(value) ? value : undefined;
 
 const stringLiterals = (property: unknown): ReadonlyArray<string> | undefined => {
 	const choices = asRecord(property)?.enum;
@@ -89,7 +105,10 @@ const followRef = (schema: Record<string, unknown> | undefined, params: unknown)
 };
 
 export const readParams = (params: unknown): ReadonlyArray<ParamSpec> => {
-	const root = asRecord(asRecord(params)?.schema) ?? asRecord(params);
+	// Only the document's own `schema`, never a bare JSON Schema object: `SpellDescription.params`
+	// is a `JsonSchemaDocument` and the bare form is refused at decode (#7758). The argument stays
+	// `unknown` so an undecoded row still reads as no parameters rather than throwing.
+	const root = asRecord(asRecord(params)?.schema);
 	const schema = followRef(root, params);
 	const properties = asRecord(schema?.properties);
 	if (properties === undefined) return [];
@@ -99,7 +118,26 @@ export const readParams = (params: unknown): ReadonlyArray<ParamSpec> => {
 			? declaredRequired.filter((name): name is string => typeof name === "string")
 			: [],
 	);
-	return Object.keys(properties).map((name) => {
+	const names = Object.keys(properties);
+	return names.map((name, index) => {
+		const property = followRef(asRecord(properties[name]), params);
+		const rest = property?.[REST_PARAMETER_ANNOTATION];
+		if (rest !== undefined && rest !== true) {
+			throw new InvalidRestParameter({name, reason: "must be declared with true"});
+		}
+		if (rest === true) {
+			if (index !== names.length - 1) {
+				throw new InvalidRestParameter({name, reason: "must be the last declared parameter"});
+			}
+			if (
+				property?.type !== "string" ||
+				property.enum !== undefined ||
+				property.const !== undefined
+			) {
+				throw new InvalidRestParameter({name, reason: "must be a free string"});
+			}
+			return {name, required: required.has(name), rest: true};
+		}
 		const literals = stringLiterals(properties[name]);
 		return literals === undefined
 			? {name, required: required.has(name)}
@@ -124,11 +162,7 @@ export const buildSpellIndex = (descriptions: RegistryDescription): SpellIndex =
 	const spells: Array<IndexedSpell> = [];
 
 	for (const description of descriptions) {
-		const [head, ...rest] = description.path;
-		// The protocol's `SpellPath` is non-empty by decode, but the type only says `readonly
-		// string[]`, so an undecoded row can still reach here. Dropping it keeps the parser total.
-		if (head === undefined) continue;
-		const path: SpellPath = [head, ...rest];
+		const path: SpellPath = description.path;
 		const spell: IndexedSpell = {
 			path,
 			describe: description.describe,

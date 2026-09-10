@@ -5,7 +5,6 @@
 	"grandfatheredMissingTokens": [
 		"--t-h1",
 		"--t-h3",
-		"--t-heading-sm",
 		"--border-subtle",
 		"--warning-soft",
 		"--bg",

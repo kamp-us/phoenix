@@ -3,15 +3,17 @@
  *
  * The order is the contract: validate against the folded state FIRST, append ONLY an event the
  * machine accepts. An invalid event — no cell in the current state, outside the six, wrong phase,
- * finished workflow — never reaches the append, so the refusal leaves `events.jsonl` untouched
- * (#5671, run 8). An append that fails is {@link APPEND_UNKNOWN}, never reported as recorded.
+ * finished workflow — never reaches the append, so the refusal leaves `events.jsonl` untouched.
+ * An append that fails is {@link APPEND_UNKNOWN}, never reported as recorded.
  *
  * The whole load → fold → validate → append section runs inside the lane's write lock
  * ([`append-lock.ts`](append-lock.ts)), so a shell recording its own terminal cannot validate
- * against bytes another writer is about to move under it (#5994). Lock-budget exhaustion refuses
+ * against bytes another writer is about to move under it. Lock-budget exhaustion refuses
  * {@link CONCURRENT_WRITE} — retry this same event — never an ordinary machine-refusal code.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
@@ -22,11 +24,14 @@ import {
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
 	GRANT_REFUSED,
+	PARK_UNCAUSED,
+	RATIONALE_REFUSED,
 	RESUME_UNBUDGETED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import {isOperatorEvent} from "./machine.ts";
+import {parkCauseRefusal} from "./park-cause-rule.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
 	type CauseResolution,
@@ -34,6 +39,8 @@ import {
 	classesForEvent,
 	type GrantResolution,
 	grantForEvent,
+	type RationaleResolution,
+	rationaleForEvent,
 } from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -49,13 +56,21 @@ export interface TransitionOptions extends LaneRef {
 	 *
 	 * A driver originates parks the shells cannot report (`operate` §4), so the cause field has to
 	 * reach the ledger on this path too — a `BLOCKED` only a driver could record would otherwise be
-	 * novel by construction, which is the gap #6480 closed on the shell's path.
+	 * novel by construction, which is the gap the cause field closed on the shell's path.
 	 */
 	readonly cause: string | null;
 	/**
-	 * The lane classes standing at this event, which the `class:<name>` arms route on (ADR 0317).
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
 	 *
-	 * The driver relays a shipped verb's answer here and never derives one (ADR 0228): `lane prove`
+	 * This verb records the parks a driver originates, so the rule refusing a cause-less park has to
+	 * reach it too — a rule only the shell's path enforced would leave the driver's own bare
+	 * `BLOCKED` recordable, which is the same defect at a different door.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
+	/**
+	 * The lane classes standing at this event, which the `class:<name>` arms route on.
+	 *
+	 * The driver relays a shipped verb's answer here and never derives one: `lane prove`
 	 * writes nothing by design and the append path stays offline, so the class rides the event line
 	 * exactly as `--cause` does. Empty leaves the standing set alone; a spelling outside the closed
 	 * set is refused rather than routed as unclassed.
@@ -64,11 +79,19 @@ export interface TransitionOptions extends LaneRef {
 	/**
 	 * Waits this event grants, on an `UNBLOCKED` out of a wait park; `null` grants none.
 	 *
-	 * It rides the resume so the clear and the grant are one recorded line — `recipe unpark` passes it
-	 * once it has proven the queue moved, and a human passes `--grant-wait` when that read cannot run
-	 * (ADR 0313). A resume that needs one and carries none is `applyEvent`'s `unbudgeted-resume`.
+	 * It rides the resume so the clear and the grant are one recorded line — `recipe unpark` passes
+	 * it once it has proven the queue moved, and a human passes `--grant-wait` when that read cannot
+	 * run. A resume that needs one and carries none is `applyEvent`'s `unbudgeted-resume`.
 	 */
 	readonly waitGrant: number | null;
+	/**
+	 * Why the park this event clears was cleared, on an `UNBLOCKED` only; `null` records none.
+	 *
+	 * `recipe unpark` passes the driver's own recommendation here when it clears a driver-routed
+	 * park, which is the whole audit of that clearance — the route says a driver may take the park,
+	 * and this says what it took it on.
+	 */
+	readonly rationale: string | null;
 }
 
 export const runTransition = (
@@ -92,11 +115,16 @@ export const runTransition = (
 				const event = options.event.toUpperCase();
 				// An event outside the six is applyEvent's refusal below, and its message is the better one;
 				// seating the cause as Uncaused here just keeps this read total until that refusal lands.
+				const rule = parkCauseRefusal(VERB, options.parkCause);
+				if (rule._tag === "Refused") return rule.outcome;
 				const caused: CauseResolution = isOperatorEvent(event)
-					? causeForEvent(options.cause, event)
+					? causeForEvent(options.cause, event, rule.requireCause)
 					: {_tag: "Uncaused"};
 				if (caused._tag === "Rejected") {
 					return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
+				}
+				if (caused._tag === "Required") {
+					return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 				}
 				const classed = classesForEvent(options.classes);
 				if (classed._tag === "Rejected") {
@@ -110,6 +138,15 @@ export const runTransition = (
 					: {_tag: "Granted", grant: null};
 				if (granted._tag === "Rejected") {
 					return refuse(GRANT_REFUSED, `${VERB}: refused (log unappended): ${granted.reason}.`);
+				}
+				const reasoned: RationaleResolution = isOperatorEvent(event)
+					? rationaleForEvent(options.rationale, event)
+					: {_tag: "Reasoned", rationale: null};
+				if (reasoned._tag === "Rejected") {
+					return refuse(
+						RATIONALE_REFUSED,
+						`${VERB}: refused (log unappended): ${reasoned.reason}.`,
+					);
 				}
 
 				const at = yield* Effect.sync(() => new Date().toISOString());
@@ -132,6 +169,7 @@ export const runTransition = (
 				const entry: LogEntry = {
 					...applied.entry,
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+					...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 				};
 				const wrote = yield* Effect.result(
 					appendText(loaded.logPath, `${JSON.stringify(entry)}\n`),
@@ -152,6 +190,7 @@ export const runTransition = (
 							...(classed.classes === null ? {} : {classes: classed.classes}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 							...(granted.grant === null ? {} : {waitGrant: granted.grant}),
+							...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 						},
 						null,
 						2,
@@ -159,6 +198,9 @@ export const runTransition = (
 					[`${VERB}: appended ${entry.event} to ${loaded.logPath}.`],
 				);
 			}),
-			(lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
+			{
+				onAbsent: (dir) => loadRefusal(VERB, {_tag: "Absent", dir}),
+				onLocked: (lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
+			},
 		);
 	});

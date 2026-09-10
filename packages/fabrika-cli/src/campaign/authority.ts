@@ -1,6 +1,6 @@
 /**
  * Who may write the `## Campaigns` table — **two conjunctive clauses, neither substituting for the
- * other** (ADR 0294).
+ * other**: a configured set narrows the live ACL and never replaces it.
  *
  * 1. The configured set: the cited comment's author is in `.fabrika.jsonc`'s `campaignAuthors`,
  *    case-insensitively for a `@user` entry and by REST membership for a `@org/team` one.
@@ -9,9 +9,9 @@
  *
  * **Clause 2 is load-bearing here specifically.** These verbs run against a working tree before any
  * pull request exists, so there is no base ref to resolve `campaignAuthors` at and the file is the
- * one the same actor is editing — the "a checked-in identity list is instructions, not enforcement"
- * hole ADR 0055 supersedes 0051 to close. A login appended to the key on a branch, by somebody with
- * no collaboration on the repo, must not satisfy the check.
+ * one the same actor is editing — a checked-in identity list is instructions, not enforcement. A
+ * login appended to the key on a branch, by somebody with no collaboration on the repo, must not
+ * satisfy the check.
  */
 
 import {Effect} from "effect";

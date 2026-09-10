@@ -6,8 +6,8 @@
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
 import {Effect, Schema} from "effect";
-import {describe, expect, expectTypeOf, it} from "vitest";
 import {defineSpell, type Scope, type Spell} from "./spell.ts";
 
 const scope: Scope = {
@@ -55,18 +55,20 @@ describe("defineSpell", () => {
 		>();
 	});
 
-	it("is the identity function — the value it returns is the value it was given", async () => {
-		const spell = {
-			path: ["window", "close"],
-			describe: "Close the focused window.",
-			params: Schema.Struct({id: Schema.String}),
-			result: Schema.Struct({closed: Schema.Boolean}),
-			execute: () => Effect.succeed({closed: true}),
-			capabilities: [],
-		} as const;
-		expect(defineSpell(spell)).toBe(spell);
-		expect(await Effect.runPromise(closeWindow.execute({id: "w1"}, scope))).toEqual({closed: true});
-	});
+	it.effect("is the identity function — the value it returns is the value it was given", () =>
+		Effect.gen(function* () {
+			const spell = {
+				path: ["window", "close"],
+				describe: "Close the focused window.",
+				params: Schema.Struct({id: Schema.String}),
+				result: Schema.Struct({closed: Schema.Boolean}),
+				execute: () => Effect.succeed({closed: true}),
+				capabilities: [],
+			} as const;
+			assert.strictEqual(defineSpell(spell), spell);
+			assert.deepStrictEqual(yield* closeWindow.execute({id: "w1"}, scope), {closed: true});
+		}),
+	);
 
 	it("carries `capabilities` as inert data no part of this slice reads", () => {
 		expectTypeOf<Spell<Schema.Top, Schema.Top, never, never>["capabilities"]>().toEqualTypeOf<

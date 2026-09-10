@@ -115,10 +115,10 @@ describe("runNew", () => {
 	});
 
 	it("selects the prospective scaffold from a binding-decision citation", async () => {
-		const {written} = await run({decision: "https://github.com/acme/repo/issues/1"});
+		const {written} = await run({decision: "https://forge.example/acme/repo/issues/1"});
 		const text = written.get(".patterns/worker-queue-retry.md") ?? "";
 		expect(text).toContain("## Prospective scope");
-		expect(text).toContain("[the binding decision](https://github.com/acme/repo/issues/1)");
+		expect(text).toContain("[the binding decision](https://forge.example/acme/repo/issues/1)");
 		expect(text).toContain("Do not claim current call sites that do not exist");
 	});
 

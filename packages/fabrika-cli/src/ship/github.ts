@@ -5,8 +5,8 @@
  *
  * - **Every response's status is read before its bytes are interpreted.** A failed read becomes an
  *   explicit `Failure`, never an empty string flowing onward as "nothing found" — roughly a third of
- *   v1's captures skipped this, and every scar in that family (#4216, #4223, #3716) is the same
- *   omission wearing a different symptom.
+ *   v1's captures skipped this, and every scar in that family is the same omission wearing a
+ *   different symptom.
  * - **Every list read pages, and returns its own completeness proof beside what it received.** A
  *   caller that cannot see the proof cannot refuse a truncated read, and a truncated read that
  *   answers anyway is a verdict over unknown scope. Which proof depends on what the platform
@@ -16,7 +16,7 @@
  *   natively instead of parsing `gh api -i` output back out of a printed status line.
  *
  * The transport is `../io/gh-api.ts`, not a `gh` subprocess. REST throughout, with two of the three
- * carves ADR 0315 records: the review-thread block at the bottom, and the auto-merge mutation.
+ * carves this package records: the review-thread block at the bottom, and the auto-merge mutation.
  * Neither has a REST route at all. The third is `pullsClosing` in `../io/pulls.ts`.
  */
 
@@ -65,7 +65,7 @@ export interface ReviewRead {
  * Every review on the PR, paged and **un-reduced**.
  *
  * Latest-per-author is computed by the caller after the pages are joined, never per page: v1's
- * per-page `group_by` could surface a page-1 stale approval past a page-2 revocation (#725's class).
+ * per-page `group_by` could surface a page-1 stale approval past a page-2 revocation.
  */
 export const listReviews = (repo: string, pr: number): Shell<Attempt<ReviewRead>> =>
 	authed((token) =>
@@ -124,7 +124,7 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
  *
  * A second reading of `build/github.ts`'s `defaultBranch` only because that one publishes `env` and
  * `HttpClient` up into its callers; `../ship/roster.ts` is reached from a hundred `Shell<…>` sites
- * that thread neither. #6814 folds the two once one convention wins.
+ * that thread neither. The two fold into one once a single convention wins.
  */
 export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
 	authed((token) =>
@@ -168,7 +168,7 @@ export const listTeamMembers = (
  * One file's bytes at a ref, through the raw media type.
  *
  * The §CP boundary and the flag registry are both read this way and both read from the **base
- * branch**, never from the PR — a PR must not reclassify itself (#981).
+ * branch**, never from the PR — a PR must not reclassify itself.
  */
 export const readFileAtRef = (repo: string, path: string, ref: string): Shell<Existence<string>> =>
 	authedExistence((token) =>
@@ -212,7 +212,7 @@ export interface CheckRunSet {
  * The check runs at one commit, paged, latest-per-context **after** the pages are joined.
  *
  * The REST read is deliberate: the GraphQL rollup lags reality by ~15 minutes and refused green PRs
- * for it (#3999). The aggregate `.conclusion` is never bound — red-wins-over-pending would mask an
+ * for it. The aggregate `.conclusion` is never bound — red-wins-over-pending would mask an
  * unfinished gating check.
  */
 export const listShipCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRunSet>> =>
@@ -380,7 +380,7 @@ export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
  * Whether one workflow file exists in the repository.
  *
  * The `absent` arm of `ship evidence` rests on this being a **successful** read that found nothing —
- * the foreign-repo degradation (ADR 0086) is a fact about the repo, and a failed read is not.
+ * the foreign-repo degradation is a fact about the repo, and a failed read is not.
  */
 export const workflowExists = (repo: string, file: string): Shell<Existence<string>> =>
 	authedExistence((token) =>
@@ -517,10 +517,10 @@ const isZip = (bytes: Uint8Array): boolean => bytes[0] === 0x50 && bytes[1] === 
 /**
  * Fetch one artifact into a per-run directory, prove it is a zip, and serve the manifest.
  *
- * The magic-number check is the #3716 fix made structural: a 503 body saved with a `.zip` name is
- * not a bundle, and the read that reported "no run-evidence bundle" for a bundle present the whole
- * time is exactly that byte sequence parsed as one. The directory is `mktemp -d` per run — a fixed
- * or PID-derived path lets two racing shippers read each other's bundle (#3718, #2281).
+ * The magic-number check makes one failure structural: a 503 body saved with a `.zip` name is not a
+ * bundle, and the read that reported "no run-evidence bundle" for a bundle present the whole time is
+ * exactly that byte sequence parsed as one. The directory is `mktemp -d` per run — a fixed or
+ * PID-derived path lets two racing shippers read each other's bundle.
  *
  * The zip endpoint answers `302` to a signed storage URL, and the redirect is followed by the
  * runtime rather than by this leg: Node's global `fetch` is undici, whose redirect step deletes
@@ -580,8 +580,9 @@ export interface TimelineRead {
 /**
  * The PR's timeline, paged, with the pagination-exhaustion proof its callers refuse on.
  *
- * A 30-event first page read as the whole history is #4193; walking to a terminal page with no
- * `next` link is what makes the ejection classification and the reopened count honest.
+ * A 30-event first page read as the whole history is a truncated history believed; walking to a
+ * terminal page with no `next` link is what makes the ejection classification and the reopened
+ * count honest.
  */
 export const pullTimeline = (repo: string, pr: number): Shell<Attempt<TimelineRead>> =>
 	authed((token) =>
@@ -599,10 +600,10 @@ export const pullTimeline = (repo: string, pr: number): Shell<Attempt<TimelineRe
 	);
 
 /**
- * How far the inspected head sits behind the base — the #4477 base-drift notice.
+ * How far the inspected head sits behind the base — the base-drift notice.
  *
- * An approval solicited on a head that must move is destroyed by the rebase that moves it (#4521 is
- * three §CP approvals destroyed in one night), so the notice fires before one is asked for.
+ * An approval solicited on a head that must move is destroyed by the rebase that moves it, three at
+ * a time when a night's PRs all drift together, so the notice fires before one is asked for.
  */
 export const behindBase = (repo: string, base: string, sha: string): Shell<Attempt<number>> =>
 	authed((token) =>

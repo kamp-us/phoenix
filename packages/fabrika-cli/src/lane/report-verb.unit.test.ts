@@ -1,19 +1,25 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
 	LANE_ABSENT,
+	LANE_UNREADABLE,
+	PARK_UNCAUSED,
 	PROOF_ABSENT,
 	PROOF_CONTRADICTED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	WAIT_TOO_SOON,
 } from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
 import type {ProveOptions} from "./prove-verb.ts";
-import {SHELL_VOCABULARIES} from "./report.ts";
+import {PARK_CAUSE_TOKENS, SHELL_VOCABULARIES} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -63,6 +69,7 @@ const run = (
 		pr?: string | null;
 		comment?: string | null;
 		cause?: string | null;
+		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver>;
 	} = {},
@@ -78,8 +85,9 @@ const run = (
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
+					parkCause: extra.parkCause ?? parkCauseRead(),
 					classes: extra.classes ?? [],
-					repo: "kamp-us/phoenix",
+					repo: "o/r",
 					cwd: "/repo",
 					env: {},
 				},
@@ -101,6 +109,7 @@ describe("lane report — every shell terminal token maps to one operator event"
 		reviewer: "review",
 		"ui-reviewer": "review:ui",
 		shipper: "ship",
+		machinery: "ship",
 	};
 
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
@@ -135,8 +144,8 @@ describe("lane report — every shell terminal token maps to one operator event"
 describe("lane report — refs on the event line", () => {
 	it("records --pr and --comment on the appended line, and the line survives a history read", async () => {
 		const fs = laneAt(LOG_AT.build);
-		const pr = "https://github.com/kamp-us/phoenix/pull/9001";
-		const comment = "https://github.com/kamp-us/phoenix/issues/42#issuecomment-1";
+		const pr = "https://forge.example/o/r/pull/9001";
+		const comment = "https://forge.example/o/r/issues/42#issuecomment-1";
 
 		const out = await run(fs, "SHIPPED-PR", {pr, comment});
 		expect(out.code).toBe(0);
@@ -219,7 +228,7 @@ describe("lane report — the append is proof-gated", () => {
 				task: "issue",
 				classes: null,
 				pr: null,
-				repo: "kamp-us/phoenix",
+				repo: "o/r",
 				cwd: "/repo",
 				env: {},
 			},
@@ -228,13 +237,12 @@ describe("lane report — the append is proof-gated", () => {
 
 	/**
 	 * The ship stage's closure is read off the PR the terminal names, so the ref has to reach the
-	 * prover and not only the line it lands on — nominating for it cannot see a merged `Part of #N`
-	 * (#7457).
+	 * prover and not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
 	 */
 	it("hands the prover the same --pr ref the event line records", async () => {
 		const fs = laneAt(LOG_AT.build);
 		const prover = fakeProver();
-		const pr = "https://github.com/kamp-us/phoenix/pull/7806";
+		const pr = "https://forge.example/o/r/pull/7806";
 
 		const out = await run(fs, "SHIPPED-PR", {prover, pr});
 		expect(out.code).toBe(0);
@@ -244,7 +252,7 @@ describe("lane report — the append is proof-gated", () => {
 
 	/**
 	 * The classes go to the prover as well as to the log, because they pick the arm the event takes
-	 * and the arm picks which cell owes the routed namespace (#6664). A prover asked without them
+	 * and the arm picks which cell owes the routed namespace. A prover asked without them
 	 * would answer about a different transition than the one being appended.
 	 */
 	it("hands the prover the same classes the append carries", async () => {
@@ -291,7 +299,7 @@ describe("lane report — the append is proof-gated", () => {
 	});
 });
 
-describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
+describe("lane report — the park cause a BLOCKED carries", () => {
 	it("records a known cause on the event line, where the fold reads it back", async () => {
 		const fs = laneAt(LOG_AT.build);
 
@@ -345,10 +353,60 @@ describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
 	});
 });
 
+describe("lane report — a cause-less park under `parkCause.uncaused: refuse`", () => {
+	const strict = parkCauseRead("refuse");
+
+	it("refuses the bare park at its own code, unappended and without reaching the prover", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, prover});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(out.code).not.toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
+		for (const cause of PARK_CAUSE_TOKENS) expect(out.stderr.join(" ")).toContain(cause);
+	});
+
+	it("records the same terminal once it names a cause", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, cause: "worktree-holds-branch"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs)).cause).toBe("worktree-holds-branch");
+	});
+
+	// The whole containment: a terminal that maps to anything but BLOCKED is untouched by the key.
+	it("leaves a non-park terminal alone", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "BUILT-NO-PR", {parkCause: strict});
+
+		expect(out.code).toBe(0);
+	});
+
+	it("refuses UNKNOWN on a config nobody could read, rather than recording the bare park", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "STOPPED", {
+			parkCause: {_tag: "Refused", reason: "EACCES"},
+			prover,
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
 /**
  * A `PASS` proven over a set short one namespace is a different fact from one proven over the whole
  * set, and only the event line can carry the difference — an epic child hands `review-ui` to its
- * epic's tail, and a bare `PASS` says nothing about the verdict still owed there (#7041).
+ * epic's tail, and a bare `PASS` says nothing about the verdict still owed there.
  */
 describe("lane report — the deferral a proven PASS discloses", () => {
 	it("records what the prover deferred on the event line and on stdout", async () => {
@@ -377,8 +435,8 @@ describe("lane report — the deferral a proven PASS discloses", () => {
 });
 
 /**
- * The #7382 shape: a merged `Part of #N` PR drove its lane to `complete` exactly as a closing merge
- * did, because nothing between the nominator and the ledger carried the difference (ADR 0343).
+ * A merged `Part of #N` PR used to drive its lane to `complete` exactly as a closing merge
+ * did, because nothing between the nominator and the ledger carried the difference.
  */
 describe("lane report — the partial merge a shipped lane discloses", () => {
 	it("records the prover's partial and lands the lane back in `queued`", async () => {
@@ -393,7 +451,7 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 	});
 
 	/**
-	 * The evidence rides the line beside the polarity (#7457), and it is what a later sweep reads to
+	 * The evidence rides the line beside the polarity, and it is what a later sweep reads to
 	 * tell this `false` from the one the old nominator fell through to — a distinction no timestamp
 	 * on the line can make.
 	 */
@@ -426,7 +484,7 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 });
 
 /**
- * Lane 5661 replayed (#6112). The run's inputs are the ones that lane had: a criteria heading it
+ * That lane replayed. The run's inputs are the ones it had: a criteria heading it
  * could not read, and then three FAIL verdicts current at the head. What changed is where the
  * terminal is picked — at the end of the run, once, off everything it reached — so the ledger ends
  * on the failed review the verdicts say, and on the repair round the retry budget pays for rather
@@ -444,7 +502,7 @@ describe("lane report — a reviewer's terminal is the one its run reached", () 
 	it("records the FAIL, and the lane folds into the repair round rather than a human's park", async () => {
 		const fs = laneAt(LOG_AT.review);
 
-		const out = await run(fs, "FAIL", {pr: "https://github.com/kamp-us/phoenix/pull/6108"});
+		const out = await run(fs, "FAIL", {pr: "https://forge.example/o/r/pull/6108"});
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -475,5 +533,119 @@ describe("lane report — a reviewer's terminal is the one its run reached", () 
 			expect(out.code).toBe(PROOF_CONTRADICTED);
 			expect(fs.written.size).toBe(0);
 		}
+	});
+});
+
+describe("lane report — a machinery terminal lands its own cause", () => {
+	it("seats the token's cause on the line with no --cause typed at all", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "QUEUE-EJECTED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			task: "issue",
+			event: "ISSUE.LAP",
+			cause: "queue-ejected",
+		});
+	});
+
+	it("lets a recorder that knows better name another cause off the routed table", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "BASE-DRIFTED", {cause: "assembly-conflict"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "assembly-conflict"});
+	});
+
+	it("tells an integrate-sourced failure from a review-sourced one on the recorded line", async () => {
+		const machinery = laneAt(LOG_AT.ship);
+		const content = laneAt(LOG_AT.review);
+
+		await run(machinery, "REPLAY-COLLIDED");
+		await run(content, "FAIL");
+
+		expect(JSON.parse(appendedLine(machinery))).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "replay-conflict",
+		});
+		const recorded = JSON.parse(appendedLine(content)) as Record<string, unknown>;
+		expect(recorded).toMatchObject({event: "ISSUE.FAIL"});
+		expect(recorded.cause).toBeUndefined();
+	});
+});
+
+describe("lane report — a queue wait is floored on elapsed time, not on driver passes", () => {
+	const secondsAgo = (seconds: number): string =>
+		new Date(Date.now() - seconds * 1000).toISOString();
+
+	/** The `ship:queued` prefix, with the entering `WIP`'s clock under the test's control. */
+	const queuedSince = (at: string): string =>
+		`${LOG_AT.ship}${JSON.stringify({task: "issue", event: "ISSUE.WIP", at})}\n`;
+
+	it("refuses a re-fold inside the floor, naming the seconds still to run, log byte-identical", async () => {
+		const fs = laneAt(queuedSince(secondsAgo(90)));
+
+		const out = await run(fs, "UNRESOLVED");
+
+		expect(out.code).toBe(WAIT_TOO_SOON);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(out.stderr.at(-1)).toContain("390s are still to run");
+		expect(out.stderr.at(-1)).toContain("The wait is intact");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records a re-fold past the floor, spending the wait", async () => {
+		const fs = laneAt(queuedSince(secondsAgo(WAIT_FLOOR_SECONDS + 1)));
+
+		const out = await run(fs, "UNRESOLVED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({token: "UNRESOLVED", event: "ISSUE.WIP"});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({task: "issue", event: "ISSUE.WIP"});
+	});
+
+	/**
+	 * Only the re-read of the same queue is floored. Every other event out of `ship:queued` is an
+	 * answer about that queue, spends no wait, and must land the moment the shipper has it.
+	 */
+	it("leaves every non-wait record on the same task unaffected inside the floor", async () => {
+		const answers: ReadonlyArray<readonly [string, string]> = [
+			["LANDED", "DONE"],
+			["EJECTED", "FAIL"],
+			["AWAITING-CP-APPROVAL", "BLOCKED"],
+		];
+		for (const [token, event] of answers) {
+			const fs = laneAt(queuedSince(secondsAgo(1)));
+
+			const out = await run(fs, token);
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(appendedLine(fs))).toMatchObject({event: `ISSUE.${event}`});
+		}
+	});
+
+	/** Entering the queue is not a re-read of it, so the shipper's own `QUEUED` is never floored. */
+	it("records the enqueue that enters ship:queued however fresh the line before it", async () => {
+		const fs = laneAt(
+			`${LOG_AT.review}${JSON.stringify({task: "issue", event: "ISSUE.PASS", at: secondsAgo(1)})}\n`,
+		);
+
+		const out = await run(fs, "QUEUED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.WIP"});
+	});
+
+	it("refuses a re-fold whose clock reads as no date — an unreadable floor never cleared", async () => {
+		const fs = laneAt(queuedSince("whenever"));
+
+		const out = await run(fs, "UNRESOLVED");
+
+		expect(out.code).toBe(WAIT_TOO_SOON);
+		expect(out.stderr.at(-1)).toContain("UNKNOWN");
+		expect(fs.written.size).toBe(0);
 	});
 });

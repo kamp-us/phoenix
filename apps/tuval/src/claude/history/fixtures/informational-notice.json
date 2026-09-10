@@ -1,0 +1,8 @@
+{
+	"type": "system",
+	"subtype": "informational",
+	"content": "Usage limit reached · continuing automatically at 3:30am · esc or type to cancel",
+	"level": "notice",
+	"uuid": "00000000-0000-4000-8000-000000000050",
+	"session_id": "00000000-0000-4000-8000-000000000040"
+}

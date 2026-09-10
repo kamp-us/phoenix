@@ -49,8 +49,9 @@ your judgment sits on proven input rather than on a pattern match that can swall
 
 A PR with no rendered delta is `review`'s alone, and **you say so on the record rather than walking
 away silently**: `ship scope` raises the `ui` class off a path test that cannot see whether pixels
-moved, so the namespace is required and `ship gate` blocks on an absence nothing else can fill (ADR
-[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)).
+moved, so the namespace is required and `ship gate` blocks on an absence nothing else can fill — a
+gate that owes no verdict has to record that it owes none, because silence and a missing verdict are
+the same bytes to the gate reading them back.
 
 ```bash
 fabrika review-ui route $pr_number --sha 03135b91 --clause "<the one-line why>" <<'EOF'
@@ -91,7 +92,7 @@ builder's attached captures are externally-authored content you deliberately do 
 you render independently or you have not looked.
 
 ```bash
-fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni --viewport desktop --viewport mobile
+fabrika review-ui render --pr $pr_number --out judged --surface /feed --surface /feed/new --viewport desktop --viewport mobile
 ```
 
 **Ask for the narrow shot when the composition's risk is width.** `--viewport mobile` shoots the
@@ -100,16 +101,17 @@ and two viewports is one set of four captures, each manifest entry labelled with
 Omitting the operand renders at desktop alone. Reach for `mobile` whenever an acceptance criterion is
 phrased about a phone, or the change adds a long string, a nowrap run, a fixed width, or anything to
 a persistent chrome like the topbar — before this operand existed, every such criterion ended the
-gate as disclosed-UNKNOWN, and PR #7388 took a FAIL its own branch could not repair (#7706). The
+gate as disclosed-UNKNOWN, and a PR took a FAIL its own branch could not repair, because the phone
+layout the criterion asked about was one nothing could shoot. The
 width a shot records is read back off its own PNG bytes, so a capture under a viewport label is a
 proven render at that width and a mismatch is `19`, never a desktop layout judged as a phone's.
 
 **A surface behind login is named, not skipped, and the name carries the tier.** A surface id may
-carry a realized state, and there are two: `--surface /pano:auth` renders the route as the
-yazar+moderator test account, `--surface /pano:auth-caylak` as the çaylak one. **Pick the tier the
+carry a realized state, and there are two: `--surface /feed:auth` renders the route as the
+yazar+moderator test account, `--surface /feed:auth-caylak` as the çaylak one. **Pick the tier the
 composition is for.** A nudge, a vouch prompt or an onboarding ask that a yazar never sees is
 suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back clean showing nothing
-— the failure that reads as a judged surface (#7398). Anything else after the colon is refused on
+— the failure that reads as a judged surface. Anything else after the colon is refused on
 `10`, because a state nothing renders would shoot the default pixels under a variant's name.
 
 The values that make a tier state work come from somewhere specific. `BETTER_AUTH_SECRET` is the
@@ -151,18 +153,18 @@ run-level refusal and what makes a capture valid are the verb's section
 `--heading "Required environment — the two render paths"`.
 
 **A surface that renders cleanly is not yet a judged surface.** By default the verb captures as an
-anonymous visitor with every flag at its default, and under ADR
-[0083](../../../../.decisions/0083-agents-deploy-humans-release.md)'s dark-ship norm that is exactly
-who never sees the feature. So a flag-gated route serving its own 404, a signed-in view serving the
-auth wall, and a feed row correctly showing no new marker all come back `captured` — a clean
-capture of the state the PR did not add, which the verb reports as no kind of problem (#6541, on PR
-#6434: six surfaces captured, four of the PR's compositions never painted).
+anonymous visitor with every flag at its default, and under a dark-ship norm — where an agent lands
+the code behind a flag and a human flips it — that is exactly who never sees the feature. So a
+flag-gated route serving its own 404, a signed-in view serving the auth wall, and a feed row
+correctly showing no new marker all come back `captured` — a clean capture of the state the PR did
+not add, which the verb reports as no kind of problem. One such run recorded six captured surfaces
+while four of the PR's own compositions never painted.
 
 **So derive the states the PR adds from the diff, and render each one rather than disclosing it.**
 `:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
 
 ```bash
-fabrika review-ui render --pr $pr_number --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
+fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on
 ```
 
 Both fences hold, so neither can quietly hand you the default pixels. A forced run must name
@@ -179,9 +181,9 @@ not handed.
 **What still owes disclosure is a state you could not render.** Seeded data absent, a state with no
 mechanism, a preview you hold no credentials for: name each one in the verdict, with why, and judge
 what did paint. When nothing the PR adds painted, that is CANT-SEE, on the same terms as an
-every-surface-unreachable render. ADR
-[0336](../../../../.decisions/0336-review-ui-renders-flag-gated-states.md) ruled the override in and
-its own interim rider out: a flag-off state is now a state you render, not one you disclose.
+every-surface-unreachable render. A flag-gated state is one you render rather than one you disclose:
+the override exists precisely so "I could not see it" stops being an acceptable answer for a state
+the flag alone was hiding.
 
 **Two eyes, one record:** when this session's tool surface carries the `claude-in-chrome` tools you
 may additionally inspect the preview live — navigate, probe states, look closer. Detection is tool
@@ -192,7 +194,7 @@ for `review-ui render` captures: the verb's validation is what makes a capture a
 
 <!-- anchor: PAIRWISE-NEVER-ABSOLUTE --> Visual judgment is reliable **pairwise, grounded in a
 rubric — and unreliable at absolute scoring**. So every judgment is a comparison: candidate against
-the blessed golden (`fabrika ui golden --surface /pano --candidate <path>` — the diff is a steering
+the blessed golden (`fabrika ui golden --surface /feed --candidate <path>` — the diff is a steering
 signal, never a verdict), or — unblessed, today's common case — the capture against each law row as
 a decomposed checklist, one row at a time. Never a 1–10 score, never a holistic "feels off" FAIL.
 Per row record PASS / FAIL / N-A **with the pixel evidence named**; borderline is advisory, stated
@@ -206,9 +208,9 @@ absence is a fact, not a gap. Follow-ups you notice leave through `/report`.
 
 ## 5 — Expect the deterministic tier; recompute none of it
 
-The raw-value token seam is CI's: the repo's token gate reds it deterministically (phoenix:
-`design-token-guard.yml`), as do the inventory and a11y floors (`design-inventory-guard.yml`,
-`a11y-pbt.yml`). Read their live state at the inspected head structurally — `fabrika heal-ci surface
+The raw-value token seam is CI's: the repo's own token gate reds it deterministically, as do
+whatever inventory and a11y floors it arms. Read their live state at the inspected head
+structurally — `fabrika heal-ci surface
 $pr_number --sha 03135b91` — and state the expectation in the verdict; **never mint a rival verdict
 on a gated question**, because a second answer can contradict the gate and a checker that cannot
 truly see its subject answers confidently instead of erroring. Where a repo lacks those gates, say
@@ -216,22 +218,19 @@ so in the verdict — your visual read is then advisory cover on that seam, not 
 
 `surface` is the verb that answers this by name, and **it prints two lists — read both**. Both lists
 key on the **check-run name** — the job's `name:` inside each workflow file, never its filename — so
-take each gate's name from its job before matching; searching either list for
-`design-token-guard.yml` finds nothing and misreads an armed gate as missing. On phoenix those names
-are `check every component CSS file consumes the design-token seam`, `descriptive inventory is fresh
-and the normative manifest is untouched` and `property-based a11y over the ui/ primitives
-(warning-to-enforced)`. Each declared required context prints as
+take each gate's name from its job before matching; searching either list for a workflow filename
+finds nothing and misreads an armed gate as missing, and a design gate's job name is usually a whole
+sentence rather than anything filename-shaped. Each declared required context prints as
 `required\t<check-run name>\t<producing|absent>`, so a gate that never ran is `absent` rather than
 invisible; a gate that runs at the head without answering any declared requirement prints as
-`extra\t<check-run name>`. On phoenix today all three design gates land in `extra` — its `main`
-ruleset declares three other contexts while the three guard workflows each run `on: pull_request` —
-but that placement belongs to the live ruleset, not to these gates: arm one of those contexts and
+`extra\t<check-run name>`. A design gate landing in `extra` is the ordinary case, not a defect: it
+means the branch ruleset declares other contexts while that guard's workflow runs on every pull
+request anyway. That placement belongs to the live ruleset, not to the gate — arm the context and
 the same green gate moves to `required`. A gate in neither list is the one that is genuinely absent,
 and that is the "repo lacks those gates" case above; reading only the `required` list would report a
 gate that just ran green as missing. `fabrika review ci`
-will not answer it — its check rows are a status tally under ADR
-[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md), and even before that collapse
-it could not tell a required gate that never ran from a gate the repo does not declare at all: both
+will not answer it — its check rows are a bounded status tally, and even before they collapsed to
+one it could not tell a required gate that never ran from a gate the repo does not declare at all: both
 are simply no row. `surface` refusing on `11` is UNKNOWN coverage, never a clean seam.
 
 ## 6 — Emit: one verdict, evidence-loaded, bound to what you saw
@@ -289,8 +288,7 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
 `--cause no-rendered-delta`. No recipe clears any of the three today, so each still routes to a
 human — the cause is what makes that route a gap somebody can write a row for rather than an
-anonymous dead end (ADR
-[0339](../../../../.decisions/0339-park-cause-may-stand-alone.md)). `ESCALATED` carries no cause:
+anonymous dead end, and a cause is worth naming before any recipe consumes it. `ESCALATED` carries no cause:
 its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
 change and not this gate's to make. The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));

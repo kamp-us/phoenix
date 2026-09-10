@@ -13,6 +13,7 @@ export {
 	PiClientService,
 	type PiClientWebSocketConfig,
 	type PiSessionRef,
+	type SessionUpdate,
 } from "./PiClientService.ts";
 export {connectionRefusalOf, sessionRefusalOf} from "./refusals.ts";
 export {

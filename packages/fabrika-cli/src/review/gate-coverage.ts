@@ -3,7 +3,7 @@
  *
  * `rollup.ts` answers what the check runs at a head concluded. It cannot answer *which* workflows
  * produced them, so a head where only a platform-provided workflow reported rolls up `green` while
- * every gate the repo relies on never saw the bytes (#6522). A conflicted branch is the ordinary way
+ * every gate the repo relies on never saw the bytes. A conflicted branch is the ordinary way
  * in: GitHub stops creating `pull_request` runs, CodeQL's default setup keeps reporting on its own
  * trigger, and `green` and "no gate ran" become one word.
  *
@@ -11,9 +11,9 @@
  * the repo is addressed by its file path; one the platform provides on the repo's behalf — default
  * CodeQL setup, Dependabot, the Copilot reviewer — is addressed as `dynamic/<provider>/<name>`. That
  * prefix is the platform's own marker, which is why the discriminator can be structural: no expected
- * job names, no second copy of the repo's CI shape to drift (#5603, R17.1).
+ * job names, no second copy of the repo's CI shape to drift.
  *
- * `ship checks` asks the same question at its own `green` (#6915) and asks it through this module
+ * `ship checks` asks the same question at its own `green` and asks it through this module
  * rather than a ship-side copy — the merge authority and the review gate reading one head must not
  * be able to disagree about which gates ran on it.
  */

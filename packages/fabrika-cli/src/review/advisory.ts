@@ -2,10 +2,10 @@
  * The §CP advisory carrier: a first line that withholds the SHA, and a canonical body line that
  * carries it.
  *
- * The shape is ADR 0151's, reimplemented here rather than called (ADR 0238). Its whole point is that
+ * The carrier's shape is reimplemented here rather than called. Its whole point is that
  * the two tokens are **distinct**: the first line stays SHA-less so an advisory can never be read as
- * an auto-mergeable `PASS @ <sha>` marker (ADR 0111 preserved), while `Reviewed-head: @ <sha>` in the
- * body records the head that was actually inspected. ADR 0226 makes the carrier PASS-only — a §CP
+ * an auto-mergeable `PASS @ <sha>` marker, while `Reviewed-head: @ <sha>` in the
+ * body records the head that was actually inspected. The carrier is PASS-only — a §CP
  * FAIL posts the ordinary FAIL marker — which `review post` enforces on `10`.
  */
 import {CLAUSE_SEPARATOR, type HeadSha, headSha} from "../wire/verdict-marker.ts";
@@ -14,11 +14,11 @@ import {CLAUSE_SEPARATOR, type HeadSha, headSha} from "../wire/verdict-marker.ts
 export const emitAdvisory = (namespace: string, clause: string): string =>
 	`${namespace}: advisory ${CLAUSE_SEPARATOR} ${clause}\n`;
 
-/** The canonical body line ADR 0151 pins. Emitted verbatim; a drifted prefix is not this line. */
+/** The canonical body line the carrier pins. Emitted verbatim; a drifted prefix is not this line. */
 export const reviewedHeadLine = (sha: string): string => `Reviewed-head: @ ${sha}`;
 
 const FIRST_LINE = /^\s*\*{0,2}\s*(review(?:-[a-z0-9]+)*)\s*:\s*\*{0,2}\s*advisory\b/i;
-/** ADR 0151's anchored matcher — the `Reviewed-head:` prefix, hyphen and all, at a line's start. */
+/** The anchored matcher — the `Reviewed-head:` prefix, hyphen and all, at a line's start. */
 const REVIEWED_HEAD = /^[ \t]*Reviewed-head:[ \t]*@?[ \t]*([0-9a-f]{7,40})\b/im;
 
 export interface AdvisoryCarrier {

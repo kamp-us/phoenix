@@ -12,7 +12,8 @@ import {
 const artifact = (...rows: ReadonlyArray<string>): string =>
 	`${HEADING}\n\n\`\`\`governance-digest\n${rows.join("\n")}\n\`\`\`\n`;
 
-const ROW = "row\t0398\ttension\tsits against ADR 0173 on whether a pending check blocks admission";
+const ROW =
+	"row\t0398\ttension\tsits against record 0173 on whether a pending check blocks admission";
 
 describe("read", () => {
 	it("finds the rows in file order", () => {

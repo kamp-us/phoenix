@@ -1,19 +1,18 @@
 /**
  * The §CP boundary, derived from `.github/CODEOWNERS` itself — the artifact the merge gate
- * enforces — so this group and the gate read one file and cannot disagree (#981, #4954).
+ * enforces — so this group and the gate read one file and cannot disagree.
  *
  * Three properties are load-bearing and each has an incident behind it:
  *
  * - **Last match wins, and an owner-less row unsets ownership.** That is GitHub's documented rule,
  *   and a repo leans on it to un-own a subtree that a broader row above it would otherwise sweep in.
- * - **A trivial boundary is a printed hold, not a match-everything verdict** — the #4336 adopter
- *   incident and the #4401 empty-capture class.
+ * - **A trivial boundary is a printed hold, not a match-everything verdict.** A row that owns
+ *   every path, and a boundary file that parses to no owned rows at all, both hold instead.
  * - **The owners are parsed, never hardcoded.** `@<org>/<team>` and individual `@login` owners are
  *   both read off the file, so an adopter repo with a different team, or with no org at all, is
- *   answered rather than mis-answered. Individual owners count exactly as team owners do (founder
- *   ruling on #5603, built as #6299): GitHub discharges a row when any listed owner approves, and a
- *   personal repo whose owners are all individuals used to classify `unknown` — the HOLD state —
- *   which deadlocked every PR in it.
+ *   answered rather than mis-answered. Individual owners count exactly as team owners do: GitHub
+ *   discharges a row when any listed owner approves, and a personal repo whose owners are all
+ *   individuals used to classify `unknown` — the HOLD state — which deadlocked every PR in it.
  */
 
 /** One `pattern owner…` row, in file order. `owners` empty is the ownership-unset idiom. */
@@ -126,9 +125,9 @@ const coversEverything = (row: OwnerRow): boolean =>
  * `unknown` is the one HOLD state — the skill treats it as §CP until proven otherwise. It is not a
  * verdict on the gated question; the merge gate still owns that.
  *
- * A change set entirely under `.decisions/` is `not-control-plane` (founder ruling, 2026-08-15 on
- * #5531: "adrs shouldn't be control-plane"). What stands behind an ADR PR is the required
- * `governance` verdict floor, not a human approval — see ADR 0274 §2 and
+ * A change set entirely inside the repo's decision corpus classifies `not-control-plane`, because
+ * the boundary file does not own that directory. What stands behind a decision-record PR is the
+ * required `governance` verdict floor rather than a human approval — see
  * `claude-plugins/fabrika/docs/control-plane-classification.md`.
  */
 export const classify = (rows: ReadonlyArray<OwnerRow>, files: ReadonlyArray<string>): CpState => {

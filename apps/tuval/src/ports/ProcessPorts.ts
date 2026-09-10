@@ -1,7 +1,12 @@
 /**
  * The wiring as one running process sees it: emit on its own out-ports by name, and nothing
- * else. A program's Cmd handler requires this service and never a node id or the `Wiring`, so
- * which node it is running as stays its spawner's knowledge.
+ * else. A program's Cmd handler requires this service and never a node id or the `Wiring`: the
+ * routes stay its spawner's knowledge.
+ *
+ * Its own identity does not. A handler reads the process it is running as off `ProcessSelf`
+ * (`../process/self.ts`), which every spawn provides — parentage is the kernel's to stamp from the
+ * process it is interpreting for, identity is a free read, and neither is a relation a handler can
+ * set by naming an id (founder's ruling on #8757).
  *
  * Two spawners provide one per process. `src/launch/` binds a graph node's to the wiring, and
  * `src/commands/core/process.ts` binds a picker-spawned process's to that process's latches. A

@@ -264,3 +264,36 @@ shapes were rejected with it: a `CLEARED`-style event on the wait axis (a second
 accepting the one-shot and only fixing the prose (still spends a person per clear), and making the
 park an error final (a doorless final). [#7269](https://github.com/kamp-us/phoenix/issues/7269)'s
 elapsed-time floor is untouched — it is a different fix to a different half of this ADR.
+
+## Amendment — 2026-09-10: a pass refused on the floor ends `LANE-WAITING`, and burning the horizon out here is not an escape
+
+Ruled [2026-09-10](https://github.com/kamp-us/phoenix/issues/9000#issuecomment-5618153803) on
+[#9000](https://github.com/kamp-us/phoenix/issues/9000), as engine machinery under
+[#8807](https://github.com/kamp-us/phoenix/issues/8807) R4.1. This amendment transcribes that ruling.
+
+The floor above left the driver an ending its own vocabulary had no word for. `operate`'s
+`Terminal vocabulary` offered four tokens and a pass refused with exit `55` fitted none: the fold is
+not final (`LANE-TERMINAL`), not a park (`LANE-PARKED`, which promises an `UNBLOCKED` the machine
+refuses), not a lost claim (`LANE-HELD`), and not a defect (`STOPPED`). Because the floor measures
+from the task's last recorded line and the shipper's own terminal *is* that line, every queued lane
+reaches this ending on its first driver pass — so the gap fired on every lane, not on a race.
+
+**A driver pass refused on the wait floor ends `LANE-WAITING`.** It names the PR and the earliest
+clock time a re-read is admissible, records no event, posts nothing, releases the claim and leaves
+the worktree for the successor. The caller re-dispatches the lane no sooner than the time named and
+spends no human.
+
+**"Every run ends as exactly one of" stays total.** A no-terminal hand-back was the other named arm
+and was rejected: every caller routes on the token, so a run that ends without one hands its caller
+nothing to route on.
+
+**Running `ship reconcile` bare from a driver pass is not a sanctioned escape.** Dropping `--polls 1`
+burns the shipper's ~480s horizon inside the driver pass, which clears the floor and lands a real
+terminal — and re-absorbs the horizon this decision put in the shipper. Nor is a hand-rolled timer:
+the skill bans `sleep` and timed polling, and a backgrounded loop waiting on the PR's state is the
+same wait wearing another shape. The waiting belongs to a later pass.
+
+The mechanism is authorised here and written in
+[`operate/SKILL.md`](../claude-plugins/fabrika/skills/operate/SKILL.md)'s `ship:queued` and
+`Terminal vocabulary` sections. Nothing in code moves: `LANE-WAITING` is a driver's spoken terminal,
+not a `lane report` token, and the refusal itself is already `WAIT_TOO_SOON = 55`.

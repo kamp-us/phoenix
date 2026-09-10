@@ -2,8 +2,7 @@
  * The filesystem boundary for the golden pointer file — the only golden module
  * that touches disk, keeping `golden-pointer.ts` pure. The committed file is a
  * `{ "surfaces": { "<surface-id>": { sha256, blessedDate, intent } } }` JSON blob;
- * a re-bless is a one-line edit to it (the migrations-guard `migration-hashes.json`
- * shape, ADR 0108 / 0183 §4).
+ * a re-bless is a one-line edit to it (the migrations-guard hash-file shape).
  */
 import {readFileSync} from "node:fs";
 import type {GoldenEntry, GoldenPointer} from "./golden-pointer.ts";

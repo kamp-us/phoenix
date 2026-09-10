@@ -108,9 +108,9 @@ describe("runAnchor", () => {
 		expect(out.stderr.at(-1)).toContain("indents with a tab");
 	});
 
-	// #5361's three shapes, at the exit code a caller actually reads. Each parses as YAML and each
-	// carries a catalog the reader does not comprehend, so the verb refuses instead of answering —
-	// and in particular never claims the manifest "carries no catalog: map".
+	// The three unreadable catalog shapes, at the exit code a caller actually reads. Each parses as
+	// YAML and each carries a catalog the reader does not comprehend, so the verb refuses instead of
+	// answering — and in particular never claims the manifest "carries no catalog: map".
 	const manifest = (yaml: string): Script => [[/^git show \w+:\S+\.yaml$/, okOut(yaml)]];
 
 	it("refuses an inline flow map instead of answering `unpinned`", async () => {

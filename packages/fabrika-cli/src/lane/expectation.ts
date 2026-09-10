@@ -3,19 +3,19 @@
  * links does it carry, and does it hang under a parent?
  *
  * The parent edge rides the `getIssue` call already made — `IssueRecord.parent` is populated from
- * the single read's own payload — so the third fact costs no further request (#7381). Epic wins the
+ * the single read's own payload — so the third fact costs no further request. Epic wins the
  * precedence: a sub-epic routes to `lane emit` like any other epic, and its parenthood changes
  * nothing about which machine it needs.
  *
  * Two reads rather than one, because an epic's two halves of life answer differently and the window
- * between them is #7024's whole incident. A planned epic carries children. An epic nobody has
+ * between them is the whole incident. A planned epic carries children. An epic nobody has
  * planned yet carries none, and the only thing on the board saying what it is, is its `type:epic`
  * label — so keying on children alone reads a pre-plan epic as an ordinary issue, which is exactly
  * the lane that came up on the single-task coder template at 16:30 before `plan-epic` ever ran.
  *
  * A reader a caller passes rather than a seam a verb reaches through on its own, which is what keeps
  * `lane open` and `lane migrate` provably offline everywhere they are handed `null` — the shape
- * `lane stale`'s claim pairing established (#6771).
+ * `lane stale`'s claim pairing established.
  *
  * An unreadable answer is `Unknown`, never `Single`. Reading a failed read as "not an epic" is how a
  * wrong-machine boot would slip through the very refusal this exists to make.

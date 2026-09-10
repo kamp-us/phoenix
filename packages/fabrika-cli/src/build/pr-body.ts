@@ -3,14 +3,14 @@
  *
  * Three defects, each with a scar behind it:
  *
- * - **A `## Deviations` section the review gate cannot read** (#4542, #5566). The check blocks rather
+ * - **A `## Deviations` section the review gate cannot read**. The check blocks rather
  *   than warns, and "None." counts while silence does not — the verb can force the author to *write*,
  *   never to be honest, so the section's truth stays the skill's problem and its shape is this one's.
  *   The shape itself is not restated here: it is `../wire/deviations.ts`, the same registered format
  *   `review deviations` reads, so a body this verb accepts cannot fail that gate as malformed.
- * - **A stray closing keyword** (#4471). One closing line, aimed at this PR's own issue; a second
+ * - **A stray closing keyword**. One closing line, aimed at this PR's own issue; a second
  *   aimed anywhere else auto-closed an issue the PR did not fix.
- * - **A classification claim** (#4153). CODEOWNERS decides control-plane membership at the merge gate
+ * - **A classification claim**. CODEOWNERS decides control-plane membership at the merge gate
  *   and triage decides type and priority; a body asserting either is a second answer to a gated
  *   question, and a false one shipped.
  *

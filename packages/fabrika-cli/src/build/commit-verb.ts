@@ -6,7 +6,7 @@
  * every call site was improvised and nothing asserted the message on the resulting commit. A lane
  * improvised `git commit -F <scratch leaf>`, the leaf held a two-day-old message from another lane,
  * and the commit landed claiming an issue this lane had never touched — silently, with every command
- * exiting 0 (#5484).
+ * exiting 0.
  *
  * Three guards, each closing one half of that:
  *

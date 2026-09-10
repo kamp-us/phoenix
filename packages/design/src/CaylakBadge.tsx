@@ -8,6 +8,7 @@
 import {Badge} from "./Badge";
 import {useDesignT} from "./i18n";
 import "./CaylakBadge.css";
+import "./visually-hidden.css";
 
 /**
  * @component CaylakBadge

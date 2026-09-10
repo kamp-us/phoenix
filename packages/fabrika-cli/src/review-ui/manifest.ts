@@ -9,7 +9,7 @@
  * The set path is **deterministic from the PR and the head**, never a `mktemp -d` nobody recorded
  * (v1 S4: a PASS whose evidence upload failed was unauditable). The `--out` set name is the run's
  * own key inside that directory — two concurrent reviews of one head name different sets and never
- * write each other's bytes (the run-keyed rule #5111 states; a session is not a run).
+ * write each other's bytes — the key is the run, and a session is not a run.
  */
 import {createHash} from "node:crypto";
 import {Effect, FileSystem} from "effect";
@@ -18,7 +18,7 @@ import type {CapAndCount} from "../evidence.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 
 /**
- * How many page errors a capture carries in full before the rest become a count (ADR 0308).
+ * How many page errors a capture carries in full before the rest become a count.
  *
  * Raw console text carries no reason vocabulary to histogram, so the collapse is a cap-and-count.
  * Three is enough to recognize what a page is complaining about without paying for a dev-mode
@@ -33,7 +33,7 @@ export interface CaptureEntry {
 	/**
 	 * The viewport label this shot was taken at (`plan.ts`'s closed set). A set is a
 	 * surface × viewport cross-product, so the surface id alone no longer identifies an entry —
-	 * without this a manifest cannot say what width its pixels are of (#7706).
+	 * without this a manifest cannot say what width its pixels are of.
 	 */
 	readonly viewport: string;
 	readonly path: string;

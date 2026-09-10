@@ -4,8 +4,8 @@
  * A lane is a directory: `<root>/<key>/workflow.json` (the machine document, placed there by the
  * operator from a committed template) plus `events.jsonl` (the append-only log, born on the first
  * recorded event) — `.fabrika/lanes/<n>/` for an issue lane, `.fabrika/chores/<name>/` for a chore
- * lane. Lane state is local and gitignored — the repo `.gitignore`'s `/.fabrika/` entry covers it
- * (#5673). Which root a key resolves to is [`key.ts`](key.ts)'s call, not this module's.
+ * lane. Lane state is local and gitignored — the repo `.gitignore`'s `/.fabrika/` entry covers it.
+ * Which root a key resolves to is [`key.ts`](key.ts)'s call, not this module's.
  *
  * The load keeps four outcomes apart because they take opposite remedies: the lane is provably not
  * there, it could not be read (UNKNOWN, never "fresh"), it was read in full and is not the shape,
@@ -19,12 +19,12 @@ import {type CompiledLane, compileText} from "./machine.ts";
 
 /**
  * The lanes root leaf — `.fabrika/lanes` — and its chore sibling. Relative leaves, joined onto the
- * repository root a verb derives from the cwd (#5815); an explicit `--root` replaces the whole
+ * repository root a verb derives from the cwd; an explicit `--root` replaces the whole
  * resolved path.
  */
 export const DEFAULT_LANES_ROOT = ".fabrika/lanes";
 
-/** Where a chore lane lives: keyed by name, because a chore has no issue number (#5840). */
+/** Where a chore lane lives: keyed by name, because a chore has no issue number. */
 export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
 
 /**
@@ -32,9 +32,12 @@ export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
  *
  * That placement is the whole mechanism: `lane reconcile` and `lane migrate` sweep the roots they
  * are handed and nothing above them, so a lane moved to a sibling is out of both sweeps without
- * either verb learning a skip rule it could get wrong (ADR 0352).
+ * either verb learning a skip rule it could get wrong.
  */
 export const DEFAULT_ARCHIVED_LANES_ROOT = ".fabrika/lanes-archived";
+
+/** The machine document whose absence is what makes a lane absent, and nothing else. */
+export const WORKFLOW_FILE = "workflow.json";
 
 export interface LaneRef {
 	/** The lanes root — `.fabrika/lanes`, or `.fabrika/chores` for a chore key. */
@@ -62,7 +65,7 @@ export const loadLane = (
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
 		const dir = path.join(ref.root, ref.lane);
-		const workflowPath = path.join(dir, "workflow.json");
+		const workflowPath = path.join(dir, WORKFLOW_FILE);
 		const logPath = path.join(dir, "events.jsonl");
 
 		const workflowText = yield* Effect.result(readFile(workflowPath));
@@ -98,6 +101,28 @@ export const loadLane = (
 		return {_tag: "Loaded", lane: compiled.lane, entries: parsed.entries, dir, logPath} as const;
 	});
 
+export type LanePresence =
+	| {readonly _tag: "Present"; readonly dir: string}
+	| {readonly _tag: "Absent"; readonly dir: string}
+	| {readonly _tag: "Unprobeable"; readonly dir: string; readonly reason: string};
+
+/**
+ * Whether a lane directory is already there — the probe {@link placeMachine} refuses on, split out
+ * so a caller can ask before it spends a board read on a lane that needs no boot at all.
+ */
+export const probeLane = (
+	ref: LaneRef,
+): Effect.Effect<LanePresence, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const dir = path.join(ref.root, ref.lane);
+		const probe = yield* Effect.result(exists(dir));
+		if (Result.isFailure(probe)) {
+			return {_tag: "Unprobeable", dir, reason: probe.failure.reason} as const;
+		}
+		return probe.success ? ({_tag: "Present", dir} as const) : ({_tag: "Absent", dir} as const);
+	});
+
 export type Placement =
 	| {readonly _tag: "Placed"; readonly dir: string; readonly workflow: string}
 	| {readonly _tag: "Exists"; readonly dir: string}
@@ -108,7 +133,7 @@ export type Placement =
  * Place one machine document as a NEW lane — the boot both `lane open` and `lane emit` share.
  *
  * An existing lane directory refuses before anything is written: resuming an existing lane needs no
- * boot, and silently overwriting a machine mid-drive would corrupt a live fold (#5688). A probe that
+ * boot, and silently overwriting a machine mid-drive would corrupt a live fold. A probe that
  * cannot answer is UNKNOWN, never an absence to build on.
  */
 export const placeMachine = (
@@ -117,13 +142,13 @@ export const placeMachine = (
 ): Effect.Effect<Placement, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const dir = path.join(ref.root, ref.lane);
-		const probe = yield* Effect.result(exists(dir));
-		if (Result.isFailure(probe)) {
-			return {_tag: "Unprobeable", dir, reason: probe.failure.reason} as const;
+		const presence = yield* probeLane(ref);
+		const {dir} = presence;
+		if (presence._tag === "Unprobeable") {
+			return {_tag: "Unprobeable", dir, reason: presence.reason} as const;
 		}
-		if (probe.success) return {_tag: "Exists", dir} as const;
-		const workflow = path.join(dir, "workflow.json");
+		if (presence._tag === "Present") return {_tag: "Exists", dir} as const;
+		const workflow = path.join(dir, WORKFLOW_FILE);
 		const wrote = yield* Effect.result(writeFile(workflow, text));
 		if (Result.isFailure(wrote)) {
 			return {_tag: "Unwritten", path: workflow, reason: wrote.failure.reason} as const;

@@ -1,10 +1,9 @@
 # fabrika contract-spec format
 
 A **contract spec** is what an authoring session emits per skill: the verbs that skill needs, fully
-specified. It is the deliverable of the derivation the
-[#4638](https://github.com/kamp-us/phoenix/issues/4638) ruling mandates — the session works out
-which deterministic work belongs in the CLI and writes the contract the CLI implements — and it is
-the input a `write-code` agent builds from.
+specified. It is the deliverable of the derivation an authoring session owes: the session works out
+which deterministic work belongs in the CLI and writes the contract the CLI implements, and that
+document is the input a `write-code` agent builds from.
 
 This page is the reference for that document's format: its required sections, the completeness test
 it must clear, and a worked example. The runtime discipline every verb the spec describes owes its
@@ -15,8 +14,8 @@ caller is the sibling page's subject: [the CLI interface convention](interface-c
 `SKILL.md` the session authored. The implementing pull request links back to it.
 
 **The bar it must clear.** A fresh `write-code` agent implements every verb in the spec without
-reading the authoring transcript, without asking the session a question, and without opening a v1
-script.
+reading the authoring transcript, without asking the session a question, and without opening a
+legacy script.
 
 **What it is at runtime.** The authoring spec is `contract.md`'s primary role; runtime lookup is
 not a role it carries. A running shell whose question has one addressable answer — an exit-code
@@ -24,10 +23,10 @@ row, a grammar table, a terminal vocabulary, one section — gets it from a CLI 
 (`fabrika wire doc-section --heading <x> < <skill-base>/contract.md`, or a dedicated lookup verb
 like `fabrika triage codes`), never by opening the whole contract. Only a judgment-shaped pass —
 authoring a skill, reviewing one, resolving an ambiguity the verbs cannot address — opens the file,
-and even then section-at-a-time. The why is ADR
-[0291](../../../.decisions/0291-runtime-lookups-verb-served.md) as amended by ADR
-[0296](../../../.decisions/0296-contracts-are-read-by-section.md); the pointer-sizing side of the
-same split is [skill-conventions §2](skill-conventions.md).
+and even then section-at-a-time. A running shell that opens a whole contract to answer one
+addressable question spends its context on text no decision needed, and the answer it reaches is
+one nothing checked; the pointer-sizing side of the same split is
+[skill-conventions §2](skill-conventions.md).
 
 ## Required sections
 
@@ -62,9 +61,9 @@ point: an implementer can tell an unfinished spec from a finished one before sta
 3. Every non-zero exit code is enumerated with the condition that produces it.
 4. Every error names its message, its stream, and its code.
 5. Every judging verb states its scope and its zero-scope behavior.
-6. No clause defers to a v1 script, another skill's prose, or the authoring session. Deferral is the
-   [#4638](https://github.com/kamp-us/phoenix/issues/4638) failure: the spec is the contract, so a
-   spec that points elsewhere has not derived one.
+6. No clause defers to a legacy script, another skill's prose, or the authoring session. Deferral is
+   the failure the whole document exists to prevent: the spec *is* the contract, so a spec that
+   points elsewhere has not derived one.
 7. **Every value an example prints is derivable from the spec.** A verb that emits a computed value
    specifies the computation — every input to it, down to the tie-break and the rounding — or prints
    no example value. Where the value also depends on data outside the spec, the example names data a
@@ -73,16 +72,15 @@ point: an implementer can tell an unfinished spec from a finished one before sta
    a code.
 
 Checks 1–6 are all *presence* tests, and a spec can pass every one of them while leaving its core
-uninvented — that is check 7's finding ([#4735](https://github.com/kamp-us/phoenix/issues/4735),
-[ADR 0247](../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)): an example that
-*looks* verifiable and is not is worse than no example, because a reader treats the number as a
-contract. Check 8 runs check 3 backwards — 3 walks the codes and asks what produces each, so it only
-sees what the spec already wrote down, and a state the spec never mentioned is invisible to it. An
-unmentioned reachable state lands on `1`, which [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)
+uninvented — that is check 7's finding: an example that *looks* verifiable and is not is worse than
+no example, because a reader treats the number as a contract. Check 8 runs check 3 backwards — 3
+walks the codes and asks what produces each, so it only sees what the spec already wrote down, and a
+state the spec never mentioned is invisible to it. An unmentioned reachable state lands on `1`,
+which [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)
 reserves for a failure to invoke, so the spec's silence hands the caller a **proven** refusal it
-cannot tell from a broken binary ([#4736](https://github.com/kamp-us/phoenix/issues/4736) — the
-verdict-versus-invocation collision of #4208 / #4219). Checks 7 and 8 are the **outcome-completeness**
-pair: 7 that the spec derives every value it prints, 8 that it names every outcome it can reach.
+cannot tell from a broken binary — the verdict-versus-invocation collision. Checks 7 and 8 are the
+**outcome-completeness** pair: 7 that the spec derives every value it prints, 8 that it names every
+outcome it can reach.
 
 ## Worked example
 
@@ -123,7 +121,7 @@ no empty answer: see Scope.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `decisions: cannot read <dir>: <reason>` | 1 | refusal |
-| `decisions: scanned <dir>, 0 decision records — refusing to answer (ADR 0092)` | 3 | refusal |
+| `decisions: scanned <dir>, 0 decision records — refusing to answer` | 3 | refusal |
 | `decisions: <dir> holds a record with an unparseable id: <name>` | 1 | refusal |
 
 **Scope** — every file in `--dir` matching `NNNN-slug.md`. Zero matches is a **failed read, not an
@@ -147,8 +145,9 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0092 — zero scope reds; the empty scan is a refusal, not `0001`.
-- #4208 / #4219 — the proven refusal sits on `3`, never on `1` or `127`, so a caller can tell a
-  proven empty scan from a verb that never ran.
+- Zero scope reds: a judging verb that scanned nothing refuses rather than answering `0001`, because
+  an empty scan and a correct answer are indistinguishable to the caller otherwise.
+- The proven refusal sits on `3`, never on `1` or `127`, so a caller can tell a proven empty scan
+  from a verb that never ran.
 - Serialized authoring: concurrent id derivation races, so a caller that mints records in parallel
   pre-assigns ids rather than calling this verb twice.

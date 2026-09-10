@@ -1,7 +1,6 @@
 # cli-interface-convention — split into two pages
 
-This page served two audiences in one file and was split
-([#7021](https://github.com/kamp-us/phoenix/issues/7021)). It no longer holds the content itself;
+This page served two audiences in one file and was split. It no longer holds the content itself;
 every section moved intact:
 
 - **The CLI interface convention** — what a verb owes its caller (`--help` discoverability, output
@@ -24,4 +23,4 @@ sections*, *Completeness test*, *Worked example*) resolve on `contract-spec-form
 | [Part 2 — the contract-spec format](contract-spec-format.md) | required sections, completeness test, worked example |
 
 Update links you own to point at the new pages directly; this note keeps links you do not own
-resolvable until the index sweep folds them ([#6490](https://github.com/kamp-us/phoenix/issues/6490)).
+resolvable until a sweep folds them.

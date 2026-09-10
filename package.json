@@ -11,17 +11,16 @@
 		"build": "turbo run build",
 		"deploy": "turbo run deploy",
 		"typecheck": "turbo run typecheck",
+		"typecheck:affected": "TURBO_SCM_BASE=origin/main turbo run typecheck --affected",
 		"test": "turbo run test",
 		"lint": "case \"$PWD\" in */.claude/worktrees/*) pnpm run lint:worktree ;; *) biome check . ;; esac",
 		"lint:worktree": "node scripts/biome-worktree.mjs check",
 		"format": "case \"$PWD\" in */.claude/worktrees/*) pnpm run format:worktree ;; *) biome check --write . ;; esac",
 		"format:worktree": "node scripts/biome-worktree.mjs write",
-		"prepare": "if [ \"$(git rev-parse --git-dir 2>/dev/null)\" = \"$(git rev-parse --git-common-dir 2>/dev/null)\" ]; then lefthook install || true; else echo 'prepare: linked worktree — skipping lefthook install (git hooks are primary-checkout-managed)'; fi",
-		"postinstall": "node scripts/patch-effect-tsgo.mjs"
+		"prepare": "if [ \"$(git rev-parse --git-dir 2>/dev/null)\" = \"$(git rev-parse --git-common-dir 2>/dev/null)\" ]; then lefthook install || true; else echo 'prepare: linked worktree — skipping lefthook install (git hooks are primary-checkout-managed)'; fi"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",
-		"@kampus/fabrika-cli": "workspace:*",
 		"@effect/language-service": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"lefthook": "catalog:",

@@ -59,7 +59,7 @@ describe("readDischargedGate", () => {
 			[ASSEMBLY_LOG, commitLog(`feat(tracer): the first tracer (#${BLOCKER_NUMBER})`)],
 		]);
 		expect(out.gate).toEqual({_tag: "Clear", scanned: 1});
-		expect(out.notes.join("\n")).toContain(`adds a commit naming #${BLOCKER_NUMBER}`);
+		expect(out.notes.join("\n")).toContain(`adds a commit that lands #${BLOCKER_NUMBER}`);
 	});
 
 	it("still blocks an open edge the branch does not carry — discharge only ever admits", async () => {
@@ -70,7 +70,7 @@ describe("readDischargedGate", () => {
 			[ASSEMBLY_LOG, commitLog("chore(epic): assembly branch cut (#6768)")],
 		]);
 		expect(out.gate).toEqual({_tag: "Blocked", scanned: 1, open: [BLOCKER_NUMBER]});
-		expect(out.notes.join("\n")).toContain("none naming an undischarged blocker");
+		expect(out.notes.join("\n")).toContain("none landing an undischarged blocker");
 	});
 
 	it("keeps the board's state when the assembly branch cannot be read", async () => {

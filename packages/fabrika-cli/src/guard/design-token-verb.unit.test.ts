@@ -58,7 +58,7 @@ describe("runDesignTokenGuard", () => {
 	});
 
 	// Keep a violation in the app half while the package half stays clean. If CSS_ROOTS silently
-	// drops apps/web/src, this regression test becomes a false green.
+	// drops the app root, this regression test becomes a false green.
 	it("keeps app CSS in the dual-root scan", async () => {
 		const clean = tree(".a {\n  background: var(--surface);\n}\n");
 		const outcome = await run({

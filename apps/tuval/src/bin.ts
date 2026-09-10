@@ -11,13 +11,20 @@
  * than the runner's default 130.
  */
 
+import {dirname} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
 import {renderBindingErrors} from "./commands/bindings/index.ts";
+import {servePage} from "./page/dev-server.ts";
+import {displayHost} from "./page/loopback.ts";
+import {serveDesk} from "./shell/host/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
+
+/** The app's own directory — `index.html`'s home, and so the page server's root. */
+const appRoot = dirname(import.meta.dirname);
 
 /** One table row as the terminal shows it: the port's row, nothing program-specific. */
 export const renderRow = (row: TableRow): string => {
@@ -47,9 +54,17 @@ const tuval = Command.make(
 			),
 			Flag.optional,
 		),
+		noPage: Flag.boolean("no-page").pipe(
+			Flag.withDescription("Boot the kernel and the socket, but serve no page"),
+			Flag.withDefault(false),
+		),
+		pagePort: Flag.integer("page-port").pipe(
+			Flag.withDescription("Port for the page (default: a free one)"),
+			Flag.withDefault(0),
+		),
 	},
-	Effect.fn(function* ({config, project}) {
-		const {report, kernel} = yield* boot({
+	Effect.fn(function* ({config, project, noPage, pagePort}) {
+		const {report, kernel, keyTable, moduleRenderers, features} = yield* boot({
 			global: Option.getOrElse(config, defaultGlobalConfig),
 			project: Option.getOrElse(project, () => process.cwd()),
 		}).pipe(
@@ -73,6 +88,33 @@ const tuval = Command.make(
 		);
 		for (const row of rows) yield* Console.log(renderRow(row));
 		if (rows.length === 0) return;
+
+		// The socket first: the page is handed its URL, so the transport has to be bound before the
+		// dev server that will answer with it.
+		const transport = yield* serveDesk({kernel, port: 0, table: keyTable});
+		yield* Console.log(`tuval: transport on 127.0.0.1:${transport.port}`);
+		if (noPage) {
+			yield* Console.log("tuval: no page served (--no-page)");
+		} else {
+			// A page that will not start does not take the kernel down with it: the processes are up
+			// and checkpointing, and a second `pnpm dev` can attach to the same socket.
+			// `servePage` admits its own port with the transport's fence before returning, so the URL
+			// printed here is one a browser can actually attach from (#7560).
+			// The config's rows are the page's loader list too: every `kind: "module"` renderer they name
+			// is handed to the page server beside the config module that declared it, and the page refuses
+			// a specifier that resolves from neither (ADR 0359, amended by #8262).
+			// The merged flags ride along for the same reason the rows do: the page generates them into
+			// a module its renderer table imports, and that is the only way a flag an operator turned
+			// on in their config reaches the browser (#8439).
+			yield* servePage({root: appRoot, transport, port: pagePort, moduleRenderers, features}).pipe(
+				Effect.flatMap((page) =>
+					// The localhost URL, and the addresses behind it: whichever family the browser resolves
+					// reaches this desk, and the founder can see that it does (ADR 0370, #8593).
+					Console.log(`tuval: desk at ${page.url} — ${page.hosts.map(displayHost).join(" and ")}`),
+				),
+				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
+			);
+		}
 		yield* Console.log("tuval: running — Ctrl-C stops and checkpoints");
 		return yield* Effect.never.pipe(Effect.onInterrupt(() => Console.log("tuval: stopping")));
 	}, Effect.scoped),

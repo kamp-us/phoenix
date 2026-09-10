@@ -21,7 +21,7 @@ const stickyComment = (...blocks: string[]) =>
 
 describe("resolvePreviewUrl", () => {
 	it("resolves the web preview URL from the web block", () => {
-		const url = "https://pr-9-web.kampusinfra.workers.dev";
+		const url = "https://pr-9-web.example.workers.dev";
 		assert.strictEqual(resolvePreviewUrl(stickyComment(webBlock(url))), url);
 	});
 
@@ -34,8 +34,8 @@ describe("resolvePreviewUrl", () => {
 	});
 
 	it("keys off the :web anchor — a second app's line never shadows web (the head -n1 hazard)", () => {
-		const apiUrl = "https://pr-9-api.kampusinfra.workers.dev";
-		const webUrl = "https://pr-9-web.kampusinfra.workers.dev";
+		const apiUrl = "https://pr-9-api.example.workers.dev";
+		const webUrl = "https://pr-9-web.example.workers.dev";
 		// A future `api` app's block appears BEFORE web's in the comment.
 		const apiBlock = `<!-- preview-deploy:api -->\n- **api** — Stage \`pr-9\` → ${apiUrl} <sub>(abc1234)</sub>`;
 		const body = stickyComment(apiBlock, webBlock(webUrl));
@@ -44,8 +44,8 @@ describe("resolvePreviewUrl", () => {
 	});
 
 	it("does not bleed a sibling app's URL into the web block", () => {
-		const webUrl = "https://pr-9-web.kampusinfra.workers.dev";
-		const apiUrl = "https://pr-9-api.kampusinfra.workers.dev";
+		const webUrl = "https://pr-9-web.example.workers.dev";
+		const apiUrl = "https://pr-9-api.example.workers.dev";
 		// web block first, then api — web must still resolve to its OWN url.
 		const apiBlock = `<!-- preview-deploy:api -->\n- **api** — Stage \`pr-9\` → ${apiUrl} <sub>(abc1234)</sub>`;
 		const body = stickyComment(webBlock(webUrl), apiBlock);
@@ -54,7 +54,7 @@ describe("resolvePreviewUrl", () => {
 });
 
 describe("readPreviewAnnouncement", () => {
-	const url = "https://pr-9-web.kampusinfra.workers.dev";
+	const url = "https://pr-9-web.example.workers.dev";
 
 	it("reads the app's URL and the head it deployed, out of that app's own block", () => {
 		const read = readPreviewAnnouncement(stickyComment(webBlock(url, "abc1234")), "web");

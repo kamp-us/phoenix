@@ -6,15 +6,15 @@
  * Per `.patterns/effect-schema-validation.md`, Schema lives at the boundary —
  * here, where genuinely untyped crabbox output enters — and not past it: the
  * pure transform (`adapter.ts`) is total over a decoded `RunSummary`. The crabbox
- * shape is the one verified in spike #235 (`provider`/`leaseId`/`slug`/timing/
+ * shape is the one crabbox emits (`provider`/`leaseId`/`slug`/timing/
  * `exitCode`/`artifacts[]`/`leaseStopped`), widened with an optional per-command
  * `commands[]` so the adapter can derive one `checks[]` entry per command rather
  * than collapsing the whole run to a single top-level `exitCode`.
  *
  * JUnit parsing is deliberately tolerant: a missing, empty, or unparseable file
  * degrades to a zeroed `TestSummary` (never a throw), because "no JUnit" is a
- * legitimate run (a config-only PR runs no test step) — ADR 0054 §2 makes `tests`
- * required only *when a test step ran*, and the adapter always emits a present,
+ * legitimate run (a config-only PR runs no test step) — the manifest contract makes
+ * `tests` required only *when a test step ran*, and the adapter always emits a present,
  * zeroed `tests` so consumers never branch on absence.
  */
 import {Effect} from "effect";
@@ -38,7 +38,7 @@ export const CrabboxArtifact = Schema.Struct({
 export type CrabboxArtifact = (typeof CrabboxArtifact)["Type"];
 
 /**
- * The crabbox machine-readable run-summary (spike #235's verified shape). Only
+ * The crabbox machine-readable run-summary, as crabbox emits it. Only
  * the fields the adapter folds are modeled; crabbox may emit more (Schema
  * ignores unknown keys). `exitCode` is the run's top-level exit; `commands[]`,
  * when present, gives the per-command exits the adapter prefers for `checks[]`.
@@ -152,7 +152,7 @@ const failureMessage = (payload: unknown): string => {
  * `<testsuite>`s; `passed` is the derived remainder. Each failing `<testcase>` (one
  * carrying a `<failure>` or `<error>`) contributes a `{suite, name, message}`. A
  * `null`/empty/unparseable input yields the zeroed summary — the degrade path (never a
- * throw) that keeps a no-JUnit run from crashing (ADR 0054 §2).
+ * throw) that keeps a no-JUnit run from crashing.
  */
 export const parseJUnit = (xml: string | null | undefined): TestSummary => {
 	if (xml === null || xml === undefined) return {...ZERO_TESTS};
@@ -160,7 +160,7 @@ export const parseJUnit = (xml: string | null | undefined): TestSummary => {
 	if (text.length === 0) return {...ZERO_TESTS};
 
 	let root: unknown;
-	// biome-ignore lint/plugin: best-effort parse — malformed XML is absorbed into ZERO_TESTS (ADR 0054 §2: a no-JUnit run must not crash), never the E channel; a total helper, not Effect-cosplay.
+	// biome-ignore lint/plugin: best-effort parse — malformed XML is absorbed into ZERO_TESTS (a no-JUnit run must not crash), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		root = xmlParser.parse(text);
 	} catch {

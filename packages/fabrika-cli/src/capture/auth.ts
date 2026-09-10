@@ -1,6 +1,6 @@
 /**
  * Build the better-auth session cookie a capture context presents, so `review-ui render` can shoot
- * a surface behind login (#7051). Pure — no browser, no network; `capture.ts` seeds what this
+ * a surface behind login. Pure — no browser, no network; `capture.ts` seeds what this
  * returns.
  *
  * The wire format is better-auth's, read at the pinned version rather than assumed:
@@ -12,7 +12,7 @@
  *
  * Two cookie names are seeded, not one, and that is deliberate. The `__Secure-` prefix is chosen
  * inside the worker isolate from `isProduction` when the app configures `baseURL` as an object —
- * which phoenix does on preview (`deriveAuthUrlConfig`) — so it is a fact about the running worker
+ * which an app commonly does on preview — so it is a fact about the running worker
  * that no caller out here can observe. The server reads exactly one name and ignores the other.
  */
 import {createHmac} from "node:crypto";
@@ -49,7 +49,7 @@ export const sessionCookies = (
  * The environment variable carrying each tier's session token. One variable per tier, because the
  * token IS the identity: an unset one means `preview-seed test-account` did not seed that tier on
  * this preview, so the refusal below is what stops a surface naming it from falling back to the
- * seeded identity and shooting the wrong audience clean (#7398). `preview-seed`'s bin reads the
+ * seeded identity and shooting the wrong audience clean. `preview-seed`'s bin reads the
  * same names on the provisioning side — the two lists move together.
  */
 export const TIER_TOKEN_ENV: Readonly<Record<CaptureTier, string>> = {
@@ -93,19 +93,19 @@ export const readIdentity = (
  * better-auth's `/get-session` (`dist/api/routes/session.mjs` at the `1.6.23` pin) reads the signed
  * session cookie and returns a bare JSON `null` when it does not resolve to a session, or an object
  * carrying `session` + `user` when it does — so the answer is decidable from the body alone, without
- * reading a pixel. Mounted at `/api/auth/*` by `apps/web/worker/features/pasaport/route.ts`.
+ * reading a pixel. The app mounts better-auth's routes at `/api/auth/*`.
  */
 export const SESSION_PROBE_PATH = "/api/auth/get-session";
 
 /**
  * Whether a capture context is signed in **and at which tier**, decided from the probe's own
  * answer. The tier rides here because signed-in is not the whole question: an `:auth` surface whose
- * audience is defined by *not* clearing the yazar floor renders clean and wrong when the shot came
- * back as somebody above it (#7398).
+ * audience is defined by *not* clearing the lowest tier's floor renders clean and wrong when the
+ * shot came back as somebody above it.
  *
- * `user.tier` is on the answer because `additionalUserFields` in
- * `apps/web/worker/features/pasaport/better-auth-live.ts` declares it without `returned: false` —
- * the flag `promotedAt` carries and `tier` deliberately does not.
+ * `user.tier` is on the answer because the app declares it in better-auth's
+ * `additionalUserFields` without `returned: false` — the flag a private field would carry and
+ * `tier` deliberately does not.
  *
  * Three arms, not two: a probe that could not be read is UNKNOWN and must not collapse into
  * "anonymous", because both would refuse but only one of them is a fact about the session. A signed

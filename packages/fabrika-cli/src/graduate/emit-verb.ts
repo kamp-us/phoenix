@@ -279,7 +279,7 @@ export const runEmit = <R = never>(
 		if (!labels.value.includes(INTAKE_LABEL)) {
 			return refuse(
 				NO_TARGET,
-				`${VERB}: label "${INTAKE_LABEL}" does not exist in ${repo} — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap (#4952).`,
+				`${VERB}: label "${INTAKE_LABEL}" does not exist in ${repo} — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap.`,
 				[scope],
 			);
 		}
@@ -287,7 +287,7 @@ export const runEmit = <R = never>(
 		if (prefix !== null) {
 			return refuse(
 				CLASSIFIED,
-				`${VERB}: --title classifies the work ("${prefix}") — type and priority are triage's (ADR 0246).`,
+				`${VERB}: --title classifies the work ("${prefix}") — type and priority are triage's, not this group's.`,
 				[scope],
 			);
 		}
@@ -301,7 +301,7 @@ export const runEmit = <R = never>(
 			);
 		}
 		// The footer is appended BEFORE the scan, never after: bytes added after a scan are bytes
-		// nobody scanned, and this footer interpolates a source number and a digest (#3086).
+		// nobody scanned, and this footer interpolates a source number and a digest.
 		const composed = withFooter(body, renderFooter({source, specDigest, timestamp: at}));
 		const scan = scanBody(composed);
 		if (scan.leaks.length > 0) {

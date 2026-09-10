@@ -8,7 +8,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, type Scope} from "effect";
+import {Context, Effect, Layer, type Scope, Stream} from "effect";
+import {assistantItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {memoryStores} from "../../durability/stores.ts";
 import {NodeId} from "../../ports/graph.ts";
@@ -17,45 +18,130 @@ import {Processes} from "../../process/Processes.ts";
 import type {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessHandle} from "../../process/process.ts";
 import {Registry} from "../../registry/Registry.ts";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
-import type {ModePayload, PermissionPayload, TranscriptPagePayload} from "../ports/index.ts";
+import {
+	type AiAgentSessionState,
+	aiAgentSessionMachine,
+	isAiAgentSessionState,
+} from "../core/index.ts";
+import type {
+	ModelRef,
+	ModePayload,
+	PermissionPayload,
+	TranscriptPagePayload,
+} from "../ports/index.ts";
 import {aiAgentProgram} from "../program.ts";
 import {
 	disconnects,
 	history,
 	mode as modeBrand,
+	models,
 	modes,
+	noEchoReply,
 	PERMISSION_REQUEST,
 	permissionTurn,
 	plainReply,
 	SESSION_ID,
 } from "../service/fixtures/scripts.ts";
-import {type AgentScript, ScriptedAiAgent, TuvalAiAgent} from "../service/index.ts";
+import {
+	type AgentScript,
+	ScriptedAiAgent,
+	StartError,
+	type StartOptions,
+	TuvalAiAgent,
+	type TuvalAiAgentApi,
+} from "../service/index.ts";
 import {aiAgentPortNames} from "./publish.ts";
 
 const PROGRAM = "ai-agent-session-test";
 
+type ScriptSource = AgentScript | ((build: number) => AgentScript);
+
 interface Probe {
+	agents: Array<TuvalAiAgentApi>;
+	subscribed: Array<number>;
+	unsubscribed: Array<number>;
 	acquired: number;
 	released: number;
+	/** Prompts the layer was actually asked for; a refused prompt has to reach none of them. */
+	prompts: number;
+	/** The text of each, so a test reads what the backend was sent rather than that it was sent. */
+	sent: Array<string>;
+	pages: Array<string | null>;
 }
 
+const probeOf = (): Probe => ({
+	acquired: 0,
+	released: 0,
+	prompts: 0,
+	sent: [],
+	pages: [],
+	agents: [],
+	subscribed: [],
+	unsubscribed: [],
+});
+
+/** A backend that holds no session at all, whatever it is asked to open. */
+const refusesEveryStart = (options: StartOptions) =>
+	new StartError({
+		reason: "session-not-found",
+		cwd: options.cwd,
+		detail: "this backend holds no session",
+	});
+
 /**
- * `ScriptedAiAgent.layer` with its build and its teardown counted. Wrapping rather than editing the
- * fixture keeps the count on this test's side of the seam: what is asserted is that the *row*
- * builds the layer once per process and closes it once, not anything about the script.
+ * `ScriptedAiAgent.layer` with its build, its teardown and its prompts counted. Wrapping rather
+ * than editing the fixture keeps the count on this test's side of the seam: what is asserted is
+ * that the *row* builds the layer once per process and closes it once, not anything about the
+ * script.
+ *
+ * A script factory varies the backend by build, so a reconnect can refuse where the first open
+ * succeeded. The probe observes real streams and their finalizers without replacing the handlers.
  */
-const countingLayer = (script: AgentScript, probe: Probe): Layer.Layer<TuvalAiAgent> =>
+const countingLayer = (
+	script: ScriptSource,
+	probe: Probe,
+	refuseStart = false,
+): Layer.Layer<TuvalAiAgent> =>
 	Layer.effect(
 		TuvalAiAgent,
 		Effect.gen(function* () {
-			probe.acquired += 1;
+			const build = ++probe.acquired;
 			yield* Effect.addFinalizer(() =>
 				Effect.sync(() => {
 					probe.released += 1;
 				}),
 			);
-			return Context.get(yield* Layer.build(ScriptedAiAgent.layer(script)), TuvalAiAgent);
+			const selected = typeof script === "function" ? script(build) : script;
+			const agent = Context.get(yield* Layer.build(ScriptedAiAgent.layer(selected)), TuvalAiAgent);
+			probe.agents.push(agent);
+			return {
+				...agent,
+				events: Stream.unwrap(
+					Effect.sync(() => {
+						probe.subscribed.push(build);
+						return agent.events;
+					}),
+				).pipe(
+					Stream.ensuring(
+						Effect.sync(() => {
+							probe.unsubscribed.push(build);
+						}),
+					),
+				),
+				start: (options: StartOptions) =>
+					refuseStart ? Effect.fail(refusesEveryStart(options)) : agent.start(options),
+				page: (before: string | null, limit: number) =>
+					Effect.suspend(() => {
+						probe.pages.push(before);
+						return agent.page(before, limit);
+					}),
+				prompt: (text: string, key?: string) =>
+					Effect.suspend(() => {
+						probe.prompts += 1;
+						probe.sent.push(text);
+						return agent.prompt(text, key);
+					}),
+			};
 		}),
 	);
 
@@ -78,27 +164,37 @@ const recorder = (log: Array<Emitted>, wired: ReadonlySet<string>) =>
 
 const allPorts = new Set(Object.values(aiAgentPortNames));
 
-const row = (script: AgentScript, probe: Probe, itemLimit?: number) =>
+interface KernelOptions {
+	readonly itemLimit?: number;
+	readonly wired?: ReadonlySet<string>;
+	/** Every open this row's layer answers is refused, so the process never leaves `idle`. */
+	readonly refuseStart?: boolean;
+}
+
+const row = (script: ScriptSource, probe: Probe, options: KernelOptions) =>
 	aiAgentProgram({
 		id: PROGRAM,
-		layer: countingLayer(script, probe),
-		config: {cwd: "/work", ...(itemLimit === undefined ? {} : {itemLimit})},
+		layer: countingLayer(script, probe, options.refuseStart ?? false),
+		config: {
+			cwd: "/work",
+			...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
+		},
 	});
 
 const withKernel = <A, E>(
-	script: AgentScript,
+	script: ScriptSource,
 	probe: Probe,
 	body: (
 		spawn: Effect.Effect<ProcessHandle, unknown>,
 		log: Array<Emitted>,
 	) => Effect.Effect<A, E, Processes | ProcessTable | Scope.Scope>,
-	options: {readonly itemLimit?: number; readonly wired?: ReadonlySet<string>} = {},
+	options: KernelOptions = {},
 ) => {
 	const log: Array<Emitted> = [];
 	const ports = recorder(log, options.wired ?? allPorts);
 	return Effect.gen(function* () {
 		const processes = yield* Processes;
-		const spawn = processes.spawn(row(script, probe, options.itemLimit).id, {
+		const spawn = processes.spawn(row(script, probe, options).id, {
 			services: Context.make(ProcessPorts, ports),
 		});
 		return yield* body(spawn, log);
@@ -107,7 +203,7 @@ const withKernel = <A, E>(
 		Effect.provide(
 			Processes.layer.pipe(
 				Layer.provideMerge(Checkpoints.layer(memoryStores())),
-				Layer.provideMerge(Registry.layer([row(script, probe, options.itemLimit)])),
+				Layer.provideMerge(Registry.layer([row(script, probe, options)])),
 			),
 		),
 	);
@@ -129,12 +225,10 @@ const lastOn = (log: ReadonlyArray<Emitted>, port: string): unknown =>
 
 describe("the AI agent handlers under a process", () => {
 	it.live("acquires the layer in the process's Scope and releases it once on stop", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(plainReply, probe, (spawn) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				assert.deepStrictEqual([probe.acquired, probe.released], [0, 0]);
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
 				assert.deepStrictEqual([probe.acquired, probe.released], [1, 0]);
 				yield* handle.stop;
@@ -146,13 +240,11 @@ describe("the AI agent handlers under a process", () => {
 	});
 
 	it.live("gives two processes of one row two agents", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(plainReply, probe, (spawn) =>
 			Effect.gen(function* () {
 				const first = yield* spawn;
-				const second = yield* spawn;
-				yield* first.dispatch({type: "start", cwd: "/work", resume: null});
-				yield* second.dispatch({type: "start", cwd: "/work", resume: null});
+				yield* spawn;
 				yield* eventually(() => probe.acquired === 2);
 				assert.strictEqual(probe.acquired, 2);
 				yield* first.stop;
@@ -162,13 +254,12 @@ describe("the AI agent handlers under a process", () => {
 	});
 
 	it.live("carries a prompt to the layer and the reply back on the transcript port", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(plainReply, probe, (spawn, log) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).transcript.items.length === 2);
 
 				assert.deepStrictEqual(
@@ -181,12 +272,80 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	it.live("resolves a local cursor once before the backend and returns older history", () => {
+		const probe = probeOf();
+		const older = [userItem("old-user", "older"), assistantItem("old-assistant")];
+		const script = {
+			...noEchoReply,
+			history: [...older, userItem("stored-user", "hello"), assistantItem("a4")],
+		};
+		return withKernel(script, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "cursor", timestamp: 1});
+				yield* eventually(() =>
+					sessionOf(handle).transcript.items.some((item) => item.id === "a4"),
+				);
+				yield* handle.dispatch({type: "page", before: "local:cursor", limit: 10});
+				assert.deepStrictEqual(probe.pages, ["a4"]);
+				assert.deepStrictEqual(sessionOf(handle).lastPage?.items, older);
+				assert.isNull(sessionOf(handle).failure);
+			}),
+		);
+	});
+
+	it.live("never calls the backend for an all-local or evicted local cursor", () => {
+		const probe = probeOf();
+		const script = {...plainReply, turns: [{events: []}]};
+		return withKernel(script, probe, (spawn, log) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "alone", timestamp: 1});
+				yield* handle.dispatch({type: "page", before: "local:alone", limit: 10});
+				yield* handle.dispatch({type: "page", before: "local:evicted", limit: 10});
+				assert.deepStrictEqual(probe.pages, []);
+				assert.isNull(sessionOf(handle).lastPage);
+				assert.isNull(sessionOf(handle).failure);
+				assert.isUndefined(lastOn(log, aiAgentPortNames.pageReply));
+			}),
+		);
+	});
+
+	it.live("does not submit a live partial cursor before its stored frame exists", () => {
+		const probe = probeOf();
+		const partial = {...assistantItem("streaming"), partial: true};
+		const script = {
+			...plainReply,
+			turns: [{events: [{kind: "item" as const, item: partial}]}],
+		};
+		return withKernel(script, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "partial", timestamp: 1});
+				yield* eventually(() =>
+					sessionOf(handle).transcript.items.some((item) => item.id === partial.id),
+				);
+				for (const before of ["local:partial", partial.id]) {
+					const folded = yield* handle.dispatchFolded({type: "page", before, limit: 10});
+					assert.isTrue(isAiAgentSessionState(folded.summary.state));
+					if (!isAiAgentSessionState(folded.summary.state)) return;
+					assert.isNull(folded.summary.state.pageOutcome);
+				}
+				assert.deepStrictEqual(probe.pages, []);
+				assert.isNull(sessionOf(handle).lastPage);
+				assert.isNull(sessionOf(handle).failure);
+			}),
+		);
+	});
+
 	it.live("answers a transcript-page request on the page reply port", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(plainReply, probe, (spawn, log) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
 				yield* handle.dispatch({type: "page", before: null, limit: 3});
 				yield* eventually(() => sessionOf(handle).lastPage !== null);
@@ -203,14 +362,42 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	it.live(
+		"samples each page's tagged outcome after handler completion, even when values repeat",
+		() => {
+			const probe = probeOf();
+			return withKernel(plainReply, probe, (spawn) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).phase === "ready");
+					for (const before of [null, "unknown", "unknown", null]) {
+						const folded = yield* handle.dispatchFolded({type: "page", before, limit: 3});
+						assert.isTrue(isAiAgentSessionState(folded.summary.state));
+						if (!isAiAgentSessionState(folded.summary.state)) return;
+						const state = folded.summary.state;
+						assert.strictEqual(state.pageOutcome?.status, before === null ? "success" : "refused");
+						assert.isNotNull(state.lastPage);
+						if (before !== null) assert.strictEqual(state.failure?.reason, "unknown-cursor");
+					}
+					assert.strictEqual(sessionOf(handle).pageOutcome?.status, "success");
+					assert.strictEqual(sessionOf(handle).failure?.reason, "unknown-cursor");
+				}),
+			);
+		},
+	);
+
 	it.live("crosses a permission event out and an inbound answer back in", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(permissionTurn, probe, (spawn, log) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "delete it", key: "k1"});
+				yield* handle.dispatch({
+					type: "prompt",
+					text: "delete it",
+					key: "k1",
+					timestamp: Date.now(),
+				});
 				yield* eventually(() => sessionOf(handle).permissions[PERMISSION_REQUEST] !== undefined);
 
 				const pending = lastOn(log, aiAgentPortNames.permissionPending) as PermissionPayload;
@@ -223,8 +410,9 @@ describe("the AI agent handlers under a process", () => {
 					request: PERMISSION_REQUEST,
 					decision: "allow-once",
 				});
-				// The core drops the card on the `answer` Msg, but the port only clears once the
-				// layer's `permission-resolved` event has come back round the stream.
+				// The card is not dropped on the `answer` Msg any more (#8006): it is marked, published
+				// under that mark, and cleared only by the confirmation — the layer's
+				// `permission-resolved` event, or the answer call's own reply.
 				const clearedRequests = () => {
 					const latest = lastOn(log, aiAgentPortNames.permissionPending) as
 						| PermissionPayload
@@ -234,16 +422,28 @@ describe("the AI agent handlers under a process", () => {
 				yield* eventually(() => clearedRequests().length === 0);
 				assert.deepStrictEqual(clearedRequests(), []);
 				assert.deepStrictEqual(Object.keys(sessionOf(handle).permissions), []);
+
+				const announced = log
+					.filter((entry) => entry.port === aiAgentPortNames.permissionPending)
+					.map((entry) => entry.payload as PermissionPayload)
+					.flatMap((payload) =>
+						payload.kind === "pending"
+							? [payload.requests[PERMISSION_REQUEST]?.progress ?? null]
+							: [],
+					);
+				assert.deepStrictEqual(
+					announced.filter((progress) => progress?.status === "answering"),
+					[{status: "answering", decision: "allow-once"}],
+				);
 			}),
 		);
 	});
 
 	it.live("crosses a mode event out and an inbound set back in", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(plainReply, probe, (spawn, log) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).modes.available.length === 2);
 
 				const state = lastOn(log, aiAgentPortNames.modeState) as ModePayload;
@@ -260,15 +460,62 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	// No port carries the model (#7981): the window reads it off the session state it already holds,
+	// so this asserts the committed state rather than a payload on the log.
+	it.live("folds the offered catalog into state and takes a setModel back to the layer", () => {
+		const probe = probeOf();
+		return withKernel(plainReply, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).models.available.length === 2);
+				assert.deepStrictEqual(sessionOf(handle).models.current, models.current);
+
+				const sonnet = models.available[1] as ModelRef;
+				yield* handle.dispatch({type: "setModel", model: sonnet});
+				yield* eventually(() => sessionOf(handle).models.current?.id === sonnet.id);
+				assert.deepStrictEqual(sessionOf(handle).models.current, sonnet);
+				assert.isNull(sessionOf(handle).failure);
+			}),
+		);
+	});
+
+	// The picker's half of this — a pick becoming a `prompt` Msg carrying `/compact` — is proven in
+	// `shell/chat/agent-controls.unit.test.tsx`; this is the other half, that such a Msg reaches the
+	// backend as prompt text and as nothing else. A command runs as a prompt, so no port carries it.
+	it.live("folds the catalog into state and sends a picked command as ordinary prompt text", () => {
+		const probe = probeOf();
+		const compact = {name: "compact", description: "Summarise the conversation."};
+		return withKernel({...plainReply, commands: [compact]}, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).commands.length === 1);
+				assert.deepStrictEqual(sessionOf(handle).commands, [compact]);
+
+				yield* handle.dispatch({
+					type: "prompt",
+					text: "/compact",
+					key: "k1",
+					timestamp: Date.now(),
+				});
+				yield* eventually(() => probe.sent.length === 1);
+				assert.deepStrictEqual(probe.sent, ["/compact"]);
+			}),
+		);
+	});
+
 	it.live("windows a transcript past the limits and carries the omission out", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(
 			plainReply,
 			probe,
 			(spawn, log) =>
 				Effect.gen(function* () {
 					const handle = yield* spawn;
-					yield* handle.dispatch({type: "start", cwd: "/work", resume: SESSION_ID});
+					yield* eventually(() => sessionOf(handle).phase === "ready");
+					// The replayed history is what overruns the limit, and only a resumed open replays
+					// it. A fresh process opens itself with no resume now (#7925), so the reconnect is
+					// what asks the backend for the session it already holds.
+					yield* handle.dispatch({type: "reconnect"});
 					yield* eventually(() => sessionOf(handle).transcript.omitted.items > 0);
 
 					const tail = sessionOf(handle).transcript;
@@ -280,44 +527,58 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
-	it.live("turns a session-not-found resume into a failed Msg carrying the tag", () => {
-		const probe: Probe = {acquired: 0, released: 0};
-		return withKernel(plainReply, probe, (spawn) =>
-			Effect.gen(function* () {
-				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: "no-such-session"});
-				yield* eventually(() => sessionOf(handle).failure !== null);
-				assert.deepStrictEqual(
-					[sessionOf(handle).failure?.tag, sessionOf(handle).failure?.reason],
-					["tuval/ai-agent/StartError", "session-not-found"],
-				);
-				assert.strictEqual(sessionOf(handle).phase, "idle");
-			}),
+	it.live("turns a start the backend refuses into an openFailed Msg carrying the tag", () => {
+		const probe = probeOf();
+		return withKernel(
+			plainReply,
+			probe,
+			(spawn) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).failure !== null);
+					assert.deepStrictEqual(
+						[sessionOf(handle).failure?.tag, sessionOf(handle).failure?.reason],
+						["tuval/ai-agent/StartError", "session-not-found"],
+					);
+					assert.strictEqual(sessionOf(handle).phase, "idle");
+				}),
+			{refuseStart: true},
 		);
 	});
 
+	// A refused open leaves the process at `idle`, which is the one phase a fresh session can still
+	// reach a prompt from — and the phase every prompt outside `ready` is refused from.
 	it.live("refuses a prompt outside ready as a failed Msg and sends nothing", () => {
-		const probe: Probe = {acquired: 0, released: 0};
-		return withKernel(plainReply, probe, (spawn) =>
-			Effect.gen(function* () {
-				const handle = yield* spawn;
-				yield* handle.dispatch({type: "prompt", text: "too early", key: "k1"});
-				assert.deepStrictEqual(
-					[sessionOf(handle).failure?.tag, probe.acquired],
-					["tuval/ai-agent/PromptError", 0],
-				);
-			}),
+		const probe = probeOf();
+		return withKernel(
+			plainReply,
+			probe,
+			(spawn) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).failure !== null);
+					yield* handle.dispatch({
+						type: "prompt",
+						text: "too early",
+						key: "k1",
+						timestamp: Date.now(),
+					});
+					assert.deepStrictEqual(
+						[sessionOf(handle).failure?.tag, probe.prompts],
+						["tuval/ai-agent/PromptError", 0],
+					);
+				}),
+			{refuseStart: true},
 		);
 	});
 
 	it.live("turns a disconnected event stream into a failed Msg", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(disconnects, probe, (spawn) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).failure?.tag === "tuval/ai-agent/TransportError");
 				assert.deepStrictEqual(
 					[sessionOf(handle).failure?.tag, sessionOf(handle).failure?.reason],
@@ -331,13 +592,12 @@ describe("the AI agent handlers under a process", () => {
 	// `prompt` and `page` all fail. So a reconnect that came back can only have rebuilt the layer,
 	// which is what ruling 4 (#7570) says restore is.
 	it.live("rebuilds the layer on reconnect and re-opens the event stream", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(disconnects, probe, (spawn, log) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).failure?.tag === "tuval/ai-agent/TransportError");
 				const downAt = log.length;
 
@@ -363,13 +623,12 @@ describe("the AI agent handlers under a process", () => {
 	});
 
 	it.live("counts the rebuilt transport once, not twice, when the process stops", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(disconnects, probe, (spawn) =>
 			Effect.gen(function* () {
 				const handle = yield* spawn;
-				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).failure !== null);
 				yield* handle.dispatch({type: "reconnect"});
 				yield* eventually(() => probe.acquired === 2);
@@ -380,17 +639,112 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	it.live(
+		"rearms the rebuilt transport after a failed second start and a later successful reconnect",
+		() => {
+			const probe = probeOf();
+			const machine = aiAgentSessionMachine({cwd: "/work"});
+			const ids = (handle: ProcessHandle) =>
+				(machine.subscriptions?.(sessionOf(handle)) ?? []).map((sub) => sub.id);
+			const script: ScriptSource = (build) => ({
+				...plainReply,
+				...(build === 2
+					? {
+							startRefusal: new StartError({
+								cwd: "/work",
+								reason: "refused",
+								detail: "second open refused",
+							}),
+						}
+					: {}),
+				interrupt: [
+					{kind: "item", item: assistantItem(`notice-${build}`, `transport-${build} notification`)},
+				],
+				turns: [
+					{
+						events: [
+							{kind: "phase", phase: "prompting"},
+							{kind: "item", item: assistantItem(`answer-${build}`, `reply-${build}`)},
+							{kind: "phase", phase: "ready"},
+						],
+					},
+				],
+			});
+			return withKernel(script, probe, (spawn, log) =>
+				Effect.gen(function* () {
+					const handle = yield* spawn;
+					yield* eventually(() => sessionOf(handle).phase === "ready");
+					yield* handle.dispatch({type: "prompt", text: "first", key: "first", timestamp: 1});
+					yield* eventually(() =>
+						sessionOf(handle).transcript.items.some((item) => item.id === "answer-1"),
+					);
+					const before = ids(handle);
+					assert.lengthOf(before, 1);
+					yield* handle.dispatch({type: "reconnect"});
+					yield* eventually(
+						() => sessionOf(handle).failure?.detail.includes("second open refused") === true,
+					);
+					const failed = ids(handle);
+					assert.notDeepEqual(failed, before);
+					assert.lengthOf(failed, 1);
+					assert.strictEqual(sessionOf(handle).phase, "idle");
+					yield* eventually(() => probe.subscribed.includes(2));
+					assert.deepStrictEqual(probe.subscribed, [1, 2]);
+					assert.deepStrictEqual([probe.acquired, probe.released], [2, 1]);
+					assert.deepStrictEqual(probe.unsubscribed, [1]);
+					const rebuilt = probe.agents[1];
+					if (rebuilt === undefined) return yield* Effect.die("missing rebuilt backend");
+					yield* rebuilt.interrupt;
+					yield* eventually(() =>
+						sessionOf(handle).transcript.items.some((item) => item.id === "notice-2"),
+					);
+					assert.isTrue(sessionOf(handle).transcript.items.some((item) => item.id === "notice-2"));
+					assert.isTrue(sessionOf(handle).transcript.items.some((item) => item.id === "answer-1"));
+					assert.include(
+						JSON.stringify(lastOn(log, aiAgentPortNames.transcript)),
+						"transport-2 notification",
+					);
+					yield* handle.dispatch({
+						type: "failed",
+						failure: {
+							tag: "tuval/ai-agent/PromptError",
+							reason: "refused",
+							detail: "ordinary refusal",
+						},
+					});
+					assert.deepStrictEqual(ids(handle), failed);
+					assert.deepStrictEqual(probe.subscribed, [1, 2]);
+					yield* handle.dispatch({type: "reconnect"});
+					yield* eventually(
+						() => sessionOf(handle).phase === "ready" && probe.subscribed.includes(3),
+					);
+					assert.notDeepEqual(ids(handle), failed);
+					assert.deepStrictEqual([probe.acquired, probe.released], [3, 2]);
+					assert.deepStrictEqual(probe.unsubscribed, [1, 2]);
+					yield* handle.dispatch({type: "prompt", text: "again", key: "again", timestamp: 2});
+					yield* eventually(() =>
+						sessionOf(handle).transcript.items.some((item) => item.id === "answer-3"),
+					);
+					assert.isTrue(sessionOf(handle).transcript.items.some((item) => item.id === "answer-3"));
+					assert.include(JSON.stringify(lastOn(log, aiAgentPortNames.transcript)), "reply-3");
+					yield* handle.stop;
+					assert.deepStrictEqual([probe.acquired, probe.released], [3, 3]);
+					assert.deepStrictEqual(probe.unsubscribed, [1, 2, 3]);
+				}),
+			);
+		},
+	);
+
 	it.live("publishes nothing and fails nothing when a port has no route", () => {
-		const probe: Probe = {acquired: 0, released: 0};
+		const probe = probeOf();
 		return withKernel(
 			plainReply,
 			probe,
 			(spawn, log) =>
 				Effect.gen(function* () {
 					const handle = yield* spawn;
-					yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
 					yield* eventually(() => sessionOf(handle).phase === "ready");
-					yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+					yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 					yield* eventually(() => sessionOf(handle).transcript.items.length === 2);
 					assert.deepStrictEqual(log, []);
 				}),

@@ -1,13 +1,12 @@
 /**
  * `guard catalog-guard check` — every dep in every workspace `package.json` is on
- * `catalog:`/`workspace:`, never a hardcoded version (#2737), ported off
- * v1's `catalog-guard check` (epic #5720).
+ * `catalog:`/`workspace:`, never a hardcoded version — ported off v1's `catalog-guard check`.
  *
  * The verb is scope plus IO: the members come from `./members.ts`, the root manifest is added here
  * because the catalog rule governs it too, and the rule itself lives in `./catalog.ts`.
  *
  * **v1's one non-zero exit splits into three seats here.** A tree with no manifest at all is a
- * broken scope assumption (`7`, ADR 0092), a manifest that will not parse is a scan that could not
+ * broken scope assumption (`7`, fail-closed), a manifest that will not parse is a scan that could not
  * judge what it read (`11`), and a hardcoded version is the thing the guard forbids (`12`). All
  * three stay red, so the gate is exactly as strict as it was.
  */
@@ -61,7 +60,7 @@ interface Unparseable {
 
 /**
  * Every manifest in scope, read and parsed. The raw text rides along because the parsed object
- * carries no positions and the annotation wants the line the offending dep sits on (#3868).
+ * carries no positions and the annotation wants the line the offending dep sits on.
  */
 const readManifests = (
 	root: string,
@@ -111,7 +110,7 @@ const judge = (
 		const paths = yield* manifestPaths(root);
 		if (paths.length === 0) {
 			return zeroScope(
-				`${VERB}: scanned ZERO package.json manifests — fail-closed (ADR 0092). Is the repo root correct, or did the workspace shape change?`,
+				`${VERB}: scanned ZERO package.json manifests — fail-closed, like every guard here. Is the repo root correct, or did the workspace shape change?`,
 			);
 		}
 		const {read, unparseable} = yield* readManifests(root, paths);

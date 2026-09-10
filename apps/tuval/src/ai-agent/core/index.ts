@@ -6,13 +6,25 @@
 
 export {
 	MODE_UNSUPPORTED,
+	MODEL_UNSUPPORTED,
 	PAGE_ERROR,
 	PROMPT_ERROR,
-	portRefused,
+	promptQueueFull,
+	promptUnqueued,
 	START_ERROR,
+	THINKING_UNSUPPORTED,
+	TRANSPORT_ERROR,
 	UNKNOWN_REQUEST,
 } from "./failures.ts";
-export {addUsage, foldEvent, foldItem, upsertItem, type WindowLimits} from "./fold.ts";
+export {
+	addUsage,
+	foldEvent,
+	foldItem,
+	promptItem,
+	promptItemId,
+	upsertItem,
+	type WindowLimits,
+} from "./fold.ts";
 export {
 	type AiAgentSessionMachine,
 	type AiAgentSessionOptions,
@@ -26,17 +38,63 @@ export {
 	eventsSub,
 	eventsSubId,
 } from "./messages.ts";
-export {isAiAgentSessionState, parseSessionState} from "./snapshot.ts";
 export {
+	enqueue,
+	isQueueFull,
+	type QueuedPrompt,
+	queueLimit,
+	releaseQueued,
+} from "./queue.ts";
+export {
+	markTurnRunning,
+	noteSend,
+	type PendingSend,
+	pendingSend,
+	runningSend,
+	type SendOutcome,
+	sendAfterFailure,
+	sendLimit,
+	sendOutcome,
+	settleAccepted,
+	settledBy,
+	settleEndedSession,
+	settleFailedTurn,
+	type TurnProgress,
+} from "./sends.ts";
+export {
+	isAiAgentSessionState,
+	loadCheckpoint,
+	parseSessionState,
+	readCheckpoint,
+	SPENT_BEFORE_LEDGER,
+	withCheckpointDefaults,
+	withSubagentWorkers,
+	withUsageLedger,
+} from "./snapshot.ts";
+export {
+	type AgentAccount,
 	type AgentFailure,
 	type AiAgentSessionState,
+	type CheckpointField,
+	checkpointFields,
+	checkpointWorthy,
+	cutPromptId,
 	emptyUsage,
 	type HistoryPage,
+	holdsPartialItem,
+	holdsRunningSubagent,
+	type Interruption,
 	initialState,
 	lastAssistantId,
+	type ModelState,
 	type ModeState,
 	phases,
-	replyPending,
 	restore,
+	settleRunningSubagents,
+	settleTurn,
+	type ThinkingState,
+	type TurnUsage,
+	type UsageLedger,
 	type UsageTotals,
+	usageTotals,
 } from "./state.ts";

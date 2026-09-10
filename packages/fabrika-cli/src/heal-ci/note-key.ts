@@ -3,17 +3,17 @@
  *
  * A strand's history is a history, so `note` posts a new comment per classification — but "per
  * classification" and "per caller" are not the same thing. Two sweeps three minutes apart at one
- * head with one class produced up to six substantively identical notes on a single pull request
- * (#7209), because nothing on either side of the write knew the other had already recorded it.
+ * head with one class produced up to six substantively identical notes on a single pull request,
+ * because nothing on either side of the write knew the other had already recorded it.
  * The key `<pr>:<class>:<head>` is what makes the record idempotent: one key earns exactly one note
  * for as long as the pull request is open, and a strand is re-noticed only when its class changes or
  * a new commit lands — the two events that make the earlier note stale.
  *
  * The suppression used to live in `.github/workflows/heal-ci-sweep.yml`'s `run:` block, which built
  * the key, paged the comments and globbed for a hit. That deduped the scheduled path and left every
- * other caller posting bare, and it put the workflow on the wrong side of ADR 0228 — a script
- * deriving a decision rather than relaying a verb's. Moving it here fixes both, and every note path
- * inherits it.
+ * other caller posting bare, and it left the workflow deriving a decision rather than relaying a
+ * verb's answer, which a workflow's shell must never do. Moving it here fixes both, and every note
+ * path inherits it.
  *
  * It is deliberately **not** `marker.ts`'s shape, and the two readers cannot see
  * each other's marker: this one is an HTML comment matched as a whole line anywhere in the body, the

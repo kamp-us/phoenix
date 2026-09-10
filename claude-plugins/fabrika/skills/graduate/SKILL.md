@@ -118,7 +118,7 @@ spec you invented a boundary for.
 ## 3 — Check it is not already filed
 
 ```bash
-fabrika report dedup --query "moderation weight earned per account not inherited from kefil"
+fabrika report dedup --query "moderation weight earned per account not inherited from a voucher"
 ```
 
 Three outcomes, and only one is about your spec: `candidates` (open each and judge it yourself),

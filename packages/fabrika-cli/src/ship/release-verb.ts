@@ -1,7 +1,7 @@
 /**
  * `ship release` — dark-ship detection and the `status:awaiting-release` label.
  *
- * Agents deploy, humans release (ADR 0083): the label is the seam and the whole action. Nothing here
+ * Agents deploy, humans release: the label is the seam and the whole action. Nothing here
  * flips or validates a flag.
  *
  * `no-issue` is deliberately its own answer, never folded into `n/a`: a dark-ship signal fired and
@@ -9,7 +9,7 @@
  * exact hazard this verb exists to prevent. The label write is read back, because v1's unverified
  * POST could report a release queued that no human would ever find.
  *
- * The write is also taxonomy-guarded like every other board-label writer (#4285, #6054): GitHub's
+ * The write is also taxonomy-guarded like every other board-label writer: GitHub's
  * label POST creates what it cannot find, so on a repo that never bootstrapped its taxonomy an
  * unguarded write mints `status:awaiting-release` with a random colour and no description.
  */
@@ -104,7 +104,7 @@ export const runRelease = (
 		if (issue === null) return emit("no-issue", shipped.key, null);
 
 		// Guarded here and not earlier: it is the POST below that mints an unknown label, so an `n/a`
-		// or `no-issue` run — which posts nothing — owes the taxonomy no read (`plan flip`, #4285).
+		// or `no-issue` run — which posts nothing — owes the taxonomy no read (`plan flip` too).
 		const taxonomy = yield* listLabels(repo);
 		if (taxonomy._tag === "Failure") {
 			return refuse(
@@ -116,7 +116,7 @@ export const runRelease = (
 		if (!taxonomy.value.includes(AWAITING_RELEASE)) {
 			return refuse(
 				LABEL_ABSENT,
-				`${VERB}: label "${AWAITING_RELEASE}" is absent from ${repo}'s taxonomy — refusing to create it (#4285). A real dark ship is not queued; run \`fabrika status bootstrap label-taxonomy\` and re-run.`,
+				`${VERB}: label "${AWAITING_RELEASE}" is absent from ${repo}'s taxonomy — refusing to create it. A real dark ship is not queued; run \`fabrika status bootstrap label-taxonomy\` and re-run.`,
 				diagnostics,
 			);
 		}

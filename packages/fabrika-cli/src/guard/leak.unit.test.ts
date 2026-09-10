@@ -1,6 +1,6 @@
 /**
  * The leak gate's BLOCK/ALLOW matrix, ported from the v1 CLI's `leak-guard.unit.test.ts` and
- * `path-matcher.unit.test.ts` (#173, #3070, #3401, #3475, #4496).
+ * `path-matcher.unit.test.ts`.
  *
  * Every literal below is a *shape*, not anyone's path — this file names the forbidden forms because
  * its subject is the rule, which is why it sits in `DOC_SELF_EXEMPT`.
@@ -22,7 +22,7 @@ describe("findLeaks — blocks a real machine-local path in a shared artifact", 
 		expect(flags("guide.md", "logs under ~/.agent/runs")).toBe(true);
 	});
 
-	// #3475: the carve-out is the two public config FILES, never the directory tree.
+	// The carve-out is the two public config FILES, never the directory tree.
 	it("blocks a ~/.claude directory-internal path in a .md", () => {
 		expect(flags("guide.md", "see ~/.claude/projects/x/memory.md")).toBe(true);
 	});
@@ -35,14 +35,14 @@ describe("findLeaks — blocks a real machine-local path in a shared artifact", 
 		expect(flags("guide.md", "notes in /vault/daily/2026-01-01.md")).toBe(true);
 	});
 
-	it("blocks a leak inside a .decisions/ file whatever its extension", () => {
+	it("blocks a leak inside a decision-record file whatever its extension", () => {
 		expect(flags(".decisions/0001-x.txt", "recorded at /Users/bob/x")).toBe(true);
 	});
 });
 
 describe("findLeaks — leaves legitimate content alone", () => {
 	it("allows repo-relative paths in a .md", () => {
-		expect(flags("guide.md", "run apps/web/worker/index.ts and packages/fabrika-cli/src")).toBe(
+		expect(flags("guide.md", "run apps/site/worker/index.ts and packages/fabrika-cli/src")).toBe(
 			false,
 		);
 	});

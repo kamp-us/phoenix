@@ -15,9 +15,10 @@ const PULL_RECORD = {
 	comments: 0,
 	draft: false,
 	merged: false,
+	mergeCommitSha: null,
 	baseRef: "main",
 	autoMerge: false,
-	authorLogin: "usirin",
+	authorLogin: "an-author",
 	assignees: [],
 	updatedAt: "2026-08-08T00:00:00Z",
 };

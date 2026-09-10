@@ -8,6 +8,7 @@ import type {Cmd, Machine, Sub} from "@demlik/tea";
 import {type Effect, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
+import type {SubFailurePolicy} from "../sub-failure.ts";
 
 // Type-only brand: a plain string at runtime, a distinct type to the checker (`.patterns/effect-schema-validation.md`).
 export const ProgramId = Schema.String.pipe(Schema.brand("tuval/ProgramId"));
@@ -26,6 +27,14 @@ export interface InPort<T = unknown> {
 	readonly direction: "in";
 	readonly accepts: (payload: unknown) => payload is T;
 	readonly bound: PortBound;
+	/**
+	 * The predicate an answer to this port must fit, present only on a port that answers its caller
+	 * — `port.request(In, Out)` in the authoring layer (#8716 R17.1). A request port arrives like any
+	 * other in-port, so it is one field here rather than a fourth `PortSchema` member every
+	 * `direction === "in"` reader would have to learn; its absence is what "this port answers
+	 * nothing" means, and an `ask` against such a port is refused (#8756).
+	 */
+	readonly answers?: (payload: unknown) => boolean;
 }
 
 export interface OutPort<T = unknown> {
@@ -74,9 +83,19 @@ export type HostSubs<M, U extends Sub, E, R> = {
  */
 export type Receiver<M> = (payload: never) => M;
 
-export type RendererKind = "host-native" | "host-declarative" | "isolated-frame";
+export type RendererKind = "host-native" | "host-declarative" | "isolated-frame" | "module";
 
-/** A reference only. Rendering is not this epic's; the kernel stores the reference and reports it. */
+/**
+ * A reference only. Rendering is not this epic's; the kernel stores the reference and reports it.
+ *
+ * For every kind but one, `ref` is a name the page's own table answers to. For `kind: "module"`,
+ * `ref` is a module specifier the page loads (ADR 0359): a bare package entry such as
+ * `@csirin/tuval-calc/window`, resolved from the app root the way any import there is. The module's
+ * `default` export is the renderer, minted with `windowRenderer("module", …)`, and its `admits`
+ * export is the predicate over the state that renderer reads (ADR 0358). A row written by a package
+ * installed with `pnpm add` is then whole on its own: the kernel half runs from this row, and the
+ * page finds the window half by the same string, with no table edit in the app.
+ */
 export interface RendererRef {
 	readonly kind: RendererKind;
 	readonly ref: string;
@@ -112,10 +131,27 @@ export interface CapabilityRequest {
 	readonly detail?: string;
 }
 
-/** Where the program is placed. `local` is the only host today; the host chooses placement. */
+/**
+ * Where the program is placed. `local` means the Node kernel runs it, and it is the only host
+ * anything runs on today; `browser` is named so a transport can refuse it (#7556) rather than skip
+ * it silently, and nothing spawns one until the browser tier lands.
+ */
 export interface Placement {
-	readonly host: "local";
+	readonly host: "local" | "browser";
 }
+
+/**
+ * The core a row carries: Demlik's `Machine` widened by ADR 0346's Sub-failure policy. The policy's
+ * type lives in `src/sub-failure.ts`, owned by neither slice, so a row declaring `subFailure` still
+ * imports nothing from the host that reads it.
+ */
+export type ProgramCore<
+	S,
+	M extends {readonly type: string},
+	C extends Cmd,
+	U extends Sub,
+	Ctx,
+> = Machine<S, M, C, U, Ctx> & {readonly subFailure?: SubFailurePolicy<M, U>};
 
 export interface Program<
 	S,
@@ -127,8 +163,10 @@ export interface Program<
 	R,
 > {
 	readonly id: ProgramId;
+	/** What a surface calls this program. Absent means `identity.program` — read it through `programLabel`. */
+	readonly label?: string;
 	/** Private: read by the host that runs the program and by no other process. */
-	readonly core: Machine<S, M, C, U, Ctx>;
+	readonly core: ProgramCore<S, M, C, U, Ctx>;
 	/** Public: the only thing another process may see of this program. */
 	readonly ports: Readonly<Record<string, PortSchema>>;
 	/**
@@ -146,8 +184,79 @@ export interface Program<
 	readonly handlers: HostHandlers<M, C, E, R>;
 	/** Effect-valued Sub handlers, one per Sub the core subscribes to. A row with none omits it. */
 	readonly subs?: HostSubs<M, U, E, R>;
+	/**
+	 * What a spawner dispatches into a process of this program that came back from a checkpoint.
+	 *
+	 * Pure and total: a state with nothing to resume answers with an empty list. It exists because
+	 * Demlik refuses a rehydrating `init` that emits Cmds (`@demlik/tea` 0.12 `runtime-types.ts`),
+	 * so the last step of a restore has to be a Msg someone sends after the spawn — and before this
+	 * field the only senders were tests, which left every restored session holding a live id and no
+	 * transport (#7877). Both spawners read it: `src/launch/` for a graph node whose checkpoint
+	 * existed, and `src/durability/restore.ts` for one the graph does not plan. The kernel never
+	 * reads what the Msgs mean.
+	 */
+	readonly resume?: (state: S) => ReadonlyArray<M>;
+	/**
+	 * What the kernel dispatches into every live process of this program when the config is re-read
+	 * and this row's replacement carries different settings (#7509 ruling 3).
+	 *
+	 * Read off the row a process is *running under*, and handed the reloaded row of the same id —
+	 * so a row that wants to diff its own settings has to publish them on itself, as
+	 * `claudeSession` publishes `settings` (`../claude/program.ts`). Pure and total: a row that
+	 * applies nothing live answers with an empty list, and the kernel never reads what the Msgs
+	 * mean. A row the reloaded config dropped is never asked, so its processes keep running under
+	 * the row they were spawned from.
+	 */
+	readonly configChanged?: (next: AnyProgram) => ReadonlyArray<M>;
+	/**
+	 * Whether this program could restore the raw checkpoint durability loaded for it — the same
+	 * verdict its `init` reaches, asked before `init` runs.
+	 *
+	 * `false` means the process boots on its own refusal, and durability holds the bytes for it: a
+	 * snapshot this refuses is never written over, so it stays on disk to be read and re-refused on
+	 * every later boot (`src/durability/Checkpoints.ts`, #8112). Without it the refusal was
+	 * one-shot — the state carrying it was saved straight back over the checkpoint it refused, and
+	 * the next boot restored that state with no failure on it. A row that omits the field restores
+	 * whatever loads, which is every program with no parse of its own.
+	 */
+	readonly restorable?: (raw: unknown) => boolean;
+	/**
+	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
+	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
+	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
+	 * (`src/host/actor.ts`, #8170). A state this refuses is one no restore ever reads back, which
+	 * is why the skipped write is not owed: a half-written reply must never come back as the reply.
+	 *
+	 * A row that omits it checkpoints every state, which is every program with nothing in flight.
+	 */
+	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
+	/**
+	 * The service keys this program's args are read through, one per arg the author declared, keyed
+	 * by the arg's name (#8716 R15.1). Data only: an arg's value never rides the row — it rides the
+	 * row's existing `R`, provided by the Layer the config call builds when it fills the args
+	 * (`src/authoring/args.ts`). A row whose program declares none omits the field.
+	 */
+	readonly args?: Readonly<Record<string, string>>;
+	/**
+	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only
+	 * `true` or absent: a row that never asked for keys is never sent one, so a keystroke landing on
+	 * a window outside its composer cannot reach a program with no cell for it (#7973). The row
+	 * carries the declaration and nothing else, as it does for `renderer` — what a forwarded key
+	 * becomes is the program's own Msg, and the shell never reads it.
+	 */
+	readonly takesKeys?: true;
 	readonly renderer?: RendererRef;
+	/**
+	 * The two desk-level renderers, both optional: what this program shows in the desk inspector,
+	 * and the segments it contributes to the middle of the status bar while one of its windows is
+	 * focused (#7500 rulings 4 and 5). A row declaring neither is a whole row — most programs draw
+	 * only in their window, which is the only surface they own. The shapes these resolve to are
+	 * `InspectorRenderer` and `StatusRenderer` (`src/shell/desk/renderer.ts`); this row carries the
+	 * reference and nothing else, as it does for the window renderer.
+	 */
+	readonly inspector?: RendererRef;
+	readonly status?: RendererRef;
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }
@@ -158,6 +267,16 @@ export interface Program<
  */
 export type AnyProgram = Program<any, any, any, any, any, any, any>;
 
+/** Does the shell forward a key to a window bound to this program? Declared on the row, or not at all. */
+export const takesForwardedKeys = (row: AnyProgram): boolean => row.takesKeys === true;
+
 /** The row's provenance as a refusal names it: `package/program@version (digest)`. */
 export const provenanceOf = (row: AnyProgram): string =>
 	`${row.identity.package}/${row.identity.program}@${row.identity.version} (${row.identity.digest})`;
+
+/**
+ * The human-readable name a program shows under. Optional on the row and defaulted from
+ * `identity.program`, so the picker (#7557) can list a row "by id and label" without every author
+ * writing one out.
+ */
+export const programLabel = (row: AnyProgram): string => row.label ?? row.identity.program;

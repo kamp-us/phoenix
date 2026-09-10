@@ -93,7 +93,7 @@ citation-superseded\tterms\tCore / shape\tworker\tcites 0044, status "superseded
 	/**
 	 * The fixture's `LANGUAGE.md` is present and holds no table, so `--register both` — the verb's own
 	 * default — reds on zero scope over it while `--register terms` answers. Present-and-empty and
-	 * absent are different facts and never share a code (ADR 0092).
+	 * absent are different facts and never share a code.
 	 */
 	it("reds on the present-and-empty LANGUAGE register under --register both", async () => {
 		const out = await run(

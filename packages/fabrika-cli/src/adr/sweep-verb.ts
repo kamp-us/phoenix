@@ -3,7 +3,7 @@
  *
  * **All three outcomes are answers and all three exit 0.** A caller must never read its own
  * shortlist as a failed run, which is precisely the mistake v1's `adr-sweep` makes by exiting 1 on
- * the one case it was asked to produce; and `--json` goes to **stdout**, not stderr (#4723).
+ * the one case it was asked to produce; and `--json` goes to **stdout**, not stderr.
  *
  * A readable-but-empty `--dir` is the rarity floor at its limit, so it answers `indeterminate` and
  * needs no case of its own; only an unreadable corpus is UNKNOWN.

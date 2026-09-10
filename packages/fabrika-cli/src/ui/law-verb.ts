@@ -36,7 +36,7 @@ export const runLaw = (): Effect.Effect<
 		if (manifest._tag === "Absent") {
 			return refuse(
 				NO_MANIFEST,
-				`${VERB}: no design manifest at ${MANIFEST_PATH} — run /fabrika (#4952).`,
+				`${VERB}: no design manifest at ${MANIFEST_PATH} — run /fabrika: front-door's bootstrap drafts one.`,
 			);
 		}
 

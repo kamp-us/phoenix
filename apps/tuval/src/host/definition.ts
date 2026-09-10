@@ -23,6 +23,11 @@ import type {
 	UpdateForm,
 } from "@demlik/tea";
 import type {Effect, Scope} from "effect";
+import type {SubFailurePolicy} from "../sub-failure.ts";
+import {ActorNameCollisionError} from "./errors.ts";
+
+/** ADR 0346's failure types live outside both slices (`src/sub-failure.ts`); the host names them here as before. */
+export type {SubFailure, SubFailurePolicy} from "../sub-failure.ts";
 
 /**
  * A Demlik `Machine` minus its Promise-shaped `interpret` and `subscribe` — the pure core plus
@@ -35,6 +40,7 @@ export interface CoreMachine<S, M extends {type: string}, C extends Cmd, U exten
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, M, Ctx>>;
 	readonly identity?: Identity<S, M>;
 	readonly subscriptions?: (state: S) => readonly U[];
+	readonly subFailure?: SubFailurePolicy<M, U>;
 	readonly __form?: UpdateForm;
 }
 
@@ -95,10 +101,26 @@ export type ActorDefinition<
 	I extends InterpretHandlers<M, C, Ctx>,
 	B extends SubscribeHandlers<M, U, Ctx>,
 > = CtxArg<Ctx> & {
+	/**
+	 * The definition's nominal identity, unique per process and never derived from state (ADR
+	 * 0346). Demlik's `tea-effect` will mint a service key from it; in Tuval it is the registry
+	 * row's `ProgramId`. The instance id is the host's and lives in the process table.
+	 */
+	readonly name: string;
 	readonly machine: CoreMachine<S, M, C, U, Ctx>;
 	readonly interpret: I;
 	readonly subscribe: B;
 	readonly store?: Store<S>;
+	/**
+	 * Whether this state is worth a checkpoint, asked at every save site — commit's, boot's and
+	 * stop's. `false` writes nothing, so a run of mid-turn states costs no disk at all and the next
+	 * state the program calls worthy is the flush; the write the flush skipped is never owed, since
+	 * a state answering `false` is one no restore may read back (#8170).
+	 *
+	 * Total and cheap: it runs inside the transition tail on every commit. A definition omitting it
+	 * saves every state, which is what every program did before.
+	 */
+	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly supervision?: Supervision<S, M>;
 	readonly onError?: OnError;
 	/**
@@ -121,6 +143,11 @@ export type DefinitionServices<
 	D extends {readonly interpret: unknown; readonly subscribe: unknown},
 > = ServicesOf<D["interpret"]> | ServicesOf<D["subscribe"]>;
 
+const definedNames = new Set<string>();
+
+/** A bundler re-evaluating this module is not a second definition; Demlik's `definePort` reads the same escape. */
+const underHmr = (): boolean => (import.meta as {hot?: unknown}).hot != null;
+
 export const defineActor = <
 	S,
 	M extends {type: string},
@@ -131,4 +158,10 @@ export const defineActor = <
 	const B extends SubscribeHandlers<M, U, Ctx>,
 >(
 	definition: ActorDefinition<S, M, C, U, Ctx, I, B>,
-): ActorDefinition<S, M, C, U, Ctx, I, B> => definition;
+): ActorDefinition<S, M, C, U, Ctx, I, B> => {
+	if (!underHmr() && definedNames.has(definition.name)) {
+		throw new ActorNameCollisionError({actorName: definition.name});
+	}
+	definedNames.add(definition.name);
+	return definition;
+};

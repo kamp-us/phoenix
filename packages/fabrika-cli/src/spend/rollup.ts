@@ -1,5 +1,5 @@
 /**
- * The spend roll-up — what fabrika's runs cost, summed out of the durable ledger (#5010).
+ * The spend roll-up — what fabrika's runs cost, summed out of the durable ledger.
  *
  * Pure and total: it takes what {@link readSpendLedger} already produced and a resolved window, and
  * returns the answer. Nothing here reads a file, spawns anything, or re-parses a transcript — the
@@ -14,7 +14,7 @@ import type {LedgerRead, LedgerRow, LedgerSkips} from "./ledger.ts";
 
 /** The four figures a roll-up answers with, plus how many runs stand behind them. */
 export interface SpendTotals {
-	/** Σ `billed` — the headline (ADR 0112 §2). */
+	/** Σ `billed` — the headline. */
 	readonly billed: number;
 	/** Σ `exCacheRead` — the cross-run comparator that does not re-count the cached prefix. */
 	readonly exCacheRead: number;

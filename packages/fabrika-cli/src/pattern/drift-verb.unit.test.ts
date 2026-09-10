@@ -16,12 +16,12 @@ const MOVED = "aa4712e0af2d9b6c35417e83c5b6d9a2f4e0c1b7";
  */
 const DOC = `# Worker queue retry
 
-The shape lives in \`packages/fabrika-cli/src/bin.ts\` and [the router](apps/web/worker/router.ts),
+The shape lives in \`packages/fabrika-cli/src/bin.ts\` and [the router](services/api/router.ts),
 alongside \`packages/effect/src/Effect.ts\`, \`packages/fate/src/server/live.ts\` and the bare
 \`retry.ts\`.
 `;
 
-const TOP_LEVEL = "packages\napps\n.patterns\nREADME.md\n";
+const TOP_LEVEL = "packages\nservices\n.patterns\nREADME.md\n";
 
 type Script = ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>;
 
@@ -38,7 +38,7 @@ const shell = (overrides: Script = []) =>
 		[/^git ls-tree --name-only \w+:$/, okOut(TOP_LEVEL)],
 		[
 			/^git ls-tree --name-only \w+ --/,
-			okOut("packages/fabrika-cli/src/bin.ts\napps/web/worker/router.ts\n"),
+			okOut("packages/fabrika-cli/src/bin.ts\nservices/api/router.ts\n"),
 		],
 		[/^git show \w+:/, okOut(DOC)],
 		[/^git log -1/, okOut(`${ANCHOR}\t2026-07-01\n`)],

@@ -3,8 +3,8 @@
  *
  * The command is the function's own parameter, so the outcomes are handed to it directly rather than
  * scripted through `fakeShell`, which maps every answer onto a child that exits — it has no way to
- * express the one this file is about, a run killed at its timeout with stderr already captured
- * (#7408). The spawner is still provided, and it is an assertion in its own right: a recovery round
+ * express the one this file is about, a run killed at its timeout with stderr already captured.
+ * The spawner is still provided, and it is an assertion in its own right: a recovery round
  * spawns `git worktree prune`, so a scripted-empty `calls` array is the proof no round ran.
  */
 import {Effect} from "effect";

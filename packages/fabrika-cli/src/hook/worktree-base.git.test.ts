@@ -1,6 +1,6 @@
 /**
  * `hook worktree-create`'s base resolution under **parallel spawns**, driven against real git in a
- * throwaway clone (#6081).
+ * throwaway clone.
  *
  * The claim under test is not one about argv — it is one about what git does when several spawns
  * fetch the same clone at once, so it is run rather than reasoned about (CLAUDE.md: ground platform
@@ -10,7 +10,7 @@
  * pairs came back empty; point {@link fetchBaseArgs} back at `FETCH_HEAD` and this file goes red.
  *
  * The per-spawn ref that fixed it left a second, rarer race on the directory those names *shared*,
- * which surfaced here as an intermittent `cannot lock ref` (#7428). That one is settled by where
+ * which surfaced here as an intermittent `cannot lock ref`. That one is settled by where
  * {@link baseRefFor} puts its leaf, so it is pinned in the last describe rather than raced for: the
  * observed rate was one loss in 320 pairs, far below what this file's load would catch reliably.
  *
@@ -24,7 +24,7 @@
  * own — a sibling's null-oid `worktrees/<name>/HEAD` placeholder breaking a concurrent fetch's
  * connectivity check, and `failed to read …/commondir` between two adds — so including it would make
  * this file red for reasons it is not judging. Those two are `worktree-concurrency.git.test.ts`'s
- * subject (#7331), over the same {@link openClone} fixture.
+ * subject, over the same {@link openClone} fixture.
  */
 import {execFile, execFileSync} from "node:child_process";
 import {existsSync} from "node:fs";
@@ -109,7 +109,7 @@ describe("the per-spawn base ref", () => {
 		}
 	});
 
-	// #7428: a per-spawn *name* still left a shared *directory* for `update-ref -d` to rmdir out from
+	// A per-spawn *name* still left a shared *directory* for `update-ref -d` to rmdir out from
 	// under a sibling's in-flight fetch. What makes the leaf safe is which component it sits in, so
 	// that is what is pinned — a future nesting that reintroduces the race reds here.
 	it("puts its leaf directly in `refs/fabrika/`, the deepest directory `update-ref -d` cannot prune", () => {

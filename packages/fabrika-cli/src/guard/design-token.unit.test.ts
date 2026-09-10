@@ -137,7 +137,7 @@ describe("the CSS parsers", () => {
 		expect(parseHexLiterals(`a { color: ${hex}; }`)).toEqual([{value: hex, line: 1}]);
 	});
 
-	// 1px and 2px are the grid's sanctioned hairline/nudge values (ADR 0162 value #1).
+	// 1px and 2px are the grid's sanctioned hairline/nudge values.
 	it("returns only px values over 2px", () => {
 		expect(parseRawPxOverTwo("a { a: 1px; b: 2px; c: 3px; }")).toEqual([{value: "3px", line: 1}]);
 	});

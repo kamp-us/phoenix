@@ -43,7 +43,7 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 const labelsOk = [LABELS, labelSet("status:needs-triage", "type:bug", "p0")] as const;
 
-/** #7213's reported query, whose twelve AND-joined terms matched nothing. */
+/** The reported query whose twelve AND-joined terms matched nothing. */
 const LONG_QUERY =
 	"review render seed authenticated notification rows state suffix reserved unimplemented exit capture";
 

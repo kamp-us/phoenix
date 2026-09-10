@@ -2,10 +2,10 @@
  * The five ports, end to end, over a real compiled graph: one `aiAgentProgram` node wired to a
  * stand-in window node, launched by the kernel, with every assertion made on what crossed a port.
  *
- * Nothing here reaches into the agent process's state. The point of the interface is that a window
- * can drive any agent knowing only the eight port keys, so the test drives it the same way — the
- * one call that is not a port is `start`, which the interface deliberately does not carry (the
- * shell opens a session; the five ports are what the conversation runs on).
+ * The point of the interface is that a window can drive any agent knowing only the eight port keys,
+ * so the test drives it the same way. The one read outside a port is the session's own phase, which
+ * is how a caller waits for the open the spawn started (#7925) — nothing dispatches `start`, and
+ * the interface deliberately does not carry it.
  *
  * It sits in the unit tier because it stands nothing up outside this process: the tiers split on
  * that, and the scripted layer talks to nothing.
@@ -18,12 +18,14 @@ import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {launch} from "../launch/launch.ts";
 import {compile} from "../ports/compile.ts";
+import {PayloadRejected} from "../ports/errors.ts";
 import {type Graph, NodeId} from "../ports/graph.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {open} from "../ports/wiring.ts";
 import {Processes} from "../process/Processes.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {isAiAgentSessionState} from "./core/index.ts";
 import {aiAgentPortNames} from "./handlers/index.ts";
 import type {
 	ModePayload,
@@ -74,13 +76,13 @@ const windowProgram: AnyProgram = {
 	}),
 	ports: {
 		[aiAgentPortNames.transcript]: transcript.inbound(),
-		[aiAgentPortNames.pageRequest]: transcriptPage.outbound(),
-		[aiAgentPortNames.pageReply]: transcriptPage.inbound(),
+		[aiAgentPortNames.pageRequest]: transcriptPage.ends.request.outbound(),
+		[aiAgentPortNames.pageReply]: transcriptPage.ends.page.inbound(),
 		[aiAgentPortNames.prompt]: prompt.outbound(),
-		[aiAgentPortNames.permissionPending]: permission.inbound(),
-		[aiAgentPortNames.permissionDecision]: permission.outbound(),
-		[aiAgentPortNames.modeState]: mode.inbound(),
-		[aiAgentPortNames.modeSet]: mode.outbound(),
+		[aiAgentPortNames.permissionPending]: permission.ends.pending.inbound(),
+		[aiAgentPortNames.permissionDecision]: permission.ends.decision.outbound(),
+		[aiAgentPortNames.modeState]: mode.ends.state.inbound(),
+		[aiAgentPortNames.modeSet]: mode.ends.set.outbound(),
 	},
 	receive: {
 		[aiAgentPortNames.transcript]: took(aiAgentPortNames.transcript),
@@ -158,15 +160,24 @@ const agentRow = (script: AgentScript) =>
 		config: {cwd: "/work"},
 	});
 
-const eventually = (check: () => boolean) =>
+/**
+ * A wait that names what did not happen. Falling through on a spent budget leaves the body running
+ * against a state that never arrived, and the failure then surfaces as a `TypeError` several lines
+ * later instead of as the condition (#7925).
+ */
+const eventually = (what: string, check: () => boolean) =>
 	Effect.gen(function* () {
 		for (let i = 0; i < 400 && !check(); i++) yield* Effect.sleep("5 millis");
+		assert.isTrue(check(), `timed out after 2s waiting for ${what}`);
 	});
 
 const onGraph = <A, E>(
 	script: AgentScript,
 	body: (
-		agent: {readonly dispatch: (msg: unknown) => Effect.Effect<void, unknown>},
+		agent: {
+			readonly dispatch: (msg: unknown) => Effect.Effect<void, unknown>;
+			readonly state: () => unknown;
+		},
 		window: {readonly say: (port: string, payload: unknown) => Effect.Effect<void, unknown>},
 		seen: () => ReadonlyArray<Arrival>,
 	) => Effect.Effect<A, E, Scope.Scope>,
@@ -182,7 +193,7 @@ const onGraph = <A, E>(
 		const agentHandle = agent!.handle;
 		const windowHandle = window!.handle;
 		return yield* body(
-			{dispatch: (msg) => agentHandle.dispatch(msg as never)},
+			{dispatch: (msg) => agentHandle.dispatch(msg as never), state: () => agentHandle.getState()},
 			{
 				say: (port, payload) => windowHandle.dispatch({type: "say", port, payload} as never),
 			},
@@ -201,16 +212,24 @@ const onGraph = <A, E>(
 const latest = (seen: ReadonlyArray<Arrival>, port: string): unknown =>
 	[...seen].reverse().find((arrival) => arrival.port === port)?.payload;
 
-const started = (agent: {readonly dispatch: (msg: unknown) => Effect.Effect<void, unknown>}) =>
-	agent.dispatch({type: "start", cwd: "/work", resume: null});
+/** Spawning the row is what opens the session (#7925), so a caller only waits for it. */
+const started = (agent: {readonly state: () => unknown}) =>
+	eventually("the spawned session to reach ready", () => {
+		const state = agent.state();
+		return isAiAgentSessionState(state) && state.phase === "ready";
+	});
 
 describe("the AI agent interface over a compiled graph", () => {
 	it.live("carries a prompt in and the windowed transcript out", () =>
 		onGraph(plainReply, (agent, window, seen) =>
 			Effect.gen(function* () {
 				yield* started(agent);
-				yield* window.say(aiAgentPortNames.prompt, {text: "hello", key: "k1"});
-				yield* eventually(() => {
+				yield* window.say(aiAgentPortNames.prompt, {
+					text: "hello",
+					key: "k1",
+					timestamp: Date.now(),
+				});
+				yield* eventually("both turn items on the transcript port", () => {
 					const payload = latest(seen(), aiAgentPortNames.transcript) as
 						| TranscriptPayload
 						| undefined;
@@ -235,7 +254,10 @@ describe("the AI agent interface over a compiled graph", () => {
 					before: null,
 					limit: 3,
 				});
-				yield* eventually(() => latest(seen(), aiAgentPortNames.pageReply) !== undefined);
+				yield* eventually(
+					"a page on the pageReply port",
+					() => latest(seen(), aiAgentPortNames.pageReply) !== undefined,
+				);
 				const page = latest(seen(), aiAgentPortNames.pageReply) as TranscriptPagePayload;
 				assert.strictEqual(page.kind, "page");
 				if (page.kind !== "page") return;
@@ -251,14 +273,20 @@ describe("the AI agent interface over a compiled graph", () => {
 		onGraph(permissionTurn, (agent, window, seen) =>
 			Effect.gen(function* () {
 				yield* started(agent);
-				yield* window.say(aiAgentPortNames.prompt, {text: "delete it", key: "k1"});
+				yield* window.say(aiAgentPortNames.prompt, {
+					text: "delete it",
+					key: "k1",
+					timestamp: Date.now(),
+				});
 				const pending = () =>
 					latest(seen(), aiAgentPortNames.permissionPending) as PermissionPayload | undefined;
 				const keys = () => {
 					const payload = pending();
 					return payload?.kind === "pending" ? Object.keys(payload.requests) : null;
 				};
-				yield* eventually(() => (keys() ?? []).includes(PERMISSION_REQUEST));
+				yield* eventually("the permission card to be raised", () =>
+					(keys() ?? []).includes(PERMISSION_REQUEST),
+				);
 				assert.deepStrictEqual(keys(), [PERMISSION_REQUEST]);
 
 				yield* window.say(aiAgentPortNames.permissionDecision, {
@@ -266,7 +294,7 @@ describe("the AI agent interface over a compiled graph", () => {
 					request: PERMISSION_REQUEST,
 					decision: "allow-once",
 				});
-				yield* eventually(() => keys()?.length === 0);
+				yield* eventually("the answered card to close", () => keys()?.length === 0);
 				assert.deepStrictEqual(keys(), []);
 			}),
 		),
@@ -280,13 +308,95 @@ describe("the AI agent interface over a compiled graph", () => {
 					const payload = latest(seen(), aiAgentPortNames.modeState) as ModePayload | undefined;
 					return payload?.kind === "state" ? payload.current : null;
 				};
-				yield* eventually(() => current() === modes.current);
+				yield* eventually("the mode list on the modeState port", () => current() === modes.current);
 				assert.strictEqual(current(), modes.current);
 
 				yield* window.say(aiAgentPortNames.modeSet, {kind: "set", mode: modeBrand("plan")});
-				yield* eventually(() => current() === modeBrand("plan"));
+				yield* eventually("the set mode to come back", () => current() === modeBrand("plan"));
 				assert.strictEqual(current(), modeBrand("plan"));
 			}),
 		),
+	);
+});
+
+/**
+ * The four payloads the row's in-ports refuse at the send (#7750).
+ *
+ * `program.ts`'s receivers are pure translations with nothing left to refuse: each in-port declares
+ * one direction's predicate, so the kernel's `accepts` check turns an unstamped prompt (#7991) and
+ * a wrong-direction payload (#8235) away inside the caller's own `emit`. The refusal names the port
+ * it crossed, and the window renders a failure by that port's kind (ruling 3, #7570) — so an end
+ * that admitted the whole union again would deliver a mode-set as a page request with nothing red.
+ */
+describe("what the agent row's in-ports refuse at the send", () => {
+	const pageReply = {
+		kind: "page",
+		items: [],
+		omitted: {items: 0, bytes: 0, reason: "none"},
+		next: null,
+	};
+	const pageRequest = {kind: "request", before: null, limit: 3};
+	const pendingSet = {kind: "pending", requests: {}};
+	const answer = {kind: "decision", request: PERMISSION_REQUEST, decision: "allow-once"};
+	const modeState = {kind: "state", current: modes.current, available: modes.available};
+	const modeSet = {kind: "set", mode: modeBrand("plan")};
+
+	const refusals = [
+		{
+			sends: "a prompt carrying no idempotency key",
+			port: aiAgentPortNames.prompt,
+			kind: prompt.kind,
+			wrong: {text: "hello", timestamp: 1},
+			right: {text: "hello", key: "k1", timestamp: 1},
+		},
+		{
+			sends: "a page at the end that takes requests",
+			port: aiAgentPortNames.pageRequest,
+			kind: transcriptPage.kind,
+			wrong: pageReply,
+			right: pageRequest,
+		},
+		{
+			sends: "a pending set at the end that takes answers",
+			port: aiAgentPortNames.permissionDecision,
+			kind: permission.kind,
+			wrong: pendingSet,
+			right: answer,
+		},
+		{
+			sends: "a mode state at the end that takes sets",
+			port: aiAgentPortNames.modeSet,
+			kind: mode.kind,
+			wrong: modeState,
+			right: modeSet,
+		},
+	] as const;
+
+	/** One compiled graph per send, so a refused payload leaves no queue behind for the next case. */
+	const sending = (port: string, payload: unknown) =>
+		Effect.gen(function* () {
+			const wiring = yield* open(yield* compile(graph));
+			return yield* wiring.emit({node: windowNode, port}, payload);
+		}).pipe(Effect.scoped, Effect.provide(Registry.layer([agentRow(plainReply), windowProgram])));
+
+	it.effect.each(refusals)(
+		"refuses $sends, naming the port it crossed",
+		({port, kind, wrong, right}) =>
+			Effect.gen(function* () {
+				const refusal = yield* Effect.flip(sending(port, wrong));
+				if (!(refusal instanceof PayloadRejected)) {
+					return assert.fail(`expected PayloadRejected on ${port}, got ${String(refusal)}`);
+				}
+				assert.deepStrictEqual(
+					{node: refusal.node, program: refusal.program, port: refusal.port, kind: refusal.kind},
+					{node: agentNode, program: AGENT, port, kind},
+				);
+
+				// The same port takes its own direction, so what the case above pinned is the direction
+				// and not a port that refuses everything.
+				assert.deepStrictEqual(yield* sending(port, right), [
+					{to: {node: agentNode, port}, accepted: true},
+				]);
+			}),
 	);
 });

@@ -1,0 +1,438 @@
+[
+	{
+		"type": "system",
+		"subtype": "init",
+		"cwd": "/tmp/tuval-capture",
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"tools": ["Task", "Bash", "CronCreate"],
+		"mcp_servers": [
+			{
+				"name": "plugin:playwright:playwright",
+				"status": "connected"
+			},
+			{
+				"name": "plugin:accessibility:binclusive",
+				"status": "needs-auth"
+			},
+			{
+				"name": "effect-docs",
+				"status": "connected"
+			}
+		],
+		"model": "claude-fable-5-1",
+		"permissionMode": "default",
+		"slash_commands": ["find-skills", "pr-review-canvas", "sound"],
+		"terminal_slash_commands": ["doctor", "color"],
+		"apiKeySource": "none",
+		"claude_code_version": "2.1.259",
+		"output_style": "default",
+		"agents": ["claude", "Explore", "fabrika:builder"],
+		"skills": ["find-skills", "pr-review-canvas", "sound"],
+		"plugins": [
+			{
+				"name": "frontend-design",
+				"path": "/home/user/.claude/plugins/cache/claude-plugins-official/frontend-design/85cce0381e78",
+				"source": "frontend-design@claude-plugins-official"
+			},
+			{
+				"name": "typescript-lsp",
+				"path": "/home/user/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0",
+				"source": "typescript-lsp@claude-plugins-official",
+				"version": "1.0.0"
+			},
+			{
+				"name": "feature-dev",
+				"path": "/home/user/.claude/plugins/cache/claude-plugins-official/feature-dev/85cce0381e78",
+				"source": "feature-dev@claude-plugins-official"
+			}
+		],
+		"capabilities": ["interrupt_receipt_v1", "interrupt_cancel_queued_v1", "msg_lifecycle_v1"],
+		"analytics_disabled": false,
+		"product_feedback_disabled": false,
+		"uuid": "00000000-0000-4000-8000-000000000003",
+		"memory_paths": {
+			"auto": "/home/user/.claude/projects/-tmp-tuval-capture/memory/"
+		},
+		"messaging_socket_path": "/tmp/cc-socks/76672.sock",
+		"fast_mode_state": "off",
+		"fast_mode_disabled_reason": "sdk_opt_in_required"
+	},
+	{
+		"type": "system",
+		"subtype": "status",
+		"status": "requesting",
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"uuid": "00000000-0000-4000-8000-000000000004"
+	},
+	{
+		"type": "rate_limit_event",
+		"rate_limit_info": {
+			"status": "allowed",
+			"resetsAt": 1788733800,
+			"rateLimitType": "five_hour",
+			"overageStatus": "rejected",
+			"overageDisabledReason": "org_level_disabled",
+			"isUsingOverage": false,
+			"unifiedWindows": {
+				"five_hour": {
+					"utilization": 0.29,
+					"resetsAt": 1788733800
+				},
+				"seven_day": {
+					"utilization": 0.58,
+					"resetsAt": 1788969600
+				}
+			}
+		},
+		"uuid": "00000000-0000-4000-8000-000000000005",
+		"session_id": "00000000-0000-4000-8000-000000000002"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "message_start",
+			"message": {
+				"model": "claude-fable-5-1",
+				"id": "msg_00000000000000000006",
+				"type": "message",
+				"role": "assistant",
+				"content": [],
+				"stop_reason": null,
+				"stop_sequence": null,
+				"stop_details": null,
+				"usage": {
+					"input_tokens": 2,
+					"cache_creation_input_tokens": 28015,
+					"cache_read_input_tokens": 0,
+					"cache_creation": {
+						"ephemeral_5m_input_tokens": 0,
+						"ephemeral_1h_input_tokens": 28015
+					},
+					"output_tokens": 1,
+					"service_tier": "standard",
+					"inference_geo": "not_available"
+				},
+				"diagnostics": null
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000007",
+		"ttft_ms": 2541
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_start",
+			"index": 0,
+			"content_block": {
+				"type": "text",
+				"text": ""
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000008"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_delta",
+			"index": 0,
+			"delta": {
+				"type": "text_delta",
+				"text": "h"
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000009"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_delta",
+			"index": 0,
+			"delta": {
+				"type": "text_delta",
+				"text": "ello from"
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000010"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_delta",
+			"index": 0,
+			"delta": {
+				"type": "text_delta",
+				"text": " tu"
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000011"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_delta",
+			"index": 0,
+			"delta": {
+				"type": "text_delta",
+				"text": "val streaming cap"
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000012"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_delta",
+			"index": 0,
+			"delta": {
+				"type": "text_delta",
+				"text": "ture"
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000013"
+	},
+	{
+		"type": "assistant",
+		"message": {
+			"model": "claude-fable-5-1",
+			"id": "msg_00000000000000000006",
+			"type": "message",
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "hello from tuval streaming capture"
+				}
+			],
+			"stop_reason": null,
+			"stop_sequence": null,
+			"stop_details": null,
+			"usage": {
+				"input_tokens": 2,
+				"cache_creation_input_tokens": 28015,
+				"cache_read_input_tokens": 0,
+				"cache_creation": {
+					"ephemeral_5m_input_tokens": 0,
+					"ephemeral_1h_input_tokens": 28015
+				},
+				"output_tokens": 1,
+				"service_tier": "standard",
+				"inference_geo": "not_available"
+			},
+			"diagnostics": null,
+			"context_management": null
+		},
+		"parent_tool_use_id": null,
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"uuid": "00000000-0000-4000-8000-000000000014",
+		"timestamp": "2026-09-06T18:29:25.477Z",
+		"request_id": "req_00000000000000000015"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "content_block_stop",
+			"index": 0
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000016"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "message_delta",
+			"delta": {
+				"stop_reason": "end_turn",
+				"stop_sequence": null,
+				"stop_details": null
+			},
+			"usage": {
+				"input_tokens": 2,
+				"cache_creation_input_tokens": 28015,
+				"cache_read_input_tokens": 0,
+				"output_tokens": 13,
+				"output_tokens_details": {
+					"thinking_tokens": 0
+				},
+				"iterations": [
+					{
+						"input_tokens": 2,
+						"output_tokens": 13,
+						"cache_read_input_tokens": 0,
+						"cache_creation_input_tokens": 28015,
+						"cache_creation": {
+							"ephemeral_5m_input_tokens": 0,
+							"ephemeral_1h_input_tokens": 28015
+						},
+						"type": "message"
+					}
+				]
+			},
+			"context_management": {
+				"applied_edits": []
+			}
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000017"
+	},
+	{
+		"type": "stream_event",
+		"event": {
+			"type": "message_stop"
+		},
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"parent_tool_use_id": null,
+		"uuid": "00000000-0000-4000-8000-000000000018"
+	},
+	{
+		"type": "rate_limit_event",
+		"rate_limit_info": {
+			"status": "allowed",
+			"resetsAt": 1788733800,
+			"rateLimitType": "five_hour",
+			"overageStatus": "rejected",
+			"overageDisabledReason": "org_level_disabled",
+			"isUsingOverage": false,
+			"unifiedWindows": {
+				"five_hour": {
+					"utilization": 0.29,
+					"resetsAt": 1788733800
+				},
+				"seven_day": {
+					"utilization": 0.58,
+					"resetsAt": 1788969600
+				},
+				"seven_day_overage_included": {
+					"utilization": 0.31,
+					"resetsAt": 1788969600
+				}
+			}
+		},
+		"uuid": "00000000-0000-4000-8000-000000000019",
+		"session_id": "00000000-0000-4000-8000-000000000002"
+	},
+	{
+		"duration_api_ms": 3686,
+		"stop_reason": "end_turn",
+		"session_id": "00000000-0000-4000-8000-000000000002",
+		"total_cost_usd": 0.561943,
+		"usage": {
+			"input_tokens": 2,
+			"cache_creation_input_tokens": 28015,
+			"cache_read_input_tokens": 0,
+			"output_tokens": 13,
+			"output_tokens_details": {
+				"thinking_tokens": 0
+			},
+			"server_tool_use": {
+				"web_search_requests": 0,
+				"web_fetch_requests": 0
+			},
+			"service_tier": "standard",
+			"cache_creation": {
+				"ephemeral_1h_input_tokens": 28015,
+				"ephemeral_5m_input_tokens": 0
+			},
+			"inference_geo": "not_available",
+			"iterations": [
+				{
+					"input_tokens": 2,
+					"output_tokens": 13,
+					"cache_read_input_tokens": 0,
+					"cache_creation_input_tokens": 28015,
+					"cache_creation": {
+						"ephemeral_5m_input_tokens": 0,
+						"ephemeral_1h_input_tokens": 28015
+					},
+					"type": "message"
+				}
+			],
+			"speed": "standard"
+		},
+		"modelUsage": {
+			"claude-haiku-4-5-20251001": {
+				"inputTokens": 908,
+				"outputTokens": 13,
+				"cacheReadInputTokens": 0,
+				"cacheCreationInputTokens": 0,
+				"webSearchRequests": 0,
+				"costUSD": 0.0009729999999999999,
+				"contextWindow": 200000,
+				"maxOutputTokens": 32000,
+				"thinkingTokens": 0,
+				"canonicalModel": "claude-haiku-4-5",
+				"provider": "firstParty",
+				"costBasis": "list"
+			},
+			"claude-fable-5-1": {
+				"inputTokens": 2,
+				"outputTokens": 13,
+				"cacheReadInputTokens": 0,
+				"cacheCreationInputTokens": 28015,
+				"webSearchRequests": 0,
+				"costUSD": 0.56097,
+				"contextWindow": 1000000,
+				"maxOutputTokens": 64000,
+				"thinkingTokens": 0,
+				"canonicalModel": "claude-fable-5-1",
+				"provider": "firstParty",
+				"costBasis": "list"
+			}
+		},
+		"permission_denials": [],
+		"terminal_reason": "completed",
+		"fast_mode_state": "off",
+		"fast_mode_disabled_reason": "sdk_opt_in_required",
+		"subagent_stats": {
+			"spawned": 0,
+			"requested": {
+				"background": 0,
+				"foreground": 0,
+				"unset": 0
+			},
+			"started_in_background": 0,
+			"max_depth": 0,
+			"spawned_by_subagents": 0,
+			"completed": 0,
+			"failed": 0,
+			"killed": {
+				"parent": 0,
+				"user": 0,
+				"system": 0
+			},
+			"refused": {
+				"depth_limit": 0,
+				"concurrency_limit": 0,
+				"budget": 0
+			},
+			"by_type": {}
+		},
+		"is_error": false,
+		"num_turns": 1,
+		"subtype": "success",
+		"api_error_status": null,
+		"result": "hello from tuval streaming capture",
+		"ttft_ms": 2816,
+		"type": "result",
+		"duration_ms": 2889,
+		"uuid": "00000000-0000-4000-8000-000000000020",
+		"ttft_stream_ms": 2555,
+		"time_to_request_ms": 14,
+		"queued_turn_count": 0
+	}
+]

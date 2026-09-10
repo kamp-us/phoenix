@@ -2,32 +2,38 @@
  * `lane report` — a shell records its own terminal token, mapped to one operator event in code.
  *
  * The channel between a shell and the ledger used to be prose the operator re-read out of a
- * transcript (#5736); this verb closes it: token in, [`report.ts`](report.ts)'s map picks the
- * event, and the append rides `transition`'s exact path — validate against the folded state FIRST,
- * append only what the machine accepts, refuse everything else with the log left byte-identical.
- * The optional `--pr`/`--comment` refs land on the event line itself, so an event names its
- * evidence at the moment the shell knows the URL (#5712). One more field lands there and it is the
- * prover's rather than the caller's: `deferred`, relayed off the proof's own answer and never
- * recomposed here, says this `PASS` was proven over a set short the namespaces named — the routed
- * `review-ui` an epic child hands to its epic's tail, which nothing else in the ledger records
- * (#7041). `partial` is the second of that kind and rides the ship stage's `DONE`: it says whether
- * the merge behind this terminal carried `Part of #N` and left the issue open, which is the whole
- * input to the machine's `merge:partial` arm (ADR 0343). It rides at both polarities — a closing
- * merge records `partial: false` — so the line says the closure was read rather than leaving a
- * later sweep to read it again (ADR 0351). `landed` is that read's evidence and rides beside it:
- * the merged PRs the closure judged, so a recorded `false` says which reader wrote it and not only
- * which way it fell (#7457).
+ * transcript; this verb closes it: token in, [`report.ts`](report.ts)'s map picks the event, and
+ * the append rides `transition`'s exact path — validate against the folded state FIRST, append only
+ * what the machine accepts, refuse everything else with the log left byte-identical. The optional
+ * `--pr`/`--comment` refs land on the event line itself, so an event names its evidence at the
+ * moment the shell knows the URL. One more field lands there and it is the prover's rather than the
+ * caller's: `deferred`, relayed off the proof's own answer and never recomposed here, says this
+ * `PASS` was proven over a set short the namespaces named — the routed `review-ui` an epic child
+ * hands to its epic's tail, which nothing else in the ledger records. `partial` is the second of
+ * that kind and rides the ship stage's `DONE`: it says whether the merge behind this terminal
+ * carried `Part of #N` and left the issue open, which is the whole input to the machine's
+ * `merge:partial` arm. It rides at both polarities — a closing merge records `partial: false` — so
+ * the line says the closure was read rather than leaving a later sweep to read it again. `landed`
+ * is that read's evidence and rides beside it: the merged PRs the closure judged, so a recorded
+ * `false` says which reader wrote it and not only which way it fell.
+ *
+ * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
+ * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
+ * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
+ * driver passes.
  *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
  * this verb runs the same read `lane prove` runs, so a `DONE` and a `PASS` enter the ledger with
  * their artifact behind them or not at all, a reviewer's park enters it only while no `FAIL` at the
- * head says the run reached a verdict (#6112), and every other event answers `not-required` without
+ * head says the run reached a verdict, and every other event answers `not-required` without
  * a board read. A refusal is returned on the prover's own code, log untouched — the codes and their
  * remedies are `lane prove`'s, unchanged. The prover is a parameter so this verb's unit tier stays
  * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
@@ -37,13 +43,22 @@ import {
 	CLASS_UNRECOGNISED,
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
+	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
+import {parkCauseRefusal} from "./park-cause-rule.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
+import {
+	causeForEvent,
+	classesForEvent,
+	eventForToken,
+	floorQueueWait,
+	machineryCause,
+} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
@@ -60,7 +75,14 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
-	/** The lane classes standing at this event, relayed onto the event line (ADR 0317). */
+	/**
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * Passed in rather than read here, the way `lane open` takes its cap: this verb's append path
+	 * stays offline, and the one config read belongs to the adapter that already knows the checkout.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
+	/** The lane classes standing at this event, relayed onto the event line. */
 	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
@@ -80,9 +102,18 @@ export const runReport = <R>(
 		if (resolved._tag === "Unrecognised") {
 			return refuse(TOKEN_UNRECOGNISED, `${VERB}: refused (log unappended): ${resolved.reason}`);
 		}
-		const caused = causeForEvent(options.cause, resolved.event);
+		const rule = parkCauseRefusal(VERB, options.parkCause);
+		if (rule._tag === "Refused") return rule.outcome;
+		const caused = causeForEvent(
+			options.cause ?? machineryCause(resolved.token),
+			resolved.event,
+			rule.requireCause,
+		);
 		if (caused._tag === "Rejected") {
 			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
+		}
+		if (caused._tag === "Required") {
+			return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
 		const classed = classesForEvent(options.classes);
 		if (classed._tag === "Rejected") {
@@ -111,7 +142,7 @@ export const runReport = <R>(
 		}
 
 		// The proof runs BEFORE the lock: it is read-only over the artifacts, never over the lane's
-		// bytes, so holding writers up behind a slow board read buys nothing (#5994). What the lock
+		// bytes, so holding writers up behind a slow board read buys nothing. What the lock
 		// covers is the authoritative second pass below, where a fresh fold decides and appends.
 		const proved = yield* prove({
 			root: options.root,
@@ -119,10 +150,10 @@ export const runReport = <R>(
 			event: resolved.event,
 			task: task.taskId,
 			// The same classes the append carries, so the proof asks about the arm this event actually
-			// takes rather than the one the lane stood on before it (#6664).
+			// takes rather than the one the lane stood on before it.
 			classes: classed.classes,
 			// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
-			// not only the line it lands on — nominating for it cannot see a merged `Part of #N` (#7457).
+			// not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
 			pr: options.pr,
 			repo: options.repo,
 			cwd: options.cwd,
@@ -138,7 +169,7 @@ export const runReport = <R>(
 
 		// Authoritative pass, inside the write lock: a fresh load → fold → validate → append against
 		// the bytes as they exist under the lock, so a shell recording its terminal cannot validate
-		// against a state another writer is about to move under it (#5994). The pre-lock pass above
+		// against a state another writer is about to move under it. The pre-lock pass above
 		// only gated whether proving was worth its board read; this pass decides.
 		return yield* withLedgerLock(
 			{fs, path, dir: path.join(options.root, options.lane), verb: VERB},
@@ -153,6 +184,20 @@ export const runReport = <R>(
 				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
 
 				const now = yield* Effect.sync(() => new Date().toISOString());
+				// The floor is read here and not in the pre-lock pass because the line it measures from is
+				// exactly what a concurrent writer moves: a re-fold that cleared the floor before the lock
+				// has not cleared it after another lane's wait landed under it.
+				const floored = floorQueueWait({
+					lane: fresh.lane,
+					states: freshFold.states,
+					taskId: freshTask.taskId,
+					event: resolved.event,
+					lastAt: fresh.entries.findLast((entry) => entry.task === freshTask.taskId)?.at,
+					now,
+				});
+				if (floored._tag === "TooSoon") {
+					return refuse(WAIT_TOO_SOON, `${VERB}: refused (log unappended): ${floored.reason}.`);
+				}
 				// `partial` reaches only this pass: the pre-lock one runs before the proof that reads it,
 				// and it decides nothing — both arms of `merge:partial` hold a cell, so the arm taken
 				// cannot turn an acceptance into a refusal. This pass is the one that appends.
@@ -209,6 +254,9 @@ export const runReport = <R>(
 					],
 				);
 			}),
-			(lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
+			{
+				onAbsent: (dir) => loadRefusal(VERB, {_tag: "Absent", dir}),
+				onLocked: (lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
+			},
 		);
 	});

@@ -6,7 +6,7 @@ import {CI, ciKey, SHIPPED_CI} from "./ci.ts";
 const declared = (config: unknown) =>
 	resolve(loadConfig({_tag: "Text", text: JSON.stringify({[CI]: config})}), ciKey);
 
-describe("the shipped default is phoenix's CI surface", () => {
+describe("the shipped CI surface", () => {
 	it("resolves refuse and ci.yml for a repo with no config at all", () => {
 		const resolved = resolve(loadConfig({_tag: "Absent"}), ciKey);
 		expect(resolved._tag).toBe("Default");

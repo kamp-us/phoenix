@@ -190,8 +190,7 @@ describe("runReap — what the trunk proves", () => {
 /**
  * The merge base bounds the trunk scan, so a shallow clone's graft boundary stops the landing read
  * before it starts. The tree is KEEP either way — the finding this seam was repaired for is that its
- * reason names the one cause an operator can fix locally (#7407), the way the assembly read already
- * did (#7292).
+ * reason names the one cause an operator can fix locally, the way the assembly read already did.
  */
 describe("runReap — an unreachable merge base names its remedy when there is one", () => {
 	const beyondBoundary = (shallow: ExecResult): ReadonlyArray<Scripted> => [
@@ -263,7 +262,7 @@ describe("runReap — one unreadable tree costs its own row, not the sweep", () 
 });
 
 describe("runReap — the removals are proven, never reported", () => {
-	it("removes WITHOUT --force — ADR 0321 bans it on every path", async () => {
+	it("removes WITHOUT --force — it is banned on every path", async () => {
 		const {calls} = await run(
 			[
 				...GROUND,

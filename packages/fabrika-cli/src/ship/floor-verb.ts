@@ -3,10 +3,10 @@
  *
  * `ship gate` seats `blocked` at exit 0, and that is right for its interface: `blocked` is an answer
  * it proved, and a produced answer goes on 0 (`../verb.ts`). But an answer nobody reads enforces
- * nothing. The floor landed in #5231 and two fabrika-tree PRs merged with no governance verdict
- * anyway, because the only thing turning `blocked` into a stop was prose in the `ship` skill (#5408).
- * A workflow step cannot read `gate\tblocked` on its own without deciding in bash, which ADR 0228
- * forbids — so the decision is seated here and CI relays this verb's exit code.
+ * nothing. When the only thing turning `blocked` into a stop was prose in the `ship` skill,
+ * governance-root PRs merged with no governance verdict anyway. A workflow step cannot read
+ * `gate\tblocked` on its own without deciding in bash, which shell must never do — so the decision is
+ * seated here and CI relays this verb's exit code.
  *
  * **One namespace, and the resolution is `runGate`'s own.** This verb is not a second conjunction: it
  * asks `ship gate` for `governance` and reads that one line back, so there is one derivation of an
@@ -15,14 +15,14 @@
  *
  * **It refuses on WRONG, not only on MISSING.** `absent`, `stale` and `fail` all seat
  * {@link GOVERNANCE_FLOOR_UNMET}; a verdict from an author without write+ resolves `absent` through
- * the ADR 0055 ACL gate and lands there too. Only a head-bound PASS from an authorized author is
+ * the ACL gate and lands there too. Only a head-bound PASS from an authorized author is
  * satisfied.
  *
  * **What the floor is, and how it is seated, are two things.** {@link resolveFloor} answers the
  * first and nothing else; {@link runFloor} seats that answer on this verb's exit table, and
  * `./floor-check.ts` seats the same answer on a check-run. Splitting them is what lets the
  * check-run mode distinguish "not judged yet" from "judged wrong" without a second derivation of
- * the floor to disagree with this one (#6161).
+ * the floor to disagree with this one.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -67,7 +67,7 @@ const REMEDY: Readonly<Record<string, string>> = {
 	absent:
 		"no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post`",
 	stale:
-		"the in-force governance verdict is bound to another head — re-judge at this head and re-post (ADR 0058)",
+		"the in-force governance verdict is bound to another head — re-judge at this head and re-post",
 	fail: "the in-force governance verdict at this head is FAIL — repair the diff and re-post",
 };
 
@@ -178,7 +178,7 @@ export const resolveFloor = (
 			return unresolved(
 				refuse(
 					ZERO_SCOPE,
-					`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable (ADR 0092).`,
+					`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable.`,
 					scanned,
 				),
 			);
@@ -194,7 +194,7 @@ export const resolveFloor = (
 			};
 		}
 
-		// The floor's whole resolution — marker read, ADR 0055 ACL, head-binding, in-force ordering —
+		// The floor's whole resolution — marker read, ACL gate, head-binding, in-force ordering —
 		// is `ship gate`'s, asked for this one namespace. A second file read cannot loosen the
 		// requirement: `--require governance` is passed because the read above already proved a
 		// governance root, so a diff that changed under us still gates.
@@ -228,7 +228,7 @@ export const resolveFloor = (
 
 /** Why a blocking state blocks, in the words the person reading the check needs. */
 export const floorRefusalLine = (pr: number, state: string, sha: string): string =>
-	`${VERB}: #${pr} touches a governance root and its ${NAMESPACE} verdict at ${sha} is ${state} — ${REMEDY[state] ?? "the floor is not discharged"} (#5408).`;
+	`${VERB}: #${pr} touches a governance root and its ${NAMESPACE} verdict at ${sha} is ${state} — ${REMEDY[state] ?? "the floor is not discharged"}.`;
 
 export const runFloor = (
 	options: FloorOptions,

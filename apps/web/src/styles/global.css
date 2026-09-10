@@ -3,6 +3,7 @@
 
 @import "@kampus/design/fonts.css";
 @import "@kampus/design/tokens.css";
+@import "@kampus/design/visually-hidden.css";
 
 *,
 *::before,
@@ -104,21 +105,6 @@ select {
 [data-scope="field"][data-part="root"]:has(:focus-visible) [data-part="control"] {
 	outline: var(--focus-ring);
 	outline-offset: var(--focus-ring-offset);
-}
-
-/* Visually-hidden but AT-readable text (#2169). Standard clip-rect: stays in the
-   accessibility tree + reading order while taking no visual space, for a text
-   suffix that names state a sighted user reads from color/position alone. */
-.kp-visually-hidden {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	margin: -1px;
-	padding: 0;
-	border: 0;
-	overflow: hidden;
-	clip: rect(0, 0, 0, 0);
-	white-space: nowrap;
 }
 
 /* Reduced motion — global, unconditional a11y baseline (WCAG 2.3.3).

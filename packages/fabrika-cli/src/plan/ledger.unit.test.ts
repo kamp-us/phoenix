@@ -72,7 +72,7 @@ describe("readEpicStories", () => {
 
 	/**
 	 * The boundary is `../build/dependencies.ts`'s, imported rather than restated, so this reader and
-	 * the topology reader cannot disagree about where a last section ends (#5816).
+	 * the topology reader cannot disagree about where a last section ends.
 	 */
 	it("stops at a thematic break, so an appended amendment adds no stories", () => {
 		const body =

@@ -236,7 +236,7 @@ describe("the refusals that write nothing", () => {
 	it("refuses a --title that classifies the work — that is triage's seat", async () => {
 		const {outcome} = await emit(healthy(), {_tag: "Text", text: SPEC}, "feature: cap the weight");
 		expect(outcome.code).toBe(CLASSIFIED);
-		expect(outcome.stderr.join("\n")).toContain("ADR 0246");
+		expect(outcome.stderr.join("\n")).toContain("type and priority are triage's");
 	});
 });
 

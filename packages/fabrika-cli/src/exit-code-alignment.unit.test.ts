@@ -94,7 +94,7 @@ describe("every verb group the CLI ships is accounted for", () => {
 	const onDisk = codeTableGroupsIn(SRC_DIR);
 	const gaps = () => coverageGaps({registered: shipped, onDisk});
 
-	it("finds groups and tables at all — a scan over nothing is a failure, not a pass (ADR 0092)", () => {
+	it("finds groups and tables at all — a scan over nothing is a failure, not a pass", () => {
 		expect(shipped.length).toBeGreaterThan(0);
 		expect(onDisk.length).toBeGreaterThan(0);
 	});
@@ -123,11 +123,11 @@ describe("every verb group the CLI ships is accounted for", () => {
  * It is not a style rule. On `PreToolUse` exit `2` is the harness's one blocking code
  * (`./hook/harness-exit.ts`), so a table that seats any meaning on it denies a tool call as a side
  * effect of its exit status — which is how a fabrika that could not bootstrap came to block every
- * spawn in a session (#5423, ADR 0250). A per-group docblock cannot hold this: the property is that
+ * spawn in a session. A per-group docblock cannot hold this: the property is that
  * NO group seats it, and only a scan over every shipped table can say so.
  */
 describe("no group's exit table seats the harness's blocking code", () => {
-	it("scans every table there is — an empty scan is a failure, not a pass (ADR 0092)", () => {
+	it("scans every table there is — an empty scan is a failure, not a pass", () => {
 		expect(Object.keys(TABLES).length).toBeGreaterThan(0);
 	});
 
@@ -137,7 +137,7 @@ describe("no group's exit table seats the harness's blocking code", () => {
 });
 
 /**
- * The blindness itself, pinned (#5213). Scoping the scan to `codes.ts` files made a group that
+ * The blindness itself, pinned. Scoping the scan to `codes.ts` files made a group that
  * ships none unreachable by the check — so it could sit in no registry and the suite stayed green.
  * These assert the property that removes it: scope comes from what is shipped, and an empty scan
  * is a throw rather than an all-clear.
@@ -155,7 +155,7 @@ describe("the coverage scan can see a group that ships no table", () => {
 		});
 	});
 
-	it("throws rather than reporting no gaps when there is nothing to scan (ADR 0092)", () => {
+	it("throws rather than reporting no gaps when there is nothing to scan", () => {
 		expect(() => coverageGaps({registered: [], onDisk: ["report"]})).toThrow(ZeroCoverageScope);
 		expect(() => coverageGaps({registered: ["report"], onDisk: []})).toThrow(ZeroCoverageScope);
 	});
@@ -163,8 +163,8 @@ describe("the coverage scan can see a group that ships no table", () => {
 
 /**
  * The untabled record is an admission of a tracked gap, not a way to opt out of the guard: each
- * entry must name a reason, and none may be a group that already carries a table. It is empty today
- * (#5294) — the covered state, and the one state that needs no reason.
+ * entry must name a reason, and none may be a group that already carries a table. It is empty
+ * today — the covered state, and the one state that needs no reason.
  */
 describe("the untabled groups are genuinely untabled", () => {
 	it("states a reason for each", () => {
@@ -178,7 +178,7 @@ describe("the untabled groups are genuinely untabled", () => {
 });
 
 /**
- * The per-verb seat, pinned (#5296). `checkAlignment` reads a table's module namespace, so a code a
+ * The per-verb seat, pinned. `checkAlignment` reads a table's module namespace, so a code a
  * verb file declares for itself is invisible to it — which is how the base group came to seat two
  * meanings on `3` and two on `4` inside its own table.
  */
@@ -195,7 +195,7 @@ describe("no verb file seats an exit code its group's table does not", () => {
 		return root;
 	};
 
-	it("reads verb files at all — a scan over nothing is a failure, not a pass (ADR 0092)", () => {
+	it("reads verb files at all — a scan over nothing is a failure, not a pass", () => {
 		expect(verbSeatedExitCodes(SRC_DIR, onDisk).scanned).toBeGreaterThan(0);
 	});
 
@@ -225,7 +225,7 @@ describe("no verb file seats an exit code its group's table does not", () => {
 		expect(verbSeatedExitCodes(root, ["ghost"]).seated).toEqual([]);
 	});
 
-	it("throws rather than reporting none when there is nothing to scan (ADR 0092)", () => {
+	it("throws rather than reporting none when there is nothing to scan", () => {
 		expect(() => verbSeatedExitCodes(SRC_DIR, [])).toThrow(ZeroCoverageScope);
 		expect(() => verbSeatedExitCodes(stub({}), ["ghost"])).toThrow(ZeroCoverageScope);
 	});

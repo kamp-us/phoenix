@@ -1,6 +1,6 @@
 /**
  * The floor's whole value is that it refuses on a verdict that is WRONG, not only on one that is
- * MISSING — a guard that fires on absence alone is the class #5416 and #4887 keep re-landing. So the
+ * MISSING — a guard that fires on absence alone keeps letting the wrong verdict through. So the
  * battery below mutates the verdict four ways that all *look* like a governance verdict is there —
  * FAIL at head, PASS on another head, PASS from an author without write+, a marker in a neighbouring
  * namespace — and asserts each one still reds.
@@ -39,7 +39,7 @@ const permissionServed = (permission: string): HttpReply => ({
 /** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts")),
+	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
@@ -74,14 +74,14 @@ describe("runFloor", () => {
 	it("answers n/a — not satisfied — when the diff touches no governance root", async () => {
 		const out = await run([
 			[PULL, served(pull())],
-			[FILES, served(files("apps/web/src/a.ts", "apps/web/src/b.ts"))],
+			[FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`floor\tn/a\t${HEAD}\nns\tgovernance\t-\n`);
 		expect(out.stderr.join("\n")).toContain("not a discharged verdict");
 	});
 
-	it("reds when the verdict is ABSENT — the #5293/#5333 shape", async () => {
+	it("reds when the verdict is ABSENT — no verdict at this head at all", async () => {
 		const out = await run([
 			[PULL, served(pull({comments: 0}))],
 			FABRIKA_TREE,
@@ -139,12 +139,12 @@ describe("runFloor", () => {
 	it("refuses a short file list — a governance root could sit in the part nobody read", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 9}))],
-			[FILES, served(files("apps/web/src/a.ts"))],
+			[FILES, served(files("apps/site/src/a.ts"))],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 	});
 
-	it("refuses a zero-file diff rather than answering n/a (ADR 0092)", async () => {
+	it("refuses a zero-file diff rather than answering n/a", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 0}))],
 			[FILES, served(files())],

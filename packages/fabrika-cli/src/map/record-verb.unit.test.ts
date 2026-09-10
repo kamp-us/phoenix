@@ -381,7 +381,7 @@ const SESSION_COMMENTS = /issues\/9301\/comments/;
 const BOUND = roundDigestOf(1);
 const QUESTION = "R1.2";
 
-/** The frontier of a map whose one ticket is a decision forked to session #9301. */
+/** The frontier of a map whose one ticket is a decision forked to a grilling session. */
 const forkedDecision = (): ReadonlyArray<Scripted> =>
 	frontier(
 		ticketComments(

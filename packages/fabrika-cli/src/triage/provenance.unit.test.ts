@@ -36,7 +36,7 @@ describe("hasAgentFooter", () => {
 		expect(
 			hasAgentFooter("The footer reads `<sub>Filed by an agent · …</sub>` and is wrong."),
 		).toBe(false);
-		expect(hasAgentFooter("A discussion of ADR 0159: Filed by an agent is the signal.")).toBe(
+		expect(hasAgentFooter("A discussion of the rule: Filed by an agent is the signal.")).toBe(
 			false,
 		);
 		expect(hasAgentFooter("> <sub>Filed by an agent · 2026-01-01</sub>")).toBe(false);

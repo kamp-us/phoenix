@@ -1,0 +1,103 @@
+/*
+ * What Tuval changes about `@kampus/design`'s `CommandPalette`, and nothing else. The dialog, the
+ * field, the rows and the footer are the shared component's paint (`packages/design/src/
+ * CommandPalette.css`); these rules only carry the two things a command line needs it to be —
+ * pinned to the top centre, and set in mono.
+ *
+ * Every colour, size, radius and type step is a role token from `@kampus/design`'s layer. This file
+ * declares no colour of its own, which is what `design-system-manifest.md` (Pillar 2) and this
+ * slice's `tokens.unit.test.ts` require.
+ *
+ * The one thing worth reading twice is the positioner rule: the palette is pinned to the top centre
+ * of the viewport rather than vertically centred, because it is a desk-level overlay and never
+ * anchored to a window (the founder's 2026-09-04 correction on #7643).
+ */
+
+[data-scope="dialog"][data-part="positioner"]:has(.tuval-palette) {
+	align-items: flex-start;
+	padding-top: max(var(--s-7), env(safe-area-inset-top));
+}
+
+[data-scope="dialog"][data-part="content"].tuval-palette {
+	/* Fixed width, so the overlay is in the same place at the same size on every desk. */
+	--manti-dialog-max-width: 40rem;
+	/* The positioner above aligns to the top; a dialog's own `margin-block: auto` would re-centre it
+	   inside that box, which is what put the palette back in the middle of the desk. */
+	margin-block: 0;
+}
+
+.tuval-palette .kp-command-palette__search [data-scope="field"][data-part="input"] {
+	font: var(--t-mono);
+}
+
+/* The field's own refusal message — manti renders it, and it needs the list's inset so it lines up
+   with the rows under it rather than with the flush input above. */
+.tuval-palette .kp-command-palette__search [data-scope="field"][data-part="error"] {
+	padding: var(--s-2) var(--s-3) 0;
+}
+
+/* A spell path is code, so it is set in mono and never truncated: the describe beside it is what
+   gives way when the row runs out of room. */
+.tuval-palette .kp-command-palette__label {
+	font: var(--t-mono);
+	font-weight: 400;
+	flex: none;
+}
+
+.tuval-palette .kp-command-palette__copy {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-2);
+}
+
+.tuval-palette .kp-command-palette__description {
+	min-width: 0;
+}
+
+/* The component scrolls the active row into view itself, and this pins that to a jump whatever an
+   ancestor asks for: nothing here carries meaning on motion (Pillar 4), so a reduced-motion reader
+   and everyone else get the same instant move. */
+.tuval-palette .kp-command-palette__results {
+	scroll-behavior: auto;
+	max-height: min(24rem, 50vh);
+}
+
+/* The footer holds two stacked lines rather than one row: what the caret is on, then the keys. */
+.tuval-palette .kp-command-palette__footer {
+	display: block;
+	padding: 0;
+}
+
+.tuval-palette .kp-command-palette__legend {
+	display: block;
+	margin: 0;
+}
+
+.tuval-palette__detail,
+.tuval-palette__legend {
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	font: var(--t-meta);
+	/* `--text-muted`, never `--text-faint`: both lines carry meaning, and the faint rung is the 3:1
+	   decorative one the manifest forbids meaning from. */
+	color: var(--text-muted);
+	border-top: 1px solid var(--border-faint);
+}
+
+.tuval-palette__detail {
+	min-height: var(--tap-min);
+	display: flex;
+	align-items: center;
+	gap: var(--s-2);
+}
+
+.tuval-palette__expected {
+	font: var(--t-mono);
+	color: var(--text-secondary);
+}
+
+.tuval-palette__legend {
+	display: flex;
+	align-items: center;
+	gap: var(--s-1);
+}

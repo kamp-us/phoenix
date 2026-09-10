@@ -6,7 +6,7 @@
  * second push. The older run's contexts conclude `cancelled` at the same `head_sha` the newer run is
  * still proving, and the dependent aggregator job (`ci-required`) makes it worse: the newer run has
  * not created its own aggregator context yet, so latest-per-context resolves to the cancelled one.
- * `ship checks` then read a healthy head as a hard red and routed a green PR to `heal-ci` (#6834).
+ * `ship checks` then reads a healthy head as a hard red and routes a green PR to `heal-ci`.
  *
  * **Only `cancelled` is reclassified, and only into `pending`.** The rollup's fail-closed default
  * (`../review/rollup.ts`) is load-bearing everywhere else: a cancel proved nothing, and "proved

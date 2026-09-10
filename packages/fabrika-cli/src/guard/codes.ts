@@ -8,7 +8,7 @@
  *
  * A guard speaks three refusals and they are deliberately three numbers, not one:
  *
- * - `7` {@link ZERO_SCOPE} — the scan resolved to nothing, so a green would be vacuous (ADR 0092).
+ * - `7` {@link ZERO_SCOPE} — the scan resolved to nothing, so a green would be vacuous.
  * - `11` {@link PRECONDITION_UNKNOWN} — a read failed, so the verdict is UNKNOWN, not "clean".
  * - `12` {@link VIOLATION} — the scan ran over real scope and found the thing the guard forbids.
  *
@@ -27,7 +27,7 @@ import {
 
 /**
  * Proven: the guard's scope resolved empty — no workspace member, no changed file, no declared
- * glob to scan under. Fail-closed, never a vacuous pass (ADR 0092).
+ * glob to scan under. Fail-closed, never a vacuous pass.
  */
 export const ZERO_SCOPE = BUILD_ZERO_SCOPE;
 

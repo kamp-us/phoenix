@@ -126,3 +126,54 @@ local loop is the point), [#5680](https://github.com/kamp-us/phoenix/issues/5680
 design this reverses for epic runs), [#5731](https://github.com/kamp-us/phoenix/issues/5731) (the
 `build-epic` retirement this unblocks),
 [`packages/fabrika-cli/src/lane/emit.ts`](../packages/fabrika-cli/src/lane/emit.ts).
+
+## Amendment — 2026-08-20: the tail gains a `build` repair cell, and its review FAIL routes there
+
+Founder ruling,
+[2026-08-20](https://github.com/kamp-us/phoenix/issues/6521#issuecomment-5361635581), on
+[#6521](https://github.com/kamp-us/phoenix/issues/6521). This amendment transcribes it.
+
+The tail region this record decided had `review → ship → shipped` and nothing else. A child region
+carries a `build` cell, so a child's `FAIL` has somewhere to go; the tail's `FAIL` retry arm pointed
+at `review` itself. The facts a tail review actually fails on are not a reviewer's to change — an
+assembly branch gone `CONFLICTING` against a `main` that moved under it, a head with no CI — so the
+edge re-dispatched the shell that had just produced the verdict, spent the tail's round, and reached
+the human park anyway. Live instance: epic [#4306](https://github.com/kamp-us/phoenix/issues/4306),
+PR [#6434](https://github.com/kamp-us/phoenix/pull/6434). It recurs by construction: the assembly
+ages against a moving trunk while the children build.
+
+**The tail region gains a `build` cell**, with the child region's two edges — `DONE` back to
+`review`, `BLOCKED` to `blocked` — and the `review` `FAIL`'s retry arm targets it under the existing
+`retriesRemaining` guard. The fallthrough is unchanged. `ship` and `ship:queued` keep their `review`
+arm: a shipper fails on the PR's own mergeability, which the next verdict over the same head answers.
+
+**A repair round is briefed on the assembly branch.** `lane brief` used to fall through to a `Pull`
+ground for any build state, so a builder sent to repair the assembly was told the PR and no branch.
+The tail at `build` now emits its own ground carrying the run's one PR, the epic issue and
+`epic/<lane-key>`, under a byte-fixed rules paragraph of its own.
+
+**The assembly-branch merge is the driver's, not the repair builder's.** The assembly worktree
+belongs to the lane driver and no spawned shell can reach it
+([#6517](https://github.com/kamp-us/phoenix/issues/6517)), so the repair round's rules say so and
+name the move: the driver runs `lane refresh`, which merges `main` into `epic/<lane-key>`. **Merge,
+never rebase** — each landed child's range verdict is bound to the commits it names, and a rebase
+rewrites every one of them.
+
+**A lane already emitted does not adopt the cell.** `lane migrate` reports a generated epic machine
+`Foreign` and writes nothing, and the ruling picked no direction for the mid-drive case; that gap is
+[#6857](https://github.com/kamp-us/phoenix/issues/6857). This amendment builds no migration path.
+
+One thing the issue's own acceptance criteria asked for was **not** built, and deliberately: they
+named `frozen` as the FAIL array's fallthrough. That target moved to `human:budget-spent` after the
+issue was written, for the reason
+[0378](0378-driver-seat-on-a-spent-repair-budget.md) records — `recipe/parks.ts`'s `isPark` matches
+`blocked` and `human:*` and never `frozen`, so a tail exhausting into `frozen` parks where every
+recipe answers `NotParked`. The shape the criterion asked for (a `{type: "final"}` carrying an
+`UNBLOCKED` door to `hist`) is exactly what `human:budget-spent` already is, so the criterion is met
+under the name that works and the retired one is not reintroduced.
+
+Sources: the [ruling](https://github.com/kamp-us/phoenix/issues/6521#issuecomment-5361635581),
+[#6521](https://github.com/kamp-us/phoenix/issues/6521),
+[`packages/fabrika-cli/src/lane/emit.ts`](../packages/fabrika-cli/src/lane/emit.ts),
+[`packages/fabrika-cli/src/lane/brief-verb.ts`](../packages/fabrika-cli/src/lane/brief-verb.ts),
+[`packages/fabrika-cli/src/wire/lane-brief.ts`](../packages/fabrika-cli/src/wire/lane-brief.ts).

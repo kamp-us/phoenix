@@ -4,13 +4,13 @@
  *
  * This verb is not a relay, and two proofs are why. **Completeness:** a diff carrying fewer files
  * than git lists for the same range is refused, because a gate that judged the visible prefix as the
- * whole PR is the #3925 blind-PASS class one layer down; v1's `pr-diff.sh` was the relay, and
+ * whole PR is the blind-PASS class one layer down; v1's `pr-diff.sh` was the relay, and
  * nothing checked what it served. This is not a guard against a truncating platform: the diff media type refuses an
  * over-limit diff rather than serving a short one, and these bytes never come from it — see
- * `diff.ts` for what the proof does and does not cover (#4993). **Provenance:** the bytes come from
+ * `diff.ts` for what the proof does and does not cover. **Provenance:** the bytes come from
  * the object database at the bound commit via `diffRange`, never from an endpoint that takes a PR
  * number and no commit — see `head.ts` for why a SHA on the verdict is not the same thing as bytes
- * from that SHA (#5117).
+ * from that SHA.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -46,7 +46,7 @@ export const runDiff = (
 		const target = yield* openPull(VERB, repo, pr, {
 			requireOpen: true,
 			requireFiles: true,
-			emptyReason: "refusing to serve an empty diff as a reviewable one (ADR 0092).",
+			emptyReason: "refusing to serve an empty diff as a reviewable one.",
 		});
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
@@ -68,7 +68,7 @@ export const runDiff = (
 		// `--name-only -z` emits exactly one path per `diff --git` entry, renames paired identically —
 		// so rename pairing and merge-base choice cancel instead of being compared across systems. What
 		// that does and does not prove is in `diff.ts`. GitHub's `changed_files` is its own merge base
-		// and its own rename detection, so it is reported below and never refused on (#5139).
+		// and its own rename detection, so it is reported below and never refused on.
 		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
@@ -90,13 +90,13 @@ export const runDiff = (
 		];
 		if (inRange !== pull.changedFiles) {
 			diagnostics.push(
-				`${VERB}: git and GitHub disagree on #${pr}'s file count (${inRange} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on (#5139).`,
+				`${VERB}: git and GitHub disagree on #${pr}'s file count (${inRange} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on.`,
 			);
 		}
 		if (seen < inRange) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: the diff at ${head.sha} carries ${seen} of the ${inRange} files git reports for the same range ${head.mergeBase}...${head.sha} — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).`,
+				`${VERB}: the diff at ${head.sha} carries ${seen} of the ${inRange} files git reports for the same range ${head.mergeBase}...${head.sha} — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole.`,
 				diagnostics,
 			);
 		}

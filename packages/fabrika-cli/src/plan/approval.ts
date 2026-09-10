@@ -6,9 +6,9 @@
  * whether this invocation may post, and the read resolves it again to decide whose posted bytes
  * count: posting a `plan-approved:` line takes nothing but the ability to comment on the epic, and
  * the digest it must carry is printed on `plan check`'s stdout. A read honouring the format alone
- * would let any agent token in this pipeline approve a plan, which ADR 0289 forbids in as many words
- * and which the sibling `../build/clearances.ts` refuses under its clause 2 (ADR 0055 over 0051: a
- * committed list with no author gate is exactly the shape 0055 supersedes 0051 to forbid).
+ * would let any agent token in this pipeline approve a plan, which the approval rule forbids in as
+ * many words and which the sibling `../build/clearances.ts` refuses under its clause 2: a committed
+ * list with no author gate is exactly the shape an authority check exists to forbid.
  */
 
 import {Effect} from "effect";
@@ -59,7 +59,7 @@ export interface ApprovalScan {
  * however fresh its digest. Empty means nobody may approve here, so nothing stands.
  *
  * Ordered by `updatedAt` and then by id, never by `createdAt`: a marker edited after a later one was
- * posted is the newer statement, and only the write stamp says so (#4200).
+ * posted is the newer statement, and only the write stamp says so.
  */
 export const scanApprovals = (
 	comments: ReadonlyArray<CommentRecord>,
@@ -99,9 +99,8 @@ export type ApprovalGate =
 	| {readonly _tag: "Approved"; readonly standing: StandingApproval};
 
 /**
- * The approval **enforcement** the three re-deriving verbs share — ADR 0289's fail-closed
- * precondition, seated ahead of the floor so a defective unapproved plan refuses on the approval and
- * not on its defects.
+ * The approval **enforcement** the three re-deriving verbs share — a fail-closed precondition, seated
+ * ahead of the floor so a defective unapproved plan refuses on the approval and not on its defects.
  *
  * `derived` is the digest taken from the plan as this run has just read it, never one a caller
  * carried: an approval is a statement about a scope, so measuring it against a scope the caller
@@ -154,14 +153,14 @@ export const requireApproval = (
 		if (standing === null) {
 			return refused(
 				PLAN_UNAPPROVED,
-				`${verb}: #${epic} carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).`,
+				`${verb}: #${epic} carries no founder approval of this plan (state absent) — refusing ahead of the floor.`,
 				evidence,
 			);
 		}
 		if (!approves(standing.approval, epic, derived)) {
 			return refused(
 				PLAN_UNAPPROVED,
-				`${verb}: #${epic}'s approval binds digest ${standing.approval.digest} but the plan now derives ${derived} (state stale) — it moved after it was approved; re-approve (ADR 0289).`,
+				`${verb}: #${epic}'s approval binds digest ${standing.approval.digest} but the plan now derives ${derived} (state stale) — it moved after it was approved; re-approve.`,
 				evidence,
 			);
 		}

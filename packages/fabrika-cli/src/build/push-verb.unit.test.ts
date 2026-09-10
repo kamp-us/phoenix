@@ -23,7 +23,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {runPush} from "./push-verb.ts";
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -182,7 +182,7 @@ describe("runPush", () => {
 	});
 
 	// The repair path mandates --force-with-lease, and the lease is blind to THIS lane dropping the
-	// remote's own commits — so these four are the containment contract (#5222).
+	// remote's own commits — so these four are the containment contract.
 	it("refuses on 23 when the force-path head does not contain the remote head, and pushes nothing", async () => {
 		const seams = fakeSeams([
 			...LANE_OK,

@@ -48,7 +48,7 @@ export const SIGNATURES: ReadonlyArray<Signature> = [
 		class: "transient",
 		pattern:
 			/(preview|deployment|deployed target).{0,80}?\b(not reachable|did not become reachable|connection refused|502|503|504)\b/i,
-		rationale: "this PR's own preview target was not up yet (#5348)",
+		rationale: "this PR's own preview target was not up yet",
 	},
 	{
 		id: "readiness-stall",

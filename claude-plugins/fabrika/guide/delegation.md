@@ -11,8 +11,10 @@ The decision is implemented in
 (the outcomes) and
 [`packages/fabrika-cli/src/delegate/repository.ts`](../../../packages/fabrika-cli/src/delegate/repository.ts)
 (repository identity), with the process boundary in
-[`entry.ts`](../../../packages/fabrika-cli/src/delegate/entry.ts). The rule the refusal enforces is
-[ADR 0287](../../../.decisions/0287-delegation-stays-inside-one-repository.md).
+[`entry.ts`](../../../packages/fabrika-cli/src/delegate/entry.ts). The rule the refusal enforces:
+the boundary delegation will not cross is the **repository**, not the checkout — linked
+worktrees share one repository and answer each other's invocations, two clones of the same remote do
+not, and a tree whose repository cannot be established counts as a different one.
 
 ## The four facts
 
@@ -54,11 +56,9 @@ code as the refusal, and distinct from `1` (a verb's usage error) and `127` (not
 
 Only two outcomes are silent: `run-here` in both of its forms. `warn-and-run-here` always prints
 unless `FABRIKA_GLOBAL_WARNING_DISABLED` is set, and `refuse-foreign-checkout` always prints. The
-incidents behind the current shape are
-[#4784](https://github.com/kamp-us/phoenix/issues/4784) (the silent-branch rule),
-[#4956](https://github.com/kamp-us/phoenix/issues/4956) (the foreign-copy refusal) and
-[#5679](https://github.com/kamp-us/phoenix/issues/5679) (worktrees are one repository, not two); the
-reasoning is in [ADR 0287](../../../.decisions/0287-delegation-stays-inside-one-repository.md).
+shape came from three failures in turn: a delegation that ran somewhere else without saying so, a
+copy answering from a checkout nobody named, and a fence drawn at the checkout that refused every
+invocation from a linked worktree of the one repository.
 
 ### The refusal's text
 

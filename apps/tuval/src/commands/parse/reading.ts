@@ -59,12 +59,20 @@ export interface Reading {
 const describeSegments = (segments: ReadonlyArray<string>): string =>
 	segments.length === 0 || segments.length > 6 ? "<segment>" : segments.join("|");
 
+/**
+ * A suggestion equal to the expectation is dropped here, where the two are computed, rather than at
+ * each surface that renders them. With one candidate — a node with a single child, a parameter with
+ * a single literal — the expectation and the nearest match are the same string, and the line reads
+ * `expected sey; did you mean "sey"?`: the reader is refused for the word they were just asked for,
+ * and the distinction the two fields carry (what shape belongs here, versus a guess at the typo) is
+ * erased (#7745).
+ */
 const refused = (
 	position: number,
 	expected: string,
 	suggestion?: string,
 ): Extract<ReadingCore, {kind: "Refused"}> =>
-	suggestion === undefined
+	suggestion === undefined || suggestion === expected
 		? {kind: "Refused", position, expected}
 		: {kind: "Refused", position, expected, didYouMean: suggestion};
 
@@ -162,12 +170,12 @@ const bind = (
 ): Reading => {
 	const caretIsArgument = caretIndex >= consumed && caretIndex < tokens.length;
 	const committed = tokens.slice(consumed, caretIsArgument ? caretIndex : tokens.length);
-	const pending = caretIsArgument && caret.text !== "" ? caret : undefined;
 
 	const args: Record<string, string> = {};
 	const bound = new Set<string>();
 	const byName = new Map(spell.params.map((param) => [param.name, param]));
 	let position = 0;
+	let rest: ParamSpec | undefined;
 
 	const nextPositional = (): ParamSpec | undefined => {
 		while (position < spell.params.length) {
@@ -189,6 +197,7 @@ const bind = (
 		| {readonly kind: "full"};
 
 	const target = (token: Token): Target => {
+		if (rest !== undefined) return {kind: "bind", param: rest, value: token.text};
 		const named = NAMED.exec(token.text);
 		const name = named?.[1];
 		const value = named?.[2];
@@ -204,6 +213,12 @@ const bind = (
 		return positional === undefined
 			? {kind: "full"}
 			: {kind: "bind", param: positional, value: token.text};
+	};
+
+	const assign = (param: ParamSpec, value: string): void => {
+		args[param.name] = rest === undefined ? value : `${args[param.name]} ${value}`;
+		bound.add(param.name);
+		if (param.rest === true) rest = param;
 	};
 
 	for (const token of committed) {
@@ -227,10 +242,13 @@ const bind = (
 				slot: {kind: "value", param: slot.param, token},
 			};
 		}
-		args[slot.param.name] = slot.value;
-		bound.add(slot.param.name);
+		assign(slot.param, slot.value);
 	}
 
+	const pending =
+		caretIsArgument && (caret.text !== "" || rest !== undefined || nextPositional()?.rest === true)
+			? caret
+			: undefined;
 	if (pending !== undefined) {
 		const slot = target(pending);
 		if (slot.kind === "full") {
@@ -257,12 +275,11 @@ const bind = (
 						slot: valueSlot,
 					};
 		}
-		args[slot.param.name] = slot.value;
-		bound.add(slot.param.name);
+		assign(slot.param, slot.value);
 		return {core: finish(spell, args, bound), slot: valueSlot};
 	}
 
-	const open = nextPositional();
+	const open = rest ?? nextPositional();
 	return {
 		core: finish(spell, args, bound),
 		slot: open === undefined ? {kind: "none"} : {kind: "value", param: open, token: caret},

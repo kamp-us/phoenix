@@ -1,5 +1,5 @@
 /**
- * What travels on each of the five AI agent ports, and the predicate that admits it.
+ * What travels on each of the six AI agent ports, and the predicate that admits it.
  *
  * A port is a nominal kind plus a payload predicate (#7512) — not a schema system — so each
  * payload here is a plain type with a hand-written predicate, the shape `src/ports/` routes on.
@@ -7,11 +7,10 @@
  * single route between two nodes serves the whole conversation.
  */
 
-import {Schema} from "effect";
+import {Predicate, Schema} from "effect";
 import {
 	isJsonValue,
 	isNonNegativeInteger,
-	isRecord,
 	isTranscriptItems,
 	type JsonValue,
 	type TranscriptItem,
@@ -31,7 +30,7 @@ const reasons: ReadonlySet<string> = new Set<WindowOmission["reason"]>([
 ]);
 
 export const isWindowOmission = (value: unknown): value is WindowOmission =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	isNonNegativeInteger(value.items) &&
 	isNonNegativeInteger(value.bytes) &&
 	typeof value.reason === "string" &&
@@ -44,7 +43,31 @@ export interface TranscriptPayload {
 }
 
 export const isTranscriptPayload = (value: unknown): value is TranscriptPayload =>
-	isRecord(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
+	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
+
+/**
+ * `result` — one finished turn, as whatever consumes an agent's answer reads it (R19.3 on #8715).
+ *
+ * `text` is the reply a caller would quote and `items` is the same turn whole, because the two
+ * answer different questions: a parent program routing an answer onward wants the line, and one
+ * judging what the turn *did* needs the tool calls under it. `ok` is the turn ending with nothing
+ * refused — a turn that failed or was cut short still lands here, marked, because a consumer that
+ * never hears about a failed turn waits for a payload that is not coming.
+ *
+ * It carries no session id: a port already names the process it came out of, and a payload
+ * restating that would be a second identity for a reader to reconcile.
+ */
+export interface TurnResult {
+	readonly text: string;
+	readonly items: ReadonlyArray<TranscriptItem>;
+	readonly ok: boolean;
+}
+
+export const isTurnResult = (value: unknown): value is TurnResult =>
+	Predicate.isObject(value) &&
+	typeof value.text === "string" &&
+	isTranscriptItems(value.items) &&
+	typeof value.ok === "boolean";
 
 /**
  * `transcript-page` — a request for older history and the page that answers it. `before` is the
@@ -64,7 +87,7 @@ const isCursor = (value: unknown): value is string | null =>
 	value === null || (typeof value === "string" && value.length > 0);
 
 export const isTranscriptPagePayload = (value: unknown): value is TranscriptPagePayload => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "request":
 			return isCursor(value.before) && Number.isInteger(value.limit) && (value.limit as number) > 0;
@@ -78,19 +101,47 @@ export const isTranscriptPagePayload = (value: unknown): value is TranscriptPage
 };
 
 /**
+ * The two directions of `transcript-page`, each with a predicate that admits only its own.
+ *
+ * The union predicate above says what the *kind* carries; an end of the port takes one direction,
+ * and these are what its `accepts` check is built from (#8235). Refusing at the send is what makes
+ * a wrong-direction payload an error the caller reads, rather than a `delivered: true` followed by
+ * a refusal only a rendering window ever sees — the same move #7991 made for `prompt`.
+ */
+export type TranscriptPageRequest = Extract<TranscriptPagePayload, {readonly kind: "request"}>;
+export type TranscriptPageReply = Extract<TranscriptPagePayload, {readonly kind: "page"}>;
+
+export const isTranscriptPageRequest = (value: unknown): value is TranscriptPageRequest =>
+	isTranscriptPagePayload(value) && value.kind === "request";
+
+export const isTranscriptPageReply = (value: unknown): value is TranscriptPageReply =>
+	isTranscriptPagePayload(value) && value.kind === "page";
+
+/**
  * `prompt` — one turn of operator text. `key` is the idempotency key: a second prompt carrying a
  * key the session already saw is dropped rather than re-sent, so a transport retry is free while
  * a deliberate resend mints a new key.
+ *
+ * Both fields are required here, and that is a reversal (#7991). They used to be optional so an
+ * older sender stayed readable, but the receiver refused an unstamped prompt anyway (`program.ts`)
+ * — into a `failed` Msg only a rendering window can see. So the optionality bought no sender
+ * anything: their turn never ran either way, and the caller read `delivered: true`. Required, the
+ * kernel's own `accepts` check refuses at the send, which is the error the Claude `send` tool
+ * already promises. The kind stays `@1` because the set of payloads that ever produced a turn is
+ * unchanged; only the moment of refusal moved.
  */
 export interface PromptPayload {
 	readonly text: string;
-	readonly key?: string;
+	readonly key: string;
+	/** Epoch milliseconds, stamped by the sender: the turn's clock, since the core reads none. */
+	readonly timestamp: number;
 }
 
 export const isPromptPayload = (value: unknown): value is PromptPayload =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.text === "string" &&
-	(value.key === undefined || typeof value.key === "string");
+	typeof value.key === "string" &&
+	Number.isFinite(value.timestamp);
 
 /** One card the window renders while the program waits for an answer. */
 export interface PermissionRequest {
@@ -111,12 +162,37 @@ const decisions: ReadonlySet<string> = new Set<PermissionDecision>([
 ]);
 
 /**
+ * How far one card's answer has got. A card leaves the pending set on its confirmation and not on
+ * the click that answered it (#8006), so `answering` is the state a window renders while the
+ * decision is out and `unresolved` is the one it renders when that answer's outcome is unknown.
+ *
+ * `unresolved` offers no second answer: the authorization may have been applied, so re-sending one
+ * is a retry nobody asked for. Only the backend's own `permission-resolved` clears it.
+ */
+export type PermissionProgress =
+	| {readonly status: "open"}
+	| {readonly status: "answering"; readonly decision: PermissionDecision}
+	| {readonly status: "unresolved"; readonly decision: PermissionDecision};
+
+/** One card the window renders, how far its answer has got, and which raising of its id it is. */
+export interface PendingPermission {
+	readonly request: PermissionRequest;
+	/**
+	 * Which request this session has raised, counting from one. A confirmation names it, so an
+	 * answer whose reply arrives after its card was settled cannot clear a later card that happens
+	 * to carry the same request id.
+	 */
+	readonly seq: number;
+	readonly progress: PermissionProgress;
+}
+
+/**
  * `permission` — the pending set outbound, keyed by request id, and one answer inbound. A program
  * that never prompts emits an empty `pending` and is done; it declares the port all the same, so
  * the window's wiring does not change per program.
  */
 export type PermissionPayload =
-	| {readonly kind: "pending"; readonly requests: Readonly<Record<string, PermissionRequest>>}
+	| {readonly kind: "pending"; readonly requests: Readonly<Record<string, PendingPermission>>}
 	| {
 			readonly kind: "decision";
 			readonly request: string;
@@ -125,18 +201,34 @@ export type PermissionPayload =
 	  };
 
 export const isPermissionRequest = (value: unknown): value is PermissionRequest =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.title === "string" &&
 	typeof value.displayName === "string" &&
 	typeof value.description === "string" &&
 	isJsonValue(value.input) &&
 	typeof value.offersAlways === "boolean";
 
+const isProgress = (value: unknown): value is PermissionProgress =>
+	Predicate.isObject(value) &&
+	(value.status === "open" ||
+		((value.status === "answering" || value.status === "unresolved") &&
+			typeof value.decision === "string" &&
+			decisions.has(value.decision)));
+
+export const isPendingPermission = (value: unknown): value is PendingPermission =>
+	Predicate.isObject(value) &&
+	isPermissionRequest(value.request) &&
+	isNonNegativeInteger(value.seq) &&
+	isProgress(value.progress);
+
 export const isPermissionPayload = (value: unknown): value is PermissionPayload => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "pending":
-			return isRecord(value.requests) && Object.values(value.requests).every(isPermissionRequest);
+			return (
+				Predicate.isObject(value.requests) &&
+				Object.values(value.requests).every(isPendingPermission)
+			);
 		case "decision":
 			return (
 				typeof value.request === "string" &&
@@ -149,6 +241,16 @@ export const isPermissionPayload = (value: unknown): value is PermissionPayload 
 			return false;
 	}
 };
+
+/** The two directions of `permission`: one answer inbound, the pending set outbound. */
+export type PermissionAnswer = Extract<PermissionPayload, {readonly kind: "decision"}>;
+export type PermissionPendingSet = Extract<PermissionPayload, {readonly kind: "pending"}>;
+
+export const isPermissionAnswer = (value: unknown): value is PermissionAnswer =>
+	isPermissionPayload(value) && value.kind === "decision";
+
+export const isPermissionPendingSet = (value: unknown): value is PermissionPendingSet =>
+	isPermissionPayload(value) && value.kind === "pending";
 
 /** A mode a program offers. The names are the program's own; the window only lists them. */
 export const Mode = Schema.String.pipe(Schema.brand("tuval/ai-agent/Mode"));
@@ -165,7 +267,7 @@ export type ModePayload =
 const isMode = (value: unknown): value is Mode => typeof value === "string" && value.length > 0;
 
 export const isModePayload = (value: unknown): value is ModePayload => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "state":
 			return (
@@ -179,3 +281,13 @@ export const isModePayload = (value: unknown): value is ModePayload => {
 			return false;
 	}
 };
+
+/** The two directions of `mode`: one set inbound, the current mode and its list outbound. */
+export type ModeSet = Extract<ModePayload, {readonly kind: "set"}>;
+export type ModeState = Extract<ModePayload, {readonly kind: "state"}>;
+
+export const isModeSet = (value: unknown): value is ModeSet =>
+	isModePayload(value) && value.kind === "set";
+
+export const isModeState = (value: unknown): value is ModeState =>
+	isModePayload(value) && value.kind === "state";

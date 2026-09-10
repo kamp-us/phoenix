@@ -5,7 +5,7 @@
  * something under it, while the review reader dropped every bullet carrying no `Said` field and then
  * called a section of zero surviving entries `malformed`. A body that fully satisfied the producer
  * was therefore guaranteed to fail the consumer closed, and no author-facing doc stated the field
- * grammar either side was judging against (#5566). Registering the section as a wire format is what
+ * grammar either side was judging against. Registering the section as a wire format is what
  * makes that disagreement unrepresentable: one module owns the bytes, and both sides read it.
  *
  * `read` is total, and `Found` carries a {@link DeviationsDisclosure} rather than a bare list,
@@ -19,8 +19,8 @@
  * whether anyone accepted it — so the refusal now names the missing field at the point the body is
  * written, instead of costing a review round that could not say what was wrong.
  *
- * v1's §DEV supplied the semantics — the four fields, the seven classes, the M/R/D tiers — and was
- * read as prior art, never called (ADR 0238).
+ * An older pipeline's deviations section supplied the semantics — the four fields, the seven
+ * classes, the M/R/D tiers — and was read as prior art, never called.
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
@@ -326,6 +326,29 @@ export const emit = (disclosure: DeviationsDisclosure): string => {
 	const body =
 		disclosure._tag === "NoneDeclared" ? NONE_TEXT : disclosure.entries.map(entryLine).join("\n");
 	return `${heading}\n\n${body}\n`;
+};
+
+/**
+ * The standing entries a replacement disclosure drops — empty when it carries all of them.
+ *
+ * A round rewrites the whole section, so what an author naturally writes is that round's own
+ * entries, and the standing ones — still true of the range the next reviewer grades — go with the
+ * rewrite. An entry is keyed by its **Said**: what the spec asked is what makes it the same
+ * deviation across rounds, where `Did`, `Why` and `Disposition` are the fields a later round
+ * revises. Retiring an entry is therefore restating it with a `Disposition` that says the change was
+ * reverted or corrected, never deleting the bullet.
+ */
+export const droppedEntries = (
+	standing: DeviationsDisclosure,
+	replacement: DeviationsDisclosure,
+): ReadonlyArray<DeviationEntry> => {
+	if (standing._tag === "NoneDeclared") return [];
+	const carried = new Set(
+		replacement._tag === "NoneDeclared"
+			? []
+			: replacement.entries.map((entry) => normalize(entry.said)),
+	);
+	return standing.entries.filter((entry) => !carried.has(normalize(entry.said)));
 };
 
 export type DeviationsFields =

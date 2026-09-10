@@ -4,14 +4,14 @@
  *
  * Two questions, deliberately joined here. `boardVocabulary.standingLanes` says which lanes this
  * repo runs, and it has a shipped default, so a repo that declares nothing still resolves to
- * phoenix's pair. That default is a claim about someone else's board: in a repo where neither label
+ * a shipped pair. That default is a claim about someone else's board: in a repo where neither label
  * exists, `triage homes` offered both anyway and a triager took one, classified the whole issue, and
- * only then hit a failed label write naming a label rather than the real cause (#6440). So the
+ * only then hit a failed label write naming a label rather than the real cause. So the
  * declared set is a candidate list, never the answer — a lane is offered only once the board is
  * observed to carry its label, which is the same evidence the later write depends on.
  *
- * ADR 0286 rules the source is config with no shipped default. The default survives until the
- * `boardVocabulary` eviction lands, which is #6469's — the presence filter is what contains it in
+ * The source is config, with no shipped default. The default survives until the `boardVocabulary`
+ * eviction lands — the presence filter is what contains it in
  * the meantime, and `"standingLanes": []` is how a repo says it runs none.
  */
 
@@ -26,7 +26,7 @@ export interface StandingLane {
 }
 
 /**
- * What routing to each of phoenix's own lanes means.
+ * What routing to each of the shipped default's lanes means.
  *
  * Constants rather than the repo's live label descriptions, so a description edit cannot change a
  * machine-channel answer. A lane outside this map is one some repo declared, and no source here can

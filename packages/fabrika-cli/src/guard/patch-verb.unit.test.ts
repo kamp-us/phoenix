@@ -57,9 +57,9 @@ const run = (options: FakeFsOptions, env: Record<string, string | undefined> = {
 	);
 
 const ALL_PINNED = {
-	"apps/web/src/fate/nkzw.test.ts": THREE[0],
-	"apps/web/tests/integration/flagship.test.ts": THREE[1],
-	"apps/web/src/fate/useView.test.tsx": THREE[2],
+	"apps/site/src/fate/nkzw.test.ts": THREE[0],
+	"apps/site/tests/integration/flagship.test.ts": THREE[1],
+	"apps/site/src/fate/useView.test.tsx": THREE[2],
 };
 
 describe("runPatchGuard", () => {
@@ -99,8 +99,8 @@ describe("runPatchGuard", () => {
 		const outcome = await run(
 			repo(
 				[THREE[1]],
-				{"apps/web/tests/linked.test.ts": THREE[1]},
-				{real: {[`${ROOT}/apps/web/tests/linked.test.ts`]: "/outside/pinned.test.ts"}},
+				{"apps/site/tests/linked.test.ts": THREE[1]},
+				{real: {[`${ROOT}/apps/site/tests/linked.test.ts`]: "/outside/pinned.test.ts"}},
 			),
 		);
 		expect(outcome.code).toBe(0);
@@ -109,8 +109,8 @@ describe("runPatchGuard", () => {
 	it("reds an unpinned patch on the violation seat and annotates the workspace file", async () => {
 		const outcome = await run(
 			repo(THREE, {
-				"apps/web/src/fate/nkzw.test.ts": THREE[0],
-				"apps/web/tests/integration/flagship.test.ts": THREE[1],
+				"apps/site/src/fate/nkzw.test.ts": THREE[0],
+				"apps/site/tests/integration/flagship.test.ts": THREE[1],
 			}),
 			{GITHUB_ACTIONS: "true"},
 		);
@@ -125,15 +125,15 @@ describe("runPatchGuard", () => {
 	it("reds a stale pin and annotates the test file carrying it", async () => {
 		const outcome = await run(
 			repo([THREE[1]], {
-				"apps/web/tests/integration/flagship.test.ts": THREE[1],
-				"apps/web/tests/integration/stale.test.ts": "alchemy@2.0.0-beta.1",
+				"apps/site/tests/integration/flagship.test.ts": THREE[1],
+				"apps/site/tests/integration/stale.test.ts": "alchemy@2.0.0-beta.1",
 			}),
 			{GITHUB_ACTIONS: "true"},
 		);
 		expect(outcome.code).toBe(VIOLATION);
 		expect(
 			outcome.stderr.some((line) =>
-				line.startsWith("::error file=apps/web/tests/integration/stale.test.ts::"),
+				line.startsWith("::error file=apps/site/tests/integration/stale.test.ts::"),
 			),
 		).toBe(true);
 	});
@@ -144,9 +144,9 @@ describe("runPatchGuard", () => {
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor: nothing in scope cannot report clean.
+	// The fail-closed floor: nothing in scope cannot report clean.
 	it("fails closed when patchedDependencies is empty", async () => {
-		const outcome = await run(repo([], {"apps/web/tests/orphan.test.ts": THREE[1]}));
+		const outcome = await run(repo([], {"apps/site/tests/orphan.test.ts": THREE[1]}));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO patchedDependencies");
 	});
@@ -167,7 +167,7 @@ describe("runPatchGuard", () => {
 	it("answers UNKNOWN when a test file in the tree cannot be read", async () => {
 		const outcome = await run({
 			...repo(THREE, ALL_PINNED),
-			unreadable: [`${ROOT}/apps/web/src/fate/nkzw.test.ts`],
+			unreadable: [`${ROOT}/apps/site/src/fate/nkzw.test.ts`],
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("nkzw.test.ts");

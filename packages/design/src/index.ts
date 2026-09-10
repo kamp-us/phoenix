@@ -2,6 +2,12 @@ export type {AgentChatInputProps} from "./AgentChatInput";
 export {AgentChatInput} from "./AgentChatInput";
 export {Alert} from "./Alert";
 export {Avatar} from "./Avatar";
+export type {AgentChatDeliveryRule} from "./agent-chat/delivery";
+export type {
+	PickerItem as AgentSettingItem,
+	SettingMenuProps as AgentSettingMenuProps,
+} from "./agent-chat/SettingMenu";
+export {SettingMenu as AgentSettingMenu} from "./agent-chat/SettingMenu";
 export type {
 	AgentChatInputBridge,
 	PiCommand,
@@ -51,6 +57,7 @@ export type {
 	DesignTranslate,
 } from "./i18n";
 export {DesignTranslationProvider} from "./i18n";
+export {Markdown} from "./Markdown";
 export type {MenuItem, MenuProps} from "./Menu";
 export {Menu} from "./Menu";
 export type {MetaRowProps} from "./MetaRow";

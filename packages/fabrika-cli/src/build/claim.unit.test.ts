@@ -41,7 +41,7 @@ const run = <A>(
 ) => Effect.runPromise(Effect.provide(effect, fakeSeams(script).layer));
 
 /**
- * Two lanes, one session id, one number — the shape the session-only rule could not see (#6037). The
+ * Two lanes, one session id, one number — the shape the session-only rule could not see. The
  * earlier marker is lane A's; lane B reads the same thread and must be told it lost.
  */
 const BOTH_LANES: ReadonlyArray<Scripted> = [

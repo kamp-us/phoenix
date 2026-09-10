@@ -7,7 +7,7 @@
  *
  * When the target resolves to a pull request the note carries the PR's head SHA at post time, so a
  * reader can see at a glance that a note predates a later push. Without it a spot judgement carries no
- * freshness signal at all, which is the stale-repair-note class (#4808).
+ * freshness signal at all, which is the stale-repair-note class.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -33,7 +33,7 @@ const SURFACE = {
 
 export interface NoteOptions {
 	readonly number: number;
-	/** The token `build claim` handed this lane — the identity it posts under (#6037). */
+	/** The token `build claim` handed this lane — the identity it posts under. */
 	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;

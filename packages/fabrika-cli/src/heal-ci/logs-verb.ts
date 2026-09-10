@@ -117,7 +117,7 @@ export const runLogs = (
 				notices,
 			);
 		}
-		// The ADR 0061 carve-out is applied before anything is fetched, so a preview-deploy failure
+		// The informational carve-out is applied before anything is fetched, so a preview-deploy failure
 		// never enters this lane.
 		const failing = latestPerContext(enumerated.value.runs)
 			.filter((run) => !isInformational(run.name))

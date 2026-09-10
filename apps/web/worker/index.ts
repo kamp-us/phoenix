@@ -15,6 +15,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {workerDevPort} from "../dev-ports.ts";
 import {ENV_BINDINGS, envBindings, sentryDsn} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {DrizzleLive} from "./db/Drizzle.ts";
@@ -72,7 +73,7 @@ const phoenixProps =
 			main: import.meta.filename,
 			// `strictPort` makes a port collision fail loudly; `alchemy dev` otherwise falls
 			// back to the next free port and the Vite proxy silently hits the wrong worker.
-			dev: {port: 1337, strictPort: true},
+			dev: {port: workerDevPort(), strictPort: true},
 			// Binding names are NOT restated here — they come from the same `as const` the
 			// `Config` constructors read under, so a key↔name mismatch is unrepresentable (#1432).
 			env: {

@@ -140,7 +140,7 @@ describe("renderReport", () => {
 	it("names the zero-approval consequence, not just the missing row", () => {
 		const report = renderReport([{path: ".github/", kind: "dir"}]);
 		expect(report).toContain(".github/");
-		expect(report).toContain("#955");
+		expect(report).toContain("control-plane-re.ts");
 		expect(report).toContain("zero required");
 	});
 });

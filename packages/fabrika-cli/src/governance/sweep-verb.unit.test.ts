@@ -89,7 +89,7 @@ describe("runSweep in --landed mode", () => {
 		const out = await run([], {landed: "0001"}, fakeFs({dirs: {[DIR]: []}}));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"governance sweep: scanned .decisions, 0 decision records — refusing to answer (ADR 0092).",
+			"governance sweep: scanned .decisions, 0 decision records — refusing to answer.",
 		);
 	});
 

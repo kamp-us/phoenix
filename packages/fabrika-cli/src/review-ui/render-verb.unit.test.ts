@@ -113,7 +113,7 @@ describe("runRender", () => {
 		);
 	});
 
-	it("prints the capped page errors on both channels, so the file reader cannot desync (ADR 0308)", async () => {
+	it("prints the capped page errors on both channels, so the file reader cannot desync", async () => {
 		const noisy: SurfaceRender = {
 			_tag: "Rendered",
 			entry: {
@@ -159,8 +159,8 @@ describe("runRender", () => {
 		expect((await run(happy(), {surfaces: ["/pano:empty"]})).outcome.code).toBe(OFF_VOCABULARY);
 	});
 
-	// An `:auth` surface rendered anonymously is the "unseen ground reading as clean" defect
-	// (#7051), so a half-set or absent credential pair is UNKNOWN rather than a visitor's shot.
+	// An `:auth` surface rendered anonymously is the "unseen ground reading as clean" defect, so a
+	// half-set or absent credential pair is UNKNOWN rather than a visitor's shot.
 	it("refuses an :auth surface with no credentials on 11, never the anonymous render", async () => {
 		expect((await run(happy(), {surfaces: ["/pano:auth"]})).outcome.code).toBe(
 			PRECONDITION_UNKNOWN,
@@ -194,7 +194,7 @@ describe("runRender", () => {
 
 	// A tier with no token of its own is a tier `preview-seed test-account` did not seed on this
 	// preview. Reading it as satisfied by the yazar's token would render the audience the surface
-	// said it was not, and the capture would come back clean (#7398).
+	// said it was not, and the capture would come back clean.
 	it("refuses a çaylak surface whose tier token is unset, naming it rather than falling back", async () => {
 		const {outcome} = await run(happy(), {
 			surfaces: ["/hosgeldin:auth-caylak"],
@@ -229,7 +229,7 @@ describe("runRender", () => {
 
 	// The credential check only proves each tier's token was SET. Which tier actually rendered is the
 	// shot's own answer, and a shot that came back above the named floor is UNKNOWN — the page
-	// rendered fine, it is just not the audience the surface id named (#7398).
+	// rendered fine, it is just not the audience the surface id named.
 	it("refuses a wrong-tier shot on 11, recording no capture under that surface id", async () => {
 		const {outcome, written} = await run(happy(), {
 			surfaces: ["/hosgeldin:auth-caylak"],
@@ -249,7 +249,7 @@ describe("runRender", () => {
 
 	// The credential check only proves the pair was SET. Whether the cookie actually authenticated is
 	// the shot's own answer, and a shot that came back a visitor's is UNKNOWN — never a red surface,
-	// because the page rendered fine, and never a Rendered entry under the `:auth` id (#7051).
+	// because the page rendered fine, and never a Rendered entry under the `:auth` id.
 	it("refuses an :auth shot that did not render signed in on 11, recording no capture", async () => {
 		const {outcome, written} = await run(happy(), {
 			surfaces: ["/pano:auth"],
@@ -290,9 +290,9 @@ describe("runRender", () => {
 
 	// The operand's own refusals, decided before a browser launches. Both are `10`: an operand
 	// nothing can force and an operand the preview would silently drop are the same defect — the
-	// default state shot under the forced name (#7218).
+	// default state shot under the forced name.
 	it("refuses a malformed --flag operand on 10, naming the token and why", async () => {
-		const {outcome} = await run(happy(), {surfaces: ["/pano:auth"], flags: ["phoenix-welcome"]});
+		const {outcome} = await run(happy(), {surfaces: ["/pano:auth"], flags: ["welcome-banner"]});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.join("\n")).toContain("no = separating the key from its value");
 		expect((await run(happy(), {surfaces: ["/pano:auth"], flags: ["a=true"]})).outcome.code).toBe(
@@ -303,7 +303,7 @@ describe("runRender", () => {
 	it("refuses --flag beside an anonymous surface on 10 — the preview would drop the cookie", async () => {
 		const {outcome} = await run(happy(), {
 			surfaces: ["/pano:auth", "/hosgeldin"],
-			flags: ["phoenix-welcome=on"],
+			flags: ["welcome-banner=on"],
 		});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.join("\n")).toContain('anonymous surface "/hosgeldin"');
@@ -313,7 +313,7 @@ describe("runRender", () => {
 		const seen = new Map<string, {cookies: number; forced: Record<string, boolean>}>();
 		const {outcome} = await run(happy(), {
 			surfaces: ["/hosgeldin:auth"],
-			flags: ["phoenix-welcome=on"],
+			flags: ["welcome-banner=on"],
 			env: {
 				CLAUDE_PIPELINE_REPO: "o/r",
 				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
@@ -331,7 +331,7 @@ describe("runRender", () => {
 		// Two session cookies (prefixed and bare) plus the one override cookie.
 		expect(seen.get("/hosgeldin:auth")).toEqual({
 			cookies: 3,
-			forced: {"phoenix-welcome": true},
+			forced: {"welcome-banner": true},
 		});
 	});
 
@@ -351,7 +351,7 @@ describe("runRender", () => {
 	it("refuses an inert override on 11, recording no capture", async () => {
 		const {outcome, written} = await run(happy(), {
 			surfaces: ["/hosgeldin:auth", "/b:auth"],
-			flags: ["phoenix-welcome=on"],
+			flags: ["welcome-banner=on"],
 			env: {
 				CLAUDE_PIPELINE_REPO: "o/r",
 				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
@@ -360,7 +360,7 @@ describe("runRender", () => {
 			render: legOf({
 				"/hosgeldin:auth": {
 					_tag: "OverrideInert",
-					reason: "the preview evaluated phoenix-welcome at the default",
+					reason: "the preview evaluated welcome-banner at the default",
 				},
 				"/b:auth": {_tag: "Crashed", firstError: "TypeError: x is null"},
 			}),
@@ -451,7 +451,7 @@ describe("runRender", () => {
 	});
 
 	// Omitting the operand is what every invocation written before it did, so the default must stay
-	// the single desktop shot rather than becoming a cross-product nobody asked for (#7706).
+	// the single desktop shot rather than becoming a cross-product nobody asked for.
 	it("renders at desktop alone when no --viewport is passed", async () => {
 		const seen: string[] = [];
 		const {outcome} = await run(happy(), {
@@ -499,7 +499,7 @@ describe("runRender", () => {
 	});
 
 	// A desktop-width shot filed under `mobile` answers the narrow half of the law from the wrong
-	// pixels, which no byte check downstream can tell from the real thing (#7706).
+	// pixels, which no byte check downstream can tell from the real thing.
 	it("refuses a shot whose bytes read back at another width on 19, recording no capture", async () => {
 		const {outcome, written} = await run(happy(), {
 			viewports: ["mobile"],

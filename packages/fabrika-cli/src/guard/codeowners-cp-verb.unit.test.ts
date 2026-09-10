@@ -25,7 +25,7 @@ const owningAllBut = (...dropped: ReadonlyArray<string>): string =>
 	cpPaths(CONTROL_PLANE_RE)
 		.map((p) => p.path)
 		.filter((p) => !dropped.includes(p))
-		.map((p) => `/${p} @kamp-us/control-plane`)
+		.map((p) => `/${p} @acme/control-plane`)
 		.join("\n");
 
 describe("runCodeownersCpGuard", () => {
@@ -35,7 +35,7 @@ describe("runCodeownersCpGuard", () => {
 		expect(outcome.stdout).toContain("§CP path(s) are covered");
 	});
 
-	// The #955 defect verbatim: a §CP path in the boundary with no CODEOWNERS row behind it.
+	// The defect verbatim: a §CP path in the boundary with no CODEOWNERS row behind it.
 	it("seats a dropped §CP row on the violation code, naming the path", async () => {
 		const outcome = await run({files: {[CODEOWNERS]: owningAllBut(".github/")}});
 		expect(outcome.code).toBe(VIOLATION);
@@ -53,7 +53,7 @@ describe("runCodeownersCpGuard", () => {
 		);
 	});
 
-	// ADR 0092's floor, twice over: no file and no owned row are both "nothing is owned", and an
+	// The fail-closed floor, twice over: no file and no owned row are both "nothing is owned", and an
 	// owner-less CODEOWNERS is exactly the shape that would otherwise pass vacuously.
 	it("fails closed when CODEOWNERS is absent", async () => {
 		expect((await run({files: {}})).code).toBe(ZERO_SCOPE);

@@ -2,7 +2,7 @@
  * What a guard answers, and how that answer becomes bytes and an exit code.
  *
  * Every guard in this group computes a {@link GuardVerdict} and hands it here. The taxonomy lives
- * once so a workflow reads the same grammar from every guard, and so the ADR 0092 floor — a scan
+ * once so a workflow reads the same grammar from every guard, and so the fail-closed floor — a scan
  * that resolved to nothing reds, never passes — is a *shape* rather than a rule each guard is
  * trusted to remember. `zeroScope` is a constructor; there is no way to build a `Clean` verdict
  * that carries no scanned scope.
@@ -21,9 +21,9 @@ import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
  * point — CI reds on all of them, a human fixing one needs to know which.
  *
  * `Skipped` and `ZeroScope` both mean the guard scanned nothing, and they are not the same answer.
- * `ZeroScope` is a scan that resolved empty when it should have resolved to something — the ADR 0092
- * red. `Skipped` is the repo having declared the guard's subject does not exist here, so there was
- * never anything to resolve; reporting that as a red would make a valid config a permanent CI
+ * `ZeroScope` is a scan that resolved empty when it should have resolved to something — the
+ * fail-closed red. `Skipped` is the repo having declared the guard's subject does not exist here,
+ * so there was never anything to resolve; reporting that as a red would make a valid config a permanent CI
  * failure.
  */
 export type GuardVerdict =
@@ -37,7 +37,7 @@ export type GuardVerdict =
 			readonly report: string;
 			readonly annotations: ReadonlyArray<Annotation>;
 	  }
-	/** The scope resolved empty, so a pass would be vacuous (ADR 0092). */
+	/** The scope resolved empty, so a pass would be vacuous. */
 	| {readonly _tag: "ZeroScope"; readonly report: string}
 	/** A read the verdict rests on failed. Nothing is proven — never reported as clean. */
 	| {readonly _tag: "Unknown"; readonly report: string};
@@ -99,7 +99,7 @@ export const verdictCode = (verdict: GuardVerdict): number => {
 /**
  * The verdict as bytes and an exit code. A `ZeroScope` or `Unknown` verdict supplies no annotations
  * of its own, so it gets the report's head as one bare `::error` — a red that renders a blank check
- * surface is the #3868 complaint verbatim.
+ * surface hides the failure from everyone who does not open the log.
  */
 export const emitVerdict = (
 	verdict: GuardVerdict,

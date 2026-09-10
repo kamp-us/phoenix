@@ -57,8 +57,8 @@ const SEPARATOR = /^(?:—|–|--|-)\s*/;
  *
  * Each widening is additive — no existing marker's reading changes — and each namespace is its own
  * family rather than a `review-<gate>` member, because a verdict wearing another gate's namespace is
- * the family confusion the partition ruling removed (#4891). `governance` is admitted here (#5199)
- * ahead of the verb that will emit it: `ship scope` already derives it as a required namespace, so a
+ * a family confusion this partition removes. `governance` is admitted here ahead of the verb that
+ * will emit it: `ship scope` already derives it as a required namespace, so a
  * format that cannot carry it makes every governance-root PR permanently `blocked` at `ship gate`.
  * Nothing here grants emission authority — `review post` still refuses any namespace this PR's diff
  * did not derive, and `governance` is not in that image.

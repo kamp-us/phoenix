@@ -182,8 +182,8 @@ describe("runPost", () => {
 		expect(write).toContain("earlier round at this head");
 	});
 
-	// The #7247 instance: a PASS landing over a standing FAIL at one head is the write that erased
-	// PR #7081's blocking verdict, and GitHub keeps no comment-body history to recover it from.
+	// The erasure: a PASS landing over a standing FAIL at one head is the write that erased a
+	// blocking verdict, and GitHub keeps no comment-body history to recover it from.
 	it("refuses on 17 a post that would retire the opposite polarity at this head", async () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
@@ -229,9 +229,9 @@ describe("runPost", () => {
 		expect(write).toContain("the Deviations entry is malformed.");
 	});
 
-	// The head dimension of the upsert key. It shipped in v1 under #4007 and this tree did not carry
+	// The head dimension of the upsert key. It shipped in v1 and this tree did not carry
 	// it forward, so a re-gate after a repair PATCHed the prior head's verdict away and the record of
-	// what was true over that tree became unrecoverable (#5585). Both carriers are pinned, because
+	// what was true over that tree became unrecoverable. Both carriers are pinned, because
 	// each binds its head on different bytes and a fix to one says nothing about the other.
 	it("leaves a prior head's marker verdict intact and appends at the new head", async () => {
 		const shell = fakeSeams([
@@ -307,7 +307,7 @@ describe("runPost", () => {
 		expect(write).toContain(STAMP);
 	});
 
-	// The pre-#5048 upsert took the FIRST match, and the list arrives oldest-first — so on a namespace
+	// The earlier upsert took the FIRST match, and the list arrives oldest-first — so on a namespace
 	// that already holds two of this author's comments it edited the one the resolver is least likely
 	// to be reading, and reported success.
 	it("supersedes the NEWEST comment in the namespace when two of this author's already exist", async () => {
@@ -424,7 +424,7 @@ describe("runPost", () => {
 		const advisoryFail = await run(happy(), {polarity: "FAIL", carrier: "advisory"});
 		expect(advisoryFail.code).toBe(OFF_VOCABULARY);
 		expect(advisoryFail.stderr.at(-1)).toBe(
-			"review post: --carrier advisory is a PASS path only (ADR 0226) — post the FAIL marker instead.",
+			"review post: --carrier advisory is a PASS path only — post the FAIL marker instead.",
 		);
 	});
 
@@ -436,7 +436,7 @@ describe("runPost", () => {
 		expect(out.code).toBe(STALE_HEAD);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review post: the live head is ${HEAD}, not ${OLD_HEAD} — the tree you judged is gone; re-review at ${HEAD} (ADR 0058).`,
+			`review post: the live head is ${HEAD}, not ${OLD_HEAD} — the tree you judged is gone; re-review at ${HEAD}.`,
 		);
 		expect(shell.requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(
 			false,
@@ -700,7 +700,7 @@ describe("runPost", () => {
 });
 
 /**
- * The provenance fence (#5122).
+ * The provenance fence.
  *
  * The derived namespace set is documented as both floor and ceiling for what this verb may emit, so
  * recomputing it from the PR-number endpoint admits a namespace this run never derived and refuses

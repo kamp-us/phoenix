@@ -2,7 +2,7 @@
  * The JSON boundary — the one native `try/catch` around `JSON.parse` in this package.
  *
  * **No `effect` import here on purpose.** Parsing an untrusted string needs a native `try/catch`,
- * and the repo bans that inside Effect control flow (#2736) — so this is the boundary half, and the
+ * and this package bans that inside Effect control flow — so this is the boundary half, and the
  * Effect seams in `issues.ts` wrap it. A parse that fails never resolves to a value: it is either
  * `null` or a tagged reason, which every caller turns into a typed refusal rather than into an
  * empty result.

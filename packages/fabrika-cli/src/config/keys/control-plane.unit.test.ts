@@ -31,11 +31,11 @@ describe(UNREADABLE_CODEOWNERS, () => {
 	});
 });
 
-describe(`phoenix's own ${CONFIG_PATH}`, () => {
+describe(`this repo's own ${CONFIG_PATH}`, () => {
 	// The shipped default is the LOOSE value, which is the one departure from the "reproduce today's
 	// behaviour" rule in .patterns/fabrika-config-key-groups.md. It is only safe because it is
 	// paired: this repo declares the strict value, and this test is what holds it there.
-	it("resolves refuse-on-unreadable — here CODEOWNERS IS the control-plane gate (#4216)", () => {
+	it("resolves refuse-on-unreadable — here CODEOWNERS IS the control-plane gate", () => {
 		const text = readFileSync(
 			fileURLToPath(new URL(`../../../../../${CONFIG_PATH}`, import.meta.url)),
 			"utf8",

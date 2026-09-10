@@ -1,7 +1,9 @@
 import {describe, expect, it} from "vitest";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
+import {headSha} from "../wire/verdict-marker.ts";
 import {
 	appendOnly,
+	type CriterionProvenance,
 	criterionRow,
 	grewByOne,
 	insertAfterLastCriterion,
@@ -42,11 +44,30 @@ const WRAPPED = `### Acceptance criteria
 `;
 
 describe("criterionRow", () => {
+	const sha = (raw: string) => {
+		const value = headSha(raw);
+		if (value === null) throw new Error(`fixture is not a revision: ${raw}`);
+		return value;
+	};
+	const pull: CriterionProvenance = {_tag: "Pull", pr: 4321};
+	const ranged: CriterionProvenance = {
+		_tag: "Ranged",
+		range: {base: sha("9f2c1ab"), tip: sha("03135b9")},
+	};
+
 	it("carries the provenance tag that makes a routed row auditable", () => {
-		expect(criterionRow("a regression test covers qty > 1", 4321, 1)).toBe(
+		expect(criterionRow("a regression test covers qty > 1", pull, 1)).toBe(
 			"- [ ] a regression test covers qty > 1 <!-- ac:review pr:#4321 round:1 -->",
 		);
-		expect(provenanceTag(4321, 2)).toBe("<!-- ac:review pr:#4321 round:2 -->");
+		expect(provenanceTag(pull, 2)).toBe("<!-- ac:review pr:#4321 round:2 -->");
+	});
+
+	it("names the range when the round was judged over one, distinguishably from a PR", () => {
+		expect(criterionRow("a regression test covers qty > 1", ranged, 1)).toBe(
+			"- [ ] a regression test covers qty > 1 <!-- ac:review range:9f2c1ab..03135b9 round:1 -->",
+		);
+		expect(provenanceTag(ranged, 2)).toBe("<!-- ac:review range:9f2c1ab..03135b9 round:2 -->");
+		expect(provenanceTag(ranged, 2)).not.toContain("pr:#");
 	});
 });
 
@@ -75,7 +96,7 @@ Some trailing prose.`);
 
 	it("locates a WRAPPED last criterion and lands the row after its last physical line", () => {
 		// The anchor this case used to miss: the criterion's text is the joined sentence, which is on
-		// no single line, so a text-to-line match found nothing and refused the append (#5716).
+		// no single line, so a text-to-line match found nothing and refused the append.
 		const composed = compose(WRAPPED, "- [ ] a third thing");
 		expect(composed).toContain(
 			"as a new sibling row rather than a continuation of the previous one.\n- [ ] a third thing\n",

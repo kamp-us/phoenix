@@ -1,6 +1,6 @@
 /**
  * The parse of `ROADMAP.md`'s two tables and the I1–I5 verdict — each invariant's pass and every way
- * it fails, ported from v1's `roadmap-guard` (#2648). No IO: the file and the milestone
+ * it fails, ported from v1's `roadmap-guard`. No IO: the file and the milestone
  * projection are crossed in `./roadmap-verb.ts`.
  */
 import {describe, expect, it} from "vitest";
@@ -79,7 +79,7 @@ describe("judge — happy path", () => {
 	});
 });
 
-describe("judge — I4 zero-scope fail-closed (ADR 0092)", () => {
+describe("judge — I4 zero-scope fail-closed", () => {
 	it("FAILS zero-scope on zero arc rows", () => {
 		const v = judge([], goodCampaigns, goodMilestones);
 		expect(v.pass).toBe(false);
@@ -166,7 +166,7 @@ describe("judge — I3 no unclaimed open milestone", () => {
 	});
 });
 
-describe("judge — I5 state symmetry (the campaign lifecycle, #2660; paused per ADR 0304)", () => {
+describe("judge — I5 state symmetry (the campaign lifecycle, paused included)", () => {
 	it("PASSES a PAUSED campaign over an OPEN milestone — pausing does not close the milestone", () => {
 		expect(
 			judge(
@@ -276,7 +276,7 @@ describe("judge — collects EVERY violation in one pass", () => {
 			// two active arcs (I2), one pinned to a missing milestone (I1)
 			[arc("A", 17, "active"), arc("B", 99, "active")],
 			[],
-			// #42 open + unclaimed (I3)
+			// milestone 42 open + unclaimed (I3)
 			[ms(17, "open"), ms(42, "open")],
 		);
 		expect(new Set(codes(v))).toEqual(new Set(["I1", "I2", "I3"]));
@@ -300,11 +300,11 @@ describe("renderReport", () => {
 	it("explains the fail-closed zero-scope verdict", () => {
 		const r = renderReport(judge([], goodCampaigns, goodMilestones));
 		expect(r).toContain("fail-closed");
-		expect(r).toContain("ADR 0092");
+		expect(r).toContain("(I4)");
 	});
 
 	it("lists each violation with its invariant code", () => {
-		// Ghost is pinned to #99 (absent) ⇒ I1; #17 open + unclaimed ⇒ I3.
+		// Ghost is pinned to milestone 99 (absent) ⇒ I1; milestone 17 open + unclaimed ⇒ I3.
 		const r = renderReport(judge([arc("Ghost", 99, "active")], [], [ms(17, "open")]));
 		expect(r).toContain("[I1]");
 		expect(r).toContain("[I3]");

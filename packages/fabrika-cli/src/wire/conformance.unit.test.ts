@@ -177,7 +177,7 @@ describe("the laws bite — each mutation is caught", () => {
  * expected value sits on the right of an `=`, so flipping it reds with `TS2322` at the line that
  * states the claim. A probe that compiles either way proves nothing, which is exactly what the old
  * `brandWitness<A>` counterexample turned out to be — `A` was free, so it type-checked while naming
- * a brand the field did not carry (#4969).
+ * a brand the field did not carry.
  */
 type Inhabits<K extends string, V> = K extends BrandedKeys<V> ? true : false;
 
@@ -292,7 +292,7 @@ describe("the witness binds the field name to that field's own type", () => {
 	});
 
 	it("refuses a value type with no branded field — zero scope is not an empty brands list", () => {
-		// @ts-expect-error — the parameter type is `never`, so the call is unwritable (ADR 0092). The
+		// @ts-expect-error — the parameter type is `never`, so the call is unwritable. The
 		// runtime throw below is what a caller that reached it anyway gets: a refusal, never `[]`.
 		expect(() => brandWitnesses<{readonly onlyBare: string}>({})).toThrow(/no branded field/);
 	});

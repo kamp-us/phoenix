@@ -6,7 +6,7 @@
  *
  * `declared` beats `collision` beats `absent`, and TERMS is searched before LANGUAGE, so a term
  * declared in both is reported once as `declared` in TERMS. That duplication is a defect
- * `glossary check` reports as `cross-register` (#4465); reporting it twice here would make one term
+ * `glossary check` reports as `cross-register`; reporting it twice here would make one term
  * look like two.
  */
 import {Effect, Path} from "effect";

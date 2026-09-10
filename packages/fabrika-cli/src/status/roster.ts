@@ -2,13 +2,13 @@
  * Where the skill roster lives, and what one `SKILL.md` says about itself.
  *
  * **The roster is the plugin's, not the target repo's.** fabrika installs into repos that are not
- * phoenix (#4776), so defaulting to a repo-relative path would make `status menu` empty on
- * precisely the fresh repo this skill onboards. Resolution runs six tiers and prints which one
- * served, so a caller can re-run the read instead of adopting the render.
+ * its own home, so defaulting to a repo-relative path would make `status menu` empty on precisely
+ * the fresh repo this skill onboards. Resolution runs six tiers and prints which one served, so a
+ * caller can re-run the read instead of adopting the render.
  *
  * **A roster that resolves and holds zero skills is a fact, not a failure**; a roster that could not
  * be read, or one `SKILL.md` inside it that could not be read, is UNKNOWN. A partial roster is not a
- * roster — the false-absence class of #4105 and #4163.
+ * roster: a skill it could not read would render as a skill that does not exist.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import {ancestors} from "../delegate/root.ts";
@@ -40,7 +40,7 @@ export const PLUGIN_NAME = "fabrika";
  *
  * `.orphaned_at` is stamped by the harness's cache sweep on every version the live plugin set no
  * longer references, so its absence is what distinguishes the installed version from the dozens of
- * superseded copies left beside it (49 of them on the machine #6448 was reproduced on, 48 orphaned).
+ * superseded copies left beside it (one machine carried 49 copies, 48 of them orphaned).
  * `.in_use` marks a version some running session holds; it is a tiebreak and not a filter, because
  * the live version on that same machine carried no `.in_use` at all.
  */
@@ -254,7 +254,7 @@ export const resolveRosterPath = (
 		}
 		// The env rung is the harness's own answer and outranks every probe, but it cannot be the
 		// only one: `CLAUDE_PLUGIN_ROOT` is set for plugin hooks and plugin-provided commands and
-		// NOT for an ordinary Bash tool call, which is how most of these verbs are invoked (#6448).
+		// NOT for an ordinary Bash tool call, which is how most of these verbs are invoked.
 		if (
 			sources.pluginRootEnv !== null &&
 			(yield* probe(path.join(sources.pluginRootEnv, PLUGIN_MANIFEST)))
@@ -277,7 +277,7 @@ export const resolveRosterPath = (
 		}
 		// The checkout rung walks the same marker up from `moduleDir`, and is the only one that
 		// answers in the dev shape: the CLI at `packages/fabrika-cli/` has no plugin manifest above
-		// it, so `plugin` cannot fire, and `repo` is rooted at a target repo holding none (#5775).
+		// it, so `plugin` cannot fire, and `repo` is rooted at a target repo holding none.
 		const checkoutRoot = yield* nearestAncestorWith(path, sources.moduleDir, IN_REPO_ROSTER);
 		if (checkoutRoot !== null) {
 			return {
@@ -288,9 +288,9 @@ export const resolveRosterPath = (
 		}
 		// The rung that answers the marketplace shape: the plugin sits in the harness's cache and the
 		// CLI is a global npm package outside it, so nothing on disk connects the two and no walk from
-		// `moduleDir` or the cwd can reach the roster (#6448). It sits *below* the two walking rungs
-		// on purpose: a phoenix developer has both, and a cache read there would render the published
-		// roster over the working tree's, which is the shape #5775 was fixed to serve.
+		// `moduleDir` or the cwd can reach the roster. It sits *below* the two walking rungs on
+		// purpose: a developer working on fabrika itself has both, and a cache read there would render
+		// the published roster over the working tree it is being edited in.
 		const cached =
 			sources.pluginCache === null ? null : yield* cachedPluginRoot(path, sources.pluginCache);
 		return cached === null ? null : yield* rosterIn(path, cached, "cache");

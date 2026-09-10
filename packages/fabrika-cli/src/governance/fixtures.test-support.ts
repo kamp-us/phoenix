@@ -34,7 +34,7 @@ export const STATUS_AT = (base: string = BASE, head: string = HEAD): RegExp =>
  *
  * A rename or copy carries two paths — source then destination — where every other change carries
  * one, which is the three-field shape `parseNameStatus` walks statefully. A row type fixed at two
- * fields cannot express it, so no test could reach that walk (#6064).
+ * fields cannot express it, so no test could reach that walk.
  */
 export type StatusRow = readonly [status: string, ...paths: string[]];
 
@@ -66,7 +66,7 @@ export const FULL_TREE: ReadonlyArray<string> = [
 /** The resolved skill root `FULL_TREE` yields. */
 export const SKILL_ROOT = "claude-plugins/fabrika/skills/governance/";
 
-/** An epic child's two ends, and the commit `git merge-base` names for them (#6064). */
+/** An epic child's two ends, and the commit `git merge-base` names for them. */
 export const RANGE_BASE = "1a2b3c4d5e6f708192a3b4c5d6e7f80910111213";
 export const RANGE_TIP = "2b3c4d5e6f708192a3b4c5d6e7f8091011121314";
 export const RANGE_MERGE_BASE = "3c4d5e6f708192a3b4c5d6e7f809101112131415";

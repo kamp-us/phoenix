@@ -79,7 +79,7 @@ describe("runDigest", () => {
 		);
 	});
 
-	it("reports `status:` verbatim rather than interpreting it (#4388)", async () => {
+	it("reports `status:` verbatim rather than interpreting it", async () => {
 		const out = await run([...happy.slice(0, 8), [SHOW[0], okOut(record("0240", "proposed"))]]);
 		expect(out.stdout).toContain("\tproposed\t");
 	});
@@ -131,7 +131,7 @@ describe("runDigest", () => {
 		const out = await run([REMOTES, FETCH, RESOLVE, SHALLOW, [TREE[0], okOut("src/cart.ts\0")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"governance digest: scanned .decisions, 0 decision records — refusing to answer (ADR 0092).",
+			"governance digest: scanned .decisions, 0 decision records — refusing to answer.",
 		);
 	});
 

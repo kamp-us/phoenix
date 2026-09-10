@@ -43,8 +43,29 @@ and capability set — and its contract to `cli-interface-convention.md` Part 2'
 test. A restated sibling behavior (rather than an imported module or a cited section) is drift
 waiting to happen; name it.
 
-**Every contract read the diff instructs is a section read** (ADR
-[0296](../../../../../.decisions/0296-contracts-are-read-by-section.md)). Skill text and any
+**No step, rationale or exit-code note may point at something only this repo can resolve.** Run
+`fabrika guard portability-guard check` on any diff under `claude-plugins/fabrika/` or
+`packages/fabrika-cli/src/` and take a red as a finding: a skill installed elsewhere whose refusal
+rationale names a ticket the reader cannot open teaches nothing, and the fix is a self-contained
+sentence, not a shorter pointer. The guard's floor only shrinks, so a diff that lifts a ceiling to
+admit a new reference is the finding rather than the remedy.
+
+**Every contract read the diff instructs is a section read** — a contract is a reference the reader
+resolves one heading at a time, never a document loaded whole. Skill text and any
 spawn prompt in the diff point at
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`; text telling an agent to read,
 open, or load a `contract.md` whole is a finding, whatever the read's shape.
+
+## 5 — Writing craft
+
+Apply [`writing-for-agents`](../../writing-for-agents/SKILL.md) verbatim to the skill-class slice
+and state its verdict here. `claude-plugins/fabrika/docs/skill-conventions.md` §8 gate 1 admits a
+skill only when it is written under that discipline, and the gate reads the text rather than the
+session that produced it, so this section is where the gate acquires teeth. Read the skill inline as
+a reference; it has no run to spawn.
+
+Name what it catches: a step whose completion criterion nothing can check, reference that buries the
+steps around it, one meaning kept in two homes, a sentence that changes no behaviour against the
+model's default, a rule steered by prohibition where the positive target would land harder. An unmet
+line is a finding, and a finding here refuses PASS on the `review-skill` namespace on the same
+footing as one from sections 1–4.

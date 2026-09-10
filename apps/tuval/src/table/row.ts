@@ -4,7 +4,7 @@
  * tells a Pi process from a Claude one by `programId` and by nothing else (#7498's stated risk).
  */
 
-import {Option} from "effect";
+import {Option, Predicate} from "effect";
 import type {Lifecycle, ProcessId, ProcessRow} from "../process/process.ts";
 import type {ProgramId} from "../registry/program.ts";
 
@@ -26,6 +26,10 @@ export interface TableRow {
 	readonly parentId: Option.Option<ProcessId>;
 	readonly ports: Readonly<Record<string, PortDeclaration>>;
 	readonly stateSummary: TableStateSummary;
+	/** The newest line the process said on `title@1`, latched by the kernel (`../process/self-report.ts`). */
+	readonly title: Option.Option<string>;
+	/** The newest line it said on `status@1`. Both are `none` for a program declaring neither port. */
+	readonly status: Option.Option<string>;
 }
 
 export type TableEventKind = "spawned" | "stopped" | "state-changed";
@@ -38,6 +42,7 @@ export interface TableEvent {
 
 export const toTableRow = (row: ProcessRow): TableRow => {
 	const {lifecycle, revision} = row.stateSummary();
+	const {title, status} = row.selfReport();
 	const ports: Record<string, PortDeclaration> = {};
 	for (const [name, port] of Object.entries(row.ports)) {
 		ports[name] = {kind: port.kind, direction: port.direction};
@@ -48,38 +53,39 @@ export const toTableRow = (row: ProcessRow): TableRow => {
 		parentId: row.parentId,
 		ports,
 		stateSummary: {lifecycle, revision},
+		title,
+		status,
 	};
 };
 
 const kinds: ReadonlySet<string> = new Set<TableEventKind>(["spawned", "stopped", "state-changed"]);
 const lifecycles: ReadonlySet<string> = new Set<Lifecycle>(["running", "stopping"]);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null;
-
 const isPortDeclaration = (value: unknown): value is PortDeclaration =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.kind === "string" &&
 	(value.direction === "in" || value.direction === "out");
 
 const isStateSummary = (value: unknown): value is TableStateSummary =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.lifecycle === "string" &&
 	lifecycles.has(value.lifecycle) &&
 	typeof value.revision === "number";
 
 export const isTableRow = (value: unknown): value is TableRow =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.id === "string" &&
 	typeof value.programId === "string" &&
 	Option.isOption(value.parentId) &&
-	isRecord(value.ports) &&
+	Predicate.isObjectOrArray(value.ports) &&
 	Object.values(value.ports).every(isPortDeclaration) &&
-	isStateSummary(value.stateSummary);
+	isStateSummary(value.stateSummary) &&
+	Option.isOption(value.title) &&
+	Option.isOption(value.status);
 
 /** The port predicate: the wire is nominal kind plus predicate, and this is the predicate. */
 export const isTableEvent = (value: unknown): value is TableEvent =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.kind === "string" &&
 	kinds.has(value.kind) &&
 	isTableRow(value.row);

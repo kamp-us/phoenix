@@ -1,10 +1,10 @@
 import {type DispatchDiscardedError, type NoCtx, subId} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Schema, type Scope} from "effect";
+import {Context, Effect, Exit, Fiber, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
 import {type ActorHandle, layer, make} from "./actor.ts";
 import {type CoreMachine, defineActor} from "./definition.ts";
-import type {ActorStoppedError, StoreError} from "./errors.ts";
+import type {ActorStoppedError, MsgNotAcceptedError, StoreError} from "./errors.ts";
 import {counterMachine, type Msg, recordingStore, type State} from "./fixtures.ts";
 
 describe("host actor", () => {
@@ -23,6 +23,7 @@ describe("host actor", () => {
 				};
 				const actor = yield* make(
 					defineActor({
+						name: "test/serialized",
 						machine,
 						interpret: {
 							slow: (cmd) =>
@@ -57,6 +58,7 @@ describe("host actor", () => {
 					state.type === "on" ? [{id: subId("ticker"), type: "ticker"}] : [],
 			};
 			const definition = defineActor({
+				name: "test/sub-scope",
 				machine,
 				interpret: {},
 				subscribe: {
@@ -97,6 +99,7 @@ describe("host actor", () => {
 			const live = layer(
 				Counter,
 				defineActor({
+					name: "test/layered",
 					machine: counterMachine(log),
 					store: recordingStore(saves),
 					interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
@@ -117,6 +120,57 @@ describe("host actor", () => {
 		}),
 	);
 
+	it.effect("refuses a Msg with no cell and leaves the process open (#7973)", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				type S = {readonly count: number};
+				// The wire shape a forwarded key arrives in. `Reducer` demands a cell per member of a
+				// closed `M`, so the machine that meets this bug is one whose Msg type is open — which
+				// is what a process handle erased to `AnyProgram` hands the shell's `forwardKey`.
+				type M = {readonly type: string; readonly key?: string};
+				const machine: CoreMachine<S, M, never, never, NoCtx> = {
+					init: () => [{count: 0}, []],
+					update: {tick: (state) => [{count: state.count + 1}, []]},
+				};
+				const actor = yield* make(
+					defineActor({name: "test/no-cell", machine, interpret: {}, subscribe: {}}),
+				);
+
+				const refused = yield* actor.dispatch({type: "key", key: "x"}).pipe(Effect.flip);
+				assert.strictEqual(refused._tag, "tuval/host/MsgNotAcceptedError");
+
+				yield* actor.dispatch({type: "tick"});
+				assert.deepStrictEqual(actor.getState(), {count: 1});
+			}),
+		),
+	);
+
+	it.effect("a cell that genuinely throws still closes the gate under the stop default", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				type S = {readonly count: number};
+				type M = {readonly type: "tick"};
+				const machine: CoreMachine<S, M, never, never, NoCtx> = {
+					init: () => [{count: 0}, []],
+					update: {
+						tick: () => {
+							throw new Error("boom");
+						},
+					},
+				};
+				const actor = yield* make(
+					defineActor({name: "test/throwing-cell", machine, interpret: {}, subscribe: {}}),
+				);
+
+				const died = yield* Effect.exit(actor.dispatch({type: "tick"}));
+				assert.isTrue(Exit.isFailure(died));
+
+				const refused = yield* actor.dispatch({type: "tick"}).pipe(Effect.flip);
+				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+			}),
+		),
+	);
+
 	it.effect("keeps every save snapshot JSON-round-trippable", () =>
 		Effect.gen(function* () {
 			const saves: State[] = [];
@@ -124,6 +178,7 @@ describe("host actor", () => {
 				Effect.gen(function* () {
 					const actor = yield* make(
 						defineActor({
+							name: "test/snapshots",
 							machine: counterMachine([]),
 							store: recordingStore(saves),
 							interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
@@ -148,6 +203,7 @@ describe("host actor", () => {
 			"test/Clock",
 		) {}
 		const definition = defineActor({
+			name: "test/typed",
 			machine: counterMachine([]),
 			interpret: {
 				notify: (cmd) =>
@@ -165,7 +221,7 @@ describe("host actor", () => {
 		expectTypeOf<Effect.Success<typeof built>>().toEqualTypeOf<ActorHandle<State, Msg, Boom>>();
 		type Dispatched = ReturnType<Effect.Success<typeof built>["dispatch"]>;
 		expectTypeOf<Effect.Error<Dispatched>>().toEqualTypeOf<
-			Boom | StoreError | DispatchDiscardedError | ActorStoppedError
+			Boom | StoreError | DispatchDiscardedError | ActorStoppedError | MsgNotAcceptedError
 		>();
 		expectTypeOf<Effect.Services<Dispatched>>().toEqualTypeOf<never>();
 	});
@@ -176,6 +232,7 @@ describe("host actor", () => {
 				const log: string[] = [];
 				const actor = yield* make(
 					defineActor({
+						name: "test/commits",
 						machine: counterMachine([]),
 						interpret: {
 							notify: (cmd) =>
@@ -201,4 +258,146 @@ describe("host actor", () => {
 			}),
 		),
 	);
+
+	it.live(
+		"settles a follow-up interrupted before it ran, so a stop in the same tick completes",
+		() =>
+			Effect.gen(function* () {
+				type S = {readonly followed: boolean};
+				type M = {readonly type: "follow"};
+				type C = {readonly type: "boot"};
+				const machine: CoreMachine<S, M, C, never, NoCtx> = {
+					init: () => [{followed: false}, [{type: "boot"}]],
+					update: {follow: () => [{followed: true}, []]},
+				};
+				const definition = defineActor({
+					name: "test/stop-in-the-same-tick",
+					machine,
+					interpret: {boot: () => Effect.succeed({type: "follow"} as const)},
+					subscribe: {},
+				});
+
+				// The tick is the whole test: nothing is awaited between `make` returning and the scope
+				// closing, so the boot's follow-up — forked into that same scope — is interrupted before
+				// it ever starts. An in-body `ensuring` never registers on such a fiber, which leaves
+				// `pending` above zero and hangs `stop` on `quiet` for ever; `addObserver` settles it on
+				// the Exit instead (#7925).
+				// Detached, so a regression hangs this assertion rather than the test fiber's own teardown.
+				const running = yield* Effect.forkDetach(Effect.scoped(Effect.asVoid(make(definition))));
+				const stopped = yield* Fiber.join(running).pipe(
+					Effect.timeout("5 seconds"),
+					Effect.exit,
+					Effect.map(Exit.isSuccess),
+				);
+				assert.isTrue(
+					stopped,
+					"the actor's stop never completed: a pending follow-up never settled",
+				);
+			}),
+	);
+
+	describe("checkpointWorthy", () => {
+		type Streaming = {readonly text: string; readonly partial: boolean};
+		type Delta = {readonly type: "delta"; readonly chunk: string} | {readonly type: "done"};
+
+		const streaming: CoreMachine<Streaming, Delta, never, never, NoCtx> = {
+			init: (loaded) => [loaded ?? {text: "", partial: false}, []],
+			update: {
+				delta: (state, msg) => [{text: state.text + msg.chunk, partial: true}, []],
+				done: (state) => [{...state, partial: false}, []],
+			},
+		};
+
+		const streamer = (saves: Streaming[], name: string) =>
+			make(
+				defineActor({
+					name,
+					machine: streaming,
+					store: recordingStore(saves),
+					checkpointWorthy: (state) => !state.partial,
+					interpret: {},
+					subscribe: {},
+				}),
+			);
+
+		it.effect("writes nothing mid-turn, and the Msg that ends the turn flushes", () =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const saves: Streaming[] = [];
+					const actor = yield* streamer(saves, "test/worthy-flush");
+					assert.deepStrictEqual(saves, [{text: "", partial: false}]);
+
+					for (const chunk of ["a", "b", "c", "d"]) {
+						yield* actor.dispatch({type: "delta", chunk});
+					}
+					assert.strictEqual(saves.length, 1);
+
+					yield* actor.dispatch({type: "done"});
+					// Asserted after the dispatch returns, which is the flush claim: the turn cannot be
+					// reported done while its own state is still only in memory.
+					assert.deepStrictEqual(saves, [
+						{text: "", partial: false},
+						{text: "abcd", partial: false},
+					]);
+				}),
+			),
+		);
+
+		it.effect("stops without writing the partial a turn cut short left in state", () =>
+			Effect.gen(function* () {
+				const saves: Streaming[] = [];
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const actor = yield* streamer(saves, "test/worthy-stop-mid-turn");
+						yield* actor.dispatch({type: "delta", chunk: "half"});
+						assert.deepStrictEqual(actor.getState(), {text: "half", partial: true});
+					}),
+				);
+				assert.deepStrictEqual(saves, [{text: "", partial: false}]);
+			}),
+		);
+
+		it.effect("still writes the boot save and the stop-path save when the state is worthy", () =>
+			Effect.gen(function* () {
+				const saves: Streaming[] = [];
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const actor = yield* streamer(saves, "test/worthy-boot-and-stop");
+						yield* actor.dispatch({type: "delta", chunk: "hi"});
+						yield* actor.dispatch({type: "done"});
+					}),
+				);
+				assert.deepStrictEqual(saves, [
+					{text: "", partial: false},
+					{text: "hi", partial: false},
+					{text: "hi", partial: false},
+				]);
+			}),
+		);
+
+		it.effect("saves every state when the definition declares no predicate", () =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const saves: State[] = [];
+					const actor = yield* make(
+						defineActor({
+							name: "test/worthy-absent",
+							machine: counterMachine([]),
+							store: recordingStore(saves),
+							interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
+							subscribe: {},
+						}),
+					);
+					yield* actor.dispatch({type: "start", runId: "r1"});
+					yield* actor.dispatch({type: "tick"});
+					assert.deepStrictEqual(saves, [
+						{type: "idle", count: 0},
+						{type: "running", runId: "r1", count: 0, acks: 0},
+						{type: "running", runId: "r1", count: 1, acks: 0},
+						{type: "running", runId: "r1", count: 1, acks: 1},
+					]);
+				}),
+			),
+		);
+	});
 });

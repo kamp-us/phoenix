@@ -64,9 +64,9 @@ describe("readStdinWith", () => {
 	});
 
 	it("decodes once over the joined bytes, so a split multi-byte character survives", () => {
-		const bytes = new TextEncoder().encode("sözlük");
+		const bytes = new TextEncoder().encode("cömert");
 		// `ö` is two bytes at offset 1; splitting between them is what per-chunk decoding mangles.
 		const read = readStdinWith(io([bytes.subarray(0, 2), bytes.subarray(2)]));
-		expect(read).toEqual({_tag: "Text", text: "sözlük"});
+		expect(read).toEqual({_tag: "Text", text: "cömert"});
 	});
 });

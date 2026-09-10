@@ -59,8 +59,8 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * Proven: the **invoking token** resolves below `write` on the repository, so it may not record a
- * ruling (ADR 0055). Distinct from {@link PRECONDITION_UNKNOWN}, which is a permission read that
- * failed — authority is never granted by a lookup that did not complete.
+ * ruling. Distinct from {@link PRECONDITION_UNKNOWN}, which is a permission read that failed —
+ * authority is never granted by a lookup that did not complete.
  */
 export const TOKEN_UNAUTHORIZED = 12;
 /** Proven: the question id names no question in the session. */
@@ -72,7 +72,7 @@ export const QUESTION_UNKNOWN = 13;
  * questions, and a question block missing a required field still leaves nothing to digest.
  */
 export const DIGEST_UNBINDABLE = 14;
-/** Proven: `--authorization` is missing, empty, or carries no ISO-8601 date (#4938). */
+/** Proven: `--authorization` is missing, empty, or carries no ISO-8601 date. */
 export const AUTHORIZATION_ABSENT = 15;
 /** Proven: more than one open session matches the topic — which one is live is undecidable. */
 export const SESSION_AMBIGUOUS = 16;
@@ -95,3 +95,12 @@ export const QUESTION_RETIRED = 18;
  * names, so it is a proven fact about an artifact rather than a read that did not complete.
  */
 export const BINDING_MALFORMED = 19;
+
+/** Audit input or retained body does not conform to its owned context schema. */
+export const AUDIT_MALFORMED = 20;
+/** The complete initial body exceeds the application limit. */
+export const AUDIT_TOO_LARGE = 21;
+/** A retained identity names different research; no overwrite is permitted. */
+export const AUDIT_CONTEXT_CHANGED = 22;
+/** A matching audit session is closed; recovery never reopens it. */
+export const AUDIT_CLOSED = 23;

@@ -145,7 +145,7 @@ describe("wire check", () => {
 		}
 	});
 
-	it("reds on zero scope rather than passing vacuously (ADR 0092)", async () => {
+	it("reds on zero scope rather than passing vacuously", async () => {
 		const out = await check(piped(CONFORMING), "no-such-format");
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");

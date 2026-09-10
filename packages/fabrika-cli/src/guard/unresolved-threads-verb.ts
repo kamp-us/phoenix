@@ -1,6 +1,5 @@
 /**
- * `guard unresolved-threads check` — the ADR 0158 merge gate, ported off
- * v1's `unresolved-threads-guard` (epic #5720).
+ * `guard unresolved-threads check` — the review-thread accounting merge gate.
  *
  * The whole decision is in `./unresolved-threads.ts`; this file is the two reads it rests on and the
  * fail-closed posture around them.
@@ -8,8 +7,8 @@
  * - The threads come from `ship`'s `listReviewThreads` — the one sanctioned GraphQL path (REST has
  *   no `isResolved`), already paged and count-proved. A short read is UNKNOWN here, never a shorter
  *   thread list, because a verdict over a truncated set is a verdict over unknown scope.
- * - The verdict body is the newest `review-code:` marker whose author holds write+ on the repo
- *   (ADR 0055). Without that gate a forged `review-code: PASS … path:line` from anyone with a
+ * - The verdict body is the newest `review-code:` marker whose author holds write+ on the repo.
+ *   Without that gate a forged `review-code: PASS … path:line` from anyone with a
  *   keyboard would account for the very thread it is hiding.
  *
  * **An unreadable ACL drops the marker rather than refusing the run.** That is the opposite of
@@ -34,7 +33,7 @@ const VERB = "guard unresolved-threads check";
 /** The gate whose verdict is the accounting surface. A `review-doc` PASS accounts for nothing. */
 const NAMESPACE = "review-code";
 
-/** The permission levels ADR 0055 counts as an authorized verdict author. */
+/** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 export interface UnresolvedThreadsOptions {
@@ -60,7 +59,7 @@ const outranks = (candidate: CommentRecord, best: CommentRecord): boolean => {
  * The newest authorized `review-code` verdict body on the PR, or `null`.
  *
  * Ordered by the **write** stamp, not the create stamp: a verdict comment is upserted in place, so a
- * FAIL rewritten into an older comment after a PASS is the one in force (#4200). The comment id
+ * FAIL rewritten into an older comment after a PASS is the one in force. The comment id
  * breaks a tie between two writes sharing a second.
  */
 const latestVerdictBody = (
@@ -98,7 +97,7 @@ const gather = (
 		const found = yield* getPullRequest(repo, pr);
 		if (found._tag === "Absent") {
 			return zeroScope(
-				`${VERB}: PR #${pr} not found in ${repo} — there is nothing to gate, fail-closed (ADR 0092).`,
+				`${VERB}: PR #${pr} not found in ${repo} — there is nothing to gate, fail-closed.`,
 			);
 		}
 		if (found._tag === "Unknown") return unreadable(`PR #${pr} in ${repo}`, found.reason);

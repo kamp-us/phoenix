@@ -1,11 +1,10 @@
 /**
  * `triage apply --blocked-by` — turn a stated ordering into native `blocked_by` edges.
  *
- * ADR 0301 makes the graph the one carrier of "do not start this yet", and until now no triage verb
- * could reach it: `map ticket` was the only caller of `addBlockedBy`, and only for a wayfinding
- * map's own tickets, so a triager filing an ordered slice set wrote the ordering as prose (#6728).
- * The founder ruling at
- * https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763 seats the write here.
+ * The native `blocked_by` graph is the one carrier of "do not start this yet", and until this flag
+ * no triage verb could reach it: `map ticket` was the only caller of `addBlockedBy`, and only for a
+ * wayfinding map's own tickets, so a triager filing an ordered slice set wrote the ordering as
+ * prose, which no builder reads.
  *
  * Three shapes carry the weight. **Every target is resolved before any edge is written**, so a typo'd
  * number refuses over a graph nobody touched rather than half-way through one. **The edges already
@@ -27,9 +26,8 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 
-/** What ADR 0301 says to do with a pull request that blocks something — quoted on both refusals. */
-const PR_RULE =
-	"ADR 0301: a blocking pull request is named in the graph by the issue its merge closes";
+/** What to do with a pull request that blocks something — quoted on both refusals. */
+const PR_RULE = "a blocking pull request is named in the graph by the issue its merge closes";
 
 /** What the write phase will do, decided entirely from reads. */
 export interface EdgePlan {
@@ -171,9 +169,9 @@ export const landEdges = (
  * Which of the numbers a body's stated ordering names are pull requests — the ones the gate must not
  * red on.
  *
- * ADR 0301 names a blocking PR by the issue its merge closes, so a body writing "blocked on #7271"
- * about a PR states no edge that could exist, and the `--blocked-by` escape cannot clear it: over the
- * 150 most recently created issues, 5 of the 6 bodies the gate refused named a PR (#6728 round 1).
+ * A blocking PR is named in the graph by the issue its merge closes, so a body writing "blocked on
+ * #<n>" about a PR states no edge that could exist, and the `--blocked-by` escape cannot clear it:
+ * over 150 issues, 5 of the 6 bodies the gate refused named a PR.
  * A target proven absent is **not** dropped — an ordering naming an issue nobody can find is still a
  * red — and a read that failed refuses, because a gate that passed on an unread target would be
  * fail-open.

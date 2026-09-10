@@ -14,7 +14,7 @@
  * `.patterns/` (`5`), nothing composes a body from authored input (`6`) — and `7` `ZERO_SCOPE`
  * stays unseated because no verb here judges over a corpus, so none has a vacuous pass to prevent.
  * An empty or absent doc directory is a **fact** this group reports at exit `0`; refusing there
- * would leave a repo adopting fabrika unable to write its first pattern doc (#5254).
+ * would leave a repo adopting fabrika unable to write its first pattern doc.
  *
  * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
  */

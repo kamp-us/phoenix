@@ -15,13 +15,17 @@
  * lane it is about to drive is stale, and what a release runs before merging a machine change.
  *
  * Staleness is not the only way a lane can be wrong, and it was the only one this sweep could see:
- * a coder-template lane booted on an epic grafts cleanly and reads `current`, which is #7024. So each
+ * a coder-template lane booted on an epic grafts cleanly and reads `current`. So each
  * issue-keyed lane is also judged against the board's answer for its issue ([`shape.ts`](shape.ts)),
- * and a proven mismatch is its own verdict ahead of every migration one. The reader is passed in, so
- * a caller that hands none still gets the wholly offline sweep.
+ * and a proven mismatch is its own verdict ahead of every migration one. A lane booted for an epic's
+ * CHILD is the second such verdict and a different fault: its template is right, so it grafted
+ * cleanly and read `current`, and the wrongness is that the directory exists at all beside the
+ * parent's. That one is reported and never acted on — retiring a ledger is an operator's act — so a
+ * `duplicate` row leaves the exit code where it was. The reader is passed in, so a caller that hands
+ * none still gets the wholly offline sweep.
  *
- * The judgement never widens what this verb writes: a mismatched lane is skipped, and the read can
- * only turn a write into a skip. That is what keeps ADR 0313's guarantee for this verb intact — it
+ * The judgement never widens what this verb writes: a mismatched or duplicate lane is skipped, and
+ * the read can only turn a write into a skip. That is what keeps this verb's guarantee intact — it
  * writes only where the swap is provably inert.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
@@ -66,6 +70,7 @@ type Verdict =
 	| "stale"
 	| "generated"
 	| "mismatched"
+	| "duplicate"
 	| "unsafe"
 	| "unreadable";
 
@@ -75,6 +80,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"stale",
 	"generated",
 	"mismatched",
+	"duplicate",
 	"unsafe",
 	"unreadable",
 ];
@@ -84,11 +90,16 @@ const VERDICTS: ReadonlyArray<Verdict> = [
  *
  * `unknown` is a seat rather than an absent field, for the reason every read in this protocol keeps
  * it: a sub-issue list that did not load says nothing about whether the machine fits, and reading it
- * as `matches` is the silence #7024 is about.
+ * as `matches` is the silence this verb exists to break.
+ *
+ * `duplicate` is the same silence one level over: a lane booted for an epic's child read `matches`
+ * and grafted cleanly, so every sweep called a stray ledger healthy. It is not `mismatched` because
+ * there is no template to swap — the lane is a directory to retire, and this verb only names it.
  */
 type LaneShape =
 	| {readonly state: "matches"}
 	| {readonly state: "mismatched"; readonly reason: string}
+	| {readonly state: "duplicate"; readonly parent: number | null; readonly reason: string}
 	| {readonly state: "unknown"; readonly reason: string};
 
 interface LaneRow {
@@ -105,7 +116,7 @@ interface LaneRow {
 /** How a caller addresses this lane: a chore root's entries are keyed `chore:<name>` (`key.ts`). */
 const keyOf = (root: string, name: string): string =>
 	// Suffix, never equality: the default root arrives absolute once it is derived off the owning
-	// repository (#5815), so a relocated or derived root still keys its chores correctly.
+	// repository, so a relocated or derived root still keys its chores correctly.
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
 /**
@@ -131,8 +142,9 @@ const shapeOf = <R>(
 		const read = yield* expectations(issue);
 		if (read._tag === "Unknown") return {state: "unknown", reason: read.reason};
 		const judged = judgeShape(issue, originOf(id), read.expectation);
-		return judged._tag === "Matches"
-			? {state: "matches"}
+		if (judged._tag === "Matches") return {state: "matches"};
+		return judged._tag === "Duplicate"
+			? {state: "duplicate", parent: judged.parent, reason: judged.reason}
 			: {state: "mismatched", reason: judged.reason};
 	});
 
@@ -173,9 +185,15 @@ const migrateLane = <R>(
 		// leave a degraded sweep reading exactly like a clean one.
 		const withShape = (row: LaneRow): LaneRow => (shape === undefined ? row : {...row, shape});
 		// Ahead of every migration verdict: a lane running the wrong machine for its issue is not a
-		// lane to bring up to a template, whatever the graft says (#7024).
+		// lane to bring up to a template, whatever the graft says.
 		if (shape?.state === "mismatched") {
 			return withShape({key, root, verdict: "mismatched", reason: shape.reason});
+		}
+		// Ahead of the graft for the opposite reason a mismatch is: this lane's template is right and
+		// migrating it would be inert, but writing to a ledger an operator is being told to retire
+		// hands them a directory this run just touched.
+		if (shape?.state === "duplicate") {
+			return withShape({key, root, verdict: "duplicate", reason: shape.reason});
 		}
 
 		const grafts = templateTexts.map((text) => graftContext(text, onDisk.success));
@@ -189,7 +207,7 @@ const migrateLane = <R>(
 				key,
 				root,
 				verdict: "generated",
-				reason: `machine "${id}" was generated, not booted — it drains on the machine it was emitted with and is never migrated (ADR 0313, amendment 2026-08-20)`,
+				reason: `machine "${id}" was generated, not booted — it drains on the machine it was emitted with and is never migrated`,
 			});
 		}
 		if (sameMachine(onDisk.success, graft.text)) return withShape({key, root, verdict: "current"});
@@ -290,9 +308,13 @@ export const runMigrate = <R = never>(
 		);
 		const unsafe = lanes.filter((row) => row.verdict === "unsafe");
 		const mismatched = lanes.filter((row) => row.verdict === "mismatched");
+		const duplicate = lanes.filter((row) => row.verdict === "duplicate");
 		const acted = lanes.filter((row) => row.verdict === (options.check ? "stale" : "migrated"));
+		// A duplicate reaches the operator on stderr as well as in its row, because a refusal over some
+		// OTHER lane empties stdout by contract and would take every duplicate finding with it.
 		const stderr = [
 			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.check ? " — check only, nothing written" : ""}.`,
+			...duplicate.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "duplicate"}`),
 			...mismatched.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "mismatched"}`),
 			...unsafe.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "unsafe"}`),
 		];
@@ -307,7 +329,7 @@ export const runMigrate = <R = never>(
 		if (unsafe.length === 0) {
 			return refuse(
 				SHAPE_MISMATCH,
-				`${VERB}: ${mismatched.length} lane(s) run a machine their issue's board state does not call for, and none of those was written: ${mismatched.map((row) => row.key).join(", ")}. An epic's lane is rebuilt in two steps — retire its directory, then \`fabrika lane emit <n>\` (a lane on disk is never re-emitted over: ADR 0313, amendment 2026-08-20). A lane whose issue is not an epic is opened with \`fabrika lane open <n>\`.`,
+				`${VERB}: ${mismatched.length} lane(s) run a machine their issue's board state does not call for, and none of those was written: ${mismatched.map((row) => row.key).join(", ")}. An epic's lane is rebuilt in two steps — retire its directory, then \`fabrika lane emit <n>\` (a lane on disk is never re-emitted over). A lane whose issue is not an epic is opened with \`fabrika lane open <n>\`.`,
 				stderr,
 			);
 		}
@@ -319,7 +341,7 @@ export const runMigrate = <R = never>(
 				options.check
 					? `${acted.length} other lane(s) are stale and safe to migrate.`
 					: `${acted.length} other lane(s) were migrated: ${acted.map((row) => row.key).join(", ") || "none"}.`
-			} A lane whose issue is closed and whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log (ADR 0352); any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
+			} A lane whose issue is closed and whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log; any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
 			stderr,
 		);
 	});

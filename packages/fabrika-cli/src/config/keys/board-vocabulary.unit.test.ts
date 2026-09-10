@@ -28,7 +28,7 @@ const owns = (
 ): {readonly _tag: string} | undefined =>
 	read._tag === "Resolved" ? read.resolved.facets.find((f) => f.name === name)?.owns : undefined;
 
-describe("the shipped default is phoenix's board", () => {
+describe("the shipped default board", () => {
 	it("resolves every list to today's value for a repo with no config at all", () => {
 		const resolved = resolve(loadConfig({_tag: "Absent"}), boardVocabularyKey);
 		expect(resolved._tag).toBe("Default");
@@ -74,7 +74,7 @@ describe("a declared vocabulary", () => {
 		expect(resolved.reason).toContain("priorities");
 	});
 
-	/** Zero lanes disables no gate — it says every issue homes on a milestone (#6440). */
+	/** Zero lanes disables no gate — it says every issue homes on a milestone. */
 	it("takes an empty standingLanes as a declaration, not as a disabled facet", () => {
 		const resolved = declared({standingLanes: []});
 		expect(resolved._tag).toBe("Declared");
@@ -106,8 +106,8 @@ describe("a declared vocabulary", () => {
 });
 
 /**
- * The composition is what stops the two keys drifting into #4285's shape: a declared value its
- * facet has no authority to remove is written once and never superseded.
+ * The composition is what stops the two keys drifting apart: a declared value its facet has no
+ * authority to remove is written once and never superseded.
  */
 describe("composing the board with the facet table", () => {
 	it("keeps a shipped pattern that still contains the declared values", () => {

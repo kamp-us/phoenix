@@ -4,19 +4,19 @@
  *
  * Also the registered behavior pin for the `effect` patch's hunk 3 (`buildHelpDoc` honouring
  * `Param.withHidden` on a positional): the help case below fails if upstream's unpatched
- * rendering comes back. It took the pin over when ADR 0279 removed the crew package that
- * carried it.
+ * rendering comes back. It took the pin over when the package that used to carry it was removed.
  *
  * The defect this covers produced a successful-looking result — exit 0 with the id `adr next` would
- * have printed anyway (#4828) — so a test asserting on stdout *content* is exactly the test that
- * passes against the bug. Every case below asserts the exit code and stderr instead.
+ * have printed anyway — so a test asserting on stdout *content* is exactly the test that passes
+ * against the bug. Every case below asserts the exit code and stderr instead.
  *
- * **Five spawns, and none of them touch the network (#4847).** Each `it` costs one cold node+TS load
- * of `bin.ts` — about 2.3s on a CI runner — so spawn count *is* this file's cost, and the matrix it
+ * **Five spawns, and none of them touch the network.** Each `it` costs one cold node+TS load of
+ * `bin.ts` — about 2.3s on a CI runner — so spawn count *is* this file's cost, and the matrix it
  * used to walk twelve times is covered in 19ms by `excess-operand.unit.test.ts`. What only a
  * subprocess can prove is the exit status, which needs a handful of representative invocations, not
  * one per phrasing. Twelve spawns plus one that fetched `origin/main` for real is what timed out and
- * ejected PR #4835 from the merge queue; the cwd that removes that fetch is explained at its case.
+ * ejected the pull request from the merge queue; the cwd that removes that fetch is explained at its
+ * case.
  */
 import {execFileSync} from "node:child_process";
 import {mkdtempSync, readdirSync} from "node:fs";

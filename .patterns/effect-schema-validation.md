@@ -91,9 +91,10 @@ Reach for `Schema.decodeUnknown` *inside* a service method only when the validat
 
 ## A repo-authored config file: whole-file refusal with pinned wording
 
-`packages/fabrika-cli/src/ui/harness.ts` is the worked example — `design-harness.json` is untrusted
-text a consuming repo wrote, and every failure has to come back as one human-readable line a verb
-interpolates into its refusal. Three rules make that work with `Schema` rather than hand predicates:
+`packages/fabrika-cli/src/config/keys/ui-surfaces.ts` is the worked example — the `uiSurfaces` value
+in `.fabrika.jsonc` is untrusted text a consuming repo wrote, and every failure has to come back as
+one human-readable line a verb interpolates into its refusal. Three rules make that work with
+`Schema` rather than hand predicates:
 
 **The native `JSON.parse` stays outside the schema.** Parsing an untrusted string needs a native
 `try/catch`, which the repo bans in any file importing `effect` (#2736, enforced by a biome plugin).
@@ -115,10 +116,42 @@ Read the first violation back with `SchemaIssue.makeFormatterStandardSchemaV1`, 
 message that has to name a key the schema cannot know statically (the unexpected one) carries a
 placeholder the formatter fills from `path`.
 
-Defaults and normalisation ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an
-absent key's value, `Schema.decode({decode: SchemaGetter.transform(...)})` for a normalisation like
-stripping a trailing slash. `HarnessConfig` is then `typeof Harness.Type` — one declaration, not an
-interface kept in sync beside it.
+Defaults ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an absent key's value, and
+`Schema.decode({decode: SchemaGetter.transform(...)})` when a value also needs normalising.
+`UiSurface` is then `typeof Surface.Type` — one declaration, not an interface kept in sync
+beside it.
+
+**A rule about the whole list runs after the decode, not inside it.** `uiSurfaces` declares
+an array of apps, and three of its rules are facts about the array rather than about any one value:
+two apps under one name, two under one mount, and a command with no `{{port}}` placeholder. Those are
+a plain loop over the decoded value, returning the same `Violation` string arm the schema path
+returns, with the wording exported (`LIST_VIOLATION`) so the test pins it exactly as it pins the
+schema's own. Writing them as a struct-level `check` would work and would report them from a path
+nobody can act on; keeping them out of the schema keeps every message field-addressed or
+list-addressed, never both.
+
+## A boundary whose type is already an interface: a total predicate, not a second declaration
+
+Sometimes the shape at the boundary is an interface you cannot replace with a Schema — it is a
+sibling module's public type, or it lives in a module that must not import Effect. Declaring a
+Schema beside it is the "maintaining both is a smell" anti-pattern below. The answer is a **total**
+type predicate, written beside the type it recovers, and total is the whole point: a guard that
+checks the top-level fields and then casts (`candidate as T`) hands a corrupt interior back typed
+as sound, which is exactly the fail a boundary exists to catch.
+
+`apps/tuval/src/shell/` is the worked example — `shellStateOf` recovers a checkpointed desk from
+`unknown`, `isShellState` (`core/state.ts`) is total over it, and it recurses into `isLayoutTree`
+(`layout/node.ts`, a module kept free of Effect on purpose). Two rules make it hold:
+
+- **The predicate lives with the type, one per module**, so a field added to the interface and a
+  field the guard checks are edited in the same file.
+- **A field whose type already is a Schema reuses that schema's own guard.** The shell's view slot
+  is typed `Schema.Json`, so its check is `Schema.is(Schema.Json)` — never a hand-rolled JSON
+  predicate, which would be the second declaration this section is avoiding.
+
+State what the predicate does *not* check. A structural guard is not an invariant checker: the
+shell's guard says nothing about whether `activeWorkspace` names a workspace the map holds, because
+that is the reducer's invariant and its readers already answer `undefined` rather than throwing.
 
 ## Schema for tagged errors that cross boundaries
 

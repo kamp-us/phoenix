@@ -3,7 +3,7 @@
  *
  * A lane's machine and the issue it drives are decided in two different places — the machine by
  * whichever boot verb ran (`lane open`'s committed template, `lane emit`'s generated document), the
- * issue's shape by the board — and until #7024 nothing compared them. An epic whose lane was booted
+ * issue's shape by the board — and nothing used to compare them. An epic whose lane was booted
  * before it had a plan came up on the single-task coder template, and every later diagnostic read it
  * as healthy: the fold replays fine, `lane migrate --check` grafts it cleanly and answers `current`,
  * and the only symptom is a builder backing off because the machine has no child regions to drive.
@@ -17,14 +17,14 @@
  * What the board says the lane's issue needs.
  *
  * An epic is an issue the board types `type:epic` **or** one carrying sub-issue links: the label is
- * what a pre-plan epic has, the children are what a planned one has, and #7024's lane was booted in
- * the window where only the first was true. `children` is the link count, so `0` is exactly that
+ * what a pre-plan epic has, the children are what a planned one has, and the mis-booted lane came
+ * up in the window where only the first was true. `children` is the link count, so `0` is that
  * pre-plan case.
  *
- * `Child` is the mirror #7024's guard could not reach, because both facts it reads are facts about
+ * `Child` is the mirror that guard could not reach, because both facts it reads are facts about
  * the issue itself: an epic's child carries no `type:epic` label and no children of its own, so it
- * resolved `Single` and a second lane ledger booted over work the parent's lane already owned
- * (#7381). `parent` is `null` when the board carried the edge and no number that parses.
+ * resolved `Single` and a second lane ledger booted over work the parent's lane already owned.
+ * `parent` is `null` when the board carried the edge and no number that parses.
  */
 export type Expectation =
 	| {readonly _tag: "Epic"; readonly children: number}
@@ -50,18 +50,26 @@ export const originOf = (documentId: string): MachineOrigin => {
 		: {_tag: "Generated", epic: Number(match[1])};
 };
 
+/**
+ * `Duplicate` is its own arm rather than a `Mismatched` because the two name different repairs: a
+ * mismatch is a machine to swap, and a booted child lane is a second ledger over work the parent's
+ * lane already carries — nothing about its template is wrong. Folding it into `Mismatched` would
+ * send `lane migrate` at a template migration it must not attempt, and folding it into `Matches`
+ * (what shipped before) leaves the stray reported as healthy, which is why nobody retired one.
+ */
 export type ShapeVerdict =
 	| {readonly _tag: "Matches"}
-	| {readonly _tag: "Mismatched"; readonly reason: string};
+	| {readonly _tag: "Mismatched"; readonly reason: string}
+	| {readonly _tag: "Duplicate"; readonly parent: number | null; readonly reason: string};
 
 /**
  * Judge one lane's machine against its issue. Every combination seats, because a mismatch the other
  * way — an emitted epic machine on an issue the board says has no children — strands a driver just as
  * completely, and costs nothing to catch here.
  *
- * `Child` judges as `Single` does, and deliberately: a child's lane is refused at boot, so one
- * already on disk is a ledger to reconcile rather than a machine to swap, and calling it mismatched
- * here would send `lane migrate` at a fix it does not have (#7381).
+ * A `Child` splits on origin: a BOOTED one is the ledger `lane open` now refuses to create, so it
+ * judges `Duplicate`. A GENERATED one is an epic machine on an issue that is nobody's epic, which is
+ * the same wrong machine a `Single` carrying one has, and judges `Mismatched` with it.
  */
 export const judgeShape = (
 	issue: number,
@@ -84,6 +92,17 @@ export const judgeShape = (
 					_tag: "Mismatched",
 					reason: `this lane drives #${issue} and runs the machine emitted for #${origin.epic}`,
 				};
+	}
+	if (expectation._tag === "Child" && origin._tag === "Booted") {
+		const {parent} = expectation;
+		return {
+			_tag: "Duplicate",
+			parent,
+			reason:
+				parent === null
+					? `#${issue} hangs under a parent the board named with no number that parses, so the lane already driving this work cannot be named here — this directory is a second ledger booted before \`lane open\` refused a child, and retiring it is an operator's act`
+					: `#${issue} hangs under epic #${parent}, whose own lane ${parent} already drives this work — this directory is a second ledger booted before \`lane open\` refused a child, and retiring it is an operator's act`,
+		};
 	}
 	return origin._tag === "Booted"
 		? {_tag: "Matches"}

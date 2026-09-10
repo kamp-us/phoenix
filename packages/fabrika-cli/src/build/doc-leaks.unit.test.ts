@@ -1,13 +1,14 @@
 import {describe, expect, it} from "vitest";
+import {DECISIONS_ROOT} from "../review/classes.ts";
 import {docLeaks, isDocLeakExempt, isDocSurface} from "./doc-leaks.ts";
 
 /**
- * The three ways the body scanner disagreed with the committed-file gate (#5687). Each fixture is
- * bytes v1's `leak-guard scan` passes clean and `build check --surface prose` used to red.
+ * The three ways the body scanner disagreed with the committed-file gate. Each fixture is bytes
+ * v1's `leak-guard scan` passes clean and `build check --surface prose` used to red.
  */
 describe("docLeaks — the three divergences from the body scanner", () => {
 	it("does not read a fenced regex literal as a path — a segment must be name-shaped", () => {
-		// The reproducing bytes, verbatim from the report line that red the lane in #5687.
+		// The reproducing bytes, verbatim from the report line that red the lane.
 		const fenced = ["```bash", "grep -nE '(~/|/Users/|/home/)' -- .", "```"].join("\n");
 		expect(docLeaks("reports/snapshot.md", fenced, [])).toEqual([]);
 	});
@@ -26,7 +27,7 @@ describe("docLeaks — the three divergences from the body scanner", () => {
 
 describe("docLeaks — what it still catches", () => {
 	it("reports a real home path with its 1-based line", () => {
-		const doc = ["intro", "", "run it from /Users/someone/phoenix", ""].join("\n");
+		const doc = ["intro", "", "run it from /Users/someone/repo", ""].join("\n");
 		const leaks = docLeaks("docs/guide.md", doc, []);
 		expect(leaks).toHaveLength(1);
 		expect(leaks[0]?.line).toBe(3);
@@ -34,7 +35,7 @@ describe("docLeaks — what it still catches", () => {
 	});
 
 	it("scans inside a fence — a fence is a likely place for a real leak to sit", () => {
-		const doc = ["```bash", "cd /Users/someone/phoenix && pnpm dev", "```"].join("\n");
+		const doc = ["```bash", "cd /Users/someone/repo && pnpm dev", "```"].join("\n");
 		expect(docLeaks("docs/guide.md", doc, [])).toHaveLength(1);
 	});
 
@@ -62,13 +63,13 @@ describe("docLeaks — what it still catches", () => {
 describe("isDocSurface / isDocLeakExempt — the scoping, in one place", () => {
 	it("takes markdown by extension and the decision/pattern dirs by path", () => {
 		expect(isDocSurface("docs/guide.md")).toBe(true);
-		expect(isDocSurface(".decisions/0001-x.markdown")).toBe(true);
+		expect(isDocSurface(`${DECISIONS_ROOT}0001-x.markdown`)).toBe(true);
 		expect(isDocSurface(".patterns/index.md")).toBe(true);
-		expect(isDocSurface("apps/web/worker/index.ts")).toBe(false);
+		expect(isDocSurface("src/server/index.ts")).toBe(false);
 	});
 
 	it("scans nothing off a path no prose surface covers", () => {
-		expect(docLeaks("scripts/run.sh", "cd /Users/someone/phoenix\n", [])).toEqual([]);
+		expect(docLeaks("scripts/run.sh", "cd /Users/someone/repo\n", [])).toEqual([]);
 	});
 
 	it("matches an exemption by suffix, so a relative and an absolute path agree", () => {

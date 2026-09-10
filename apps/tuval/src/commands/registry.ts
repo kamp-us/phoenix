@@ -1,15 +1,17 @@
 /**
  * The spell registry: one table of every callable spell, addressed by path, replaced whole.
  *
- * The table lives behind a single `Ref` and `swap` is a single write, so a config reload replaces
+ * The table lives behind a single `SubscriptionRef` and `swap` is a single write, so a config reload replaces
  * every program's spells at once and a reader never observes half a table (#7617 R1.2). Registering
  * is `buildRegistry`, a pure function over the core list and the program rows; the service only
  * holds what it produced.
  */
 
-import {Context, Effect, type JsonSchema, Layer, Ref, Schema} from "effect";
+import {Context, Effect, type JsonSchema, Layer, Schema, Stream, SubscriptionRef} from "effect";
 import type {AnyProgram, CapabilityRequest, ProgramId} from "../registry/program.ts";
 import {DuplicateSpellPath, SpellNotDescribable, SpellNotFound} from "./errors.ts";
+import {readParams} from "./parse/spell-index.ts";
+import {REST_PARAMETER_ANNOTATION} from "./rest-parameter.ts";
 import {type AnySpell, renderPath, type SpellPath} from "./spell.ts";
 
 /** Where a registered spell came from. A refusal names both sides through `describeSource`. */
@@ -60,14 +62,14 @@ export const lookupRow = (table: RegistryTable, path: SpellPath): SpellRow | und
 
 /** The serializable face of one spell: what a client is told without being handed the closure. */
 export interface SpellDescription {
-	readonly path: ReadonlyArray<string>;
+	readonly path: SpellPath;
 	readonly describe: string;
 	readonly params: JsonSchema.Document<"draft-2020-12">;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 }
 
 export const describeSpell = (row: SpellRow): SpellDescription => ({
-	path: [...row.path],
+	path: row.path,
 	describe: row.spell.describe,
 	params: row.paramsDocument,
 	capabilities: [...row.spell.capabilities],
@@ -83,7 +85,13 @@ const describeParams = (
 	row: Omit<SpellRow, "paramsDocument">,
 ): Effect.Effect<JsonSchema.Document<"draft-2020-12">, SpellNotDescribable> =>
 	Effect.try({
-		try: () => Schema.toJsonSchemaDocument(row.spell.params),
+		try: () => {
+			const document = Schema.toJsonSchemaDocument(row.spell.params, {
+				includeAnnotationKey: (key) => key === REST_PARAMETER_ANNOTATION,
+			});
+			readParams(document);
+			return document;
+		},
 		catch: (cause) =>
 			new SpellNotDescribable({
 				path: renderPath(row.path),
@@ -161,20 +169,22 @@ export const buildRegistry = Effect.fn("Tuval.Commands.buildRegistry")(function*
 });
 
 const make = Effect.fn("Tuval.SpellRegistry.make")(function* (initial: RegistryTable) {
-	// Every read below is one `Ref.get`, so a read either precedes `swap`'s single write or
-	// follows it; there is no window in which a reader walks a half-replaced table.
-	const table = yield* Ref.make(initial);
+	// See .patterns/tuval-spells.md, "The registry".
+	const table = yield* SubscriptionRef.make(initial);
 	return SpellRegistry.of({
 		lookup: (path) =>
-			Effect.flatMap(Ref.get(table), (current) => {
+			Effect.flatMap(SubscriptionRef.get(table), (current) => {
 				const row = lookupRow(current, path);
 				return row === undefined
 					? Effect.fail(new SpellNotFound({path: renderPath(path)}))
 					: Effect.succeed(row);
 			}),
-		list: Effect.map(Ref.get(table), (current) => current.rows),
-		describe: Effect.map(Ref.get(table), (current) => current.rows.map(describeSpell)),
-		swap: (next) => Ref.set(table, next),
+		list: Effect.map(SubscriptionRef.get(table), (current) => current.rows),
+		describe: Effect.map(SubscriptionRef.get(table), (current) => current.rows.map(describeSpell)),
+		changes: Stream.map(SubscriptionRef.changes(table), (current) =>
+			current.rows.map(describeSpell),
+		),
+		swap: (next) => SubscriptionRef.set(table, next),
 	});
 });
 
@@ -184,6 +194,7 @@ export class SpellRegistry extends Context.Service<
 		readonly lookup: (path: SpellPath) => Effect.Effect<SpellRow, SpellNotFound>;
 		readonly list: Effect.Effect<ReadonlyArray<SpellRow>>;
 		readonly describe: Effect.Effect<ReadonlyArray<SpellDescription>>;
+		readonly changes: Stream.Stream<ReadonlyArray<SpellDescription>>;
 		readonly swap: (table: RegistryTable) => Effect.Effect<void>;
 	}
 >()("tuval/SpellRegistry") {

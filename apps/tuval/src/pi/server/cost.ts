@@ -3,13 +3,12 @@
  *
  * Pi's own cost carries an optional `tiers` array (`@earendil-works/pi-ai`
  * `dist/types.d.ts:691-694`: `ModelCost extends ModelCostRates` plus `tiers?: ModelCostTier[]`).
- * The wire's `ModelCostSchema` is a strict object of exactly the four rates
- * (`@earendil-works/pi-protocol` `dist/schemas.js`, `StrictObject` = `additionalProperties: false`),
- * so handing Pi's cost straight to `encodeServerMessage` fails validation the moment a model is
- * priced in tiers. Only the four fields cross, and this is the one place that decides that.
+ * Tuval's own `ModelCost` (`../wire/model.ts`) is exactly the four rates. Protocol 8 carries the
+ * payload opaque, so nothing on the wire refuses a tiered cost any more — which makes this
+ * projection the only thing keeping one off it, rather than a second line of defence.
  */
 
-import type {ModelMetadata} from "@earendil-works/pi-protocol";
+import type {ModelMetadata} from "../wire/index.ts";
 
 export type ProtocolModelCost = ModelMetadata["cost"];
 

@@ -1,0 +1,360 @@
+/*
+ * The desk's chrome: the two tokens `@kampus/design` has no member of, and every `.tuval-*` rule
+ * that paints a window, the status line, the picker, the command line or a failure panel.
+ *
+ * The role layer itself is the package's, loaded ahead of this file by `../../page/styles.ts`, and
+ * nothing here re-declares a name it already owns. That is what `../picker/frame.ts` resolves
+ * against when it emits `--surface`, `--border`, `--focus-ring` and the rest.
+ *
+ * Dark is the only scheme. Tuval is window chrome, not a document, so the theme is pinned on every
+ * HTML entry (`data-theme="dark" data-color-theme="indigo"`) and nothing here reads
+ * `prefers-color-scheme`.
+ */
+
+/*
+ * The three roles the desk paints outside any one root, so all three are declared on the document
+ * element — which is also where `@kampus/design`'s own layer declares the names they alias, since
+ * the theme is pinned on `<html>`.
+ *
+ * `--page-backdrop` because `body` sits outside `.tuval-surface`; overscroll is the only place it
+ * shows (#7560).
+ *
+ * The ring pair because the board's overlay leaves that root: `@kampus/design`'s `Dialog` mounts
+ * through a zag `Portal` into `document.body`, a sibling of `#root` that inherits nothing from
+ * `.tuval-surface`. Declared there, both `var()`s below would be undefined inside the overlay, and
+ * an undefined `var()` is invalid at computed-value time — which unsets `outline` in the author
+ * origin and beats the UA's own `:focus-visible` ring, so a keyboard operator tabbing the tiles got
+ * no ring at all (#8867). The package declares `--manti-focus-ring*` for Manti's own consumption and
+ * no role token for the desk's ring, so the manifest's law lives here: 2px ring plus a 2px
+ * transparent gap, which clears 3:1 against a same-family dark surface. Painted once by the rule
+ * below, never per component.
+ */
+:root {
+	--page-backdrop: var(--surface-sunken);
+	--focus-ring: 2px solid var(--accent);
+	--focus-ring-offset: 2px;
+}
+
+.tuval-surface {
+	color-scheme: dark;
+
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	font: var(--t-body);
+	display: flex;
+	flex-direction: column;
+	block-size: 100%;
+	inline-size: 100%;
+}
+
+/* Gated on the last input the desk saw (`./input-modality.ts`), because a browser matches
+   `:focus-visible` on a text field for a *pointer* focus too — the composer got a ring on every
+   click and the founder ruled it keyboard-only (#8786). Still the one rule on the root: for a
+   button or a picker row the gate is a no-op, since a browser already withholds `:focus-visible`
+   from those on pointer focus.
+
+   Written as "not pointer" rather than "is keyboard" so the gate can only ever *remove* a ring, and
+   only from a surface that has seen a click. Several `.tuval-surface` roots are not the desk and
+   publish nothing — the attaching placeholder (`../../page/AttachedDesk.tsx`), the boot screens,
+   every proof page — and a positive gate would have silently stripped the ring off all of them.
+
+   The board's overlay is named beside the surface because a `Dialog` renders through a portal, out
+   of every `.tuval-surface` root (`../board/ProcessBoardOverlay.tsx`, #8867). It is the one rule
+   either way: a second one in the board's own sheet would be the per-component outline Pillar 4
+   forbids. It carries no modality gate because it has no root publishing one, and needs none — the
+   gate exists for a text field, and everything focusable in the overlay is a button, which a
+   browser already withholds `:focus-visible` from on pointer focus. It is written first because the
+   selector list ascends in specificity, which is what biome's descending-specificity rule asks. */
+.tuval-board-overlay :focus-visible,
+.tuval-surface:not([data-input-modality="pointer"]) :focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
+}
+
+.tuval-tiling {
+	flex: 1 1 auto;
+	min-block-size: 0;
+}
+
+.tuval-window {
+	display: flex;
+	flex-direction: column;
+	min-inline-size: 0;
+	min-block-size: 0;
+	/* The panel around it is sized by the tiling group; this box is its only child and has to take
+	   all of it, or a renderer that fills its window gets the height of its own content instead.
+	   Invisible until a renderer wanted the room: the demo counter and log are two lines, and the
+	   chat window came up 302px tall in a 775px panel with a 2px transcript (#7573). */
+	block-size: 100%;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	overflow: hidden;
+}
+
+/* The focused window is marked twice over: a heavier border and the `▸` in its own title row.
+   Pillar 4 forbids carrying state on colour alone, so the glyph is not decoration. */
+.tuval-window[data-focused="true"] {
+	border-color: var(--border-strong);
+	box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
+.tuval-window-title {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	padding: var(--s-1) var(--s-2);
+	border-block-end: 1px solid var(--border-faint);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-window-body {
+	flex: 1 1 auto;
+	min-block-size: 0;
+	overflow: auto;
+	padding: var(--s-2);
+}
+
+/*
+ * The separator's own state comes from `data-separator`, whose value at the pin
+ * (`react-resizable-panels@4.12.3`, `Separator` in `dist/react-resizable-panels.js`) is one of
+ * `inactive` / `hover` / `focus` / `active` / `disabled`. The library sets no width or height — its
+ * inline style is `flexBasis: auto` with no children — so a rule that paints only a background
+ * paints a zero-pixel box, and the grab region comes from `Group`'s `resizeTargetMinimumSize`
+ * rather than from these pixels (`./LayoutView.tsx`).
+ */
+.tuval-separator {
+	flex: 0 0 auto;
+	background: var(--border-faint);
+	transition: background var(--motion-fast) ease;
+}
+
+.tuval-separator[aria-orientation="vertical"] {
+	inline-size: 4px;
+	cursor: col-resize;
+}
+
+.tuval-separator[aria-orientation="horizontal"] {
+	block-size: 4px;
+	cursor: row-resize;
+}
+
+.tuval-separator[data-separator="hover"],
+.tuval-separator[data-separator="focus"],
+.tuval-separator[data-separator="active"] {
+	background: var(--accent);
+}
+
+.tuval-status {
+	display: flex;
+	gap: var(--s-4);
+	align-items: center;
+	padding: var(--s-1) var(--s-3);
+	min-block-size: var(--tap-min);
+	border-block-start: 1px solid var(--border);
+	background: var(--surface-raised);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-status strong {
+	color: var(--text-primary);
+	font-weight: 600;
+}
+
+.tuval-kbd {
+	font: var(--t-mono);
+	padding: 0 var(--s-1);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	color: var(--text-secondary);
+}
+
+.tuval-command-line {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--s-2);
+	align-items: center;
+	padding: var(--s-2) var(--s-3);
+	border-block-start: 1px solid var(--border);
+	background: var(--surface-raised);
+}
+
+.tuval-command-result {
+	flex-basis: 100%;
+	min-inline-size: 0;
+	max-block-size: 30vh;
+	overflow: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	margin: 0;
+	color: var(--text-primary);
+	font: var(--t-mono);
+}
+
+.tuval-command-line input {
+	flex: 1 1 auto;
+	min-block-size: var(--tap-min);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	font: var(--t-mono);
+	padding: 0 var(--s-2);
+}
+
+/* The placeholder spells a real command, so it is text a reader has to be able to read. */
+.tuval-command-line input::placeholder {
+	color: var(--text-muted);
+}
+
+.tuval-refusal {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.tuval-picker {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.tuval-picker [role="option"] {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	min-block-size: var(--tap-min);
+	padding: var(--s-1) var(--s-2);
+	border-radius: var(--r-sm);
+	transition: background var(--motion-fast) ease;
+}
+
+.tuval-picker [role="option"][aria-selected="true"] {
+	background: var(--accent-soft);
+	color: var(--text-primary);
+}
+
+/* The `/` filter at the top of the list. Same box as the command line's input, because it is the
+   same gesture: a prompt the desk hands the caret to. */
+.tuval-picker-filter {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+}
+
+.tuval-picker-filter label {
+	color: var(--text-muted);
+	font: var(--t-mono);
+}
+
+.tuval-picker-filter input {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	min-block-size: var(--tap-min);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	font: var(--t-mono);
+	padding: 0 var(--s-2);
+}
+
+.tuval-picker-filter input::placeholder {
+	color: var(--text-muted);
+}
+
+.tuval-picker-detail {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.tuval-picker-group-label {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.tuval-placeholder {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	justify-content: center;
+	align-items: flex-start;
+	block-size: 100%;
+	color: var(--text-muted);
+}
+
+/*
+ * The failure panel `./ErrorBoundary.tsx` paints where a region used to be. `--text-muted` for the
+ * throw's own words and for the stack, never `--text-faint`: both sit inside a `role="alert"`, and
+ * the faint rung is the 3:1 decorative one `design-system-manifest.md` forbids meaning from.
+ */
+.tuval-boundary {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	/* Top-aligned, not centred: this panel replaces a whole region, and a message floating at its
+	   midpoint reads as decoration rather than as the thing that just failed. */
+	justify-content: flex-start;
+	gap: var(--s-2);
+	padding: var(--s-4);
+	min-block-size: 0;
+	overflow: auto;
+}
+
+/* The same panel inside one window's body: it replaces that window's content, so it takes the body's
+   own room rather than the tiling area's. */
+.tuval-window-boundary {
+	block-size: 100%;
+	padding: var(--s-2);
+}
+
+.tuval-boundary p {
+	margin: 0;
+}
+
+.tuval-boundary-reason,
+.tuval-boundary-stack {
+	color: var(--text-muted);
+	font: var(--t-mono);
+}
+
+.tuval-boundary-stack {
+	margin: 0;
+	white-space: pre-wrap;
+	font: var(--t-meta);
+}
+
+.tuval-boundary-where summary {
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+	cursor: pointer;
+}
+
+.tuval-boundary button {
+	color: var(--accent-fg);
+	background: var(--accent);
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	padding: var(--s-1) var(--s-3);
+	cursor: pointer;
+	font: var(--t-body-sm);
+	transition: filter var(--motion-fast) ease;
+}
+
+/* The package's own primary-button hover (`packages/design/src/Button.css`), so this panel's retry
+   lightens the same way every other accent fill in the system does. */
+.tuval-boundary button:hover {
+	filter: brightness(1.06);
+}
+
+/* Every transition collapses to an instant swap. Honouring this is part of the behavioural spine
+   the design manifest calls code-authoritative, and Pillar 4 forbids carrying meaning on motion in
+   the first place, so nothing is lost when it collapses. */
+@media (prefers-reduced-motion: reduce) {
+	.tuval-surface {
+		--motion-fast: 0ms;
+	}
+}

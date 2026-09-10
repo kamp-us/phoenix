@@ -28,7 +28,7 @@ const CYCLE = CYCLE_DOC;
 const COMMENTS = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/4300\\/comments`);
 const TRUNK = new RegExp(`^GET ${API}\\/repos\\/o\\/r$`);
 const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
-const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`);
+const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/o\\/teams\\/control-plane\\/members`);
 
 const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
 
@@ -42,8 +42,8 @@ const ledger: ReadonlyArray<Scripted> = [
 /** The same roster `plan approve` writes under — resolved again here, over the marker's author. */
 const acl: ReadonlyArray<Scripted> = [
 	[TRUNK, served({default_branch: "main"})],
-	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
-	[MEMBERS, served([{login: "usirin"}, {login: "cansirin"}])],
+	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"}],
+	[MEMBERS, served([{login: "noor"}, {login: "mira"}])],
 ];
 
 const marker = (epicRef: number, digest: string): string =>
@@ -64,7 +64,7 @@ describe("runApproval", () => {
 	it("answers current with the author and both digests", async () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
-			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "usirin"})],
+			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "noor"})],
 			...ledger,
 		]);
 		expect(outcome.code).toBe(0);
@@ -72,7 +72,7 @@ describe("runApproval", () => {
 			answer: "approval",
 			epic: 4300,
 			state: "current",
-			by: "usirin",
+			by: "noor",
 			markerDigest: digest,
 			derivedDigest: digest,
 			at: "2026-08-16T07:16:03Z",
@@ -85,7 +85,7 @@ describe("runApproval", () => {
 	it("answers stale when the plan moved after the marker landed", async () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
-			[COMMENTS, comments({id: 91, body: marker(4300, "0000000000ff"), author: "usirin"})],
+			[COMMENTS, comments({id: 91, body: marker(4300, "0000000000ff"), author: "noor"})],
 			...ledger,
 		]);
 		expect(outcome.code).toBe(0);
@@ -110,7 +110,7 @@ describe("runApproval", () => {
 	it("does not take a marker naming a different epic as this epic's approval", async () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
-			[COMMENTS, comments({id: 91, body: marker(4301, digest), author: "usirin"})],
+			[COMMENTS, comments({id: 91, body: marker(4301, digest), author: "noor"})],
 			...ledger,
 		]);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({state: "absent"});
@@ -130,13 +130,13 @@ describe("runApproval", () => {
 			[
 				COMMENTS,
 				comments(
-					{id: 91, body: marker(4300, "0000000000ff"), author: "usirin"},
-					{id: 92, body: marker(4300, digest), author: "cansirin"},
+					{id: 91, body: marker(4300, "0000000000ff"), author: "noor"},
+					{id: 92, body: marker(4300, digest), author: "mira"},
 				),
 			],
 			...ledger,
 		]);
-		expect(JSON.parse(outcome.stdout)).toMatchObject({state: "current", by: "cansirin"});
+		expect(JSON.parse(outcome.stdout)).toMatchObject({state: "current", by: "mira"});
 	});
 
 	it("refuses 11 when the comment list cannot be read — UNKNOWN, not absent", async () => {
@@ -150,7 +150,7 @@ describe("runApproval", () => {
 
 	/**
 	 * The gate the write side alone cannot hold: posting these bytes takes only the ability to comment
-	 * on the epic, and the digest is on `plan check`'s stdout (ADR 0289, ADR 0055 over 0051).
+	 * on the epic, and the digest is on `plan check`'s stdout, so only the author gate can hold it.
 	 */
 	it("does not honour a marker from an account off the control-plane roster", async () => {
 		const digest = await derivedDigest();
@@ -173,7 +173,7 @@ describe("runApproval", () => {
 			[
 				COMMENTS,
 				comments(
-					{id: 91, body: marker(4300, digest), author: "usirin"},
+					{id: 91, body: marker(4300, digest), author: "noor"},
 					{id: 92, body: marker(4300, "0000000000ff"), author: "some-agent"},
 				),
 			],
@@ -181,7 +181,7 @@ describe("runApproval", () => {
 		]);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
 			state: "current",
-			by: "usirin",
+			by: "noor",
 			comment: 91,
 			unauthorized: 1,
 		});
@@ -191,19 +191,19 @@ describe("runApproval", () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
 			[CODEOWNERS, {status: 200, body: "# nobody owns anything\n"}],
-			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "usirin"})],
+			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "noor"})],
 			...ledger,
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({state: "absent", unauthorized: 1});
 	});
 
-	/** #4223 on the read side: an unread roster is neither an approval nor its absence. */
+	/** The collapse, on the read side: an unread roster is neither an approval nor its absence. */
 	it("refuses 11 when the roster read fails — never absent and never current", async () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
 			[MEMBERS, {status: 502, body: '{"message":"Bad gateway"}'}],
-			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "usirin"})],
+			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "noor"})],
 			...ledger,
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);

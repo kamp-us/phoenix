@@ -2,9 +2,9 @@
  * `adr next`'s allocation, pure: the id is `max(union) + 1`, never the first free number in it.
  *
  * A gap below the maximum is a number some pull request claimed and never merged, and re-issuing
- * it points every citation of the abandoned ADR at a different decision (#4296). The contract
- * records that this departs from ADR 0074's stated "first integer free" rule and follows every
- * implementation since; the divergence is tracked on #3779 and is not this package's to resolve.
+ * it points every citation of the abandoned ADR at a different decision. This departs from the
+ * older "first integer free" wording and follows every implementation since; reconciling the two is
+ * a corpus question, not this package's to resolve.
  */
 
 /** How many digits an id zero-pads to — the width every existing record already carries. */

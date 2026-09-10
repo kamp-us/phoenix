@@ -107,7 +107,7 @@ describe("captureRenderLeg", () => {
 		expect(run(succeeding({status: 200}))._tag).toBe("Rendered");
 	});
 
-	it("collapses a capture's page errors to the cap plus a count of the rest (ADR 0308)", () => {
+	it("collapses a capture's page errors to the cap plus a count of the rest", () => {
 		const noisy = Array.from({length: PAGE_ERROR_CAP + 4}, (_, i) => ({
 			kind: "console.error" as const,
 			text: `Warning: ${i}`,
@@ -129,7 +129,7 @@ describe("captureRenderLeg", () => {
 });
 
 /**
- * The width half of the same readback discipline (#7706): the requested viewport is what the plan
+ * The width half of the same readback discipline: the requested viewport is what the plan
  * asked for, the recorded width is what the bytes say, and a shot that answers the narrow question
  * from desktop pixels is a valid PNG no byte check downstream can tell from the real thing.
  */
@@ -171,7 +171,7 @@ describe("captureRenderLeg — the shot's own width", () => {
 /**
  * The bytes cannot answer this: an anonymous render of `/pano` is a valid PNG whichever name it is
  * filed under, so every arm below decodes fine and the classification is the only thing separating a
- * signed-in capture from the visitor's (#7051).
+ * signed-in capture from the visitor's.
  */
 describe("captureRenderLeg — the :auth session proof", () => {
 	it("asks for the proof on an :auth surface and for nothing on a bare route", () => {
@@ -208,7 +208,7 @@ describe("captureRenderLeg — the :auth session proof", () => {
 });
 
 /**
- * The tier half of the same proof (#7398). Every arm here IS signed in and decodes fine — the whole
+ * The tier half of the same proof. Every arm here IS signed in and decodes fine — the whole
  * defect is that a yazar's render of a çaylak-only surface is a clean, valid capture of the audience
  * the feature is designed never to show.
  */
@@ -254,10 +254,10 @@ describe("captureRenderLeg — the rendered actor's tier", () => {
 
 /**
  * One layer over the session proof and for the same reason: a preview that dropped the override
- * cookie renders the flag-off page, and that page is a valid PNG under the flag-on name (#7218).
+ * cookie renders the flag-off page, and that page is a valid PNG under the flag-on name.
  */
 describe("captureRenderLeg — the forced-flag proof", () => {
-	const FORCED = {"phoenix-welcome": true};
+	const FORCED = {"welcome-banner": true};
 	const forcedRequest = {...authRequest, forcedFlags: FORCED};
 	const runForced = (capture: CaptureShots): SurfaceRender =>
 		Effect.runSync(makeCaptureRenderLeg(capture)(forcedRequest));
@@ -286,12 +286,12 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 			runForced(
 				authShot({
 					sessionProof: signedIn,
-					overrideProof: {_tag: "Inert", keys: ["phoenix-welcome"]},
+					overrideProof: {_tag: "Inert", keys: ["welcome-banner"]},
 				}),
 			),
 		).toEqual({
 			_tag: "OverrideInert",
-			reason: "the preview evaluated phoenix-welcome at the default",
+			reason: "the preview evaluated welcome-banner at the default",
 		});
 	});
 

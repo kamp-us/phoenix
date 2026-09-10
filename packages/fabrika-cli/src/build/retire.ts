@@ -1,17 +1,16 @@
 /**
  * The release predicate `build retire` turns on: may this worktree's checkout be taken from it?
  *
- * Pure, and separated from the verb because the whole ruling on #6610 lives here — the two licenses
- * are board-attested positive statements, and neither is an inference from a tree that looks idle
- * (ADR 0323, which is why ADR [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md)
- * §5's ban on eviction-by-inference is satisfied rather than widened).
+ * Pure, and separated from the verb because the whole ruling lives here — the two licenses are
+ * board-attested positive statements, and neither is an inference from a tree that looks idle, so
+ * the ban on evicting a lane by inference is satisfied rather than widened.
  *
  * **Dirty is not an input to either board license.** The founder's ruling rejects it explicitly:
  * agents routinely leave a worktree dirty long after its ticket merged, so dirtiness is a false
  * negative for "work in progress" and reading it would keep the deadlock in the case that most needs
  * clearing.
  *
- * The third license is the one ADR 0342 adds for the case the board says nothing about at all — no
+ * The third license covers the case the board says nothing about at all — no
  * authorized claim marker carries the branch's lane nonce, because the claim was released. Nothing
  * holds that lane, so there is no claim to evict; but with no board statement to lean on, the
  * evidence is `./reap.ts`'s rather than a board license's, and it is read the same way: a tree goes
@@ -44,7 +43,7 @@ export const subjectsFor = (
  *
  * `terminal` is the *ticket* reaching its end — a closed issue, a merged pull request — and it is
  * read off the board rather than derived from anything local. `adoptedSessions` are the sessions an
- * **authorized** ADR 0295 adopt marker on this number declares gone; `sessionByNonce` maps each
+ * **authorized** adopt marker on this number declares gone; `sessionByNonce` maps each
  * authorized claim marker's lane nonce to the session that took it, which is the only link from a
  * branch name back to a session.
  */
@@ -92,8 +91,8 @@ export interface Residue {
  * anyway, one step later and with a worse message.
  *
  * A branch whose nonce a live claim marker carries holds on that alone, ahead of {@link seatResidue}
- * — a lane that holds its claim owns its tree however empty the tree looks, which is the inference
- * ADR 0215 §5 bans and this order makes unreachable.
+ * — a lane that holds its claim owns its tree however empty the tree looks, which is the
+ * eviction-by-inference the ban forbids and this order makes unreachable.
  */
 export const classify = (
 	subject: Subject,
@@ -126,7 +125,7 @@ export const classify = (
 };
 
 /**
- * Seat an unclaimed subject on what it carries — ADR 0342's arm.
+ * Seat an unclaimed subject on what it carries — the arm for a lane no claim holds.
  *
  * Everything short of both proofs holds, and each refusal names the count that blocked it, because
  * an operator's next move differs: uncommitted paths are committed or discarded in that tree, and
@@ -148,7 +147,7 @@ export const seatResidue = (subject: Subject, residue: Residue): Seated => {
 			}
 		: {
 				_tag: "Hold",
-				because: `no authorized claim marker on #${laneNumber(subject.lane)} carries this branch's lane nonce, and the tree carries ${carried.join(" and ")} — with no board license, only a tree carrying nothing may go (ADR 0342)`,
+				because: `no authorized claim marker on #${laneNumber(subject.lane)} carries this branch's lane nonce, and the tree carries ${carried.join(" and ")} — with no board license, only a tree carrying nothing may go`,
 			};
 };
 

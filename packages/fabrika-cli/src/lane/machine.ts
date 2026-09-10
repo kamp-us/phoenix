@@ -1,7 +1,6 @@
 /**
  * The lane compiler — one `workflow.json` machine document in, one flat tea Transitions machine
- * per task out, everything XState's nesting carried reduced to data (#5673; grounded in the
- * recorded spike runs on #5671/#5672).
+ * per task out, everything a nested state library carried reduced to data.
  *
  * Structural recognitions replace every name-driven mechanism, and **two guard spellings are read**:
  * a `guard`/`actions` string is otherwise inert data.
@@ -11,15 +10,17 @@
  *     under the two routing spellings below, whose fallthrough is the ordinary path and carries no
  *     error. The first arm's own spelling picks the guard, and only three kinds exist.
  *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
- *     nothing: it picks which shell serves the round, and picking is not repairing (ADR 0317).
+ *     nothing: it picks which shell serves the round, and picking is not repairing.
  *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
  *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
- *     than folding to a terminal over an issue the board still calls buildable (ADR 0343). Every
+ *     than folding to a terminal over an issue the board still calls buildable. Every
  *     other spelling is the budget guard, one inline counter comparison in the compiled cell, and
  *     **which counter it spends is the event's own polarity**: `FAIL` is a repair round and spends
- *     `retries`, every other event is a wait and spends `waits`. A queue dwell must not eat the
- *     budget a later repair draws on, and reading that off the event keeps it structural — beyond
- *     the two routing spellings, no guard name is consulted (ADR 0313).
+ *     `retries`, {@link MACHINERY_EVENT} is the pipeline's own machinery failing and spends `laps`,
+ *     every other event is a wait and spends `waits`. A queue dwell must not eat the
+ *     budget a later repair draws on, and neither must a child collision at integrate; reading that
+ *     off the event keeps it structural — beyond the two routing spellings, no guard name is
+ *     consulted.
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -27,24 +28,43 @@
  *     the tripped one.
  *   - A **`final` carrying an `on`** is a park rather than an end: it stays in `finals`, so its
  *     phase still folds and its trip still reads, and the door out stays walkable — how `frozen`
- *     takes an `UNBLOCKED` without leaving either set (ADR 0297).
+ *     takes an `UNBLOCKED` without leaving either set.
  *
  * Compilation is total over its result type: a document that does not fit comes back as
  * {@link Malformed} with every defect named, never as a machine that half-works.
  *
  * One cell is the compiler's rather than the document's: {@link CLEARED_EVENT}, injected into every
- * state, which raises the retry budget and moves nothing (ADR 0312). A document that declares it is
+ * state, which raises the retry budget and moves nothing. A document that declares it is
  * still a defect — the budget is a fold over recorded events, so a grant is a line in
  * `events.jsonl`, never a field the compiler reads out of mutable context.
  */
 import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
 import {budgetWith} from "../cap-clearance.ts";
-import {RETRY_BUDGET} from "../retry-budget.ts";
+import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 
-/** The operator's whole event vocabulary — the six, closed (#5570 founder session, 2026-08-15). */
-export const OPERATOR_EVENTS = ["DONE", "PASS", "FAIL", "BLOCKED", "WIP", "UNBLOCKED"] as const;
+/**
+ * The machinery event — a lap the pipeline spent on itself, not a round the artifact owes.
+ *
+ * It is an operator event like the other six, so a document may declare a cell for it and
+ * `lane transition` may record one; what separates it is the counter its guarded cell spends
+ * ({@link TaskState.laps}) and the cause every one of them carries. A child colliding at integrate
+ * and a reviewer's FAIL both used to arrive as `FAIL`, which is how a run cleared its whole repair
+ * budget on collisions and had nothing left for the first real verdict against it.
+ */
+export const MACHINERY_EVENT = "LAP";
+
+/** The operator's whole event vocabulary — the seven, closed. */
+export const OPERATOR_EVENTS = [
+	"DONE",
+	"PASS",
+	"FAIL",
+	"BLOCKED",
+	"WIP",
+	"UNBLOCKED",
+	MACHINERY_EVENT,
+] as const;
 
 export type OperatorEvent = (typeof OPERATOR_EVENTS)[number];
 
@@ -52,15 +72,15 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
 	(OPERATOR_EVENTS as readonly string[]).includes(event);
 
 /**
- * The seventh event, and the one no operator records: a founder's cleared repair round, appended by
- * `build clear` (ADR 0312). It targets nothing — it raises the budget from its own position in the
- * log forward — so it opens no door out of a park and leaves 0297's transition vocabulary at six.
+ * The eighth event, and the one no operator records: a founder's cleared repair round, appended by
+ * `build clear`. It targets nothing — it raises the budget from its own position in the
+ * log forward — so it opens no door out of a park and leaves the transition vocabulary at seven.
  */
 export const CLEARED_EVENT = "CLEARED";
 
 /**
- * The eighth event, and the only line that names another line: a correction, appended by
- * `lane reconcile` to say what a recorded event's routing payload should have been (ADR 0350).
+ * The ninth event, and the only line that names another line: a correction, appended by
+ * `lane reconcile` to say what a recorded event's routing payload should have been.
  *
  * It reaches no machine at all — no state holds a cell for it, and the fold consumes it before any
  * message is dispatched. That is the design rather than an omission: a correction is a fact about
@@ -68,6 +88,70 @@ export const CLEARED_EVENT = "CLEARED";
  * needing a door out of the terminal that fold reached.
  */
 export const CORRECTED_EVENT = "CORRECTED";
+
+/**
+ * The tenth and eleventh events: the two board-proven terminals, appended by `lane settle` once it has
+ * read what the driving issue's closure says, and by nothing else.
+ *
+ * `CANCELLED` is a not-planned or duplicate close — the board dropped the work. `LANDED` is a
+ * completed close with a merged pull request linking the issue — the work shipped outside the lane's
+ * own flow, which is what a hand-shipped lane parked in `build` or `review` looks like.
+ *
+ * Both are injected as a cell on every state, the way {@link CLEARED_EVENT} is, and for the same
+ * reason: a lane booted before they existed carries its own copy of `workflow.json` under
+ * `.fabrika/lanes/<n>/`, and a document-declared transition would reach none of them. Unlike a
+ * clearance they move the task — into {@link BOARD_TERMINALS}' final for the event.
+ *
+ * Neither is an operator event: {@link OPERATOR_EVENTS} still holds seven, and `lane transition`
+ * refuses both, so the operator's vocabulary is closed exactly as it was and a `DONE`'s proof
+ * semantics are untouched.
+ */
+export const CANCELLED_EVENT = "CANCELLED";
+
+export const LANDED_EVENT = "LANDED";
+
+/**
+ * The twelfth event, and the second that reaches no machine: a topology amendment, appended by
+ * `lane amend` to say that the lane's machine was re-derived from the epic's current
+ * `## Dependencies` block at this point in the log.
+ *
+ * Like {@link CORRECTED_EVENT} it is a fact about the lane rather than about a task, so no state
+ * holds a cell for it and the fold drops it before any message is dispatched. That is what keeps
+ * the log append-only across a topology change: the machine on disk is replaced, no recorded line
+ * is rewritten, and this line is where a reader finds out why the lines above it were folded by a
+ * machine whose task set differs. Its `tasks` payload is the set the amendment left behind, which
+ * is the whole audit of the change.
+ */
+export const AMENDED_EVENT = "AMENDED";
+
+/**
+ * The finals a board-proven terminal lands in — the compiler's own states, never a document's.
+ *
+ * Each is in `finals` so its phase folds, and in neither `errorFinals` nor `openFinals`: a settled
+ * lane did not trip and has no door out. `deriveStatus` reads each as its own workflow terminal
+ * rather than folding it into `complete` (which would claim this lane's own flow finished it) or
+ * `tripped` (which would claim it failed).
+ *
+ * The `board:` prefix is load-bearing rather than decoration: an emitted epic machine already owns a
+ * document state called `landed` (`emit.ts`'s `initialFor`, a child booted over a completed close),
+ * and the compiler refuses a document that names one of its own finals — so an unprefixed name here
+ * would refuse every epic lane in the repo. It also says where the fact came from, which is the one
+ * thing separating these two leaves from the ones a lane's own flow earns.
+ */
+export const BOARD_TERMINALS: Readonly<Record<string, string>> = {
+	[CANCELLED_EVENT]: "board:cancelled",
+	[LANDED_EVENT]: "board:landed",
+};
+
+export const CANCELLED_STATE = "board:cancelled";
+
+export const LANDED_STATE = "board:landed";
+
+export const isBoardTerminalEvent = (event: string): boolean =>
+	Object.hasOwn(BOARD_TERMINALS, event);
+
+export const isBoardTerminalState = (state: string): boolean =>
+	Object.values(BOARD_TERMINALS).includes(state);
 
 /**
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
@@ -89,6 +173,9 @@ export interface TaskState {
 	/** Re-folds spent waiting on something outside the lane — never the repair budget above. */
 	readonly waits: number;
 	readonly maxWaits: number;
+	/** Rounds the pipeline's own machinery spent — never the repair budget above. */
+	readonly laps: number;
+	readonly maxLaps: number;
 	readonly was?: string;
 }
 
@@ -104,13 +191,13 @@ export interface LaneMsg {
 	 * It rides the resume rather than arriving as an eighth event, because the point is that ONE
 	 * recorded line both clears the park and buys the read the resumed lane needs: a bare `UNBLOCKED`
 	 * out of `human:queue-stall` restores a state whose wait budget is spent, and the fold refuses
-	 * exactly that (ADR 0313). `recipe unpark` grants it once it has proven the queue moved; a
+	 * exactly that. `recipe unpark` grants it once it has proven the queue moved; a
 	 * human's `lane transition --grant-wait` is the fallback for when that read cannot run.
 	 */
 	readonly waitGrant?: number;
 	/**
 	 * Whether the merge this event reports left its issue undischarged — the `merge:partial` guard's
-	 * whole input, relayed off `lane prove`'s closure read (ADR 0343).
+	 * whole input, relayed off `lane prove`'s closure read.
 	 *
 	 * Unlike {@link TaskState.classes} it is not sticky and folds into no state field: it is a fact
 	 * about *this* merge, so a lane that partially merged, went round and closed properly must read
@@ -133,20 +220,28 @@ export interface CompiledTask {
 	/**
 	 * The states holding a **retries**-guarded cell — the ones whose only non-`PASS` route out is
 	 * gated on `retries < maxRetries`. Read at resume time, where landing in one with the budget
-	 * spent means the state was restored and the budget was not (#6570). A wait-guarded cell is not
+	 * spent means the state was restored and the budget was not. A wait-guarded cell is not
 	 * one of these: its spent fallthrough is a human park that names the stall, not a fall back into
-	 * the error final the resume just left (ADR 0313).
+	 * the error final the resume just left.
 	 */
 	readonly guardedStates: ReadonlySet<string>;
 	/**
-	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — `ship:queued`'s `WIP`
-	 * to `human:queue-stall`, and nothing else in today's machine.
+	 * The states holding a **laps**-guarded cell. Empty on every document that declares no
+	 * {@link MACHINERY_EVENT} arm — which is every lane emitted before this axis existed, and every
+	 * one emitted with the machinery key off — so a reader can tell a machine that spends laps from
+	 * one that has never heard of them, and print the counter only where it means something.
+	 */
+	readonly lapStates: ReadonlySet<string>;
+	/**
+	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — the epic tail's
+	 * `ship:queued` `WIP` to `human:queue-stall`, and a child's `integrate` `WIP` to
+	 * `human:replay-stall`.
 	 *
 	 * The wait axis's own resume read, and it needs the pairing where {@link guardedStates} needs
 	 * only the name: a retry-guarded state's fallthrough is a final, so `errorFinals` already says
 	 * where a resume came from. A wait park is a plain state, so the pair is what tells the fold that
 	 * a resume lands back in the state whose spent guard produced this very park — rather than in one
-	 * a differently-caused park happens to share (ADR 0313).
+	 * a differently-caused park happens to share.
 	 */
 	readonly waitParks: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
@@ -155,14 +250,14 @@ export interface CompiledTask {
 	 *
 	 * Carried so a reader can locate a misrouted line off the machine instead of off a state-name
 	 * list: which state ships, and which event lands the merge, is the document's call. An epic
-	 * tail's emitted region declares no partial arm, so it yields nothing here — ADR 0343's carve-out
+	 * tail's emitted region declares no partial arm, so it yields nothing here — that carve-out
 	 * falls out of the compilation rather than being restated as a special case.
 	 */
 	readonly partialStates: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
-	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
-	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
-	 * rather than leaving an operator staring at a grant that silently buys nothing.
+	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours.
+	 * Carried so a refusal can name the repair — re-record each as a `CLEARED` event — rather than
+	 * leaving an operator staring at a grant that silently buys nothing.
 	 */
 	readonly staleGrants: ReadonlyArray<number>;
 	/** The task's `context` entry minus the two budgets' bookkeeping — passed through to status. */
@@ -175,7 +270,7 @@ export interface CompiledLane {
 	/** The workflow's two terminal names, read off the last phase's `onDone` pair. */
 	readonly terminals: {readonly complete: string; readonly tripped: string};
 	/**
-	 * What fires this lane, as the document declares it — a chore workflow's own field (#5840). Read
+	 * What fires this lane, as the document declares it — a chore workflow's own field. Read
 	 * and carried rather than ignored, so a mistyped declaration is a defect instead of a silence;
 	 * what a trigger name *means* is the caller's, exactly as a guard name is.
 	 */
@@ -207,7 +302,7 @@ const classGuardOf = (arm: unknown): string | undefined => {
  *
  * Namespaced like `class:<name>` rather than spelled bare, because a bare word falls through to the
  * budget guard: a typo would compile, match nothing, spend a wait, and fold the lane to the terminal
- * this arm exists to divert it from — silently, which is the failure ADR 0317 named on the class
+ * this arm exists to divert it from — silently, which is the failure already met on the class
  * axis and this axis inherits.
  */
 export const PARTIAL_GUARD = "merge:partial";
@@ -263,9 +358,16 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
 	const guardedStates = new Set<string>();
+	const lapStates = new Set<string>();
 	const waitParks = new Map<string, Set<string>>();
 	const partialStates = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
+		if (isBoardTerminalState(name)) {
+			defects.push(
+				`task "${taskId}": state "${name}" is one of the compiler's own board-proven finals on every task, never a document's state`,
+			);
+			continue;
+		}
 		if (nodeType(node) === "final") finals.add(name);
 	}
 
@@ -287,13 +389,19 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			const msg = bareEvent(eventName);
 			if (msg === CLEARED_EVENT) {
 				defects.push(
-					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition (ADR 0312)`,
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition`,
+				);
+				continue;
+			}
+			if (isBoardTerminalEvent(msg)) {
+				defects.push(
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a board-proven terminal is the compiler's own cell on every state, never a document's transition`,
 				);
 				continue;
 			}
 			if (!isOperatorEvent(msg)) {
 				defects.push(
-					`task "${taskId}": state "${stateName}" listens for "${eventName}" — outside the operator's six (${OPERATOR_EVENTS.join("/")})`,
+					`task "${taskId}": state "${stateName}" listens for "${eventName}" — outside the operator's vocabulary (${OPERATOR_EVENTS.join("/")})`,
 				);
 				continue;
 			}
@@ -335,25 +443,37 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
 				if (msg === "FAIL") guardedStates.add(stateName);
+				// A lap park pairs with nothing, because there is no lap grant to be short of: a resume
+				// out of one walks back into the state it left and parks again on the next machinery
+				// failure, which is loud. The wait axis's refusal exists because its grant does.
+				else if (msg === MACHINERY_EVENT) lapStates.add(stateName);
 				else {
 					const parks = waitParks.get(stateName) ?? new Set<string>();
 					parks.add(fallthrough);
 					waitParks.set(stateName, parks);
 				}
-				cells[msg] =
-					msg === "FAIL"
-						? (s, m) => {
-								const c = withPayload(s, m);
-								return c.retries < c.maxRetries
-									? [{...c, type: taken, retries: c.retries + 1, was: c.type}, []]
-									: [{...c, type: fallthrough, was: c.type}, []];
-							}
-						: (s, m) => {
-								const c = withPayload(s, m);
-								return c.waits < c.maxWaits
-									? [{...c, type: taken, waits: c.waits + 1, was: c.type}, []]
-									: [{...c, type: fallthrough, was: c.type}, []];
-							};
+				if (msg === "FAIL") {
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						return c.retries < c.maxRetries
+							? [{...c, type: taken, retries: c.retries + 1, was: c.type}, []]
+							: [{...c, type: fallthrough, was: c.type}, []];
+					};
+				} else if (msg === MACHINERY_EVENT) {
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						return c.laps < c.maxLaps
+							? [{...c, type: taken, laps: c.laps + 1, was: c.type}, []]
+							: [{...c, type: fallthrough, was: c.type}, []];
+					};
+				} else {
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						return c.waits < c.maxWaits
+							? [{...c, type: taken, waits: c.waits + 1, was: c.type}, []]
+							: [{...c, type: fallthrough, was: c.type}, []];
+					};
+				}
 				continue;
 			}
 			if (typeof transition !== "string") {
@@ -380,24 +500,49 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
-	// Read BEFORE the clearance cell is injected: an open final is one the DOCUMENT left a door in.
-	// The injected cell targets nothing, so counting it would read every final as a park (ADR 0312).
+	// Each board-proven final is the compiler's, so it holds a row of its own: a `CLEARED` landing on
+	// an already-settled task must fold, not throw the log unreplayable.
+	for (const state of Object.values(BOARD_TERMINALS)) {
+		finals.add(state);
+		table[state] = {};
+	}
+
+	// Read BEFORE the injected cells: an open final is one the DOCUMENT left a door in. The clearance
+	// cell targets nothing and the cancellation cell is not a door out, so counting either would read
+	// every final as a park.
 	const openFinals = new Set(
 		Object.entries(table)
 			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
 			.map(([name]) => name),
 	);
 
+	// A region that BOOTS inside an open final booted in an error: something outside the lane already
+	// ended this task and left it needing a door. A closed final is the opposite and stays clean —
+	// `landed` is a settled boot, not a fault. Without this the emitter's abandoned-child boot stopped
+	// tripping its phase the moment nothing fell through to `frozen` any more, and an epic whose child
+	// the board closed unbuilt folded to `complete`.
+	if (openFinals.has(initialState)) errorFinals.add(initialState);
+
 	// The lane guard and `build verdicts`'s `capReached` spend one grant identically, which is why the
-	// budget is derived there rather than tallied here — see `../cap-clearance.ts` (#5959, #6137).
+	// budget is derived there rather than tallied here — see `../cap-clearance.ts`.
 	const clearedCell: Cell = (s, msg) => {
 		const round = msg.round;
-		// Set-semantic by the round it names, so a re-recorded grant buys nothing (ADR 0312).
+		// Set-semantic by the round it names, so a re-recorded grant buys nothing.
 		if (round === undefined || s.cleared.includes(round)) return [s, []];
 		const cleared = [...s.cleared, round].sort((a, b) => a - b);
 		return [{...s, cleared, maxRetries: budgetWith(declared, cleared)}, []];
 	};
 	for (const cells of Object.values(table)) cells[CLEARED_EVENT] = clearedCell;
+
+	// One cell per state per board terminal, so each reaches every lane already on disk, whose
+	// `workflow.json` was copied from a template that never declared it. A board final itself gets
+	// none: settling a settled task would fold as movement that did not happen.
+	for (const [event, terminal] of Object.entries(BOARD_TERMINALS)) {
+		const cell: Cell = (s) => [{...s, type: terminal, was: s.type}, []];
+		for (const [name, cells] of Object.entries(table)) {
+			if (!isBoardTerminalState(name)) cells[event] = cell;
+		}
+	}
 
 	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
@@ -408,8 +553,13 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		? ctx.classes.filter((name): name is string => typeof name === "string")
 		: [];
 	// A cap clearance buys a repair round and never a longer wait: `clearedCell` raises `maxRetries`
-	// alone, so the wait budget is a declared constant no recorded event moves (ADRs 0312, 0313).
+	// alone, so the wait budget is a declared constant no recorded event moves.
 	const maxWaits = typeof ctx.maxWaits === "number" ? ctx.maxWaits : WAIT_BUDGET;
+	// The lap budget is a declared constant no recorded event moves either, and it defaults for the
+	// same reason the wait one does: a lane emitted before this axis existed declares none, and must
+	// fold exactly as it did — which it does, because its document declares no lap-guarded cell to
+	// read the counter at all.
+	const maxLaps = typeof ctx.maxLaps === "number" ? ctx.maxLaps : MACHINERY_LAP_BUDGET;
 	const {
 		maxRetries: _max,
 		retries: _retries,
@@ -417,6 +567,8 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		classes: _classes,
 		maxWaits: _maxWaits,
 		waits: _waits,
+		maxLaps: _maxLaps,
+		laps: _laps,
 		...extras
 	} = ctx;
 	const initial: TaskState = {
@@ -427,6 +579,8 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		classes,
 		waits: 0,
 		maxWaits,
+		laps: 0,
+		maxLaps,
 	};
 	// The Transitions mapped type demands a cell for every (state × msg) pair; a lane machine is
 	// compiled from data and deliberately partial — the absent cells ARE the refusal contract
@@ -443,6 +597,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			errorFinals,
 			openFinals,
 			guardedStates,
+			lapStates,
 			waitParks,
 			partialStates,
 			staleGrants,
@@ -569,6 +724,7 @@ export interface LaneTopology {
 				readonly initial: string;
 				readonly maxRetries: number;
 				readonly maxWaits: number;
+				readonly maxLaps: number;
 				/** Per state, the events it holds a cell for — everything else refuses. */
 				readonly states: Readonly<Record<string, ReadonlyArray<string>>>;
 			}
@@ -592,6 +748,7 @@ export const topology = (lane: CompiledLane): LaneTopology => ({
 				initial: task.initial.type,
 				maxRetries: task.initial.maxRetries,
 				maxWaits: task.initial.maxWaits,
+				maxLaps: task.initial.maxLaps,
 				states: Object.fromEntries(
 					Object.entries(task.machine.update as Record<string, Record<string, unknown>>).map(
 						([state, cells]) => [state, Object.keys(cells)],

@@ -91,7 +91,7 @@ describe("runSweep", () => {
 	});
 
 	// A readable-but-empty corpus is the rarity floor at its limit, not a failed read — the fresh
-	// adopter sweeping their very first draft gets an answer (#5254).
+	// adopter sweeping their very first draft gets an answer.
 	it("answers indeterminate against a readable-but-empty --dir", async () => {
 		const io = fakeFs({
 			dirs: {[dir]: []},

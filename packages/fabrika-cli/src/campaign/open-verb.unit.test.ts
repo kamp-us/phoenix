@@ -81,7 +81,7 @@ describe("campaign open — the answer", () => {
 	it("admits an author reached through a team entry", async () => {
 		const {outcome} = await run(
 			[...APPROVED, [MEMBERSHIP, {status: 200, body: '{"state":"active"}'}]],
-			tree(TWO_ROWS, config("@kamp-us/founders")),
+			tree(TWO_ROWS, config("@acme/founders")),
 		);
 		expect(outcome.code).toBe(0);
 	});
@@ -110,7 +110,7 @@ describe("campaign open — usage refusals", () => {
 	});
 
 	it("refuses a --cites that is not a comment URL", async () => {
-		const {outcome} = await run(APPROVED, tree(), {cites: "https://github.com/o/r/issues/6289"});
+		const {outcome} = await run(APPROVED, tree(), {cites: CITES.replace(/#.*$/, "")});
 		expect(outcome.code).toBe(1);
 		expect(outcome.stderr.at(-1)).toContain("is not a comment URL in o/r");
 	});
@@ -195,14 +195,14 @@ describe("campaign open — the approval trace", () => {
 		expect(outcome.stderr.at(-1)).toContain("approves #52 active, not #52 paused");
 	});
 
-	it("refuses a declared author below the write floor on 21 (ADR 0055)", async () => {
+	it("refuses a declared author below the write floor on 21", async () => {
 		const {outcome, written} = await run([
 			[GET_COMMENT, comment(marker(52, "paused"))],
 			[PERMISSION, permission("read")],
 		]);
 		expect(outcome.code).toBe(21);
 		expect(outcome.stderr.at(-1)).toBe(
-			`campaign open: ${CITES} was authored by @usirin, who resolves to read on o/r, below write — authority is the ACL's, never .fabrika.jsonc's alone (ADR 0055). NOTHING was written.`,
+			`campaign open: ${CITES} was authored by @usirin, who resolves to read on o/r, below write — authority is the ACL's, never .fabrika.jsonc's alone. NOTHING was written.`,
 		);
 		expect(written.size).toBe(0);
 	});
@@ -228,11 +228,11 @@ describe("campaign open — the approval trace", () => {
 	it("refuses a campaignAuthors team the org does not have on 13, pointing at the key", async () => {
 		const {outcome} = await run(
 			[...APPROVED, [MEMBERSHIP, {status: 404, body: "{}"}], [TEAM, {status: 404, body: "{}"}]],
-			tree(TWO_ROWS, config("@kamp-us/founders")),
+			tree(TWO_ROWS, config("@acme/founders")),
 		);
 		expect(outcome.code).toBe(13);
 		expect(outcome.stderr.at(-1)).toBe(
-			"campaign open: campaignAuthors names @kamp-us/founders, which kamp-us does not have — fix the key; authority is UNKNOWN, NOTHING was written.",
+			"campaign open: campaignAuthors names @acme/founders, which acme does not have — fix the key; authority is UNKNOWN, NOTHING was written.",
 		);
 	});
 
@@ -243,7 +243,7 @@ describe("campaign open — the approval trace", () => {
 				[MEMBERSHIP, {status: 404, body: "{}"}],
 				[TEAM, {status: 200, body: '{"slug":"founders"}'}],
 			],
-			tree(TWO_ROWS, config("@kamp-us/founders")),
+			tree(TWO_ROWS, config("@acme/founders")),
 		);
 		expect(outcome.code).toBe(16);
 	});

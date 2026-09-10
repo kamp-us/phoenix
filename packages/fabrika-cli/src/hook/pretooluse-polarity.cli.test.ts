@@ -1,24 +1,22 @@
 /**
- * The polarity ADR 0250 rules, pinned as a test: a fabrika that cannot bootstrap must not block a
- * spawn.
+ * The ruled polarity, pinned as a test: a fabrika that cannot bootstrap must not block a spawn.
  *
  * On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), and the
  * bootstrap/dispatch failures sat on it — so a fabrika install that could not resolve itself denied
- * every `Task`/`Workflow` spawn in the session, the exact inverse of the ruled fail-open (#5423).
+ * every `Task`/`Workflow` spawn in the session, the exact inverse of the ruled fail-open.
  * Nothing in the type system stops that seat being taken again, so it is pinned in the two places it
  * can come back: the **exit code a real process returns**, and the **literals the bootstrap sources
  * carry**.
  *
  * The end-to-end leg runs the argv out of a committed `hooks.json` declaration rather than a
  * literal, for the same reason the golden test does: a pass must not be able to exercise a verb the
- * surface does not name. Since ADR 0331 retired the spawn hook the surface declares only
+ * surface does not name. Since the spawn hook was retired the surface declares only
  * `SessionStart`, so that is the row it drives — the property under test is the *exit code* a
  * cannot-run fabrika returns, which is the same whichever hook consulted it, and the code must stay
  * off `2` so a future `PreToolUse` declaration cannot inherit a denying bootstrap. And it reaches a
- * refusal for real rather than mocking one — a temp
- * directory made into a repo root that resolves a *different* `@kampus/fabrika-cli` is the
- * cross-checkout state, which triage measured on the v1 crew's worktrees before they left with ADR
- * 0279 — the state belongs to any worktree whose install resolves outside its own checkout.
+ * refusal for real rather than mocking one — a temp directory made into a repo root that resolves a
+ * *different* `@kampus/fabrika-cli` is the cross-checkout state, measured on real worktrees, and it
+ * belongs to any worktree whose install resolves outside its own checkout.
  *
  * `../delegate/foreign-checkout.cli.test.ts` spawns the same state and asserts a different property:
  * that the refusal happens at all, and that the cwd's install never answers. This file asserts what
@@ -43,8 +41,8 @@ const HOOKS_JSON = "../../../../claude-plugins/fabrika/hooks.json";
 
 /**
  * Every file that can end the process before a verb runs. The list is explicit because the claim is
- * about a closed set of sites, and a scan that silently covered fewer would be the vacuous pass
- * (ADR 0092) — the count is asserted below.
+ * about a closed set of sites, and a scan that silently covered fewer would be the vacuous pass —
+ * the count is asserted below.
  */
 const BOOTSTRAP_SOURCES = ["bin.ts", "delegate/entry.ts", "delegate/resolve.ts"] as const;
 
@@ -126,7 +124,7 @@ describe("a hook the surface declares, run from a checkout it refuses to answer 
 		});
 	};
 
-	it("refuses, and says so on stderr — fail open and loud, per ADR 0250", () => {
+	it("refuses, and says so on stderr — fail open and loud", () => {
 		expect(run().stderr).toContain("different repositories");
 	});
 

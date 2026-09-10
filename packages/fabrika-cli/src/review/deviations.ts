@@ -4,7 +4,7 @@
  *
  * The grammar is not here. It lives in `../wire/deviations.ts`, the registered format both this
  * reader and `build pr`'s body-shape check resolve against — one writer and one reader cannot
- * disagree about a shape neither of them owns (#5566). This module is the projection from the wire's
+ * disagree about a shape neither of them owns. This module is the projection from the wire's
  * three answers onto the four states the review verdict vocabulary needs, and nothing else.
  *
  * The fourth state is why a projection is needed at all: `None.` is a *checked* claim, and

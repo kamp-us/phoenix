@@ -1,11 +1,11 @@
 /**
  * The range-scoped write path `review post --base/--tip` and `governance post --base/--tip` share —
- * one composer for the marker `lane prove`'s epic-child arm reads (#5935, ruling on #5901).
+ * one composer for the marker `lane prove`'s epic-child arm reads.
  *
- * A child's verdict lands on the **child issue**, not a PR: the epic run opens one tail PR
- * (ADR 0285), so mid-run there is no PR surface to bind a head-scoped marker to, and the two SHAs
+ * A child's verdict lands on the **child issue**, not a PR: the epic run opens one tail PR,
+ * so mid-run there is no PR surface to bind a head-scoped marker to, and the two SHAs
  * the range names stop being history the moment the range merges into the epic branch. What binds
- * is the content digest (ADR 0276), which is why this path composes through
+ * is the content digest, which is why this path composes through
  * `../wire/range-verdict-marker.ts` — the exact reader `proveRangeVerdicts` folds — and never the
  * head-bound format.
  *
@@ -19,8 +19,8 @@
  * **A re-post appends; it never replaces.** The prior verdict is retired verbatim below
  * `./supersede.ts`'s fence and the fresh one takes the first line, because GitHub keeps no
  * comment-body history and this path's verdict has no second copy anywhere — a child opens no PR, so
- * the comment *is* the record of that child's review, and `lane prove` derives a refusal from it
- * (#7411). Retiring a standing verdict of the opposite polarity is {@link SUPERSEDES_VERDICT} until
+ * the comment *is* the record of that child's review, and `lane prove` derives a refusal from it.
+ * Retiring a standing verdict of the opposite polarity is {@link SUPERSEDES_VERDICT} until
  * `--supersede` says so out loud, and that refusal keys on the **range** rather than a head: the
  * range dimension plays the head dimension's role here, and it is already
  * {@link carriesNamespaceOver}'s upsert key, so the refusal and the upsert cannot disagree about
@@ -72,7 +72,7 @@ export interface RangeGate {
 }
 
 export interface RangePost {
-	/** The child issue the verdict lands on — verdicts live on GitHub (ADR 0283). */
+	/** The child issue the verdict lands on — verdicts live on GitHub. */
 	readonly issue: number;
 	readonly namespace: string;
 	readonly polarity: Polarity;
@@ -193,12 +193,12 @@ export const runRangePost = (
 			);
 		}
 		const diagnostics = [
-			`${verb}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} — the digest this verdict survives on (ADR 0276).`,
+			`${verb}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} — the digest this verdict survives on.`,
 		];
 		const refused = gate.admit(content.value.paths, diagnostics);
 		if (refused !== null) return refused;
 
-		// Composed through the wire format, never by hand (#3173) — the same module the prove arm reads.
+		// Composed through the wire format, never by hand — the same module the prove arm reads.
 		const marker: RangeVerdictMarker = {
 			namespace: post.namespace,
 			polarity: post.polarity,
@@ -225,7 +225,7 @@ export const runRangePost = (
 
 		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
 		// comment-body history, and on this path there is no PR carrying a second copy, so a PATCH
-		// over it is the whole record of that child's review gone (#7411). A polarity flip is the one
+		// over it is the whole record of that child's review gone. A polarity flip is the one
 		// case that also needs saying out loud, because `lane prove` derives its refusal from it.
 		const standing = mine === undefined ? null : polarityOfMarker(mine.body);
 		if (standing !== null && standing !== post.polarity && !post.supersede) {
@@ -258,7 +258,7 @@ export const runRangePost = (
 		}
 		const upsert = mine === undefined ? "created" : "superseded";
 
-		// Read back from live state — the write call's own echo is not evidence (#3173). The comparand
+		// Read back from live state — the write call's own echo is not evidence. The comparand
 		// is the ENVELOPE, not the composed verdict: on a re-post the bytes that were sent carry the
 		// retired verdict below the fence, and comparing against the fresh half alone reds every append.
 		const back = yield* getComment(repo, landed.id);

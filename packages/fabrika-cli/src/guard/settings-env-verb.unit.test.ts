@@ -27,13 +27,13 @@ describe("runSettingsEnvGuard", () => {
 		expect(outcome.stderr).toEqual([]);
 	});
 
-	// The post-#2495 phoenix shape: the fix was to delete the block, and that must stay green.
+	// The fix for a bad env value is often to delete the block, and that must stay green.
 	it("passes a settings file with no env block at all", async () => {
 		const outcome = await run(settings(JSON.stringify({permissions: {allow: []}})));
 		expect(outcome.code).toBe(0);
 	});
 
-	it("reds the #2495 regression value on the violation seat, with nothing on stdout", async () => {
+	it("reds an unexpanded token on the violation seat, with nothing on stdout", async () => {
 		const outcome = await run(
 			settings(JSON.stringify({env: {KAMPUS_PIPELINE_DATA: "${CLAUDE_PROJECT_DIR}/.pipeline"}})),
 		);
@@ -56,7 +56,7 @@ describe("runSettingsEnvGuard", () => {
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor: no settings file means the guard scanned nothing, so it cannot report clean.
+	// The fail-closed floor: no settings file means the guard scanned nothing, so never clean.
 	it("fails closed when the settings file is absent", async () => {
 		const outcome = await run({files: {}});
 		expect(outcome.code).toBe(ZERO_SCOPE);

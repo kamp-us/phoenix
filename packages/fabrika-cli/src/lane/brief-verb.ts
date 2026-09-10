@@ -11,14 +11,19 @@
  * shape names, and the two local paths a spawned shell cannot derive: this driver's lanes root,
  * resolved absolute here because the shell would resolve a relative one against its own worktree,
  * and the fabrika entrypoint the shell runs its verbs through, resolved off this running copy so a
- * repo that installs fabrika is not handed phoenix's in-tree path (#6012).
+ * repo that installs fabrika is not handed the developing repo's in-tree path.
  *
  * An epic lane's children are the one place where no PR is resolved at all: one run is one branch and
  * one PR, so a child builds in a worktree and its review judges a commit range, while the tail task
- * briefs that single PR under the same refusals a single-issue lane has always used (ADR 0285). That
+ * briefs that single PR under the same refusals a single-issue lane has always used. That
  * range is resolved here, off this tree, through the same read `lane prove` stands its proof on
  * (`./range.ts`) — the two verbs cannot name different ranges for one child, and a range the tree
- * cannot pin refuses the dispatch instead of printing one that resolves to nothing (#6023).
+ * cannot pin refuses the dispatch instead of printing one that resolves to nothing.
+ *
+ * A brief standing on that branch is also checked against it: the entrypoint is repo-relative in a
+ * checkout, so it resolves inside the shell's worktree, and a branch cut before a lane verb landed
+ * hands the shell a CLI that cannot execute the contract this brief states. `./briefed-verbs.ts`
+ * reads the branch's own tree, and a missing verb refuses at {@link BRIEFED_VERB_ABSENT}.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,6 +35,7 @@ import {
 	artifactUrl,
 	emit as emitBrief,
 	epicBranch,
+	type FabrikaEntry,
 	fabrikaEntry,
 	isBuildState,
 	isReviewState,
@@ -41,7 +47,9 @@ import {
 	shellState,
 } from "../wire/lane-brief.ts";
 import {headSha} from "../wire/marker-line.ts";
+import {carriedVerbs} from "./briefed-verbs.ts";
 import {
+	BRIEFED_VERB_ABSENT,
 	ISSUE_UNRESOLVED,
 	LANE_UNREADABLE,
 	NO_SHELL,
@@ -67,7 +75,7 @@ export interface BriefOptions extends LaneRef {
 	/**
 	 * This run's own entrypoint, read at the command boundary off the real filesystem — the value the
 	 * brief's `fabrika:` field carries, so the shell runs the copy of fabrika its repo actually has
-	 * rather than phoenix's in-tree path (#6012).
+	 * rather than the developing repo's in-tree path.
 	 */
 	readonly entrypoint: EntrypointRead;
 }
@@ -123,8 +131,8 @@ const issueUrl = (
  * exactly these facts (`./codes.ts`) — nothing there, several candidates, unreadable, truncated.
  *
  * Refusing is the whole point: a brief whose range resolves to nothing sends the reviewer an empty
- * diff it can still land a `range-verdict-marker` over (#6023), and one whose base sits on a shallow
- * graft boundary sends it a count that swallowed everyone else's landed commits (#6343).
+ * diff it can still land a `range-verdict-marker` over, and one whose base sits on a shallow
+ * graft boundary sends it a count that swallowed everyone else's landed commits.
  */
 const rangeRefusal = (
 	located: Exclude<RangeLocation, {readonly _tag: "Located"}>,
@@ -160,7 +168,7 @@ type GroundRead =
  *
  * The range is read here so the reviewer judges two commits the *driver* pinned. The far end used to
  * be `HEAD`, which the spawned shell re-resolved in a worktree standing on the assembly branch, so
- * the range read as empty (#6023). `build` reads nothing off the tree at all: no child branch exists
+ * the range read as empty. `build` reads nothing off the tree at all: no child branch exists
  * yet there, and its ground carries no range field to half-fill.
  */
 const childGround = (
@@ -198,6 +206,39 @@ const childGround = (
 		} as const;
 	});
 
+/**
+ * The refusal a brief owes when the assembly branch its shell will stand on does not carry a lane
+ * verb the brief tells that shell to run — `null` when there is nothing to stop.
+ *
+ * Only a ground naming that branch is judged; every other shell's worktree is cut from the driver's
+ * own head, which is the tree this process is already running out of.
+ */
+const briefedVerbRefusal = (
+	path: Path.Path,
+	ground: LaneGround,
+	fabrika: FabrikaEntry,
+	epic: number,
+	notes: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome | null, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (ground._tag === "Pull" || ground._tag === "Tail") return null;
+		const carriage = yield* carriedVerbs(path, ground.branch, fabrika);
+		if (carriage._tag === "Carried") return null;
+		if (carriage._tag === "Unreadable") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: ${carriage.reason} — whether the shell's tree carries the lane verbs this brief tells it to run is UNKNOWN.`,
+				notes,
+			);
+		}
+		const absent = carriage.verbs.map((verb) => `\`lane ${verb}\``).join(", ");
+		return refuse(
+			BRIEFED_VERB_ABSENT,
+			`${VERB}: ${ground.branch} does not carry ${absent}, and the shell runs its verbs through this brief's own \`${fabrika}\` inside a worktree cut from that branch — it would do the work, produce its verdict, and be unable to record it. Remedy: \`fabrika lane refresh ${epic}\` from the assembly worktree, then brief again.`,
+			notes,
+		);
+	});
+
 export const runBrief = (
 	options: BriefOptions,
 ): Effect.Effect<
@@ -208,7 +249,7 @@ export const runBrief = (
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
 		// The brief carries the driver's root resolved against the driver's cwd, because the shell
-		// resolves what it is handed against its own worktree (#5736).
+		// resolves what it is handed against its own worktree.
 		const root = lanesRoot(path.resolve(options.root));
 		if (root === null) {
 			return refuse(
@@ -218,7 +259,7 @@ export const runBrief = (
 		}
 		// The entrypoint rides as a `## Task` field and never as text inside the rules: the format's
 		// reader recomputes those bytes from the ground alone, so an interpolated path would make
-		// every brief malformed on the next machine that read it (#6012).
+		// every brief malformed on the next machine that read it.
 		const entry = options.entrypoint;
 		const fabrika = entry._tag === "Entrypoint" ? fabrikaEntry(entry.entrypoint) : null;
 		if (fabrika === null) {
@@ -284,6 +325,8 @@ export const runBrief = (
 			if (child._tag === "Refused") return child.outcome;
 			const ground = child.ground;
 			notes.push(...child.notes);
+			const stale = yield* briefedVerbRefusal(path, ground, fabrika, epic, notes);
+			if (stale !== null) return stale;
 			const brief: LaneBrief = {
 				lane: options.lane,
 				root,
@@ -336,13 +379,27 @@ export const runBrief = (
 			);
 		}
 
-		// The epic run's tail (task `epic_<n>`, and a PR is resolved — the tail states require one
-		// above): the ground carries the epic too, so the tail review's brief names where each
-		// child's `build-deviations` disclosure lives (#5903).
+		// The epic run's tail (task `epic_<n>`): review and ship carry the epic too, so the brief names
+		// where each child's `build-deviations` disclosure lives; `build` — the repair round the review's
+		// FAIL retries into — carries the assembly branch as well, because that branch is where the
+		// repair happens and nothing else in the brief names it.
+		if (epic !== null && prUrl === null) {
+			return refuse(
+				PR_AMBIGUOUS,
+				`${VERB}: ${traced._tag === "None" ? traced.why : "no PR URL was resolved"} across ${nominationScope(issue)}, and epic #${epic}'s tail repairs the run's one PR — without it the builder has no assembly to repair.`,
+				notes,
+			);
+		}
 		const ground: LaneGround =
-			epic !== null && prUrl !== null && !isBuildState(state)
-				? {_tag: "Tail", pr: prUrl, epic: read.url}
+			epic !== null && prUrl !== null
+				? isBuildState(state)
+					? {_tag: "TailRepair", pr: prUrl, epic: read.url, branch: epicBranch(epic)}
+					: {_tag: "Tail", pr: prUrl, epic: read.url}
 				: {_tag: "Pull", pr: prUrl};
+		if (epic !== null) {
+			const stale = yield* briefedVerbRefusal(path, ground, fabrika, epic, notes);
+			if (stale !== null) return stale;
+		}
 		const brief: LaneBrief = {
 			lane: options.lane,
 			root,

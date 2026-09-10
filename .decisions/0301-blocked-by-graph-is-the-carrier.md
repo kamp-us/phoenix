@@ -197,3 +197,98 @@ no vocabulary impact
 > `unreadable` rather than offered. The lazy shape is what makes it affordable over a whole board —
 > the parent resolve and the branch read fire only for a candidate the graph already refused. Filed
 > against [#7223](https://github.com/kamp-us/phoenix/issues/7223).
+
+> Amendment 2026-09-10 — **the claim-seam gate binds `--purpose build` and nothing else.** The
+> purpose matrix is now part of this record: `build` refuses on `16` exactly as written above,
+> `plan` and `gate` skip the graph read outright. Nothing else moves — the graph is still the one
+> carrier, `status:blocked` stays retired, the discharge of the 2026-08-29 amendment still narrows
+> the build arm, and the read still fails closed on that arm (an unreadable edge list is `11`, never
+> "not blocked"). Founder ruling:
+> [#7542, comment 5617229240](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240)
+> (umut, 2026-09-10) — "planning and plan-gating an epic is allowed while the epic it waits on is
+> still open; only the actual build work stays blocked."
+>
+> **Why the build arm is the whole point of the gate.** What this record means by "do not start this
+> yet" is *do not write code against a contract that has not landed*. Planning an epic writes a task
+> ledger; gating one grades that ledger. Neither writes code, and both are the work that most wants
+> doing while the blocker is being built, because every child of the downstream epic can start the
+> moment the blocker lands only if its ledger already exists. Fencing them on the same edge inverted
+> that: the downstream epic could not be planned until the blocker epic *closed*, which is the last
+> event in its run rather than the first.
+>
+> That cost was paid four times before the ruling. `fabrika build claim --purpose plan` refused on
+> `16` for #7497 (blocker #7496), #7499 (#7496 again, filed as #7543 and folded here), #8070
+> (#7625) and #8716 (#8715). Each stop was worked around by hand — dropping the epic-level edges and
+> keeping only the children's exact ones — which spends the one carrier this record establishes,
+> the same failure mode the 2026-08-29 amendment was written to stop.
+>
+> **Nothing is unfenced by this.** The edge still refuses every claim that would write code: each
+> child's own build claim reads its exact `blocked_by` edges, discharge and all, and `build pick`
+> and `build eligible` are build-purpose questions by construction and are untouched. What the
+> matrix removes is a refusal on the *epic's own* edge at a seam that produces a document.
+>
+> **The two consumers stop disagreeing with the producer.** `check-epic-plan`'s contract already
+> declared `16` unreachable in that gate; before this it was true of the gate's own verbs and false
+> of the claim it runs first. It is now true of both. `plan-epic` never had a `16` row in its
+> terminal vocabulary, and now needs none: the code is unreachable from a `plan` claim, and both
+> skills say so at the claim step. A skipped gate is printed rather than inferred —
+> `build claim: blockedness: the gate binds a build claim only — …` lands where the `scanned` line
+> would have — so a reader can tell "not blocked" from "not asked". Filed against
+> [#7542](https://github.com/kamp-us/phoenix/issues/7542).
+
+> Amendment 2026-09-10 — **"Nothing is unfenced by this" was wrong about the children, and the
+> prerequisites carry down to fix it.** The paragraph of that name in the amendment above says each
+> child's own build claim reads its exact `blocked_by` edges. That is true and it is not the whole
+> answer, because nothing puts the *epic's* edge onto a child. So an external prerequisite recorded
+> only at epic level refuses **the epic's own build claim and nothing else**. Read the sentence that
+> way from here.
+>
+> Before the purpose split, that same edge fenced the children too, by accident: the epic could not
+> take a `gate` claim, so `plan flip` never ran and no child was flipped `status:triaged`. Admitting
+> the gate claim removed the refusal and the accidental fence with it. The plan gate's defect floor
+> ([`defects.ts`](../packages/fabrika-cli/src/plan/defects.ts)) does not close the hole either — it
+> checks that the graph agrees with the plan's prose, and reads nothing off the epic's own edge list.
+>
+> **Ruled: carry them down at plan time.** `plan-epic` writes every open target on the epic's own
+> `blocked_by` list into each child's `## Dependencies` refs — the grammar already admits a `#<int>`
+> outside the epic ([`dependencies.ts`](../packages/fabrika-cli/src/build/dependencies.ts)) — so
+> `requiredEdges` derives a real per-child pair, `ledger edges` writes it, and each child's build
+> claim refuses on `16` with discharge intact. The plan gate reads the epic's own `blocked_by` list
+> and reds a plan that dropped one of its open targets. Ruling:
+> [#8992, comment 5617977097](https://github.com/kamp-us/phoenix/issues/8992#issuecomment-5617977097)
+> (2026-09-10), recorded by the EA under the driver's call of
+> [#8807](https://github.com/kamp-us/phoenix/issues/8807) R4.1 and open to a founder override in one
+> line.
+>
+> **Why not the other answer.** Declaring the per-child fence the intended shape was the live
+> alternative, and it would have made a policy out of a side effect: the narrowing was ruled so a
+> blocked epic can be *planned*, not so its children can be *built*.
+>
+> **Where it is enforced, and that it is not yet.** Two sites — a `plan-epic` contract clause for the
+> write and a defect in the plan gate's floor for the check — filed as
+> [#8995](https://github.com/kamp-us/phoenix/issues/8995) and ordered after
+> [#7562](https://github.com/kamp-us/phoenix/issues/7562), which reports that `ledger topology`
+> still refuses the very ref shape the clause asks a planner to write. Until both land, an
+> externally-blocked epic's children stay unfenced. This file is the ruling, and the ruling is not
+> the wiring.
+>
+> **What does not move.** The graph is still the one carrier, `status:blocked` stays retired, the
+> purpose matrix stands as written, and discharge still only ever admits. What changes is that the
+> per-child edge stops being something a planner may or may not think to write.
+
+> Amendment 2026-09-10 — **a mention is not a landing.** The 2026-08-29 amendment above names
+> `issueRefsIn` as the rule that discharges an edge off the assembly branch. That matcher reads a
+> bare `#<n>` anywhere in a message, so a commit the run itself put on `epic/<parent>` saying
+> `refactor(tracer): rework the helper; does not touch #6008` discharged #6008's edge and a child
+> lane started against a predecessor that does not exist. The rule is now `landingRefsIn`
+> (`packages/fabrika-cli/src/build/commit-message.ts`), which recognises three shapes and nothing
+> else: a subject's trailing `(#<n>)`, a line-anchored `Closes`/`Fixes`/`Resolves`/`Part of` trailer,
+> and the ref inside the `Merge branch 'build/<n>-…'` subject `lane integrate` writes. It sits beside
+> `issueRefsIn` rather than narrowing it, because `lane prove` and `build commit`'s foreign-ref
+> refusal both want the loose read.
+>
+> **What does not move.** Discharge still only ever admits, the range is still
+> `<merge base with the trunk>..epic/<parent>`, and the two bounds stay independent — the range says
+> which commits may speak, the landing rule says what counts as speaking. Recognition failure is
+> silence, never a landing: an unrecognised shape leaves the edge as the board reads it and the gate
+> refuses. Filed against [#7238](https://github.com/kamp-us/phoenix/issues/7238).

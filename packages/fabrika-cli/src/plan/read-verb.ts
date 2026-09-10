@@ -4,7 +4,7 @@
  * The fetch and the registered parses, and no judgment: *what the plan is worth* stays in the skill,
  * and *whether it clears the floor* is `plan check`'s. Zero children is a `7` refusal rather than an
  * empty answer — an empty child set is not a clean read of an epic with nothing in it, it is a scope
- * nobody can grade (ADR 0092).
+ * nobody can grade.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -29,7 +29,7 @@ export const MESSAGES: PlanMessages = {
 	verb: VERB,
 	grammar: (reason) => `${VERB}: ${reason}`,
 	zeroChildren: (epic) =>
-		`${VERB}: #${epic} has zero sub-issue children — there is no ledger to read (ADR 0092).`,
+		`${VERB}: #${epic} has zero sub-issue children — there is no ledger to read.`,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to read it as one.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — the ledger is UNKNOWN.`,
 };

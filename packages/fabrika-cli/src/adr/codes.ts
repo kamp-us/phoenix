@@ -4,14 +4,14 @@
  * Before this table each verb seated its own numerals and the group collided with itself: `3` was
  * `ALREADY_EXISTS`, `BASE_UNFETCHABLE`, `NO_SUBJECT` or `CORPUS_UNREADABLE` depending on which verb
  * produced it, and `NO_SUBJECT` was `3` under `adr supersede` and `4` under `adr sweep` — one name,
- * two numbers, shipped (#5294).
+ * two numbers, shipped.
  *
  * The two shared seats are **imported from the base, never re-typed** — the discipline
  * `../exit-code-alignment.ts` can check, because an import cannot drift. `12` and up are this
  * group's own.
  *
  * **`5` is absent from this table on purpose and must not be added to it.** It meant "the record
- * directory was read and is empty — refusing" until #5254 and #5297 made that state an answer, so it
+ * directory was read and is empty — refusing" until a read-and-empty corpus became an answer, so it
  * is a *vacated* seat rather than a free one: a caller still pinned to the old reading would take a
  * new meaning there as the old one. The private band starting at `12` puts it out of reach.
  *
@@ -97,7 +97,6 @@ export const ORIGIN_REPO_UNRESOLVABLE = 21;
  * Its own seat rather than {@link DIR_UNREADABLE}'s, because the two are opposites a caller must
  * route differently: `11` is "nobody could read the corpus", UNKNOWN and worth retrying, while this
  * is a settled fact about the repo that no retry changes. Not `7`-shaped either — a declined key is
- * not an empty directory, and #5254/#5297 already made "read and empty" an answer rather than a
- * refusal.
+ * not an empty directory, and "read and empty" is already an answer rather than a refusal.
  */
 export const CORPUS_DECLINED = 22;

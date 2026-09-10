@@ -110,7 +110,7 @@ describe("requiredEdges", () => {
 		return requiredEdges(read._tag === "Parsed" ? read.edges : []);
 	};
 
-	/** Epic #6595's shape: the row exists, the graph does not, and both build gates read the graph. */
+	/** The epic shape: the row exists, the graph does not, and both build gates read the graph. */
 	it("names the pair a `requires:` row states", () => {
 		expect(of("- phase 1: #6597\n- phase 2: #6598\n- #6598 requires: #6597")).toEqual([
 			{dependent: 6598, prerequisite: 6597},

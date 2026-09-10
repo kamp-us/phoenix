@@ -2,12 +2,12 @@
  * `containmentVocabulary` — which child types are asked for a `**Containment:**` marker, and which
  * values satisfy it.
  *
- * Declared rather than compiled in (R14.1, #5603 comment 47), because containment is a *deployment*
- * story and fabrika installs into repos that have a different one or none at all. Phoenix ships
- * dark-ship, so its marker reads `flag` or `exempt`; a library repo might ask for `unpublished` or
- * `exempt`; a repo with no deployment story asks for nothing.
+ * Declared rather than compiled in, because containment is a *deployment* story and fabrika installs
+ * into repos that have a different one or none at all. A repo that dark-ships reads `flag` or
+ * `exempt`; a library repo might ask for `unpublished` or `exempt`; a repo with no deployment story
+ * asks for nothing.
  *
- * **The shipped default is phoenix's pair, and it is deliberately not empty.** An empty default
+ * **The shipped default is a dark-ship pair, and it is deliberately not empty.** An empty default
  * would retire a gate for every repo that never declared anything, which is the one direction this
  * surface never moves in.
  *
@@ -41,7 +41,7 @@ export interface ContainmentVocabulary {
 	readonly values: ReadonlyArray<string>;
 }
 
-/** Phoenix's pair — what a repo declaring nothing still gets. */
+/** The shipped pair — what a repo declaring nothing still gets. */
 export const SHIPPED_CONTAINMENT_VOCABULARY: ContainmentVocabulary = {
 	types: ["type:feature"],
 	values: ["flag", "exempt"],

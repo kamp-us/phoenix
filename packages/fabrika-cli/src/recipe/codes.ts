@@ -8,7 +8,7 @@
  * the read-back contradicts it, the read that would have proven any of that failed. `12`+ is this
  * group's own band.
  *
- * **The known/novel split is an exit code, never prose** (#5847). A recipe either matched and its
+ * **The known/novel split is an exit code, never prose.** A recipe either matched and its
  * fixed fix applied, or it did not match and nothing was touched — and those two are different
  * numbers, because the caller routes autonomously on the first and to a human on the second.
  */
@@ -52,8 +52,8 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * The park's cause is outside the known-recipe set. **Nothing was mutated** — the verb refuses
  * before it would touch the log, which is what makes the novel exit a proven no-op rather than a
- * claim about one. This is the seat the founder's grill answer sits on (epic #5840): known clears
- * autonomously, novel routes to a human, and the split lives here rather than in operator prose.
+ * claim about one. This is the seat the known/novel split sits on: known clears autonomously, novel
+ * routes to a human, and the split lives here rather than in operator prose.
  */
 export const PARK_NOVEL = 12;
 
@@ -112,3 +112,16 @@ export const RERUN_UNKNOWN = 21;
  * §2's table), and a chore drive that ran *some* verb there would be guessing.
  */
 export const NO_RECIPE = 22;
+
+/**
+ * The park routes to the driver and this repo lets a driver clear one, and the run named no
+ * `--rationale`. **Nothing was written** — the refusal lands before any proving read, on the same
+ * principle as {@link PARK_NOVEL}.
+ *
+ * Its own seat rather than {@link PARK_NOVEL}'s: novel says no fixed fix covers this park and the
+ * remedy is a human, while this says the driver may clear it and has not said why. An unlogged
+ * driver clearance is what would make the whole driver route unauditable, so the rationale is a
+ * precondition of the clear rather than a decoration on it — and the remedy is to re-run naming one,
+ * never to route a person at the park.
+ */
+export const RATIONALE_ABSENT = 23;

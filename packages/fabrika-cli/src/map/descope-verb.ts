@@ -54,7 +54,7 @@ export interface DescopeOptions {
 	 * The frontier ticket this direction retires, when the rejection is also a ticket's exit.
 	 *
 	 * Optional, and named in the contract's exit table (`13`/`18`) and in `map record`'s refusal text
-	 * rather than in its Inputs table — see the spec-defect note on #5022.
+	 * rather than in its Inputs table.
 	 */
 	readonly ticket: number | null;
 	readonly repo: string | null;

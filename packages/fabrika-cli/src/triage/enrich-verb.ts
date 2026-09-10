@@ -11,6 +11,12 @@
  * predicate. Here the composed body *contains foreign content by design* — the preserved original —
  * and that content is redacted, not refused, because refusing it would strand the enrichment on
  * somebody else's leak while preserving it unredacted would re-commit that leak to a public issue.
+ *
+ * **A criteria-less body is a fact, except over `ready-for:agent`.** That label is the promise a
+ * builder can pick the issue up cold, and the criteria block is what the promise is made of — so
+ * this verb reads the target's live labels and refuses on {@link CRITERIA_REQUIRED} rather than
+ * leaving the stamp standing over no contract, the same seat `triage apply` and `decision rule`
+ * refuse the audience on.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -21,9 +27,11 @@ import {normalizeForReadback} from "../report/compose.ts";
 import {renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
+import {READY_FOR_AGENT} from "./audience.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
 import {pullRequestReferences} from "./blocked-by.ts";
 import {
+	CRITERIA_REQUIRED,
 	MALFORMED_CRITERIA,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -146,11 +154,11 @@ export const runEnrich = (
 
 		const composed = composeBody({mode, issue, authored: authored.text, preserved});
 
-		// ADR 0288 §1: the read runs over the bytes about to be posted, not over stdin — an enclosing
+		// The read runs over the bytes about to be posted, not over stdin — an enclosing
 		// template can demote a heading that arrived conforming. It is scoped to the region above the
 		// marker, which `composeBody` guarantees is `composed`'s own prefix, because the preserved
 		// original below it is redacted rather than refused; a legacy `##` heading buried there would
-		// otherwise refuse every re-enrichment forever. `Absent` stays allowed (#5565).
+		// otherwise refuse every re-enrichment forever. `Absent` stays allowed.
 		const criteria = readCriteria(authoredRegion(mode, authored.text));
 		if (criteria._tag === "Malformed") {
 			return refuse(
@@ -159,8 +167,25 @@ export const runEnrich = (
 			);
 		}
 
-		// ADR 0301: the graph is the one carrier of "do not start this yet", so an ordering stated only
-		// in prose produces an issue `build pick` admits and no lane can build (#6663). The read is
+		// `Absent` is allowed above because an issue with no criteria block is a fact. It stops
+		// being a fact the moment the target already carries `ready-for:agent`: that label is the
+		// promise a builder can pick the issue up cold, and this write would leave it standing over no
+		// contract. The epic surface is exempt for the reason `apply` exempts `--type epic` — an epic's
+		// criteria arrive per child from the plan ledger.
+		if (
+			!options.epic &&
+			criteria._tag !== "Found" &&
+			target.value.labels.includes(READY_FOR_AGENT)
+		) {
+			return refuse(
+				CRITERIA_REQUIRED,
+				`triage enrich: #${issue} carries ${READY_FOR_AGENT} and ${surface.noun} composes no acceptance-criteria block the wire reader answers Found on — ${criteria.reason}. That label promises a builder can pick the issue up cold, and the block is what the promise is made of. Either author a "### Acceptance criteria" block into ${surface.noun} and re-send, or drop the audience label first with \`fabrika triage apply ${issue} --ready-for human\`. Nothing was written.`,
+				diagnostics,
+			);
+		}
+
+		// The graph is the one carrier of "do not start this yet", so an ordering stated only in prose
+		// produces an issue `build pick` admits and no lane can build. The read is
 		// deferred to here because it is only owed by a body that states one.
 		const orderings = statedOrderings(authoredRegion(mode, authored.text));
 		if (orderings.length > 0) {
@@ -176,10 +201,10 @@ export const runEnrich = (
 			}
 			const stated = unwiredReferences(orderings, live.value);
 
-			// ADR 0301 names a blocking pull request by the issue its merge closes, so a PR is an edge
-			// `--blocked-by` refuses to write, and reding on one would leave the reword escape alone on a
-			// body that is often already right — 5 of the 6 bodies this gate refused across the 150 most
-			// recent issues named a PR (#6728 round 1).
+			// A blocking pull request is named in the graph by the issue its merge closes, so a PR is an
+			// edge `--blocked-by` refuses to write, and reding on one would leave the reword escape alone
+			// on a body that is often already right — 5 of the 6 bodies this gate refused across 150
+			// issues named a PR.
 			const pulls = yield* pullRequestReferences(
 				repo,
 				stated.flatMap((ordering) => ordering.references),
@@ -199,7 +224,7 @@ export const runEnrich = (
 						.map((n) => `#${n}`)
 						.join(", ")} named by a stated ordering ${
 						pulls.value.length === 1 ? "is a pull request" : "are pull requests"
-					} — ADR 0301 names a blocking pull request by the issue its merge closes, so ${
+					} — a blocking pull request is named in the graph by the issue its merge closes, so ${
 						pulls.value.length === 1 ? "it is" : "they are"
 					} not read as a prerequisite.`,
 				);
@@ -215,7 +240,7 @@ export const runEnrich = (
 					.join(", ");
 				return refuse(
 					UNWIRED_ORDERING,
-					`triage enrich: ${surface.noun} states an ordering on ${numbers} that #${issue}'s live blocked_by graph carries no edge for (line ${lines}: "${unwired[0]?.text.trim()}"). ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence. There is no override: either wire the edge — ${wire} — and re-send, or reword the body so it states no ordering it does not own. Nothing was written.`,
+					`triage enrich: ${surface.noun} states an ordering on ${numbers} that #${issue}'s live blocked_by graph carries no edge for (line ${lines}: "${unwired[0]?.text.trim()}"). The graph is the one carrier, so a builder reads the edges and never this sentence. There is no override: either wire the edge — ${wire} — and re-send, or reword the body so it states no ordering it does not own. Nothing was written.`,
 					diagnostics,
 				);
 			}

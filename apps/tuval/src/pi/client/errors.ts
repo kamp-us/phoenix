@@ -1,5 +1,5 @@
 /**
- * The four refusals this client speaks. Every failure the 0.84.3 `PiClient` throws — its own error
+ * The four refusals this client speaks. Every failure `pi-client`'s `Client` throws — its own error
  * classes, a `ProtocolError` off the wire, or anything unrecognised — folds into one of these in
  * [`refusals.ts`](./refusals.ts), so no `Promise` rejection and no Pi error class escapes the
  * service's error channel.

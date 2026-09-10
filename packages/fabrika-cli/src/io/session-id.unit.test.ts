@@ -34,7 +34,7 @@ describe("sessionIdFrom", () => {
 		expect(sessionIdFrom({CLAUDE_CODE_SESSION_ID: "  cc  "})).toBe("cc");
 	});
 
-	it("resolves null when all three variables are unset or blank — fail-closed stays", () => {
+	it("resolves null when all supported variables are unset or blank — fail-closed stays", () => {
 		expect(sessionIdFrom({})).toBeNull();
 		expect(
 			sessionIdFrom({
@@ -45,7 +45,20 @@ describe("sessionIdFrom", () => {
 		).toBeNull();
 	});
 
-	it("names all three consulted variables in the unset refusal clause", () => {
+	it("names all supported consulted variables in the unset refusal clause", () => {
 		for (const name of SESSION_ID_VARS) expect(sessionIdUnset).toContain(name);
 	});
+});
+
+for (const name of ["CODEX_THREAD_ID", "CODEX_SESSION_ID"]) {
+	it(`recognizes ${name} while preserving existing harness precedence`, () => {
+		expect(sessionIdFrom({[name]: "codex"})).toBe("codex");
+		expect(sessionIdFrom({[name]: "codex", PI_SUBAGENT_PARENT_SESSION: "pi"})).toBe("pi");
+		expect(sessionIdFrom({[name]: "codex", FABRIKA_SESSION_ID: "override"})).toBe("override");
+	});
+}
+it("falls through blank Codex identities and prefers the thread identity", () => {
+	expect(sessionIdFrom({CODEX_THREAD_ID: "thread", CODEX_SESSION_ID: "session"})).toBe("thread");
+	expect(sessionIdFrom({CODEX_THREAD_ID: " ", CODEX_SESSION_ID: "session"})).toBe("session");
+	expect(sessionIdFrom({CODEX_THREAD_ID: " ", CODEX_SESSION_ID: " "})).toBeNull();
 });

@@ -137,7 +137,7 @@ describe("runTicket — the preconditions, all before anything is written", () =
 describe("runTicket — the write order", () => {
 	const created: Scripted = [
 		CREATE,
-		{status: 201, body: '{"number":9145,"html_url":"https://github.com/o/r/issues/9145"}'},
+		{status: 201, body: '{"number":9145,"html_url":"https://forge.example/o/r/issues/9145"}'},
 	];
 
 	it("exits 8 naming the number when the marker does not land — the issue is inert, not half-present", async () => {

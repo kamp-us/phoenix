@@ -1,4 +1,5 @@
 import {Schema} from "effect";
+import {stringifyJson} from "../protocol/json.ts";
 
 export class DuplicateSpellPath extends Schema.TaggedError<DuplicateSpellPath>()(
 	"tuval/commands/DuplicateSpellPath",
@@ -83,5 +84,29 @@ export class BadResult extends Schema.TaggedError<BadResult>()("tuval/commands/B
 }) {
 	override get message(): string {
 		return `spell "${this.path}" returned a result its own schema refuses: ${this.reason}`;
+	}
+}
+
+/** An untagged failure value as one phrase, so a reply says more than its tag repeated back. */
+const describeValue = (value: unknown): string => {
+	if (typeof value === "string") return value.length === 0 ? "an empty string" : `"${value}"`;
+	if (value instanceof Error && value.message.length > 0) return value.message;
+	// A spell fails with whatever it likes, so a cycle or a BigInt reaches this; `stringifyJson` is
+	// the boundary that survives one.
+	const json = stringifyJson(value);
+	return json._tag === "Stringified" ? json.text : `an unprintable ${typeof value}`;
+};
+
+/**
+ * A spell failed with a value carrying no `_tag`, so it names no error class of its own. The reply
+ * then carries this class's tag instead of a literal the executor invented, and the value rides
+ * `original` rather than being dropped on the way out.
+ */
+export class SpellFailed extends Schema.TaggedError<SpellFailed>()("tuval/commands/SpellFailed", {
+	path: Schema.String,
+	original: Schema.Unknown,
+}) {
+	override get message(): string {
+		return `spell "${this.path}" failed with ${describeValue(this.original)}`;
 	}
 }

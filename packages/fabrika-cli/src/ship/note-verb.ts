@@ -2,8 +2,8 @@
  * `ship note` — the durable stop-path comment.
  *
  * Every non-enqueue path leaves a signal, and this verb is that signal's single sanctioned emitter:
- * a freelanced `gh api -f body=@file` is the #3018 bypass class, and a stop with no signal at all is
- * #1928's silent dead shipper.
+ * a freelanced `gh api -f body=@file` is the bypass class this closes, and a stop with no signal at
+ * all is a shipper that died where nobody can see it.
  *
  * Stop-path notes are a **history, not a state** — each run's refusal is its own record — so this
  * posts a new comment rather than upserting one. A note on a closed or merged PR is legal for the
@@ -41,10 +41,10 @@ export const runNote = (
 		const repo = resolved.repo;
 
 		const authored = readAuthored(VERB, yield* options.stdin, {
-			empty: `${VERB}: no body on stdin — a silent stop is the #1928 defect; write the reason.`,
+			empty: `${VERB}: no body on stdin — a silent stop is the defect; write the reason.`,
 			bareAt: `${VERB}: the body is a bare "@" path reference — the bytes never arrived; pipe them.`,
 			leaked: (_count, first) =>
-				`${VERB}: the body carries a machine-local path at line ${first.line} (${first.class}) — cite repo-relative (#4994's class routes to a human).`,
+				`${VERB}: the body carries a machine-local path at line ${first.line} (${first.class}) — cite repo-relative.`,
 		});
 		if (authored._tag === "Refused") return authored.outcome;
 		const body = authored.text;

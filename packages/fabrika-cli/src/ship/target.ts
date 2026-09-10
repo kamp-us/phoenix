@@ -107,7 +107,7 @@ export const badNumber = (verb: string, noun: string, value: number): VerbOutcom
  *
  * **The empty-SHA degeneration is designed out at the type layer.** An empty or malformed value is a
  * usage error, never a matches-everything pattern — v1's `case "$H" in "$SHA"*)` collapsed to `*` on
- * an empty capture, twice, in two different scripts (#4223).
+ * an empty capture, twice, in two different scripts.
  */
 export const inspectedSha = (verb: string, raw: string): VerbOutcome | string => {
 	const value = raw.trim();

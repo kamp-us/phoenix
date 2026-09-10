@@ -1,6 +1,6 @@
 # `/governance` — derived CLI contract
 
-**Skill:** [`governance`](SKILL.md) · **Authoring brief:** [#4949](https://github.com/kamp-us/phoenix/issues/4949) · **Date:** 2026-08-09
+**Skill:** [`governance`](SKILL.md) · **Date:** 2026-08-09
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `governance`
 subcommand beside the groups already registered in `packages/fabrika-cli/src/registry.ts` — at the
@@ -10,8 +10,9 @@ rather than this sentence**. `governance` was confirmed free there against a fre
 `origin/main` immediately before this spec landed. The [CLI interface convention](../../docs/cli-interface-convention.md) governs
 these verbs; where this spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). v1's
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — fabrika reimplements
+what it needs rather than shelling out to its predecessor, so no clause here can break when a tool
+this package does not own changes. v1's
 `review-doc` Step 4a and its `scripts/adr-sweep.sh`, v1's `review-skill` Step 4 check 4, and the
 `class-probe` / `verdict` / `control-plane-paths` / `adr-sweep` tools were read for their semantics
 and their scars — each Grounding section names what the v1 counterpart gets wrong and what this spec
@@ -19,7 +20,7 @@ does instead — but no clause defers to one and none is invoked.
 
 **Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use; GitHub
 access per
-[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+[skill conventions §11, "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md).
 
 ## Verb inventory
 
@@ -41,16 +42,16 @@ same tracked debt the sibling contracts carry.)
 
 - **A §CP classifier, of any kind — path, content or hybrid.** fabrika's §CP model is
   CODEOWNERS-only, three-valued, `UNKNOWN` treated as §CP, with **no semantic detection**
-  ([§CP classification](../../docs/control-plane-classification.md), founder ruling on #4927). The
-  boundary is enforced twice in CI — `.github/workflows/codeowners-cp.yml` job `check`, and
-  `ci.yml`'s `skills` job via `validate-gate-path-drift.sh` — and by GitHub's own code-owner review
-  requirement. A second answer here could contradict a merge-gating verdict, which is #4227's cost.
+  ([§CP classification](../../docs/control-plane-classification.md), by founder ruling). The
+  boundary is enforced twice in CI — by the repo's own §CP path-boundary job, and by the job that
+  re-checks that boundary against the prose describing it — and by GitHub's own code-owner review
+  requirement. A second answer here could contradict a merge-gating verdict, and a gate that
+  contradicts itself costs more than the extra detection is worth.
   This group computes no §CP answer; the skill states the expectation and nothing more.
-  ADR [0164](../../../../.decisions/0164-guard-relaxing-adr-cp-gate.md) wanted a guard-vocabulary
-  content probe for exactly the case this skill owns. That ADR is `status: proposed`, its mechanism
-  exists only inside v1's ship-it Step 0 (#3416), and fabrika resolved the same case **two other
-  ways**: path-set completeness in CODEOWNERS, and this skill's judgment. A fabrika content regex
-  would be a third, rival answer.
+  A standing proposal wanted a guard-vocabulary content probe for exactly the case this skill
+  owns. It was never accepted, its only mechanism lives inside v1's ship-it Step 0, and fabrika
+  resolved the same case **two other ways**: path-set completeness in CODEOWNERS, and this skill's
+  judgment. A fabrika content regex would be a third, rival answer.
 - **A re-derivation of the ranking algorithm.** `governance sweep` **imports**
   `packages/fabrika-cli/src/adr/sweep.ts` — `decisionBearingText`, `tokenize`, the idf scoring and
   `RARITY_FLOOR` — rather than restating any of it. A second lexical sweep would be a rival answer
@@ -59,25 +60,25 @@ same tracked debt the sibling contracts carry.)
 - **A citation-resolution verb.** `fabrika adr resolve` already answers
   `live` / `landed` / `in-flight` / `absent` against a freshly fetched base ref. The skill invokes it
   directly. A `governance resolve` would be a wrapper whose only behaviour is relaying an upstream
-  answer, which ADR 0238 bans.
+  answer, and a wrapper whose whole behaviour is relaying is not a verb.
 - **An ADR-number-collision verb.** `fabrika adr next` already unions the merged set with the ids
-  open ADR PRs claim — the cross-PR read #3779 proved a tree-local guard structurally cannot make.
+  open ADR PRs claim — the cross-PR read a tree-local guard structurally cannot make.
   The skill invokes it; this group adds nothing.
-- **A dead-link or ADR-index checker.** `doc-links.yml` and `decisions-index.yml` gate each. Note
-  what they do **not** cover, because it is this skill's job and not a gap in theirs: `lychee
-  --offline` skips `http(s)` by design and `decisions-index validate` checks files, never citations,
-  so a PR citing an unlanded ADR passes both green (#4296). That check reaches the corpus half
-  through `adr resolve`, not through a second link checker.
+- **A dead-link or ADR-index checker.** A repo that arms a link checker and a corpus-index
+  validator gates each already. Note what they do **not** cover, because it is this skill's job and
+  not a gap in theirs: `lychee --offline` skips `http(s)` by design and `decisions-index validate`
+  checks files, never citations, so a PR citing an unlanded ADR passes both green. That check
+  reaches the corpus half through `adr resolve`, not through a second link checker.
 - **A verdict-conjunction or enqueue verb.** `fabrika ship gate` folds the required namespaces into
   one fail-closed enqueue decision and is the single merge authority. This group emits one
   namespace's verdict and reads none of the others.
-- **A blocking digest.** The readout gates nothing by founder ruling (#4927 comment 5227714776).
+- **A blocking digest.** The readout gates nothing, by founder ruling.
   A verb that could red on a digest row would re-create the human gate the ruling retired.
 
 ### Nothing here recomputes an enforced answer
 
-The enforced questions are: the §CP path boundary and its CODEOWNERS/prose drift
-(`codeowners-cp.yml` job `check`; `ci.yml` job `skills`), the enqueue conjunction over required
+The enforced questions are: the §CP path boundary and its CODEOWNERS/prose drift (the repo's own
+§CP job and the drift check beside it), the enqueue conjunction over required
 namespaces (`fabrika ship gate`, the single merge authority), typecheck/lint/tests, leaks, secrets,
 dead links, and ADR-index integrity — each with the workflow or verb that owns it. This spec
 computes no second verdict on any of them. The namespace derivation and the contradiction ranking
@@ -86,15 +87,12 @@ are legitimately verbs here.
 
 ### The name situation, and routing
 
-No v1 skill is named `governance`, so there is no name collision. Nothing on `main` routes to any
-fabrika skill: `CLAUDE.md` pins skill routing to the `.claude/skills` filesystem path, which is a
-symlink to the v1 tree. The gap is already filed — [#4761](https://github.com/kamp-us/phoenix/issues/4761)
-(routing pinned to a path) and [#4829](https://github.com/kamp-us/phoenix/issues/4829) (the symlink
-loads v1 regardless of the plugin toggle) — and is recorded in the authoring PR rather than patched
-from here, the same disposition the `review` and `ship` contracts took. Today this skill is reached
+No v1 skill is named `governance`, so there is no name collision. A repo whose skill routing is
+pinned to a filesystem path pointing at some other tree reaches none of these skills at all; that is
+the repo's own wiring to fix, and no clause here patches it. This skill is reached
 as `/fabrika:governance`, and **from inside fabrika it is already routed**: `review`'s SKILL.md §6
 directs the model to fire it on a `governance: required` diff — the token `review scope` prints
-from this group's own `governedRoots` derivation, never the narrower `harness` flag (#5607) — and
+from this group's own `governedRoots` derivation, never the narrower `harness` flag — and
 `review`'s eval set carries a
 `governance-seam-derived-required` case.
 
@@ -131,7 +129,7 @@ each meaning:
 |---|---|---|
 | `3` `5` `6` `7` `8` `9` `11` | `packages/fabrika-cli/src/report/codes.ts` | `EMPTY_STDIN`, `LEAKED_PATH`, `BARE_AT_PATH`, `NO_TARGET` (re-exported here as `ZERO_SCOPE`, the same rename `review` uses), `WRITE_UNKNOWN`, `READBACK_MISMATCH`, `PRECONDITION_UNKNOWN` |
 | `10` | `packages/fabrika-cli/src/triage/codes.ts` | `OFF_VOCABULARY`. **The seat is literally the same binding** — `triage/codes.ts` is `export const OFF_VOCABULARY = REPORT_CLASSIFIED`, so there is no numeric difference to hunt for. Import it **from `triage`** anyway, because that is where the meaning this group proves is named; `report`'s spelling, `CLASSIFIED`, means "the title or `--label` carries a type or priority classification" (`report file` only). `review/codes.ts` imports it from `triage` for exactly this reason. |
-| `12` `13` `17` | `packages/fabrika-cli/src/review/codes.ts` | `STALE_HEAD`, `INCOMPLETE_SCAN`, `SUPERSEDES_VERDICT` — imported because this group proves the same three facts. `17` in particular *must* be the import: `governance post --base/--tip` and `review post --base/--tip` are one module (`review/range-post.ts`), so a private seat here would hand a caller two codes for a refusal produced by one line of code (#7411) |
+| `12` `13` `17` | `packages/fabrika-cli/src/review/codes.ts` | `STALE_HEAD`, `INCOMPLETE_SCAN`, `SUPERSEDES_VERDICT` — imported because this group proves the same three facts. `17` in particular *must* be the import: `governance post --base/--tip` and `review post --base/--tip` are one module (`review/range-post.ts`), so a private seat here would hand a caller two codes for a refusal produced by one line of code |
 | `4` | declared locally as `DELIBERATE_GAP = 4` | the same shape `review/codes.ts` ships, so the gap is registered rather than silently absent |
 | `14` | this group's own | see below |
 
@@ -149,7 +147,7 @@ package**, never from a sibling `contract.md`.
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — | — |
 | `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | — | ✓ |
 | `6` | the **authored** text is a bare `@` path reference — not redactable | — | — | — | — | ✓ | — | ✓ |
-| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files, the corpus holds zero decision records, the window holds zero landings, or the readout artifact is proven absent — a fail-closed refusal (ADR 0092) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files, the corpus holds zero decision records, the window holds zero landings, or the readout artifact is proven absent — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | ✓ | — | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | ✓ | — | ✓ |
 | `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this skill's own resolved directory | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -157,7 +155,7 @@ package**, never from a sibling `contract.md`.
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 | `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | `14` | refused: this PR's diff derives **no** governance namespace — a verdict in a namespace the diff did not require | — | — | — | — | ✓ | — | — |
-| `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written (#7411) | — | — | — | — | ✓ | — | — |
+| `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written | — | — | — | — | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **The export names `governance/codes.ts` must ship**, because `checkAlignment`
@@ -188,7 +186,7 @@ carries no cross-group uniqueness obligation (interface convention rule 3), so *
 locally and do not import it** — an implementer who imports `14` from `review` alongside `12` and
 `13` gets the wrong meaning silently.
 
-### The commit binding runs before every read (#5117, #5122, #4163)
+### The commit binding runs before every read
 
 `governance scope`, `governance sweep`, `governance guards` and `governance base` serve the artifact
 a governance verdict is formed over, so **the bytes come from a named commit, not from an endpoint
@@ -205,21 +203,21 @@ verdict over text nobody judged. All four run one shared binding step
    must resolve in the object database, and `git rev-parse` must resolve it to *itself*. The base ref
    must resolve too, since a diff is a range, **and so must the merge base of that branch tip and
    this head** — the binding carries the tip and the branch point as two separate values, and every
-   verb's `base` is the branch point (#5770). Any of these unmet is `11`, naming what is UNKNOWN.
+   verb's `base` is the branch point. Any of these unmet is `11`, naming what is UNKNOWN.
    There is no permissive fallback to the PR-number endpoints.
 3. The artifact is then read with `git diff <base>...<head>` and `git show <head>:<path>` under flags
    that pin output to the two commits rather than to the invoking user's own git configuration
    (`--no-ext-diff`, explicit `a/`/`b/` prefixes).
 
-**`scope` and `base` in range mode run no PR binding, because there is no PR to bind** (#6064). The
+**`scope` and `base` in range mode run no PR binding, because there is no PR to bind.** The
 caller has already named two commits, which is what the binding exists to produce, so the two ends
 are read straight out of the object database and the base is `merge-base(base, tip)` — the same
 commit git's three-dot form resolves for `<base>...<tip>`, so both modes derive over one range.
 A range end that will not resolve is `11`, never a fallback to either end.
 
-**The fetch is load-bearing, not incidental.** A stale working tree is what made four seats declare a
-merged ADR nonexistent (#4163) and what applied a withdrawn ADR 86 minutes after its withdrawal
-(#4338). v1's `adr-sweep.sh` has no fetch at all and reads whatever `.decisions/` the launching
+**The fetch is load-bearing, not incidental.** A stale working tree is what made four seats declare
+a merged decision record nonexistent, and what applied a withdrawn one 86 minutes after its
+withdrawal. v1's `adr-sweep.sh` has no fetch at all and reads whatever decision corpus the launching
 checkout happens to hold. Nothing is checked out here: a fetch writes objects, not a working tree, so
 the head's instruction files are never on disk to be loaded.
 
@@ -241,13 +239,12 @@ wrapper shape at `packages/fabrika-cli/src/review/authored.ts` and
 ### Three shipped-surface changes this group requires
 
 All are additive; none changes how any existing marker, namespace or verdict reads. Each is a
-change to a surface this group does not own, so each names the file and the exact edit. **Changes 1
-and 2 landed** via [#5206](https://github.com/kamp-us/phoenix/pull/5206) and **1b** via #5036 — they
-are kept here, in landed state, because they are still the surfaces this group's fail-closed
-property rests on. Change 3 is the only one still outstanding.
+change to a surface this group does not own, so each names the file and the exact edit. **Changes 1,
+1b and 2 have landed** — they are kept here, in landed state, because they are still the surfaces
+this group's fail-closed property rests on. Change 3 is the only one still outstanding.
 
 **1. `ship`'s required-namespace vocabulary must admit `governance` — without this the whole
-fail-closed property is decoration. LANDED (#5206).**
+fail-closed property is decoration. LANDED.**
 `packages/fabrika-cli/src/review/classes.ts:161` now declares `SHIP_NAMESPACES` as the `review-*`
 set derived from `SHIP_CLASS_NAMES` **plus** the literal `governance`, and `shipNamespacesOf`
 (`packages/fabrika-cli/src/review/classes.ts:149`) appends `governance` when the PR's changed files
@@ -259,12 +256,13 @@ is enforced, not merely specified. Why it was required: until it landed, a harne
 could reach the enqueue seam with no governance verdict and nothing anywhere said no.
 
 `ship gate`'s resolution of a `governance` marker needs no change beyond this: it reads markers
-through the same `verdict-marker` format for every namespace, and the ADR 0058 key already carries
-no notion of which skill posted one. **This is not a second answer to an enforced question** — the
-enqueue conjunction stays `ship gate`'s alone. It is that enforcer being taught one more namespace,
-which is the only shape in which a derived-required namespace can actually be required.
+through the same `verdict-marker` format for every namespace, and the verdict marker's key already
+carries no notion of which skill posted one. **This is not a second answer to an enforced
+question** — the enqueue conjunction stays `ship gate`'s alone. It is that enforcer being taught
+one more namespace, which is the only shape in which a derived-required namespace can actually be
+required.
 
-**1b. …and requiring it must not be optional. LANDED (#5036).** Admitting the namespace left one
+**1b. …and requiring it must not be optional. LANDED.** Admitting the namespace left one
 hole: `--require` was caller-asserted, so a session that simply never passed
 `--require governance` shipped a governance-root diff with no governance verdict, and the gate
 called that `satisfied`. `packages/fabrika-cli/src/ship/gate-verb.ts` now reads the PR's own
@@ -272,35 +270,34 @@ changed-file list and raises the required set from it (`requiredWithFloor`) thro
 `touchesGovernanceRoot` predicate `governance scope` and `ship scope` use — one derivation, three
 readers. So the requirement is a property of the diff, not of what a session remembered to type.
 
-**1c. …and the requirement had to be readable by something other than an agent. LANDED (#5408).**
+**1c. …and the requirement had to be readable by something other than an agent. LANDED.**
 `ship gate` seats `blocked` at exit 0 and no workflow invoked it, so the floor bound on nothing but
 prose in the `ship` skill and two fabrika-tree PRs merged with no governance verdict after it
 shipped. `fabrika ship floor` reads the same conjunction for this one namespace and refuses on `18`
-when the verdict is absent, stale or fail; `.github/workflows/governance-floor.yml` runs it with
-`--publish-check`, which publishes that answer as the `governance floor at head` check-run — pending
-while no verdict exists, red once one exists and is wrong (#6161, ADR 0318). The mechanism choice and
+when the verdict is absent, stale or fail; the repo arms a `governance-floor` workflow that runs it
+with `--publish-check`, which publishes that answer as the `governance floor at head` check-run —
+pending while no verdict exists, red once one exists and is wrong. The mechanism choice and
 why the alternatives were rejected are recorded once, in
 [the `ship` contract](../ship/contract.md#the-mechanism-choice); the conclusion map is
 [its check-run section](../ship/contract.md#publish-check).
 
-**The founder ruled this instead of a §CP row** ([veto on
-#5036](https://github.com/kamp-us/phoenix/issues/5036#issuecomment-5234614633), 2026-08-10):
-`claude-plugins/fabrika/**` gets **no** CODEOWNERS row and **no** §CP-boundary widening. The model
+**The founder ruled this instead of a §CP row** (2026-08-10): the plugin tree gets **no** CODEOWNERS
+row and **no** §CP-boundary widening. The model
 is *machine gate plus human awareness, not a human click* — this floor blocks the enqueue, and the
-§CP digest readout (producer: this skill; display: the front door, #4952) carries every fabrika-tree
+§CP digest readout (producer: this skill; display: the front door) carries every plugin-tree
 landing to the founder. **Visibility after landing replaces blocking before it**, with the limit
 recorded rather than glossed: the readout makes a gate-weakening landing *visible*, not
-*impossible* (#5216 is one the machine chain missed). `.github/**` — CODEOWNERS included — and
+*impossible*, and the machine chain has already missed one. `.github/**` — CODEOWNERS included — and
 everything the existing §CP boundary already covers stay §CP, enforced server-side regardless.
 
-**2. The `verdict-marker` namespace class must admit `governance`. LANDED (#5206), with one
+**2. The `verdict-marker` namespace class must admit `governance`. LANDED, with one
 residual.** `packages/fabrika-cli/src/wire/verdict-marker.ts` now declares
 `const NAMESPACE = /^(review|check-epic-plan|governance)(-[a-z0-9]+)*$/` (`:73`) and
 `const NAMESPACE_PREFIXES = ["review", "check-epic-plan", "governance"]` (`:78`), so a `governance`
 marker **is** representable — `read`'s prefix gate admits it and the regex accepts it, instead of
 turning it away as `Absent` before the regex is tested and letting `emit` compose bytes the format
-can never read back. Both constants widened together, the same additive shape #5107 used for the
-plan gate; widening one and not the other would have been the defect. **The residual:** the
+can never read back. Both constants widened together, the same additive shape the plan gate's own
+widening used; widening one and not the other would have been the defect. **The residual:** the
 registry's `verdict-marker` row (`packages/fabrika-cli/src/wire/registry.ts:68`) still carries only
 `review-code` round-trip and malformed fixtures, so `wire/conformance.ts` drives no `governance`
 arm — adding those fixture rows is what remains of this change.
@@ -308,8 +305,8 @@ arm — adding those fixture rows is what remains of this change.
 **3. A new registered format `governance-digest`.** One row in
 `packages/fabrika-cli/src/wire/registry.ts` plus a sibling schema module
 `packages/fabrika-cli/src/wire/governance-digest.ts` — never a branch inside a verb, which is that
-registry's stated law. Producer `governance`, consumer the front door
-([#4952](https://github.com/kamp-us/phoenix/issues/4952)). The artifact is a fenced block under a
+registry's stated law. Producer `governance`, consumer the front door. The artifact is a fenced
+block under a
 `## Governance readout` heading whose rows are the **stdin row grammar `governance readout` accepts**
 — `row\t<NNNN>\t<tension|blast|routine>\t<one-line note>` — and **not** that verb's own stdout line,
 which reports the write rather than carrying the digest. `emit` / `read` / fixtures / brands as the
@@ -356,7 +353,7 @@ fabrika governance scope --base <rev> --tip <rev> [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | in PR mode | — | the pull-request number to scope; dropped in range mode, which names its own subject |
 | `--sha` | string | no | the PR's live head | the head to read the changed files at; see the binding step above. Refused beside a range |
-| `--base` | string | with `--tip` | — | the range's base end, 7–40 lowercase hex — the epic-child form (#6064) |
+| `--base` | string | with `--tip` | — | the range's base end, 7–40 lowercase hex — the epic-child form |
 | `--tip` | string | with `--base` | — | the range's tip end |
 | `--repo` | string | no | resolved | the repository. Not read in range mode, which resolves no PR |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -364,21 +361,22 @@ fabrika governance scope --base <rev> --tip <rev> [--json]
 **The two modes name a subject two ways and derive identically.** A PR's subject is its bound head
 against its merge base; a range's is `<base>...<tip>`, whose base end is `merge-base(base, tip)` —
 the same commit git's own three-dot form resolves, and the one `governance base` then serves this
-skill's bytes at. Range mode reads no PR at all: an epic child has none mid-run (ADR 0285).
+skill's bytes at. Range mode reads no PR at all: an epic run opens one tail PR at the end rather
+than one per child, so mid-run a child has none.
 
 **Output** — machine channel. First line:
 `governance\t<required|not-required>\t<head-sha|base..tip>` — the third field names the subject the
 derivation ran over: the commit the file list was read out of in PR mode, the range in range mode,
 matching `governance post`'s third field in each. Then one line per harness root the diff touches,
-most-touched first — `root\t<.decisions/|.claude/|.github/|claude-plugins/>\t<file-count>` — then
+most-touched first — `root\t<governed-root>\t<file-count>` — then
 `self\t<true|false>`, then one line per decision record in the diff —
 `record\t<NNNN>\t<added|modified|deleted>\t<path>`.
 
 With `--json`, an object with keys `outcome` (`required` | `not-required`), `head` (full 40-hex, or
 `<base>..<tip>` in range mode — the same field the first line's third column carries),
 `roots` (an object mapping each touched root to its file count, count-descending and ties on the
-root — the ADR [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) evidence
-collapse, since the skill reads the root set off `fabrika status settings`, never off this field),
+root — evidence no caller reads row by row is capped and counted rather than listed whole, and the
+skill reads the root set off `fabrika status settings`, never off this field),
 `self` (boolean), `base` (the merge-base SHA, full 40-hex),
 `records` (array of `{id, change, path}`), and `scanned` (changed files seen).
 
@@ -386,11 +384,12 @@ collapse, since the skill reads the root set off `fabrika status settings`, neve
 event — the one change to the corpus an `added`/`modified` pair cannot express at all.
 
 **The root set is a path prefix list the repo declares — `governedRoots` in `.fabrika.jsonc` — and a
-repo that declares nothing gets the shipped list stated here, so two runs cannot disagree:**
+repo that declares nothing gets the shipped default, whose five entries are the kinds below. Read
+the resolved list off `fabrika status settings`, never off this table:**
 
 | Root | Why it is governance-bearing |
 |---|---|
-| `.decisions/` | the decision corpus itself — deliberately outside CODEOWNERS, so this is the guard that stays (#4927) |
+| the decision corpus (`decisionsDir`) | the records themselves — commonly outside CODEOWNERS, so this is the guard that stays |
 | `.claude/` | agent and skill definitions the harness executes |
 | `.github/` | workflows, CODEOWNERS and rulesets — the enforcement layer |
 | `claude-plugins/` | every plugin's skills, contracts and rubrics, at any depth, whatever the extension |
@@ -401,14 +400,15 @@ repo that declares nothing gets the shipped list stated here, so two runs cannot
 `.fabrika.jsonc` would let a config un-govern itself, the one change nobody would ever be asked to
 justify. Either way `governance scope` refuses `11` — the root set is UNKNOWN, never `not-required`.
 `review scope` derives its `governance` line off the same key, so the two verbs answer one question
-once (#4730).
+once.
 
 `required` iff at least one changed path is under at least one root. **The directory is the unit of
 coverage, not the file type** — the v1 §CP definition learned this the hard way: an enumerated
 skill-dir list plus an any-depth `*.sh` clause left a non-`.sh` file beside a gated script
 proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under the
 resolved skill root — the same `*/fabrika/skills/governance/SKILL.md` resolution `governance base`
-states below, plugin segment included, **never hardcoded to phoenix's install path**. That directory is always a subset of
+states below, plugin segment included, **never hardcoded to one repo's install path**. That
+directory is always a subset of
 `claude-plugins/`, so this skill's own diff derives its own namespace by construction.
 
 **This is not the §CP answer and the verb says so on stderr**, once, on every run:
@@ -418,7 +418,7 @@ states below, plugin segment included, **never hardcoded to phoenix's install pa
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404), or closed, or has **zero changed files**; or the range changes no path — a derivation over nothing (ADR 0092) |
+| `7` | the PR is proven absent (404), or closed, or has **zero changed files**; or the range changes no path — a derivation over nothing, refused fail-closed |
 | `10` | `--sha` is not a head SHA; a lone `--base`/`--tip`; `--sha` beside a range; a range end that is not a revision; a positional beside a range, or neither a positional nor a range |
 | `11` | the PR could not be read, the commit could not be bound, or the range's merge base or file list could not be read — the derivation is UNKNOWN, never `not-required` |
 | `12` | `--sha` is not the PR's head — re-scope at the head |
@@ -430,20 +430,20 @@ states below, plugin segment included, **never hardcoded to phoenix's install pa
 |---|---|---|
 | `governance scope: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance scope: PR #<n> is closed — nothing to derive.` | 7 | refusal |
-| `governance scope: PR #<n> has zero changed files — refusing to derive over an empty diff (ADR 0092).` | 7 | refusal |
-| `governance scope: <base>..<tip> changes no path — refusing to derive over an empty diff (ADR 0092).` | 7 | refusal |
+| `governance scope: PR #<n> has zero changed files — refusing to derive over an empty diff.` | 7 | refusal |
+| `governance scope: <base>..<tip> changes no path — refusing to derive over an empty diff.` | 7 | refusal |
 | `governance scope: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance scope: --base and --tip come together — a range has two ends.` | 10 | refusal |
-| `governance scope: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).` | 10 | refusal |
+| `governance scope: --sha does not combine with --base/--tip — a range verdict binds content, not a head.` | 10 | refusal |
 | `governance scope: --<base\|tip> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance scope: a range is its own subject — drop the pull-request number, or drop --base/--tip.` | 10 | refusal |
 | `governance scope: name a pull request, or scope a range with --base and --tip — there is no subject here.` | 10 | refusal |
 | `governance scope: cannot read PR #<n> in <repo>: <reason> — whether the namespace is required is UNKNOWN, never "not-required".` | 11 | refusal |
 | `governance scope: <what> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
 | `governance scope: cannot resolve the merge base of <base>..<tip>: <reason> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
-| `governance scope: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
-| `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read (#3999).` | 13 | refusal |
-| `governance scope: <base>..<tip> carries <k> of the <m> files its ends change — refusing to derive from a short read (#3999).` | 13 | refusal |
+| `governance scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
+| `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read.` | 13 | refusal |
+| `governance scope: <base>..<tip> carries <k> of the <m> files its ends change — refusing to derive from a short read.` | 13 | refusal |
 | `governance scope: root <name> is absent in this repository — the derivation covered <k> of 4 roots.` | 0 | notice |
 | `governance scope: partitioned <k> of <k> declared changed files at <subject> across 4 roots.` | 0 | notice |
 
@@ -457,28 +457,28 @@ the whole value of a `not-required` answer is that it was computed over everythi
 ```
 $ fabrika governance scope 4321
 governance	required	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c
-root	.decisions/	1
+root	docs/decisions/	1
 root	claude-plugins/	2
 self	false
-record	0240	added	.decisions/0240-only-landed-adrs-may-be-cited.md
+record	0240	added	docs/decisions/0240-only-landed-records-may-be-cited.md
 ```
 
 ```
-$ fabrika governance scope 4400 --json
+$ fabrika governance scope 4 --json
 {"outcome":"not-required","head":"9f2c1a77b0e4d3586a1c9042bb7731ee5c0d18af","roots":{},"self":false,"base":"c4e0aa1b7f39d2860b5417ce9a0d3f7712bb64e8","records":[],"scanned":6}
 ```
 
 **Grounding**
 
-- #4386 / #3416 — §CP-by-content has no platform enforcement and only §CP-by-path hard-gates. This
+- §CP-by-content has no platform enforcement, and only §CP-by-path hard-gates. This
   verb does not try to fill that gap with a content regex; it derives a *separate* namespace whose
   verdict is the skill's judgment, and leaves §CP to CODEOWNERS.
 - The v1 §CP boundary's recorded holes — the enumerated skill-dir list, the `**/*.sh` clause, the
   `.claude-plugin/` hyphen miss — are why the root set is four directory prefixes and not a file-type
   or an enumeration that can rot as surfaces are added.
-- #4060 — v1's `class-probe` read 0 files and classified `has-code` at exit 0; the zero-file case
+- v1's `class-probe` read 0 files and classified `has-code` at exit 0; the zero-file case
   here is a `7` refusal.
-- #5117 — the file list is the derivation's only input, so the list and the head are one commit or
+- The file list is the derivation's only input, so the list and the head are one commit or
   the verb refuses.
 - `class-probe`'s `ReviewNamespace` is a closed three-value union keyed to v1's gate skills, so a new
   required namespace there is a type-level change. Here the requirement is a boolean over a root
@@ -535,13 +535,13 @@ construction rather than by agreement.
 **Every score this spec prints is derivable from that module** — score is the sum over shared terms
 of `log(n / max(df, 1))`, where `n` is the live-`accepted` count and `df` the document frequency,
 counted only for terms with `df < n`. The example below is illustrative of the *shape*; an
-implementer reproduces scores from the imported module, never from this document (#4735).
+implementer reproduces scores from the imported module, never from this document.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `7` | `--dir` was read and held zero decision records — zero scope (ADR 0092); or the PR is proven absent (404) or closed |
+| `7` | `--dir` was read and held zero decision records — zero scope, refused fail-closed; or the PR is proven absent (404) or closed |
 | `10` | `--record` / `--landed` is not a four-digit id; `--sha` is not a head SHA; `--limit` is negative; or the positional and `--landed` were both given |
 | `11` | the subject record could not be read at the bound commit, the commit could not be bound, **or a corpus member exists and could not be read** — an incomplete corpus is UNKNOWN |
 | `12` | `--sha` is not the PR's head |
@@ -551,7 +551,7 @@ implementer reproduces scores from the imported module, never from this document
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `governance sweep: scanned <dir>, 0 decision records — refusing to answer (ADR 0092).` | 7 | refusal |
+| `governance sweep: scanned <dir>, 0 decision records — refusing to answer.` | 7 | refusal |
 | `governance sweep: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance sweep: --record "<v>" is not a four-digit decision id.` | 10 | refusal |
 | `governance sweep: --sha "<v>" is not a head SHA — expected 7–40 lowercase hex characters.` | 10 | refusal |
@@ -560,8 +560,8 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: #<n> at <sha> carries no decision record <id> — nothing to sweep.` | 11 | refusal |
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
-| `governance sweep: PR #<n>'s head is <live>, not <asked> — re-sweep at <live> (ADR 0058).` | 12 | refusal |
-| `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read (#3999).` | 13 | refusal |
+| `governance sweep: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
+| `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read.` | 13 | refusal |
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
 
@@ -600,14 +600,14 @@ $ echo $?
   failure exits `127` that its skill prose never mentions. All three outcomes exit `0` here and
   every failure has its own seat.
 - v1's `--json` **lands on stderr on the shortlist path** and on stdout only for the useless clean
-  report, because the report is routed through a `CheckFailed` (#4723). Here `--json` is on stdout
+  report, because the report is routed through a `CheckFailed`. Here `--json` is on stdout
   for all three outcomes.
-- v1's sweep never fetches; it reads whatever `.decisions/` the launching checkout holds (#4163,
-  #4338). The subject here is read at a bound commit and the corpus read is count-reported.
+- v1's sweep never fetches; it reads whatever decision corpus the launching checkout holds. The
+  subject here is read at a bound commit and the corpus read is count-reported.
 - The citation-independence rule is v1's one good idea, kept: the candidate set is never derived
   from the subject's own reference list, because a document that never names what it contradicts
-  gives you no thread to pull (#3980).
-- #4735 — a spec that prints a score it cannot derive is incomplete; the derivation is stated above
+  gives you no thread to pull.
+- A spec that prints a score it cannot derive is incomplete; the derivation is stated above
   and the module that owns it is named.
 
 ---
@@ -641,8 +641,8 @@ With `--json`:
 
 **`hits` is whole; `guardFiles` is capped.** Every anchored hit needs a disposition, so that array is
 the answer. The guard-bearing file list is evidence — this skill cites that it exists and never reads
-a row by name — so it collapses to a cap-and-count per ADR
-[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md). `more` is always present, `0`
+a row by name — so it collapses to a cap-and-count, the bounded shape every evidence field in this
+group takes. `more` is always present, `0`
 included: a whole list must never read as a truncated one.
 
 **The three outcomes are distinct facts and none is a clearance.** `hits` — an anchored invariant
@@ -662,8 +662,8 @@ at the head, and the blocks are paired by NAME and occurrence: a NAME absent fro
 `removed`; a NAME whose block text differs is `modified`. Whitespace is collapsed before comparing,
 so a re-wrap or a move is not a hit. Reading both commits is what makes the answer independent of
 the diff's shape — a same-line comparison could not see an anchor whose own line was never in the
-diff, so a paragraph reworded under an untouched tag read as `no-anchor-change`
-([#5514](https://github.com/kamp-us/phoenix/issues/5514)). A deleted file and a rename have no
+diff, so a paragraph reworded under an untouched tag once read as `no-anchor-change`. A deleted
+file and a rename have no
 comparable base path, so those keep the older same-line walk over the diff's `+`/`-` lines; a file
 covered by both scans still reports one hit per NAME.
 
@@ -715,12 +715,12 @@ anchors rather than invariants.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `governance guards: PR #<n> not found in <repo>.` | 7 | refusal |
-| `governance guards: PR #<n> has zero changed files — nothing to scan (ADR 0092).` | 7 | refusal |
+| `governance guards: PR #<n> has zero changed files — nothing to scan.` | 7 | refusal |
 | `governance guards: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance guards: <what> — the diff cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `governance guards: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
-| `governance guards: PR #<n>'s head is <live>, not <asked> — re-scan at <live> (ADR 0058).` | 12 | refusal |
-| `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan (#3925's class).` | 13 | refusal |
+| `governance guards: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
+| `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan.` | 13 | refusal |
 | `governance guards: cannot read <path> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: scanned <k> files, <m> anchored invariants in reach, <j> compared block-by-block against <base>.` | 0 | notice |
 
@@ -740,7 +740,7 @@ guard-file	claude-plugins/fabrika/skills/ship/SKILL.md	3
 ```
 
 ```
-$ fabrika governance guards 4400
+$ fabrika governance guards 4
 guards	no-anchors-in-reach	0
 ```
 
@@ -759,10 +759,10 @@ $ fabrika governance guards 4321 --json
 - v1's explicitly-empty answer is kept and made mechanical: a non-gate-critical PR records "no gate
   invariant is in the diff's reach" as a PASS with that evidence. `no-anchors-in-reach` is that
   answer's machine half — an explicitly-empty answer rather than an unwritten one.
-- #4000 — a PR shipped an invariant-narrowing change in skill text with no authorizing ADR, and the
-  reviewer-required ADR was never filed. The hit list is what makes that finding concrete enough to
-  survive an agreement that nobody wrote down.
-- ADR 0092 — the scan states its scope (`inReach`) on its own channel, so "I scanned nothing and
+- A PR once shipped an invariant-narrowing change in skill text with no authorizing decision
+  record, and the record the reviewer required was never filed. The hit list is what makes that
+  finding concrete enough to survive an agreement that nobody wrote down.
+- The scan states its scope (`inReach`) on its own channel, so "I scanned nothing and
   found nothing" is never renderable as a pass.
 
 ---
@@ -782,7 +782,7 @@ fabrika governance base --base <rev> --tip <rev> [--path <repo-relative>]
 |---|---|---|---|---|
 | *(positional)* | integer | in PR mode | — | the pull-request number whose merge-base is resolved; dropped in range mode |
 | `--path` | string, repeatable | no | `<skill-root>/SKILL.md` and `<skill-root>/contract.md`, where `<skill-root>` is the resolved directory below | a repo-relative path inside this skill's own directory to read at the merge-base; see the resolution and fence below |
-| `--base` | string | with `--tip` | — | the range's base end, 7–40 lowercase hex — the epic-child form (#6064) |
+| `--base` | string | with `--tip` | — | the range's base end, 7–40 lowercase hex — the epic-child form |
 | `--tip` | string | with `--base` | — | the range's tip end |
 | `--repo` | string | no | resolved | the repository. Not read in range mode, which resolves no PR |
 
@@ -816,7 +816,7 @@ text". The **skill root** is that file's parent directory.
 - **More than one match** — refuse on `11`, naming every candidate. Which install is "this skill" is
   genuinely unknown, and picking one is a coin flip the caller cannot see.
 
-**Do not hardcode phoenix's path.** This skill ships to other repositories, and a literal
+**Do not hardcode one repo's path.** This skill ships to other repositories, and a literal
 `claude-plugins/fabrika/` fence refuses the self fence in every one of them — a failure a graded run
 of this spec surfaced. The fence itself is deliberate: this verb exists for the self fence, and a
 general "read any file at the merge-base" verb would be a second way to load instructions out of a
@@ -855,7 +855,7 @@ either; the bytes come from the object database.
 scope line names the root it found, on stderr. **Zero scope is a refusal in both directions**: zero
 resolved roots is `7` and more than one is `11`, and zero readable paths is `7` — a self fence that
 reads nothing would silently fall back to judging by the head's rules, which is the exact failure
-the fence exists to prevent (ADR 0092).
+the fence exists to prevent.
 
 **Examples**
 
@@ -884,7 +884,7 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0052 — the BASE-revision pin: a gate must not review a PR by the instructions that PR
+- **The base-revision pin**: a gate must not review a PR by the instructions that PR
   introduces. v1 enforced it with a denylist that removed the head's instruction surfaces from a
   worktree; here nothing is checked out at all, so there is no surface to remove and the fence is
   a positive read of named base bytes instead of a negative scrub.
@@ -920,7 +920,7 @@ poster reads success.
 
 **Output** — machine channel. One line:
 `posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|superseded>\t<comment-url>`, where
-`<content>` is the content digest the verdict binds (ADR 0276) and the sixth field says whether the
+`<content>` is the content digest the verdict binds, and the sixth field says whether the
 write opened a fresh comment or appended into this namespace's existing comment at this head,
 retiring the verdict that was there.
 With `--json`:
@@ -946,8 +946,9 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    `namespace`/`polarity`/`sha`/`content`/`clause`), giving
    `governance: PASS @ <sha> content:<digest> — <clause>`. The digest is taken over the same bound
    range this step's derivation read, so a verdict survives a branch update that leaves the diff and
-   every changed file byte-identical, and dies on anything else (ADR 0276). This requires the namespace widening specified above; until
-   it lands, `emit` composes bytes `read` rejects and step 6 fails every clean run.
+   every changed file byte-identical, and dies on anything else. This requires the namespace
+   widening specified above; until it lands, `emit` composes bytes `read` rejects and step 6 fails
+   every clean run.
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local path
    is the `5` refusal, a bare `@` reference the `6`.
 5. **Append into one comment per head.** An existing comment by this bot whose first non-blank line
@@ -956,8 +957,8 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    verdict retired verbatim below the `<!-- fabrika:superseded -->` fence, under a dated
    `## Superseded verdict — YYYY-MM-DD` heading; otherwise a new comment is created. **The prior
    verdict is never replaced.** GitHub keeps no comment-body history, so a PATCH over a verdict is
-   that verdict gone: a FAIL replaced by a PASS at one head leaves no trace a gate ever blocked
-   (#7247, #7411). The fresh verdict goes on top because the marker is the comment's first non-blank
+   that verdict gone: a FAIL replaced by a PASS at one head leaves no trace a gate ever blocked. The
+   fresh verdict goes on top because the marker is the comment's first non-blank
    line, so every reader — `ship gate`, `review verdicts`, `lane prove` — resolves the newest one
    without knowing the envelope exists. When the write would retire a standing verdict of the
    **opposite** polarity at this head, the post is the `17` refusal unless `--supersede` is passed,
@@ -965,34 +966,32 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    that decides the merge, so it is said out loud. A post at a moved head still creates a second
    comment, leaving the prior head's verdict readable: a verdict is SHA-bound, so a new head's
    verdict is a different fact, not a revision, and editing the old comment destroys the only record
-   of what was true over that tree (ADR 0213 named this half of rule 2's key as still open; #4007
-   closed it in v1). One namespace at one head, one comment: a second marker stacked on line 2 is
-   un-anchored, resolves the namespace empty and fail-closes a substantively-passing PR.
+   of what was true over that tree. One namespace at one head, one comment: a second marker stacked
+   on line 2 is un-anchored, resolves the namespace empty and fail-closes a substantively-passing PR.
 6. **Read it back, unconditionally, from live PR state** — re-fetch the comment, hand its body to the
    format's `read`, require `Found` with exactly the five fields posted, then compare the whole
    comment against the bytes sent through `normalizeForReadback`. The comparand is the **envelope**,
    not the fresh verdict alone: on a re-post the bytes sent carry the retired verdict below the
    fence, so comparing the fresh half would red every append. A read-back that trusts a carried
-   variable instead of live state re-ships #3173's false PASS.
-7. **Assert the floor at this head.** `governance-floor.yml` triggers on `pull_request` alone, so it
-   ran before this verdict could exist, judged a head with no verdict on it, and no comment write can
-   re-fire a `pull_request`-triggered job — every governance-root PR carries an unsatisfied floor at
-   least once and carries it until something re-runs the job (#5585). The verb reads the runs at the
-   bound head, and when the newest `governance-floor` run there is completed it asks the
-   `governance floor at head` check-run whether the floor still needs clearing — pending or red, both
-   do; the job's own conclusion decides only where no such check-run exists, because since #6161 the
-   job succeeds whenever it *published* an answer (ADR 0318). Where it does, it requests a re-run of
-   the whole run — `rerun-failed-jobs` is refused on a run with no failed job, which is now the
-   ordinary shape — then re-reads the run and requires the re-fire to be **proven from run state** —
-   either
-   `run_attempt` increased, or that same run id is no longer `completed`, which only this dispatch
-   could have caused. The counter lags the dispatch by a beat, and calling that beat unproven is what
-   sent three agents chasing a `heal-ci` pass over re-fires that had taken (#5982). **The re-run is a
-   re-derivation, never a claim**: nothing here writes a check-run or a status, so the green a PR ends
-   with is one `ship floor` reached itself against live comment state. **This step is the one place
-   the verb needs `actions: write`** on its token; no earlier step asks for it. Without it the
-   re-run request 403s, the floor reads `unknown`, and the fix degrades to
-   #5585's own symptom — a red check a human clears — never to a false green.
+   variable instead of live state re-ships the false PASS a hand-rolled emit once self-reported.
+7. **Assert the floor at this head.** The repo's `governance-floor` workflow triggers on
+   `pull_request` alone, so it ran before this verdict could exist, judged a head with no verdict on
+   it, and no comment write can re-fire a `pull_request`-triggered job — every governance-root PR
+   carries an unsatisfied floor at least once and carries it until something re-runs the job. The
+   verb reads the runs at the bound head, and when the newest `governance-floor` run there is
+   completed it asks the `governance floor at head` check-run whether the floor still needs
+   clearing — pending or red, both do; the job's own conclusion decides only where no such check-run
+   exists, because the job succeeds whenever it *published* an answer. Where it does, it requests a
+   re-run of the whole run — `rerun-failed-jobs` is refused on a run with no failed job, which is now
+   the ordinary shape — then re-reads the run and requires the re-fire to be **proven from run
+   state** — either `run_attempt` increased, or that same run id is no longer `completed`, which only
+   this dispatch could have caused. The counter lags the dispatch by a beat, and calling that beat
+   unproven is what sent three agents chasing a `heal-ci` pass over re-fires that had taken.
+   **The re-run is a re-derivation, never a claim**: nothing here writes a check-run or a status, so
+   the green a PR ends with is one `ship floor` reached itself against live comment state. **This
+   step is the one place the verb needs `actions: write`** on its token; no earlier step asks for it.
+   Without it the re-run request 403s, the floor reads `unknown`, and the fix degrades to that same
+   symptom — a red check a human clears — never to a false green.
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
 a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one
@@ -1038,7 +1037,7 @@ clothes.
 | `governance post: --sha "<v>" is not a head SHA — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance post: --clause is blank — a verdict with no clause states nothing.` | 10 | refusal |
 | `governance post: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
-| `governance post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
+| `governance post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live>.` | 12 | refusal |
 | `governance post: #<n>'s diff touches no governance root (<roots>) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.` | 14 | refusal |
 | `governance post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; re-read #<n>'s comments before retrying.` | 8 | refusal |
 | `governance post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
@@ -1054,17 +1053,17 @@ the first four is `11` — nothing written, outcome known-unwritten; a read fail
 
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md
-posted	governance	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+posted	governance	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211
 ```
 
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" --json < verdict.md
-{"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","content":"2f1a9c4e0b7d","upsert":"created","floor":"refired","commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
+{"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","content":"2f1a9c4e0b7d","upsert":"created","floor":"refired","commentUrl":"https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211"}
 ```
 
 ```
-$ fabrika governance post 4400 --polarity PASS --sha 9f2c1a77 --clause "ok" < verdict.md
-governance post: #4400's diff touches no governance root (.decisions/, .claude/, .github/, claude-plugins/, .fabrika.jsonc) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.
+$ fabrika governance post 4 --polarity PASS --sha 9f2c1a77 --clause "ok" < verdict.md
+governance post: #4's diff touches no governance root (docs/decisions/, .claude/, .github/, claude-plugins/, .fabrika.jsonc) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.
 $ echo $?
 14
 ```
@@ -1074,7 +1073,7 @@ field says the prior one was archived rather than replaced:
 
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md
-posted	governance	PASS	03135b91	2f1a9c4e0b7d	superseded	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+posted	governance	PASS	03135b91	2f1a9c4e0b7d	superseded	https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211
 ```
 
 The flip is the one that has to be said out loud:
@@ -1088,18 +1087,17 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0058 — the marker is SHA-bound and one-per-(PR, namespace). ADR
-  0213 refines rule 2's uniqueness key and names its head dimension as left open there; #4007 closed
-  that half in v1, and step 5 above carries it here: the key is (PR, namespace, head), so a re-post
+- The marker is SHA-bound and one-per-(PR, namespace), and that uniqueness rule leaves its head
+  dimension open. Step 5 above closes it: the key is (PR, namespace, head), so a re-post
   at the same head lands in the one comment and a moved head opens a second. Which skill posted a
   namespace is still no part
   of the key — nothing in the enqueue decision asks — which is what makes one skill emitting N
   namespaces, and a namespace filled by a non-primary reviewer, both already legal.
-- #7247, #7411 — within one comment, a re-post appends rather than replaces: the prior verdict is
+- Within one comment, a re-post appends rather than replaces: the prior verdict is
   retired verbatim below the fence, because GitHub keeps no comment-body history to recover it from.
-- #3173 — a hand-rolled emit posted a literal path and self-reported a false PASS; this verb is the
+- A hand-rolled emit once posted a literal path and self-reported a false PASS; this verb is the
   single sanctioned path and the read-back is unconditional and from live state.
-- ADR 0055 — authority arrives through the ACL-checked read, never from the text being plausible.
+- Authority arrives through the ACL-checked read, never from the text being plausible.
   The verdict body is authored by this run, so `5`/`6` apply to it: authored text is refusable
   because the author can fix it.
 - The `14` refusal is the fail-closed condition's write-seam half. Absence of a verdict on a
@@ -1139,20 +1137,20 @@ With `--json`:
 stdout would be byte-identical to a verb that never ran, which is the v1 scar this group's shared
 conventions name.
 
-**The `status` field is reported, never interpreted.** It is the frontmatter line as written. Nine
-records on `main` read `proposed` while being enforced at a live gate (#4388), ADR 0164 among them,
+**The `status` field is reported, never interpreted.** It is the frontmatter line as written. A corpus
+can hold records that read `proposed` while being enforced at a live gate,
 so a consumer that treats `proposed` as "not law" is reading a claim as an observation. The verb
 prints what is there and the skill judges what it means.
 
 **This verb ranks nothing.** Tension and blast radius are the two ruled ranking dimensions and both
 are judgment; a ranking verb would be a second judgement wearing a verb's clothes, and would also
-grow the rubric past what #4927 authorized.
+grow the rubric past what the founder's ruling authorized.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `7` | `--dir` is proven absent, or holds zero decision records — zero scope (ADR 0092) |
+| `7` | `--dir` is proven absent, or holds zero decision records — zero scope, refused fail-closed |
 | `10` | `--since` or `--until` is not `YYYY-MM-DD`, or `--until` precedes `--since` |
 | `11` | `--base` could not be fetched or resolved, or a landing commit could not be read — the window is UNKNOWN, never `none` |
 | `13` | the history walk is provably incomplete — a shallow clone whose graft boundary falls inside the window |
@@ -1161,12 +1159,12 @@ grow the rubric past what #4927 authorized.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `governance digest: scanned <dir>, 0 decision records — refusing to answer (ADR 0092).` | 7 | refusal |
+| `governance digest: scanned <dir>, 0 decision records — refusing to answer.` | 7 | refusal |
 | `governance digest: --since "<v>" is not a YYYY-MM-DD date.` | 10 | refusal |
 | `governance digest: --until <b> precedes --since <a> — an empty window is a usage error, not a result.` | 10 | refusal |
 | `governance digest: cannot fetch or resolve <base>: <reason> — what landed is UNKNOWN, never "none".` | 11 | refusal |
 | `governance digest: cannot read landing commit <sha>: <reason> — the window is UNKNOWN.` | 11 | refusal |
-| `governance digest: the history is shallow and its boundary <sha> falls inside the window — refusing a partial landing list (#3999's class).` | 13 | refusal |
+| `governance digest: the history is shallow and its boundary <sha> falls inside the window — refusing a partial landing list.` | 13 | refusal |
 | `governance digest: walked <base> from <since> to <until>, <k> commits touching <dir>.` | 0 | notice |
 
 **Scope** — the commits on `--base` between `--since` and `--until` that touch `--dir`, and for each
@@ -1192,15 +1190,15 @@ above falls on `2026-08-09` — `0240` lands on `2026-08-08` and would be inside
 
 **Grounding**
 
-- #4927 comment 5227714776 — the founder's condition for retiring the human gate on ADRs: a
-  periodic, non-blocking digest of landed decisions, ranked by this skill. "Without the readout,
-  overrule-later is fiction — this half is not droppable." This verb is the listing mechanics that
+- The founder's condition for retiring the human gate on decision records: a periodic,
+  non-blocking digest of landed decisions, ranked by this skill. Without the readout,
+  overrule-later is fiction, and that half is not droppable. This verb is the listing mechanics that
   ruling required to be a verb rather than prose in a skill.
-- #4388 / #4391 — `status:` does not track what is binding; the field is reported verbatim and the
+- `status:` does not track what is binding; the field is reported verbatim and the
   hazard is stated rather than silently normalized.
-- #4338 — the base is fetched before the walk, because a stale checkout is how withdrawn doctrine
+- The base is fetched before the walk, because a stale checkout is how withdrawn doctrine
   gets applied after its withdrawal.
-- ADR 0092 — `none` over a corpus that could not be read is not `none`; the read failure is `11`.
+- `none` over a corpus that could not be read is not `none`; the read failure is `11`.
 
 ---
 
@@ -1235,7 +1233,7 @@ itself. That is what keeps a coordination artifact from steering its receiver.
 
 **Non-blocking by construction.** This verb writes a comment and nothing else. It sets no label,
 touches no PR, and has no exit code meaning "the corpus is in a bad state" — because a digest that
-could red would be the human gate the #4927 ruling retired, wearing a new name. Every outcome here
+could red would be the human gate the founder's ruling retired, wearing a new name. Every outcome here
 is either "the readout landed" or "the readout did not land".
 
 **The operation:** compose the rows through the `governance-digest` wire format's `emit`;
@@ -1264,7 +1262,7 @@ rows in the same order, then compare the whole body through `normalizeForReadbac
 | `governance readout: no rows on stdin — an empty readout is not a readout.` | 3 | refusal |
 | `governance readout: the assembled body carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
 | `governance readout: the body is a bare "@" path reference — the rows never arrived. Send them on stdin.` | 6 | refusal |
-| `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it (#4952).` | 7 | refusal |
+| `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it.` | 7 | refusal |
 | ``governance readout: no artifact issue given, `$FABRIKA_GOVERNANCE_READOUT_ISSUE` is unset, and <repo> has no open issue titled "Governance readout" — refusing to guess where the digest lands.`` | 7 | refusal |
 | `governance readout: issue #<n> is closed — a readout nobody reads is not a readout.` | 7 | refusal |
 | `governance readout: row <k>'s kind "<v>" is outside tension/blast/routine.` | 10 | refusal |
@@ -1280,46 +1278,43 @@ upserted, so a reader always finds exactly one current readout rather than an ap
 **Examples**
 
 ```
-$ printf 'row\t0240\ttension\tsits against ADR 0058 on whether a verdict may bind an unread head\nrow\t0238\troutine\tno tension found\n' | fabrika governance readout 4952
-readout	4952	2	edited	https://github.com/kamp-us/phoenix/issues/4952#issuecomment-5229900001
+$ printf 'row\t0240\ttension\tsits against record 0058 on whether a verdict may bind an unread head\nrow\t0238\troutine\tno tension found\n' | fabrika governance readout 4952
+readout	4952	2	edited	https://github.com/<owner>/<repo>/issues/4952#issuecomment-5229900001
 ```
 
 ```
 $ printf 'row\t0240\troutine\tno tension found\n' | fabrika governance readout 4952 --json
-{"outcome":"readout","issue":4952,"rows":1,"upsert":"edited","commentUrl":"https://github.com/kamp-us/phoenix/issues/4952#issuecomment-5229900001"}
+{"outcome":"readout","issue":4952,"rows":1,"upsert":"edited","commentUrl":"https://github.com/<owner>/<repo>/issues/4952#issuecomment-5229900001"}
 ```
 
 **Grounding**
 
-- #4927 comment 5227714776 — the readout is the non-droppable condition on retiring the ADR human
-  gate. The producer half is this verb; the display half is #4952's.
-- ADR 0058 rule 2 — upsert, never append: one current record rather than a stream a timestamp
-  decides between. The same reasoning applies to a readout as to a verdict.
-- #4481 — a periodic sweep re-files what a standing ruling already killed unless something stops it.
+- The readout is the non-droppable condition on retiring the human gate over decision records. The
+  producer half is this verb; the display half is the front door's.
+- The marker rule's second half — upsert, never append: one current record rather than a stream a
+  timestamp decides between. The same reasoning applies to a readout as to a verdict.
+- A periodic sweep re-files what a standing ruling already killed unless something stops it.
   The rows are authored per run by the skill, which cites the ruling and drops the row; this verb
   refuses nothing on that basis, because a verb that judged a row's novelty would be judging.
-- #4761 / #4829 — the front door cannot reach this artifact by skill routing yet; the artifact is an
-  issue precisely so it is reachable without any routing at all.
+- Where skill routing cannot reach the front door at all, this artifact is still reachable: it is an
+  issue precisely so it needs no routing.
 
 ---
 
 ## The eval-enumeration obligation (leaf rule)
 
-Stated once, in [`SKILL.md`](SKILL.md)'s "Eval enumeration" section — the single home #4891's
-obligation lives in. This spec adds nothing to it; the eval mechanics belong to
-[#4649](https://github.com/kamp-us/phoenix/issues/4649).
+Stated once, in [`SKILL.md`](SKILL.md)'s "Eval enumeration" section — the single home that
+obligation lives in. This spec adds nothing to it, and the eval mechanics are a ticket of their own.
 
 ## Open questions this spec does not decide
 
-- **Is a founder ruling recorded on an issue binding law for this judgement?**
-  [#4982](https://github.com/kamp-us/phoenix/issues/4982) is open. Until it is ruled, the
-  conservative floor above holds: a ruling cited from an issue is evidence to name in a verdict body,
-  never the sole ground for a FAIL, and a *relayed* ruling is indistinguishable from a fabricated one
-  ([#4441](https://github.com/kamp-us/phoenix/issues/4441)).
-- **Does ADR 0092's fail-closed rule extend from zero scope to stale scope?**
-  [#4628](https://github.com/kamp-us/phoenix/issues/4628) is open. This spec takes the conservative
-  side already — every read fetches and binds — so a ruling either way leaves these verbs correct.
-- **Does the ADR-0231/0233 enforcement row belong to this skill's gate half or to `review`'s skill
-  rubric?** [#4560](https://github.com/kamp-us/phoenix/issues/4560) is open against the v1 gate. The
-  gate-invariant judgement is this skill's, so the row lands here when it is ruled; nothing in this
-  spec assumes it has been.
+- **Is a founder ruling recorded on an issue binding law for this judgement?** Unruled. Until it is,
+  the conservative floor above holds: a ruling cited from an issue is evidence to name in a verdict
+  body, never the sole ground for a FAIL, and a *relayed* ruling is indistinguishable from a
+  fabricated one.
+- **Does the fail-closed rule extend from zero scope to stale scope?** Unruled. This spec takes the
+  conservative side already — every read fetches and binds — so a ruling either way leaves these
+  verbs correct.
+- **Does an enforcement row for a decision record belong to this skill's gate half or to `review`'s
+  skill rubric?** Unruled. The gate-invariant judgement is this skill's, so the row lands here when
+  it is ruled; nothing in this spec assumes it has been.

@@ -5,12 +5,26 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import {Effect} from "effect";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
+import {Effect, Predicate} from "effect";
+import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 
-export type LogState = {readonly lines: ReadonlyArray<number>};
-export type LogMsg = {readonly type: "record"; readonly count: number};
+export type LogState = {
+	readonly lines: ReadonlyArray<number>;
+	/** Keystrokes the shell forwarded into this process, newest last. See `./counter.ts`. */
+	readonly keys: ReadonlyArray<string>;
+};
+/** As `./counter.ts`'s: the log's own admission test, read by its window renderer (#8157). */
+export const isLogState = (value: unknown): value is LogState =>
+	Predicate.isObject(value) &&
+	Array.isArray(value.lines) &&
+	value.lines.every((line) => typeof line === "number") &&
+	Array.isArray(value.keys) &&
+	value.keys.every((key) => typeof key === "string");
+
+export type LogMsg =
+	| {readonly type: "record"; readonly count: number}
+	| {readonly type: "key"; readonly key: string};
 export type Print = {readonly type: "print"; readonly line: string};
 
 export interface LogOptions {
@@ -20,15 +34,32 @@ export interface LogOptions {
 
 export const logId = ProgramId.make("log");
 
+/**
+ * Every cell filled, whatever the checkpoint held. `keys` was added after the first checkpoints were
+ * written, and a state decoded without it would spread `undefined` on the first forwarded key — a
+ * crash on the one path anyone who booted the older build takes (#7560).
+ *
+ * The parameter is `Partial` where the machine declares `LogState`: a checkpoint is whatever an
+ * older build wrote, so the declared type is a claim about new state, not about what decodes.
+ */
+const restore = (loaded: Partial<LogState> | null | undefined): LogState => ({
+	lines: loaded?.lines ?? [],
+	keys: loaded?.keys ?? [],
+});
+
 export const logProgram = ({write}: LogOptions): AnyProgram =>
 	({
 		id: logId,
 		core: defineMachine<LogState, LogMsg, Print, never, unknown>({
-			init: (loaded) => [loaded ?? {lines: []}, []],
+			init: (loaded) => [restore(loaded), []],
 			update: {
 				record: (state, msg) => [
-					{lines: [...state.lines, msg.count]},
+					{...state, lines: [...state.lines, msg.count]},
 					[{type: "print", line: `count ${msg.count}`}],
+				],
+				key: (state, msg) => [
+					{...state, keys: [...state.keys, msg.key]},
+					[{type: "print", line: `key ${msg.key}`}],
 				],
 			},
 			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
@@ -47,6 +78,10 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 			print: (cmd: Print) => Effect.as(write(cmd.line), [] as ReadonlyArray<LogMsg>),
 		},
 		capabilities: [],
+		takesKeys: true,
+		// Headless rows never bind a window (`../shell/picker/entries.ts`); this reference is the name
+		// the page's renderer table answers to, as `./counter.ts` says.
+		renderer: {kind: "host-native", ref: "tuval/demo/log"} satisfies RendererRef,
 		identity: {
 			package: "@kampus/tuval",
 			program: "log",

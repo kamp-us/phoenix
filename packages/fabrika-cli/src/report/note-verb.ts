@@ -3,8 +3,9 @@
  *
  * **This verb exists because the skill tells its caller to comment on a duplicate rather than file
  * a twin.** A skill that says that without providing a guarded path sends the caller to a
- * hand-rolled posting call — which is the exact call #3945 and #3173 each made, and both of those
- * incidents were comment posts, not issue creates.
+ * hand-rolled posting call — which is the exact call that has shipped a literal path as a body and
+ * a comment whose landed text nobody read back, both of them comment posts rather than issue
+ * creates.
  *
  * A note is free prose: no section template applies and no footer is appended. Stated in code as
  * well as in the contract because the sibling verb does both.
@@ -121,7 +122,7 @@ export const runNote = (
 			);
 		}
 
-		// #3173 is precisely a posted comment whose landed body was not what the poster believed it
+		// The failure here is a posted comment whose landed body was not what the poster believed it
 		// had sent, reported upward as a success — so a post that is not verified is not finished.
 		const landed = yield* getComment(repo, posted.value.id);
 		const mismatch =

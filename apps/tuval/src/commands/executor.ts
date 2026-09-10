@@ -7,10 +7,13 @@
  *
  * `AnySpell` erases each spell's requirements, so nothing checks that the runtime carries what a
  * registered spell needs — the composition root that builds the registry owes those services, and
- * the single conversion in `runSpell` is where that obligation is spent.
+ * the single conversion in `runSpell` is where that obligation is spent. `src/boot.ts` is that
+ * root and discharges it there: `WindowIndex` and `shellDispatchKernel` are built into the same
+ * `Kernel` context a caller runs a spell under, and `Kernel` names both, so a dropped provider is
+ * a compile error at `start` rather than a defect at the first call (#7774).
  */
 
-import {Context, Effect, Layer, Schema} from "effect";
+import {Context, Effect, Layer, Predicate, Schema} from "effect";
 import {firstSchemaIssue} from "../protocol/issue.ts";
 import {
 	PROTOCOL_VERSION,
@@ -20,7 +23,7 @@ import {
 	SpellReplyError,
 	SpellReplyOk,
 } from "../protocol/messages.ts";
-import {BadArgs, BadResult, UnknownSpell} from "./errors.ts";
+import {BadArgs, BadResult, SpellFailed, UnknownSpell} from "./errors.ts";
 import {SpellRegistry, type SpellRow} from "./registry.ts";
 import {type Client, resolveScope, WindowIndex} from "./scope.ts";
 import {renderPath, type Scope, type SpellPath} from "./spell.ts";
@@ -55,26 +58,31 @@ const nearestPath = (target: string, rows: ReadonlyArray<SpellRow>): string | un
 	return best?.path;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null;
+/** An error that names itself: a `_tag` to discriminate on, and whatever it renders as. */
+type NamedError = {readonly _tag: string; readonly message?: unknown};
 
-const tagOf = (error: unknown): string =>
-	isRecord(error) && typeof error._tag === "string" ? error._tag : "tuval/commands/SpellFailed";
+const isNamed = (value: unknown): value is NamedError =>
+	Predicate.isObject(value) && typeof value._tag === "string";
 
-const messageOf = (error: unknown, tag: string): string => {
-	const message = isRecord(error) ? error.message : undefined;
-	return typeof message === "string" && message.length > 0
-		? message
-		: `the call failed with ${tag}`;
-};
+/**
+ * The caught value as an error that names itself. One already carrying a `_tag` is its own;
+ * anything else becomes `SpellFailed`, a class `errors.ts` declares, so the only source of a
+ * reply's tag is an error object and no reply can carry a tag naming nothing in the tree.
+ */
+const named = (call: SpellCall, error: unknown): NamedError =>
+	isNamed(error) ? error : new SpellFailed({path: renderPath(call.path), original: error});
+
+const messageOf = (error: NamedError): string =>
+	typeof error.message === "string" && error.message.length > 0
+		? error.message
+		: `the call failed with ${error._tag}`;
 
 /**
  * A failure as the page reads it. The spell path is always the call's own, so a spell's private
  * error cannot claim a different one; only the executor's own errors add `expected`/`didYouMean`.
  */
-const failureOf = (call: SpellCall, error: unknown): SpellFailure => {
-	const tag = tagOf(error);
-	const base = {tag, message: messageOf(error, tag), path: call.path};
+const failureOf = (call: SpellCall, error: NamedError): SpellFailure => {
+	const base = {tag: error._tag, message: messageOf(error), path: call.path};
 	if (error instanceof UnknownSpell && error.didYouMean !== undefined) {
 		return {...base, didYouMean: error.didYouMean};
 	}
@@ -158,8 +166,7 @@ const make = Effect.fn("Tuval.SpellExecutor.make")(function* () {
 		client: Client,
 	) {
 		const attempt = Effect.gen(function* () {
-			// The wire schema checks the path is non-empty, so an empty one is unrepresentable here.
-			const row = yield* lookup(call.path as SpellPath);
+			const row = yield* lookup(call.path);
 			const args = yield* decodeArgs(row, call);
 			const scope = yield* resolveScope(call, client);
 			const value = yield* runSpell(row, args, scope);
@@ -167,7 +174,18 @@ const make = Effect.fn("Tuval.SpellExecutor.make")(function* () {
 		});
 		return yield* attempt.pipe(
 			Effect.provideService(WindowIndex, index),
-			Effect.catch((error) => Effect.succeed(refused(call, failureOf(call, error)))),
+			Effect.catch((error) => {
+				const failure = named(call, error);
+				const reply = refused(call, failureOf(call, failure));
+				// The reply carries only what the wire can hold, so the value itself is logged here
+				// or it is readable nowhere once this frame goes.
+				return failure instanceof SpellFailed
+					? Effect.logError("spell executor: a spell failed with an untagged value", {
+							path: failure.path,
+							original: failure.original,
+						}).pipe(Effect.as(reply))
+					: Effect.succeed(reply);
+			}),
 		);
 	});
 

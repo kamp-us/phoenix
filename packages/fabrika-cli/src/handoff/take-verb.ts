@@ -3,9 +3,9 @@
  *
  * The compose, the scan, the reachability guard, the post and the read-back are mechanical; *what to
  * say in the four sections* is irreducibly the model's. The caller supplies only the asserted half,
- * on stdin: a caller-supplied ground state would be exactly the premise-inheritance (#4133) the
- * two-half split exists to prevent, and a body passed as a file reference is how a machine-local path
- * reached a posted artifact (#3086, #3173), so there is no `--body` and no `--body-file`.
+ * on stdin: a caller-supplied ground state would be exactly the premise-inheritance the two-half
+ * split exists to prevent, and a body passed as a file reference is how a machine-local path reaches
+ * a posted artifact, so there is no `--body` and no `--body-file`.
  *
  * <!-- anchor: UNREACHABLE-WORK-IS-REFUSED --> **Unreachability refuses rather than warns.** A
  * successor is a fresh session in a different checkout: an unpushed commit and a modified tracked file
@@ -137,7 +137,7 @@ export const runTake = (
 		// The bare-`@` predicate asks whether a body ever arrived, so it is applied per **section**:
 		// the composed document always opens with this format's own marker and the asserted half
 		// always opens with `## Intent`, so testing either whole would make the seat unreachable and
-		// let `@/path/to/notes.md` ride into a posted artifact under a heading (#3086).
+		// let `@/path/to/notes.md` ride into a posted artifact under a heading.
 		const unarrived = Object.entries(asserted.value).find(([, body]) => isBareAtReference(body));
 		if (unarrived !== undefined) {
 			return refuse(

@@ -7,7 +7,7 @@
  *
  * The answer is a **positive token**, never silence: a verb whose success is empty stdout is
  * byte-identical to a verb that never ran (cli-interface-convention rule 2). The scope it judged goes
- * to stderr on every path, so a verdict is never reported over unstated scope (ADR 0092).
+ * to stderr on every path, so a verdict is never reported over unstated scope.
  */
 import {Effect} from "effect";
 import type {StdinRead} from "../io/stdin.ts";

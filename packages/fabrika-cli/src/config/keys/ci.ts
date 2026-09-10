@@ -6,13 +6,12 @@
  * supersedes an in-tree prediction.
  *
  * **Workflow existence is the whole test, and nothing here inspects what a workflow does.** The
- * founder ruled it that way (#5603, R17.1: "that's fine, only if workflows exist is fine dude") —
- * no job-name matching, no expected set, because any such set is a second place the repo's CI shape
- * is written down and a second place it drifts.
+ * rule is deliberate — no job-name matching, no expected set, because any such set is a second
+ * place the repo's CI shape is written down and a second place it drifts.
  *
  * **The shipped default is `refuse`, and that is today's behaviour, not a new strictness.** A repo
  * with no producer cannot evidence anything about a head, so a rollup over its empty enumeration is
- * vacuous (ADR 0092). A repo that knowingly runs no Actions workflows declares `degrade` for
+ * vacuous. A repo that knowingly runs no Actions workflows declares `degrade` for
  * itself; the default never quietly greens on the repo that simply forgot to set up CI.
  */
 
@@ -31,7 +30,7 @@ export interface CiSurface {
 	readonly gateWorkflow: string;
 }
 
-/** Phoenix's own CI surface — what a repo declaring nothing still gets. */
+/** The shipped CI surface — what a repo declaring nothing still gets. */
 export const SHIPPED_CI: CiSurface = {noProducer: "refuse", gateWorkflow: "ci.yml"};
 
 const named = (path: string): string => `\`${CI}\`'s \`${path}\``;

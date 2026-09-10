@@ -107,7 +107,7 @@ export type AdmissionSubject =
 			 * Whether this claim repairs an open PR — derived here, the one place that proves it.
 			 *
 			 * The caller reached this through {@link openIssue}, which refuses a closed target, so a
-			 * resolved served issue means an **open** PR serves it (#5914).
+			 * resolved served issue means an **open** PR serves it.
 			 */
 			readonly repair: RepairClaim;
 	  }
@@ -116,7 +116,7 @@ export type AdmissionSubject =
 /**
  * Resolve a claim target to the record whose home and audience the fence judges.
  *
- * An issue judges itself. A pull request judges the issue its lane serves (#5562). The resolution
+ * An issue judges itself. A pull request judges the issue its lane serves. The resolution
  * runs whether or not a campaign is active, because the audience axis reads the served issue either
  * way; only the *scope* refusal is gated on an active campaign, so an **unresolvable** PR falls back
  * to its own record while the fence is inert instead of refusing at `20`. A served issue that cannot be

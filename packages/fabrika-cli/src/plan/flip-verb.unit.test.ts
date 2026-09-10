@@ -134,7 +134,7 @@ describe("runFlip", () => {
 			audience: {result: "flipped", observed: ["ready-for:agent", "type:epic"]},
 		});
 		// `audience.observed` is the answer and stays whole; the child's own observed labels were the
-		// evidence, and the collapse is only real if none of them reached stdout (ADR 0308).
+		// evidence, and the collapse is only real if none of them reached stdout.
 		expect(JSON.parse(outcome.stdout).children).toEqual({count: 1, results: {flipped: 1}});
 		expect(outcome.stdout).not.toContain("4301");
 	});
@@ -289,7 +289,7 @@ describe("runFlip", () => {
 	});
 
 	/**
-	 * `POST .../labels` creates an unknown label rather than rejecting it (#4285), so an absent label
+	 * `POST .../labels` creates an unknown label rather than rejecting it, so an absent label
 	 * would be silently minted. Drop the precondition and the write below invents `status:triaged`.
 	 */
 	it("refuses 23 when a label it must write is absent from the taxonomy", async () => {
@@ -327,7 +327,7 @@ describe("runFlip", () => {
 		expect(calls.some((line) => LABEL_WRITE.test(line))).toBe(false);
 	});
 
-	/** #5680's shape: an epic planned and gated before #5832, re-gated to earn its audience label. */
+	/** An epic planned and gated before the audience flip existed, re-gated to earn that label. */
 	it("flips the epic alone when every child is already triaged", async () => {
 		const already = child({number: 4301, labels: ["type:feature", "p1", "status:triaged"]});
 		const digest = await digestOf([
@@ -408,7 +408,7 @@ describe("runFlip", () => {
 
 	/**
 	 * The re-gate covers the human decision too: a lane holding a `plan check` that passed before a
-	 * re-plan must not carry it past this write (ADR 0289).
+	 * re-plan must not carry it past this write.
 	 */
 	it("refuses 25 on an unapproved plan, writing nothing", async () => {
 		const digest = await digestOf(CLEAN_READ);

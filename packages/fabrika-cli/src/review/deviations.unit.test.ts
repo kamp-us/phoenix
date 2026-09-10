@@ -82,8 +82,8 @@ describe("readDeviations", () => {
 });
 
 /**
- * The defect #5566 named: the producer accepted bodies the consumer failed closed on, and nothing
- * ran one body through both sides. These do, over the shapes each side used to answer differently.
+ * The defect: the producer accepted bodies the consumer failed closed on, and nothing ran one body
+ * through both sides. These do, over the shapes each side used to answer differently.
  */
 describe("what `build pr` accepts is never read as malformed", () => {
 	const accepted = (body: string): boolean => bodyDefect(body, 4312, false) === null;

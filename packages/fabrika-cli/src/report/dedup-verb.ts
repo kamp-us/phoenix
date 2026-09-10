@@ -2,14 +2,14 @@
  * `report dedup` — rank the open issues that may already cover an observation.
  *
  * The verb **supplies an input; it does not judge**, which is why all three outcomes exit 0: the
- * check is advisory, never a gate on filing (ADR 0181). A duplicate is cheap for triage to close
+ * check is advisory, never a gate on filing. A duplicate is cheap for triage to close
  * and a lost observation is gone, so the skill files on ambiguity.
  *
  * The two halves are read for different reasons. The **label queue** is read-after-write consistent
  * and catches an issue filed seconds ago; the **search index** is eventually consistent — it lags
  * fresh issues but reaches older open issues that have already left the queue.
  *
- * The search half is sent a **narrower token list than ranking scores against** (#7213), so the
+ * The search half is sent a **narrower token list than ranking scores against**, so the
  * stderr scope line and `--json` both carry `searchTokens` beside `tokens` whenever the two differ —
  * a diagnostic naming a scope the run did not read is worse than none.
  */
@@ -25,10 +25,9 @@ import {rank, renderCandidate, searchTokens, tokenize} from "./dedup.ts";
  * `--label` does not exist in `--repo`, so the queue half has **no scope** — and a scope of zero
  * cannot produce a proven negative.
  *
- * Reported as a spec defect on #4752: a missing label is not
- * a transport error, so `GET /issues?labels=<missing>` answers HTTP 200 with `[]` and never reaches
- * {@link QUEUE_UNREADABLE}. It lands on the success path, where an empty queue is read as a fact,
- * and the verb prints `none` — a proven negative over nothing scanned, which ADR 0092 forbids. The
+ * A missing label is not a transport error, so `GET /issues?labels=<missing>` answers HTTP 200 with
+ * `[]` and never reaches {@link QUEUE_UNREADABLE}. It lands on the success path, where an empty queue
+ * is read as a fact, and the verb prints `none` — a proven negative over nothing scanned. The
  * code is `7` rather than a fresh number so it means what it already means on `report file`: *the
  * target named by `--label` does not exist in `--repo`*.
  */

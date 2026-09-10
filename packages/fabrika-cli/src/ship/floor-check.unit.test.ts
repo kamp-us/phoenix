@@ -1,9 +1,9 @@
 /**
  * The check-run mode's whole point is that ONE of the blocking states reads as waiting: `absent`
  * means nobody has judged this head yet, and showing that as the same red a FAIL shows is what
- * taught people to stop reading reds (#6161). So the battery below pins the conclusion map row by
- * row, and pins the two things the polarity change must not cost — a `stale`/`fail` verdict still
- * concludes failure, and an UNKNOWN still concludes failure rather than waiting (ADR 0092).
+ * taught people to stop reading reds. So the battery below pins the conclusion map row by row, and
+ * pins the two things the polarity change must not cost — a `stale`/`fail` verdict still concludes
+ * failure, and an UNKNOWN still concludes failure rather than waiting.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -39,7 +39,7 @@ const permissionServed = (permission: string): HttpReply => ({
 /** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE: Scripted = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts")),
+	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ];
 
 /** What GitHub echoes for a check-run this run just wrote. */
@@ -122,7 +122,7 @@ describe("planFor is the conclusion map, whole", () => {
 		});
 	});
 
-	it("concludes failure on UNKNOWN rather than waiting (ADR 0092)", () => {
+	it("concludes failure on UNKNOWN rather than waiting", () => {
 		const plan = planFor(1, {
 			_tag: "Unresolved",
 			outcome: {code: 11, stdout: "", stderr: ["ship floor: cannot read the changed-file list"]},
@@ -133,7 +133,7 @@ describe("planFor is the conclusion map, whole", () => {
 });
 
 // `review ci` tells a floor it can clear from one it cannot by reading this title back off the
-// published check-run, and the name/status/conclusion triple cannot make that distinction (#7441).
+// published check-run, and the name/status/conclusion triple cannot make that distinction.
 // So the round-trip is the contract: every branch of `planFor` above has to come back as itself.
 describe("publishedFloorOf is planFor's inverse", () => {
 	const sha = HEAD;
@@ -207,7 +207,7 @@ describe("runFloorCheck publishes the answer and exits 0 on having published it"
 	it("concludes success and says n/a when the diff touches no governance root", async () => {
 		const {outcome, seams} = await run([
 			[PULL, served(pull())],
-			[FILES, served(files("apps/web/src/a.ts", "apps/web/src/b.ts"))],
+			[FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))],
 			NO_HELD_CHECK,
 			[CREATE, echoed("completed", "success")],
 		]);

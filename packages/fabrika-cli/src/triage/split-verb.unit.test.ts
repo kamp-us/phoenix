@@ -301,7 +301,7 @@ describe("runSplit — a read that cannot see is never an answer", () => {
 	it("exits 7 when the queue label does not exist — a 200 over [] is not a proven negative", async () => {
 		const {outcome, requests} = await run(script([LABELS, labels("type:bug", "p0")]));
 		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(outcome.stderr.at(-1)).toContain("(ADR 0092)");
+		expect(outcome.stderr.at(-1)).toContain("a queue that would scan nothing");
 		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 });
@@ -363,7 +363,7 @@ describe("runSplit — the authored-text guard", () => {
 	});
 });
 
-/** #5644: the guard reads the PARENT — the issue this verb mutates by cross-linking it. */
+/** The guard reads the PARENT — the issue this verb mutates by cross-linking it. */
 describe("runSplit — the parent guard", () => {
 	const MINE = "session-mine";
 	const THEIRS = "session-theirs";

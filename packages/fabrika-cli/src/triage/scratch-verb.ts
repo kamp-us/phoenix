@@ -4,9 +4,9 @@
  * `<temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>`. A fan-out of triagers runs
  * under one session id, so a namespace keyed on the session alone hands every lane the same
  * directory and a fixed name like `authored.md` clobbers a sibling's file silently — which happened
- * on 2026-08-20 across #6597/#6189/#6146, and was caught only because the overwritten content
- * happened to be a different issue's body (#6630). The claim nonce in the key makes that
- * unconstructible rather than detectable, exactly as `build scratch` does for build lanes (#6037).
+ * on 2026-08-20 across three lanes, and was caught only because the overwritten content happened to
+ * be a different issue's body. The claim nonce in the key makes that unconstructible rather than
+ * detectable, exactly as `build scratch` does for build lanes.
  *
  * The printed path is machine-local and must never reach a posted artifact — the leak predicate the
  * writing verbs share reds on the temp roots it lives under.

@@ -1,13 +1,13 @@
 /**
  * `ci pr-body` — repair the standing Release PR body a commit subject's literal HTML tag poisons.
  *
- * Runs in `release-please.yml` before release-please reads its own PR back (#5946). The output
+ * Runs in the release workflow before release-please reads its own PR back. The output
  * contract is empty-means-no-work: the repaired body lands on stdout **only when a stray tag had
  * to be neutralized**, so the caller writes back exactly when there is something to write.
  *
  * A completed read exits 0 whether it repaired anything or not — this is a repair, not a gate, and
  * the release run it protects must not go red because the body was already clean. An unreadable
- * pipe is a different answer from an empty one and never collapses into it (#3924).
+ * pipe is a different answer from an empty one and never collapses into it.
  */
 
 import {Effect} from "effect";

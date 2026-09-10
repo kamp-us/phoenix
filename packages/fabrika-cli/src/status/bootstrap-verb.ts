@@ -4,7 +4,7 @@
  *
  * The content is the skill's judgement; the write, the collision guard and the read-back are this
  * verb's. That split is why file content arrives on stdin: *"/fabrika shows what's missing, then
- * runs the primitives to build the missing thing"* (#4952). A **line** surface is the exception and
+ * runs the primitives to build the missing thing"*. A **line** surface is the exception and
  * carries its own text here: a caller supplying it would let two repos spell one block two ways.
  *
  * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off a disposition.** A
@@ -14,8 +14,8 @@
  *
  * **`exists` is an exit-`0` answer, not a refusal.** A target already there is a proven fact the
  * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten
- * — bar the merge arm ADR 0334 rules for adoption surfaces, which touches only the keys a surface
- * declares and never bytes it does not own.
+ * — bar the merge arm an adoption surface takes into a present file, which key-merges or appends
+ * once, touching only what the surface declares and never bytes it does not own.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -72,10 +72,10 @@ export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxo
  *
  * **Every name is derived, never restated.** v1 listed the two statuses and the priorities and
  * stopped, so a repo that ran the whole documented bootstrap still could not `triage apply`,
- * `triage park`, `plan flip` or `ship release` — each refuses a label the repo lacks (#4285),
- * correctly, over a gap that list left (#5772). Deriving it from the board vocabulary is what makes
- * a seventh type widen the bootstrap with no second edit here — and what makes a repo that declared
- * its own vocabulary get *its* labels rather than phoenix's (#6294).
+ * `triage park`, `plan flip` or `ship release` — each refuses a label the repo lacks, correctly,
+ * over a gap that list left. Deriving it from the board vocabulary is what makes a seventh type
+ * widen the bootstrap with no second edit here — and what makes a repo that declared its own
+ * vocabulary get *its* labels rather than the shipped defaults.
  */
 export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 	[
@@ -85,7 +85,7 @@ export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 		...board.audiences.map(audienceLabel),
 	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
-/** The taxonomy a repo that declared no vocabulary gets — phoenix's own. */
+/** The taxonomy a repo that declared no vocabulary gets — the shipped default. */
 export const TAXONOMY: ReadonlyArray<LabelSpec> = taxonomy(DEFAULT_BOARD_VOCABULARY);
 
 /**
@@ -142,7 +142,7 @@ const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" 
  *
  * A roadmap is the one buildable file whose shape is not the drafting skill's judgement — it is a
  * grammar `triage homes` joins milestones through — so the write says what parsed rather than
- * leaving an inert draft to be discovered in some later session (#5778).
+ * leaving an inert draft to be discovered in some later session.
  */
 export const roadmapCount = (text: string): ContentCount => {
 	const {arcs, campaigns} = parseRoadmap(text);
@@ -229,10 +229,9 @@ const FABRIKA_IGNORE_BLOCK = `# fabrika's local machine state — the per-lane l
 ${FABRIKA_IGNORE_ROW}`;
 
 /**
- * The `settings-patch` keys: the `kampus` marketplace registration and the plugin flip, spelled as an
- * adopted repo carries them (kamp-us/demlik#5 is the hand-authored origin). Fixed in the registry for
- * the reason the line surface's row is fixed there: a caller supplying the JSON would let two repos
- * spell one marketplace two ways.
+ * The `settings-patch` keys: the marketplace registration and the plugin flip, spelled as an adopted
+ * repo carries them. Fixed in the registry for the reason the line surface's row is fixed there: a
+ * caller supplying the JSON would let two repos spell one marketplace two ways.
  */
 export const SETTINGS_PATCH: Readonly<Record<string, unknown>> = {
 	extraKnownMarketplaces: {
@@ -252,8 +251,8 @@ export const FABRIKA_CLI_PACKAGE = "@kampus/fabrika-cli";
 
 /**
  * The exact install command printed once the row lands, at the version just pinned. The lockfile is
- * the caller's to resolve — fabrika never shells to a package manager (#6995 R1.3) — so this line
- * on the notice is the whole handoff.
+ * the caller's to resolve — fabrika never shells to a package manager — so this line on the notice
+ * is the whole handoff.
  */
 export const installCommand = (packageName: string, version: string): string =>
 	`pnpm add --save-exact ${packageName}@${version}`;
@@ -263,9 +262,9 @@ export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
 
 /**
  * The canonical operator-first "work flows through fabrika" CLAUDE.md section, fixed in code as
- * the single source (ADR 0334's append-if-absent arm). Repo-specific adaptation — tone, carve-outs
- * like a no-ADRs rule — stays with the adopting agent in the front-door flow; this verb emits the
- * canonical text and no repo-specific branches (#7008).
+ * the single source, appended once when its marker heading is absent. Repo-specific adaptation —
+ * tone, an exemption like a no-ADRs rule — stays with the adopting agent in the front-door flow;
+ * this verb emits the canonical text and no repo-specific branches.
  */
 export const CLAUDE_MD_SECTION = `${CLAUDE_MD_MARKER}
 
@@ -425,7 +424,7 @@ interface Target {
  *
  * Three sources in one order: an explicit `--path`, else the repo's declared path for surfaces that
  * have a key, else the registry default. A config that cannot be decoded refuses rather than falling
- * through to the default — scaffolding phoenix's path into a repo that declared its own is the
+ * through to the default — scaffolding the shipped path into a repo that declared its own is the
  * silent half of the same defect a wrong `--path` makes loud.
  */
 const targetOf = (
@@ -559,7 +558,7 @@ const serializeJsonPatch = (value: Readonly<Record<string, unknown>>): string =>
 	`${JSON.stringify(value, null, "\t")}\n`;
 
 /**
- * **The JSON key-merge arm (ADR 0334), shared by every json-shaped target.** An adopting repo's
+ * **The JSON key-merge arm, shared by every json-shaped target.** An adopting repo's
  * file usually exists before fabrika ever sees it, so the file arm's absence guard cannot serve it.
  * A present target must parse as a JSON object: the patch's declared keys merge over it, every
  * undeclared key survives the re-serialize verbatim, and bytes that refuse to parse are exit `11`
@@ -642,11 +641,10 @@ const buildJsonPatch = (
  * **dep-pin resolves the release at run time; the edit itself is the json arm's.** The pinned
  * version is never a constant here — the npm registry's current published release is what makes a
  * re-run move an old row forward — and an unreachable or malformed answer refuses instead of
- * pinning a guess (#7007). The merge rides {@link mergePatchAt} over one key path:
+ * pinning a guess. The merge rides {@link mergePatchAt} over one key path:
  * `dependencies.@kampus/fabrika-cli` at exactly the resolved version, every other key verbatim,
- * absolute idempotency (ADR 0334). No package manager ever spawns and no lockfile is read or
- * written — the exact install command is printed instead, because the lockfile stays the caller's
- * (#6995 R1.3).
+ * absolute idempotency. No package manager ever spawns and no lockfile is read or written — the
+ * exact install command is printed instead, because the lockfile stays the caller's.
  */
 const buildDepPin = (
 	surface: Extract<BuildableSurface, {kind: "dep-pin"}>,
@@ -723,7 +721,7 @@ const writeAndReadBack = (
  * the marker: present anywhere in the text, this is `exists` at exit `0` and nothing is written;
  * absent, the block goes on the end and the pre-existing bytes are re-read intact. Both halves are
  * substring reads over the same marker, so a hand-added row — or a hand-adapted section under the
- * same heading — is recognised as the thing it is (ADR 0334's append-if-absent arm).
+ * same heading — is recognised as the thing it is.
  */
 const buildLine = (
 	surface: Extract<BuildableSurface, {kind: "line"}>,
@@ -859,7 +857,7 @@ const buildLabels = (
  * With no number in hand a title scan is the only probe there is; once `createUnlabelledIssue` has
  * returned one, `getIssue` reads the issue's own resource. The issues *list* is eventually
  * consistent, so re-scanning it spends `READBACK_MISMATCH` — the loudest code here — on a correct
- * first creation whose row has not propagated yet (#5776).
+ * first creation whose row has not propagated yet.
  */
 const buildArtifact = (
 	surface: Extract<BuildableSurface, {kind: "issue"}>,
@@ -912,7 +910,10 @@ const buildArtifact = (
 		);
 	});
 
-/** One surface per invocation, deliberately: a partial write reported as success is #4557's shape. */
+/**
+ * One surface per invocation, deliberately: a run spanning several surfaces can write some and fail
+ * on the rest, and there is no honest single answer for that.
+ */
 export const runBootstrap = (
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> => {

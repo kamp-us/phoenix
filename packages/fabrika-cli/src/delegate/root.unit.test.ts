@@ -116,7 +116,7 @@ describe("discoverRepoRoot", () => {
 		const fs = fakeFs({
 			files: {
 				"/repo/packages/fabrika-cli/package.json": '{"name":"@kampus/fabrika-cli"}',
-				"/repo/package.json": '{"name":"phoenix"}',
+				"/repo/package.json": '{"name":"root"}',
 				"/repo/pnpm-workspace.yaml": "packages:\n  - packages/*\n",
 			},
 		});
@@ -154,7 +154,7 @@ describe("discoverRepoRoot", () => {
 
 describe("originOf", () => {
 	const checkout = (root: string) => ({
-		[`${root}/package.json`]: '{"name":"phoenix"}',
+		[`${root}/package.json`]: '{"name":"root"}',
 		[`${root}/pnpm-workspace.yaml`]: "packages:\n  - packages/*\n",
 		[`${root}/packages/fabrika-cli/package.json`]: '{"name":"@kampus/fabrika-cli"}',
 	});

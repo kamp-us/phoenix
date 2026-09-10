@@ -3,7 +3,7 @@
  *
  * The listing is a projection of the array, never a second copy of it, which is what makes "is this
  * format registered?" answerable from the binary that dispatches rather than from a document that
- * can drift. An empty registry refuses (ADR 0092): printing an empty list would be a proven
+ * can drift. An empty registry refuses: printing an empty list would be a proven
  * negative from a verb that resolved nothing.
  */
 import {answer, refuse, type VerbOutcome} from "../verb.ts";

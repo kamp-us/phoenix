@@ -17,9 +17,9 @@
  * The scan runs over the body's *contract* region, not its bytes end to end: a fenced code block
  * and a `<details>` appendix are both out of reach (see {@link scanHeadings}).
  *
- * v1's `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §2 is where the semantics
- * come from — read as prior art, never called (ADR 0238). Its reviewer-append provenance tag
- * (`<!-- ac:review-code … -->`) is deliberately not carried here.
+ * An older pipeline's intake-format doc is where the semantics come from — read as prior art,
+ * never called, so no code path here depends on a tree that is gone. Its reviewer-append provenance
+ * tag (`<!-- ac:review-code … -->`) is deliberately not carried here.
  */
 
 import type {
@@ -60,7 +60,7 @@ export type AcceptanceCriteriaRead = WireRead<NonEmptyReadonlyArray<AcceptanceCr
  *
  * A criterion's *text* cannot locate its own lines once it wraps: the text is the joined sentence
  * while the checkbox line carries only its first segment, so a caller matching one against the
- * other finds nothing and reads that as "no such row" (#5716). Anything writing beside a criterion
+ * other finds nothing and reads that as "no such row". Anything writing beside a criterion
  * takes the span from here instead of re-deriving the wrapping rule at the call site.
  */
 export interface CriterionSpan {
@@ -112,7 +112,7 @@ const DETAILS_CLOSE = /^[ \t]*<\/details>[ \t]*$/;
 /**
  * A line that opens a GFM block of its own beside the item — a plain bullet, an ordered-list marker,
  * a blockquote, or a thematic break. Each leaves the item's paragraph in the render exactly as the
- * next checkbox item does, so each closes the open criterion here (#5596). Tested after
+ * next checkbox item does, so each closes the open criterion here. Tested after
  * {@link CHECKBOX_ITEM}, which owns the task-list forms this would otherwise swallow.
  */
 const BLOCK_STARTER =
@@ -174,7 +174,7 @@ export interface RegionLine {
  * `authored region + marker + preserved original`, and the preserved original is kept verbatim
  * inside a `<details>` block — so a legacy `## Acceptance criteria` buried there used to be a
  * candidate, and the composed body read `Malformed` (drifted heading) or `Malformed` (two
- * conforming headings) over an authored block that was clean (#5852). A collapsed block is an
+ * conforming headings) over an authored block that was clean. A collapsed block is an
  * appendix, never the contract: it renders folded shut, so nothing a grader must read lives in it.
  * Skipping it here rather than at compose time is what covers the bodies already wrapped — the
  * board's whole enriched corpus — and not only the ones wrapped from now on.
@@ -249,7 +249,7 @@ const driftReason = (heading: Heading): string => {
  *
  * A `<details>` opener ends the section for the same reason {@link scanHeadings} skips inside one:
  * the collapsed block is an appendix. Without it, a preserved original that opens on checkbox lines
- * before its first heading has them read back as criteria the author never wrote (#5852).
+ * before its first heading has them read back as criteria the author never wrote.
  *
  * Exported for `triage repair-criteria`, which rewrites item shape inside exactly the extent this
  * reader grades — the same reason {@link scanHeadings} is exported.
@@ -281,7 +281,7 @@ export const sectionOf = (
  * A criterion that wraps onto a second physical line is still *one* criterion: GitHub's own `gfm`
  * render puts both lines inside one `<li class="task-list-item">`, joined by a `<br>`. A reader
  * that kept only line one therefore handed every grader a shorter contract than the author wrote,
- * and said nothing about it — which is the defect this rule closes (#5572). The loss landed on the
+ * and said nothing about it — which is the defect this rule closes. The loss landed on the
  * qualifiers and the "must not" clauses, because those are the half of a criterion that wraps.
  *
  * A line closes the open criterion when the CommonMark render also treats it as leaving the item's
@@ -293,7 +293,7 @@ export const sectionOf = (
  * 3. a fence delimiter, and every line inside the fence it opens,
  * 4. any other line that opens a block of its own — a plain bullet, an ordered-list marker, a
  *    blockquote, a thematic break ({@link BLOCK_STARTER}). Joining those swallowed a sibling block's
- *    prose into the contract, the same defect pointing the other way (#5596),
+ *    prose into the contract, the same defect pointing the other way,
  * 5. the heading that ends the section — {@link sectionOf} already cuts there, so the loop ends.
  *
  * Only a line that continues the item's own paragraph — the wrap this rule exists for — is appended.
@@ -331,10 +331,11 @@ const malformed = (reason: string, evidence: string): WireMalformed => ({
  * {@link read} is this answer with the spans dropped, so there is one scanner and one wrapping rule
  * for both — a second one would be a second definition of "criterion".
  *
- * Which block is served when a body carries more than one is ADR 0326's rules 3–5: the **last**
- * conforming block is the contract, because amend-never-rewrite appends a re-scope below the
- * original; a candidate that misses the spelling *below* the served block is `Malformed` rather than
- * dropped, and one above it stays dropped. The selection lives here and nowhere else (ADR 0241).
+ * Which block is served when a body carries more than one: the **last** conforming block is the
+ * contract, because amend-never-rewrite appends a re-scope below the original; a candidate that
+ * misses the spelling *below* the served block is `Malformed` rather than dropped, and one above it
+ * stays dropped. The selection lives here and nowhere else, because a second copy of it is a second
+ * answer to "which block is the contract".
  *
  * `Found` is unreachable with zero criteria — the only `return` that produces it is guarded by the
  * emptiness check below and the type would reject it regardless.

@@ -7,7 +7,6 @@ import {
 	APPEND_UNKNOWN,
 	KEY_MALFORMED,
 	LANE_ABSENT,
-	LANE_EXISTS,
 	LANE_UNREADABLE,
 	MALFORMED_RECORD,
 } from "./codes.ts";
@@ -50,17 +49,18 @@ export const loadRefusal = (
 	}
 };
 
-/** Seat a non-`Placed` boot outcome — nothing was written, and the reason names the remedy. */
+/**
+ * Seat a non-`Placed`, non-`Exists` boot outcome — nothing was written, and the reason names the
+ * remedy. `Exists` is not folded here: the two boot verbs answer it with opposite remedies — `lane
+ * emit` retires and re-emits a lane running the wrong machine, `lane open` sends the driver at the
+ * lane that is already there — so each states its own rather than sharing a sentence that is true of
+ * one of them.
+ */
 export const placementRefusal = (
 	verb: string,
-	placed: Exclude<Placement, {_tag: "Placed"}>,
+	placed: Exclude<Placement, {_tag: "Placed"} | {_tag: "Exists"}>,
 ): VerbOutcome => {
 	switch (placed._tag) {
-		case "Exists":
-			return refuse(
-				LANE_EXISTS,
-				`${verb}: a lane already exists at ${placed.dir} — resuming needs no boot; remove the directory to rebuild it.`,
-			);
 		case "Unprobeable":
 			return refuse(
 				LANE_UNREADABLE,

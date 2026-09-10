@@ -9,7 +9,7 @@
  *
  * There is deliberately no `20` here: a defective floor is this verb's answer, not its refusal.
  *
- * **The one refusal that outranks the answer is the approval precondition** (`25`, ADR 0289). It runs
+ * **The one refusal that outranks the answer is the approval precondition** (`25`). It runs
  * before the floor is derived, so an unapproved plan gets no floor reading at all — a defective *and*
  * unapproved plan refuses on the approval, because reporting its defects would hand a founder who
  * never saw the plan a verdict over it.
@@ -40,7 +40,7 @@ export const MESSAGES: PlanMessages = {
 	verb: VERB,
 	grammar: (reason) => `${VERB}: the ledger grammar refused: ${reason}`,
 	zeroChildren: (epic) =>
-		`${VERB}: #${epic} has zero children — refusing to answer over zero scope (ADR 0092).`,
+		`${VERB}: #${epic} has zero children — refusing to answer over zero scope.`,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to gate it.`,
 	unreadable: (what, reason) =>
 		`${VERB}: cannot read ${what}: ${reason} — the floor is UNKNOWN, not clean.`,

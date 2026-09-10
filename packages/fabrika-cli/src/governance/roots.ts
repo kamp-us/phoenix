@@ -4,7 +4,7 @@
  * The root set is **not declared here**. It is `governedRoots` in `.fabrika.jsonc`, resolved by the
  * verb and handed in, and the membership test is `touchesGovernanceRoot` in `../review/classes.ts`,
  * which `ship scope` and `ship gate`'s required-set floor read too — one derivation, three readers.
- * Two derivations of one namespace are two answers to one question (#4730), and the two would
+ * Two derivations of one namespace are two answers to one question, and the two would
  * disagree the first time a repo declared a fifth root.
  *
  * The directory is the unit of coverage, not the file type: an enumerated skill-dir list plus an
@@ -27,7 +27,7 @@ export interface ScopeResult {
 	readonly required: boolean;
 	/**
 	 * How many of the diff's paths sit under each root the diff touches — an evidence-array collapsed
-	 * to a reason histogram (ADR 0308): the root set is `.fabrika.jsonc`'s `governedRoots`, which the
+	 * to a reason histogram: the root set is `.fabrika.jsonc`'s `governedRoots`, which the
 	 * governance skill reads off `fabrika status settings` rather than off this field.
 	 */
 	readonly roots: ReasonHistogram;
@@ -70,8 +70,7 @@ export const recordsIn = (changed: ReadonlyArray<ChangedPath>): ReadonlyArray<Re
  * `skillRoots` is what the `<anything>/fabrika/skills/governance/SKILL.md` resolution found at the commit —
  * possibly none, possibly several. `self` is true when any changed path lies under **any** of them,
  * which is the conservative direction: an ambiguous install flags the self fence rather than
- * skipping it, and the fence is what stops a self-editing PR being judged by its own new rules
- * (ADR 0052).
+ * skipping it, and the fence is what stops a self-editing PR being judged by its own new rules.
  */
 export const deriveScope = (
 	changed: ReadonlyArray<ChangedPath>,

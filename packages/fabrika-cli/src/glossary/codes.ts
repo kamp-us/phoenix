@@ -43,7 +43,7 @@ export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
  * second export of it would not compile while a renamed one would read as an allocation.
  */
 export const DELIBERATE_GAP = 5;
-/** Proven: a judging verb scanned nothing it could judge (ADR 0092). */
+/** Proven: a judging verb scanned nothing it could judge, which is a red, never a clean. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** A register write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;

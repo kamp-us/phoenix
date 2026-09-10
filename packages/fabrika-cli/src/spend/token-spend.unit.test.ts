@@ -1,12 +1,12 @@
 /**
- * The fabrika half of the one-ruler proof (#4777).
+ * The fabrika half of the one-ruler proof.
  *
- * ADR 0238 has fabrika re-implement v1's token meter rather than call it, which would leave two
+ * fabrika re-implements v1's token meter rather than calling it, which would otherwise leave two
  * implementations of one specified formula free to drift. The shared fixture below is what closes
  * that: `fixtures/one-ruler/transcript.jsonl` plus its expected figures are asserted here **and**
- * by v1's `token-spend.unit.test.ts`, so the two are
- * pinned to one set of numbers instead of trusted to agree. Editing the fixture without editing
- * `expected.json` reds both suites, which is the point.
+ * by v1's `token-spend.unit.test.ts`, so the two are pinned to one set of numbers instead of
+ * trusted to agree. Editing the fixture without editing `expected.json` reds both suites, which is
+ * the point.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -16,7 +16,7 @@ import {classifyRunSpend, reconstructSpend, type StageSpend} from "./token-spend
 const read = (name: string): string =>
 	readFileSync(fileURLToPath(new URL(`./fixtures/one-ruler/${name}`, import.meta.url)), "utf8");
 
-describe("reconstructSpend — the shared one-ruler fixture (ADR 0112 §2)", () => {
+describe("reconstructSpend — the shared one-ruler fixture", () => {
 	const spend = reconstructSpend(read("transcript.jsonl"));
 	const expected = JSON.parse(read("expected.json")) as StageSpend;
 

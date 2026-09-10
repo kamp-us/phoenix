@@ -6,7 +6,7 @@
  * failed".** A git or board read that fails is a refusal for the whole verb — the ground is UNKNOWN
  * and no object is emitted. The one `unknown` in the set, `git.reachable`, is a **fact** about a
  * repository with no configured upstream, and `aheadBy` / `behindBy` are `null` in the same case for
- * the same reason. Conflating the two is how a guard vouches for a tree it never read (ADR 0092).
+ * the same reason. Conflating the two is how a guard vouches for a tree it never read.
  *
  * <!-- anchor: THE-GROUND-EXCLUDES-WHAT-THIS-GROUP-WRITES --> The digested set excludes exactly the
  * fields this group's own writes move, and nothing more: the pack and the claim are comments, so
@@ -185,7 +185,7 @@ const isCount = (value: unknown): value is number =>
  */
 export const parseGround = (text: string): GroundParse => {
 	// Through `parseJson` rather than a raw `try/catch`: this module imports `effect`, where a native
-	// throw is banned (#2736), and that boundary is exactly what `io/json.ts` exists to be.
+	// throw is banned, and that boundary is exactly what `io/json.ts` exists to be.
 	const parsed = parseJson(text);
 	if (!isRecord(parsed)) return {_tag: "Unusable", reason: "the proven half is not one object"};
 	const {issue, repo, capturedAt, groundDigest} = parsed;
@@ -522,7 +522,7 @@ export interface DeriveOptions {
  * The whole ground state, derived. Either the object or a refusal — there is no partial answer.
  *
  * A git read that fails is a refusal, **never a clean tree**: reporting `clean` over a failed
- * `git status` is the zero-scope pass ADR 0092 forbids, and here it would license a pack asserting
+ * `git status` passes over a scope nothing read, and here it would license a pack asserting
  * reachable work that is not reachable.
  */
 export const deriveGround = (

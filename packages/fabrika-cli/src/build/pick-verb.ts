@@ -6,19 +6,19 @@
  * ones:
  *
  * - **The admission test decides all four axes** — scope, type, audience, criteria — imported from
- *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere (ADR 0245). An issue with
- *   no `ready-for:` label is excluded — absence is an unknown audience, never an agent audience
- *   (#4780) — and one homed outside every active campaign is excluded with its own reason. Two of
- *   those axes used to be this file's private business, and both leaked the same way: the type set
- *   as a private constant, which is how a directly-handed `type:decision` reached `claim` with
- *   nothing to refuse it (#5490), and the criteria read as a private call, which is how
- *   `build issue <n>` built a no-AC issue this pool would have refused (#6554).
+ *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere. An issue with no
+ *   `ready-for:` label is excluded — absence is an unknown audience, never an agent audience — and
+ *   one homed outside every active campaign is excluded with its own reason. Two of those axes used
+ *   to be this file's private business, and both leaked the same way: the type set as a private
+ *   constant, which is how a directly-handed `type:decision` reached `claim` with nothing to refuse
+ *   it, and the criteria read as a private call, which is how `build issue <n>` built a no-AC issue
+ *   this pool would have refused.
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
- *   of an agent's pool (#4764, #4693).
+ *   of an agent's pool.
  * - **A candidate with an open, undischarged `blocked_by` edge excludes**, on the same channel, read
- *   off the native graph and nothing else (ADR 0301) minus what the parent epic's assembly branch
- *   already carries — one derivation in [`./discharge.ts`](./discharge.ts), shared with the claim
- *   seam so the pool and the claim cannot state different facts about one edge (#7223). It runs last
+ *   off the native graph and nothing else, minus what the parent epic's assembly branch already
+ *   carries — one derivation in [`./discharge.ts`](./discharge.ts), shared with the claim seam so
+ *   the pool and the claim cannot state different facts about one edge. It runs last
  *   because it is the only axis that costs a network call, and an unreadable graph excludes the
  *   candidate with its reason on stderr — the whole pool is not refused for one edge list, but a
  *   candidate whose blockedness is UNKNOWN is never offered.
@@ -29,9 +29,9 @@
  * and lands on the same code. An unreadable campaigns table refuses the whole pool too — an
  * unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An empty pool
  * is still a fact and prints on exit 0 with the scanned counts and a histogram of the exclusion
- * reasons beside it, which is what makes it auditable rather than merely plausible (ADR 0092). The
- * reasons collapse to counts rather than rows because `excluded` is an evidence-array under ADR
- * 0308 — no skill reads its rows by name, and the reason vocabulary is what the contract defends.
+ * reasons beside it, which is what makes it auditable rather than merely plausible. The reasons
+ * collapse to counts rather than rows because `excluded` is an evidence array — no skill reads its
+ * rows by name, and the reason vocabulary is what the contract defends.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -79,7 +79,7 @@ interface PoolEntry {
 
 /**
  * The word for a candidate the native `blocked_by` graph says must not start yet, once the parent
- * epic's assembly branch has been subtracted from it (ADR 0301's 2026-08-29 amendment).
+ * epic's assembly branch has been subtracted from it.
  *
  * It is not an admission axis and does not live in `./scope-admission.ts`: that module is pure and
  * total over facts already on an issue, while this one costs a paged network read per candidate. It
@@ -90,10 +90,10 @@ interface PoolEntry {
 const BLOCKED_REASON = "blocked";
 
 /**
- * One issue the filter kept out, with the axis that refused it (#5013).
+ * One issue the filter kept out, with the axis that refused it.
  *
- * Internal to the scan: what reaches stdout is a `{reason: count}` histogram over these rows (ADR
- * 0308), and the stderr scope line's per-axis split is derived from them too.
+ * Internal to the scan: what reaches stdout is a `{reason: count}` histogram over these rows, and
+ * the stderr scope line's per-axis split is derived from them too.
  */
 interface ExclusionEntry {
 	readonly number: number;
@@ -188,8 +188,7 @@ export const runPick = (
 				// axis is answered off facts already in hand, so a candidate they refuse is never paid
 				// for here. The discharge read inside is lazier still: a candidate the graph already reads
 				// clear resolves no parent and reads no branch. An unreadable graph excludes with its reason
-				// stated rather than refusing the
-				// whole pool (ADR 0301) — the candidate is dropped, never kept.
+				// stated rather than refusing the whole pool — the candidate is dropped, never kept.
 				const {gate, notes} = yield* readDischargedGate(
 					VERB,
 					options.env,

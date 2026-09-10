@@ -1,10 +1,10 @@
 /**
  * Which of an epic child's lane branches is superseded, and what a retired branch is named.
  *
- * Pure, and split from the verb because ADR 0324's whole safety argument sits here: the survivor is
- * a branch the board **attests** to, never the one a heuristic prefers. A child's branch is never
- * pushed (ADR 0285), so a wrong pick moves the only copy of somebody's work out from under the lane
- * still building on it — which is why an unattested set supersedes nothing and refuses instead.
+ * Pure, and split from the verb because the whole safety argument sits here: the survivor is a
+ * branch the board **attests** to, never the one a heuristic prefers. A child's branch is never
+ * pushed, so a wrong pick moves the only copy of somebody's work out from under the lane still
+ * building on it — which is why an unattested set supersedes nothing and refuses instead.
  *
  * Retirement is a rename out of `build/`. Nothing here deletes: after it the branch still exists,
  * still carries every commit, and is still reachable by name; what changes is that

@@ -4,12 +4,11 @@
  *
  *     ## Came from
  *
- *     #5652
+ *     #6
  *
  * Both siblings `map fork` routes to write it: `spike open` records it on the spike issue and
  * `grill open` records it on the session issue, where it is also the resume key. Two writers and
- * two readers across two skills is a wire format, so it is owned here rather than by either group
- * (ADR 0241).
+ * two readers across two skills is a wire format, so it is owned here rather than by either group.
  *
  * **`standalone` is a value, not an absence.** An artifact opened with no ticket writes the literal
  * word, so "nobody bound this" is something the section says rather than something a reader infers
@@ -21,8 +20,8 @@
  * The reason `read` is total matters more here than almost anywhere else in the group. This
  * section's `Found` decides whether a session already exists for a ticket, so a drifted heading
  * answered as "bound to nothing" would resume nothing and mint a **second** session on one ticket —
- * the split #5661 was filed about, except silent, where the failure it replaced was at least a
- * visibly duplicate topic. `Malformed` is what makes the caller refuse instead of resume.
+ * a silent split, where the failure it replaced was at least a visibly duplicate topic.
+ * `Malformed` is what makes the caller refuse instead of resume.
  */
 
 import {type Heading, scanHeadings} from "./acceptance-criteria.ts";
@@ -200,7 +199,7 @@ const FIELD_LINE = /^([A-Za-z-]+)[ \t]*[:\t][ \t]*(.*)$/;
  * Parse `wire emit`'s stdin into the section's value.
  *
  * One field, `binding`, and its value is the line the section carries — `#<n>` or `standalone`. A
- * bare number is refused rather than coerced: `5652` and `#5652` are different bytes, and composing
+ * bare number is refused rather than coerced: `6` and `#6` are different bytes, and composing
  * the second from the first is the writer quietly disagreeing with the reader.
  */
 export const parseFields = (fields: string): CameFromFields => {

@@ -154,7 +154,7 @@ const create = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new pattern doc from the canonical template."),
 	Command.withDescription(
-		"Scaffold <dir>/<slug>.md for a current pattern, or a prospective pattern with --decision. Optional --source-repo inspection derives a canonical origin, full HEAD commit, relevant package version and representative source/test/docs paths without serializing the local path; use --source-package when a monorepo is ambiguous. Writes exactly one file. Exits 8 (write UNKNOWN), 13 (target exists), 17 (source evidence refused). Example: fabrika pattern new worker-queue-retry --decision https://github.com/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
+		"Scaffold <dir>/<slug>.md for a current pattern, or a prospective pattern with --decision. Optional --source-repo inspection derives a canonical origin, full HEAD commit, relevant package version and representative source/test/docs paths without serializing the local path; use --source-package when a monorepo is ambiguous. Writes exactly one file. Exits 8 (write UNKNOWN), 13 (target exists), 17 (source evidence refused). Example: fabrika pattern new worker-queue-retry --decision https://forge.example/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
 	),
 );
 

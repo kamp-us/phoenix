@@ -4,12 +4,14 @@
  *
  * Two disciplines, both scars:
  *
- * - **A branch is cut off `FETCH_HEAD`, never off a local remote-tracking ref.** A checkout's
- *   `origin/main` can predate the commit the lane needs, and a branch cut off it misses work that is
- *   already on the base (#1920 / #3621). Every create here fetches first and cuts off what was just
- *   fetched.
+ * - **A branch is cut off `FETCH_HEAD`, never off a local ref.** A checkout's `origin/main` can
+ *   predate the commit the lane needs, and a branch cut off it misses work that is already on the
+ *   base. Every create here fetches first and cuts off what was just fetched. {@link fetchBase}
+ *   takes a {@link BaseRef} rather than a ref string so the one spelling that cannot be fetched —
+ *   a branch only this clone holds — is a *constructed* case with a proof behind it, not a string
+ *   that falls through to a bare `git fetch` and a stale local read.
  * - **A push is believed only after the remote ref is read back.** `git push`'s own report is not
- *   evidence: a push that died mid-hook read as sent (#4136). {@link remoteSha} asks the remote
+ *   evidence: a push that died mid-hook read as sent. {@link remoteSha} asks the remote
  *   directly, and the caller compares.
  */
 import {Effect} from "effect";
@@ -34,25 +36,89 @@ export const headSha: Shell<Attempt<string>> = Effect.gen(function* () {
 	return isObjectName(sha) ? ok(sha) : fail(`git resolved HEAD to "${sha}", not an object name`);
 });
 
-/** Fetch `base` (e.g. `origin/main`) and resolve what was fetched, so a cut never uses a stale ref. */
-export const fetchBase = (base: string): Shell<Attempt<string>> =>
+/**
+ * A base a lane branch may be cut off, in the one shape that says how it is resolved.
+ *
+ * `Remote` is fetched and read back off `FETCH_HEAD`; `Commit` is already exact; `LocalOnly` is the
+ * single arm that reads a local ref, and it exists so its one legitimate caller must *prove* the
+ * remote holds nothing before it can construct one. That proof used to be a string test — a base
+ * whose left half named no configured remote fell through to a bare `git fetch`, which writes
+ * remote-tracking refs and leaves `refs/heads/epic/<n>` where it was, so `epic/7497` resolved to
+ * whatever this clone last integrated.
+ */
+export type BaseRef =
+	| {readonly _tag: "Remote"; readonly remote: string; readonly ref: string}
+	| {readonly _tag: "LocalOnly"; readonly ref: string}
+	| {readonly _tag: "Commit"; readonly sha: string};
+
+/** How a base reads in a note or a refusal — the spelling a caller can hand back to git. */
+export const baseLabel = (base: BaseRef): string =>
+	base._tag === "Remote"
+		? `${base.remote}/${base.ref}`
+		: base._tag === "LocalOnly"
+			? base.ref
+			: base.sha;
+
+/**
+ * Classify the base an operator spelled on `--base`.
+ *
+ * A ref with no remote half is qualified against this clone's default remote rather than read
+ * locally, so `--base main` and `--base epic/7497` both resolve to the tip origin holds. Several
+ * remotes and no `origin` is a refusal: which one a bare ref means is the caller's to say.
+ */
+export const classifyBase = (base: string): Shell<Attempt<BaseRef>> =>
 	Effect.gen(function* () {
-		const split = splitRemoteRef(base, yield* remotes);
-		const fetched = yield* split === null
-			? execCapture("git", ["fetch", "--quiet"])
-			: execCapture("git", ["fetch", "--quiet", split.remote, split.ref]);
+		if (isObjectName(base)) return ok({_tag: "Commit", sha: base} as const);
+		const names = yield* remotes;
+		const split = splitRemoteRef(base, names);
+		if (split !== null) return ok({_tag: "Remote", remote: split.remote, ref: split.ref} as const);
+		const remote = names.includes("origin") ? "origin" : names.length === 1 ? names[0] : undefined;
+		return remote === undefined
+			? fail(
+					names.length === 0
+						? `"${base}" names no configured remote and this clone has none to qualify it against`
+						: `"${base}" names none of this clone's remotes (${names.join(", ")}) and there is no origin to qualify it against — spell it <remote>/<ref>`,
+				)
+			: ok({_tag: "Remote", remote, ref: base} as const);
+	});
+
+/** Fetch `base` and resolve what was fetched, so a cut never uses a stale ref. */
+export const fetchBase = (base: BaseRef): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		if (base._tag === "Commit") return yield* resolveCommit(base.sha);
+		if (base._tag === "LocalOnly") return yield* resolveCommit(`refs/heads/${base.ref}`);
+		const fetched = yield* execCapture("git", ["fetch", "--quiet", base.remote, base.ref]);
 		if (!fetched.ok) return fail(fetched.reason);
-		const resolved = yield* execCapture("git", [
-			"rev-parse",
-			"--verify",
-			"--quiet",
-			split === null ? `${base}^{commit}` : "FETCH_HEAD^{commit}",
-		]);
-		if (!resolved.ok) return fail(`cannot resolve ${base} to a commit after fetching`);
-		const sha = resolved.stdout.trim();
-		return isObjectName(sha)
-			? ok(sha)
-			: fail(`git resolved ${base} to "${sha}", not an object name`);
+		return yield* resolveCommit("FETCH_HEAD", ` after fetching ${baseLabel(base)}`);
+	});
+
+/**
+ * The merge base of two revisions.
+ *
+ * A branch's base is proven by comparing this against the base commit, never by
+ * `merge-base --is-ancestor`: that command spends exit `1` on "not an ancestor" and `128` on an
+ * unreadable object, and {@link execCapture} folds both into one failure — fusing a proven answer
+ * with an UNKNOWN, which is the split this group refuses everywhere else.
+ */
+export const mergeBaseOf = (a: string, b: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["merge-base", a, b]);
+		if (!r.ok) return fail(r.reason);
+		const sha = r.stdout.trim();
+		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base between ${a} and ${b}`);
+	});
+
+/**
+ * Whether both revisions resolve to commits here — how a caller splits {@link mergeBaseOf}'s
+ * failure back into the two facts git spent one exit status on.
+ *
+ * `merge-base A B` exits `1` on "these share no history", which is a *proven* answer, and `128` on a
+ * revision it could not read, which is an UNKNOWN. Reading the operands back is the only thing that
+ * tells them apart without asking `merge-base` for a status {@link execCapture} does not carry.
+ */
+export const bothResolve = (a: string, b: string): Shell<boolean> =>
+	Effect.gen(function* () {
+		return (yield* resolveCommit(a))._tag === "Ok" && (yield* resolveCommit(b))._tag === "Ok";
 	});
 
 export const branchExists = (name: string): Shell<boolean> =>
@@ -80,13 +146,13 @@ export const switchToNew = (name: string, start: string): Shell<Attempt<void>> =
  *
  * Renaming rather than cutting a second branch off the first is the whole point: two branches
  * carrying one child's commits is what `lane prove` reports as an underivable range, and that
- * refusal is unresolvable from inside a worktree (#6386).
+ * refusal is unresolvable from inside a worktree.
  *
  * **It does not refuse a branch another worktree has checked out**, which is the trap the caller
  * guards with {@link worktreeCheckouts}: `git branch -m` exits 0 there and silently retargets that
  * worktree's `HEAD` to the new name — only the `git switch` afterwards fails, by which point the
  * rename has already landed under a lane that is not this one. Measured against git 2.40.1 rather
- * than reasoned about (#6386, review round 1).
+ * than reasoned about.
  */
 export const renameBranch = (from: string, to: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
@@ -196,7 +262,7 @@ export const worktreeStatusPaths = (path: string): Shell<Attempt<number>> =>
  *
  * It asks nothing of the board and needs nothing from it: a pruned record has no directory, so there
  * is no tree holding work and no session whose fate anyone has to attest to. That keeps it outside
- * ADR 0295's licensing question rather than an exception to it.
+ * the question of who licenses a tree's removal rather than an exception to it.
  */
 export const pruneWorktrees: Shell<Attempt<void>> = Effect.gen(function* () {
 	const r = yield* execCapture("git", ["worktree", "prune"]);
@@ -233,11 +299,11 @@ export const commitsPastBase = (branch: string, base: string): Shell<Attempt<num
 	});
 
 /**
- * Commit everything another worktree holds onto the branch it is standing on — ADR 0321's salvage.
+ * Commit everything another worktree holds onto the branch it is standing on — the salvage.
  *
  * The uncommitted work in a dead spawn's tree is the only copy of what it was doing, so it is
  * preserved before the tree goes rather than weighed: that is what lets a retirement ignore
- * dirtiness (ADR 0323) without the removal being the thing that destroys the record.
+ * dirtiness without the removal being the thing that destroys the record.
  *
  * `--no-verify` because the hooks are this repo's contribution gate and a salvage is not a
  * contribution — a formatter rewriting a dying spawn's half-written file, or a guard refusing it,
@@ -256,7 +322,7 @@ export const salvageWorktree = (path: string, message: string): Shell<Attempt<vo
 	});
 
 /**
- * Remove one worktree and its registration — **never with `--force`**, which ADR 0321 bans on every
+ * Remove one worktree and its registration — **never with `--force`**, which is banned on every
  * path for every tree.
  *
  * A remove that refuses after the salvage means something in that tree is unaccounted for, and the
@@ -318,7 +384,7 @@ export const upstreamOf = (branch: string): Shell<{remote: string; ref: string} 
  *
  * Resume mode's local name is `build/pr-<pr>-<nonce>`, which by construction is never the PR's head
  * ref, so any check that reads the local name back calls every repair round a foreign lane —
- * `build push`'s false `17` (#5222) and `ui evidence`'s false `LANE_NOT_MINE` (#7402) are the same
+ * `build push`'s false `17` and `ui evidence`'s false `LANE_NOT_MINE` are the same
  * bug found twice. The fallback keeps a fresh lane, whose branch carries no upstream until its first
  * push, answering its own name.
  */
@@ -344,7 +410,7 @@ export const remoteSha = (remote: string, ref: string): Shell<Attempt<string | n
  * Make `sha` readable from this object database, fetching `<remote>/<ref>` once if it is not, and
  * answer whether it now is.
  *
- * {@link isAncestor} needs both commits present locally, and a repair lane's published head can be a
+ * `isAncestor` (`../io/git.ts`) needs both commits present locally, and a repair lane's published head can be a
  * commit this clone has never held. A missing object is UNKNOWN — never "not an ancestor" — so this
  * answers presence and leaves the conclusion to the caller.
  */
@@ -386,13 +452,6 @@ export const commitsDropped = (
 		return {lines: lines.slice(0, DROPPED_SHOWN), truncated: lines.length > DROPPED_SHOWN};
 	});
 
-/** Whether `ancestor` is reachable from `descendant` — the fast-forward test. */
-export const isAncestor = (ancestor: string, descendant: string): Shell<boolean> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["merge-base", "--is-ancestor", ancestor, descendant]);
-		return r.ok;
-	});
-
 export const push = (remote: string, ref: string, force: boolean): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("git", [
@@ -419,7 +478,7 @@ export const stagedPaths: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(fun
  */
 const COMMIT_FLAGS = ["commit", "--cleanup=verbatim"];
 
-/** Create a commit from a message on git's own stdin — the file-free carrying path (#5484). */
+/** Create a commit from a message on git's own stdin — the file-free carrying path. */
 export const commitFromStdin = (message: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
 		const r = yield* execCaptureInput("git", [...COMMIT_FLAGS, "-F", "-"], message);
@@ -437,9 +496,9 @@ export const commitFromFile = (path: string): Shell<Attempt<void>> =>
  * The message git actually recorded on a commit — the independent witness `build commit` turns on.
  *
  * `%B` is the raw body, so what comes back is what a reviewer will read in the merge record. The
- * whole point of asking git rather than trusting the invocation is #5484: the message reaching the
- * commit and the message the lane authored were different, every command exited 0, and nothing but
- * a read-back could tell.
+ * whole point of asking git rather than trusting the invocation: the message reaching the commit
+ * and the message the lane authored were different, every command exited 0, and nothing but a
+ * read-back could tell.
  */
 export const commitMessage = (sha: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
@@ -448,13 +507,7 @@ export const commitMessage = (sha: string): Shell<Attempt<string>> =>
 	});
 
 /** The merge base of HEAD and `base` — where this lane's diff starts. */
-export const mergeBase = (base: string): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["merge-base", "HEAD", base]);
-		if (!r.ok) return fail(r.reason);
-		const sha = r.stdout.trim();
-		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base with ${base}`);
-	});
+export const mergeBase = (base: string): Shell<Attempt<string>> => mergeBaseOf("HEAD", base);
 
 /**
  * Which of `paths` the commit `rev` actually holds — the roster that tells a file this diff *created*
@@ -529,7 +582,7 @@ const pathLines = (stdout: string): ReadonlyArray<string> =>
  * path that does not resolve against `lane.root`. The pathspec restores repo-wide, the flag
  * restores root-relative.
  *
- * The second source is the scar (#5823). `git diff` never reports an untracked path, so a
+ * The second source is the scar. `git diff` never reports an untracked path, so a
  * brand-new file was absent from the list `build check` partitions — neither validated nor named in
  * `unvalidated`, invisible instead of disclosed, while the verdict read green. The natural lane
  * order is construct, check, then commit, which is exactly the window where a new file is untracked.

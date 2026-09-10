@@ -1,6 +1,6 @@
 import {type Cmd, defineMachine} from "@demlik/tea";
+import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
 import {DuplicateProgramId, ProgramNotFound} from "./errors.ts";
 import {type AnyProgram, type Program, ProgramId, provenanceOf} from "./program.ts";
 import {Registry} from "./Registry.ts";
@@ -33,46 +33,51 @@ const row = (id: string, version = "1.0.0"): AnyProgram =>
 const withRegistry = <A, E>(
 	rows: ReadonlyArray<AnyProgram>,
 	body: (registry: Registry["Service"]) => Effect.Effect<A, E>,
-) => Effect.runPromise(Effect.flatMap(Registry, body).pipe(Effect.provide(Registry.layer(rows))));
+) => Effect.flatMap(Registry, body).pipe(Effect.provide(Registry.layer(rows)));
 
 describe("Registry", () => {
-	it("registers two distinct programs and resolves both", async () => {
-		const [a, b] = [row("a"), row("b")];
-		const resolved = await withRegistry([a, b], (registry) =>
-			Effect.all(
-				[
-					registry.resolve(ProgramId.make("a")),
-					registry.resolve(ProgramId.make("b")),
-					registry.list,
-				],
-				{concurrency: "unbounded"},
-			),
-		);
-		expect(resolved).toEqual([a, b, [a, b]]);
-	});
+	it.effect("registers two distinct programs and resolves both", () =>
+		Effect.gen(function* () {
+			const [a, b] = [row("a"), row("b")];
+			const resolved = yield* withRegistry([a, b], (registry) =>
+				Effect.all(
+					[
+						registry.resolve(ProgramId.make("a")),
+						registry.resolve(ProgramId.make("b")),
+						registry.list,
+					],
+					{concurrency: "unbounded"},
+				),
+			);
+			assert.deepStrictEqual(resolved, [a, b, [a, b]]);
+		}),
+	);
 
-	it("refuses a duplicate id at registration, naming the id and both rows' provenance", async () => {
-		const [first, second] = [row("a", "1.0.0"), row("a", "2.0.0")];
-		const error = await Effect.runPromise(
-			Effect.flip(Effect.provide(Effect.succeed(undefined), Registry.layer([first, second]))),
-		);
-		expect(error).toBeInstanceOf(DuplicateProgramId);
-		expect(error).toMatchObject({
-			id: "a",
-			first: provenanceOf(first),
-			second: provenanceOf(second),
-		});
-		expect(error.message).toBe(
-			'program id "a" is already registered by @kampus/tuval/a@1.0.0 (sha256:a-1.0.0); refusing @kampus/tuval/a@2.0.0 (sha256:a-2.0.0)',
-		);
-	});
+	it.effect("refuses a duplicate id at registration, naming the id and both rows' provenance", () =>
+		Effect.gen(function* () {
+			const [first, second] = [row("a", "1.0.0"), row("a", "2.0.0")];
+			const error = yield* Effect.flip(
+				Effect.provide(Effect.succeed(undefined), Registry.layer([first, second])),
+			);
+			assert.instanceOf(error, DuplicateProgramId);
+			assert.strictEqual(error.id, "a");
+			assert.deepStrictEqual(error.first, provenanceOf(first));
+			assert.deepStrictEqual(error.second, provenanceOf(second));
+			assert.strictEqual(
+				error.message,
+				'program id "a" is already registered by @kampus/tuval/a@1.0.0 (sha256:a-1.0.0); refusing @kampus/tuval/a@2.0.0 (sha256:a-2.0.0)',
+			);
+		}),
+	);
 
-	it("fails an unknown id with a typed error, never undefined", async () => {
-		const error = await withRegistry([row("a")], (registry) =>
-			Effect.flip(registry.resolve(ProgramId.make("missing"))),
-		);
-		expect(error).toBeInstanceOf(ProgramNotFound);
-		expect(error.id).toBe("missing");
-		expect(error.message).toBe('no program is registered under id "missing"');
-	});
+	it.effect("fails an unknown id with a typed error, never undefined", () =>
+		Effect.gen(function* () {
+			const error = yield* withRegistry([row("a")], (registry) =>
+				Effect.flip(registry.resolve(ProgramId.make("missing"))),
+			);
+			assert.instanceOf(error, ProgramNotFound);
+			assert.strictEqual(error.id, "missing");
+			assert.strictEqual(error.message, 'no program is registered under id "missing"');
+		}),
+	);
 });

@@ -81,7 +81,7 @@ const classifiable = (board: Scripted): ReadonlyArray<Scripted> => [
 	board,
 	[RATE_LIMIT, rateLimit(4000)],
 	[PULL, reply(pull({updatedAt: PUSHED}))],
-	[FILES, reply(files("apps/web/worker/a.ts", "apps/web/worker/b.ts"))],
+	[FILES, reply(files("apps/site/worker/a.ts", "apps/site/worker/b.ts"))],
 	[
 		CHECK_RUNS,
 		reply(checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "success"}])),
@@ -114,7 +114,7 @@ describe("runSweep reports the whole board or none of it", () => {
 	});
 
 	// The scheduled workflow relays this column into the note's first line, so an absent or
-	// hardcoded lane is a note telling every reader the detector found nothing to do (#7209).
+	// hardcoded lane is a note telling every reader the detector found nothing to do.
 	it("carries the class's arrow as the row's sixth column, never a fixed word", async () => {
 		const out = await run(classifiable([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]), {
 			json: true,

@@ -10,24 +10,35 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
+import type {AgentEvent} from "../events.ts";
+import type {ModelRef, TurnResult} from "../ports/index.ts";
 import {
 	cutShort,
 	disconnects,
 	disconnectTurn,
+	emptySession,
 	history,
 	interruptEvents,
+	interruptedPrompt,
 	interruptedPromptTurn,
 	interruptedTurn,
+	listRefused,
+	listsSessions,
 	mode,
+	models,
 	modes,
 	PERMISSION_REQUEST,
 	permissionRequest,
 	permissionTurn,
 	plainReply,
+	plainReplyPrompt,
+	plainReplyText,
 	plainReplyTurn,
 	runningTool,
 	SESSION_ID,
+	sessions,
 	settledTool,
+	thinking,
 	toolCall,
 	toolCallTurn,
 	usageEvent,
@@ -40,8 +51,11 @@ import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 const CWD = "/workspace/phoenix";
 
-/** The three events `start` emits before any turn: starting, the mode list, ready. */
-const START_EVENTS = 3;
+/**
+ * What `start` emits before any turn: starting, the mode, model and command lists, the thinking
+ * level set (#8062), ready.
+ */
+const START_EVENTS = 6;
 
 const on = <A, E>(
 	script: AgentScript,
@@ -52,11 +66,21 @@ const on = <A, E>(
 		return yield* body(agent);
 	}).pipe(Effect.provide(ScriptedAiAgent.layer(script)), Effect.scoped);
 
-/** The events a turn queued, with `start`'s three dropped. */
+/** The events a turn queued, with `start`'s own dropped. */
 const afterStart = (agent: TuvalAiAgentApi, count: number) =>
 	Effect.map(Stream.runCollect(Stream.take(agent.events, START_EVENTS + count)), (events) =>
 		events.slice(START_EVENTS),
 	);
+
+/**
+ * A turn as the layer publishes it: the script's own events, with the per-turn `result` the layer
+ * owes ahead of the phase that closes the turn (#8724). The script narrates the turn and the result
+ * is derived from it, so a layer that stopped wrapping its stream reds on every case below.
+ */
+const replayed = (
+	turn: ReadonlyArray<AgentEvent>,
+	result: TurnResult,
+): ReadonlyArray<AgentEvent> => [...turn.slice(0, -1), {kind: "result", result}, ...turn.slice(-1)];
 
 const take = (agent: TuvalAiAgentApi, count: number) =>
 	Stream.runCollect(Stream.take(agent.events, count));
@@ -71,7 +95,7 @@ const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?:
 		: {};
 
 describe("start", () => {
-	it.effect("returns the script's session id and announces the mode list", () =>
+	it.effect("returns the script's session id and announces every list it offers", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
 				const session = yield* agent.start({cwd: CWD});
@@ -79,6 +103,9 @@ describe("start", () => {
 				assert.deepStrictEqual(yield* take(agent, START_EVENTS), [
 					{kind: "phase", phase: "starting"},
 					{kind: "mode", current: modes.current, available: modes.available},
+					{kind: "model", current: models.current, available: models.available},
+					{kind: "commands", available: []},
+					{kind: "thinking", current: thinking.current, available: thinking.available},
 					{kind: "phase", phase: "ready"},
 				]);
 			}),
@@ -88,7 +115,7 @@ describe("start", () => {
 	it.effect("replays the prior items when it resumes the session", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
 				const events = yield* take(agent, START_EVENTS + history.length);
 				const replayed = events.filter((event) => event.kind === "item").map(({item}) => item);
 				assert.deepStrictEqual(replayed, [...history]);
@@ -99,11 +126,82 @@ describe("start", () => {
 	it.effect("fails session-not-found when the resumed id is not this session's", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
-				const exit = yield* Effect.exit(agent.start({cwd: CWD, resume: "session-someone-else"}));
+				const exit = yield* Effect.exit(
+					agent.start({
+						cwd: CWD,
+						resume: {sessionId: "session-someone-else", holdsTranscript: false},
+					}),
+				);
 				const error = causeError(exit);
 				assert.strictEqual(error._tag, "tuval/ai-agent/StartError");
 				assert.strictEqual(error.reason, "session-not-found");
 			}),
+		),
+	);
+
+	// The other half of that failure: a session the desk never started and that holds nothing
+	// resumes, replaying no items. So silence on a resume says "this session is empty" and only a
+	// miss says "this session is gone" — the two readings a session list cannot afford to share.
+	it.effect("resumes a session that is genuinely empty, replaying nothing", () =>
+		on(emptySession, (agent) =>
+			Effect.gen(function* () {
+				const session = yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION_ID, holdsTranscript: false},
+				});
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				const events = yield* take(agent, START_EVENTS);
+				assert.deepStrictEqual(
+					events.filter((event) => event.kind === "item"),
+					[],
+				);
+			}),
+		),
+	);
+});
+
+describe("listSessions", () => {
+	it.effect("answers the script's store newest first", () =>
+		on(listsSessions, (agent) =>
+			Effect.gen(function* () {
+				const listed = yield* agent.listSessions;
+				assert.deepStrictEqual(
+					listed.map((session) => session.sessionId),
+					["session-claude", "session-pi"],
+				);
+			}),
+		),
+	);
+
+	it.effect("leaves what a backend could not supply absent rather than zero-filled", () =>
+		on(listsSessions, (agent) =>
+			Effect.gen(function* () {
+				const listed = yield* agent.listSessions;
+				assert.deepStrictEqual([...listed], [sessions[1], sessions[0]]);
+				const [claude, pi] = listed;
+				// Claude's listing counts no messages and Pi's knows no branch; Pi's `cwd` for an old
+				// session is the empty string, which is not a folder named "".
+				assert.strictEqual(claude?.messageCount, undefined);
+				assert.strictEqual(pi?.branch, undefined);
+				assert.strictEqual(pi?.folder, undefined);
+				assert.strictEqual(pi?.messageCount, 12);
+			}),
+		),
+	);
+
+	it.effect("fails rather than answering an empty list when the store cannot be read", () =>
+		on(listRefused, (agent) =>
+			Effect.gen(function* () {
+				const error = causeError(yield* Effect.exit(agent.listSessions));
+				assert.strictEqual(error._tag, "tuval/ai-agent/ListError");
+				assert.strictEqual(error.reason, "store-unreadable");
+			}),
+		),
+	);
+
+	it.effect("answers with no session started, because the store is not the session", () =>
+		on(plainReply, (agent) =>
+			Effect.map(agent.listSessions, (listed) => assert.deepStrictEqual([...listed], [])),
 		),
 	);
 });
@@ -114,9 +212,14 @@ describe("prompt", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				yield* agent.prompt("hello");
-				assert.deepStrictEqual(yield* afterStart(agent, plainReplyTurn.length), [
-					...plainReplyTurn,
-				]);
+				assert.deepStrictEqual(
+					yield* afterStart(agent, plainReplyTurn.length + 1),
+					replayed(plainReplyTurn, {
+						text: "hi back",
+						items: [plainReplyPrompt, plainReplyText],
+						ok: true,
+					}),
+				);
 			}),
 		),
 	);
@@ -129,8 +232,12 @@ describe("prompt", () => {
 				yield* agent.prompt("hello", "key-1");
 				yield* agent.setMode(mode("plan"));
 				// The mode event lands right after the one turn: the repeat queued nothing at all.
-				assert.deepStrictEqual(yield* afterStart(agent, plainReplyTurn.length + 1), [
-					...plainReplyTurn,
+				assert.deepStrictEqual(yield* afterStart(agent, plainReplyTurn.length + 2), [
+					...replayed(plainReplyTurn, {
+						text: "hi back",
+						items: [plainReplyPrompt, plainReplyText],
+						ok: true,
+					}),
 					{kind: "mode", current: mode("plan"), available: modes.available},
 				]);
 			}),
@@ -154,7 +261,13 @@ describe("a tool call", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				yield* agent.prompt("read the readme");
-				assert.deepStrictEqual(yield* afterStart(agent, toolCallTurn.length), [...toolCallTurn]);
+				// One item in the result, not two: the settled send supersedes the running one under
+				// its id, and the turn drew no assistant row, so its text is empty rather than a
+				// tool's name.
+				assert.deepStrictEqual(
+					yield* afterStart(agent, toolCallTurn.length + 1),
+					replayed(toolCallTurn, {text: "", items: [settledTool], ok: true}),
+				);
 				assert.strictEqual(runningTool.id, settledTool.id);
 				assert.strictEqual(runningTool.status, "running");
 				assert.strictEqual(settledTool.status, "ok");
@@ -208,6 +321,114 @@ describe("modes", () => {
 	);
 });
 
+describe("models", () => {
+	const sonnet = models.available[1];
+
+	it.effect("echoes a supported model and refuses one it does not offer", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel(sonnet as ModelRef);
+				assert.deepStrictEqual(yield* afterStart(agent, 1), [
+					{kind: "model", current: sonnet, available: models.available},
+				]);
+				const error = causeError(
+					yield* Effect.exit(agent.setModel({provider: "openai", id: "gpt", name: "GPT"})),
+				);
+				assert.strictEqual(error._tag, "tuval/ai-agent/ModelUnsupported");
+			}),
+		),
+	);
+
+	it.effect("runs the rest of the session on the model it switched to", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel(sonnet as ModelRef);
+				yield* take(agent, START_EVENTS + 1);
+				// A resumed start re-announces what the session is on, which is the picked model and
+				// not the script's opening one — the switch outlives the turn it was made between.
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
+				const resumed = yield* take(agent, START_EVENTS + history.length);
+				assert.deepStrictEqual(resumed.at(-4), {
+					kind: "model",
+					current: sonnet,
+					available: models.available,
+				});
+			}),
+		),
+	);
+});
+
+describe("commands", () => {
+	const compact = {name: "compact", description: "Summarise the conversation."};
+	const review = {name: "skill:review", description: "Review it."};
+	const offering: AgentScript = {...plainReply, commands: [compact, review]};
+
+	it.effect("announces the script's catalog at start and answers the read with it", () =>
+		on(offering, (agent) =>
+			Effect.gen(function* () {
+				assert.deepStrictEqual(yield* agent.commands, []);
+				yield* agent.start({cwd: CWD});
+				const events = yield* take(agent, START_EVENTS);
+				assert.deepStrictEqual(events.at(-3), {kind: "commands", available: [compact, review]});
+				assert.deepStrictEqual(yield* agent.commands, [compact, review]);
+			}),
+		),
+	);
+
+	it.effect("replaces the catalog a later event carries rather than merging into it", () =>
+		on(
+			{
+				...offering,
+				turns: [{events: [{kind: "commands", available: [review]}]}],
+			},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					yield* agent.prompt("re-read the skills");
+					yield* afterStart(agent, 1);
+					assert.deepStrictEqual(yield* agent.commands, [review]);
+				}),
+		),
+	);
+});
+
+describe("thinking levels", () => {
+	it.effect("echoes a level it offers and refuses one outside the set", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("xhigh");
+				assert.deepStrictEqual(yield* afterStart(agent, 1), [
+					{kind: "thinking", current: "xhigh", available: thinking.available},
+				]);
+				// `minimal` is in the vocabulary and outside this script's offered set, which is the
+				// founder's per-backend ruling: what a backend does not support is not a row (#8062).
+				const error = causeError(yield* Effect.exit(agent.setThinkingLevel("minimal")));
+				assert.strictEqual(error._tag, "tuval/ai-agent/ThinkingUnsupported");
+			}),
+		),
+	);
+
+	it.effect("runs the rest of the session on the level it switched to", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("max");
+				yield* take(agent, START_EVENTS + 1);
+				yield* agent.start({cwd: CWD, resume: {sessionId: SESSION_ID, holdsTranscript: false}});
+				const resumed = yield* take(agent, START_EVENTS + history.length);
+				assert.deepStrictEqual(resumed.at(-2), {
+					kind: "thinking",
+					current: "max",
+					available: thinking.available,
+				});
+			}),
+		),
+	);
+});
+
 describe("usage", () => {
 	it.effect("reports the model, its token counts and its cost on the one stream", () =>
 		on(usageReport, (agent) =>
@@ -234,9 +455,18 @@ describe("interrupt", () => {
 				yield* agent.interrupt;
 				const events = yield* afterStart(
 					agent,
-					interruptedPromptTurn.length + interruptEvents.length,
+					interruptedPromptTurn.length + interruptEvents.length + 1,
 				);
-				assert.deepStrictEqual(events, [...interruptedPromptTurn, ...interruptEvents]);
+				// The cut turn still owes its one result, `ok: false` off the row the backend marked
+				// — a consumer told nothing here waits for an answer that already ended.
+				assert.deepStrictEqual(
+					events,
+					replayed([...interruptedPromptTurn, ...interruptEvents], {
+						text: cutShort.kind === "assistant" ? cutShort.text : "",
+						items: [interruptedPrompt, cutShort],
+						ok: false,
+					}),
+				);
 				assert.strictEqual(cutShort.kind === "assistant" && cutShort.interrupted, true);
 			}),
 		),

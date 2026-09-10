@@ -4,9 +4,9 @@
  *
  * Four outcomes, and the first two must never collapse: an **unread** pipe is UNKNOWN and seats on
  * `1`, a **read-but-empty** one is a proven `3`. Swallowing the first into the second makes an unread
- * pipe byte-identical to an empty one, and the caller then decides over evidence it never saw (#3924).
+ * pipe byte-identical to an empty one, and the caller then decides over evidence it never saw.
  * A body that IS a path is `6` rather than `5` because the fixes are opposite: the loop on a leak is
- * *rewrite and resend*, and on a body that is a path that loop never terminates (#3086).
+ * *rewrite and resend*, and on a body that is a path that loop never terminates.
  *
  * **The predicates are the shipped `report/leaks.ts` ones, imported** — a second leak predicate that
  * drifts from the first is worse than either alone. Only the message wording is this group's.

@@ -1,7 +1,7 @@
 ---
 id: 0332
 title: fabrika for pi ships as the npm package @kampus/fabrika-pi — release-time bundled, pinned
-status: accepted
+status: amended-in-part by [0360](0360-retire-opencode-harness.md)
 date: 2026-08-21
 tags: [fabrika, pi, packaging, distribution, publishing]
 ---

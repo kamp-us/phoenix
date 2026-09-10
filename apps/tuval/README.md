@@ -19,24 +19,102 @@ Tuval lives under `apps/` because a person runs it, not because Cloudflare hosts
 ```bash
 pnpm install          # from the repo root, once
 cd apps/tuval
-pnpm dev              # boots the two demo programs; Ctrl-C stops and checkpoints them
+pnpm dev              # boots the shell + the two demo programs, serves the desk; Ctrl-C stops and checkpoints
 pnpm test             # both tiers (vitest)
 pnpm test:unit        # the unit tier
 pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
+pnpm proof:board      # the process board in a real browser, on fixture rows — see "Paint proofs"
+pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
+pnpm proof:picker     # the window picker, open and filtering, in a real browser — see "Paint proofs"
+pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
+pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
 ```
 
+### Paint proofs
+
+`pnpm proof:pi-window` also serves `/inspector.html`: the production agent inspector over an
+in-memory process. `window.inspectorProof.update(cost, input, output)` commits a usage snapshot
+through its normal subscription, so a browser can compare repeated digit substitutions and
+digit-count growth at a narrow viewport. The fixture opens no backend or model. Cost and token
+rows use tabular figures; session/directory text keeps its wrapping and ordinary typography.
+Equal digit advances stabilize same-length substitutions, not the total width of a growing number
+or a currency value whose existing formatter changes its fraction length.
+
+Both test tiers run in jsdom, which has no layout: a claim about what the chat window *paints* —
+a diff column's width, a disclosure indicator's size, whether a portaled listbox resolves its
+tokens — cannot be made there, and a report of a browser run whose harness was thrown away cannot
+be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
+`src/shell/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
+tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
+kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
+when the default is taken.
+
+`pnpm proof:board` serves `src/shell/board/proof/`: the process board over five fixture rows —
+an agent with both generic ports, its child, a grandchild that publishes neither, a demo counter
+and a stopping shell — nested three deep, so the tile rhythm, the nesting and where a long status
+line wraps are visible somewhere a jsdom test cannot look. It is the page the design gate captures
+as the `tuval-board` surface. The rows are a still life: a board that spawned a process on a timer
+would capture differently on every run, and what the entry animation *does* is the unit tier's.
+
+`pnpm proof:picker` serves `src/shell/picker/proof/`: two empty windows through the real
+`WindowView`, one holding the picker as `<c-b> w` leaves it and one holding the same picker with
+`co` already in its `/` filter, so both sections are narrowed and the match count is on the page.
+It is the page the design gate captures as the `tuval-picker` surface, and it exists because the
+picker is two gestures deep on the real desk while `fabrika ui render` drives a bare route — without
+it the gate cannot reach the state it is asked to judge (#8450). No kernel, no registry, no socket:
+the entries are literals, and what the keys *do* is the unit tier's.
+
+The same server's `/session-refusal` fixture mounts the production read-only transcript with a
+missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep
+Back usable and omit the composer. The refused read's existing retry lands an empty readable
+transcript, which offers the composer again. The fixture supplies answers locally; it opens no
+kernel or agent. Session-open and page transcript tests cover send plans and socket-read recovery.
+
+The same harness has four paging routes: `/paging-local`, `/paging-partial`, `/paging-completed`
+and `/paging-prepended`. Each scrolls the real `ChatWindow` with shipped styles. The last route
+checks that a prepend retains the **same DOM row** for the oldest local echo, aligns it to the
+transcript's top border, and leaves the other window's history cursor untouched. It does not assert
+an unchanged pixel offset: the initial “Load earlier messages” row disappears. Twenty labelled,
+layout-only local echoes supply scroll height without supplying an eligible history cursor.
+
+These routes call the Node-side [paging replay](src/claude/proof/paging-replay.ts): real
+`ClaudeAiAgent` over the existing captured `streaming-turn` events, a scripted SDK/store and
+`KernelBridge.scripted`. It pauses after the first text delta, checks that both local and partial
+cursors cause zero store reads, then adds completed assistant frames and pages through the live
+message id's stored alias. The captured assistant frames are re-enveloped as stored rows, as in
+the existing turn regression; this is not a live JSONL read. The browser receives that completed
+replay as JSON and supplies its page through a scripted `WindowHost` with `Delivered.view`.
+There is no kernel, transport, Claude CLI, login or provider spend in this proof. Shared-handler
+and real Pi integration coverage remain separate.
+
+`window.pagingProof` exposes the run time, read counts, dispatched cursor and DOM-anchor result for
+builder inspection. A bounded open request keeps the declared capture's network-idle wait behind
+the DOM assertions; a failed assertion raises a page error, never a success-shaped screenshot.
+The four routes are first-render proof scenarios, not new product routes.
+
+The same server's `/effort.html` is the fresh-Claude effort proof: its Node endpoint runs the
+real `ClaudeAiAgent` and core fold against the scripted SDK catalog/context response, then hands
+the emitted initial-open state to the actual `ChatWindow` through an in-memory window host.
+No model is configured, the active row is not first, and no prompt or selection precedes the
+render. `/effort-offered.html` also opens the actual effort menu without selecting an item.
+`/initial-effort.json` exposes the run timestamp, duration, events and recorded control calls.
+This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
+or model execution; the in-memory host records UI dispatches without executing them.
+
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
-Node strips the TypeScript itself, so there is no build step. Boot loads your config layers (see
-"Your config"), registers their programs, launches the processes the graph plans, restores any
-other checkpointed process from the project's `.tuval/`, prints the process table, and stays up
-until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config
-that plans no process exits right after the report.
+Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
+(see "Your config"), registers their programs, launches the processes the graph plans, restores any
+other checkpointed process from the project's `.tuval/`, prints the process table, binds the page
+socket, serves the desk, and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints
+every process and exits 0; a config that plans no process exits right after the report.
 
 ```
 tuval [flags]
   --config file          Global config module (default: ~/.tuval/tuval.config.ts)
   --project directory    Project dir whose .tuval/ holds the project config and state (default: cwd)
+  --no-page              Boot the kernel and the socket, but serve no page
+  --page-port integer    Port for the page (default: a free one)
   --help, --version
 ```
 
@@ -45,16 +123,31 @@ refusals; `--project <dir>` runs against another project's `.tuval/`. A path nam
 must exist.
 
 ```
-tuval: booted — 2 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 2 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
+tuval: transport on 127.0.0.1:58319
+tuval: desk at http://localhost:5173/ — 127.0.0.1 and [::1]
 tuval: running — Ctrl-C stops and checkpoints
 count 1
 count 2
 ```
 
-The two programs in the box are the demo counter and log (`src/demo/`, #7517): the counter ticks
-once a second and announces each count on its `ticks` out-port, the log records what arrives on
+Those are two ports on purpose — the socket and the page bind separately — and the transport admits
+the page's origin as it starts, so the browser's attach goes through (#7560). The desk answers
+`localhost` on both loopback addresses, so it cannot be shadowed by another program holding the same
+port on the family it did not bind; a `--page-port` either family has taken refuses the start and
+names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-both-loopback-families.md)).
+
+Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
+walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
+zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
+`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
+program. With the prefix unarmed every key belongs to the focused window's process.
+
+Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
+ticks once a second and announces each count on its `ticks` out-port, the log records what arrives on
 its `ticks` in-port and prints it. They are boring on purpose — they exist to prove the kernel
 routes, checkpoints and restores, not to anticipate the real programs — and they are ordinary
 rows registered by the config like any other. Stop and run again: both come back at their saved
@@ -84,11 +177,17 @@ programs and runs nothing.
 import {Console} from "effect";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
+import {ProcessId} from "../src/process/process.ts";
+import {wiredShellEffects} from "../src/shell/host/index.ts";
+import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
 export default {
 	version: 1,
-	programs: demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
-	graph: demoGraph,
+	programs: [
+		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
+		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
+	],
+	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
 } satisfies TuvalConfigInput;
 ```
 
@@ -110,6 +209,21 @@ result, and the Effect that runs it — so the same definition is what the comma
 against, what a key binding compiles to, and what a program calls over the wire. The kernel
 registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
 `process send`, `process read`), and boot reports the total beside the program count.
+
+Open the palette with Cmd+K or Ctrl+K to discover registered program and core commands alongside
+shell shortcuts such as `window close`. Tab completes a selection; Enter runs it through the
+attached kernel. Success closes the palette and a refusal stays beneath its input. Escape closes
+it and returns focus. The `<c-b> :` command line also runs registered paths and keeps their actual
+result or refusal visible. Existing shell names such as `window:open log` retain their behavior.
+
+Use the program's registered prefix when asking for help: `help shell window close`,
+`help "shell window close"` and `help shell.window.close` describe the same command.
+`spell describe` accepts those three path forms too. Discovery follows committed catalogue
+replacements and reconnection without reloading the page.
+
+The ordinary-program browser proof runs with `pnpm test:browser commands.spec.ts` from this
+package. Its deterministic counter has proof-only tick/read/refuse commands; it verifies real
+state changes through both surfaces and captures results, refusals and help descriptions.
 
 A program row declares its own in a `spells` field, and each one is registered under the program's
 id, so `echo`'s `repeat` is `echo repeat` and no program can collide with another or with the
@@ -161,9 +275,17 @@ they keep going under the rows they were spawned from.
 
 `src/host/` runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
 yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
-definition is `defineActor({machine, interpret, subscribe, store?})` — the machine is Demlik's pure
-core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
-Effect-valued, and their error and service requirements fall out onto the handle.
+definition is `defineActor({name, machine, interpret, subscribe, store?})` — the machine is Demlik's
+pure core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
+Effect-valued, and their error and service requirements fall out onto the handle. The `name` is the
+definition's nominal identity, unique per process; the instance id is the process's, minted at spawn.
+
+A Sub that fails is the machine's Msg or the process's death, never a host retry (ADR 0346). The
+machine declares `subFailure(sub, failure)` beside `identity` and gets the failure as plain data —
+`id`, `type`, `reason`, `message`, nothing Effect-shaped. Returning a Msg dispatches it as an
+ordinary follow-up; returning `undefined`, or declaring nothing, closes the process's Scope with
+the failure as its Exit. Either way the Sub's id is marked `failed` and reconcile never re-arms it:
+a restart is a new id from the reducer, so it replays.
 
 It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
 speaks Demlik 0.12's Promise and disposer shapes live in `src/host/demlik-bridges.ts`, which is the
@@ -282,6 +404,318 @@ route refuses here, with nothing spawned and nothing written), open the wiring, 
 launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
 config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
 
+## Shell: the layout tree
+
+`src/shell/layout/` is the pure window layout — the tmux half of the shell, ported by hand from
+Studio's `monorepo/packages/layout-tree/src/index.ts` after the invariant audit #7551 asked for.
+Nodes are windows and stacks with stable ids, addressed by id and never by position; a window holds
+an optional process id and nothing else, so an empty window is an ordinary node. Nothing here
+imports React, Demlik or Effect, so every operation is a plain function on immutable data.
+
+```ts
+let tree = createTree(createStack("root", "horizontal", [createWindow("w0")]));
+tree = split(tree, "w0", "vertical", {window: "w1", stack: "s1"}); // w1 takes half of w0's share
+tree = resize(tree, "root", {w0: 30, w1: 70});                     // percent, never pixels
+findSibling(tree, "w0", "down")?.id;                               // "w1"
+checkTree(tree);                                                   // [] — every invariant holds
+```
+
+`"horizontal"` means the children sit side by side; Studio inverts that at its render boundary and
+this port does not (see `.glossary/LANGUAGE.md` §"Tuval: stack, orientation, size, zoom"). A split
+of a single-child stack flips that stack instead of nesting a new one; `remove` collapses an emptied
+stack into its grandparent, replaces a stack left holding one child with that child, and hands the
+freed share to the sibling the window sat against, which makes it the exact inverse of the split
+that created the window. Removing the tree's last window is refused — what closing the last window
+means is the shell's call, not the tree's. `checkTree` states the invariants as data, so the
+persistence boundary can reject a restored tree instead of rendering a broken one.
+
+## Shell: the core machine
+
+`src/shell/core/` is the shell's private Demlik core — one `defineMachine`, and the one place the
+desk is written. State is workspaces keyed by id beside an `activeWorkspace` (Studio's shape, from
+`monorepo/packages/studio/studio.ts`), each workspace a layout tree and the window focus sits in,
+plus a view slot per window and the prefix. All of it is JSON, because the kernel checkpoints it
+like any other process's state; the type-level proof is in `boundary.unit.test.ts`.
+
+```ts
+const [state, cmds] = applyMsg(defaultPrefixTable, initialState(), {
+	type: "keys.press",
+	key: {key: "b", ctrlKey: true},   // the prefix arms, untimed: cmds is []
+});
+applyMsg(defaultPrefixTable, state, {type: "keys.press", key: {key: "|"}}); // splits, side by side
+```
+
+Two shapes are worth knowing. **A bound key runs its command's Msg in the same transition** — one
+press is one commit and one checkpoint — and a name the core does not own (`command:open`,
+`config:reload`, one of yours) leaves as a `runCommand` Cmd for the command rows instead. **An armed
+prefix waits indefinitely, as tmux does** (#7842): nothing times it, there is no field to configure
+one, and it drops on a completed sequence, an unbound key (Escape is one), or a lapsed repeat
+window. **That repeat window's timer is the host's, and there is exactly one**: after a
+`repeatable: true` binding the core says when the window opens (`startRepeatTimer`, carrying its
+length in ms) and when it closes (`cancelRepeatTimer`), and the host feeds `prefix.repeatLapsed`
+back when it fires.
+
+Two refusals and one absence carry the model. The last window of a workspace does not close and the
+last workspace is not removed, for the same reason: a desk with nothing on it has no layout to
+render and no focus to hold. And there is no Cmd arm that stops a process, so closing the last
+window showing one cannot end it — a window is a view onto a process, not a container for it.
+
+## Shell: the program picker
+
+`src/shell/picker/` is what an empty window shows: the programs it can spawn, and the processes it
+can attach to. It replaces Studio's `scratch` window (`monorepo/packages/studio/studio.ts`), which
+was one hard-coded widget name every new pane opened onto.
+
+```ts
+const entries = yield* readEntries;                      // registry rows + live process rows
+const frame = pickerFrame(windowId, entries, mountPicker());
+const answer = pickerKey(windowId, entries, view, "<arrowdown>");
+const msgs = yield* runPickerIntent(openProgram(windowId, programId), {shellProcessId});
+// [{type: "window.bind", windowId, processId}] — one spawn, under the shell process
+```
+
+**Both lists are read fresh every mount** and the picker stores nothing: what it remembers is the
+window's own view slot (a cursor and at most one refusal), so a second mount after a registry
+change shows the second registry. **A program with no renderer never appears** — the founder's
+ruling makes the renderer optional and a row without one headless: it runs and exposes ports and
+cannot fill a window, so offering it would offer a choice that resolves to a blank pane.
+
+**One handler ends both routes.** A chosen row and a command line both produce a `PickerIntent`,
+and `runPickerIntent` is where each lands: `window:open <program>` spawns one process under the
+shell process and dispatches `window.bind`; `window:attach <process-id>` binds a process already
+running and spawns nothing, which is the door to one process in many windows. The two command rows
+are declared here as `pickerCommands` and folded into the table by `src/shell/commands/`.
+
+**Every refusal is a value in the window.** An unknown program id, a headless program, a process
+that no longer resolves, a spawn that failed, an unreadable command line — each is a `PickerRefusal`
+written to the view slot through `window.setView`, so the picker stays mounted and announces it.
+Nothing here throws and nothing here fails an Effect.
+
+`pickerFrame` is the render, as data: an ARIA listbox of two named groups, an accessible name on
+every option, the active option named for `aria-activedescendant`, and the refusal on an assertive
+live region. Movement answers the arrow keys and their vim and readline spellings (`j`/`k`,
+`<c-n>`/`<c-p>`, Tab), clamps at both ends rather than wrapping, and Home/End jump. The frame names
+colour by role token only, states `dark`, and reports `motion: "none"` unless the surface says
+`prefers-reduced-motion` is off — selection is carried by a character marker beside the colour, so
+no state is signalled by colour or by motion alone.
+
+## Shell: the page-to-kernel transport
+
+`src/shell/transport/` is the one WebSocket a page attaches over — the tmux server/client split, with
+the kernel and every process staying in Node and the page a view of them. The server accepts one
+socket per page, streams the process-table port to it, and streams the public state of each process
+that socket attaches to; the page side's `attach(url)` hands back exactly the `readProcess` and
+`dispatch` the window contract needs, plus `readShell`.
+
+```ts
+const server = yield* serve({token: mintLaunchToken(), port: 0, handles});
+console.log(server.launchUrl); // ws://127.0.0.1:<port>/?token=… — print this once
+
+const page = yield* attach(server.launchUrl);
+const shell = yield* page.attachProcess(shellProcessId);
+yield* shell.dispatch({type: "split", window: "w1"});
+```
+
+Two rules shape it. **The shell is not special on the wire**: its state travels as an ordinary
+process-state frame and the page finds it by reading the table for the shell program's row, so no
+frame kind is the shell's. And **the page keeps no state of its own** — workspaces, layout, focus and
+each window's view are fields of `ShellState` above, and every draft is its program's, which is why a
+second tab on the same URL shows the same desk and a split done in one appears in the other.
+
+Every frame is a nominal kind plus a predicate, like a port; one that does not decode closes the
+socket with its reason. A process placed anywhere but the node host is refused by name
+(`PlacementUnsupported`) rather than skipped. The kernel mints one random token per launch and the
+printed URL is the only place it appears — it is a `Redacted` everywhere else, so a log line or a
+snapshot cannot take it — and the upgrade is refused, before any frame, on a missing or wrong token
+or on an `Origin` that is not the kernel's own loopback origin. That is not a sandbox and not user
+auth: one user, one machine, other pages kept out. Re-attaching after a drop or a kernel restart
+replays current state, never a transcript.
+
+Its proof binds a real loopback socket, so it runs as this app's `integration` tier
+(`pnpm test:integration`) beside the `unit` one.
+
+## Shell: the shell as a program
+
+`src/shell/program.ts` is the whole of the shell's claim on the kernel: one registry row, one graph
+node. There is no built-in shell and no special path — the desk is a `Program` exactly as the demo
+counter is, registered through your own config module, and dropping its row and node is how you boot
+without one.
+
+```ts
+shellProgram({effects}); // id "shell", core from src/shell/core/, no ports
+shellGraphNode;          // {id: "shell", program: "shell", on: []} — a root
+```
+
+Its durability is the kernel's, unchanged: boot spawns the node once, the spawn opens the checkpoint
+under the node's own id, and a second boot finds a snapshot there and restores instead of spawning
+fresh — workspaces, layouts, focus and per-window view state come back byte-equal, and a snapshot
+written under another definition version refuses the boot rather than fresh-booting over it. Nothing
+under `src/shell/` opens a store, and a test asserts that no file there ever will.
+
+The version is one of two checks a snapshot passes. The other is its shape: a checkpoint re-enters
+the program as `unknown`, so `shellStateOf` runs `isShellState` over it — total through every
+workspace, layout node, view slot and order entry — and a version-matched snapshot with a corrupt
+interior reads as `null` rather than as a desk.
+
+A restored window whose process id no longer resolves is **kept**: `windowBindings(state, live)`
+answers `ProcessGone` for it and `Empty` for a window with no process, so the surface renders a
+placeholder or the picker and never a window that silently vanished. That function is also where the
+layout tree's plain-string window ids meet the window contract's branded ones (#7700) — one
+conversion, through the brand's own constructor.
+
+The core's Cmds are handed in as `effects`. This slice ships only `unwiredShellEffects`, which does
+none of them and logs each drop at debug; the set that runs them against the kernel is
+`wiredShellEffects` in `src/shell/host/`, and that is what the config registers.
+
+## Shell: the browser surface
+
+`src/shell/ui/` is the desk as a page — React 19, dark, and the only slice under `src/shell/` where
+React or the DOM is allowed to appear. Every other slice forbids both in its own
+`boundary.unit.test.ts`, and this one asserts the inverse: nothing outside `ui/` may import it.
+
+It is also on the far side of the app's **browser/Node line**: nothing this slice reaches may import
+`node:*`, because Vite externalizes those and the page throws at module load instead of rendering.
+See [The two entry points](#the-two-entry-points) below.
+
+```tsx
+<Desk state={snapshot} dispatch={send} resolveMount={mounts} entries={picker} />
+```
+
+`state` is the shell process's own state as the transport delivered it, and `dispatch` puts a Msg
+back on the wire. The surface stores nothing else — the command line being open, and the prefix
+countdown, are the whole of its tab-ephemeral state, which is why two tabs on one shell show one
+desk. A dropped socket does not clear the desk either: `useDeskAttachment` keeps the last snapshot
+on screen while the page re-attaches.
+
+The layout renders through `react-resizable-panels@4.12.3`: one `Group` per stack, one `Panel` per
+child keyed by node id, and a drag lands as exactly one `layout.resize` Msg on release. Sizes
+arriving from the kernel — another tab's drag — are pushed in through `setLayout`, because the
+library reads `defaultLayout` once and a prop alone would never mirror. Zoom (`prefix z`, the new
+`window:zoom` row) renders the one window alone and unzoom restores the split untouched. The rules
+and the reasons are
+[`.patterns/layout-tree-with-resizable-panels.md`](../../.patterns/layout-tree-with-resizable-panels.md).
+
+Each window shows one of the window contract's three arms and no fourth: a bound host's program
+renderer, the picker for an empty window, a placeholder for a gone process. The focused window is
+marked twice over — a heavier border, and a glyph plus `aria-current` in its title row — because no
+state here may be carried by colour alone.
+
+**A window's title is its process's own line.** `windowTitle` (`src/shell/ui/window-title.ts`) reads
+the newest value the process published on its generic `title@1` out-port, latched by the kernel and
+carried on the process row, and renders it as-is: a Claude session reads
+`claude-session · Opus 5 · phoenix` because the AI-agent program published that string, not because
+the shell composed it — the shell reads nothing AI-specific (ruling R8.1 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715)). The AI-agent program composes it as
+`program · model · cwd` (`src/ai-agent/self-report.ts`, ruling R3.1), leaving out any segment it
+cannot fill — a session that has not heard its model yet reads `claude-session · phoenix`. The
+program segment is the row's `identity.program`, which defaults to the row id, so it is the id and
+not a display name: nothing on a row carries a shorter one, and `label` (`src/registry/program.ts`)
+is the picker's name and is not read here
+([#8722](https://github.com/kamp-us/phoenix/issues/8722) narrowed it there deliberately). A program
+re-emitting `title@1` mid-turn moves the title with no remount, a process that published no title is
+named by its program, and the empty and gone windows keep the strings they have. The process id
+moved to the desk inspector's
+heading (ruling R3.1). All of it ships behind the default-off `windowTitles` flag
+([#8721](https://github.com/kamp-us/phoenix/issues/8721)); off, every window is `process <uuid>`
+again and the inspector carries no id.
+
+There is one **application-level** keyboard listener, on the document, and it is the only thing that
+dispatches `keys.press`. Two elements read their own keys and neither is a second shell listener:
+the command line's input, and each `Separator`, whose arrow-key resizing the library attaches per
+element.
+
+Two of the core's Cmds are the surface's work and never cross the wire, which carries no Cmd frame:
+opening the command line, and forwarding an unbound key to the focused window's renderer. The
+surface derives both by running the shell's own pure `route` over the prefix snapshot the kernel
+sent, so it cannot disagree with the core — an argument rather than a guard, tracked as
+[#7781](https://github.com/kamp-us/phoenix/issues/7781).
+
+## Shell: the assembled app
+
+`src/shell/host/` runs the core's Cmds against the kernel and starts the socket, and `src/page/`
+mounts the desk in a browser. `pnpm dev` is the whole thing in one process: boot, then the WebSocket
+on an ephemeral port, then Vite through its Node API — which is why the launch token never touches
+disk, since the middleware answering `/__tuval/launch` closes over the URL in memory.
+
+Three of the eight Cmds are the kernel's: `openProgram` and `attachProcess` run the picker's one
+handler, and `forwardKey` dispatches `{type: "key", key}` into the focused window's process. The
+prefix countdown and the command line stay the surface's — a kernel handler returns its follow-ups
+and cannot dispatch one a second later — and `config:reload` is still unwired (#7743).
+
+`src/shell/proof/end-to-end.integration.test.ts` is the ticket's three proofs over the real socket
+and the real demo programs: a scripted key sequence that splits, walks focus, switches workspaces,
+opens a program from the picker and by `prefix :`, and shows one process in two windows with two view
+slots; a stop and a second boot that brings the desk back byte-equal, duplicates no effect and yields
+exactly one effect per new key; and a dropped socket whose re-attach shows the same desk and forwards
+a key that reaches its process. The shape and its two rules are
+[`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+The renderer table is keyed by the `renderer` reference a row declares, and a row may point that
+reference outside the tree: `renderer: {kind: "module", ref: "@csirin/tuval-calc/window"}` names a
+module the page loads at boot, whose `default` export is a `windowRenderer("module", …)` and whose
+`admits` export is the predicate over the state it reads. A program installed with `pnpm add` and
+registered as one row is then whole — its kernel half runs from the row and its window is found by
+the same string. The specifier resolves from the config module that declared the row, the same base
+Node used for the row itself, so the package lives beside your own `tuval.config.ts` and is never a
+dependency of Tuval; a specifier that resolves from neither that config nor the page root refuses the
+page at boot naming that config, and a module that loads into something else is the placeholder's
+sentence. The why and the failure shapes are
+[ADR 0359](../../.decisions/0359-tuval-window-renderer-is-a-module-specifier.md).
+
+## The two entry points
+
+`src/bin.ts` runs under Node; `src/page/main.tsx` runs in a browser. They share slices but not import
+surfaces, and the line between them is enforced by a second TypeScript project rather than by a lint
+rule or a bundler plugin:
+
+```bash
+pnpm typecheck   # tsc -p tsconfig.json … && tsc -p tsconfig.browser.json …
+```
+
+`tsconfig.browser.json` is rooted at the browser entry alone and carries `"types": []` — no
+`@types/node` in scope. So `node:crypto` resolves to nothing, and any module the entry reaches that
+imports one is a plain `tsc` error. That error is the point: without it the import survives Vite,
+which externalizes `node:*`, and the page throws at module load and paints black before React mounts
+(#7836).
+
+A slice both sides use keeps two barrels. `index.ts` is the whole slice; `browser.ts` is the half a
+page may reach, and `index.ts` re-exports it — `src/shell/transport/browser.ts` leaves out the
+handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and the kernel behind
+it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
+[`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+## The static root
+
+`public/` is Vite's default `publicDir`, resolved against the `root` that `servePage` in
+`src/page/dev-server.ts` already hands `createServer`. It is served at `/` with no config change:
+the dev server runs `configFile: false` and `publicDir` needs none, so nothing on
+`PageServerOptions` mentions it and nothing should. It holds the tab icon and only the tab icon —
+`favicon-16.png`, `favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png`, each rendered at
+its own size and linked from `index.html` with a `sizes` attribute so the browser selects a cut
+rather than squashing one. That is why no SVG icon is declared: the mark is line art, and a browser
+scaling one weight down to a 16px tab closes the gaps between the branches into a blob. Each cut
+carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
+light tab strip and on the dark desk alike.
+
+None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
+tree mark as the founder supplied it, adopted in
+[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. The
+supplied file was a raster; it is traced to vector here so a size is *re-rendered* rather than
+resampled, which is what stops a further size being a downscale of a downscale. A new size is one
+`rsvg-convert` at that size; a shape change is an edit to the SVG and a re-cut of all four.
+
+The drawing is unchanged — the trace is of the supplied artwork, branch work and root flare intact,
+not a redrawn substitute. An earlier pass on this branch did substitute a simplified mark, and that
+was reverted: establishing a source of truth is not licence to redesign the thing it is a source of.
+
+One cut carries a render-time override, and only one. The mark is dense line art, and at 16px every
+stroke lands under a device pixel — rendered flat, the whole canopy comes out anti-aliased mid-tone
+with no pixel reaching full colour, which reads as a faint smudge rather than a tree. The 16px cut
+is therefore rendered with a `stroke-width` on the path group, which widens each stroke enough to
+carry solid colour: 0 pixels at full red become 62, while the interior plate gaps that make it read
+as a canopy survive. Nothing about the geometry changes. The larger cuts need no override, because
+at 32px and up the strokes already cover whole pixels.
+
 ## The AI agent slice
 
 `src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under
@@ -303,7 +737,12 @@ declared data rather than hiding in a layer.
 layer. It holds no Effect and names no backend: each Cmd is the name of work a handler performs, and
 the Sub is the name of the layer's event stream. Every refusal is data — a prompt outside `ready`, an
 answer to a card nobody raised, a mode the agent does not offer each record an `AgentFailure` and
-emit no Cmd, so the window renders the refusal instead of a crash taking the process with it.
+emit no Cmd, so the window renders the refusal instead of a crash taking the process with it. A
+permission card is the one piece of that state with a lifetime of its own: answering marks it
+`answering` and it leaves only on a confirmation naming the same raising of it, so a card that
+disappears means the agent settled the request rather than that a decision was sent
+([#8006](https://github.com/kamp-us/phoenix/issues/8006)). A confirmation that never comes leaves it
+`unresolved`, which offers no second answer — the authorization may already stand.
 
 **The handlers.** `src/ai-agent/handlers/` is the one generic handler set. Each handler yields the
 service and calls one of its members; a layer's typed error becomes a `failed` Msg carrying the tag
@@ -329,10 +768,48 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. `PiAiAgent.layer` is the first layer to fill it; `ClaudeAiAgent` is
-next ([#7618](https://github.com/kamp-us/phoenix/issues/7618)).
+`layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
+`CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) and
+`AgyAiAgent.layer` (`src/agy/ai-agent/AgyAiAgent.ts`). The first three are a
+`Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools bridge
+the row provides; agy reaches no kernel tool, so its layer asks for nothing
+(`src/agy/program.ts`). The `claude-session` row that wires it into the config
+graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
+
+## Codex
+
+`codex-session` implements the same `TuvalAiAgent` interface as Pi and Claude. It uses
+Tuval's shared chat window, inspector, session list and kernel spawn/send/read tools.
+The tracked config registers it without launching it at boot. Open it from the picker
+or run `window:open codex-session` in the palette.
+
+Install the Codex CLI and use its existing login. This implementation was tested against
+**codex-cli 0.153.4**. Custom configs import `codexSession` from `src/codex/program.ts`
+and supply the same `cwd` and `scope` values as the Claude row. Its optional `codex`
+settings include `mode`, `model` and `streamPartialReplies`.
+
+Modes are `read-only` and `workspace-write`, both with approvals enabled. Codex's own
+catalog supplies models and thinking levels, including `ultra` where offered. Permanent
+permission grants and terminal slash-command discovery are not advertised. Partial
+replies are off by default.
+
+New sessions use legacy history because the installed CLI refuses its paginated-history
+methods. Existing paginated sessions can fail to load rather than show false empty history:
+[8464](https://github.com/kamp-us/phoenix/issues/8464). A new legacy session has no persisted
+history before its first user message.
+
+```bash
+pnpm exec vitest run --project unit src/codex
+pnpm exec vitest run --project integration src/codex
+TUVAL_CODEX_PROTOCOL_TEST=1 pnpm exec vitest run --project integration src/codex/codex-cli.integration.test.ts
+```
+
+The last command runs the installed CLI with a temporary `CODEX_HOME`. It checks settings,
+empty history and Tuval tool calls without model generation or your credentials. Real model
+replies, approvals and nonempty history still need a live check.
+See [tuval-codex.md](../../.patterns/tuval-codex.md) for the protocol and lifetime rules.
 
 ## The Pi loopback server
 
@@ -404,14 +881,30 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 
 ## The Pi AI agent layer
 
-`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
-requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
-building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
-one loopback server and one client, and closing that scope closes the client, the server and every
-session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
-plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
-type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
-no event, no method's answer and no log line.
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
+`Layer<TuvalAiAgent, never, KernelBridge | Features>`, never-failing, asking for two of Tuval's own
+services and no Pi type in either channel. `KernelBridge` is what the row's three kernel tools call
+through, provided by the row from its own scope the way the Claude and Codex rows provide it (ruling
+R9.1 on [#8715](https://github.com/kamp-us/phoenix/issues/8715)); `Features` is the merged flag
+record the row's spawner hands over
+([#8595](https://github.com/kamp-us/phoenix/issues/8595)). Founder ruling 4
+([#7570](https://github.com/kamp-us/phoenix/issues/7570)) is what puts the runtime inside the layer,
+and it required nothing at all until those two landed; what the ruling guards is unchanged, since
+both are Tuval services. Building it inside the process's scope stands up Pi's model runtime, the
+`PiSessionHost` over it, one loopback server and one client, and closing that scope closes the
+client, the server and every session exactly once. A process therefore holds no Pi value of its own
+— `PiAiAgentOptions` carries plain strings, and `agentDir` is the only path it usually sets. Nothing
+on that surface is a Pi type, and the per-launch token is unwrapped once, into the transport
+factory's closure, and reaches no event, no method's answer and no log line.
+
+**The three kernel tools.** `spawn`, `send` and `read` reach a Pi session as plain `customTools` on
+`createAgentSession`, at those bare names — a third adapter over the one `KernelBridge`, where
+Claude's is an in-process MCP server and Codex's an HTTP one (`src/pi/tools.ts`,
+[#8720](https://github.com/kamp-us/phoenix/issues/8720)). They ship behind the default-off
+`piKernelTools` flag; off, the host passes no `customTools` key and opens exactly the session it
+opened before. Pi has no error flag on a tool result, so a bridge refusal is a rejected `execute`,
+which is what the agent loop renders as the model's tool error. The `pi-subagents` extension and its
+own flag are untouched by any of it.
 
 `start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
 `start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped
@@ -424,3 +917,41 @@ History is Pi's own: `page(before, limit)` reads the session's JSONL through
 `SessionManager.getBranch()` and bounds it with the shared page planner, so Tuval keeps no second
 copy. Pi raises no permission requests and offers no modes at this pin, so `answer` and `setMode`
 refuse as data.
+
+## The vertical proofs
+
+A vertical proof is one product opened in the real shell, from the real picker, over the real
+transport, and driven to the far end of what it claims: chatted with, restarted, re-attached. There
+are two, `src/pi/proof/` and `src/claude/proof/`, and they are the same proof with the layer
+swapped — same kernel, same `serveDesk` socket, same page `attach`, same keys-and-Msgs vocabulary.
+Every assertion reads process state off the transport, never off a `ProcessHandle` and never off a
+DOM, so what a case proves is what a window would see.
+
+**The Claude one runs in two variants, and only one of them is CI's.**
+
+`claude-vertical.integration.test.ts` is the scripted variant: the `claude-session` row registered
+through a user's config module (`desk.ts`) with `ScriptedAiAgent.layer` where the Agent SDK goes,
+and `pi-session` beside it on Pi's own faux provider. It calls no model API and spends nothing, so
+`pnpm test:integration` runs it and so does CI. Five cases: the picker opening a Claude chat under
+the shell with a tool row that runs and settles, one permission card answered and one mode switched;
+Pi and Claude side by side with process-table rows that differ only by program id, state summary and
+self-report; a restart that brings the transcript back with the cut turn interrupted; a dropped
+socket re-attached; and a child spawned through the three kernel tools, prompted with `send` and
+read back with `read`.
+
+`pnpm proof:claude-real` is the real-CLI variant, and it is **local only — the founder's own run, on
+their own Claude Code login, spending real tokens.** No workflow reaches it and none may: it boots
+`src/claude/proof/real.ts`, which is `ClaudeAiAgent.layer` over the `claude` CLI with the real
+`pi-session` row beside it. It serves an empty desk and chats nothing, because what the run is
+evidence of is a person doing it: open the picker, chat, answer a real card, switch the mode,
+Ctrl-C, run it again with the same `--project`, and find the chat where it was with Pi in the other
+split. The evidence is a comment on [#7625](https://github.com/kamp-us/phoenix/issues/7625) naming
+the SDK and CLI versions the start log printed, and whether the resumed CLI re-asked for a tool call
+left unanswered.
+
+Two seams the scripted variant has to stand up for itself, both because no shell owns them yet.
+`kernel-tools.ts` builds a `WindowIndex` so a tool `spawn` is parented by the Claude process — the
+kernel resolves a parent from the caller's window and `boot` leaves that index empty (#7894). And
+`late.ts` hands the real variant's config module a `SpellBridge` that does not exist when the loader
+evaluates it (#7958). Both are the proof's own scaffolding; neither writes anything under `src/ai-agent/` or
+changes what a row is.

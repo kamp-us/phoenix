@@ -1,0 +1,963 @@
+/*
+ * The chat window's own layout.
+ *
+ * This scope used to carry an adapter between two role-token layers, because Tuval's local `--t-*`
+ * were size and line-height only while a `@kampus/design` sheet's bake the family in — so the
+ * package's own `font: var(--t-meta)` was an invalid shorthand here and the whole declaration was
+ * dropped, silently, leaving an unstyled composer. Tuval reads the package's layer directly now
+ * (#7884, `../../page/styles.ts`), so there is one shape and no adapter.
+ */
+
+.tuval-chat {
+	/* The window is dark whatever it is mounted inside; Tuval is chrome, not a document. */
+	color-scheme: dark;
+
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	min-block-size: 0;
+	block-size: 100%;
+	font: var(--t-body);
+	color: var(--text-primary);
+}
+
+/*
+ * The reset `@kampus/design` is authored against. Its components assume the consuming app supplies
+ * one — apps/web does, in its own `styles/global.css`, which #7561 deliberately left app-owned —
+ * and without it a real browser load renders every design `Button` with native button chrome and
+ * every field at the browser's default width. Scoped to this window rather than to
+ * `.tuval-surface`, because the desk's own components are authored against no reset at all.
+ */
+.tuval-chat *,
+.tuval-chat *::before,
+.tuval-chat *::after {
+	box-sizing: border-box;
+}
+
+.tuval-chat button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: 0;
+	cursor: pointer;
+}
+
+/* A Manti anatomy button owns its own spacing through its `[data-scope][data-part]` rules. */
+.tuval-chat button:not([data-scope][data-part]) {
+	padding: 0;
+}
+
+.tuval-chat :is(input, textarea, select) {
+	font: inherit;
+	color: inherit;
+}
+
+.tuval-chat [data-scope="field"][data-part="input"] {
+	inline-size: 100%;
+}
+
+/* Manti's field root is inline-sized by the consuming app's own reset; the composer fills its box. */
+.tuval-chat [data-scope="field"][data-part="root"] {
+	inline-size: 100%;
+}
+
+/*
+ * The running-subagent list, above the transcript (#8405). One row per running worker, and the
+ * region is absent rather than empty when none is (Q4) — nothing here draws an empty state, because
+ * there is no element to draw one on.
+ *
+ * The rows are `MetaRow`s, so their layout and muted treatment are the shared primitive's; what this
+ * scope adds is the list's own box and the one thing a meta row cannot know — that the last line is
+ * the field that must give way when the row runs out of width.
+ */
+.tuval-chat-subagents {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	list-style: none;
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+}
+
+.tuval-chat-subagent-item {
+	display: flex;
+	min-inline-size: 0;
+}
+
+/*
+ * Each row is a button, because picking one swaps the window's view slot (#8406). It is styled as
+ * the row rather than as a control: the affordance is the hover and the focus ring, and a row of
+ * buttons drawn as buttons would read as a toolbar rather than as a list to walk.
+ */
+.tuval-chat-subagent-pick {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	padding: var(--s-1) var(--s-2);
+	border: 0;
+	border-radius: var(--r-sm);
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-align: start;
+	cursor: pointer;
+	/* The list is dense, so the row's own height is the target rather than a taller padded box. */
+	min-block-size: var(--tap-min);
+}
+
+.tuval-chat-subagent-pick:hover {
+	background: var(--surface-raised);
+}
+
+/* The one showing. The mark is the left rule plus the stronger text, never colour alone. */
+.tuval-chat-subagent-pick[aria-current="true"] {
+	background: var(--surface-raised);
+	box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
+.tuval-chat-subagent {
+	flex-wrap: nowrap;
+	min-inline-size: 0;
+	font: var(--t-meta);
+}
+
+.tuval-chat-subagent-type {
+	color: var(--text-secondary);
+	font-weight: 600;
+}
+
+.tuval-chat-subagent-pick[aria-current="true"] .tuval-chat-subagent-type {
+	color: var(--text-primary);
+}
+
+/*
+ * A kernel child's mark. The word "process" is the mark and this only sets it apart from the row's
+ * prose; nothing here is load-bearing, so a reader who sees no colour still reads the word.
+ */
+.tuval-chat-subagent-kernel {
+	color: var(--text-secondary);
+	font-variant: all-small-caps;
+	letter-spacing: 0.04em;
+}
+
+/* Short and fixed, so it never gives way to the line beside it. */
+.tuval-chat-subagent-workers {
+	flex: 0 0 auto;
+	color: var(--text-secondary);
+	white-space: nowrap;
+}
+
+/* The one field that may be any length, so it is the one that truncates. */
+.tuval-chat-subagent-line {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The tail's own door (#8407): a control, so it carries the row reset above plus its muted type. */
+.tuval-chat-subagent-more {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+/*
+ * The line at the end of a subagent's own view (Q9): what became of the worker, under its rows,
+ * where the eye already is when the transcript stops moving.
+ */
+.tuval-chat-subagent-end {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	font: var(--t-meta);
+	color: var(--text-muted);
+	border-block-start: 1px solid var(--border-faint);
+}
+
+.tuval-chat-subagent-end-mark {
+	color: var(--text-secondary);
+	font: var(--t-micro);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+/*
+ * The scroller. `overflow-anchor: none` because this window does its own prepend anchoring
+ * (`./ChatWindow.tsx`) and the browser's scroll anchoring would fight it.
+ */
+.tuval-chat-transcript {
+	flex: 1 1 auto;
+	min-block-size: 0;
+	overflow-y: auto;
+	overflow-anchor: none;
+	contain: strict;
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+}
+
+/* The virtualizer positions rows absolutely inside a spacer of the full transcript height. */
+.tuval-chat-spacer {
+	position: relative;
+	inline-size: 100%;
+}
+
+.tuval-chat-row {
+	position: absolute;
+	inset-inline: 0;
+	inset-block-start: 0;
+	padding: var(--s-2) var(--s-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+/*
+ * A subagent's row, indented under the call that spawned it, one step per fold it sits inside. The
+ * indent is the second signal only — the row already says "subagent" in words above it (ADR 0162,
+ * Pillar 4). `--nest-depth` is set per row by `ChatWindow`; the fallback keeps the rule honest for a
+ * row marked nested whose head is older than the pages this window walked back to.
+ */
+.tuval-chat-row[data-nested="true"] {
+	padding-inline-start: calc(var(--s-6) * var(--nest-depth, 1));
+	border-inline-start: 2px solid var(--border-faint);
+}
+
+.tuval-chat-who {
+	font: var(--t-micro);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.tuval-chat-text {
+	margin: 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/* The agent reply is a rendered markdown block (`@kampus/design`). It carries its own type and
+   spacing; what it needs from the row is a width to wrap and scroll inside. */
+.tuval-chat-markdown {
+	min-inline-size: 0;
+	max-inline-size: 100%;
+}
+
+/* The operator's own row renders markdown too (#8226); this keeps the tint that told the two sides
+   apart, over `.kp-markdown`'s own `--text-primary`. */
+.tuval-chat-row[data-kind="user"] .tuval-chat-markdown {
+	color: var(--text-secondary);
+}
+
+/*
+ * The turn shape (#8210), on the T3 Code model the founder ruled on 2026-09-08: with no author
+ * label, the operator's turn is a bubble pulled to the end of the row and the agent's reply is plain
+ * full-width prose. `data-message-role` is what says which, and `ChatWindow` writes it on every item
+ * row.
+ *
+ * Authorship never rides the shape alone: the row also carries a visually-hidden author name
+ * (ADR 0162, Pillar 4).
+ */
+.tuval-chat-row[data-message-role="user"] {
+	align-items: flex-end;
+}
+
+.tuval-chat-row[data-message-role="user"] .tuval-chat-markdown {
+	max-inline-size: 80%;
+	padding: var(--s-2) var(--s-3);
+	border-radius: var(--r-lg);
+	background: var(--surface-raised);
+	color: var(--text-primary);
+}
+
+.tuval-chat-row[data-kind="session"] .tuval-chat-text {
+	color: var(--text-muted);
+	font: var(--t-body-sm);
+}
+
+/* The tool row is a `Collapsible`; this is the box around it, not the disclosure's own anatomy. */
+.tuval-chat-tool {
+	min-inline-size: 0;
+	font: var(--t-mono);
+	color: var(--text-secondary);
+}
+
+/*
+ * The disclosure's own anatomy, shared by the two rows that are one. `@kampus/design`'s
+ * `Collapsible` is a bare re-export of the Manti primitive and ships no sizing, so a consuming app
+ * supplies it — apps/web does in its own sheets, and Tuval is not that app (#7853). Without these
+ * two rules a real browser load renders the trigger's state chevron at its intrinsic 56px, stacked
+ * under the row rather than beside it.
+ */
+.tuval-chat-tool [data-scope="collapsible"][data-part="trigger"],
+.tuval-chat-session [data-scope="collapsible"][data-part="trigger"],
+.tuval-chat-thinking [data-scope="collapsible"][data-part="trigger"] {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	inline-size: 100%;
+	min-block-size: var(--tap-min);
+	text-align: start;
+}
+
+.tuval-chat-tool [data-scope="collapsible"][data-part="indicator"] svg,
+.tuval-chat-session [data-scope="collapsible"][data-part="indicator"] svg,
+.tuval-chat-thinking [data-scope="collapsible"][data-part="indicator"] svg {
+	inline-size: 14px;
+	block-size: 14px;
+	color: var(--text-muted);
+}
+
+/*
+ * The session row: one line for the newest notice, the rest of the run and every detail a fold
+ * away. The line clips rather than wraps, so a burst that keeps arriving never changes the row's
+ * height under the reader — the whole reason consecutive notices are one row.
+ */
+.tuval-chat-session {
+	min-inline-size: 0;
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.tuval-chat-session-head {
+	display: flex;
+	min-inline-size: 0;
+	align-items: baseline;
+	gap: var(--s-2);
+}
+
+.tuval-chat-session-line {
+	min-inline-size: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+/* The way into the rows a settled worker's notice names (#8475). Aligned to the start rather than
+   stretched, so the control is the size of its own label and not of the row it sits in. */
+.tuval-chat-session-link {
+	flex: none;
+	align-self: flex-start;
+}
+
+.tuval-chat-session-count {
+	flex: none;
+	font: var(--t-micro);
+	color: var(--text-muted);
+}
+
+.tuval-chat-session-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: 0;
+	padding-block-start: var(--s-2);
+	padding-inline-start: 0;
+	list-style: none;
+}
+
+/*
+ * The reasoning row. Collapsed it is one line, and the line is a preview: the whole of a turn's
+ * reasoning laid out unfolded is the flood the subagent fold exists to prevent (#8027).
+ */
+.tuval-chat-thinking {
+	min-inline-size: 0;
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.tuval-chat-thinking-line {
+	min-inline-size: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-style: italic;
+}
+
+.tuval-chat-thinking-text {
+	padding-block-start: var(--s-2);
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+/*
+ * The compaction marker: its line, then a rule running out to the edge, because the operator's
+ * question here is *where* the earlier turns went rather than what the session said about it.
+ *
+ * Two rows in a grid, and the disclosure is `display: contents` so its own two boxes take places in
+ * that grid: the trigger sits beside the rule on the divider's line, and the panel spans the whole
+ * width beneath both. Nesting the rule inside the trigger would be the simpler markup and is not
+ * available — a `Collapsible` trigger is a `button`, which takes phrasing content only.
+ */
+.tuval-chat-compaction {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: center;
+	column-gap: var(--s-2);
+	min-inline-size: 0;
+}
+
+.tuval-chat-compaction-disclosure {
+	display: contents;
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="trigger"] {
+	grid-row: 1;
+	grid-column: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+	min-inline-size: 0;
+	min-block-size: var(--tap-min);
+	text-align: start;
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="indicator"] svg {
+	inline-size: 14px;
+	block-size: 14px;
+	color: var(--text-muted);
+}
+
+.tuval-chat-compaction [data-scope="collapsible"][data-part="content"] {
+	grid-row: 2;
+	grid-column: 1 / -1;
+	min-inline-size: 0;
+}
+
+/*
+ * The divider's own line: micro uppercase, and never wrapping against the rule beside it. It clips
+ * because it is a preview of a payload with no length bound — the summary itself wraps in the panel
+ * below, where `.tuval-chat-markdown` styles it like any other row (#8608).
+ */
+.tuval-chat-compaction-label {
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font: var(--t-micro);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	white-space: nowrap;
+}
+
+.tuval-chat-compaction-summary {
+	padding-block-start: var(--s-2);
+	color: var(--text-secondary);
+	white-space: normal;
+	text-transform: none;
+}
+
+.tuval-chat-compaction-rule {
+	grid-row: 1;
+	grid-column: 2;
+	margin: 0;
+	border: 0;
+	block-size: 1px;
+	background: var(--border-faint);
+}
+
+.tuval-chat-tool-head {
+	display: inline-flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-name {
+	color: var(--text-primary);
+}
+
+/* Pillar 4: the status is a word, never the colour alone. */
+.tuval-chat-tool-status[data-status="error"] {
+	color: var(--danger);
+}
+
+.tuval-chat-tool-status[data-status="running"] {
+	color: var(--accent);
+}
+
+/*
+ * The group head's second control, under the tool line rather than inside it: a button cannot nest
+ * inside the `Collapsible` trigger, which is itself a button, and the two disclosures are separate
+ * facts (#8027).
+ */
+.tuval-chat-tool-fold {
+	align-self: flex-start;
+}
+
+/*
+ * A settled turn's scaffolding behind one line (#8614). The chevron is decoration — `aria-hidden`,
+ * and the label beside it is the whole accessible name — so the rotation never carries the state
+ * alone (ADR 0162, Pillar 4). The button keeps the 36px hit area and the shared focus ring the
+ * `Button` primitive already paints.
+ */
+.tuval-chat-turn {
+	align-self: flex-start;
+	gap: var(--s-2);
+	min-block-size: var(--tap-min);
+	color: var(--text-muted);
+}
+
+.tuval-chat-turn-chevron {
+	flex: none;
+	inline-size: 0;
+	block-size: 0;
+	border-block-start: 4px solid transparent;
+	border-block-end: 4px solid transparent;
+	border-inline-start: 6px solid currentcolor;
+}
+
+/* Rotated, not animated: the rows the button reveals arrive in the same commit, so a transition
+   here would only trail the state change the list itself already shows. */
+.tuval-chat-turn-chevron[data-open="true"] {
+	rotate: 90deg;
+}
+
+/*
+ * A run of consecutive calls as one line (#8612): a status dot, the sentence, and the status as a
+ * word for a run that failed or is still going. The dot is a state marker rather than an icon —
+ * `aria-hidden`, and it never carries the state alone: the word beside it does, which is also what
+ * survives the reduced-motion collapse of the shimmer below (ADR 0162, Pillar 4).
+ */
+.tuval-chat-tool-run {
+	font: var(--t-body-sm);
+}
+
+.tuval-chat-tool-run-head {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	min-inline-size: 0;
+}
+
+/*
+ * The calls an opened run lists. No marker and no indent of its own: each row already carries a
+ * chevron — or the blank that holds a chevron's place — and a second glyph beside it would read as
+ * two affordances on one line.
+ */
+.tuval-chat-tool-calls {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0 0 0 var(--s-3);
+	list-style: none;
+}
+
+.tuval-chat-tool-call {
+	min-inline-size: 0;
+	font: var(--t-mono);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-tool-call-label {
+	color: var(--text-primary);
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/*
+ * A call with nothing beyond its label is not a control, so it gets the trigger's box without the
+ * trigger's affordance: the same 36px line and the same blank where the chevron sits, so the labels
+ * of the rows around it still line up.
+ */
+.tuval-chat-tool-call-flat {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	inline-size: 100%;
+	min-block-size: var(--tap-min);
+}
+
+.tuval-chat-tool-call-blank {
+	flex: none;
+	inline-size: 14px;
+	block-size: 14px;
+}
+
+.tuval-chat-tool-run-dot {
+	flex: none;
+	align-self: center;
+	inline-size: 6px;
+	block-size: 6px;
+	border-radius: 50%;
+	background: var(--text-muted);
+}
+
+.tuval-chat-tool-run-dot[data-status="error"] {
+	background: var(--danger);
+}
+
+.tuval-chat-tool-run-dot[data-status="running"] {
+	background: var(--accent);
+}
+
+.tuval-chat-tool-run-line {
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-run-status {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-tool-run-status[data-status="error"] {
+	color: var(--danger);
+}
+
+.tuval-chat-tool-run-status[data-status="running"] {
+	color: var(--accent);
+}
+
+/* A single class, so the reduced-motion override below ties on specificity and wins on source
+   order — the compound form would silently lose and keep pulsing (see #8121, and the sheet's own
+   note at the block). */
+.tuval-chat-tool-run-shimmer {
+	animation: tuval-chat-tool-run-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tuval-chat-tool-run-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.55;
+	}
+}
+
+.tuval-chat-tool-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding-block-start: var(--s-2);
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-label {
+	margin: 0;
+	font: var(--t-micro);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.tuval-chat-pre {
+	margin: 0;
+	padding: var(--s-2);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+	font: var(--t-mono);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-omission {
+	margin: 0;
+	/* Meaning, so it sits on `--text-muted` and never on `--text-faint` (Pillar 4). */
+	font: var(--t-micro);
+	color: var(--text-muted);
+}
+
+/* The phase line and the mode control are one header row above the transcript. */
+.tuval-chat-bar {
+	display: flex;
+	gap: var(--s-3);
+	align-items: center;
+	justify-content: space-between;
+}
+
+/* The bar's trailing group: the program's own extras, and nothing else since #8190 sent every fact
+   the bar used to carry to the desk inspector. One flex child, so the bar stays a two-ended row
+   whether or not a renderer passes extras. */
+.tuval-chat-bar-end {
+	display: flex;
+	flex: 0 1 auto;
+	gap: var(--s-3);
+	align-items: center;
+	min-inline-size: 0;
+}
+
+/* The mode picker sits in the composer's settings fieldset now (#8190), where `AgentSettingMenu`
+   owns everything about how it looks. This wrapper carries only its refusal to shrink beside the
+   model and thinking pickers. */
+.tuval-chat-mode {
+	flex: 0 0 auto;
+}
+
+/*
+ * The cards sit between the transcript and the composer. Bounded, because a program may raise
+ * several at once and an unbounded stack would push the composer off the window.
+ */
+.tuval-chat-permissions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	max-block-size: 40vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-permission-title {
+	margin: 0;
+	font: var(--t-body);
+	color: var(--text-primary);
+}
+
+.tuval-chat-permission-name {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-permission-description {
+	margin: var(--s-1) 0 var(--s-2);
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-permission-actions {
+	display: flex;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+	padding-block-start: var(--s-2);
+}
+
+/* Where a message waits for the running turn to end. It is not a transcript row and must not read
+ * as one: no bubble, no author, and the accent that says "not yet" rather than "went wrong". */
+.tuval-chat-queued {
+	max-block-size: 20vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-queued-lead {
+	margin: 0 0 var(--s-1);
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-queued-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tuval-chat-queued-item {
+	padding: var(--s-2);
+	border: 1px dashed var(--border-faint);
+	border-radius: var(--r-lg);
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-unsent {
+	max-block-size: 30vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-unsent-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tuval-chat-unsent-item {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding: var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-inline-start: 2px solid var(--danger);
+	border-radius: var(--r-lg);
+}
+
+.tuval-chat-unsent-reason {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--danger);
+}
+
+.tuval-chat-unsent-text {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-unsent-actions {
+	display: flex;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+	padding-block-start: var(--s-1);
+}
+
+/* Where an answer that has left but not landed says so. Colour is the second signal: the line's
+ * own words carry the state, so a card reads the same without it. */
+.tuval-chat-permission-progress {
+	margin: var(--s-2) 0 0;
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-permission-progress[data-status="unresolved"] {
+	color: var(--danger);
+}
+
+.tuval-chat-head {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	justify-content: center;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	border-block-end: 1px dashed var(--border-faint);
+}
+
+.tuval-chat-interrupted {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	flex-wrap: wrap;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-interrupted-mark {
+	color: var(--danger);
+}
+
+.tuval-chat-phase {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+/* The phase is carried by a word, so the dot is decoration and never the only signal. */
+.tuval-chat-phase-dot {
+	inline-size: 6px;
+	block-size: 6px;
+	border-radius: 50%;
+	background: var(--text-faint);
+}
+
+.tuval-chat-phase[data-phase="ready"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
+	background: var(--accent);
+}
+
+/* The three in-flight phases — starting, reconnecting, prompting — carry a halo the settled ones do
+   not; the transcript strip below is prompting-only, because that is the phase whose wait the eye
+   sits through. The halo is the static half and it is what makes the distinction survive
+   `prefers-reduced-motion`, which cancels the pulse and nothing else: the dot stays a ring where
+   "Ready." is a bare disc, so the state is never on motion alone (Pillar 4). The word on the phase
+   line is still the signal either way. */
+.tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
+	animation: tuval-chat-phase-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes tuval-chat-phase-pulse {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.3;
+		transform: scale(0.6);
+	}
+}
+
+.tuval-chat-phase[data-phase="gone"] .tuval-chat-phase-dot {
+	background: var(--danger);
+}
+
+.tuval-chat-placeholder {
+	margin: 0;
+	padding: var(--s-4);
+	color: var(--text-muted);
+	font: var(--t-body-sm);
+}
+
+/* The running-turn tell at the foot of the transcript. Decoration by construction — `aria-hidden`,
+   because the phase line is the announced one — so the animation carries nothing the word does not
+   already say, and collapsing it under reduced motion loses nothing. */
+.tuval-chat-working {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	margin: 0;
+	padding: var(--s-1) var(--s-4);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-working-dots {
+	display: inline-flex;
+	gap: 3px;
+	align-items: center;
+}
+
+.tuval-chat-working-dots span {
+	inline-size: 4px;
+	block-size: 4px;
+	border-radius: 50%;
+	background: var(--accent);
+	animation: tuval-chat-working-bounce 1.2s ease-in-out infinite;
+}
+
+.tuval-chat-working-dots span:nth-child(2) {
+	animation-delay: 0.16s;
+}
+
+.tuval-chat-working-dots span:nth-child(3) {
+	animation-delay: 0.32s;
+}
+
+@keyframes tuval-chat-working-bounce {
+	0%,
+	60%,
+	100% {
+		opacity: 0.25;
+	}
+	30% {
+		opacity: 1;
+	}
+}
+
+/* The override must tie or beat the rule it cancels: `@media` is a conditional group rule and
+   contributes nothing to specificity, so a bare `.tuval-chat-phase-dot` (0,1,0) would silently lose
+   to the pulse rule's (0,3,0) and keep animating for someone who asked for no motion. `[data-phase]`
+   is carried here to tie, and the tie goes to this rule because it comes later. */
+@media (prefers-reduced-motion: reduce) {
+	.tuval-chat-phase[data-phase] .tuval-chat-phase-dot,
+	.tuval-chat-working-dots span,
+	.tuval-chat-tool-run-shimmer {
+		animation: none;
+		opacity: 1;
+	}
+}

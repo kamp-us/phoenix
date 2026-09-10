@@ -2,10 +2,10 @@
  * The document-level JSON Schema for `.fabrika.jsonc`, assembled from the per-key fragments.
  *
  * Each key group carries its own `jsonSchema` fragment beside its `decode`, so the shape a repo
- * hand-edits is described in the one place its decoder already lives. This module joins the fifteen
+ * hand-edits is described in the one place its decoder already lives. This module joins the registry's
  * fragments into one draft-07 document an editor validates the file against — a red squiggle on a
  * misspelled key or a wrong-typed value, where the only feedback used to be a decode failure at
- * runtime (#6488).
+ * runtime.
  *
  * **A registered key with no fragment refuses the assembly whole.** A schema missing one key's
  * properties would green a typo in that key's subtree, which is the silent gap this schema exists to
@@ -30,6 +30,7 @@ export interface JsonSchema {
 	readonly enum?: ReadonlyArray<string>;
 	readonly pattern?: string;
 	readonly minLength?: number;
+	readonly minimum?: number;
 	readonly properties?: Readonly<Record<string, JsonSchema>>;
 	readonly required?: ReadonlyArray<string>;
 	readonly additionalProperties?: boolean | JsonSchema;

@@ -1,0 +1,5 @@
+interface:
+  display_name: "fabrika front-door"
+  short_description: "Factory status and repository onboarding"
+policy:
+  allow_implicit_invocation: false

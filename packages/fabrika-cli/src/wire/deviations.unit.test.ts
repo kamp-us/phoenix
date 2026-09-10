@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {emitFromFields, parseFields, read} from "./deviations.ts";
+import {droppedEntries, emitFromFields, parseFields, read} from "./deviations.ts";
 
 const ENTRY =
 	"- **Scope narrowing** — **Said:** four gates. **Did:** three plus a bounce. **Why:** the fourth emits a trivial verdict. **Disposition:** stated here.";
@@ -69,5 +69,49 @@ describe("parseFields", () => {
 	it("composes bytes its own reader accepts", () => {
 		const composed = emitFromFields("-\ta.\tb.\tc.\td.\n");
 		expect(composed._tag === "Composed" && read(composed.bytes)._tag).toBe("Found");
+	});
+});
+
+describe("droppedEntries", () => {
+	/** A section's bytes as a disclosure — the fixtures read through the format that owns them. */
+	const disclose = (body: string) => {
+		const result = read(body);
+		if (result._tag !== "Found") throw new Error(`fixture is not readable: ${result._tag}`);
+		return result.value;
+	};
+
+	const OTHER =
+		"- **Out-of-scope change** — **Said:** the ledger row only. **Did:** the header too. **Why:** one helper writes both. **Disposition:** stated here.";
+
+	it("names a standing entry the replacement leaves out", () => {
+		const dropped = droppedEntries(
+			disclose(`## Deviations\n\n${ENTRY}\n${OTHER}\n`),
+			disclose(`## Deviations\n\n${OTHER}\n`),
+		);
+		expect(dropped.map((entry) => entry.said)).toEqual(["four gates."]);
+	});
+
+	it("takes an entry as carried when only its later fields changed", () => {
+		const revised = ENTRY.replace("**Disposition:** stated here.", "**Disposition:** reverted.");
+		expect(
+			droppedEntries(
+				disclose(`## Deviations\n\n${ENTRY}\n`),
+				disclose(`## Deviations\n\n${revised}\n`),
+			),
+		).toEqual([]);
+	});
+
+	it("reads a replacement of `None.` over standing entries as dropping all of them", () => {
+		const dropped = droppedEntries(
+			disclose(`## Deviations\n\n${ENTRY}\n${OTHER}\n`),
+			disclose("## Deviations\n\nNone.\n"),
+		);
+		expect(dropped).toHaveLength(2);
+	});
+
+	it("owes nothing when the standing disclosure declared none", () => {
+		expect(
+			droppedEntries(disclose("## Deviations\n\nNone.\n"), disclose(`## Deviations\n\n${ENTRY}\n`)),
+		).toEqual([]);
 	});
 });

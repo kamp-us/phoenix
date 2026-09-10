@@ -42,7 +42,7 @@ export const epic = (overrides: Record<string, unknown> = {}): HttpReply =>
 		body: "An epic brief about the moderation queue.\n",
 		state: "open",
 		labels: [{name: "type:epic"}, {name: "status:triaged"}],
-		html_url: "https://github.com/o/r/issues/4300",
+		html_url: "https://forge.example/o/r/issues/4300",
 		milestone: null,
 		state_reason: null,
 		...overrides,
@@ -87,23 +87,35 @@ export const childIssue = (options: {
 		labels: (options.labels ?? []).map((name) => ({name})),
 		assignees: (options.assignees ?? []).map((login) => ({login})),
 		milestone: options.milestone == null ? null : {number: 44, title: options.milestone},
-		html_url: `https://github.com/o/r/issues/${options.number}`,
+		html_url: `https://forge.example/o/r/issues/${options.number}`,
 	});
 
 /** A plan block that clears the section set and the story grammar. */
-export const planBlock = (overrides: {stories?: string; drop?: string} = {}): string =>
+export const planBlock = (
+	overrides: {stories?: string; drop?: string; criteria?: string} = {},
+): string =>
 	[
 		"## Plan (plan-epic)",
 		"",
-		...PLAN_SECTIONS.filter((heading) => heading !== overrides.drop).flatMap((heading) => [
-			`### ${heading}`,
-			"",
-			heading === "User stories"
-				? (overrides.stories ??
-					"1. As a moderator, I want a queue.\n2. As a yazar, I want a receipt.")
-				: "Something true about this section.",
-			"",
-		]),
+		...PLAN_SECTIONS.filter((heading) => heading !== overrides.drop).flatMap((heading) => {
+			// The criteria rows sit directly under their heading; every other section takes a blank line.
+			if (heading === "Acceptance criteria") {
+				return [
+					`### ${heading}`,
+					overrides.criteria ?? "- [ ] the epic tail leaves no child's slice unwired.",
+					"",
+				];
+			}
+			return [
+				`### ${heading}`,
+				"",
+				heading === "User stories"
+					? (overrides.stories ??
+						"1. As a moderator, I want a queue.\n2. As a yazar, I want a receipt.")
+					: "Something true about this section.",
+				"",
+			];
+		}),
 	].join("\n");
 
 /** A child body that clears the field and criteria readers. */

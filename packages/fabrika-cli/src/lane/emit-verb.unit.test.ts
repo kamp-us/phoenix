@@ -8,11 +8,12 @@ import {
 	LANE_ABSENT,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
+	MALFORMED_RECORD,
 	TOPOLOGY_ABSENT,
 	TOPOLOGY_CYCLE,
 	TOPOLOGY_FOREIGN,
 } from "./codes.ts";
-import {runEmit} from "./emit-verb.ts";
+import {type EmitOptions, runEmit} from "./emit-verb.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const WORKFLOW = ".fabrika/lanes/4300/workflow.json";
@@ -46,12 +47,31 @@ const OPTIONS = {
 		string,
 		string | undefined
 	>,
+	// No cap declared — the cap's own arms live in [`concurrency.unit.test.ts`](concurrency.unit.test.ts).
+	cap: {_tag: "Value", value: null, note: "test"} as const,
+	// The axis off — the machinery arms have their own coverage in [`emit.unit.test.ts`](emit.unit.test.ts).
+	machinery: {_tag: "Value", value: {onEmit: "off"}, note: "test"} as const,
+	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
+	// The descope escape off — its own arms live below, and in [`emit.unit.test.ts`](emit.unit.test.ts).
+	children: false,
 };
 
 const run = (script: ReadonlyArray<readonly [RegExp, HttpReply]> = [], fs = fakeFs({files: {}})) =>
 	Effect.runPromise(
 		Effect.provide(
 			runEmit(OPTIONS),
+			Layer.mergeAll(fs.layer, fakeShell([]).layer, fakeHttp(script).layer),
+		),
+	).then((out) => ({out, fs}));
+
+/** The same run with the descope escape armed — the one axis these two tests turn on. */
+const runWithChildren = (
+	script: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	fs = fakeFs({files: {}}),
+) =>
+	Effect.runPromise(
+		Effect.provide(
+			runEmit({...OPTIONS, children: true}),
 			Layer.mergeAll(fs.layer, fakeShell([]).layer, fakeHttp(script).layer),
 		),
 	).then((out) => ({out, fs}));
@@ -145,6 +165,21 @@ describe("lane emit", () => {
 		expect(out.stderr.join("\n")).toContain("Dependencies");
 	});
 
+	it("refuses a prose line inside the topology, naming it and teaching where prose belongs", async () => {
+		const note = "_Shell shipped out-of-band via epic #2711._";
+		const {out, fs} = await run([
+			[ISSUE, epic({body: `## Dependencies\n\n- phase 1: #4301\n${note}\n`})],
+			[SUBS, children],
+		]);
+
+		expect(out.code).toBe(MALFORMED_RECORD);
+		expect(fs.written.size).toBe(0);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(`line 4 does not parse: "${note}"`);
+		expect(stderr).toContain("editorial or history prose belongs below a `---` thematic break");
+		expect(stderr).toContain("which ends the section");
+	});
+
 	it("refuses a topology referencing a non-child, naming the ref", async () => {
 		const {out} = await run([
 			[ISSUE, epic({body: "## Dependencies\n\n- phase 1: #9999\n"})],
@@ -152,7 +187,11 @@ describe("lane emit", () => {
 		]);
 
 		expect(out.code).toBe(TOPOLOGY_FOREIGN);
-		expect(out.stderr.join("\n")).toContain("#9999");
+		const line = out.stderr.join("\n");
+		expect(line).toContain("#9999");
+		// The refusal is the only place an operator meets either escape, so it names both.
+		expect(line).toContain("--children");
+		expect(line).toContain("ledger retopology");
 	});
 
 	it("refuses a cycle, naming the path", async () => {
@@ -167,7 +206,88 @@ describe("lane emit", () => {
 		expect(out.stderr.join("\n")).toContain("#4301");
 	});
 
+	it("drops a descoped ref under --children and reports what went", async () => {
+		const {out, fs} = await runWithChildren([
+			[ISSUE, epic({body: "## Dependencies\n\n- phase 1: #4301\n- phase 2: #9999, #4302\n"})],
+			[SUBS, children],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "emitted",
+			children: 2,
+			dropped: {count: 1, rows: ["#9999"]},
+		});
+		expect(out.stderr.join("\n")).toContain("#9999");
+		expect(fs.written.get(WORKFLOW) ?? "").not.toContain("9999");
+	});
+
+	it("reports a long dropped list whole on both channels", async () => {
+		const rows = ["#9901", "#9902", "#9903", "#9904", "#9905", "#9906", "#9907"];
+		const {out} = await runWithChildren([
+			[
+				ISSUE,
+				epic({
+					body: `## Dependencies\n\n- phase 1: #4301, #4302\n- phase 2: ${rows.join(", ")}\n`,
+				}),
+			],
+			[SUBS, children],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "emitted", dropped: {count: 7, rows}});
+		expect(out.stderr.join("\n")).toContain(
+			`dropped 7 ref(s) #4300's topology names and its child list does not: ${rows.join(", ")}.`,
+		);
+	});
+
+	it("refuses at 15 with nothing placed when --children empties the topology", async () => {
+		const {out, fs} = await runWithChildren([
+			[ISSUE, epic({body: "## Dependencies\n\n- phase 1: #9999\n"})],
+			[SUBS, children],
+		]);
+
+		expect(out.code).toBe(TOPOLOGY_ABSENT);
+		expect(out.stderr.join("\n")).toContain("#9999");
+		expect(fs.written.size).toBe(0);
+	});
+
 	it("keeps the emit refusal seats distinct", () => {
 		expect(new Set([LANE_EXISTS, TOPOLOGY_ABSENT, TOPOLOGY_FOREIGN, TOPOLOGY_CYCLE]).size).toBe(4);
+	});
+});
+
+describe("lane emit — the machinery lap key", () => {
+	const runWith = (machinery: EmitOptions["machinery"], fs = fakeFs({files: {}})) =>
+		Effect.runPromise(
+			Effect.provide(
+				runEmit({...OPTIONS, machinery}),
+				Layer.mergeAll(
+					fs.layer,
+					fakeShell([]).layer,
+					fakeHttp([
+						[ISSUE, epic()],
+						[SUBS, children],
+					]).layer,
+				),
+			),
+		).then((out) => ({out, fs}));
+
+	it("writes the machine with the lap arms when the repo declares the axis on", async () => {
+		const {out, fs} = await runWith({_tag: "Value", value: {onEmit: "on"}, note: "test"});
+
+		expect(out.code).toBe(0);
+		const written = fs.written.get(".fabrika/lanes/4300/workflow.json") ?? "";
+		expect(written).not.toBe(golden());
+		expect(written).toContain("human:machinery-stall");
+		expect(written).toContain("lapsRemaining");
+	});
+
+	it("refuses an unreadable key as UNKNOWN, and writes no machine at all", async () => {
+		const {out, fs} = await runWith({_tag: "Refused", reason: "malformed"});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("machineryLaps");
 	});
 });

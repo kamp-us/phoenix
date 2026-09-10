@@ -1,8 +1,8 @@
 /**
  * `status readout` — the landed-decision digest as published in the durable artifact.
  *
- * The display half. The producer is `governance` (#4949); this verb ranks nothing and re-derives
- * nothing — it decodes the registered `governance-digest` wire format and prints what it holds.
+ * The display half. The producer is `governance`; this verb ranks nothing and re-derives nothing —
+ * it decodes the registered `governance-digest` wire format and prints what it holds.
  *
  * **Four readings, and `absent` is only one of them.** `found`, `absent` and `malformed` are all
  * facts about the repository at exit `0`; a failed fetch, an unreadable freshness stamp and an
@@ -11,8 +11,7 @@
  * `ARTIFACT_UNKNOWN` deliberately apart from `ABSENT`.
  *
  * **`<as-of>` is the artifact comment's own `updated_at`, never the fetch time.** Printing the
- * fetch time for a digest written three weeks ago claims a freshness nobody has (#3148, #3330,
- * #4338).
+ * fetch time for a digest written three weeks ago claims a freshness nobody has.
  */
 import {Effect} from "effect";
 import type {Shell} from "../io/git.ts";
@@ -24,7 +23,7 @@ import {type AsOf, asOfToken, fromArtifact, noAsOf, row} from "./fields.ts";
 
 const VERB = "status readout";
 
-/** The registered wire format this verb decodes. Not registered yet — tracked at #5199. */
+/** The registered wire format this verb decodes. Not registered yet. */
 export const DIGEST_FORMAT = "governance-digest";
 
 /** The heading the digest comment carries. */
@@ -191,7 +190,7 @@ export const runReadout = ({read, json}: ReadoutInput): VerbOutcome => {
 	if (read._tag === "NoFormat") {
 		return refuse(
 			PRECONDITION_UNKNOWN,
-			`${VERB}: the ${DIGEST_FORMAT} format is not registered — the digest is UNKNOWN, never absent (#5199).`,
+			`${VERB}: the ${DIGEST_FORMAT} format is not registered — the digest is UNKNOWN, never absent.`,
 		);
 	}
 	if (read._tag === "Unfetchable") {

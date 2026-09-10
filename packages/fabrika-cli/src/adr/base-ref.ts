@@ -7,10 +7,10 @@
  * - **An empty merged set is a fact, not a failed read.** The read itself proves the directory:
  *   `git ls-tree <sha>:<dir>` fails outright when `<dir>` is not in the tree, so a listing that
  *   comes back empty is a directory that exists and holds nothing — a repo adopting fabrika on day
- *   one, whose first id is `0001`. Only `DirUnreadable` is UNKNOWN. ADR 0092's zero-scope refusal
+ *   one, whose first id is `0001`. Only `DirUnreadable` is UNKNOWN. The zero-scope refusal rule
  *   governs *gates* scanning for violations, where an empty scan means nothing was checked; an
- *   allocator's empty corpus is 0092's own "legitimately-empty scope", which it asks to be made
- *   explicit rather than refused (#5254).
+ *   allocator's empty corpus is that rule's own legitimately-empty scope, which is declared
+ *   explicitly rather than refused.
  * - **An empty in-flight set is a fact — but only on a successful read.** No open ADR pull request
  *   is a normal state; an in-flight set that could not be read is a refusal, because a caller that
  *   reads an empty set as "nothing reserved" falls back to the on-disk id, which is exactly the
@@ -82,7 +82,7 @@ export type InFlightFailure =
 	| {readonly _tag: "PrFilesFailed"; readonly pr: number; readonly reason: string};
 
 /**
- * Every `.decisions/` id an open pull request claims.
+ * Every decision-corpus id an open pull request claims.
  *
  * A per-pull-request file read that fails makes the set INCOMPLETE, and an incomplete set is
  * UNKNOWN — it is never trimmed down to the pull requests that happened to answer.

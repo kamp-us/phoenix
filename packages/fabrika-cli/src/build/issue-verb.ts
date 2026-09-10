@@ -5,8 +5,8 @@
  * The criteria arrive from the **imported** `acceptance-criteria` wire read and keep its three answers
  * as positive tokens. `found`, `absent` and `malformed` are three different facts and this verb
  * transports them rather than flattening them: a heading that drifted by one character is a *defect*
- * the skill must surface, and folding it into "absent" is how a gate comes to grade a PR over nothing
- * (#4735's class).
+ * the skill must surface, and folding it into "absent" is how a gate comes to grade a PR over
+ * nothing.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

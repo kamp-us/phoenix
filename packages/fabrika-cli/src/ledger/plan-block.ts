@@ -12,9 +12,15 @@
  * The section presence and duplication counts come from the gate's own `sectionCount`, so the composer
  * is held to the reader it is composing for. Only the *ordering* is derived here, because no shipped
  * reader answers it.
+ *
+ * `### Acceptance criteria` is checked the same way and for the same reason: it is the contract the
+ * epic *tail* PR is graded against, so a section of prose under that heading reads back `Absent`
+ * through the shared wire format and leaves `review criteria` with nothing — the story-list failure
+ * pointing at a different section.
  */
 
 import {readEpicStories, sectionCount, unfencedLines} from "../plan/ledger.ts";
+import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
 
 /** The line the block must open with. */
 export const PLAN_HEADING = "## Plan (plan-epic)";
@@ -28,6 +34,7 @@ export const PLAN_SECTIONS: ReadonlyArray<string> = [
 	"Goal / non-goals",
 	"Resolved questions",
 	"Approach",
+	"Acceptance criteria",
 	"Testing strategy",
 	"Task-split rationale",
 	"Vocabulary impact",
@@ -35,7 +42,25 @@ export const PLAN_SECTIONS: ReadonlyArray<string> = [
 
 const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
 
+/** The one spelling the criteria section is written under, matched whole-line. */
+const ACCEPTANCE_CRITERIA = "### Acceptance criteria";
+
 const normalize = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * The source line directly under the criteria heading, or `undefined` when there is none.
+ *
+ * Read off the unfenced view every other structural check here reads, so a fenced illustration of
+ * the section inside `### Approach` is not mistaken for the section itself.
+ */
+const lineAfterCriteriaHeading = (text: string): string | undefined => {
+	const unfenced = unfencedLines(text);
+	const at = unfenced.findIndex(({text: line}) => line.trim() === ACCEPTANCE_CRITERIA);
+	const heading = unfenced[at];
+	const next = unfenced[at + 1];
+	if (at === -1 || heading === undefined || next === undefined) return undefined;
+	return next.line === heading.line + 1 ? next.text : undefined;
+};
 
 /** The `###` headings the block carries, in the order they appear, outside every fence. */
 const headingOrder = (text: string): ReadonlyArray<string> => {
@@ -94,6 +119,19 @@ export const checkPlanBlock = (text: string): PlanBlockCheck => {
 				`the plan block's sections are out of order: "${label(current)}" appears after "${label(previous)}".`,
 			);
 		}
+	}
+
+	if (lineAfterCriteriaHeading(text)?.trim() === "") {
+		return bad(
+			`"${ACCEPTANCE_CRITERIA}" is followed by a blank line — its first "- [ ] " row sits directly under the heading, the same byte rule a child body carries.`,
+		);
+	}
+
+	const criteria = readAcceptanceCriteria(text);
+	if (criteria._tag !== "Found") {
+		return bad(
+			`the plan's acceptance criteria read as ${criteria._tag === "Absent" ? "absent" : "malformed"} — ${criteria.reason}. "${ACCEPTANCE_CRITERIA}" carries "- [ ] " checkbox rows, and a section of prose leaves the epic tail with nothing to grade.`,
+		);
 	}
 
 	const stories = readEpicStories(text);

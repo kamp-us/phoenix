@@ -1,7 +1,7 @@
 ---
 id: 0304
 title: Campaign active status is the dispatch permission, and the Focus table retires
-status: accepted
+status: amended-in-part by [0354](0354-running-campaign-admits-p0-and-p1.md)
 date: 2026-08-19
 tags: [fabrika, pipeline, roadmap]
 ---

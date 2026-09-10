@@ -126,7 +126,7 @@ The vocab-free *mechanism* lives in `packages/authz`; the kamp.us *instances + s
 | HttpApiBuilder | Effect's typed-JSON HTTP layer; serves the `GET /api/health` group (`health.ts`). | |
 | HttpRouter | Effect's imperative router; raw-`Request`/SSE routes (`/fate`, `/fate/live`, `/api/auth/*`) via `HttpRouter.add`. Replaced Hono (ADR 0027). | Hono |
 | keyset | Cursor pagination helpers (`worker/db/keyset.ts`): `KeysetPage`, `keysetAfter`, `forwardPage`. The page-envelope vocabulary. | offset pagination |
-| worker runtime | The ONE isolate-level `ManagedRuntime` (worker singletons + the composed `FateServer`) the compile step runs every fate handler through; built once in worker init, never disposed on Cloudflare (ADRs 0041/0042). | a per-request runtime |
+| worker runtime | The isolate-level layer/context construction in [`features/fate/layers.ts`](../apps/web/worker/features/fate/layers.ts). The request handler uses the native interpreter; current wiring is described in [fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md). | a runtime that executes every request's handlers |
 
 ## fate (the data layer)
 
@@ -410,4 +410,5 @@ repo already uses for other things; the founder ruled **keep the name**
 
 | Term | Definition | Not |
 |---|---|---|
-| apps/web (@phoenix/web) | The ONE app/worker today — serves the SPA (via `ASSETS`) + the API. The multi-app structure (ADR 0057) exists but `web` is the sole occupant. | |
+| apps/web (@kampus/web) | The deployed app serving the SPA and API. Its [package](../apps/web/package.json) owns the worker stack. | the local Tuval app |
+| apps/tuval (@kampus/tuval) | The local app containing the program/process kernel and shell. Its [package](../apps/tuval/package.json) has no deployment stack. | a second Cloudflare worker |

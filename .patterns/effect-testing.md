@@ -1,5 +1,12 @@
 # Testing Effect code
 
+**Scope:** test projects and database guidance below describe `apps/web`, whose
+integration tier uses real remote D1. Fiber coordination and bounded-wait guidance
+also apply to Tuval. Its integration project exercises real local sessions and
+sockets, with no D1 or cloud credentials.
+Use the owning app's Vitest projects; the shared tier vocabulary is in
+[LANGUAGE.md](../.glossary/LANGUAGE.md#the-two-test-tiers-unit--integration-and-seam-graduation).
+
 ## Two tiers — `unit` and `integration` ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md))
 
 Two tiers, no middle, **no faked engine**. The split is whether a test needs a database at all:
@@ -7,7 +14,7 @@ Two tiers, no middle, **no faked engine**. The split is whether a test needs a d
 | Tier | What it tests | Backed by | Examples |
 |---|---|---|---|
 | **`unit`** | Pure logic and Effect control flow — **no database, no SQL engine, no I/O**. The unit under test sits on a seam whose lower layer is substituted directly (the `Database` / `Drizzle` seam is already mockable — a `Layer.succeed(Drizzle, …)` with a recording or throwing `run`). | nothing — the seam below is substituted (`Layer.succeed(Drizzle, …)`) | `keyset.unit.test.ts`, `pasaport/errors.unit.test.ts`, `env.unit.test.ts`, `Vote.unit.test.ts`, `Drizzle.unit.test.ts`, `live-publisher.unit.test.ts`, `queries.unit.test.ts` |
-| **`integration`** | Real behavior against **real remote Cloudflare D1**, the deployed worker, the DOs, and the fate seam — black-box over HTTP | **real remote D1** + the deployed workerd, via alchemy `Test.make` (per-file isolated stage) | the suites under `tests/integration/` |
+| **`integration`** | Real behavior against **real remote Cloudflare D1**, the deployed worker, the DOs, and the fate seam — black-box over HTTP | **real remote D1** + the deployed worker; a run-scoped shared stage by default, dedicated stages where assertions require isolation | the suites under `tests/integration/` |
 
 **`unit` runs offline** in the `unit` Vitest project (default node pool, no workerd, no database). **`integration`** is the separate `integration` project — black-box HTTP against an alchemy-deployed worker, authored over the harness in [alchemy-test-harness.md](./alchemy-test-harness.md). No miniflare, no `@cloudflare/vitest-pool-workers`, no `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`. **If you're writing an integration test, stop reading here and go to that doc.**
 
@@ -16,11 +23,6 @@ Two tiers, no middle, **no faked engine**. The split is whether a test needs a d
 The litmus for tier placement (ADR 0082): **"Could this be wrong even if the database behaved perfectly?"** — yes (normalization, clamping, envelope shaping, pagination/keyset *decisions*, auth gates, cursor-miss branches, topic-key routing) → `unit`; only-wrong-if-the-real-D1-differs (FTS5 MATCH/bm25, collation/NULL/date tiebreaks in keyset *execution*, batch atomicity, `meta.changes` idempotency, the better-auth session round-trip) → `integration`. **No domain decision welded to SQL execution:** cursor resolution is a *port* (a thin DB read), but the keyset / cursor-miss *decision* and the page envelope are *pure* and unit-testable.
 
 Reach for `unit` first — only push to `integration` what the in-process algebra genuinely can't reach faithfully.
-
-**This page is `apps/web`'s.** `apps/tuval` also declares an `integration` project and it is a
-different fidelity — a real Pi session over a real loopback socket, no D1 and no credentials. The
-term is defined for both apps in [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md); nothing above
-applies to Tuval.
 
 ## The `*.unit.test.ts` naming convention
 
@@ -97,7 +99,7 @@ that constructor names the plain-member one instead of leaving it inline. Consum
 
 `unit` tests carry no per-test database to isolate, so there is no shared-handle lifecycle to manage: each test provides its own `Layer.succeed(Drizzle, …)` double inline. Module-scope a double that doesn't vary between tests; build it inside the test body when the scripted results differ per case.
 
-**`it.layer` builds the layer once per `describe` block** — fine for a stable stub, but if a test ever needed a fresh stateful resource per case, `it.layer` would share one across the block. At the `integration` tier, isolation is the per-file `Test.make` stage, not anything in this file — see [alchemy-test-harness.md](./alchemy-test-harness.md).
+**`it.layer` builds the layer once per `describe` block** — fine for a stable stub, but if a test ever needed a fresh stateful resource per case, `it.layer` would share one across the block. Integration files normally use `sharedStack()` with namespaced data; [pano-saved-posts.test.ts](../apps/web/tests/integration/pano-saved-posts.test.ts) is a working example. The shared-stage rules and the criteria for a dedicated stage belong in [alchemy-test-harness.md](./alchemy-test-harness.md).
 
 ## `@effect/vitest` and `it.effect`
 
@@ -170,6 +172,37 @@ Two scoped exceptions:
 Existing plain-vitest tests that run Effects via `runPromise` convert to `it.effect`
 opportunistically — when a change next touches the file, not as a churn pass.
 
+## A race between two synchronous ops is not a race a test can pin
+
+`Scheduler.MaxOpsBeforeYield` is not a coordination primitive. Cutting the run loop's yield budget
+to force two fibers to interleave tunes a number between two failure modes — one op too high and the
+fibers never interleave, one op too low and they starve — and the value that interleaves on an idle
+box is the value that starves on a loaded CI runner. Tuval's interleaved-stop case was pinned at a
+budget of `3` and timed out at 5000ms on a PR that touched no Tuval code (#8940).
+
+Nothing replaces the budget where the window is two **adjacent synchronous ops** — a `Ref.get`
+followed by a `Ref.set`, say. No `Latch` or `Deferred` a test owns can suspend a fiber between them,
+because the fiber never reaches a suspension point there; the only thing that splits the pair is a
+scheduler preemption, which is the non-determinism you were trying to remove.
+
+So close the window by construction instead, and judge *that* at a named seam:
+
+- Move the read-and-write into a module that owns the `Ref` and exposes only the atomic operation
+  (`apps/tuval/src/agy/ai-agent/stop-claim.ts` — one `Ref.modify`, no `Ref` on the interface). The
+  two-step shape stops being something a caller can spell.
+- At the seam, assert the invariant that holds under *every* interleaving ("exactly one owner"), so
+  no load can red it falsely, and read the single step off the module's own source for the one
+  property no call can observe (`stop-claim.unit.test.ts`).
+
+## An inner wait must be bounded strictly below the per-test budget
+
+A helper that bounds its own wait at the per-test timeout can never reach its own message: vitest's
+bare `Test timed out in 5000ms` always wins the race, and that is all the CI log carries. Bound every
+in-test wait strictly under the budget the project runs on — `interrupt-respawn.unit.test.ts` holds
+one `INNER_BOUND` constant under the 5000ms `unit` default — so a starved wait names what it was
+waiting for. Raising `testTimeout` to fix a flake is the inverse move: it spends the budget and keeps
+the dependence.
+
 ## Which tier to write
 
 Apply the litmus — *"could this be wrong even if the database behaved perfectly?"* In practice:
@@ -202,11 +235,15 @@ The full service record is required — `Layer.succeed` is identity on the Tag's
 
 ## Testing the `Drizzle` service (infrastructure)
 
-`run` and `batch` (the bound methods on the `Drizzle` service value) are the trust boundary. Test them in isolation against a fake/in-memory drizzle setup. See the [feature-services.md](./feature-services.md#the-drizzle-service) testing-scope notes — scope B (smoke + semantics + composition + type inference + error propagation), ~10-15 tests.
+[`Drizzle.unit.test.ts`](../apps/web/worker/db/Drizzle.unit.test.ts) exercises the
+production `makeDrizzleAccess` with a sentinel `DrizzleDb` and a recording or rejecting
+`batch` double. It checks callback forwarding, successful values, tuple shape, type
+inference and rejection translation. No SQL engine is constructed.
 
-Tests build a `Drizzle` layer over a test-supplied `db` via the production factories (`makeDrizzleAccess` / `makeDrizzleLayer` in `worker/db/Drizzle.ts`) — the test layer is exactly the production wiring with a fake `DrizzleDb`, so the `run` / `batch` bodies under test are the ones that ship.
-
-Canonical implementation: `apps/web/worker/db/Drizzle.unit.test.ts`.
+These tests prove the wrapper's behavior, not D1 execution or batch atomicity. Real-D1
+claims need a reachable integration test through the [HTTP harness](./alchemy-test-harness.md).
+When no production operation can exercise a database property, state the coverage gap;
+do not add a public fault-injection operation or claim a unit double proves it.
 
 ## Helpers in test files
 
@@ -259,6 +296,8 @@ Never use `setTimeout`, `Date.now()`, or real wall-clock sleeps in tests. `TestC
 - **Booting a SQL engine and calling it a unit test** (the banned `node:sqlite` / `makeSqliteTestDb` pattern, ADR 0082). If a test needs a database, it is an `integration` test on real D1.
 - **Proving a pure-logic or decision-level fact at `integration`.** It belongs in `unit` — offline and flake-free. `integration` pays remote-D1 latency; spend it only on real-D1 fidelity.
 - **Setting up a unit-test layer inside `beforeEach`** when it doesn't change between tests. Module-scope it.
+- **`Scheduler.MaxOpsBeforeYield` to force an interleave**, and an inner wait bounded at the per-test
+  timeout — see the two sections above.
 - **`setTimeout`/timer ticks as fiber coordination.** Await a `Latch`/`Deferred` the program resolves — see "Fiber coordination" above. Timers are for negative liveness checks only.
 - **Snapshot tests against effect-internal shapes** (Causes, Exits) — they include implementation details that change between effect versions. Assert on the success value or the error `_tag`, not the cause structure.
 

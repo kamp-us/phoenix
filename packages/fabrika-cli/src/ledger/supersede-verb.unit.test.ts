@@ -55,7 +55,10 @@ const files = (...records: ReadonlyArray<ChildRecord>) => ({
 	[manifestPath(DIR)]: renderManifest(records),
 });
 
-const COMMENTED = served({id: 5230661234, html_url: "https://github.com/o/r/issues/4288#c"}, 201);
+const COMMENTED = served(
+	{id: 5230661234, html_url: "https://forge.example/o/r/issues/4288#c"},
+	201,
+);
 
 /** The three legs and the reads around them; `once` lets each read differ before and after. */
 const happy = (
@@ -127,7 +130,7 @@ describe("runSupersede", () => {
 
 	/**
 	 * Closing before unlinking leaves a closed issue still counted as a sub-issue, which the gate reads
-	 * as a child in scope that can never carry a live assignee (#5026).
+	 * as a child in scope that can never carry a live assignee.
 	 */
 	it("unlinks before it closes, and journals before either", async () => {
 		const {log} = await run();

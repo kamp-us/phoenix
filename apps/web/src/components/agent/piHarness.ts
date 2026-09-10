@@ -139,7 +139,11 @@ export async function setPiModel(model: PiModel): Promise<void> {
 	});
 }
 
-export async function setPiThinkingLevel(level: PiThinkingLevel): Promise<void> {
+export async function setPiThinkingLevel(
+	level: Parameters<AgentChatInputBridge["setPiThinkingLevel"]>[0],
+): Promise<void> {
+	if (thinkingLevel(level) === undefined)
+		throw new Error("Pi does not support this thinking level");
 	await request("/__pi/thinking-level", {
 		method: "POST",
 		headers: {"Content-Type": "application/json"},

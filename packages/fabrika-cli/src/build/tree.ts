@@ -3,9 +3,8 @@
  * runs, and — where asked — that the tree there carries no uncommitted change.
  *
  * **Where that is, is not one of the facts.** Fabrika holds no opinion on linked worktree versus
- * primary checkout; isolation is the operator's call, made at spawn time (the 2026-08-13 ruling on
- * #5386). What survives is don't-make-a-mess: a `--require-clean` open refuses an unauthored hunk
- * (#2666), wherever the tree sits.
+ * primary checkout; isolation is the operator's call, made at spawn time. What survives is
+ * don't-make-a-mess: a `--require-clean` open refuses an unauthored hunk, wherever the tree sits.
  *
  * This module reads and never repairs. Nothing here creates, cleans, locks or removes anything.
  */

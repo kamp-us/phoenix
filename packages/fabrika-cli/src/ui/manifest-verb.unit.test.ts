@@ -32,7 +32,7 @@ describe("runManifest", () => {
 			registry: null,
 			inventory: null,
 			goldenPointer: null,
-			harness: null,
+			uiSurfaces: [],
 			lawSource: "manifest-prose",
 		});
 	});

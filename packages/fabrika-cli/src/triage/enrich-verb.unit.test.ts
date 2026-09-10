@@ -13,6 +13,7 @@ import {
 import {
 	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
+	CRITERIA_REQUIRED,
 	EMPTY_STDIN,
 	LEAKED_PATH,
 	MALFORMED_CRITERIA,
@@ -38,14 +39,14 @@ const REWRITE = "## What to build\n\nKeep focus on the editor across a save.";
 const PITCH =
 	"**Problem:** yazars lose their place\n**Arc:** fabrika campaign\n**Appetite:** 2 cycles\n**Rabbit-holes:** none\n**No-gos:** no rewrite";
 
-const issue = (body: string): HttpReply => ({
+const issue = (body: string, labels: ReadonlyArray<string> = []): HttpReply => ({
 	status: 200,
 	body: JSON.stringify({
 		number: 4312,
 		title: "t",
 		body,
 		state: "open",
-		labels: [],
+		labels: labels.map((name) => ({name})),
 		html_url: "https://example.test/issues/4312",
 		milestone: null,
 	}),
@@ -76,9 +77,13 @@ const written = (seams: GuardedSeams): string | null => {
  * A live GitHub round-trip returns what was written, so a fake that returned a fixed body would
  * make every read-back assertion a statement about the fixture rather than about the verb.
  */
-const run = async (before: string, overrides: Partial<typeof options> = {}) => {
+const run = async (
+	before: string,
+	overrides: Partial<typeof options> = {},
+	labels: ReadonlyArray<string> = [],
+) => {
 	const shell = guardedShell([
-		[once(READ), issue(before)],
+		[once(READ), issue(before, labels)],
 		[PATCH, ACCEPTED],
 	]);
 	// Two passes: the first to learn what the verb writes, the second to feed it back as the read-back.
@@ -88,9 +93,9 @@ const run = async (before: string, overrides: Partial<typeof options> = {}) => {
 	const patched = written(shell);
 	if (patched === null) return {outcome: probe, body: null, requests: shell.requests};
 	const echoing = guardedShell([
-		[once(READ), issue(before)],
+		[once(READ), issue(before, labels)],
 		[PATCH, ACCEPTED],
-		[READ, issue(patched)],
+		[READ, issue(patched, labels)],
 	]);
 	const outcome = await Effect.runPromise(
 		Effect.provide(runEnrich({...options, ...overrides}), echoing.layer),
@@ -283,7 +288,7 @@ describe("runEnrich — legacy migration", () => {
 	});
 });
 
-describe("runEnrich — the composed body's criteria block must be one the wire reader accepts (#5565, ADR 0288)", () => {
+describe("runEnrich — the composed body's criteria block must be one the wire reader accepts", () => {
 	it("refuses a level-2 heading on 15, naming the level it read and the level expected", async () => {
 		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
@@ -326,6 +331,50 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 		});
 		expect(outcome.code).toBe(0);
 		expect(body).toContain("## Acceptance criteria");
+	});
+
+	it("refuses a criteria-less rewrite over a target already labelled ready-for:agent, on 16", async () => {
+		const shell = guardedShell([[READ, issue(ORIGINAL, ["ready-for:agent", "status:triaged"])]]);
+		const outcome = await Effect.runPromise(Effect.provide(runEnrich(options), shell.layer));
+		expect(outcome.code).toBe(CRITERIA_REQUIRED);
+		expect(outcome.code).not.toBe(MALFORMED_CRITERIA);
+		const said = outcome.stderr.at(-1) ?? "";
+		expect(said).toContain("ready-for:agent");
+		// Both escapes, because one of them is a move no re-send can make.
+		expect(said).toContain("re-send");
+		expect(said).toContain("--ready-for human");
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
+	});
+
+	it("writes a rewrite that DOES carry a block over the same label", async () => {
+		const {outcome, body} = await run(
+			ORIGINAL,
+			{
+				stdin: Effect.succeed<StdinRead>({
+					_tag: "Text",
+					text: `${REWRITE}\n\n### Acceptance criteria\n\n- [ ] keep focus\n`,
+				}),
+			},
+			["ready-for:agent"],
+		);
+		expect(outcome.code).toBe(0);
+		expect(body).toContain("### Acceptance criteria");
+	});
+
+	it("exempts an --epic pitch: a criteria-less epic body over ready-for:agent still writes", async () => {
+		const {outcome, body} = await run(
+			ORIGINAL,
+			{epic: true, stdin: Effect.succeed<StdinRead>({_tag: "Text", text: PITCH})},
+			["ready-for:agent"],
+		);
+		expect(outcome.code).toBe(0);
+		expect(body).toContain(PITCH);
+	});
+
+	it("leaves the criteria-less allowance standing wherever the label is absent", async () => {
+		const {outcome, body} = await run(ORIGINAL, {}, ["status:triaged", "ready-for:human"]);
+		expect(outcome.code).toBe(0);
+		expect(body).toContain(REWRITE);
 	});
 
 	it("refuses a drifted block in an --epic pitch too, where the envelope heads it with `## Pitch`", async () => {
@@ -469,7 +518,7 @@ describe("runEnrich — refusals", () => {
 	});
 });
 
-/** #5644: the claim protocol was advisory, and this is the verb that overwrote #5642's body. */
+/** The claim protocol was advisory, and this is the verb that overwrote a winner's body. */
 describe("runEnrich — the target guard", () => {
 	const MINE = "session-mine";
 	const THEIRS = "session-theirs";
@@ -545,9 +594,9 @@ describe("runEnrich — the target guard", () => {
 });
 
 /**
- * ADR 0301 makes the native `blocked_by` graph the one carrier of "do not start this yet", so a
- * rewrite stating an ordering the graph does not carry produces an issue `build pick` admits and no
- * lane can build — #6663 shipped exactly that. Founder ruling on #6728: fail-closed, no override.
+ * The native `blocked_by` graph is the one carrier of "do not start this yet", so a rewrite stating
+ * an ordering the graph does not carry produces an issue `build pick` admits and no lane can build.
+ * The gate is fail-closed, with no override.
  */
 describe("runEnrich — the stated-ordering gate", () => {
 	const EDGES = /GET .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
@@ -564,7 +613,7 @@ describe("runEnrich — the stated-ordering gate", () => {
 	 * read-back body would make every `code` assertion here a statement about the fixture.
 	 */
 	/**
-	 * Every number a stated ordering names is read, to settle issue-versus-PR (ADR 0301). The default
+	 * Every number a stated ordering names is read, to settle issue-versus-PR. The default
 	 * answers "an ordinary issue", so a case that is not about that distinction reads as it did before.
 	 */
 	const AS_ISSUE: Scripted = [
@@ -645,9 +694,9 @@ describe("runEnrich — the stated-ordering gate", () => {
 	});
 
 	/**
-	 * ADR 0301 names a blocking pull request by the issue its merge closes, so there is no edge to
-	 * wire and the refusal's own escape could not clear one — 5 of the 6 bodies this gate refused
-	 * across the 150 most recent issues named a PR (#6728 round 1).
+	 * A blocking pull request is named in the graph by the issue its merge closes, so there is no edge
+	 * to wire and the refusal's own escape could not clear one — 5 of the 6 bodies this gate refused
+	 * across 150 issues named a PR.
 	 */
 	describe("a reference that is a pull request", () => {
 		const REF = /GET .*\/repos\/o\/r\/issues\/4311$/;
@@ -664,10 +713,10 @@ describe("runEnrich — the stated-ordering gate", () => {
 			expect(outcome.stderr.join(" ")).toContain("the issue its merge closes");
 		});
 
-		/** #7223 verbatim: a wired prerequisite beside a courtesy link to the PR implementing it. */
+		/** Verbatim: a wired prerequisite beside a courtesy link to the PR implementing it. */
 		it("passes a wired issue named beside a PR link (#7223, verbatim)", async () => {
 			const line =
-				"Blocked on #7035 / [#4311](https://github.com/kamp-us/phoenix/pull/4311). The shared derivation this";
+				"Blocked on #7035 / [#4311](https://example.test/o/r/pull/4311). The shared derivation this";
 			const {outcome, patched} = await gate(
 				`## What to build\n\n${line}`,
 				[EDGES, edgeList(7035)],

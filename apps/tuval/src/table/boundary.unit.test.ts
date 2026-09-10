@@ -13,9 +13,9 @@ import type {TableEvent, TableRow} from "./row.ts";
 
 describe("table boundary", () => {
 	it("the row type is program-blind", () => {
-		// Every field is one of five, and each is plain data a projection can render.
+		// Every field is one of seven, and each is plain data a projection can render.
 		expectTypeOf<keyof TableRow>().toEqualTypeOf<
-			"id" | "programId" | "parentId" | "ports" | "stateSummary"
+			"id" | "programId" | "parentId" | "ports" | "stateSummary" | "title" | "status"
 		>();
 		expectTypeOf<TableRow["id"]>().toEqualTypeOf<ProcessId>();
 		expectTypeOf<TableRow["programId"]>().toEqualTypeOf<ProgramId>();
@@ -26,6 +26,9 @@ describe("table boundary", () => {
 			readonly revision: number;
 		}>();
 		expectTypeOf<TableRow["stateSummary"]>().not.toHaveProperty("state");
+		// The two self-report values are lines, not a program's own payload type.
+		expectTypeOf<TableRow["title"]>().toEqualTypeOf<Option.Option<string>>();
+		expectTypeOf<TableRow["status"]>().toEqualTypeOf<Option.Option<string>>();
 		// A declared port is kind plus direction: no predicate, no queue, no payload type.
 		expectTypeOf<TableRow["ports"][string]>().toEqualTypeOf<{
 			readonly kind: string;

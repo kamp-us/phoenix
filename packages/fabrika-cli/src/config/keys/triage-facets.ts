@@ -1,18 +1,19 @@
 /**
  * `triageFacets` — what each triage facet owns, and every label an input can make it keep.
  *
- * The shipped default is phoenix's own vocabulary, taken straight off `triage/facets.ts` rather than
- * restated here, so a bare repo reconciles exactly as phoenix does today.
+ * The shipped default is taken straight off `triage/facets.ts` rather than restated here, so a bare
+ * repo reconciles on exactly the values that module already carries.
  *
  * **The containment invariant is this key's `refuseLoad`, and that seat is the point.** A facet is
- * delete authority: `owns` strips every label it matches that the keep set does not name, which is
- * how #4285 removed an issue's only priority. Checked at a call site, the rule is one a new verb can
- * forget; checked here, every reader of a loaded config inherits it and a violating config is refused
- * before any write path is reachable. The rule itself, and why it refuses in one direction for a
- * pattern and both for a set, is `../containment.ts`.
+ * delete authority: `owns` strips every label it matches that the keep set does not name, so a
+ * facet with no naming counterpart strips an issue's only priority. Checked at a call site, the
+ * rule is one a new verb can forget; checked here, every reader of a loaded config inherits it and
+ * a violating config is refused before any write path is reachable. The rule itself, and why it
+ * refuses in one direction for a pattern and both for a set, is `../containment.ts`.
  *
  * This module ships the key, its default and that refusal. Reading the *values* off it at the
- * reconcile's call sites — so a repo can actually declare its own board vocabulary — is #6294's.
+ * reconcile's call sites — so a repo can actually declare its own board vocabulary — is separate
+ * work.
  */
 
 import {FACET_VOCABULARY} from "../../triage/facets.ts";

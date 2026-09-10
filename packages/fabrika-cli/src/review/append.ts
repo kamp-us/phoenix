@@ -2,7 +2,7 @@
  * The append-only composition: where the new row goes, and the two guards that prove nothing else
  * moved.
  *
- * The guards are the fence, not a formality. ADR 0079's whole point is that a reviewer-authored
+ * The guards are the fence, not a formality. The whole point is that a reviewer-authored
  * criterion **adds** to the contract and never rewrites it — v1's `reviewer-append-ac.sh` was
  * mandated at four call sites and called at none, so the fence existed only as a description. Here
  * the composed body is checked twice before it is sent, and the two checks read it through
@@ -11,14 +11,39 @@
  * A composition that inserted the row somewhere the parser does not see it passes the first and reds
  * on the second, which is the whole reason both exist.
  */
+import type {CommitRange} from "../io/git.ts";
 import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
+import {renderRange} from "../wire/range-verdict-marker.ts";
+import type {HeadSha} from "../wire/verdict-marker.ts";
 
-/** The provenance tag ADR 0079 requires — what makes a routed row auditable after the fact. */
-export const provenanceTag = (pr: number, round: number): string =>
-	`<!-- ac:review pr:#${pr} round:${round} -->`;
+/**
+ * What the round was judged over — the half of the provenance tag that is not the round number.
+ *
+ * An epic child has no pull request mid-run, so the subject there is the commit range the
+ * reviewer read, spelled exactly as `range-verdict-marker.ts` spells it so a later reader resolves
+ * one range against `lane prove`'s verdicts and this row with the same bytes.
+ */
+export type CriterionProvenance =
+	| {readonly _tag: "Pull"; readonly pr: number}
+	| {readonly _tag: "Ranged"; readonly range: CommitRange<HeadSha>};
 
-export const criterionRow = (text: string, pr: number, round: number): string =>
-	`- [ ] ${text.trim()} ${provenanceTag(pr, round)}`;
+/** The provenance tag — what makes a routed row auditable after the fact. */
+export const provenanceTag = (provenance: CriterionProvenance, round: number): string =>
+	provenance._tag === "Pull"
+		? `<!-- ac:review pr:#${provenance.pr} round:${round} -->`
+		: `<!-- ac:review range:${renderRange(provenance.range)} round:${round} -->`;
+
+/** How a refusal or an escalation names the subject in prose. */
+export const provenanceSubject = (provenance: CriterionProvenance): string =>
+	provenance._tag === "Pull"
+		? `PR #${provenance.pr}`
+		: `the range ${renderRange(provenance.range)}`;
+
+export const criterionRow = (
+	text: string,
+	provenance: CriterionProvenance,
+	round: number,
+): string => `- [ ] ${text.trim()} ${provenanceTag(provenance, round)}`;
 
 export type Composition =
 	| {readonly _tag: "Composed"; readonly body: string}
@@ -33,7 +58,7 @@ export type Composition =
  * section carries checkboxes of its own, and appending to the wrong one puts the row outside the
  * block every future read parses. Taking the span rather than matching the criterion's text is what
  * makes a wrapped last criterion locatable at all: its text is the joined sentence, which appears on
- * no single line (#5716). Inserting after the span's last line — not its checkbox line — is what
+ * no single line. Inserting after the span's last line — not its checkbox line — is what
  * keeps the new row a sibling instead of one more continuation of the row above it.
  */
 export const insertAfterLastCriterion = (body: string, row: string): Composition => {

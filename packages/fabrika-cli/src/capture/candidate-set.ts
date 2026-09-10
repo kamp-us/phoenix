@@ -1,15 +1,15 @@
 /**
- * The candidate-set contract (epic #2955 story 1 → 2, ADR 0183 §5): the pure
- * assembly + (de)serialization of the SET the blessing surface (#2962) consumes.
+ * The candidate-set contract: the pure assembly + (de)serialization of the SET the
+ * blessing surface consumes.
  *
- * A candidate SET is the input to the founder's one blessing session: one candidate
- * SCREEN per priority surface, each carrying its surface identity + the depo
+ * A candidate SET is the input to one blessing session: one candidate SCREEN per
+ * priority surface, each carrying its surface identity + the asset store's
  * content-address of the exact rendered bytes (`sha256` + immutable `url`). That
- * `sha256` is load-bearing — it is the byte-faithfulness anchor of ADR 0183 §5's
- * no-re-render guard: the blessing surface embeds `url` in the gallery comment at
- * full resolution, the founder approves it, and the blessed pointer moves to THIS
+ * `sha256` is load-bearing — it is the byte-faithfulness anchor of the no-re-render
+ * guard: the blessing surface embeds `url` in the gallery comment at
+ * full resolution, the operator approves it, and the blessed pointer moves to THIS
  * `sha256` — never a re-render. So the render step (this package) PUTs each candidate
- * to depo up front and emits its `sha256` here, and the bless commits exactly it.
+ * to the store up front and emits its `sha256` here, and the bless commits exactly it.
  *
  * Pure + IO-free: `assembleCandidateSet` folds resolved priority surfaces against
  * their rendered+stored artifacts (unit-tested — same inputs → same set), and
@@ -23,7 +23,7 @@ import type {ResolvedPrioritySurface} from "./priority-surfaces.ts";
 
 /** One rendered-and-stored candidate screen — a blessing-gallery entry. */
 export interface CandidateScreen {
-	/** 1-based founder-decided blessing order (#2944). */
+	/** 1-based blessing order. */
 	readonly order: number;
 	/** The `<route>[:state]` surface-id — the golden-pointer key a bless moves. */
 	readonly surfaceId: string;
@@ -31,9 +31,9 @@ export interface CandidateScreen {
 	readonly title: string;
 	/** The bless intent recorded on the pointer when this candidate is blessed. */
 	readonly intent: string;
-	/** 64-hex depo content-address of the EXACT rendered bytes (the no-re-render anchor). */
+	/** 64-hex store content-address of the EXACT rendered bytes (the no-re-render anchor). */
 	readonly sha256: string;
-	/** Immutable `depo.kamp.us/<sha256>.png` URL — the full-res gallery embed. */
+	/** Immutable `<store>/<sha256>.png` URL — the full-res gallery embed. */
 	readonly url: string;
 	/** Filesystem-safe PNG name (basename of `localPath`). */
 	readonly fileName: string;
@@ -50,10 +50,10 @@ export interface CandidateSet {
 	/**
 	 * The forced flag state the preview was rendered under (flag key → on/off).
 	 * Recorded as metadata for provenance — this step CONSUMES a flag-forced preview,
-	 * it does not force flags (the forcing mechanism is emitted separately, #2955).
+	 * it does not force flags (the forcing mechanism is a separate step).
 	 */
 	readonly forcedFlags: Readonly<Record<string, boolean>>;
-	/** The candidate screens, in founder order. */
+	/** The candidate screens, in priority order. */
 	readonly screens: readonly CandidateScreen[];
 }
 
@@ -76,10 +76,10 @@ export interface AssembleCandidateSetInput {
 
 /**
  * Assemble the candidate set: join each resolved priority surface to its rendered
- * artifact by surface-id, preserving founder order. Fail-closed on a mismatch —
+ * artifact by surface-id, preserving priority order. Fail-closed on a mismatch —
  * every priority surface must have exactly one rendered candidate and vice-versa (a
  * missing or extra render means the capture leg silently dropped/duplicated a
- * surface, which must never reach the founder as a partial gallery). Rejects a
+ * surface, which must never reach the operator as a partial gallery). Rejects a
  * non-sha256 content-address (a `.png` or URL slipped in where the stem belongs).
  */
 export const assembleCandidateSet = (input: AssembleCandidateSetInput): CandidateSet => {
@@ -128,7 +128,7 @@ export const assembleCandidateSet = (input: AssembleCandidateSetInput): Candidat
 /**
  * Serialize the set to the JSON the blessing surface consumes — tab-indented +
  * trailing newline, matching the repo's committed-JSON convention. Deterministic:
- * screens stay in founder order, and flag keys are sorted so the same set always
+ * screens stay in priority order, and flag keys are sorted so the same set always
  * serializes byte-identically (a stable operator artifact / diff).
  */
 export const serializeCandidateSet = (set: CandidateSet): string => {

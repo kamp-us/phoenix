@@ -6,9 +6,10 @@ match. Every command and output below was followed against this tree at the comm
 written at.
 
 Two pages hold what this one leaves out: [`../docs/wire-formats.md`](../docs/wire-formats.md) says
-what a wire format *is* and maps the ones already registered, and
-[ADR 0241](../../../.decisions/0241-wire-formats-owned-by-schema-modules.md) says why a schema
-module owns the bytes. Neither is repeated here.
+what a wire format *is* and maps the ones already registered. Why a schema module owns the bytes is
+settled and not repeated here: a format two skills meet through lives in typed code with `emit`,
+`read` and `check` verbs, never in a paragraph of skill prose, so a drifted format answers
+`Malformed` instead of coming back as "there was nothing there".
 
 Run the CLI from source — `node packages/fabrika-cli/src/bin.ts`. An installed copy answers from its
 own checkout's registry, which does not know your row until it ships.

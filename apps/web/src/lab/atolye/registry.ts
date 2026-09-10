@@ -1,7 +1,7 @@
 // The headless registry — the array order IS the curation order. See .patterns/atolye-exhibit-harness.md
 
 import type {AnyExhibit} from "./exhibit";
-import {agentChatInputExhibit} from "./exhibits/AgentChatInput.exhibit";
+import {agentChatInputExhibit, agentChatInputPartsExhibit} from "./exhibits/AgentChatInput.exhibit";
 import {avatarExhibit} from "./exhibits/Avatar.exhibit";
 import {buttonExhibit} from "./exhibits/Button.exhibit";
 import {cardExhibit} from "./exhibits/Card.exhibit";
@@ -16,6 +16,7 @@ import {draftRestoreBannerExhibit} from "./exhibits/DraftRestoreBanner.exhibit";
 import {editedIndicatorExhibit} from "./exhibits/EditedIndicator.exhibit";
 import {emptyStateExhibit} from "./exhibits/EmptyState.exhibit";
 import {formExhibit} from "./exhibits/Form.exhibit";
+import {markdownExhibit} from "./exhibits/Markdown.exhibit";
 import {menuExhibit} from "./exhibits/Menu.exhibit";
 import {metaRowExhibit} from "./exhibits/MetaRow.exhibit";
 import {reportButtonExhibit} from "./exhibits/ReportButton.exhibit";
@@ -32,6 +33,7 @@ const exhibits: readonly AnyExhibit[] = [
 	composerExhibit,
 	commandPaletteExhibit,
 	agentChatInputExhibit,
+	agentChatInputPartsExhibit,
 	buttonExhibit,
 	avatarExhibit,
 	cardExhibit,
@@ -44,6 +46,7 @@ const exhibits: readonly AnyExhibit[] = [
 	editedIndicatorExhibit,
 	emptyStateExhibit,
 	formExhibit,
+	markdownExhibit,
 	menuExhibit,
 	metaRowExhibit,
 	reportButtonExhibit,

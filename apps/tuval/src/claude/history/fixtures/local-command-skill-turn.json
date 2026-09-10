@@ -1,0 +1,21 @@
+{
+	"type": "user",
+	"uuid": "00000000-0000-4000-8000-000000000081",
+	"session_id": "00000000-0000-4000-8000-000000000082",
+	"message": {
+		"role": "user",
+		"content": [
+			{
+				"type": "text",
+				"text": "<command-message>fabrika:triage</command-message>\n<command-name>fabrika:triage</command-name>\n<skill-format>true</skill-format>"
+			},
+			{
+				"type": "text",
+				"text": "Base directory for this skill: /tmp/tuval-capture/claude-plugins/fabrika/skills/triage\n\n# triage\n\nYou are the guardrail. **The failure that matters is not a missing label — it is a confident wrong\none**, indistinguishable from a correct one once it lands. Each step makes its answer checkable, not"
+			}
+		]
+	},
+	"parent_tool_use_id": null,
+	"parent_agent_id": null,
+	"timestamp": "2026-08-18T01:48:12.086Z"
+}

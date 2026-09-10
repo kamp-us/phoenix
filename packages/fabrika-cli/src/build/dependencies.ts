@@ -2,10 +2,10 @@
  * The `## Dependencies` grammar — canonical here, validated by `build check --surface plan` and
  * rendered into an epic ledger by `ledger topology`.
  *
- * **This block is a rendering, never a source of blockedness.** #5387 ruled that every dependency
- * in fabrika sits behind GitHub's native `blocked_by` edges and that a prose block is at most a
- * picture of them; ADR 0301 extends that to standalone issues. `build eligible` therefore parses
- * nothing here — it reads the graph through `./blockedness.ts` (#5913). What still reads this
+ * **This block is a rendering, never a source of blockedness.** Every dependency in fabrika sits
+ * behind GitHub's native `blocked_by` edges — an epic's children and a standalone issue alike — and
+ * a prose block is at most a picture of them. `build eligible` therefore parses
+ * nothing here — it reads the graph through `./blockedness.ts`. What still reads this
  * grammar reads it for planning and sequencing: the plan surface's well-formedness check, the
  * ledger renderer, and the epic machine emitter. A reader that wants to know whether work may start
  * asks the graph.
@@ -27,7 +27,7 @@
  *
  * **Any other non-blank line inside the section is unparseable, and unparseability refuses.** "No
  * parseable edges" is never read as "no edges" — a topology nobody could read is not a topology
- * proving nothing blocks (ADR 0092, #4104).
+ * proving nothing blocks.
  *
  * **The section ends at the next ATX heading or at the first thematic break (`---`, `***`, `___`),
  * whichever comes first** — this is the canonical statement of that boundary, and `plan/ledger.ts`
@@ -35,7 +35,7 @@
  * filed body is amended by appending a dated block below the original, and that block is
  * conventionally introduced by a bare `---`; with `## Dependencies` last, a heading-only boundary
  * put that separator inside the section and refused the whole topology over a line that was never
- * part of it (#5816).
+ * part of it.
  */
 
 /** A reference in the topology: a real issue, or an id local to the ledger. */
@@ -98,18 +98,57 @@ const parseRefList = (raw: string): ReadonlyArray<Ref> | null => {
 	return refs;
 };
 
+/**
+ * The `[heading, end)` line span of one `## Dependencies` section, 0-based, `end` exclusive.
+ *
+ * A reader that only wants the edges takes {@link readTopology}; a *writer* needs the bytes it may
+ * replace, and deriving those from a second scan is how two modules come to disagree about where the
+ * section ends. `plan restage` splices over this span.
+ */
+export interface TopologySpan {
+	readonly heading: number;
+	readonly end: number;
+}
+
+/**
+ * Every `## Dependencies` section in the body, in body order.
+ *
+ * All of them rather than the first, because *how many there are* is itself an answer: `readTopology`
+ * reads the first because a reader must pick one, while a writer refuses a body carrying two — a
+ * section with no single meaning is not a section to rewrite. A second heading terminates the first
+ * span, so the spans never overlap.
+ */
+export const topologySpans = (body: string): ReadonlyArray<TopologySpan> => {
+	const lines = body.split("\n");
+	const spans: TopologySpan[] = [];
+	for (let heading = 0; heading < lines.length; heading++) {
+		if (!HEADING_RE.test((lines[heading] ?? "").trim())) continue;
+		let end = lines.length;
+		for (let i = heading + 1; i < lines.length; i++) {
+			const raw = lines[i] ?? "";
+			const text = raw.trim();
+			if (text === "") continue;
+			if (ANY_HEADING_RE.test(text) || isThematicBreak(raw)) {
+				end = i;
+				break;
+			}
+		}
+		spans.push({heading, end});
+	}
+	return spans;
+};
+
 /** Read a body's `## Dependencies` block. */
 export const readTopology = (body: string): Topology => {
 	const lines = body.split("\n");
-	const start = lines.findIndex((line) => HEADING_RE.test(line.trim()));
-	if (start === -1) return {_tag: "Absent"};
+	const span = topologySpans(body)[0];
+	if (span === undefined) return {_tag: "Absent"};
 
 	const edges: Edge[] = [];
-	for (let i = start + 1; i < lines.length; i++) {
+	for (let i = span.heading + 1; i < span.end; i++) {
 		const raw = lines[i] ?? "";
 		const text = raw.trim();
 		if (text === "") continue;
-		if (ANY_HEADING_RE.test(text) || isThematicBreak(raw)) break;
 
 		const phase = PHASE_RE.exec(text);
 		if (phase?.[1] !== undefined && phase[2] !== undefined) {
@@ -137,6 +176,25 @@ export const sameRef = (a: Ref, b: Ref): boolean =>
 		: a._tag === "Local" && b._tag === "Local" && a.id === b.id;
 
 export const renderRef = (ref: Ref): string => (ref._tag === "Issue" ? `#${ref.number}` : ref.id);
+
+/**
+ * A parsed edge list back as a `## Dependencies` section, heading included, one line per edge in the
+ * order given.
+ *
+ * The inverse of {@link readTopology} over the shape {@link readTopology} produces, which is what
+ * `ledger/topology-doc.ts`'s `renderDependencies` is *not*: that one composes a block out of declared
+ * `#<n> phase <k>` lines, so it can express neither a ledger-local `C<int>` ref nor a `requires:`
+ * subject sitting in no phase. A verb that edits an existing block has to round-trip whatever the
+ * planner wrote, including both.
+ */
+export const renderTopologyBlock = (edges: ReadonlyArray<Edge>): string => {
+	const rows = edges.map((edge) =>
+		edge._tag === "Phase"
+			? `- phase ${edge.phase}: ${edge.members.map(renderRef).join(", ")}`
+			: `- ${renderRef(edge.subject)} requires: ${edge.needs.map(renderRef).join(", ")}`,
+	);
+	return `## Dependencies\n\n${rows.join("\n")}\n`;
+};
 
 /**
  * Every predecessor of `subject`, with the kind of edge that names it.
@@ -174,7 +232,7 @@ export interface RequiredEdge {
  *
  * The rendering is not the carrier, so a plan that only *says* `#N requires: #M` leaves the graph
  * empty and both build gates blind — which is how a child gated behind an unruled decision was
- * admitted for construction (#6616). This is the bridge: `ledger edges` writes what it names, and the
+ * admitted for construction. This is the bridge: `ledger edges` writes what it names, and the
  * plan gate reds on a pair the board does not carry.
  *
  * The rule is {@link predecessorsOf}'s and is not restated — every subject the block names is asked

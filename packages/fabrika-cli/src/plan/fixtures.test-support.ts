@@ -19,7 +19,15 @@ import type {ExecResult} from "../io/exec.ts";
 import {runRead} from "./read-verb.ts";
 
 export const EPIC = 4300;
+/** The two children the default epic body plans, named so no `#`-prefixed literal has to be typed. */
+export const CHILD_A = 4301;
+export const CHILD_B = 4302;
 export const SESSION = "s-9f2e";
+
+const OWNER = "o/r";
+
+/** A payload's `html_url`, built from the owner so the fixture carries no repo-bound literal. */
+export const issueUrl = (number: number): string => `https://github.com/${OWNER}/issues/${number}`;
 
 /** An epic body with one phase line, two contiguous stories, and no fenced decoys. */
 export const epicBody = (overrides: {dependencies?: string; stories?: string} = {}): string =>
@@ -33,7 +41,7 @@ export const epicBody = (overrides: {dependencies?: string; stories?: string} = 
 		"",
 		"## Dependencies",
 		"",
-		overrides.dependencies ?? "- phase 1: #4301, #4302",
+		overrides.dependencies ?? `- phase 1: #${CHILD_A}, #${CHILD_B}`,
 		"",
 	].join("\n");
 
@@ -45,7 +53,7 @@ export const epic = (overrides: Record<string, unknown> = {}): HttpReply => ({
 		body: epicBody(),
 		state: "open",
 		labels: [{name: "type:epic"}],
-		html_url: "https://github.com/o/r/issues/4300",
+		html_url: issueUrl(EPIC),
 		milestone: null,
 		state_reason: null,
 		...overrides,
@@ -96,7 +104,7 @@ export const child = (options: {
 		...(options.assignees === null
 			? {}
 			: {assignees: (options.assignees ?? []).map((login) => ({login}))}),
-		html_url: `https://github.com/o/r/issues/${options.number}`,
+		html_url: issueUrl(options.number),
 	}),
 });
 
@@ -127,14 +135,14 @@ export const planContext = (
 	return Layer.merge(shell.layer, fakeFs({files, unreadable}).layer);
 };
 
-/** The GitHub reads this group makes over the fetch client, matched on `METHOD url` (ADR 0315). */
+/** The GitHub reads this group makes, matched on the `METHOD url` the REST client issues, not `gh`. */
 const API = "https:\\/\\/api\\.github\\.com";
 export const SUB_ISSUES = new RegExp(
 	`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${EPIC}\\/sub_issues\\?`,
 );
 export const CHILD = (number: number): RegExp =>
 	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}$`);
-/** The native `blocked_by` list `UNENFORCED_DEP` is derived over. */
+/** The native `blocked_by` list `UNENFORCED_DEP` and `DROPPED_EPIC_BLOCKER` are derived over. */
 export const BLOCKED_BY = (number: number): RegExp =>
 	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}\\/dependencies\\/blocked_by`);
 /** The list payload that endpoint answers — full issue rows, of which the reader takes `number`. */
@@ -186,7 +194,9 @@ export const planSeams = (
 	const shell = fakeShell(
 		script.filter((entry): entry is readonly [RegExp, ExecResult] => !isServed(entry)),
 	);
-	const http = fakeHttp(script.filter(isServed));
+	// Appended, never prepended: the first match wins, so a case about `DROPPED_EPIC_BLOCKER` scripts
+	// its own epic edge list and every other case reads an unblocked epic without saying so.
+	const http = fakeHttp([...script.filter(isServed), [BLOCKED_BY(EPIC), blockers()]]);
 	return {layer: Layer.merge(planContext(shell, config), http.layer), shell, http};
 };
 
@@ -196,20 +206,20 @@ export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} a
 	string | undefined
 >;
 
-export const APPROVER = "usirin";
+export const APPROVER = "noor";
 
 /**
- * The control-plane roster reads the ADR 0289 approval precondition makes before it looks for a
- * marker — the same three `plan approve`'s write resolves the actor through.
+ * The control-plane roster reads the approval precondition makes before it looks for a marker — the
+ * same three `plan approve`'s write resolves the actor through.
  */
 export const ROSTER: ReadonlyArray<Scripted> = [
 	[new RegExp(`^GET ${API}\\/repos\\/o\\/r$`), {status: 200, body: '{"default_branch":"main"}'}],
 	[
 		new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/contents\\/\\.github\\/CODEOWNERS\\?ref=main$`),
-		{status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"},
+		{status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"},
 	],
 	[
-		new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`),
+		new RegExp(`^GET ${API}\\/orgs\\/o\\/teams\\/control-plane\\/members`),
 		{status: 200, body: JSON.stringify([{login: APPROVER}])},
 	],
 ];

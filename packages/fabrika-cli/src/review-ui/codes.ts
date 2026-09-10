@@ -32,7 +32,7 @@ import {
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /**
  * A required file this group derives from is absent, does not parse, or violates its schema — a
- * capture set's `manifest.json`, or `design-harness.json` at the tier-choice read.
+ * capture set's `manifest.json`, or the declared `uiCapture` at the tier-choice read.
  *
  * The base's section seat, widened to the whole-file rule the `ui` group states: a document read
  * for a decision is read whole, and a half-read one decides nothing.
@@ -65,16 +65,16 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
  * One meaning binds the two triggers — the live head moved past `--sha` at post time, or the
  * preview's deployed head is not the live head at render time — because *the pixels or the marker
  * would bind a tree that is not the PR*, and the caller's move is identical either way: re-render,
- * re-review at the live head (ADR 0058).
+ * re-review at the live head.
  */
 export const STALE_TREE = 12;
-/** Proven: at least one surface threw an uncaught page error — the render is red (#2594). */
+/** Proven: at least one surface threw an uncaught page error — the render is red. */
 export const RENDER_CRASHED = 13;
 /** Proven: at least one surface is unreachable — status ≥ 400 or a failed navigation. */
 export const SURFACE_UNREACHABLE = 14;
 /** Proven: a capture was produced but is invalid — zero bytes, undecodable, or zero area. */
 export const INVALID_CAPTURE = 15;
-/** Proven: no preview deployment exists for this PR — the skill's CANT-SEE route (#4305). */
+/** Proven: no preview deployment exists for this PR — the skill's CANT-SEE route. */
 export const NO_PREVIEW = 16;
 /** Proven: at least one evidence upload or its verification failed — **nothing was posted**. */
 export const UPLOAD_FAILED = 17;
@@ -83,10 +83,10 @@ export const UPLOAD_FAILED = 17;
  * `--supersede` was not passed.
  *
  * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
- * vocabulary — the write is legitimate and one flag away. What it costs is the record: on PR #7081 a
- * FAIL became a PASS with nothing showing a gate had blocked, and GitHub keeps no comment-body
- * history to recover it from (#7247). Nothing is posted on this refusal — the evidence uploads of
- * step 4 have already run by then, which is a spent upload rather than a landed verdict.
+ * vocabulary — the write is legitimate and one flag away. What it costs is the record: a standing
+ * FAIL silently became a PASS with nothing showing a gate had blocked, and the host keeps no
+ * comment-body history to recover it from. Nothing is posted on this refusal — the evidence
+ * uploads of step 4 have already run by then, which is a spent upload rather than a landed verdict.
  */
 export const SUPERSEDES_VERDICT = 18;
 /**
@@ -97,7 +97,6 @@ export const SUPERSEDES_VERDICT = 18;
  * this one is decided against the recorded artifact rather than against a probe the preview
  * answered — the readback is the same shape as `INVALID_CAPTURE`'s, one question further on. A shot
  * at the wrong width is a valid PNG of a layout nobody asked about, and recording it under a
- * viewport label would make the narrow half of the design law answerable from desktop pixels
- * (#7706).
+ * viewport label would make the narrow half of the design law answerable from desktop pixels.
  */
 export const WRONG_VIEWPORT = 19;

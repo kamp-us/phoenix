@@ -2,8 +2,8 @@
  * The containment invariant, as a check over declared data rather than over compiled-in constants.
  *
  * A triage facet is **delete authority, not naming**: every label its `owns` matches and its keep set
- * does not is removed. #4285 is what that costs when the two disagree — a well-formed run stripped an
- * issue's only priority and printed a success line. The invariant that stops it: *the set of values an
+ * does not is removed. When the two disagree a well-formed run strips an issue's only priority and
+ * prints a success line. The invariant that stops it: *the set of values an
  * input can produce must be a subset of what its facet owns.*
  *
  * Once the vocabulary is configuration, a test over constants proves nothing about what a repo
@@ -14,8 +14,8 @@
  *   never superseded, because the facet has no authority to remove it — two priorities coexist and
  *   every queue read downstream picks whichever it sees first.
  * - **An enumerated facet that owns a label no declared value produces is refused too.** Every extra
- *   member of a literal list is delete authority with no naming counterpart, which is #4285's exact
- *   shape.
+ *   member of a literal list is delete authority with no naming counterpart, which is exactly how a
+ *   facet strips a label nothing can put back.
  * - **A pattern wider than its values is not refused**, because that width is deliberate and not
  *   decidable anyway: `^p\d+$` owns `p3` so a priority retired from the vocabulary is still cleaned
  *   up, and no finite check can enumerate a regex's language to prove otherwise.
@@ -75,7 +75,7 @@ const facetRefusal = (key: string, facet: FacetVocabulary): string | null => {
 		const values = new Set(facet.values);
 		const extra = facet.owns.labels.filter((label) => !values.has(label));
 		if (extra.length > 0) {
-			return `\`${key}\` facet \`${facet.name}\` owns ${extra.length} label(s) no declared value produces — ${extra.join(", ")}; ${both}. An enumerated facet's extra member is delete authority with nothing to name it, which is #4285's mechanism.`;
+			return `\`${key}\` facet \`${facet.name}\` owns ${extra.length} label(s) no declared value produces — ${extra.join(", ")}; ${both}. An enumerated facet's extra member is delete authority with nothing to name it.`;
 		}
 	}
 

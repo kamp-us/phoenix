@@ -1,13 +1,13 @@
 /**
  * `guard settings-env-guard check` — no `.claude/settings.json` `env` value carries an unexpanded
- * `${...}` token (#2495), ported off v1's `settings-env-guard check` (epic #5720).
+ * `${...}` token, ported off v1's `settings-env-guard check`.
  *
  * The verb is the IO boundary and nothing else: read the settings file, hand its `env` block to the
  * pure rule in `./settings-env.ts`, seat the answer on the group's exit taxonomy.
  *
  * **The one fail-closed IoError splits into two seats here.** v1 folded "no settings.json" and
  * "settings.json does not parse" into a single non-zero exit, which is all CI needs and all a
- * human cannot use: an absent file means the guard scanned nothing (`7`, ADR 0092) and a
+ * human cannot use: an absent file means the guard scanned nothing (`7`) and a
  * malformed one means the guard could not judge what it read (`11`, UNKNOWN). Both stay red, so
  * the gate's strictness is unchanged.
  */
@@ -48,7 +48,7 @@ const judge = (
 		const target = path.join(root, SETTINGS);
 		if (!(yield* exists(target))) {
 			return zeroScope(
-				`${VERB}: ${root}/${SETTINGS} does not exist — the guard scanned no env block at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${root}/${SETTINGS} does not exist — the guard scanned no env block at all, fail-closed. Is the repo root correct?`,
 			);
 		}
 		const settings = parseJson(yield* readFile(target));
@@ -73,7 +73,7 @@ const judge = (
 					atFile(
 						"error",
 						SETTINGS,
-						`env value \`${entry.key}\` carries an unexpanded \${...} token — Claude Code applies env values verbatim, so it never resolves (#2495). Fix: resolve the path in the consuming hook from $CLAUDE_PROJECT_DIR.`,
+						`env value \`${entry.key}\` carries an unexpanded \${...} token — Claude Code applies env values verbatim, so it never resolves. Fix: resolve the path in the consuming hook from $CLAUDE_PROJECT_DIR.`,
 					),
 				),
 			),

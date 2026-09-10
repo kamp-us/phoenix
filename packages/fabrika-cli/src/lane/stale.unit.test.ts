@@ -84,6 +84,7 @@ describe("judge", () => {
 			verdict: "stale",
 			ageMinutes: 76,
 			lastEventAt: minutesAgo(76),
+			budgetMinutes: 60,
 		});
 		expect(judge(active({a: "build"}), at(60), NOW, 60).verdict).toBe("stale");
 	});
@@ -111,6 +112,7 @@ describe("judge", () => {
 			verdict: "unstarted",
 			ageMinutes: null,
 			lastEventAt: null,
+			budgetMinutes: 60,
 		});
 	});
 

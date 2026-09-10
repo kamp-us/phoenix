@@ -5,11 +5,12 @@
  * A facet owns a pattern of labels and names the ones it keeps. **Every label the pattern matches and
  * the keep set does not is removed; every label no facet's pattern matches is preserved untouched.**
  * The milestone obeys the same rule — it is not a label, so it plans as its own change, but it is a
- * facet, which is what stops `--lane` from landing the milestone-on-a-standing-lane state ADR 0208
- * bans while a labels-only read-back certifies it.
+ * facet, which is what stops `--lane` from landing an issue on both a standing lane and a
+ * milestone — a state the board does not have — while a labels-only read-back certifies it.
  *
- * **One engine, two verbs, deliberately.** #4285's mechanism was a *delete*, not a write: the
- * priority facet owned `/^p\d+$/`, the applied `p2` was not in the keep set, and a well-formed run
+ * **One engine, two verbs, deliberately.** The failure this engine exists to design out was a
+ * *delete*, not a write: the priority facet owned `/^p\d+$/`, the applied `p2` was not in the keep
+ * set, and a well-formed run
  * stripped the issue's only priority while printing a success line indistinguishable from a correct
  * one. Two independently-written reconciles are two chances to re-derive that, so the reconcile, the
  * change plan and the read-back assertion live here once and the verbs differ only in the facet table
@@ -41,11 +42,10 @@ export const STANDING_LANES: ReadonlyArray<string> = [
 ];
 
 /**
- * Phoenix's `--type` vocabulary, and the default of `boardVocabulary`'s `types`.
+ * The shipped default `--type` vocabulary, and the default of `boardVocabulary`'s `types`.
  *
- * Open, not closed, since #6294: a repo declares its own and the compile-time narrowing goes with
- * it. The refusal survives as a runtime decode against the *resolved* list, which is what
- * `decodeMember` is for.
+ * Open, not closed: a repo declares its own and the compile-time narrowing goes with it. The refusal
+ * survives as a runtime decode against the *resolved* list, which is what `decodeMember` is for.
  */
 export const TYPES: ReadonlyArray<string> = [
 	"bug",
@@ -59,22 +59,28 @@ export const TYPES: ReadonlyArray<string> = [
 export {audienceLabel, typeLabel};
 
 /**
- * The type whose deliverable is a ledger of children rather than one pull request.
+ * The type whose deliverable is a ledger of children rather than one pull request — as a bare
+ * `--type` value, for the input-side reads that never see the label.
+ */
+export const EPIC_TYPE = "epic";
+
+/**
+ * The same type as the label a board carries.
  *
  * Three modules held their own copy of the string — `plan/load.ts`, `ledger/preconditions.ts` and
- * `build/scope-admission.ts` — which is the drift shape #5772 collapsed for the status and facet
- * vocabularies. Derived from {@link TYPES}, so the label and the vocabulary cannot disagree.
+ * `build/scope-admission.ts` — the drift shape one derived constant closes. Derived from
+ * {@link EPIC_TYPE}, so the bare value and the label cannot disagree.
  */
-export const EPIC_TYPE_LABEL = typeLabel("epic");
+export const EPIC_TYPE_LABEL = typeLabel(EPIC_TYPE);
 
 /** The default `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
 export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 
-/** The default `--ready-for` vocabulary: who picks the issue up (#4780). */
+/** The default `--ready-for` vocabulary: who picks the issue up. */
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
 
 /**
- * Phoenix's own board — the shipped default of `boardVocabulary`.
+ * The shipped default of `boardVocabulary` — the board a repo that declared none reconciles to.
  *
  * Assembled from the lists above and `../labels.ts` rather than restated, so widening `TYPES`
  * widens what a bare repo accepts, bootstraps and reconciles in one edit.
@@ -131,7 +137,7 @@ export const FACET_VOCABULARY: ReadonlyArray<FacetVocabulary> = [
 ];
 
 /**
- * The board a verb reconciles against when nothing resolved one — phoenix's own.
+ * The board a verb reconciles against when nothing resolved one — the shipped default.
  *
  * It is the default argument of both facet tables below rather than a fallback they compute, so a
  * caller that has not threaded the resolved board through gets today's behaviour, never an empty
@@ -156,6 +162,21 @@ const ownsIn = (
 	const declared = vocabulary.find((facet) => facet.name === name);
 	return declared === undefined ? () => false : ownsLabel(declared.owns);
 };
+
+/**
+ * The audience facet's keep set — empty for an epic asked for the agent audience.
+ *
+ * `ready-for:agent` on an epic is `check-epic-plan`'s statement that the ledger's floor came back
+ * clean, and that gate is the flip's only owner; triage writing it too is the ambiguity the
+ * `triage apply` section of `claude-plugins/fabrika/skills/triage/contract.md` records.
+ *
+ * The facet still **owns** `ready-for:*` here, so re-triaging an epic that a gate run had already
+ * flipped strips the stamp rather than preserving it — re-classifying an epic sends it back through
+ * the gate, which is the same ownership rule read the other way. `--ready-for human` is untouched on
+ * every type: that is triage parking the epic for a person, a claim the gate never makes.
+ */
+export const audienceKeep = (type: string, readyFor: string): ReadonlyArray<string> =>
+	type === EPIC_TYPE && readyFor === "agent" ? [] : [audienceLabel(readyFor)];
 
 /**
  * The facet table for the triaged transition.
@@ -186,7 +207,7 @@ export const triagedFacets = (
 	{
 		name: "audience",
 		owns: ownsIn(resolved.facets, "audience"),
-		keep: [audienceLabel(input.readyFor)],
+		keep: audienceKeep(input.type, input.readyFor),
 	},
 	{
 		name: "lane",
@@ -226,7 +247,7 @@ export const parkedFacets = (resolved: ResolvedBoard = DEFAULT_BOARD): ReadonlyA
  *
  * What must go is the status: `status:needs-triage` on a closed issue makes every unfiltered count
  * over that label over-report the queue, and a kill after an earlier `apply` leaves `status:triaged`
- * saying the same false thing (#6710). The keep set is empty, so all three triage statuses are
+ * saying the same false thing. The keep set is empty, so all three triage statuses are
  * planned as removals whichever one the issue arrived carrying.
  *
  * The home is not a facet, and a kill does not move it: the caller passes the observed milestone as

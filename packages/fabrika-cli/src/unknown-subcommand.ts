@@ -1,6 +1,6 @@
 /**
  * Resolve `fabrika <token> …` against the command tree before the Effect CLI runner sees it, so an
- * unresolvable path is refused instead of answered (#4822).
+ * unresolvable path is refused instead of answered.
  *
  * The runner cannot do this itself. `Command.runWith` processes **action flags** (step 5) before it
  * inspects accumulated **parse errors** (step 6), and `--help` is an action flag — so a `--help`

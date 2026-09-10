@@ -1,6 +1,6 @@
 # `/graduate` — derived CLI contract
 
-**Skill:** [`graduate`](SKILL.md) · **Authoring brief:** [#5103](https://github.com/kamp-us/phoenix/issues/5103) · **Date:** 2026-08-09
+**Skill:** [`graduate`](SKILL.md) · **Date:** 2026-08-09
 
 **Where these verbs land.** `packages/fabrika-cli/`, under a **`graduate`** subcommand group
 registered in [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts). Each leaf is
@@ -10,12 +10,12 @@ operand is refused rather than ignored. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
 spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** No verb here invokes
-anything under `claude-plugins/kampus-pipeline/` or `packages/pipeline-cli/`, in a fence, behind a
-wrapper, or as a contract clause (ADR
-[0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every v1 module
-named in a **Grounding** block below is cited as a **scar to design out**, never as a dependency —
-those citations are non-normative and an implementer opens none of them to build this.
+**This group reimplements what it needs and calls the predecessor pipeline nowhere, and neither
+does the skill.** A reimplementation that shells out to the tooling it replaced keeps that tooling
+alive and inherits every scar with it, so no verb here invokes a v1 script or CLI, in a fence,
+behind a wrapper, or as a contract clause. Every v1 module named in a **Grounding** block below is
+cited as a **scar to design out**, never as a dependency — those citations are non-normative and an
+implementer opens none of them to build this.
 
 **The group name.** `graduate`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
@@ -23,14 +23,14 @@ registered groups were `adr build epic hook ledger plan report review review-ui 
 triage ui wire`. That list grows most weeks, so read the file rather than this sentence. Here the
 group and the skill share the name, which the sibling groups do not do (`grill`/`grilling`,
 `map`/`wayfinding`) — `graduate` is already a noun, and inventing a second spelling for it would
-work against ADR 0246's rule that the reader resolves the homonym by **namespace**. `fabrika
-graduate <verb>` is itself the namespace.
+work against the rule that a reader resolves the homonym by **namespace** rather than by a second
+spelling. `fabrika graduate <verb>` is itself the namespace.
 
-**Reading the homonym.** ADR 0246 records several live senses of the word. Two are verbs in other
-CLIs and neither is reachable from here: `pipeline-cli tracker graduate` **closes** a source issue
-with `state_reason=completed`, and `anka-ops flag graduate` files a flag-retirement chore. This
-group's direction is the opposite of the first and unrelated to the second. Every reference to
-either is written qualified, per that ADR.
+**Reading the homonym.** The word has several live senses, and a repo may ship more than one of
+them: a predecessor pipeline's `tracker graduate` **closes** a source issue with
+`state_reason=completed`, and an operations CLI's `flag graduate` files a flag-retirement chore.
+This group's direction is the opposite of the first and unrelated to the second. Every reference to
+another sense is written qualified.
 
 ## What fabrika already ships, reused — never respecified
 
@@ -45,7 +45,7 @@ Each is imported, not restated, because a transcription drifts and a pointer to 
 - [`src/report/dedup.ts`](../../../../packages/fabrika-cli/src/report/dedup.ts) — `tokenize`,
   `scoreTitle`, `rank`, `TOKEN_FLOOR`. Used by no verb in this group; named because the **skill**
   invokes `fabrika report dedup` directly at its step 3. A `graduate dedup` wrapper relaying that
-  answer is what ADR 0238 forbids, so there is none.
+  answer would earn no seat, so there is none.
 - [`src/report/compose.ts`](../../../../packages/fabrika-cli/src/report/compose.ts) —
   `normalizeForReadback`. Read-backs compare normalized, never byte-identical.
 - [`src/verb.ts`](../../../../packages/fabrika-cli/src/verb.ts) `answer` / `refuse`, and the `emit`
@@ -72,9 +72,10 @@ section, not from its ticket states**, and this group depends on the map **modul
 read`'s stdout. `map read`'s output object returns `tickets[]`, `outOfScope[]`, `counts` and the
 frontier token but **no array of the map's `## Decisions` entries** — so a design that read this
 group's decisions off that JSON could not produce a `ruled` row at all, and every founder ruling
-recorded on a map would render as an agent's finding, which is precisely the #4227 failure this
-skill exists to prevent. The body parser does parse that section (the five-section floor is what
-`map read` validates), so the entries are available to an importer even though the verb does not
+recorded on a map would render as an agent's finding — a founder's ruling wearing an agent's
+provenance, which is the failure this skill exists to prevent. The body parser does parse that
+section (the five-section floor is what `map read` validates), so the entries are available to an
+importer even though the verb does not
 surface them. Stated explicitly because the difference between *importing a module* and *consuming
 a sibling verb's stdout* is invisible until it produces a wrong provenance.
 
@@ -86,14 +87,13 @@ neither is malformed by that contract's own rule and is reported, never defaulte
 `graduate trail` **calls those resolvers rather than parsing either artifact itself.** This is the
 load-bearing reuse decision on the page, so here is the argument. Whether a question is `ruled` is
 already answered by a verb whose whole design is answering it fail-closed against the ACL; a second
-parser here would be a second answer to a question already decided elsewhere — the exact shape ADR
-0238's "some become nothing" clause names — and the two could disagree, which on this question means
-one of them licenses synthesizing over an unproven ruling. Importing makes disagreement
+parser here would be a second answer to a question already decided elsewhere — the reuse rule this
+group is built on names that shape — and the two could disagree, which on this question means one of
+them licenses synthesizing over an unproven ruling. Importing makes disagreement
 unrepresentable rather than merely unlikely.
 
 **Sequencing dependency, stated because it is real.** Those two modules do not exist yet:
-`grilling`'s verbs are held at [#5023](https://github.com/kamp-us/phoenix/issues/5023) and
-`wayfinding`'s at [#5022](https://github.com/kamp-us/phoenix/issues/5022). This group cannot be
+`grilling`'s verbs and `wayfinding`'s are each held on their own ticket. This group cannot be
 implemented before both land. That ordering belongs in this group's implementation ticket, and
 nothing here should be read as describing present behaviour.
 
@@ -116,7 +116,7 @@ the title equals `--title` as given; and the label set is **exactly** `["status:
 miss is `9`.
 
 <!-- anchor: REPORT-SECTIONS-NOT-WIDENED --> **`report`'s `REQUIRED_SECTIONS` is deliberately NOT
-widened**, and the distinction matters because ADR 0246 says this skill "files through the existing
+widened**, and the distinction matters because this skill is ruled to file "through the existing
 report verb machinery". That reads as the **modules** — the leak predicate, the footer, the
 read-back normalizer, the dedup core — not the `report file` verb. Widening the intake constant
 would change what every *intake* filing in the repo requires, to serve one caller that is not
@@ -137,17 +137,17 @@ incompatible meanings.
 - **A verb that closes or annotates the source.** Emission does not retire the thing it read.
   `grilling` and `wayfinding` own their own artifacts, and `wayfinding`'s contract already drops
   both branches of map-closing on the ground that emission is this skill's. Closing a source is
-  `pipeline-cli tracker graduate`, in another CLI, and rebuilding it here would re-derive the
-  destructive half v1 scripted while leaving the safe half as prose.
-- **A verb that writes a `type:`, priority or milestone label.** Ruled out by ADR 0246 and enforced
-  at `10`: triage is the sole authority and this group computes no second answer to it.
+  a predecessor pipeline's own `tracker graduate`, in another CLI, and rebuilding it here would
+  re-derive the destructive half v1 scripted while leaving the safe half as prose.
+- **A verb that writes a `type:`, priority or milestone label.** Ruled out and enforced at `10`:
+  triage is the sole authority and this group computes no second answer to it.
 - **A merge-gating verdict.** `graduate` is deliberately absent from `SHIP_NAMESPACES`
   ([`src/review/classes.ts`](../../../../packages/fabrika-cli/src/review/classes.ts):161) and emits
   no verdict marker, so `wire/verdict-marker.ts`'s `NAMESPACE` regex (`:73`) and its **separate**
   `NAMESPACE_PREFIXES` gate (`:78`) are **not** widened, and neither is
   [`src/review/advisory.ts`](../../../../packages/fabrika-cli/src/review/advisory.ts)'s `FIRST_LINE`
   (`:20`). Nothing recorded here can block a merge; widening any of them would create the second
-  human gate [#4631](https://github.com/kamp-us/phoenix/issues/4631) rules out.
+  human gate this layer exists not to add.
 
 ## Verb inventory
 
@@ -170,11 +170,11 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Decisions
-- Weight is earned per account, never inherited from a kefil. — **ruled** · R2.3
+- Weight is earned per account, never inherited from a voucher. — **ruled** · R2.3
 - The vote table has no per-account weight column today. — **established** · R2.1
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #9412.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 ```
 
 - `## Problem`, `## Solution` and `## Out of scope` arrive on **stdin**, authored by the caller. A
@@ -183,8 +183,8 @@ Weight decay on a clock — no decision yet, still open on #9412.
   stdin body carrying a `## Decisions` heading is `17`.
 
 <!-- anchor: DECISIONS-ARE-RENDERED-NOT-AUTHORED --> **Why the verb owns that one section.** The
-brief's central acceptance criterion is that a downstream reader can tell the founder's decisions
-from the skill's synthesis without the source transcript (#4227). A convention telling the model to
+skill's central acceptance criterion is that a downstream reader can tell the founder's decisions
+from the skill's synthesis without the source transcript. A convention telling the model to
 label them would be exactly the kind of prose invariant that holds until the run that forgets. Here
 the separation is structural: the provenance word and the source id are rendered from resolver
 output the model never touches, so a mislabelled decision is not something an agent can produce by
@@ -192,17 +192,17 @@ being careless. The three sections the model *does* author carry no authority cl
 
 **Each `## Decisions` entry is `- <text> — **<provenance>** · <ref>`**, where `ref` is the trail
 row's own `ref` field verbatim and `provenance` is from a closed set of two. The source issue is
-**not** repeated per line — it is in the footer once, and repeating it made a map-sourced line read
-as two issue numbers in a row (`· #9502 #9505`).
+**not** repeated per line — it is in the footer once, and repeating it made a map-sourced line
+render two issue numbers in a row, the ticket's and the source's.
 
 <!-- anchor: THE-DECISIONS-LINE-IS-PARSEABLE-BACK --> **The line is written so `graduate emit` can
 recover the ref from it**, which matters because that parse is what says which subset a spec covers.
 The rule is exact: a decision line matches `^- (?P<text>.+) — \*\*(?P<provenance>ruled|established)\*\* · (?P<ref>.+)$`,
 and `ref` is everything after the **last** ` · ` that follows the bolded provenance token. Anchoring
 on the bolded token — a closed two-member set — is what keeps the parse unambiguous when the text
-itself contains an em dash or a `·`, and it lets a ref carry a space and a `#` (`#9301 R1.2`)
-without quoting. A line in the `## Decisions` section that does not match is `18`: the section is
-machine-rendered at both ends, so a line that will not parse means the body was edited by hand.
+itself contains an em dash or a `·`, and it lets a ref carry a space and a `#` without quoting. A
+line in the `## Decisions` section that does not match is `18`: the section is machine-rendered at
+both ends, so a line that will not parse means the body was edited by hand.
 
 **`ref` is shaped by the source kind**, and a reader tells them apart by shape alone:
 
@@ -231,7 +231,7 @@ line, in this exact shape, one line, newline-terminated:
 ```
 
 <!-- anchor: FILED-BY-AN-AGENT-IS-NEVER-DROPPED --> **`Filed by an agent` leads the line and is not
-this group's to omit.** It is ADR 0159's never-auto-close signal
+this group's to omit.** It is the never-auto-close signal
 ([`src/report/compose.ts`](../../../../packages/fabrika-cli/src/report/compose.ts):92), and
 [`src/triage/provenance.ts`](../../../../packages/fabrika-cli/src/triage/provenance.ts) classifies a
 body by whether a line begins with `<sub>Filed by an agent` — so a spec filed without it is read as
@@ -266,8 +266,8 @@ making the judgment `trail` already makes — or to admit coverage is underivabl
 caller unable to tell a remainder from a duplicate. Putting the refs in the marker keeps `read` pure
 and makes the question answerable from the artifact.
 
-**The separator is `;`, not `,`, because a map ref contains a space** (`#9301 R1.2`), so a
-comma-separated list of them is ambiguous. No ref shape defined above can contain a `;`.
+**The separator is `;`, not `,`, because a map ref contains a space**, so a comma-separated list of
+them is ambiguous. No ref shape defined above can contain a `;`.
 
 **Read is total and three-valued**, on the
 [`src/wire/verdict-marker.ts`](../../../../packages/fabrika-cli/src/wire/verdict-marker.ts) model:
@@ -374,7 +374,7 @@ Every `graduate` verb obeys these; stated once rather than repeated per block.
   an undeclared re-meaning of an imported constant is the drift the import exists to stop.
 - **Common inputs.** `--repo <owner/name>` (default: resolved from the `origin` remote) on every
   verb. There is no `--json` flag: the answer channel is already one JSON object.
-- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**,
+- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md)**,
   paginated. The reason lives there. Local to this group: a source with more than one page of
   comments is ordinary after a few rounds, so an unpaginated read would miss an emission marker and
   file a second spec — the fail-open direction.
@@ -420,7 +420,7 @@ numerals, so a drift is unrepresentable rather than merely detectable. `12`–`1
 and clear the base's occupied seats; they carry **no** cross-group uniqueness obligation, so
 `review`'s `12` and this group's `12` are two namespaces rather than a collision.
 
-**`10` is reachable here and is load-bearing, not a courtesy.** ADR 0246 forbids this skill writing
+**`10` is reachable here and is load-bearing, not a courtesy.** This skill is forbidden to write
 board state, and `10` is that prohibition made mechanical: the base seats it for a title or label
 carrying a type or priority, which is exactly the thing a well-meaning run would add to a spec issue
 to "help triage". There is no deliberate gap in this group's table.
@@ -493,7 +493,7 @@ a merge of two trails, and guessing which one is live would be judgment inside a
 **Output** — machine. One JSON object; every key below is always present:
 
 ```json
-{"source":9412,"kind":"grilling","readiness":"ready","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.3","provenance":"ruled","text":"Weight is earned per account, never inherited from a kefil."},{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[],"outOfScope":[],"counts":{"ruled":1,"established":1,"unresolved":0}}
+{"source":9412,"kind":"grilling","readiness":"ready","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.3","provenance":"ruled","text":"Weight is earned per account, never inherited from a voucher."},{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[],"outOfScope":[],"counts":{"ruled":1,"established":1,"unresolved":0}}
 ```
 
 | Key | Type | Meaning |
@@ -582,18 +582,18 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0092 — a read that could not complete never answers "no decisions".
+- A read that could not complete never answers "no decisions" — a gate over zero scope fails
+  closed.
 - `pipeline-cli wayfinder-map` reports a malformed map and **returns normally**
   (`wayfinder-map/command.ts:76-79`), so a caller keying on exit status reads a broken map as fine.
   Here a source that cannot be read is `11` and a resolved one is `0`, and the readiness word rather
   than the status carries the answer.
 - The same tool's `DANGLING_FRONTIER_REF` self-disables on an empty sub-issue read
-  (`validate.ts:130`, `if (subIssues.length > 0)`) — the zero-scope pass ADR 0092 forbids. Here an
-  empty read that cannot be proven empty is `11`.
-- #4060 — a classifier read zero files under parallel invocation and silently defaulted to a
-  plausible answer. `readiness` is never defaulted: it is computed from a resolver result or the
-  verb refuses.
-- #4227 — a well-formed but wrong classification propagating downstream unchallenged. `provenance`
+  (`validate.ts:130`, `if (subIssues.length > 0)`) — the zero-scope pass a gate must fail closed
+  on. Here an empty read that cannot be proven empty is `11`.
+- A classifier that read zero files under parallel invocation once silently defaulted to a plausible
+  answer. `readiness` is never defaulted: it is computed from a resolver result or the verb refuses.
+- A well-formed but wrong classification propagates downstream unchallenged. `provenance`
   is resolved from the sibling's ACL-proven state and never from prose, and `unresolved` carries the
   resolver's own word rather than a re-interpretation of it.
 
@@ -618,7 +618,7 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #9412.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 SPEC
 ```
 
@@ -631,8 +631,8 @@ SPEC
 | stdin | markdown | yes | — | the three authored sections — `## Problem`, `## Solution`, `## Out of scope` — in that order |
 
 <!-- anchor: DECISIONS-IS-REPEATABLE-NOT-COMMA-SEPARATED --> **`--decisions` is repeated, not
-comma-joined**, because a map ref contains a space (`#9301 R1.2`) and a comma-separated list of such
-refs cannot be split unambiguously. `--decisions "#9301 R1.2" --decisions "#9507"` is the shape; a
+comma-joined**, because a map ref contains a space and a comma-separated list of such refs cannot be
+split unambiguously. `--decisions "#9301 R1.2" --decisions "#9507"` is the shape; a
 single comma-joined value is a usage error at `1`.
 
 **Output** — **machine channel**, with a shape that differs from the group default: stdout is the
@@ -682,7 +682,7 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #9412.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 SPEC
 ## Problem
 Moderation weight is unbounded, so one vouched account can outvote a whole topic.
@@ -691,11 +691,11 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Decisions
-- Weight is earned per account, never inherited from a kefil. — **ruled** · R2.3
+- Weight is earned per account, never inherited from a voucher. — **ruled** · R2.3
 - The vote table has no per-account weight column today. — **established** · R2.1
 
 ## Out of scope
-Weight decay on a clock — no decision yet, still open on #9412.
+Weight decay on a clock — no decision yet, still open on issue 9412.
 ```
 
 ```
@@ -707,11 +707,11 @@ $ echo $?
 
 **Grounding**
 
-- #4110, #3148 — work proceeding past a decision nobody made. `13` is that failure refused rather
-  than warned about, and it fires in the verb so it holds even when the skill's own step is skipped.
-- #4227 — the provenance word and the source id are rendered from resolver output, so a downstream
-  reader can tell a ruling from an agent's finding without the transcript.
-- #3086 — a machine-local path reaching a posted body. The scan runs after splicing, so the rendered
+- Work proceeding past a decision nobody made is what `13` refuses rather than warns about, and it
+  fires in the verb so it holds even when the skill's own step is skipped.
+- The provenance word and the source id are rendered from resolver output, so a downstream reader
+  can tell a ruling from an agent's finding without the transcript.
+- A machine-local path can reach a posted body. The scan runs after splicing, so the rendered
   decisions are scanned too; `report file` composes before scanning for the same reason.
 - The section floor is validated **before** the render, so a malformed authored body is `4` with
   nothing composed rather than a spec somebody has to delete.
@@ -748,8 +748,8 @@ marker carrying the digest and the covered refs.
 
 The footer is appended **before** the leak scan, never after, for the reason `report file` does the
 same: bytes added after a scan are bytes nobody scanned, and this footer interpolates a source
-number and a digest. Ordering it after the scan would reopen #3086 on the one line this group adds
-itself.
+number and a digest. Ordering it after the scan would leave that one line unscanned — the machine-
+local-path class, reopened on the only line this group adds itself.
 
 <!-- anchor: EIGHTEEN-IS-PER-REF-NOT-WHOLE-SECTION --> **`18` compares ref by ref, never the whole
 section.** A whole-section equality check against the re-derived trail would fail every deliberately
@@ -765,9 +765,9 @@ trail first.
 <!-- anchor: THE-BODY-MUST-MATCH-THE-TRAIL-IT-BINDS --> **Why emit re-checks rather than trusting
 `--spec`.** Without it a caller can compose against trail A and emit against a source that has since
 moved to trail B: the marker would bind a digest computed from B while the filed body stated A's
-decisions, so the whole #4227 property — that the emitted `## Decisions` section IS what the
-resolver returned — would hold only by luck. A `18` therefore means the source moved between compose
-and emit, and re-composing is the fix.
+decisions, so the whole property this skill rests on — that the emitted `## Decisions` section IS
+what the resolver returned — would hold only by luck. A `18` therefore means the source moved
+between compose and emit, and re-composing is the fix.
 
 <!-- anchor: WRITE-ORDERING-IS-AN-INVARIANT --> **Write ordering is an invariant, not an
 implementation detail.** The spec issue is created **first** and the marker second, because an
@@ -807,11 +807,11 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: the spec carries a machine-local path: <path> — refusing to file it.` | 5 | refusal |
 | `graduate emit: the spec is a bare @ path reference — not redactable, refusing to file it.` | 6 | refusal |
 | `graduate emit: #<n> does not exist.` | 7 | refusal |
-| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap (#4952).` | 7 | refusal |
+| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap.` | 7 | refusal |
 | `graduate emit: the create failed, so whether a spec issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> and the marker write failed — the spec EXISTS but #<source> does not record it, so a re-run would file a second. Post the marker or check #<source> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> but the read-back does not match what was sent.` | 9 | refusal |
-| `graduate emit: --title classifies the work ("<term>") — type and priority are triage's (ADR 0246).` | 10 | refusal |
+| `graduate emit: --title classifies the work ("<term>") — type and priority are triage's, not this group's.` | 10 | refusal |
 | `graduate emit: cannot read #<n>: <reason> — whether this trail was already graduated is UNKNOWN. Nothing was filed.` | 11 | refusal |
 | `graduate emit: #<n> carries neither grilling:session nor wayfinding:map — there is no trail to bind this spec to.` | 12 | refusal |
 | `graduate emit: #<n>'s trail reports readiness "blocked" — <n> decision(s) unresolved: <refs>. Nothing was filed.` | 13 | refusal |
@@ -843,10 +843,9 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0246 — no board state and no close. `10` refuses a classifying title, the `labels` key is a
-  fixed singleton, and there is no flag on this verb that could set a type, a priority, a milestone
-  or an assignee. The source is never closed: that is `pipeline-cli tracker graduate`, which does
-  the opposite of this verb.
+- No board state and no close. `10` refuses a classifying title, the `labels` key is a fixed
+  singleton, and there is no flag on this verb that could set a type, a priority, a milestone or an
+  assignee. The source is never closed: closing is the other, unrelated sense of the word.
 - v1's `tracker` `createIssue` decodes the POST response but **never re-fetches**
   (`tracker/tracker.ts:628-642`), so a create that landed a truncated body reports success. Here the
   issue is read back and compared normalized before the marker is written.
@@ -870,7 +869,7 @@ $ echo $?
   issue, its label set, and a new comment on the source), so there is nothing to clobber and no lock
   to take. The one repeat hazard that does remain, filing the same spec twice, is answered by the
   emission marker and the `15` digest refusal above rather than by a lock.
-- #3086 — a machine-local path in a posted body. Both the body and the title are scanned.
+- A machine-local path can reach a posted body. Both the body and the title are scanned.
 
 ---
 
@@ -963,8 +962,8 @@ $ echo $?
   it had no usable keywords (`intake-dedup/command.ts:55-56`), so "never checked" is byte-identical
   to "checked, found nothing". Here `state` is always a printed word and `scanned.comments` says what
   it rests on.
-- #4163 — a stale read failing toward "does not exist", a wrong answer indistinguishable from a
-  right one. A comment read that cannot complete is `11`, never `ungraduated`.
+- A stale read failing toward "does not exist" is a wrong answer indistinguishable from a right
+  one. A comment read that cannot complete is `11`, never `ungraduated`.
 - The malformed-versus-absent split is the `wire/verdict-marker.ts` three-valued read; a real
   emission written in the wrong shape is visible in `disregarded` rather than silently absent.
 
@@ -1005,5 +1004,6 @@ The five hand-checks those tests cannot perform:
 
 **No local scratch state, so the shared-state law has no surface here.** Every artifact this group
 touches lives on GitHub keyed by issue and comment id; no verb writes a temp directory, so the
-session-keyed collision recorded at [#4516](https://github.com/kamp-us/phoenix/issues/4516) cannot
-occur. Stated because an absent answer to that question reads as one nobody asked.
+session-keyed scratch collision — sibling lanes of one parent share a session id, so a
+session-keyed path is one namespace for several lanes — cannot occur. Stated because an absent
+answer to that question reads as one nobody asked.

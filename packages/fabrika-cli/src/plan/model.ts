@@ -6,7 +6,7 @@
  * collapsible into the value beside it:
  *
  * - `assigneesObserved` splits *the payload carried no `assignees` key* from *the key was there and
- *   held nothing*. `UNVERIFIABLE_ASSIGNEE` rests on exactly that split (#4693's landed shape).
+ *   held nothing*. `UNVERIFIABLE_ASSIGNEE` rests on exactly that split.
  * - `criteria` carries the imported wire read's own token rather than a count alone, so an `absent`
  *   block and a `malformed` one stay distinguishable after the read.
  */
@@ -39,7 +39,7 @@ export interface Phase {
 	readonly members: ReadonlyArray<string>;
 }
 
-/** An edge is ordered `[dependent, prerequisite]`: `["#4302","#4301"]` reads *#4302 requires #4301*. */
+/** An edge is ordered `[dependent, prerequisite]`: `["#b","#a"]` reads *child b requires child a*. */
 export type DependencyEdge = readonly [string, string];
 
 export interface PlanTopology {
@@ -51,6 +51,15 @@ export interface Ledger {
 	readonly epic: number;
 	readonly children: ReadonlyArray<ChildLedger>;
 	readonly epicStories: ReadonlyArray<number>;
+	/**
+	 * The epic's own acceptance criteria, in body order — the contract its tail PR is graded against.
+	 *
+	 * Empty when the body carries no readable block, which is every epic planned before the criteria
+	 * section joined the plan and nothing planned since: `ledger draft` refuses a plan whose criteria
+	 * do not read back `Found`,
+	 * so `absent` and `malformed` cannot be told apart here and nothing needs to.
+	 */
+	readonly epicCriteria: ReadonlyArray<string>;
 	readonly cycleDoc: CycleDoc;
 	readonly topology: PlanTopology;
 	/** The epic body carries no `## Dependencies` heading — `MISSING_DEPS_SECTION`'s only input. */

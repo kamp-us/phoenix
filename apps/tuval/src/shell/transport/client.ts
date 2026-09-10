@@ -1,0 +1,315 @@
+/**
+ * The page side of the transport. `attach(url)` opens the one socket and hands back the two things
+ * the window contract's `WindowHost` needs per process — `readProcess` and `dispatch` — plus the
+ * process table and `readShell` over it.
+ *
+ * Nothing here is a page's own state. The maps below mirror what the kernel sent and are thrown
+ * away with the socket: no layout, no focus, no view slot, no draft. That is the whole reason two
+ * tabs on one shell show the same desk — there is nowhere for them to differ (#7556). A drop is not
+ * repaired here either: attaching again is the repair, and the server replays current state rather
+ * than a transcript, so a re-attached page is at the kernel's state and no dispatch happens twice.
+ *
+ * `SubscriptionRef` carries each process's state for the reason the window fixtures give: at the
+ * pin (rc.112) its `make` builds a replaying `PubSub` and `changes` streams from it, so a reader
+ * gets the current value first and then every update — which is exactly `readProcess`'s promise.
+ */
+
+import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
+import {Socket} from "effect/unstable/socket";
+import type {Message, ProcessId} from "../../process/process.ts";
+import type {CallId} from "../../protocol/ids.ts";
+import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
+import type {RegistryDescription} from "../../protocol/registry-description.ts";
+import type {ProgramId} from "../../registry/program.ts";
+import type {TableRow} from "../../table/row.ts";
+import type {PrefixTable} from "../keys/table.ts";
+import {type DispatchResult, delivered, type ProcessView, processGone} from "../window/host.ts";
+import {type AttachRefused, NoSuchProcess, PlacementUnsupported} from "./errors.ts";
+import {
+	ATTACH_KIND,
+	DETACH_KIND,
+	DISPATCH_KIND,
+	decodeServerFrame,
+	encodeFrame,
+	fromWirePrefixTable,
+	fromWireRow,
+	type ServerFrame,
+	spellCallFrame,
+	type WireProgram,
+} from "./wire.ts";
+
+/**
+ * The shell program's registry id — `shellId` in `../program.ts`, spelled here rather than imported
+ * so the page bundle does not pull the kernel-side shell row in behind the transport. The shell is a
+ * program like any other, so the page locates its process by reading the table for this id rather
+ * than by any frame the wire keeps for it.
+ */
+export const SHELL_PROGRAM_ID = "shell" as ProgramId;
+
+/** One attached process: the two `WindowHost` members a renderer is handed, bound to this process. */
+export interface AttachedProcess<S = unknown, M extends Message = Message> {
+	readonly processId: ProcessId;
+	readonly readProcess: Stream.Stream<ProcessView<S>>;
+	readonly dispatch: (msg: M) => Effect.Effect<DispatchResult>;
+}
+
+export interface PageAttachment {
+	readonly spells: Stream.Stream<RegistryDescription>;
+	/** The kernel's process table, current rows first and then every change. */
+	readonly rows: Stream.Stream<ReadonlyArray<TableRow>>;
+	/**
+	 * Every program this kernel can show in a window — what a picker offers, and the renderer each
+	 * one names. The kernel sends the list as the socket opens and again whenever it changes, so a
+	 * registry change reaches an open page without that page reloading (#7788).
+	 */
+	readonly programs: Stream.Stream<ReadonlyArray<WireProgram>>;
+	/**
+	 * The key grammar the kernel routes against, and the only one a surface on this socket may route
+	 * over ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)). Nothing is
+	 * emitted before the kernel has sent one, so a surface that has been told nothing shows nothing.
+	 */
+	readonly keys: Stream.Stream<PrefixTable>;
+	readonly attachProcess: <S = unknown, M extends Message = Message>(
+		processId: ProcessId,
+	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
+	/**
+	 * Ask the kernel one thing. The reply this resolves with is the one whose `CallId` matches the
+	 * call's: a reply for another call is another caller's answer and is never handed here (#8161).
+	 * It fails when the socket ends, so a call outlives its socket by nothing.
+	 */
+	readonly call: (spell: SpellCall) => Effect.Effect<SpellReply, Socket.SocketError>;
+	/** Stop receiving one process's state. The process is untouched; only this socket's interest ends. */
+	readonly detach: (processId: ProcessId) => Effect.Effect<void>;
+	/**
+	 * Resolves when this socket ends, with the error that ended it. The reason is the whole point: an
+	 * open that never landed, a policy close and an abnormal close ask for three different answers,
+	 * and the page's connection lifecycle (`../../page/connection.ts`) is the one caller that reads
+	 * it. It resolves rather than fails, because a socket ending is this value's subject, not its
+	 * failure.
+	 */
+	readonly closed: Effect.Effect<Socket.SocketError>;
+	/** The shell process's state, over the same path as any other process's. */
+	readonly readShell: <S = unknown>() => Stream.Stream<
+		ProcessView<S>,
+		AttachRefused | Socket.SocketError
+	>;
+}
+
+export interface AttachOptions {
+	/** Which program the shell is. A test shell is a different row, so this is a parameter. */
+	readonly shellProgram?: ProgramId;
+}
+
+export const attach = Effect.fn("Tuval.transport.attach")(function* (
+	url: string,
+	options?: AttachOptions,
+) {
+	const shellProgram = options?.shellProgram ?? SHELL_PROGRAM_ID;
+	const socket = yield* Socket.makeWebSocket(url);
+	const write = yield* socket.writer;
+
+	const rowsRef = yield* SubscriptionRef.make<ReadonlyMap<ProcessId, TableRow>>(new Map());
+	const programsRef = yield* SubscriptionRef.make<ReadonlyArray<WireProgram>>([]);
+	const keysRef = yield* SubscriptionRef.make<PrefixTable | null>(null);
+	const spellsRef = yield* SubscriptionRef.make<RegistryDescription | null>(null);
+	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
+	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
+	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
+	const pendingCalls = new Map<CallId, Deferred.Deferred<SpellReply>>();
+	let nextSeq = 0;
+
+	const opened = yield* Deferred.make<void>();
+	/** Filled when the read loop ends: a refused handshake, a drop, or the scope closing. */
+	const closed = yield* Deferred.make<never, Socket.SocketError>();
+
+	const viewRef = (processId: ProcessId) =>
+		Effect.suspend(() => {
+			const existing = views.get(processId);
+			if (existing !== undefined) return Effect.succeed(existing);
+			return SubscriptionRef.make<ProcessView<unknown>>(processGone(processId)).pipe(
+				Effect.tap((ref) => Effect.sync(() => void views.set(processId, ref))),
+			);
+		});
+
+	const onFrame = (frame: ServerFrame): Effect.Effect<void> => {
+		switch (frame.kind) {
+			case "tuval/transport/spell-registry/v1":
+				return SubscriptionRef.set(spellsRef, frame.registry);
+			case "tuval/transport/table/v1":
+				return SubscriptionRef.update(rowsRef, (rows) => {
+					const next = new Map(rows);
+					if (frame.event === "stopped") next.delete(frame.row.id);
+					else next.set(frame.row.id, fromWireRow(frame.row));
+					return next;
+				});
+			case "tuval/transport/registry/v1":
+				return SubscriptionRef.set(programsRef, frame.programs);
+			case "tuval/transport/keys/v1":
+				return SubscriptionRef.set(keysRef, fromWirePrefixTable(frame.table));
+			case "tuval/transport/process-state/v1":
+				return Effect.gen(function* () {
+					const ref = yield* viewRef(frame.processId);
+					yield* SubscriptionRef.set(
+						ref,
+						frame.view._tag === "ProcessGone"
+							? processGone(frame.processId)
+							: ({
+									_tag: "Live",
+									processId: frame.processId,
+									lifecycle: frame.view.lifecycle,
+									revision: frame.view.revision,
+									state: frame.view.state,
+								} satisfies ProcessView<unknown>),
+					);
+					const pending = pendingAttach.get(frame.processId);
+					if (pending !== undefined) {
+						pendingAttach.delete(frame.processId);
+						yield* Deferred.succeed(pending, undefined);
+					}
+				});
+			case "tuval/transport/attach-refused/v1":
+				return Effect.suspend(() => {
+					const pending = pendingAttach.get(frame.processId);
+					if (pending === undefined) return Effect.void;
+					pendingAttach.delete(frame.processId);
+					return Deferred.fail(
+						pending,
+						frame.refusal.reason === "placement-unsupported"
+							? new PlacementUnsupported({
+									processId: frame.processId,
+									placement: frame.refusal.placement,
+								})
+							: new NoSuchProcess({processId: frame.processId}),
+					);
+				});
+			case "tuval/transport/spell-reply/v1":
+				return Effect.suspend(() => {
+					const pending = pendingCalls.get(frame.reply.id);
+					if (pending === undefined) return Effect.void;
+					pendingCalls.delete(frame.reply.id);
+					return Effect.ignore(Deferred.succeed(pending, frame.reply));
+				});
+			case "tuval/transport/dispatched/v1":
+				return Effect.suspend(() => {
+					const pending = pendingDispatch.get(frame.seq);
+					if (pending === undefined) return Effect.void;
+					pendingDispatch.delete(frame.seq);
+					if (frame.result._tag !== "Delivered") {
+						return Effect.ignore(Deferred.succeed(pending, processGone(frame.result.processId)));
+					}
+					const view = frame.result.view;
+					return Effect.ignore(
+						Deferred.succeed(pending, view === undefined ? delivered : {_tag: "Delivered", view}),
+					);
+				});
+		}
+	};
+
+	/** A clean end of the read loop is still the socket going away for everyone waiting on it. */
+	const socketEnded = () =>
+		new Socket.SocketError({reason: new Socket.SocketCloseError({code: 1000})});
+
+	yield* Effect.forkScoped(
+		socket
+			.runString(
+				(text) => {
+					const decoded = decodeServerFrame(text);
+					// The server is the only writer on this socket, so a frame it sent that does not decode
+					// means the two ends disagree about the wire: the page closes rather than guess.
+					return decoded._tag === "Frame"
+						? onFrame(decoded.frame)
+						: Effect.ignore(
+								write(new Socket.CloseEvent(1008, `undecodable frame: ${decoded.reason}`)),
+							);
+				},
+				{onOpen: Effect.ignore(Deferred.succeed(opened, undefined))},
+			)
+			.pipe(
+				Effect.catchCause((cause) => Effect.ignore(Deferred.failCause(closed, cause))),
+				Effect.andThen(Effect.ignore(Deferred.fail(closed, socketEnded()))),
+			),
+	);
+
+	yield* Effect.raceFirst(Deferred.await(opened), Deferred.await(closed));
+
+	const attachProcess = <S = unknown, M extends Message = Message>(processId: ProcessId) =>
+		Effect.gen(function* () {
+			const gate = yield* Deferred.make<void, AttachRefused>();
+			pendingAttach.set(processId, gate);
+			yield* Effect.ignore(write(encodeFrame({kind: ATTACH_KIND, processId})));
+			yield* Effect.raceFirst(Deferred.await(gate), Deferred.await(closed));
+			const ref = yield* viewRef(processId);
+			return {
+				processId,
+				readProcess: SubscriptionRef.changes(ref) as Stream.Stream<ProcessView<S>>,
+				dispatch: (msg: M) =>
+					Effect.gen(function* () {
+						const seq = nextSeq++;
+						const ack = yield* Deferred.make<DispatchResult>();
+						pendingDispatch.set(seq, ack);
+						yield* Effect.ignore(write(encodeFrame({kind: DISPATCH_KIND, seq, processId, msg})));
+						// `WindowHost`'s dispatch never fails: a socket that went away is the process being
+						// out of reach, which is `ProcessGone` — the same value a stopped process answers.
+						return yield* Effect.raceFirst(Deferred.await(ack), Deferred.await(closed)).pipe(
+							Effect.catchCause(() => Effect.succeed(processGone(processId))),
+						);
+					}),
+			} satisfies AttachedProcess<S, M>;
+		});
+
+	/**
+	 * One call, and the reply that answers it. The pending entry is dropped however the wait ends —
+	 * answered, socket gone, or the caller interrupted — so a page holding several calls open never
+	 * accumulates the ones nothing will answer.
+	 */
+	const call = (spell: SpellCall) =>
+		Effect.gen(function* () {
+			const answer = yield* Deferred.make<SpellReply>();
+			pendingCalls.set(spell.id, answer);
+			yield* Effect.ignore(write(encodeFrame(spellCallFrame(spell))));
+			return yield* Effect.raceFirst(Deferred.await(answer), Deferred.await(closed));
+		}).pipe(Effect.ensuring(Effect.sync(() => void pendingCalls.delete(spell.id))));
+
+	const detach = (processId: ProcessId) =>
+		Effect.ignore(write(encodeFrame({kind: DETACH_KIND, processId})));
+
+	const readShell = <S = unknown>() =>
+		Stream.unwrap(
+			Effect.gen(function* () {
+				const shell = yield* Stream.runHead(
+					Stream.flatMap(SubscriptionRef.changes(rowsRef), (rows) => {
+						const row = [...rows.values()].find((one) => one.programId === shellProgram);
+						return row === undefined ? Stream.empty : Stream.succeed(row.id);
+					}),
+				).pipe(Effect.raceFirst(Deferred.await(closed)));
+				if (Option.isNone(shell)) return Stream.empty;
+				const attached = yield* attachProcess<S>(shell.value);
+				return attached.readProcess;
+			}),
+		);
+
+	// `closed` fails so the races above break out of a wait; a reader wants the value instead. A
+	// cause that is not that failure — a defect on the read loop — is still this socket ending.
+	const ended = Deferred.await(closed).pipe(
+		Effect.catch((error) => Effect.succeed(error)),
+		Effect.catchCause(() => Effect.succeed(socketEnded())),
+	);
+
+	return {
+		spells: Stream.filter(
+			SubscriptionRef.changes(spellsRef),
+			(rows): rows is RegistryDescription => rows !== null,
+		),
+		rows: Stream.map(SubscriptionRef.changes(rowsRef), (rows) => [...rows.values()]),
+		programs: SubscriptionRef.changes(programsRef),
+		keys: Stream.filter(
+			SubscriptionRef.changes(keysRef),
+			(table): table is PrefixTable => table !== null,
+		),
+		attachProcess,
+		call,
+		detach,
+		closed: ended,
+		readShell,
+	} satisfies PageAttachment;
+});

@@ -50,7 +50,7 @@ const trees = (...held: ReadonlyArray<{path: string; branch: string}>) =>
 			.join("\n"),
 	);
 
-/** One authorized claim marker on #6296, carrying the live lane's nonce. */
+/** One authorized claim marker on the target issue, carrying the live lane's nonce. */
 const CLAIMED: ReadonlyArray<Scripted> = [
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
 	[PERM, served({permission: "write"})],
@@ -126,7 +126,7 @@ describe("runRetireBranch — a survivor nobody attests to is never guessed", ()
 		expect(calls.some((line) => RENAME.test(line))).toBe(false);
 	});
 
-	it("counts no marker from an account below write — content is not authority (ADR 0055)", async () => {
+	it("counts no marker from an account below write — content is not authority", async () => {
 		const {out} = await run([
 			[BRANCHES, refs(STALE, LIVE)],
 			[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
@@ -216,7 +216,7 @@ describe("runRetireBranch — the rename is proven, never reported", () => {
 	});
 });
 
-describe("runRetireBranch — no path deletes a branch (ADR 0324, first binding constraint)", () => {
+describe("runRetireBranch — no path deletes a branch (the first binding constraint)", () => {
 	// The pin is over the source rather than a run: a delete path that exists but is unreachable in
 	// the cases these tests script is exactly the defect the ruling bans, and no fake can prove its
 	// absence. Both modules are read whole, so a delete added to either reds this.

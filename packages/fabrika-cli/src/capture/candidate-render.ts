@@ -1,15 +1,15 @@
 /**
- * The candidate-render step (epic #2955 story 1, issue #2961): render the founder's
- * priority surfaces over a flag-forced preview into a deterministic candidate set
- * staged for blessing — it does NOT bless (that is the founder's step, #2962).
+ * The candidate-render step: render the priority surfaces over a flag-forced preview
+ * into a deterministic candidate set staged for blessing — it does NOT bless (that is
+ * the operator's step).
  *
  * Thin orchestration over pure cores: resolve the priority surfaces
  * (`priority-surfaces.ts`), shoot them over the preview via the reused capture leg
  * (`capture.ts` — the same flake canon the review-design gate uses), PUT each
- * candidate's bytes to depo up front (so the emitted `sha256` IS what a later bless
- * commits — ADR 0183 §5 no-re-render guard), and fold the results into the candidate
+ * candidate's bytes to the asset store up front (so the emitted `sha256` IS what a
+ * later bless commits — the no-re-render guard), and fold the results into the candidate
  * set (`candidate-set.ts`). Both impure legs are injected seams — the unit test
- * drives the whole orchestration with fakes, no browser and no depo (the
+ * drives the whole orchestration with fakes, no browser and no store (the
  * pure-core + injected-impure-leg idiom `renderLocal`/`captureAndUpload` already use).
  */
 import {Effect} from "effect";
@@ -36,7 +36,7 @@ export type CaptureLeg = (
  * What a store leg returns: the content-address stem the golden pointer records, and the
  * immutable URL the bytes are readable at. The *store itself* is the consuming repo's — a
  * repo's goldens live in its own asset store — so this package owns only the shape, never a
- * host or a credential (issue #5063).
+ * host or a credential.
  */
 export interface StoredGolden {
 	readonly sha256: string;
@@ -46,7 +46,7 @@ export interface StoredGolden {
 /**
  * The injected store leg — PUT candidate bytes, get back `{ sha256, url }`. Its
  * error/requirement channels are the caller's (the bin provides the real
- * `storeGolden` + depo layer; the test injects a fake with neither), so this module's
+ * store layer; the test injects a fake with neither), so this module's
  * `renderCandidateSet` stays parametric over both and needs no service at its edge.
  */
 export type StoreLeg<E = never, R = never> = (
@@ -56,34 +56,34 @@ export type StoreLeg<E = never, R = never> = (
 export interface RenderCandidateSetRequest {
 	/** The flag-forced preview base URL to render the candidates over. */
 	readonly previewUrl: string;
-	/** Concrete data the priority routes need — the seeded sözlük term slug. */
+	/** Concrete data the priority routes need — the seeded term slug. */
 	readonly params: PrioritySurfaceParams;
 	/** Directory the per-candidate PNG bytes are written to. */
 	readonly outDir: string;
 	/**
 	 * The forced flag state the preview is rendered under (flag key → on/off),
 	 * recorded on the set as provenance. This step consumes an already-forced
-	 * preview; it does not force flags (#2955).
+	 * preview; it does not force flags.
 	 */
 	readonly forcedFlags?: Readonly<Record<string, boolean>>;
 	/** Viewport to shoot each candidate at (default desktop). */
 	readonly viewport?: Viewport;
 	/** Passed through to the capture leg (timeout, full-page). */
 	readonly captureOptions?: CaptureOptions;
-	/** Override the priority set (test seam); defaults to the founder set. */
+	/** Override the priority set (test seam); defaults to the built-in set. */
 	readonly specs?: readonly PrioritySurfaceSpec[];
 }
 
 export interface RenderCandidateSetDeps<E = never, R = never> {
 	readonly capture?: CaptureLeg;
-	/** REQUIRED — the depo store leg (there is no browser-free default that PUTs bytes). */
+	/** REQUIRED — the asset store leg (there is no browser-free default that PUTs bytes). */
 	readonly store: StoreLeg<E, R>;
 }
 
 /**
- * Render the priority surfaces into a candidate set. Resolves the founder-ordered
- * surfaces, shoots them over the preview, stores each candidate's bytes to depo, and
- * assembles the set — one candidate screen per priority surface, in founder order,
+ * Render the priority surfaces into a candidate set. Resolves the ordered
+ * surfaces, shoots them over the preview, stores each candidate's bytes, and
+ * assembles the set — one candidate screen per priority surface, in that order,
  * each anchored to the exact `sha256` a later bless commits. A capture failure
  * short-circuits (nothing to bless from a broken render); a store failure propagates
  * in the leg's own error channel.

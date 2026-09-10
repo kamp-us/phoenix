@@ -69,12 +69,12 @@ describe("scanBody", () => {
 	});
 
 	it("leaves a repo-relative path untouched — the Pointers section is repo-relative by contract", () => {
-		const body = "packages/fabrika-cli/src/report/leaks.ts and apps/web/worker/http/retry.ts";
+		const body = "packages/fabrika-cli/src/report/leaks.ts and src/worker/http/retry.ts";
 		expect(scanBody(body)).toEqual({leaks: [], redacted: body});
 	});
 
 	/**
-	 * #5687 moved `build check`'s COMMITTED-file scan off this function onto `build/doc-leaks.ts`,
+	 * `build check`'s COMMITTED-file scan moved off this function onto `build/doc-leaks.ts`,
 	 * which is deliberately looser on three shapes. This body surface is ungated — no CI stands
 	 * behind an issue body — so it keeps refusing all three, and these pin that it still does.
 	 */

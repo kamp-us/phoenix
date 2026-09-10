@@ -1,7 +1,7 @@
 /**
  * `--help` is the recipe adapter's public contract. `unpark` is the one verb here that takes a lanes
  * root, and it must tell the same derivation story `lane`'s flag tells — a flag advertising a bare
- * cwd-relative default is how an operator learns the wrong resolution rule (#7380).
+ * cwd-relative default is how an operator learns the wrong resolution rule.
  */
 import {describe, expect, it} from "vitest";
 import type {CommandNode} from "../unknown-subcommand.ts";
@@ -34,7 +34,7 @@ const flagHelp = (leaf: DescribedCommand): string => {
 	return (leaf.config?.flags ?? []).map(text).join(" ");
 };
 
-describe("recipe unpark's repository-root help contract (#7380)", () => {
+describe("recipe unpark's repository-root help contract", () => {
 	it("advertises the repository-owned --root default the lane group's flag carries", () => {
 		const help = flagHelp(leafNamed("unpark"));
 

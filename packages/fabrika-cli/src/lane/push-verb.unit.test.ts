@@ -98,7 +98,7 @@ describe("runPush", () => {
 		expect(calls.some((line) => line.startsWith("git merge-base"))).toBe(false);
 	});
 
-	it("refuses a push from the repository's main working tree — the assembly seat is never it (#6163)", async () => {
+	it("refuses a push from the repository's main working tree — the assembly seat is never it", async () => {
 		const {outcome, calls} = await run([
 			[GIT_DIRS, IN_MAIN_CHECKOUT],
 			...remote(refRow(OLD_HEAD), refRow(HEAD)),
@@ -185,7 +185,7 @@ describe("runPush", () => {
 		expect(pushed(calls)).toBe(false);
 	});
 
-	it("pushes the derived branch even when the branch tracks main, and clears that upstream (#6435)", async () => {
+	it("pushes the derived branch even when the branch tracks main, and clears that upstream", async () => {
 		const {outcome, calls} = await run([
 			[once(UPSTREAM), okOut("origin/main\n")],
 			[UPSTREAM, errOut("fatal: no upstream")],

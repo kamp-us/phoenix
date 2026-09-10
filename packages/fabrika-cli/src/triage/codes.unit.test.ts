@@ -84,7 +84,7 @@ describe("the codes this group adds", () => {
 	 * The pairwise checks above name one `report` constant each, so a *new* code added upstream at
 	 * `12` or `13` would land on top of this group and every one of them would stay green. This reads
 	 * the base's occupied seats off its exports instead, which is the only form that covers a code
-	 * nobody has written yet (#4924).
+	 * nobody has written yet.
 	 */
 	/**
 	 * `17` is *a live marker names another session* and deliberately passes a caller holding none;

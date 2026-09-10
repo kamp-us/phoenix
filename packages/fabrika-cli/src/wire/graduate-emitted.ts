@@ -2,7 +2,7 @@
  * The `graduate-emitted` marker — the first line of the comment `graduate emit` posts on the source
  * a spec was graduated from.
  *
- *     graduate-emitted: #9412 → #9520 @ a1b2c3d4e5f6 · covers R1.2;R1.4 · 2026-08-09T18:36:48Z
+ *     graduate-emitted: #1 → #2 @ a1b2c3d4e5f6 · covers R1.2;R1.4 · 2026-08-09T18:36:48Z
  *
  * It records that a decision trail left ideation as one spec issue: which source it was read from,
  * which issue was filed, the **spec** digest that filing bound, and the refs that spec covered.
@@ -12,7 +12,7 @@
  * the repeat guard. And `covers` is what lets a reader answer a coverage question without re-deriving
  * anything: a digest alone is opaque, so a caller holding one could not tell a remainder from a
  * duplicate. Its separator is `;` rather than `,` for readability — a map-sourced ref already carries
- * a space (`#9301 R1.2`), and `R1.1, #9301 R1.2` reads as one run-on list where `;` keeps the refs
+ * a space (`#3 R1.2`), and `R1.1, #3 R1.2` reads as one run-on list where `;` keeps the refs
  * visually apart. A comma would parse the same; this is a legibility choice, not a hazard.
  *
  * It is a new format rather than a widening of `./verdict-marker.ts`: that reader is guarded by a

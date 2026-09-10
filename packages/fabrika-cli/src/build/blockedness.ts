@@ -1,19 +1,19 @@
 /**
  * Blockedness, read off GitHub's native `blocked_by` graph and nowhere else.
  *
- * ADR 0301 makes the graph the one carrier of "do not start this yet", for a standalone issue
- * exactly as for an epic child, and #5387 ruled the same for the epic ledger's prose
- * `## Dependencies` block: that block is at most a rendering of the graph, never an input anything
- * parses to decide behaviour. This module is the one reader over that one source, so every seam that
- * gates on blockedness starts from the same read. What the epic run's assembly branch then
- * discharges off that read is [`./discharge.ts`](./discharge.ts)'s, shared by `build eligible`, the
- * claim seam and the pool so the three cannot drift again (#7035, #7223).
+ * The graph is the one carrier of "do not start this yet", for a standalone issue exactly as for an
+ * epic child, and the same holds for the epic ledger's prose `## Dependencies` block: that block is
+ * at most a rendering of the graph, never an input anything parses to decide behaviour. This module
+ * is the one reader over that one source, so every seam that gates on blockedness starts from the
+ * same read. What the epic run's assembly branch then discharges off that read is
+ * [`./discharge.ts`](./discharge.ts)'s, shared by `build eligible`, the claim seam and the pool so
+ * the three cannot drift again.
  *
  * **A `blocked_by` entry is not a block on its own.** The endpoint lists every blocker whatever its
  * state, so the derivation — "any blocker issue still open" — lives here, in the reader, as
  * [`../io/edges.ts`](../io/edges.ts) already says it must.
  *
- * **The read fails closed on every axis** (ADR 0092). The edge list is `Unknown` when it 404s just
+ * **The read fails closed on every axis.** The edge list is `Unknown` when it 404s just
  * as when the transport failed: the caller proves the issue exists before asking, so a 404 here is
  * an unexplained answer, not "no edges". A blocker whose own state could not be read is its own
  * unread row rather than a closed one — it never shortens the blocking set, and it never seats a
@@ -76,7 +76,7 @@ export const readBlockedness = (repo: string, issue: number): Shell<Blockedness>
  * The gate's answer for the seams that only need "may this start" — `build claim` and `build pick`,
  * once [`./discharge.ts`](./discharge.ts) has subtracted what the assembly branch carries.
  *
- * ADR 0301 keeps this **out** of the admission test: that module is pure and total over facts
+ * This stays **out** of the admission test: that module is pure and total over facts
  * already on an issue, while blockedness needs a paged network read and its remedy is waiting rather
  * than an edit. So it composes after the pure axes, and the three-way seating is derived here alone
  * so the two seams cannot come to disagree about what an unread blocker means.

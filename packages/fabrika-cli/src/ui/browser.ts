@@ -5,7 +5,7 @@
  *
  * The three classifications are the contract's, and each is a different fact: a status ≥ 400 or a
  * navigation that threw is **unreachable** (`15` — no route, dark flag, gated tier), a runtime error
- * thrown into the page is a **crashed** render (`14`, #2594's signal, read through the shared
+ * thrown into the page is a **crashed** render (`14`, read through the shared
  * `../capture/page-errors.ts` predicate), and anything else that goes wrong leaves the capture
  * **unknown** (`11`) rather than valid.
  *

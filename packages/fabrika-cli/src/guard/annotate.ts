@@ -1,6 +1,6 @@
 /**
  * GitHub workflow-command annotations — how a red guard lands on the PR diff instead of in a log
- * dig (#3868). This is the one module that knows the syntax: the location model, the escaping, and
+ * dig. This is the one module that knows the syntax: the location model, the escaping, and
  * the "only under Actions" predicate.
  *
  * A location is a closed union rather than optional `file`/`line` fields, so the state GitHub
@@ -89,7 +89,7 @@ const FALLBACK_MESSAGE_LINES = 8;
 /**
  * The annotations for a report that supplied none of its own. Every guard's report is human prose;
  * a guard that cannot name a file still gets one bare `::error` so the failure shows up in the
- * checks summary instead of only in the log (#3868).
+ * checks summary instead of only in the log.
  */
 export const fallbackAnnotations = (
 	report: string,

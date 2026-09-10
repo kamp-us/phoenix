@@ -3,8 +3,8 @@
  *
  * **This verb exists because there was no public one, and the hand-rolled call that filled the gap
  * posts a path.** `gh api -X PATCH -f body=@file` takes its value as a raw string, so the literal
- * `@/path/to/file` lands as the whole body and the write returns success — #6708 and #6736 on
- * 2026-08-21. The plumbing was already here; what was missing was a reachable seat for it, since
+ * `@/path/to/file` lands as the whole body and the write returns success. The plumbing was already
+ * here; what was missing was a reachable seat for it, since
  * `triage enrich` is stage-scoped and cannot serve an append to an already-triaged issue.
  *
  * The scan reads the appended section only. Redacting the prior body would make an append a rewrite

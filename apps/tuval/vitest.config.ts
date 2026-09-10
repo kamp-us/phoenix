@@ -1,21 +1,68 @@
 import {defineConfig} from "vitest/config";
+import {featuresPlugin} from "./src/page/dev-server.ts";
 
-// Two projects (#7544): `unit` for everything that needs no process outside this one, and
-// `integration` for the suites that stand a real Pi `AgentSession` up on a real loopback socket
-// (#7567). Tuval's integration tier is slow, not remote — it needs no cloud credentials.
+// A `unit` project so `vitest --project unit` (the pre-push `unit-changed` leg over `apps/**`)
+// resolves here, and an `integration` project beside it now that the app has one. Tuval's
+// `integration` is the non-remote half of the tier `.glossary/LANGUAGE.md` defines — a real Pi
+// `AgentSession` behind a real loopback socket and a real WebSocket codec, slow but needing no
+// cloud credentials (#7544, #7556, #7567).
+//
+// The browser surface's component tests are `unit` too — a rendered `Desk` could be wrong even if
+// every socket behaved perfectly, which is the tier litmus (`.patterns/effect-testing.md`). They
+// live in the same project rather than a third one, and each `*.unit.test.tsx` names `jsdom` in its
+// own `@vitest-environment` docblock, so the ~490 node-environment tests beside them keep running
+// with no DOM and the repo's two tiers stay two.
+//
+// `execArgv` sits inside each project, beside that project's `pool`, because Vitest 4 reads fork
+// exec args per project (the v4 pool rework removed `poolOptions`); at the config root it is read
+// by nothing and the flags never reach a fork. Both flags are apps/web's, for reasons that reach
+// here unchanged: `--max-old-space-size` caps a runaway passive-update loop into a fast failure
+// instead of a ~5GB hang (#1470), and `--no-experimental-webstorage` drops the Node 26
+// `localStorage` global that otherwise shadows jsdom's and reads `undefined` (#7728) — this
+// package's volta pin is Node 26, and one of the surface's own assertions is that a drag writes
+// nothing to `localStorage`. That second one only reddens where Node is 26: pnpm runs vitest under
+// its own bundled Node 22, which has no such global, so a local run passes either way and CI is
+// the one that judges this.
+const execArgv = ["--max-old-space-size=512", "--no-experimental-webstorage"];
+
+// Local runs share one developer machine with each other and with the pre-push hook; CI gives a run
+// the whole runner, so only the local side is capped (#8119). Vitest's own default is
+// `availableParallelism() - 1`, which on a 12-core box is 11 forks *per run* — three build lanes
+// reached 74-87 workers and load average 218. `undefined` on CI falls through to that default.
+const maxWorkers = process.env.CI ? undefined : 2;
+
+// `src/page/renderers.tsx` imports `virtual:tuval/features` — the module the page server generates
+// from the booted config (#8439) — so any test that reaches the renderer table has to be able to
+// resolve it. Served here at `featuresDefault`: a unit test renders the desk an operator who stated
+// no flags gets. A test wanting a flag at some other value passes `ChatWindowOptions` to
+// `chatWindow()` directly, which is what `src/shell/chat/subagent-list.unit.test.tsx` does.
+// Declared per project rather than at the root: Vitest 4 builds each project's own Vite server and
+// a root `plugins` entry does not reach one.
+const plugins = [featuresPlugin()];
+
 export default defineConfig({
 	test: {
 		projects: [
 			{
+				plugins,
 				test: {
 					name: "unit",
-					include: ["src/**/*.unit.test.ts"],
+					include: ["src/**/*.unit.test.ts", "src/**/*.unit.test.tsx"],
+					pool: "forks",
+					execArgv,
+					maxWorkers,
+					sequence: {groupOrder: 0},
 				},
 			},
 			{
+				plugins,
 				test: {
 					name: "integration",
 					include: ["src/**/*.integration.test.ts"],
+					pool: "forks",
+					execArgv,
+					maxWorkers,
+					sequence: {groupOrder: 1},
 					testTimeout: 60_000,
 				},
 			},

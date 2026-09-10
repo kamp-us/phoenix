@@ -31,7 +31,7 @@ describe("runScratch", () => {
 
 	/**
 	 * The axis the incident turned on: a reviewer staged `diff.txt` in the session scratchpad and a
-	 * concurrent lane replaced the bytes between two offset reads (#7246, live on PR #7232).
+	 * concurrent lane replaced the bytes between two offset reads.
 	 */
 	it("resolves two lanes of ONE session to different directories", async () => {
 		const first = await run({lane: "4287"});

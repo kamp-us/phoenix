@@ -1,6 +1,6 @@
 # Command palette
 
-`CommandPalette` is the shared modal search surface in
+`CommandPalette` is the shared search surface in
 [`packages/design/src/CommandPalette.tsx`](../packages/design/src/CommandPalette.tsx). Its first
 product use is the search-only `⌘K` contract fixed by
 [ADR 0186](../.decisions/0186-command-palette-single-search-contract.md); callers supply result
@@ -24,11 +24,54 @@ data and selection behavior, so the design package never imports an app router o
   spine and one density ramp.
 - `showSearchIcon` (default on) is a separate axis from `variant` — the leading icon is present or
   absent the same way in both frames, so a caller never has to pick a frame to get an icon.
+- `presentation` picks where the palette lives. `dialog` (default) is the modal `⌘K` surface.
+  `inline` renders the same header, live region, listbox and footer inside a `<section>` labelled
+  with `title`, for a caller whose whole surface *is* the search — Tuval's session-list window
+  ([`apps/tuval/src/ai-agent/window/SessionListWindow.tsx`](../apps/tuval/src/ai-agent/window/SessionListWindow.tsx))
+  is the worked example. An inline palette is always open, so `open` / `defaultOpen` /
+  `onOpenChange`, `trigger`, `disabled`, `closeOnSelect`, `closeOnEscape` and the `⌘K` shortcut are
+  dialog-only: every one of them is about opening, closing or offering the modal, and an inline
+  palette does none of the three. Everything else — the ARIA spine, the movement, the
+  scroll-into-view, the filter, the scopes — is one implementation shared by both frames, which is
+  what stops a caller who cannot use a modal from writing the second palette #7882 deleted. The
+  axis is a frame, not a licence: ADR 0186's ban is on a second kamp.us *search surface*, and an
+  inline palette is still the one palette.
 - Density is inherited from the document-level `data-density` choice. The palette has no local
   size prop: its search field, result rows, groups, empty state and footer consume the shared
   `--s-*` / `--pop-row-y` ramps while `--tap-min` keeps every density keyboard- and pointer-safe.
   It carries no per-mode override: one formula follows the compact/normal/spacious values already
   owned by `tokens.css`, so changing the global ramp changes the palette with the rest of Kampüs.
+
+## Caller hooks
+
+A consumer whose keys or copy differ takes one of these rather than building a second palette —
+the ARIA spine, the movement and the scroll-into-view stay here, which is the whole point of the
+component. Tuval's spell palette
+([`apps/tuval/src/palette/Palette.tsx`](../apps/tuval/src/palette/Palette.tsx)) is the worked
+example: it used to hand-roll all of it, and #7882 folded it back onto these six.
+
+- `onKeyDown(event, active)` runs before the palette's own key handling and receives the option
+  `aria-activedescendant` currently names. `preventDefault` claims the key; anything else falls
+  through to arrow / Home / End / Enter unchanged. Tuval claims `Tab` (accept the completion) and
+  `Escape` (its opener owns where the caret goes back to).
+- `onEnter()` is asked before Enter selects the active item. `true` spends the key on the caller's
+  action; anything else leaves the default — active item wins — in place. Tuval returns whether the
+  typed line parsed into a runnable spell, so an unfinished line still completes.
+- `onActiveChange(active)` reports the active option, for a caller that describes it beside the
+  list. It reports, it never moves the selection.
+- `announcement` holds a sentence in a visually-hidden polite live region until the caller replaces
+  it. The caret never leaves the field, so this is the only thing that tells a screen-reader user
+  what a keystroke did; the `emptyLabel` / `loadingLabel` `role="status"` copy is separate and
+  visible. The region is in the DOM for the palette's whole open life, empty until the caller writes
+  into it — a region that arrives already holding its first sentence is a mutation nothing was
+  watching, so that first sentence would go unread.
+- `error` marks the field invalid and shows the message under it. It is the reply-correlated
+  refusal, not a validation of the query.
+- `closeOnEscape={false}` hands Escape to `onKeyDown` alone, so a caller owning focus restoration
+  is not racing the dialog's own close.
+
+`aria-expanded` follows the rendered options rather than being pinned to `true`: an empty or
+loading list is not an expanded popup.
 
 ## Scope sigils
 
@@ -55,10 +98,13 @@ stack of hint bars.
 
 ## Behavioral spine
 
-The palette composes the shared Manti-backed `Dialog`, which owns the modal, focus trap, Escape,
-outside-click dismissal and trigger-focus restoration. Its search field follows the WAI-ARIA
-editable combobox with list autocomplete pattern: DOM focus stays on the input; the active option
-is exposed through `aria-activedescendant`; Arrow Up/Down, Home, End and Enter operate the list.
+At `presentation="dialog"` the palette composes the shared Manti-backed `Dialog`, which owns the
+modal, focus trap, Escape, outside-click dismissal and trigger-focus restoration. Those five things
+are the whole of what `presentation="inline"` does without: an inline palette is one element among
+others on its surface, so it traps nothing, dismisses on nothing, and hands Escape to the caller.
+Its search field follows the WAI-ARIA editable combobox with list autocomplete pattern: DOM focus
+stays on the input; the active option is exposed through `aria-activedescendant`; Arrow Up/Down,
+Home, End and Enter operate the list.
 Disabled results remain perceivable but are skipped by keyboard selection.
 
 The active option is scrolled into view whenever it changes. This is part of the accessibility

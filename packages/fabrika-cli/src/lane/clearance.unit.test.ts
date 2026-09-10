@@ -38,7 +38,7 @@ describe("recordClearedRound", () => {
 		const {result, written} = await run({[WORKFLOW]: coderTemplateText()}, null, CAP_ROUND);
 		expect(result._tag).toBe("Recorded");
 		// The machine document is untouched — a grant is a line in the log, never a context edit,
-		// which is what keeps an already-recorded FAIL on the routing it took (ADR 0312).
+		// which is what keeps an already-recorded FAIL on the routing it took.
 		expect(written.has(WORKFLOW)).toBe(false);
 		const log = written.get(LOG) ?? "";
 		expect(JSON.parse(log.trim())).toMatchObject({

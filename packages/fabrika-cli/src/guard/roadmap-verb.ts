@@ -6,7 +6,7 @@
  * which failure is which — and that split is the port's whole point. The v1 original exited
  * `1` for drift, for an unreadable `ROADMAP.md` and for a `gh` that could not answer; those three
  * have opposite remedies, so here they are `12`, `11` and `11`, and a roadmap with no arcs or a repo
- * with no milestones is `7` rather than a green over nothing (ADR 0092).
+ * with no milestones is `7` rather than a green over nothing.
  */
 
 import {Effect, type FileSystem, Path} from "effect";
@@ -81,7 +81,7 @@ export const runRoadmapGuard = (
 		}
 
 		// The file the repo declares, not this guard's own literal: a guard validating `ROADMAP.md`
-		// while the fence reads `PLAN.md` is one key with two answers (#4730's shape).
+		// while the fence reads `PLAN.md` is one key with two answers.
 		const declared = yield* readRoadmapFile(options.cwd);
 		if (declared._tag === "Refused") {
 			return emitVerdict(

@@ -1,6 +1,6 @@
 /**
  * A throwaway `origin` + clone on disk, for the two real-git tests that judge what git does when
- * several spawns work one clone at once (#6081, #7331).
+ * several spawns work one clone at once.
  *
  * Not a test itself and not under `__fixtures__/`, which holds captured payloads rather than code.
  * It lives here because both concurrency files need the identical clone: a fixture that differs

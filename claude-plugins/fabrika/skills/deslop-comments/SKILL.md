@@ -33,10 +33,10 @@ earns a note.
 
 ## Placement comes first, because most walls are misfiled docs
 
-The repo already has homes for what a long docblock is trying to be: `.decisions/` holds the *why*
-and its history, `.patterns/` holds how the current code is shaped, `README` / `DEVELOPMENT.md`
-hold the state a builder reads. An inline comment is the **surface of last resort** — a
-load-bearing note with no other home that belongs at this exact line.
+The repo already has homes for what a long docblock is trying to be: its decision records hold the
+*why* and its history, its pattern docs hold how the current code is shaped, and its README and
+development guide hold the state a builder reads. An inline comment is the **surface of last
+resort** — a load-bearing note with no other home that belongs at this exact line.
 
 So a docblock re-deriving a why that an ADR already owns is duplication, and duplication drifts:
 one copy gets corrected and the other quietly lies.
@@ -49,7 +49,7 @@ or the signature (`/** The user id. */` over `userId: string`); narration of obv
 to; commented-out code; a restatement of what the line above or the file header already said.
 
 **COLLAPSE** — a multi-paragraph docblock re-explaining a why that already has an ADR or a pattern
-doc, shrunk to one pointer line: `// See ADR 0013`, `// keyset order: .patterns/fate-connections.md`.
+doc, shrunk to one pointer line naming the record or the doc it points at.
 
 **REHOME** — a docblock carrying real load-bearing why with no home yet. Never delete it: write the
 ADR with `/adr` or the pattern doc with `/write-pattern`, then replace the docblock with a pointer
@@ -72,8 +72,8 @@ any other comment.
 - **Never strip a license header, a shebang, or a tool pragma** — `@ts-expect-error`,
   `biome-ignore`, `eslint-disable`, `@vitest-environment` all change behaviour, so they are code
   wearing a comment's syntax.
-- **Never invent an ADR number.** `/adr` derives the next one from the `.decisions/` filenames; a
-  number you composed collides with a real one.
+- **Never invent an ADR number.** `/adr` derives the next one from the decision records already on
+  disk; a number you composed collides with a real one.
 
 ## Finish on evidence, not on the sweep feeling done
 

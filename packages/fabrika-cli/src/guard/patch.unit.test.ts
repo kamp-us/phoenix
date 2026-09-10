@@ -1,6 +1,6 @@
 /**
  * The pure rule behind `guard patch-guard check`, ported from the v1 CLI's
- * `patch-guard.unit.test.ts` (#3051): the workspace slice, the marker grammar, and the two-way
+ * `patch-guard.unit.test.ts`: the workspace slice, the marker grammar, and the two-way
  * cross-check. No disk — the IO seam is covered in `patch-verb.unit.test.ts`.
  *
  * The marker tag is assembled at runtime (`TAG`) rather than written contiguously, so this file —
@@ -80,7 +80,7 @@ describe("auditPins", () => {
 	it("finds nothing when every patched dep has a matching pin (the on-main state)", () => {
 		const markers = [
 			...parsePinMarkers(`// ${TAG} @nkzw/fate@1.3.1`, "src/fate/nkzw.test.ts"),
-			...parsePinMarkers(`// ${TAG} alchemy@2.0.0-beta.59`, "apps/web/tests/flagship.test.ts"),
+			...parsePinMarkers(`// ${TAG} alchemy@2.0.0-beta.59`, "apps/site/tests/flagship.test.ts"),
 			...parsePinMarkers(`// ${TAG} react-fate@1.3.1`, "src/fate/useView.test.tsx"),
 		];
 		expect(auditPins(patched, markers)).toEqual({missing: [], stale: []});

@@ -44,7 +44,7 @@ describe("readRangeVerdicts folds a child issue's range verdicts", () => {
 		expect(failing(read)).toEqual([]);
 	});
 
-	/** #6296's shape: one gate failed the child while another passed it, and the FAIL is what stands. */
+	/** One gate failed the child while another passed it, and the FAIL is what stands. */
 	it("reports a FAIL in one namespace beside a PASS in another", () => {
 		const read = readRangeVerdicts([
 			comment(1, marker("governance", "PASS")),

@@ -24,6 +24,37 @@ Both records' `E` and `R` are inferred onto the row (`Program<S, M, C, U, Ctx, E
 program's failures and its service needs fall out of the code rather than being hand-declared. Never
 widen `R` by hand to make a spawn typecheck — the spawn is what has to supply it.
 
+**A Sub handler's failure ends the process, so treat returning as the only clean exit.** ADR
+[0346](../.decisions/0346-sub-failure-policy-actor-identity.md) makes a failed Sub the machine's Msg
+or the process's death, never a host retry: the host reports the `Cause` under `"sub-fiber"`, marks
+that Sub's id `failed`, and — with no `subFailure` projection to address it — closes the process's
+Scope with the failure as its Exit. Marked ids are never re-armed, `ended` ones included, so a Sub
+that returns normally does not restart while the state keeps desiring it. Restart is data: emit the
+Sub under a new id (an attempt counter in the id, or in the dep-keyed `deps` slice) and reconcile
+arms it fresh, which is what makes the retry replay. Catch inside the handler anything you mean to
+survive; let out only what should end the process.
+
+**A row declares the policy on its `core`, and the type it writes against lives in
+[`src/sub-failure.ts`](../apps/tuval/src/sub-failure.ts).** `SubFailure` and `SubFailurePolicy` sit
+there rather than in the host, so the registry can name them while still importing nothing from the
+slice that runs a program (`registry/boundary.unit.test.ts` holds that line). A row's `core` is typed
+`ProgramCore`, which is Demlik's `Machine` widened by the optional `subFailure` field:
+
+```ts
+core: {
+  init: (loaded) => [loaded ?? {armed: false, seen: []}, []],
+  update: {…},
+  subscriptions: (state) => (state.armed ? [TICKER] : []),
+  subscribe: {ticker: () => () => {}},
+  subFailure: (sub, failure) => ({type: "noted", note: `${sub.type}:${failure.reason}`}),
+} satisfies ProgramCore<State, Msg, Cmd<never>, Ticker, unknown>,
+```
+
+Write that core as a plain literal, not through `defineMachine` — the helper takes Demlik's
+`Machine`, which has no `subFailure`, and the host detects the update form when `__form` is absent.
+The policy is only consulted for a Sub the `subscriptions` aggregate declared; a dep-keyed Sub has no
+`U` value to hand it, so its failure takes the unaddressed branch.
+
 **A Sub that needs a service belongs in `subs`, not on the machine.** Demlik 0.12's own `subscribe`
 map is Promise-shaped and synchronous (`host/demlik-bridges.ts` is the whole translation), so a cell
 there has nowhere to ask for a service. `Processes` prefers a row's `subs` entry over the bridged
@@ -70,12 +101,228 @@ failures come back and they are not the same thing:
   and it must be loud.
 
 A program playing both ends of a two-way port kind names each end locally (`pageRequest` /
-`pageReply`); `compile` matches on the kind, not the key.
+`pageReply`); `compile` matches on the kind, not the key. Each end declares only its own
+direction's predicate — `transcriptPage.ends.request.inbound()`, `transcriptPage.ends.page.outbound()`
+— so the kind stays one kind for routing while the wrong direction is refused where it arrives.
 
 ## Inbound: `receive` is a pure translation with no failure channel
 
 `receive[port]` turns an admitted payload into the program's private Msg. It is a plain function —
-there is nothing to fail into. A payload the port's predicate admits but this end cannot act on (the
-`page` half of a `transcript-page` arriving where a request belongs) becomes a Msg that records the
-refusal as data, never a throw: a throw here happens inside the launcher's pump, where nobody is
-waiting for it.
+there is nothing to fail into, so nothing it is handed may need refusing. That is what the
+direction-scoped end predicate buys: a `page` written to the end that takes requests fails the
+kernel's `accepts` check at the send, where the sender reads the error, instead of arriving here to
+be recorded as a failure Msg only a rendering window would ever see (#8235, and #7991 before it for
+`prompt`).
+
+## Starting fresh: the boot Cmd a fresh `init` emits
+
+A process whose whole point is a live connection has to open one, and the place that decides to is
+the machine's **fresh** `init` arm. Demlik's guard is scoped to rehydration — it reds only on a
+non-null `loaded` whose `init` returned Cmds (`replay` in `@demlik/tea` 0.12) — so a fresh `init`
+emitting a Cmd is inside the contract, and it is the one place in the tree that knows the process is
+new. `aiAgentSessionMachine` is the worked example: `loaded === null` answers with
+`[{type: "aiAgent.boot", cwd}]`, and a restored one still answers `noCmds` and leaves the reconnect
+to the resume rule below.
+
+**Put it there rather than on a spawn path.** A hook on one spawner is a hook the next spawner
+forgets, and that is not hypothetical: `pi-session` shipped with no production `start` caller at all,
+so the picker opened a window over a session that never began and refused every prompt
+([#7925](https://github.com/kamp-us/phoenix/issues/7925)). The core covers the picker, the launcher
+and a test kernel at once, and there is no second place to keep in step. A window is not the home
+either — two windows over one process would race into a refusal, and a window is a view rather than
+the owner of a session's lifetime.
+
+**A spawner that has something to say about the boot says it as a per-spawn service, not as an
+argument.** `SpawnOptions` carries no program arguments and is not going to grow any — the one thing
+a spawner already hands a child is the context its handlers run under. So a spawner opening a
+process *for* something names that thing as a service on the child's context and the boot Cmd's
+handler reads it with `Effect.serviceOption`: absence is the ordinary case and stays a value rather
+than a missing dependency, and the decision still lives in the one place that knows the process is
+new. [`SessionOpening`](../apps/tuval/src/ai-agent/opening.ts) is the worked example — `{cwd,
+resume}` and no third field, set by
+[`shell/picker/open.ts`](../apps/tuval/src/shell/picker/open.ts) when the operator picked a session
+out of the list, read only by `aiAgent.boot`. Keep such a service narrow on purpose: one that grows
+fields is a program-arguments system by another name, and then every spawner has to know what every
+row wants.
+
+**The Cmd's handler answers with a Msg and does no work.** `runInterpret` awaits an init Cmd's
+handler before `make` returns (`host/actor.ts`), and a spawn runs inside the *spawning* process's
+serial step — so a boot handler that opened the connection itself would freeze the shell for as long
+as the backend took, or for the row's whole start deadline when the open fails. Answering with the
+Msg instead costs nothing at spawn and puts the real work on the new process's own tail: the boot
+Cmd is a trampoline from `init`, which cannot dispatch a Msg, into the cell that already owns the
+transition and its "one open at a time" guard.
+
+**A follow-up Msg can be interrupted before its fiber starts, so count it on the Exit.** The host
+forks each unawaited follow-up into the process Scope and settles its pending count on the fiber's
+Exit rather than inside its body: a stop taken in the same tick as the dispatch — ordinary once a
+session opens itself at spawn — interrupts a fiber that never ran, which produces an Exit and runs no
+`ensuring`, and an in-body decrement leaves the actor's stop waiting on a count that never reaches
+zero.
+
+**The core owns the phases that mean "an open is in flight"; a layer's event may not enter one.**
+Every layer narrates its own open on the same event stream it publishes everything else on —
+`PiAiAgent.start` and `ClaudeAiAgent.start` both emit `starting` and then `ready` — but that stream
+is a Sub the core opens only once `started` has committed, which is *after* the open answered. So
+the `starting` a Sub reads first is always a report about an open that is already finished, and
+folding it walks a ready session backwards into a phase that refuses the first prompt the founder
+types. `foldEvent` therefore drops a `phase` event carrying `starting` or `reconnecting`: those two
+belong to the `start` and `reconnect` cells, and `started` or `failed` are the only ways out of
+them. Every other phase the layer reports is news and folds normally.
+
+## Coming back from a checkpoint: a resume Msg, and a Cmd that republishes
+
+Durability is the kernel's ([`durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts)),
+so a row does not write its own snapshot. What a row owes is the other half: what its state means
+after a restart, and what has to happen before it is usable again. Three rules, all of them visible
+in [`ai-agent/restore/`](../apps/tuval/src/ai-agent/restore/), plus one rule about the
+checkpoint a row *cannot* read.
+
+**The rehydrating `init` transforms and emits nothing.** Demlik throws on a non-null `loaded` whose
+`init` returns any Cmd (`@demlik/tea` 0.12 `runtime-types.ts`) — that branch is the migration and
+parse boundary, not a boot hook. So the transform states what a saved state *is* now: a process that
+holds no transport any more comes back `idle` (every phase but the terminal `gone`), a run-scoped
+field — a stale refusal, a page fetched from a transport that is gone — comes back empty, and a turn
+that was mid-reply when the process died comes back marked interrupted rather than pretending the
+work is still running.
+
+**Whatever the restore has to *do* is a Msg someone dispatches after the spawn** — that is the route
+the guard's own error message names. Keep it as a pure function of the restored state — Tuval's is
+`resumeMessages(state)` — so a spawner asks the row what to send instead of encoding the row's
+lifecycle at the call site, and a state with nothing to resume answers with an empty list. It is
+also where the fresh arm's counterpart goes: a checkpoint written before the session ever opened has
+no id to reconnect to and none a fresh open could duplicate, so it answers with the same open a
+fresh spawn takes — the boot Cmd above belongs to `init`'s fresh arm alone, and a rehydrating one
+may emit none.
+
+**That function belongs on the row, under `resume`, or nothing sends it.** A rule only a test calls
+is not a restore: for two months every caller of `resumeMessages` was a proof, so a real restart
+left the session holding a live id and no transport
+([#7877](https://github.com/kamp-us/phoenix/issues/7877)). The row declares
+`resume: (state) => ReadonlyArray<Msg>` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)),
+and both spawners dispatch it through one shared step
+([`durability/resume.ts`](../apps/tuval/src/durability/resume.ts)) — `src/launch/` for a graph node
+whose checkpoint existed, `durability/restore.ts` for a checkpointed process the graph does not
+plan. Launch dispatches after **every** node is spawned and pumped, never inside the loop, because a
+resume republishes on its out-ports and a reader that has not launched yet would leave those
+payloads in a queue nobody drains.
+
+**A checkpoint the row cannot read is never written over, and the row says so under `restorable`.**
+A row that parses its checkpoint has a refusal branch, and the state that branch returns is a
+perfectly ordinary state — so the save the host runs straight after `init` writes it over the bytes
+it just refused. That costs the operator the transcript with no copy left to diagnose from, and it
+silences the refusal one restart later: the saved refusal state parses fine on the next boot, and
+the restore transform drops `failure` off it, so the window falls from the refusal sentence to the
+bare phase line ([#8112](https://github.com/kamp-us/phoenix/issues/8112)). The row declares
+`restorable: (raw) => boolean` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) —
+the same read its `init` does, answered before `init` runs — and a `false` seals that process's
+store: `Checkpoints` hands the host a store whose `save` writes nothing for the process's life, so
+the bytes stay on disk and every later boot re-reads and re-refuses them. Answer it off the one
+function `init` uses, never a second copy of the parse: a store sealing on a different verdict than
+the one the window renders would hold the wrong bytes. A row with no parse of its own omits the
+field and restores whatever loads.
+
+**A state no restore may read back is never written, and the row says so under `checkpointWorthy`.**
+The host saves on every applied Msg, so a program re-upserting one growing item per delta rewrites
+its whole state through Demlik's `fileStore` — mkdir, `JSON.stringify`, write-temp, rename — awaited
+inside the single-permit transition tail, which puts each delta's fold behind the previous one's
+disk round trip. The row declares `checkpointWorthy: (state) => boolean`
+([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) and the host asks it at every save
+site — the commit's, boot's and stop's ([`host/actor.ts`](../apps/tuval/src/host/actor.ts)) — so a
+`false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
+no disk, and the state that ends the turn is worthy again, so the commit landing it is the flush and
+it is on disk before the dispatch returns. The skipped writes are never owed, because a state the
+row refuses is one no restore may show — a half-written reply must not come back as the reply. Keep
+it total and cheap; it runs on the tail on every commit. It composes with the seal above rather than
+replacing it: the row refuses this state, the sealed store refuses every state. A row whose states
+are all worth keeping omits the field
+([#8170](https://github.com/kamp-us/phoenix/issues/8170)).
+
+**A restored process publishes nothing until something republishes it.** Out-ports are event-driven:
+a projection leaves when the fold moves it. A process brought back from a checkpoint has a full
+state and no events coming, so a window attached to it renders nothing — and a pending request the
+backend is still waiting on wedges, because the event that would clear it only arrives after it is
+answered. The fix is a Cmd whose handler reads the committed state and emits the projections again,
+scheduled by the same Msg that resumes. It is the one handler that reads `ProcessSelf.state()`
+rather than folding forward, and the reason is that there is no event to fold.
+
+## A request's completion versus retained public state
+
+A window that needs the outcome of **its own** dispatch reads `Delivered.view`, not changes to a
+retained field on `readProcess`. [`Processes.dispatchFolded`](../apps/tuval/src/process/Processes.ts)
+holds the external-dispatch semaphore through the actor's transitive `idle` and the state read;
+[`transport/server.ts`](../apps/tuval/src/shell/transport/server.ts) sends that sampled view back on
+the request's existing sequence. Broadcast snapshots can arrive independently and repeat old fields.
+
+The AI agent's page path uses a nullable, tagged `pageOutcome`: clear at request admission, then
+success with the page or refusal with the failure. `lastPage` and `failure` remain independently
+retained for their existing readers, so neither one alone says what this request did. No new sequence
+counter is needed: the dispatch reply already correlates the observation. The window keeps a local
+pending guard and rejects completions from a replaced session/connection; a missing completion view
+is an unconfirmed request, not a success. The outcome is defaulted for old checkpoints and dropped
+on restore. See [`ChatWindow.tsx`](../apps/tuval/src/shell/chat/ChatWindow.tsx), its codec-round-trip
+regressions, and the real-process tests in
+[`handlers.unit.test.ts`](../apps/tuval/src/ai-agent/handlers/handlers.unit.test.ts).
+
+This applies only to work completed by the dispatch's transitive handlers. A command that merely
+starts independent background work still needs that work's own correlated result; `idle` cannot
+prove the background work finished.
+
+## A row that is also a backend: the layer, declared for enumeration
+
+An ai-agent row hands `aiAgentProgram` the `TuvalAiAgent` layer it runs on, and that helper stamps
+the same layer back onto the row as `aiAgent`
+([`ai-agent/program.ts`](../apps/tuval/src/ai-agent/program.ts)). Nothing else about the row changes:
+the declaration rides the helper rather than a new field on `Program`, so `pi-session` and
+`claude-session` both carry it with no line of their own, and the registry keeps describing programs
+without naming one program family's service.
+
+That is what makes "ask every registered ai-agent implementation" a real call
+([`ai-agent/backends.ts`](../apps/tuval/src/ai-agent/backends.ts)): the set of backends is filtered
+out of `Registry.list` rather than maintained beside it, so registering a backend in the config is
+the whole act of adding one. `isAiAgentBackend` is a type predicate over the absent field, exactly
+like `showsInAWindow` ([`shell/picker/entries.ts`](../apps/tuval/src/shell/picker/entries.ts)), and
+the two are independent: a headless row has a session store like any other, and whether it can bind
+a window is the other predicate's question.
+
+**An enumerator builds a row's layer under the same context a spawn of that row would use.** `RIn`
+rides out unclosed (#7951), and `AnyProgram` erases it, so the layer is erased and the kernel
+`Context` provided around it — the move `Processes` already makes for a row's handlers. A backend
+that fails to answer is reported beside the ones that did, never in place of them: an empty list has
+to keep meaning "you have no sessions".
+
+## A re-read config: what applies to a process that is already running
+
+A reload is not a restart. `Booted.reload` re-reads the layered config, swaps the spell registry and
+the key table, and then hands every live process what its own row says the new config means for it
+(#7509 ruling 3). Nothing respawns, and a process keeps running under the row it was spawned from.
+
+**The row declares what applies live, under `configChanged`, or the reload reaches it with nothing.**
+The field is `(next: AnyProgram) => ReadonlyArray<Msg>`
+([`registry/program.ts`](../apps/tuval/src/registry/program.ts)), read off the row a process is
+*running under* and handed the reloaded row of the same id. `claude-session` is the worked example:
+`configChanged(previous, next)` in [`claude/program.ts`](../apps/tuval/src/claude/program.ts) maps a
+changed `permissionMode` to one `setMode` and every other field to nothing, because
+`Query.setPermissionMode` is the one thing the SDK lets a running session change — the model and the
+tool list are `Options` of a query that is already open, and `cwd` never changes live at all.
+
+**A row that wants to diff its own settings has to publish them on itself.** The two generations meet
+in one call and a closure only holds one of them, so the other side has to be data: `claudeSession`
+returns a `ClaudeSessionProgram`, which is the generic row plus the decoded `settings` it runs on,
+and its `configChanged` narrows the row it is handed before reading them. Keep that field the user's
+own decoded config and nothing more — the kernel never reads it, and a row of another program that
+happens to share an id is refused by the narrowing rather than mis-diffed.
+
+**The kernel's half is one shared step, and it walks the process table.**
+[`reload.ts`](../apps/tuval/src/reload.ts)'s `dispatchConfigChanged` takes the generation the live
+processes were spawned from and the generation just read, and for each live process asks its row.
+Three cases dispatch nothing: a row with no `configChanged`, a row whose settings did not move, and a
+row the reloaded config no longer carries — that last process keeps running and is never told. The
+answer is a count, which rides out on `ReloadReport.notified`, and a dispatch that fails is logged
+rather than failing the reload: a reload is a read of the config, and one process refusing a Msg must
+not turn the whole re-read into a refusal.
+
+**The running generation is `boot`'s own, never the `Registry`.** The registry is built once at boot
+and a reload never rewrites it, so after the first reload it names rows no running process has seen a
+change against — the second reload would then re-send the first one's change. `boot` carries the
+generation in a `Ref` and swaps it as it dispatches, so each reload diffs against the one before it.

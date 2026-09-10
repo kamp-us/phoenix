@@ -2,11 +2,11 @@
  * Dark-ship detection: three ground-truth signals over the PR itself, any one sufficient.
  *
  * The linked issue's inherited `Containment:` stamp is **never** read — it describes the epic, not
- * this PR, and reading it queued a phantom release (#1257).
+ * this PR, and reading it queues a phantom release.
  *
  * Signal (c) is the one with two edges, and both are named because losing either is a real defect:
- * a **reused** flag declared by an earlier PR is a real dark ship this must catch (#2086), while a
- * **prose mention** of an old flag must not mint a phantom one (#2897/#2843). The context scoping —
+ * a **reused** flag declared by an earlier PR is a real dark ship this must catch, while a
+ * **prose mention** of an old flag must not mint a phantom one. The context scoping —
  * fenced code stripped, whole-token match, gating word required on the line — is what separates
  * them.
  */

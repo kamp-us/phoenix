@@ -1,33 +1,33 @@
 /**
  * `guard skill-lint check` core — the pure, IO-free matchers that gate the skill
- * corpus, ported from v1's `gh-phoenix lint-skills` (epic #5720). Four independent
- * checks, all fail-closed on zero scope (ADR 0092):
+ * corpus. Four independent checks, all fail-closed on zero scope, like every guard
+ * here:
  *
- *  1. GraphQL-path `gh` invocations (issue #743) — flags a reflexive `gh project`
+ *  1. GraphQL-path `gh` invocations — flags a reflexive `gh project`
  *     / GraphQL `gh pr edit` / `gh api graphql`, enforcing "REST only on this org"
  *     mechanically instead of by memory.
- *  2. Frontmatter YAML validity (issue #1766) — parses each SKILL.md / agent .md
+ *  2. Frontmatter YAML validity — parses each SKILL.md / agent .md
  *     `---`-fenced frontmatter block as strict YAML and flags any that does not
  *     parse. This is the durable gate for the recurring defect where an unquoted
  *     `description:` whose prose carries a mid-sentence colon-space (`ritual:
- *     pre-flight`) reparses as a nested mapping and breaks GitHub's renderer
- *     (#1281 shipper.md ×2, #1769 release/SKILL.md) — the tolerant harness loader
- *     accepts it, strict parsers reject it, so it shipped uncaught ≥3×.
- *  3. Bare `git push` in an executable block (issue #4213) — flags any `git … push`
+ *     pre-flight`) reparses as a nested mapping and breaks GitHub's renderer — the
+ *     tolerant harness loader accepts it, strict parsers reject it, so it shipped
+ *     uncaught three times over.
+ *  3. Bare `git push` in an executable block — flags any `git … push`
  *     inside a runnable shell block in the corpus, because a bare push cannot report
  *     whether the ref landed: `| tail` eats its exit status (`pipefail` is off here)
  *     and a detached run's output file carries no status at all, so a dead push reads
  *     as a clean one. `fabrika build push` is the sanctioned path — it reads the remote ref
  *     back and prints a PUSH-VERDICT line; this check is what makes that mechanical rather
- *     than attention-based (ADR 0202).
- *  4. Non-portable plugin path literal in a fence (issue #4605) — flags a repo-relative
+ *     than attention-based.
+ *  4. Non-portable plugin path literal in a fence — flags a repo-relative
  *     `./claude-plugins/…` path inside a fenced block. That literal resolves only inside
- *     a phoenix checkout; a marketplace consumer's install lives in their plugin cache,
- *     outside their repo, so the same fence is `No such file or directory` there. This is
- *     the guard that would have caught the live customer-down break, and it exists because
- *     nothing asserted the consumer's case (only the in-repo one).
+ *     the plugin author's own checkout; a marketplace consumer's install lives in their
+ *     plugin cache, outside their repo, so the same fence is `No such file or directory`
+ *     there. This is the guard that would have caught a live customer-down break, and it
+ *     exists because nothing asserted the consumer's case (only the in-repo one).
  *
- * Fails CLOSED on zero scope (ADR 0092): `lintCorpus` returns the set of files
+ * Fails CLOSED on zero scope: `lintCorpus` returns the set of files
  * scanned alongside the findings, and `isZeroScope` reports when nothing was
  * scanned — the CI/bin layer turns that into a FAIL, never a silent PASS. A lint
  * that scanned no files is a broken lint, not a clean one.
@@ -54,7 +54,7 @@ export interface ScanFile {
 	readonly content: string;
 }
 
-/** A file whose `---`-fenced frontmatter block did not parse as strict YAML (#1766). */
+/** A file whose `---`-fenced frontmatter block did not parse as strict YAML. */
 export interface FrontmatterFinding {
 	readonly file: string;
 	/** The strict-YAML parse error(s) — GitHub's renderer fails the same way. */
@@ -63,19 +63,19 @@ export interface FrontmatterFinding {
 
 export interface LintResult {
 	readonly findings: ReadonlyArray<Finding>;
-	/** Files whose frontmatter block failed to parse as strict YAML (#1766). */
+	/** Files whose frontmatter block failed to parse as strict YAML. */
 	readonly frontmatterFindings: ReadonlyArray<FrontmatterFinding>;
-	/** Executable `git push` invocations in the corpus (#4213). */
+	/** Executable `git push` invocations in the corpus. */
 	readonly barePushFindings: ReadonlyArray<Finding>;
-	/** Non-portable `./claude-plugins/…` path literals inside fenced blocks (#4605). */
+	/** Non-portable `./claude-plugins/…` path literals inside fenced blocks. */
 	readonly portabilityFindings: ReadonlyArray<Finding>;
-	/** Every file path the gh-call scan looked at — its scope (ADR 0092). */
+	/** Every file path the gh-call scan looked at — its scope. */
 	readonly scanned: ReadonlyArray<string>;
-	/** Every file path the frontmatter check looked at — its scope (ADR 0092). */
+	/** Every file path the frontmatter check looked at — its scope. */
 	readonly frontmatterScanned: ReadonlyArray<string>;
-	/** Every file path the bare-push scan looked at — its scope (ADR 0092). */
+	/** Every file path the bare-push scan looked at — its scope. */
 	readonly barePushScanned: ReadonlyArray<string>;
-	/** Every file path the fence-portability scan looked at — its scope (ADR 0092). */
+	/** Every file path the fence-portability scan looked at — its scope. */
 	readonly portabilityScanned: ReadonlyArray<string>;
 }
 
@@ -118,24 +118,24 @@ const SELF_EXEMPT_SUFFIXES = [
 	"/skills/write-code/SKILL.md",
 	"/skills/review-code/SKILL.md",
 	"/skills/ship-it/SKILL.md",
-	// The two halves of ship-it/SKILL.md that #4448 moved into sourced scripts, and the only two
-	// that carry a named pattern: Step 3.6's ADR-0158 §Decision-2 sanctioned GraphQL read, and Step
+	// The two halves of ship-it/SKILL.md that were later moved into sourced scripts, and the only
+	// two that carry a named pattern: Step 3.6's sanctioned GraphQL thread read, and Step
 	// 3z's comment FORBIDDING `gh pr edit` next to the REST close/reopen it mandates instead. Both
 	// were already exempt as part of the markdown, so this continues one file's exemption at the
 	// same whole-file granularity — deliberately NOT a `scripts/` directory-wide exemption, which
 	// would silently exempt every future extracted script from a live lint.
 	"/skills/ship-it/scripts/step3_6-threads-read.sh",
 	"/skills/ship-it/scripts/step3z-dropped-trigger.sh",
-	// review-code's half of the same ADR-0158 sanctioned read, extracted by #4451. Same per-script
-	// granularity, same reason.
+	// review-code's half of the same sanctioned GraphQL read, extracted into its own script. Same
+	// per-script granularity, same reason.
 	"/skills/review-code/scripts/unresolved-threads-read.sh",
-	// Same class, same granularity: #4404 moved write-code/SKILL.md's repair mode into repair.md,
+	// Same class, same granularity: write-code/SKILL.md's repair mode moved into repair.md,
 	// carrying the line that FORBIDS `gh pr edit` next to the REST PATCH it mandates instead. The
 	// text is byte-identical to its pre-move address — only the file changed, so its exemption
 	// follows it, still per-file and never a `write-code/`-wide exemption.
 	"/skills/write-code/repair.md",
 	"/skills/gh-issue-intake-formats.md",
-	// The one finding the #5004 widening surfaced, and it is prose, not a call: the passage
+	// The one finding the widened scope surfaced, and it is prose, not a call: the passage
 	// names `gh issue edit --add-label` to explain why an implementer must NOT reach for it
 	// (that porcelain rejects an unknown label client-side, which would make the contract's
 	// vocabulary precondition look redundant and invite dropping it — after which the REST
@@ -177,7 +177,7 @@ export const scanFile = (file: string, content: string): ReadonlyArray<Finding> 
  * parses. Unlike the gh-call scan, this is NOT narrowed by `isSelfExempt`: the
  * self-exempt skills (write-code, ship-it, …) are real skills whose frontmatter
  * must still be valid YAML — exempting them from the gh-grep never meant
- * exempting them from having parseable frontmatter (#1766).
+ * exempting them from having parseable frontmatter.
  */
 export const isFrontmatterScoped = (path: string): boolean => {
 	const p = normalize(path);
@@ -218,7 +218,7 @@ export const checkFrontmatter = (file: string, content: string): FrontmatterFind
  * presents as *running* rather than failed — so a backtrackable pattern here is a wedge any
  * crafted corpus line can pull. Two alternatives that can both consume the same token give
  * k ways to split each of n tokens, i.e. exponential backtracking on input that never reaches
- * `push` (CodeQL `js/redos`, #4217). Concretely, both of these were exponential and are gone:
+ * `push` (CodeQL `js/redos`). Concretely, both of these were exponential and are gone:
  *   - `--\S+=\S+\s+` alongside `-\S+\s+` — subsumed, and `\S+=\S+` re-split at every `=`
  *     (165 chars → 75 s);
  *   - `-[cC]\s+\S+\s+` alongside `-\S+\s+` with an unconstrained value token, which let a
@@ -250,8 +250,8 @@ const FENCE = /^\s*(?:```|~~~)/;
  * for a `.sh`. Scoping to code blocks is what lets the skills keep *writing about* a bare
  * `git push` in prose (they must, to explain why it is forbidden) while making the runnable
  * form impossible to ship. There is deliberately no per-line pragma and no self-exempt list:
- * an escape hatch that an agent can reach for is the attention-based enforcement ADR 0202
- * rules out, and today the corpus needs none — `fabrika build push` covers every
+ * an escape hatch that an agent can reach for is exactly the attention-based enforcement this
+ * check replaces, and today the corpus needs none — `fabrika build push` covers every
  * sanctioned push site.
  */
 export const scanBarePush = (file: string, content: string): ReadonlyArray<Finding> => {
@@ -275,7 +275,7 @@ export const scanBarePush = (file: string, content: string): ReadonlyArray<Findi
 				line: i + 1,
 				matched: match[0].trim(),
 				reason:
-					"a bare `git push` cannot report whether the ref landed (`| tail` eats its exit status, a detached run's output file carries none) — use `fabrika build push`, which confirms the remote ref and emits a PUSH-VERDICT terminal line on stdout (#4213)",
+					"a bare `git push` cannot report whether the ref landed (`| tail` eats its exit status, a detached run's output file carries none) — use `fabrika build push`, which confirms the remote ref and emits a PUSH-VERDICT terminal line on stdout",
 			});
 		}
 	}
@@ -285,9 +285,10 @@ export const scanBarePush = (file: string, content: string): ReadonlyArray<Findi
 /**
  * A repo-relative path literal into the plugin's runnable surface — `./claude-plugins/<plugin>/skills|bin|lib|hooks/…`.
  *
- * This literal resolves ONLY inside a phoenix checkout. A marketplace consumer installs the plugin
- * into its own cache, outside its repo, so the same fence there is a guaranteed `No such file or
- * directory` — a live customer-down break (#4605). The portable literal is `./.claude/.pipeline/…`,
+ * This literal resolves ONLY inside the plugin author's own checkout. A marketplace consumer
+ * installs the plugin into its own cache, outside its repo, so the same fence there is a guaranteed
+ * `No such file or directory` — a live customer-down break. The portable literal is
+ * `./.claude/.pipeline/…`,
  * a symlink the SessionStart / WorktreeCreate hooks plant at whatever install is live.
  *
  * The leading `(?<![\w./-])` is what keeps a legitimate neighbour out of scope: the marketplace
@@ -308,7 +309,7 @@ export const isPortabilityScoped = (path: string): boolean => normalize(path).en
  * never pasted by an agent, so neither is in scope; the fence is.
  *
  * There is deliberately no self-exempt list and no per-line pragma: an escape hatch is the
- * attention-based enforcement ADR 0202 rules out, and the corpus needs none — the planted link is
+ * attention-based enforcement this check replaces, and the corpus needs none — the planted link is
  * reachable from every consuming repo by construction.
  */
 export const scanFencePortability = (file: string, content: string): ReadonlyArray<Finding> => {
@@ -330,7 +331,7 @@ export const scanFencePortability = (file: string, content: string): ReadonlyArr
 				line: i + 1,
 				matched: match[0],
 				reason:
-					"a repo-relative `./claude-plugins/…` literal resolves only inside a phoenix checkout — in a marketplace consumer's repo the plugin lives in their cache and this fence is `No such file or directory`; use the hook-planted `./.claude/.pipeline/…` link (#4605)",
+					"a repo-relative `./claude-plugins/…` literal resolves only inside the plugin author's own checkout — in a marketplace consumer's repo the plugin lives in their cache and this fence is `No such file or directory`; use the hook-planted `./.claude/.pipeline/…` link",
 			});
 		}
 	}
@@ -340,7 +341,7 @@ export const scanFencePortability = (file: string, content: string): ReadonlyArr
 /**
  * Scan the whole handed-in corpus. Runs BOTH checks and returns their findings
  * and their (independent) scopes. The caller pairs this with `isZeroScope` to
- * fail closed when EITHER scope is empty (ADR 0092).
+ * fail closed when EITHER scope is empty.
  */
 export const lintCorpus = (files: ReadonlyArray<ScanFile>): LintResult => {
 	const scanned: string[] = [];
@@ -384,7 +385,7 @@ export const lintCorpus = (files: ReadonlyArray<ScanFile>): LintResult => {
 };
 
 /**
- * Zero-scope test (ADR 0092): true when ANY check scanned NO files. A zero-scope run
+ * Zero-scope test: true when ANY check scanned NO files. A zero-scope run
  * is a FAIL, never a silent PASS — a lint that looked at nothing protects nothing. The
  * caller maps `true` → non-zero exit. Every scope must be non-empty: a corpus with no
  * frontmatter-bearing file is as broken a scope for the frontmatter gate as an empty

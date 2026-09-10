@@ -92,9 +92,10 @@ form type, so `t(plural(locale, n, {one: "…", other: "…"}))` type-checks wit
 ## A DOM-free module returns a key, never copy
 
 Much of the decision logic behind these surfaces lives in plain `.ts` modules beside the
-component — `divanGating.ts`, `flag-overrides.ts`, `remove-the-wave.ts` — because `apps/web/src`
-has no jsdom and those decisions are unit-tested. Such a module cannot call `useT`, so **it
-returns a `CatalogKey` and the component translates it**:
+component — `divanGating.ts`, `flag-overrides.ts`, `remove-the-wave.ts`. These helpers are
+unit-tested without rendering React; the separate `client` project runs `src/**/*.test.tsx`
+in jsdom ([Vitest config](../apps/web/vitest.config.ts)). A plain helper cannot call `useT`,
+so **it returns a `CatalogKey` and the component translates it**:
 
 ```ts
 export function itemKindLabel(kind: TargetKind): CatalogKey { … }

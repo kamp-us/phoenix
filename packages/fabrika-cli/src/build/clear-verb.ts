@@ -4,9 +4,9 @@
  * The clauses are conjunctive and any miss resolves to *not cleared*, never to a warning: the
  * invoking account is in the repo's `.fabrika.jsonc` grant-author set at the PR's base ref AND holds
  * `write+` at GitHub's ACL, the PR is open, its budget is actually spent, and the quoted
- * authorization is present and dated. A bare stamp is void (#4938), which is why `--authorization`
- * is required rather than inferred; the ACL clause is ADR 0055's, which is why the configured set
- * narrows the ACL rather than replacing it (ADR 0294).
+ * authorization is present and dated. A bare stamp is void, which is why `--authorization`
+ * is required rather than inferred; authority is the ACL's, which is why the configured set
+ * narrows the ACL rather than replacing it.
  *
  * **Write ordering is an invariant, not an implementation detail** — the same one `grill rule`
  * holds. The authorization comment lands first and the marker second: an interrupted run that wrote
@@ -18,7 +18,7 @@
  * **What `cleared` proves, exactly.** That an account the repo configured posted a marker naming a
  * round whose budget was spent, with a dated authorization comment beside it. It does not prove the
  * quoted authorization is a truthful record of what the founder said; nothing mechanical can, and
- * the residue is the same one #4441 is open on for `grill rule`. In a repo where an agent runs on
+ * the residue is the same unclosable one `grill rule` carries. In a repo where an agent runs on
  * the founder's own token, the agent's restraint is what holds — this verb is the operator's, and
  * `build`'s Repair section tells a builder that reads a cap to escalate, never to clear it.
  *
@@ -26,8 +26,8 @@
  * the cap it raised is the reason the budget test would now say "not spent" — so a run that finds
  * this round already granted skips both the budget test and the two writes, and does the one thing
  * that is still undone: the lane's local bump. Without that branch exit `29`'s own stated remedy
- * refuses on `7` and the lane can only be unfrozen by an edit outside the loop, which is the thing
- * #5959 exists to remove.
+ * refuses on `7` and the lane can only be unfrozen by an edit outside the loop — the hand edit this
+ * branch exists to remove.
  */
 
 import type {FileSystem, Path} from "effect";
@@ -113,7 +113,7 @@ export const runClear = <R = never>(
 		if (quoted.trim() === "") {
 			return refuse(
 				AUTHORIZATION_VOID,
-				`${VERB}: --authorization ${authorizationPath} is empty — a clearance with no quoted authorization is void (#4938).`,
+				`${VERB}: --authorization ${authorizationPath} is empty — a clearance with no quoted authorization is void.`,
 			);
 		}
 		if (!ISO_DATE.test(quoted)) {
@@ -205,7 +205,7 @@ export const runClear = <R = never>(
 				[scopeLine],
 			);
 		}
-		// ADR 0055: the committed set narrows the ACL, it never stands in for one. Read through the
+		// The committed set narrows the ACL, it never stands in for one. Read through the
 		// same door that judges a landed marker, so the set that may post a grant and the set whose
 		// grant counts can never drift into two.
 		const permissions = yield* permissionsFor(repo, [viewer.value]);
@@ -220,7 +220,7 @@ export const runClear = <R = never>(
 		if (!clearsWriteFloor(level)) {
 			return refuse(
 				GRANT_UNAUTHORIZED,
-				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone (ADR 0055).`,
+				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone.`,
 				[scopeLine],
 			);
 		}

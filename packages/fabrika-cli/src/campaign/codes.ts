@@ -59,7 +59,7 @@ export const AMBIGUOUS_SELECTOR = 18;
 export const DUPLICATE_ROW = 19;
 /** Proven: the row already holds the state `--to` names — nothing written. `campaign state` only. */
 export const ALREADY_IN_STATE = 20;
-/** Proven: the cited comment's author is below the `write` floor on this repository (ADR 0055). */
+/** Proven: the cited comment's author is below the `write` floor on this repository. */
 export const BELOW_WRITE_FLOOR = 21;
 /** `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode — UNKNOWN. */
 export const CONFIG_UNREADABLE = 22;

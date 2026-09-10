@@ -21,7 +21,8 @@ the whole prop cross-product a hand-written test would enumerate one case at a t
 
 Three files, one responsibility each:
 
-- **`registry.tsx`** — classifies every runtime export of `packages/design/src/index.ts` as
+- **`registry.tsx`** — classifies every runtime export the package publishes — the barrel
+  `packages/design/src/index.ts` plus each component subpath entry — as
   `interactive` / `presentational` / `deferred`, with an arbitrary for the first
   two.
 - **`posture.ts`** — the per-invariant `enforced` / `warning` posture map (the
@@ -41,18 +42,54 @@ catching by hand becomes a permanent guardrail. Never assert a geometry/paint fa
 in jsdom; that is a false gate.
 
 **2. Fail-closed auto-coverage.** The coverage test asserts the registry's key set
-**equals** the barrel's runtime export set (symmetric difference empty). A new
+**equals** the package's runtime export set (symmetric difference empty). A new
 primitive that no one classified — or a stale entry for a removed one — **fails the
 gate** (ADR [0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)), so the
-covered set tracks `packages/design/src/index.ts` and never silently goes stale. `deferred` is a
+covered set tracks what the package publishes and never silently goes stale.
+
+That set is the barrel **plus every component subpath entry**. A component sits on its own entry so
+a consumer can code-split it — `Diff` pulls `@pierre/diffs` and Shiki, and a barrel edge is one no
+bundler can cut — and being off the barrel is a packaging fact, not an exemption from this gate. The
+entries are listed in `a11y-pbt.test.tsx`'s `SUBPATH_ENTRIES` so they can be imported statically, and
+a second case checks that list against `package.json`'s own `exports`: a new entry nobody adds there
+reds instead of quietly leaving its component uncovered. `deferred` is a
 reasoned, reason-carrying parking spot (Manti machine primitives needing required
 `items`/`trigger`/`content` props or a portal interaction; form controls whose name
 comes from a composed label prop), not an escape hatch.
 
+## Running it from a consumer, over your own composition
+
+The gate above covers each primitive **alone**. It does not cover what an app builds *out of* them,
+and two of the reasons are structural: the compound primitives are parked `deferred` precisely
+because they need composition to be representative, and an app's own markup around a primitive (a
+table, a labelled region) is not in the registry at all. So an app that composes them owes its own
+pass.
+
+`runEnforcedInvariants` is exported for that, as `@kampus/design/a11y`
+([`check.ts`](../packages/design/src/a11y/check.ts) is the subpath's entry, and re-exports the spec
+types beside it). The consumer supplies the rendered root and a spec; `fast-check` generates the
+**state** rather than the props, since a composition's inputs are its app's own domain data.
+`apps/tuval/src/shell/chat/chat-a11y.unit.test.tsx` is the worked instance (issue
+[#7610](https://github.com/kamp-us/phoenix/issues/7610)).
+
+Three things that pass are worth copying:
+
+- **Scope the scan to the regions you built.** A pass over the whole screen inherits every red from
+  a primitive you only mounted — a consumer cannot fix a defect in the package, and widening its own
+  gate to swallow one teaches the next builder to widen it again. Name the regions, and name the
+  issue for anything excluded.
+- **The focus probe needs a root that is not the control.** `checkFocusable` runs
+  `root.querySelector(spec.selector)`, and `querySelector` searches descendants — so `:scope` matches
+  nothing and the probe reports `no element matched selector`. Mark the control, probe from an
+  ancestor by that mark, unmark.
+- **Give the test its own timeout.** One `axe.run` per region per generated state is seconds, not
+  milliseconds; Vitest's 5s default passes the file alone and times it out inside a loaded full run.
+
 ## Adding a primitive
 
-Add its export to `packages/design/src/index.ts`, then classify it in `registry.tsx` — the coverage
-test fails until you do. If it renders standalone with a valid prop arbitrary, make
+Add its export to `packages/design/src/index.ts` — or, if it is heavy enough to want code-splitting,
+to its own `exports` entry plus `a11y-pbt.test.tsx`'s `SUBPATH_ENTRIES` — then classify it in
+`registry.tsx`. The coverage test fails until you do. If it renders standalone with a valid prop arbitrary, make
 it `interactive` (with a `selector` for its control) or `presentational`; if it needs
 composition/portal/provider context to be representative, make it `deferred` with the
 reason. Keep arbitraries generating only **valid** props — the harness asserts that a

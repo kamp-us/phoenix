@@ -2,11 +2,11 @@
  * The GitHub reads and writes the `build` verbs need beyond what `io/issues.ts` and `io/pulls.ts`
  * already serve.
  *
- * The house disciplines hold unchanged across the move off `gh` (ADR 0315): REST and **never
- * GraphQL**, **every list read pages**, *proven absent* split from *unreadable*, and a shape that is
- * not what was asked for treated as a failure rather than an empty result. The pagination is the one
- * this group most depends on — a truncated bucket is the un-paginated scar these verbs exist to
- * close (#4926), and a candidate pool that silently stops at 100 answers "no p0s".
+ * The house disciplines hold unchanged across the move off `gh`: REST and **never GraphQL**,
+ * **every list read pages**, *proven absent* split from *unreadable*, and a shape that is not what
+ * was asked for treated as a failure rather than an empty result. The pagination is the one this
+ * group most depends on — a truncated bucket is the un-paginated scar these verbs exist to close,
+ * and a candidate pool that silently stops at 100 answers "no p0s".
  *
  * What the transport changed is where two of those facts come from, not what they mean. The 404 that
  * makes an answer `Absent` is now the response's own status rather than `(HTTP 404)` scraped out of
@@ -113,7 +113,7 @@ export const listLabelled = (
  * An issue's parent epic, through the dedicated sub-endpoint.
  *
  * The single-issue payload carries **no** `parent` key, so reading `.parent` there answers a
- * well-formed, plausible, always-wrong "standalone" (#4171). The sub-endpoint's 404 is the
+ * well-formed, plausible, always-wrong "standalone". The sub-endpoint's 404 is the
  * proven-standalone answer; everything else stays UNKNOWN.
  */
 export const getParent = (
@@ -264,7 +264,7 @@ export const createPull = (
  * Replace an open pull request's body, and move nothing else.
  *
  * A `PATCH` carrying only `body` is what lets a body-only defect — the recurring one is a
- * `## Deviations` section the review gate reads as malformed — be repaired without a push (#5618).
+ * `## Deviations` section the review gate reads as malformed — be repaired without a push.
  */
 export const updatePullBody = (
 	env: Readonly<Record<string, string | undefined>>,
@@ -279,7 +279,7 @@ export const updatePullBody = (
 		return attemptOf(outcome, (payload) => toPullRef(payload, "an updated pull request"));
 	});
 
-/** One native review on a pull request — its own row kind, never coerced into a marker (#4555). */
+/** One native review on a pull request — its own row kind, never coerced into a marker. */
 export interface ReviewRecord {
 	readonly id: number;
 	readonly state: string;

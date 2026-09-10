@@ -1,6 +1,6 @@
 /**
  * `ci annotate` — a pass-through filter that re-emits each tsc diagnostic as a GitHub `::error`
- * workflow command, so a failing CI typecheck lands inline on the PR diff (#3873).
+ * workflow command, so a failing CI typecheck lands inline on the PR diff.
  *
  *   pnpm typecheck | node packages/fabrika-cli/src/bin.ts ci annotate
  *

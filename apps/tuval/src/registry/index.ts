@@ -11,6 +11,7 @@ export type {
 	PortBound,
 	PortSchema,
 	Program,
+	ProgramCore,
 	Receiver,
 	RendererKind,
 	RendererRef,

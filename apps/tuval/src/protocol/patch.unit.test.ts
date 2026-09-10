@@ -114,6 +114,37 @@ describe("applyPatch", () => {
 		}),
 	);
 
+	it.effect("refuses every spelling of an index that is not digits", () =>
+		Effect.gen(function* () {
+			// Each of these is an index to `Number` — 0, 2, 1, 1 — and none of them is one here.
+			for (const segment of ["", "0x2", " 1 ", "1e0", "+0", "00", "1.0"]) {
+				const refusal = yield* Effect.flip(
+					applyPatch(snapshot, patchOf([replace(["processes", segment, "id"], "x")])),
+				);
+				assert.strictEqual(refusal._tag, "tuval/PatchRefused", segment);
+				assert.include(refusal.message, "is not an index of the array there");
+			}
+		}),
+	);
+
+	it.effect("refuses a path deeper than the walk's cap rather than recursing into it", () =>
+		Effect.gen(function* () {
+			const refusal = yield* Effect.flip(
+				applyPatch(snapshot, patchOf([replace(new Array(100_000).fill("desk"), 1)])),
+			);
+			assert.strictEqual(refusal._tag, "tuval/PatchRefused");
+			assert.include(refusal.message, "is not walked");
+		}),
+	);
+
+	it.effect("refuses a replace at the revision the patch itself carries", () =>
+		Effect.gen(function* () {
+			const refusal = yield* Effect.flip(applyPatch(snapshot, patchOf([replace(["rev"], 99)])));
+			assert.strictEqual(refusal._tag, "tuval/PatchRefused");
+			assert.include(refusal.message, "not a replace target");
+		}),
+	);
+
 	it.effect("refuses a replace that would leave the snapshot undecodable", () =>
 		Effect.gen(function* () {
 			const refusal = yield* Effect.flip(

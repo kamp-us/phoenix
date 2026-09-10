@@ -1,7 +1,7 @@
 /**
  * What a PR body says about a linked issue — read as a **fact**, never as a requirement.
  *
- * A conversation-authored doc or ADR PR may legitimately carry no linked issue (ADR 0075), and
+ * A conversation-authored doc or decision-record PR may legitimately carry no linked issue, and
  * minting one to satisfy a link guard is banned outright, so `none` is a well-formed answer. Only
  * `linkage-refused` — a body that reaches for a reference form the merge seam does not recognise —
  * is a stall class, and it needs the *other* forms named to be detectable at all.

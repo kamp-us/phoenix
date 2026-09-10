@@ -31,6 +31,8 @@ const SUBS = SUB_ISSUES;
 const CHILD_1 = CHILD(4301);
 const CHILD_2 = CHILD(4302);
 const REF_9999 = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/9999$/;
+/** An issue outside this epic — the shape a carried-down prerequisite has. */
+const EXTERNAL = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/7511$/;
 const CYCLE = CYCLE_DOC;
 
 const options = {number: 4300, repo: null, env: ENV, cwd: CWD};
@@ -158,9 +160,9 @@ describe("runCheck", () => {
 	});
 
 	/**
-	 * Epic #6595's shape, end to end: the ledger says #4302 requires #4301 and the graph carries
-	 * nothing. Before this defect the floor answered `clean` here, `plan flip` made #4302 pickable, and
-	 * `build claim` admitted it on `scanned 0 blocked_by edges` (#6616).
+	 * The whole shape, end to end: the ledger says the phase-2 child requires the phase-1 one and the
+	 * graph carries nothing. Before this defect the floor answered `clean` here, `plan flip` made the
+	 * phase-2 child pickable, and `build claim` admitted it on `scanned 0 blocked_by edges`.
 	 */
 	it("reds UNENFORCED_DEP when the graph does not carry a stated dependency", async () => {
 		const gated = epic({
@@ -185,6 +187,85 @@ describe("runCheck", () => {
 
 		const written = await run([...script, [BLOCKED_BY(4302), blockers(4301)]]);
 		expect(JSON.parse(written.stdout)).toMatchObject({answer: "clean"});
+	});
+
+	/**
+	 * The hole the carry-down ruling closes, end to end: the epic waits on an outside issue, the gate
+	 * admits the epic anyway (the purpose matrix), and a plan that never puts that issue on a child
+	 * hands both children a contract that has not landed.
+	 */
+	it("reds DROPPED_EPIC_BLOCKER for each child the plan does not carry the epic's own blocker onto", async () => {
+		const dropped = await run([
+			[EPIC, epic()],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
+			[CYCLE, cycleDoc],
+			[BLOCKED_BY(4300), blockers(7511)],
+			[EXTERNAL, child({number: 7511})],
+		]);
+		expect(dropped.code).toBe(0);
+		const defects = JSON.parse(dropped.stdout).defects;
+		expect(defects).toContainEqual({
+			type: "DROPPED_EPIC_BLOCKER",
+			refs: [4301, 7511],
+			detail: "#4301 does not require #7511, an open blocker of #4300",
+		});
+		expect(defects).toContainEqual({
+			type: "DROPPED_EPIC_BLOCKER",
+			refs: [4302, 7511],
+			detail: "#4302 does not require #7511, an open blocker of #4300",
+		});
+
+		const carried = await run([
+			[
+				EPIC,
+				epic({
+					body: epicBody({
+						dependencies:
+							"- phase 1: #4301, #4302\n- #4301 requires: #7511\n- #4302 requires: #7511",
+					}),
+				}),
+			],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
+			[CYCLE, cycleDoc],
+			[EXTERNAL, child({number: 7511})],
+			[BLOCKED_BY(4300), blockers(7511)],
+			[BLOCKED_BY(4301), blockers(7511)],
+			[BLOCKED_BY(4302), blockers(7511)],
+		]);
+		expect(JSON.parse(carried.stdout)).toMatchObject({answer: "clean"});
+	});
+
+	/** A closed blocker is carried down by nobody — the amendment names the *open* targets only. */
+	it("asks nothing of the children for a blocker that has closed", async () => {
+		const out = await run([
+			[EPIC, epic()],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
+			[CYCLE, cycleDoc],
+			[BLOCKED_BY(4300), blockers(7511)],
+			[EXTERNAL, child({number: 7511, state: "closed"})],
+		]);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "clean"});
+	});
+
+	it("refuses 11 when the epic's own blocker state could not be read", async () => {
+		const out = await run([
+			[EPIC, epic()],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
+			[CYCLE, cycleDoc],
+			[BLOCKED_BY(4300), blockers(7511)],
+			[EXTERNAL, {status: 502, body: '{"message":"Bad gateway"}'}],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("#4300's own blocker");
 	});
 
 	it("refuses 11 on an unread blocked_by list — an unseen edge is never a present one", async () => {
@@ -225,8 +306,8 @@ describe("runCheck", () => {
 });
 
 /**
- * ADR 0289's fail-closed precondition. It sits **ahead of the floor**, so these cases are about what
- * the verb refuses to grade at all rather than about what it grades.
+ * The fail-closed approval precondition. It sits **ahead of the floor**, so these cases are about
+ * what the verb refuses to grade at all rather than about what it grades.
  */
 describe("the approval precondition", () => {
 	const unapproved = (script: ReadonlyArray<Scripted>, listed: HttpReply) =>
@@ -274,7 +355,7 @@ describe("the approval precondition", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "clean", defects: []});
 	});
 
-	/** #4223's collapse, on this side too: a roster nobody could read is UNKNOWN, never `absent`. */
+	/** The same collapse, on this side too: a roster nobody could read is UNKNOWN, never `absent`. */
 	it("refuses 11, not 25, when the roster cannot be read", async () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -294,7 +375,7 @@ describe("the approval precondition", () => {
 });
 
 /**
- * Story 1 and story 5 of #5631 together: the bare repo gets phoenix's behaviour off the shipped
+ * The two halves of vocabulary resolution together: a repo that declares none gets the shipped
  * vocabulary, and a repo that declares its own gets that one instead. Every other test in this file
  * is the bare-repo arm — none of them writes a config — so these two only have to move the config.
  */
@@ -302,7 +383,7 @@ describe("the containment vocabulary, resolved", () => {
 	const withConfig = async (config: string | {readonly unreadable: true}) =>
 		Effect.runPromise(Effect.provide(runCheck(options), await approvedLayer(CLEAN, config)));
 
-	it("reds a phoenix-legal marker a foreign vocabulary does not carry", async () => {
+	it("reds a marker the shipped vocabulary allows and a foreign one does not carry", async () => {
 		const out = await withConfig(
 			'{"containmentVocabulary": {"values": ["unpublished", "exempt"]}}',
 		);

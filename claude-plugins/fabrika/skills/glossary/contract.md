@@ -1,15 +1,14 @@
 # `/glossary` — derived CLI contract
 
-**Skill:** [`glossary`](SKILL.md) · **Authoring brief:** [#4711](https://github.com/kamp-us/phoenix/issues/4711) · **Date:** 2026-08-10
+**Skill:** [`glossary`](SKILL.md) · **Date:** 2026-08-10
 
 The group is `glossary`, in `packages/fabrika-cli/`, invoked as `fabrika glossary <verb> …`. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs all six; where this spec
 and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** Every verb below is
-implemented in `packages/fabrika-cli/`, and no fence in `SKILL.md` invokes anything else
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). v1's
-`glossary-drift` tool and the v1 skill's three shell scripts were read for their semantics and their
+**`fabrika` calls the retired v1 pipeline CLI nowhere, and neither does the skill.** Every verb
+below is implemented in `packages/fabrika-cli/`, and no fence in `SKILL.md` invokes anything else.
+v1's drift tool and the v1 skill's three shell scripts were read for their semantics and their
 scars — every scar named in a Grounding block below came from that reading — and none is called.
 
 **Three questions were considered and deliberately not derived**, because each already has an
@@ -25,12 +24,11 @@ authority and a second answer could contradict it on a merge-gating question:
   Repo-wide and merge-blocking; the same reasoning applies.
 - **Control-plane classification.** Decided at the merge gate, never predicted here.
 
-**Why a drift verb *is* derived, when a v1 tool computes something similar.** `pipeline-cli
-glossary-drift` is **not** a gate: `.github/workflows/glossary-drift.yml` carries only `schedule`
-(weekly) and `workflow_dispatch` triggers, no `pull_request`, is absent from `ci-required.yml`, and
-its own header states it is off the blocking path by construction (ADR 0128 rejected extending the
-gate). Nothing is enforced, so nothing is contradicted, and ADR 0238 asks fabrika to implement its
-own.
+**Why a drift verb *is* derived, when the v1 tool computed something similar.** The v1 drift job was
+**not** a gate: it ran on a weekly schedule and on manual dispatch, never on a pull request, was
+absent from the required-context list, and its own header stated it was off the blocking path by
+construction — extending it into a gate was considered and rejected. Nothing is enforced, so nothing
+is contradicted, and fabrika implements its own rather than calling v1's.
 
 ## Verb inventory
 
@@ -88,8 +86,8 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
 - **No verb in this group reaches GitHub or the network.** Every read is the local tree: the register
   files, the commit range, and the decision records under `--decisions`. The group therefore has no
   rate-limit code, no token input, and no REST/GraphQL question to answer — the
-  [§11 rule](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql) binds fabrika's
-  GitHub-touching groups and this one simply is not among them. Stated rather than left silent, so a
+  [§11 rule](../../docs/skill-conventions.md) binds fabrika's GitHub-touching groups and this one
+  simply is not among them. Stated rather than left silent, so a
   reader does not go looking for the network surface.
 
 ### Term normalization — one function, used by every verb
@@ -99,14 +97,14 @@ the same key, so this is exact:
 
 1. Strip a leading and trailing run of backticks, `*` and `_`.
 2. Lowercase with `String.prototype.toLocaleLowerCase()` — **Unicode-aware, not `[a-z]`-restricted**,
-   so `Sözlük` and `sözlük` are one key and `Geçit` is not silently dropped.
+   so `Gündem` and `gündem` are one key and `İzleme` is not silently dropped.
 3. Replace every run of `-`, `_` or whitespace with a single space.
 4. Trim.
 
 **What it deliberately does not do:** it does not split on `(`, `/` or `,`. The whole cell is one
-key. `sözlük (sozluk)` is a single term whose key is `sözlük (sozluk)`, and `tag` is a different term
+key. `gündem (gundem)` is a single term whose key is `gündem (gundem)`, and `tag` is a different term
 from `Database (tag)`. Splitting a parenthetical into an alias is the defect that produced three
-false duplicates when it was last attempted (#4206) — a parenthetical in this corpus is a
+false duplicates when it was last attempted — a parenthetical in a vocabulary register is a
 disambiguating qualifier, not a synonym.
 
 **Overlap** — used only by `lookup` — is defined against the normalized keys: key `a` overlaps key
@@ -164,8 +162,7 @@ which is the correct reading. Do not invent `DELIBERATE_GAP_2`.
 
 Creates a register file that does not exist. Without it `bootstrap` is a state the skill can reach
 and never leave: `add` requires a `--section` matched against live headings, and a file that is not
-there has none. This verb is the reason a repo adopting fabrika on day one can run this skill at all
-(#4776).
+there has none. This verb is why a repo adopting fabrika on day one can run this skill at all.
 
 **Invocation**
 
@@ -236,9 +233,9 @@ $ echo $?
 
 **Grounding**
 
-- #4776 — working in a foreign repo is a release criterion. Without this verb the documented
-  bootstrap path terminates in `add` exit `13` with no section to name, which is a first-run dead end
-  rather than a fail-loud.
+- **Working in a foreign repo is a release criterion.** Without this verb the documented bootstrap
+  path terminates in `add` exit `13` with no section to name, which is a first-run dead end rather
+  than a fail-loud.
 - The refusal-on-existing rule is `adr new`'s exit `3` idiom, reseated on this group's `12`: a
   register is the one artifact whose accidental overwrite destroys the most work.
 
@@ -307,8 +304,8 @@ count and the declared-key count.
 **The three outcomes, disjoint by construction.**
 
 - **`bootstrap`** — `--dir` was read, and it holds no register file for the selected register, or one
-  that parses to zero rows. Both are facts about an adopting repo, not failed reads (#4776 makes
-  working in a foreign repo a release criterion). A `--dir` that could not be read at all is
+  that parses to zero rows. Both are facts about an adopting repo, not failed reads — working in a
+  foreign repo is a release criterion. A `--dir` that could not be read at all is
   UNKNOWN, and that is exit `11` — the distinction is the directory, not the file.
 - **`clean`** — the range was computed and every candidate was suppressed or filtered.
 - **`drift`** — at least one candidate survived.
@@ -339,7 +336,7 @@ The same sentence reaches stderr as `glossary drift: <reason>.`
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary drift: cannot read <dir>: <reason> — the declared set is UNKNOWN, never "0 declared".` | 11 | refusal |
-| `glossary drift: --paths <value> matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).` | 7 | refusal |
+| `glossary drift: --paths <value> matched 0 tracked files — refusing to report a clean sweep of nothing.` | 7 | refusal |
 | `glossary drift: cannot resolve the commit that last changed <path>: <reason> — the range is UNKNOWN, never "never committed".` | 11 | refusal |
 | `glossary drift: <path> has no parseable term table — the declared set is UNKNOWN.` | 4 | refusal |
 | `glossary drift: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
@@ -370,7 +367,7 @@ removing it from the default:
 
 ```
 $ fabrika glossary drift --paths no/such/dir
-glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).
+glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing.
 $ echo $?
 7
 ```
@@ -390,10 +387,9 @@ live run prints the sha that last touched the register.
 
 A `drift` run's `hits` and `first-surface` are computed over the commit range
 `sinceCommit..HEAD`, which moves with the repository. **The following two data lines are sample
-data, not a reproducible run** — the line *grammar* is the contract, the values are not, and pinning
-a number here would be the defect ADR
-[0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md) names, where a
-reader treats an unverifiable number as a contract:
+data, not a reproducible run** — the line *grammar* is the contract, the values are not. Pinning a
+number here would leave a reader treating an unverifiable value as a contract, and a spec's example
+value is derivable or it is absent:
 
 ```
 drift
@@ -424,17 +420,17 @@ readable directory holding no register file is `bootstrap` on exit `0`.
   range is exit `11` and `bootstrap` is reachable only from a file that was read.
 - v1's script also printed nothing at all on a clean sweep, making "no drift" byte-identical to a run
   that died early; the `clean` token and its pinned `reason` exist for that.
-- v1 defaulted the diff to the literal pathspec `apps packages`, so any repo with a different layout
-  got a permanently empty diff that read as "no drift" (#4776). `--paths` defaults to the whole tree.
-- The v1 CLI tool's tokenizer was `/\b[a-z][a-z-]+\b/g`, which excludes uppercase and all non-ASCII —
-  so every Turkish product noun the glossary exists for was structurally invisible (#4481). Step 3
-  splits on Unicode letter classes instead.
+- **v1 defaulted the diff to a literal two-directory pathspec**, so any repo with a different layout
+  got a permanently empty diff that read as "no drift". `--paths` defaults to the whole tree.
+- **The v1 tokenizer was `/\b[a-z][a-z-]+\b/g`**, which excludes uppercase and all non-ASCII — so
+  every non-ASCII product noun the glossary exists for was structurally invisible. Step 3 splits on
+  Unicode letter classes instead.
 - The same tool suppressed a candidate when a declared term contained it **or** it contained a
-  declared term. Against a 226-row register most short candidates contain some declared key, which
-  inverts the stated recall bias; measured precision across four fires was about 10% (#4481). Step 5
+  declared term. Against a register of any size most short candidates contain some declared key,
+  which inverts the stated recall bias; measured precision across four fires was about 10%. Step 5
   is equality on the normalized key.
-- ADR 0128 — glossary maintenance stays off the fail-closed per-PR gate. This verb reports; it never
-  reds a merge.
+- **Glossary maintenance stays off the fail-closed per-PR gate.** This verb reports; it never reds a
+  merge.
 
 ---
 
@@ -473,8 +469,8 @@ one term and many terms parse identically.
 **`declared` beats `collision` beats `absent`.** A term whose normalized key equals a declared key is
 `declared` even when it also overlaps others. With `--register both`, TERMS is searched before
 LANGUAGE and the first `declared` wins; a term declared in **both** registers is still reported once,
-as `declared` in TERMS, and is a defect `glossary check` reports separately — one term, one register
-(#4465).
+as `declared` in TERMS, and is a defect `glossary check` reports separately — one term, one
+register.
 
 **All three states are answers on exit 0.** `absent` means *proven absent against a register that was
 read* — never what a failed read prints.
@@ -493,7 +489,7 @@ read* — never what a failed read prints.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary lookup: cannot read <path>: <reason> — every state is UNKNOWN, never "absent".` | 11 | refusal |
-| `glossary lookup: <path> has no parseable term table — membership is UNKNOWN, never "absent".` | 4 | refusal |
+| `glossary lookup: <path> has no parseable term table (<reason>) — membership is UNKNOWN, never "absent".` | 4 | refusal |
 | `glossary lookup: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
 | `glossary lookup: no term given.` | 1 | usage error |
 
@@ -533,14 +529,13 @@ absent	-	-	-
 
 **Grounding**
 
-- #4206 — `glossary-drift` had no duplicate-term check and a same-anchor coining collision landed
-  silently; `pitch` and `appetite` were each defined twice (#4205). Triage verified that reusing v1's
-  alias-splitting produced three false positives (`tag` vs `Database (tag)`, four `(eval-harness)`
-  rows, two `(crew-role kind)` rows), which is why the whole cell is one key here.
-- #4481 — v1's `normalize` folded case and whitespace but not hyphens, so a declared `front-door`
-  never suppressed `front door`.
-- ADR 0246 — a term with two live senses is disambiguated by namespace and keeps its name, so a
-  collision is a question for the skill, not something a verb resolves.
+- **v1's drift tool had no duplicate-term check**, so a same-anchor coining collision landed
+  silently and two terms ended up defined twice. Reusing its alias-splitting was tried and produced
+  three false positives, which is why the whole cell is one key here.
+- **v1's `normalize` folded case and whitespace but not hyphens**, so a declared `front-door` never
+  suppressed `front door`.
+- **A term with two live senses is disambiguated by namespace and keeps its name**, so a collision
+  is a question for the skill, not something a verb resolves.
 
 ---
 
@@ -564,9 +559,10 @@ fabrika glossary sections [--register <terms|language|both>] [--dir <path>] [--j
 `<section>`, `<rows>`. With `--json`, an array of `{register, section, rows}`.
 
 **A heading is a line matching `^##[ \t]+\S`** — the space after the hashes is required by the
-markdown spec and is load-bearing here. `TERMS.md` contains a line beginning `#3227).` inside a
-prose paragraph; a scan for `^#` reports it as a phantom section. A section's rows are the table rows
-between its heading and the next heading of level 1 or 2, excluding the header row and the
+markdown spec and is load-bearing here. A register's prose can wrap so a paragraph line begins with
+a `#` and digits — a citation carried onto its own line — and a scan for `^#` reports that as a
+phantom section. A section's rows are the table rows between its heading and the next heading of
+level 1 or 2, excluding the header row and the
 `---` separator row, and prose paragraphs between the heading and the table are skipped rather than
 treated as rows.
 
@@ -614,8 +610,8 @@ $ echo $?
 
 **Grounding**
 
-- The phantom-heading case is real in this repo's own register, not hypothetical: `.glossary/TERMS.md`
-  carries a paragraph line starting `#3227).` and a `^#` scan counts it as a section.
+- **The phantom-heading case is real, not hypothetical**: a live register carries a paragraph line
+  wrapped so it starts with a `#`-prefixed number, and a `^#` scan counts it as a section.
 - A register's sections are data that grows with the repo, so the skill reads them rather than
   carrying a list that rots — the same reason the verb index is derived from the registry rather than
   hand-maintained (interface convention rule 1).
@@ -761,9 +757,9 @@ replaced	packages/fabrika-cli/test-fixtures/glossary/registers/TERMS.md	Core / s
 - The one-row assertion is the `adr supersede` idiom (its exit `6`), reseated here on this group's
   `15`. A group allocates its own seat for a shared refusal rather than importing a sibling's private
   number.
-- #4727 — the `control-plane` row defined itself by a retired model and its `Not` column excluded the
-  sanctioned path. `--replace` exists because a register that can only be appended to accumulates
-  wrong answers.
+- **A row can define itself by a retired model.** The `control-plane` row did: its `Not` column
+  excluded the sanctioned path. `--replace` exists because a register that can only be appended to
+  accumulates wrong answers.
 
 ---
 
@@ -794,18 +790,18 @@ fabrika glossary check [--register <terms|language|both>] [--dir <path>] [--deci
 |---|---|
 | `row-shape` | the row does not have exactly three cells, or a cell is empty where the shape requires content |
 | `duplicate-key` | two rows in the selected registers share a `normalizeKey` |
-| `cross-register` | one key is declared in both TERMS and LANGUAGE — one term, one register (#4465) |
+| `cross-register` | one key is declared in both TERMS and LANGUAGE — one term, one register |
 | `out-of-order` | a row precedes a row that sorts before it within its section |
 | `citation-dead` | a cited `NNNN` decision id has no record under the resolved corpus |
 | `citation-superseded` | a cited record exists and its frontmatter `status:` is not live |
-| `citations-unverified` | at least one citation is in scope and the corpus could not be read, or the repo declares `decisionsDir: null` and keeps none — either way no citation in scope was resolved. A register citing **nothing** never fires it: with no citation to settle, no corpus is consulted and the run is `clean` (#6433) |
+| `citations-unverified` | at least one citation is in scope and the corpus could not be read, or the repo declares `decisionsDir: null` and keeps none — either way no citation in scope was resolved. A register citing **nothing** never fires it: with no citation to settle, no corpus is consulted and the run is `clean` |
 
 A citation is a four-digit token in a row's second or third cell. **Live** is decided by importing
 `isLive` from [`src/adr/records.ts`](../../../../packages/fabrika-cli/src/adr/records.ts) rather than
 restating it, so the two groups cannot disagree about what a status word means. That function admits
 exactly three arms — the status is `accepted`, or exactly `amended-in-part`, or begins
 `amended-in-part by`. A looser paraphrase such as "begins `amended-in-part`" is **wrong**: it would
-call `amended-in-part (0250)` live where the imported predicate does not.
+call `amended-in-part (9250)` live where the imported predicate does not.
 
 **`detail` is fixed text per `kind`**, because a caller may grep it:
 
@@ -829,7 +825,7 @@ With `--json`, one object with keys `outcome`, `findings` (array of
 
 **All three outcomes are answers on exit 0**, because the outcome is this verb's own verdict and a
 caller must never read its own finding list as a failed run — the mistake v1's `adr-sweep` made by
-exiting non-zero on the one case it was asked to produce (#4723).
+exiting non-zero on the one case it was asked to produce.
 
 **The `reason` string is fixed text, byte for byte:**
 
@@ -840,17 +836,16 @@ exiting non-zero on the one case it was asked to produce (#4723).
 | `defects` | `null` |
 
 **Scope** — every parsed row of the selected register(s), plus every decision record a row cites,
-resolved against the corpus `decisionsDir` declares unless `--decisions` overrides it (#6433). The
+resolved against the corpus `decisionsDir` declares unless `--decisions` overrides it. The
 scope line goes to stderr naming the row count per register and the number of citations resolved, or
 the reason none were.
 
 **Zero scope is a red for this verb, with one carved-out exception.** A selected register that is
 present and parses to **zero rows** is exit `7`: a check that scanned nothing must never report
-`clean` (ADR 0092). The exception is a register file that is **absent**, which is `bootstrap` on exit
-`0` — an adopting repo has not written one yet, and refusing there would leave a fresh repo unable to
-run the skill at all (#4776, and the same reasoning that made an empty `.decisions/` answer `0001`
-rather than refuse in #5254). Present-and-empty and absent are different facts and never share a
-code.
+`clean`. The exception is a register file that is **absent**, which is `bootstrap` on exit `0` — an
+adopting repo has not written one yet, and refusing there would leave a fresh repo unable
+to run the skill at all, on the same reasoning that makes an empty decision corpus answer `0001`
+rather than refuse. Present-and-empty and absent are different facts and never share a code.
 
 **Two defect classes this verb deliberately does not report**, because each is already decided by a
 merge-blocking gate and a second answer could contradict it: **machine-local paths** in the register
@@ -873,14 +868,15 @@ expectation that those gates hold; it does not recompute their verdicts.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary check: cannot read <path>: <reason> — the outcome is UNKNOWN, never "clean".` | 11 | refusal |
-| `glossary check: <path> has no parseable term table — the outcome is UNKNOWN.` | 4 | refusal |
-| `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register (ADR 0092).` | 7 | refusal |
+| `glossary check: <path> has no parseable term table (<reason>) — the outcome is UNKNOWN.` | 4 | refusal |
+| `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register.` | 7 | refusal |
 | `glossary check: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
 
 **Examples**
 
 Both the register and the decision corpus are committed fixtures in this skill's tree, so every
-printed byte reproduces:
+printed byte reproduces — including the record ids below, which are that fixture corpus's own and
+not a live repository's:
 
 ```
 $ fabrika glossary check --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers --decisions packages/fabrika-cli/test-fixtures/glossary/decisions
@@ -905,16 +901,16 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0092 — a judging verb reds on zero scope; exit `7` is that rule for a register that exists and
-  holds nothing. The absent-file carve-out follows #5254's reasoning, where refusing on a
-  legitimately empty corpus left an adopting repo unable to mint its first record.
-- #4723 — v1's sweep exited non-zero on its own informative case, so a caller read a produced answer
-  as a failure. All three outcomes here exit `0`.
-- #5104, #5274, #4702 — a row lands only after its coining decision is on `main`, and decision
-  numbers are not stable before merge (three lanes each derived `0253`, #5278). `citation-dead` is
-  how a row that jumped the gun is found afterwards.
-- #4727 — a row can go stale against a superseding decision with nothing detecting it;
+- **A judging verb reds on zero scope**; exit `7` is that rule for a register that exists and holds
+  nothing. The absent-file carve-out follows the same reasoning that keeps a legitimately empty
+  decision corpus from leaving an adopting repo unable to mint its first record.
+- **v1's sweep exited non-zero on its own informative case**, so a caller read a produced answer as
+  a failure. All three outcomes here exit `0`.
+- **A row lands only after its coining decision is on the default branch**, and decision numbers are
+  not stable before merge — three lanes have derived one id at once. `citation-dead` is how a row
+  that jumped the gun is found afterwards.
+- **A row can go stale against a superseding decision with nothing detecting it**;
   `citation-superseded` is that detection.
-- #4465 — one term, one register, one row. `cross-register` is that rule made mechanical.
+- **One term, one register, one row.** `cross-register` is that rule made mechanical.
 - The leak and link carve-outs are the interface convention's rule 6 consequence — where a question is
   already enforced, state the expectation and leave the verdict where it is enforced.

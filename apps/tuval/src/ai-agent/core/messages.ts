@@ -9,35 +9,131 @@
 
 import {type Sub, type SubId, subId} from "@demlik/tea";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, PermissionDecision} from "../ports/index.ts";
+import type {
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+	TranscriptItem,
+} from "../ports/index.ts";
 import type {AgentFailure, HistoryPage} from "./state.ts";
 
 export type AiAgentSessionMsg =
 	| {readonly type: "start"; readonly cwd: string; readonly resume: string | null}
-	| {readonly type: "started"; readonly sessionId: string}
-	/** `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570). */
-	| {readonly type: "prompt"; readonly text: string; readonly key: string}
+	/**
+	 * The open landed. `history` is the resumed session's whole stored transcript when the layer
+	 * read one (`../service/TuvalAiAgent.ts`, `StartedSession`), and the `started` cell re-plans the
+	 * tail over it rather than keeping the one the checkpoint carried (#8855).
+	 */
+	| {
+			readonly type: "started";
+			readonly sessionId: string;
+			readonly history?: ReadonlyArray<TranscriptItem>;
+	  }
+	/** The slot was rebuilt, but its start call refused; the subscription lifetime still changed. */
+	| {readonly type: "openFailed"; readonly failure: AgentFailure}
+	/**
+	 * `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570), and the
+	 * id of the turn the `prompt` cell records is derived from it. `timestamp` rides along because
+	 * that turn needs a clock and no update cell may read one (#7978).
+	 */
+	| {
+			readonly type: "prompt";
+			readonly text: string;
+			readonly key: string;
+			readonly timestamp: number;
+	  }
+	/**
+	 * What the layer did with one deliberate send, under that send's own key — the only Msg that
+	 * answers a *particular* prompt rather than the session as a whole.
+	 *
+	 * `failure: null` means the layer took the text. Anything else is the refusal, and `sends.ts`
+	 * decides from its `reason` whether the text provably never crossed or merely might not have; a
+	 * window keeps a copy of what it sent until this arrives, so neither arm loses it.
+	 */
+	| {readonly type: "sent"; readonly key: string; readonly failure: AgentFailure | null}
 	| {readonly type: "event"; readonly sessionId: string; readonly event: AgentEvent}
-	| {readonly type: "answer"; readonly request: string; readonly decision: PermissionDecision}
+	/** `message` is the operator's optional note; the window offers one on every decision. */
+	| {
+			readonly type: "answer";
+			readonly request: string;
+			readonly decision: PermissionDecision;
+			readonly message?: string;
+	  }
+	/**
+	 * The answer's own confirmation, back from the call that carried it. `seq` names which raising
+	 * of the request was answered, so a reply that outlived its card settles nothing (#8006).
+	 */
+	| {readonly type: "answered"; readonly request: string; readonly seq: number}
+	| {
+			readonly type: "answerFailed";
+			readonly request: string;
+			readonly seq: number;
+			readonly failure: AgentFailure;
+	  }
 	| {readonly type: "setMode"; readonly mode: Mode}
+	| {readonly type: "setModel"; readonly model: ModelRef}
+	| {readonly type: "setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "paged"; readonly page: HistoryPage}
-	| {readonly type: "interrupt"}
+	| {readonly type: "pageRefused"; readonly failure: AgentFailure}
+	/**
+	 * Stop the running turn. `at` is the operator's clock, carried for the same reason `prompt`'s
+	 * is: no update cell may read one, and the window measures the wait against it (#8007).
+	 */
+	| {readonly type: "interrupt"; readonly at: number}
 	| {readonly type: "reconnect"}
 	| {readonly type: "failed"; readonly failure: AgentFailure};
 
 export type AiAgentSessionCmd =
-	| {readonly type: "aiAgent.start"; readonly cwd: string; readonly resume: string | null}
+	/**
+	 * Open this process's session, because the process is new. The one Cmd a fresh `init` emits.
+	 *
+	 * Its handler does no backend work: it answers with the `start` Msg and nothing else. `init`
+	 * cannot dispatch a Msg — a Cmd is its only channel out — and the transition that opens a
+	 * session belongs to the `start` cell, which is also the one guard against a second open. So
+	 * this Cmd is the trampoline between them, and being trampoline-cheap is what keeps a spawn
+	 * from blocking on the session: the real `aiAgent.start` runs on the process's own tail after
+	 * the spawn has returned, rather than inside it.
+	 */
+	| {readonly type: "aiAgent.boot"; readonly cwd: string}
+	| {
+			readonly type: "aiAgent.start";
+			readonly cwd: string;
+			readonly resume: string | null;
+			/** The mode the session is on, so the layer opens on it rather than on the row's (#7953). */
+			readonly mode: Mode | null;
+	  }
 	| {readonly type: "aiAgent.prompt"; readonly text: string; readonly key: string}
 	| {
 			readonly type: "aiAgent.answer";
 			readonly request: string;
+			readonly seq: number;
 			readonly decision: PermissionDecision;
+			readonly message?: string;
 	  }
 	| {readonly type: "aiAgent.setMode"; readonly mode: Mode}
+	| {readonly type: "aiAgent.setModel"; readonly model: ModelRef}
+	| {readonly type: "aiAgent.setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "aiAgent.page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "aiAgent.interrupt"}
-	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string};
+	| {
+			readonly type: "aiAgent.reconnect";
+			readonly cwd: string;
+			readonly sessionId: string;
+			/** The checkpointed mode, which is the whole reason a restore keeps the switch (#7953). */
+			readonly mode: Mode | null;
+	  }
+	/**
+	 * Publish the committed state's three outbound projections again, with no backend call.
+	 *
+	 * The outbound ports are event-driven — a projection leaves only when the fold moved it — so a
+	 * window attached to a session that was restored from a checkpoint has nothing to render until
+	 * the next event arrives. A restored session's pending permission cards are exactly the case
+	 * that wedges: the cards are in state, the agent is still waiting on them, and no event is
+	 * coming until one is answered (#7608).
+	 */
+	| {readonly type: "aiAgent.republish"};
 
 /**
  * The one subscription: this session's event stream, keyed by the session *and* the connection.

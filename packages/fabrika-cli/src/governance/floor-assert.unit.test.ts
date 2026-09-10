@@ -52,8 +52,8 @@ const noFloorCheck: ReadonlyArray<Scripted> = [
  * Whether one recorded request WROTE a check-run — the fence this module must never trip.
  *
  * Every method that is not a GET counts. `ship floor --publish-check` creates with POST and rewrites
- * with PATCH, so a POST-shaped fence would let a PATCH-shaped fabricated conclusion straight through
- * (#6161).
+ * with PATCH, so a POST-shaped fence would let a PATCH-shaped fabricated conclusion straight
+ * through.
  */
 const writesCheckRun = (call: string): boolean =>
 	call.includes("check-runs") && !call.startsWith("GET ");
@@ -93,9 +93,9 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(true);
 		// The re-fire re-runs `ship floor` in CI. Nothing here WRITES a check-run — the read above is
 		// how this module learns the floor's state, and the green a PR ends up with is one the job
-		// derived for itself (#5585). The fence is every method that is not a GET, not `POST` alone:
+		// derived for itself. The fence is every method that is not a GET, not `POST` alone:
 		// `ship floor --publish-check` rewrites a held row with `PATCH /check-runs/{id}`, so a
-		// method-specific fence would let the PATCH-shaped fabrication through (#6161).
+		// method-specific fence would let the PATCH-shaped fabrication through.
 		expect(seams.requests.some(writesCheckRun)).toBe(false);
 	});
 
@@ -128,8 +128,8 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(false);
 	});
 
-	// The job now succeeds whenever it PUBLISHED an answer, so its green says nothing about the floor
-	// (#6161). A pending check-run beside a green job is the ordinary "no verdict yet" state, and it is
+	// The job succeeds whenever it PUBLISHED an answer, so its green says nothing about the floor.
+	// A pending check-run beside a green job is the ordinary "no verdict yet" state, and it is
 	// exactly the state this module exists to clear.
 	it("re-fires a green job whose check-run is still pending", async () => {
 		const {assertion, seams} = await withCalls([
@@ -151,7 +151,7 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 	});
 
 	// GitHub bumps `run_attempt` a beat after it accepts the dispatch, and calling that beat UNKNOWN
-	// sent three agents to `heal-ci` over re-fires that had taken and went green untouched (#5982).
+	// sent three agents to `heal-ci` over re-fires that had taken and went green untouched.
 	it("reads a same-id run that is running again as a re-fire to wait on, not UNKNOWN", async () => {
 		const {assertion, seams} = await withCalls([
 			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],

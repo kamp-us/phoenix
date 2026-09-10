@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
 import {planBlock} from "./fixtures.test-support.ts";
 import {checkPlanBlock, PLAN_SECTIONS} from "./plan-block.ts";
 
@@ -68,9 +69,91 @@ describe("checkPlanBlock", () => {
 		});
 	});
 
+	it("names `Acceptance criteria` when the plan omits it — the epic tail's contract", () => {
+		const checked = checkPlanBlock(planBlock({drop: "Acceptance criteria"}));
+		expect(checked).toMatchObject({
+			reason: expect.stringContaining("missing section(s): Acceptance criteria"),
+		});
+	});
+
+	it("refuses criteria written as prose — the wire reader would find none", () => {
+		const checked = checkPlanBlock(
+			planBlock({criteria: "The tail ships when every child is wired."}),
+		);
+		expect(checked).toMatchObject({
+			reason: expect.stringContaining("acceptance criteria read as"),
+		});
+	});
+
+	it("refuses a blank line under the criteria heading — the child body's byte rule", () => {
+		const checked = checkPlanBlock(
+			planBlock().replace("### Acceptance criteria\n- [ ]", "### Acceptance criteria\n\n- [ ]"),
+		);
+		expect(checked).toMatchObject({
+			reason: expect.stringContaining("is followed by a blank line"),
+		});
+	});
+
+	it("reads the blank-line rule outside fences — a fenced example of the section is not the section", () => {
+		const fencedExample = [
+			"### Approach",
+			"",
+			"The section a planner writes looks like this:",
+			"",
+			"```markdown",
+			"### Acceptance criteria",
+			"",
+			"- [ ] a fenced illustration, blank line and all",
+			"```",
+		].join("\n");
+		const checked = checkPlanBlock(
+			planBlock().replace("### Approach\n\nSomething true about this section.", fencedExample),
+		);
+		expect(checked).toMatchObject({_tag: "Ok"});
+	});
+
+	it("passes criteria written as checkbox rows under their heading", () => {
+		expect(checkPlanBlock(planBlock({criteria: "- [ ] one\n- [ ] two"}))).toMatchObject({
+			_tag: "Ok",
+		});
+	});
+
 	it("does not judge content — a TBD section passes", () => {
 		expect(
 			checkPlanBlock(planBlock().replace("Something true about this section.", "TBD")),
 		).toMatchObject({_tag: "Ok"});
+	});
+});
+
+/**
+ * The whole point of the section: what `ledger write` splices must be what `review criteria <epic>`
+ * reads back. Checking the block alone would not catch the two ways the *spliced body* loses it —
+ * a `## Dependencies` block below it, and the enriched original's own buried legacy heading.
+ */
+describe("the staged block survives the splice into an epic body", () => {
+	it("reads back Found, and the enriched appendix's buried block is not the contract", () => {
+		const block = planBlock({criteria: "- [ ] one\n- [ ] two"});
+		expect(checkPlanBlock(block)).toMatchObject({_tag: "Ok"});
+
+		const body = [
+			"## Pitch\n\nwords\n",
+			block,
+			"## Dependencies\n\n- phase 1: #4301\n",
+			"<!-- fabrika:enriched issue=4300 mode=rewrite -->",
+			"<details>",
+			"<summary>Original report (verbatim)</summary>",
+			"",
+			"### Acceptance criteria",
+			"- [ ] a buried legacy row",
+			"",
+			"</details>",
+		].join("\n");
+
+		const found = readAcceptanceCriteria(body);
+		expect(found._tag).toBe("Found");
+		expect(found._tag === "Found" ? found.value.map((row) => row.text) : []).toEqual([
+			"one",
+			"two",
+		]);
 	});
 });

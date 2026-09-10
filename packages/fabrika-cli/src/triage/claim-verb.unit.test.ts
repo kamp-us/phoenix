@@ -197,7 +197,7 @@ describe("runClaim — winning", () => {
 
 describe("runClaim — two lanes of one session", () => {
 	// The defect: both siblings share CLAUDE_CODE_SESSION_ID, so a session-only marker read each
-	// sibling's claim back as its own and both wrote the issue (#6132).
+	// sibling's claim back as its own and both wrote the issue.
 	const race = (): ReadonlyArray<Scripted> => [
 		[ISSUE, issue("open")],
 		[POST, posted(5001)],
@@ -379,7 +379,7 @@ describe("runClaim — preconditions", () => {
 		});
 		expect(outcome.code).toBe(1);
 		expect(outcome.stderr.join("\n")).toContain(
-			"no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION are all unset — refusing to post an unattributable claim.",
+			"no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION, CODEX_THREAD_ID, CODEX_SESSION_ID are all unset — refusing to post an unattributable claim.",
 		);
 		expect(requests).toHaveLength(0);
 	});

@@ -1,6 +1,6 @@
 /**
  * Refuse an operand a leaf verb never declared, instead of binding none of them and answering
- * anyway (#4828).
+ * anyway.
  *
  * At a leaf the Effect CLI parser reports nothing: `resolveFirstValue` gates its `UnknownSubcommand`
  * on `!expectsArgs && subIndex.size > 0`, and a leaf's `subIndex` is empty, so the token becomes a
@@ -8,7 +8,7 @@
  * unconsumed remainder without an error (`effect@4.0.0-beta.92`,
  * `src/unstable/cli/internal/parser.ts` and `internal/command.ts`). Nothing is ever pushed into
  * `parsedArgs.errors`, so this is a *missing* check — not the ordering bug the sibling guard in
- * `unknown-subcommand.ts` works around (#4822), which loses an error that does get produced.
+ * `unknown-subcommand.ts` works around, which loses an error that does get produced.
  *
  * The fix declares the remainder rather than re-deriving it. Every leaf gets one hidden trailing
  * catch-all argument, so the **parser** decides what is a flag value and what is a positional — the
@@ -18,8 +18,8 @@
  * unaffected.
  *
  * The refusal is seated the way the interface convention requires
- * (`claude-plugins/fabrika/docs/cli-interface-convention.md` §2/§3, and matching #4827's shape): the
- * reason on stderr, nothing on stdout, exit `1`.
+ * (`claude-plugins/fabrika/docs/cli-interface-convention.md` §2/§3): the reason on stderr, nothing
+ * on stdout, exit `1`.
  */
 import {Effect} from "effect";
 import {Argument, Command, Param} from "effect/unstable/cli";

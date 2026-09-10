@@ -1,5 +1,5 @@
 /**
- * The fabrika hook surface, proven end to end against captured real payloads (ADR 0180).
+ * The fabrika hook surface, proven end to end against captured real payloads.
  *
  * Three things have to hold together for the surface to be real, and this file refuses to let any
  * one of them be assumed:
@@ -9,12 +9,12 @@
  *      this repo's own, never out of a literal here — so a test that passes cannot be exercising a
  *      verb the declaration does not name (the false-green this campaign keeps paying for). Which
  *      events each document may carry is asserted per document, because that split is a decision
- *      (ADR 0337) and not a filing convenience.
+ *      and not a filing convenience.
  *   2. The **bytes** are the captured ones. `__fixtures__/*.golden.json` are what Claude Code
  *      really wrote to a hook's stdin; `__fixtures__/PROVENANCE.md` says how, per build. A
- *      hand-authored envelope in the assertion path is the anti-pattern ADR 0180 exists for — v1's
- *      spawn-guard test hand-authored a `PreToolUse` envelope and so never knew the harness sends
- *      `prompt_id`, `permission_mode` and `effort`.
+ *      hand-authored envelope in the assertion path is what the capture rule exists to stop — the
+ *      predecessor's spawn-guard test hand-authored a `PreToolUse` envelope and so never knew the
+ *      harness sends `prompt_id`, `permission_mode` and `effort`.
  *   3. The **shape** is pinned by exact key set, presences and absences both. A subset check would
  *      pass against the fabricated shape too, which is the litmus the pattern doc sets.
  */
@@ -72,7 +72,7 @@ const runDeclared = (
 };
 
 describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("declares at least one hook — a surface with zero rows is never a pass (ADR 0092)", () => {
+	it("declares at least one hook — a surface with zero rows is never a pass", () => {
 		expect(surface.length).toBeGreaterThan(0);
 	});
 
@@ -87,8 +87,8 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 	/**
 	 * The plugin travels to every adopting repo, and a `WorktreeCreate` hook preempts git worktree
 	 * creation wherever it is declared — with no fail-open form, since the harness reads even the
-	 * convention's never-ran codes as a creation failure. So that event lives in phoenix's own
-	 * settings and may never be declared here (ADR 0337, ADR 0250).
+	 * convention's never-ran codes as a creation failure. So that event lives in a repo's own
+	 * settings, where its toolchain is guaranteed, and may never be declared here.
 	 */
 	it("declares no provider event on the plugin surface, which adopting repos inherit", () => {
 		expect(surface.filter((hook) => hook.event.startsWith("Worktree"))).toEqual([]);
@@ -96,7 +96,7 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 });
 
 describe("this repo's own hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("declares at least one hook — a surface with zero rows is never a pass (ADR 0092)", () => {
+	it("declares at least one hook — a surface with zero rows is never a pass", () => {
 		expect(repoSurface.length).toBeGreaterThan(0);
 	});
 
@@ -120,7 +120,7 @@ describe("this repo's own hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_M
 	/**
 	 * 600s, not the harness default. The budget is the whole reason the hook exists: `git worktree
 	 * add` fires lefthook's `post-checkout` install, which is far slower than the ~13s the harness's
-	 * default worktree path allows (ADR 0178).
+	 * default worktree path allows.
 	 */
 	it("gives the provisioning install a budget the install can finish inside", () => {
 		const settings = JSON.parse(readGoldenFixture(import.meta.url, SETTINGS_JSON)) as {
@@ -205,8 +205,8 @@ describe("the declared hook, run against the captured envelope", {
 
 	/**
 	 * The litmus the pattern doc sets: the test must FAIL against a fabricated contract. This is the
-	 * exact shape v1's spawn-guard test hand-authored — plausible, and missing three fields the
-	 * harness really sends plus the two every envelope carries.
+	 * exact shape the predecessor's spawn-guard test hand-authored — plausible, and missing three
+	 * fields the harness really sends plus the two every envelope carries.
 	 */
 	it("refuses a hand-authored envelope of the shape a doc-assumed contract would produce", () => {
 		const fabricated = JSON.stringify({
@@ -236,7 +236,7 @@ describe("the captured envelope shape, pinned by exact key set", {
 		expect(payload.source).toBe("startup");
 	});
 
-	it("PreToolUse carries these keys and no others — including the three v1's fabricated envelope missed", () => {
+	it("PreToolUse carries these keys and no others — including the three a fabrication missed", () => {
 		const payload = loadGoldenPayload(
 			import.meta.url,
 			"__fixtures__/pre-tool-use.payload.golden.json",
@@ -268,7 +268,7 @@ describe("the captured envelope shape, pinned by exact key set", {
 		expect(payload.hook_event_name).toBe("PreToolUse");
 		// A `Task|Workflow` matcher fires, but the harness then sends `tool_name: "Agent"` — a hook
 		// keyed on `tool_name === "Task"` would never fire. Kept as the captured record of that gap
-		// even though fabrika declares no PreToolUse hook today (ADR 0331).
+		// even though fabrika declares no PreToolUse hook today.
 		expect(payload.tool_name).toBe("Agent");
 		expect(payload.tool_input).toMatchObject({subagent_type: "general-purpose", model: "opus"});
 	});
@@ -284,8 +284,8 @@ describe("the captured envelope shape, pinned by exact key set", {
 	/**
 	 * The two fields a doc-assumed contract invents are what this pins. The harness sends `name`, a
 	 * slug — never `worktree_path` and never `base_ref` — so the path is *constructed* and the base
-	 * is the hook's own call. v1 shipped a handler built to the invented shape and it fail-closed
-	 * every worktree spawn (#2925).
+	 * is the hook's own call. A handler built to the invented shape shipped once and fail-closed
+	 * every worktree spawn.
 	 */
 	it("WorktreeCreate carries these keys and no others — `name`, not `worktree_path`", () => {
 		const payload = loadGoldenPayload(

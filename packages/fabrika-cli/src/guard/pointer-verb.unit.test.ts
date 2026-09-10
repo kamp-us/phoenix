@@ -59,7 +59,7 @@ const tree = (
 describe("runPointerGuard", () => {
 	it("passes when every backticked pointer resolves", async () => {
 		const outcome = await run(
-			tree({"CLAUDE.md": "see `apps/web/index.ts`"}, ["apps/web/index.ts"]),
+			tree({"CLAUDE.md": "see `apps/site/index.ts`"}, ["apps/site/index.ts"]),
 			["CLAUDE.md"],
 		);
 		expect(outcome.code).toBe(0);
@@ -68,34 +68,34 @@ describe("runPointerGuard", () => {
 	});
 
 	it("reds a pointer whose target is gone, naming file, line and path", async () => {
-		const outcome = await run(tree({"CLAUDE.md": "\nsee `apps/web/gone.ts`"}), ["CLAUDE.md"]);
+		const outcome = await run(tree({"CLAUDE.md": "\nsee `apps/site/gone.ts`"}), ["CLAUDE.md"]);
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stdout).toBe("");
-		expect(outcome.stderr.join("\n")).toContain("CLAUDE.md:2  →  apps/web/gone.ts");
+		expect(outcome.stderr.join("\n")).toContain("CLAUDE.md:2  →  apps/site/gone.ts");
 	});
 
 	// The load-bearing case: CLAUDE.md points at a generated path the doc tells you to create.
 	it("treats a gitignored absent path as resolved", async () => {
 		const outcome = await run(
-			tree({"CLAUDE.md": "run `cp` into `apps/web/.env`"}),
+			tree({"CLAUDE.md": "run `cp` into `apps/site/.env`"}),
 			["CLAUDE.md"],
-			["apps/web/.env"],
+			["apps/site/.env"],
 		);
 		expect(outcome.code).toBe(0);
 	});
 
 	it("scans every tracked CLAUDE.md, not only the root one", async () => {
 		const outcome = await run(
-			tree({"CLAUDE.md": "ok", "apps/web/CLAUDE.md": "see `apps/web/gone.ts`"}),
-			["CLAUDE.md", "apps/web/CLAUDE.md"],
+			tree({"CLAUDE.md": "ok", "apps/site/CLAUDE.md": "see `apps/site/gone.ts`"}),
+			["CLAUDE.md", "apps/site/CLAUDE.md"],
 		);
 		expect(outcome.code).toBe(VIOLATION);
-		expect(outcome.stderr.join("\n")).toContain("apps/web/CLAUDE.md:1");
+		expect(outcome.stderr.join("\n")).toContain("apps/site/CLAUDE.md:1");
 	});
 
 	it("annotates each stale pointer on its own line under Actions", async () => {
 		const outcome = await run(
-			tree({"CLAUDE.md": "see `apps/web/gone.ts`"}),
+			tree({"CLAUDE.md": "see `apps/site/gone.ts`"}),
 			["CLAUDE.md"],
 			[],
 			undefined,
@@ -107,7 +107,7 @@ describe("runPointerGuard", () => {
 	});
 
 	it("emits no annotation off a runner", async () => {
-		const outcome = await run(tree({"CLAUDE.md": "see `apps/web/gone.ts`"}), ["CLAUDE.md"]);
+		const outcome = await run(tree({"CLAUDE.md": "see `apps/site/gone.ts`"}), ["CLAUDE.md"]);
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 

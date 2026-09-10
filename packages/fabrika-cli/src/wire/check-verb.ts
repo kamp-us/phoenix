@@ -4,7 +4,7 @@
  * `read` without the payload: the same three-way total read, answered as a verdict token rather
  * than as fields, for a caller that only needs the yes/no. It shares `read`'s codes so one meaning
  * covers both, and it prints the scope it judged on **every** path — a verdict whose scope is
- * unstated cannot be told from a verdict over nothing (ADR 0092).
+ * unstated cannot be told from a verdict over nothing.
  */
 import {Effect} from "effect";
 import type {StdinRead} from "../io/stdin.ts";

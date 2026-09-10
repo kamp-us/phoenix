@@ -1,7 +1,6 @@
 /**
  * `guard fanout-guard check` — a mutation over a fate-live fanned entity publishes its `/fate/live`
- * invalidation, and publishes it at the declared topic (ADR 0155, #1898), ported off
- * v1's `fanout-guard check` (epic #5720).
+ * invalidation, and publishes it at the declared topic.
  *
  * The verb is the IO boundary and nothing else: gather the manifest, the `LiveTopic` map and each
  * feature's mutation keys / publisher reference / live targets, hand them to the rule in
@@ -9,7 +8,7 @@
  *
  * **v1's single non-zero splits into three seats here.** A missing feature dir or an unreadable file
  * is UNKNOWN (`11`) — the scan never completed; zero discovered mutations and a present-but-empty
- * manifest are both a broken scope assumption (`7`, ADR 0092); a real drift, omission or mis-aim is
+ * manifest are both a broken scope assumption (`7`); a real drift, omission or mis-aim is
  * the violation (`12`). All three stay red, so the gate's strictness is unchanged.
  */
 
@@ -67,8 +66,8 @@ interface GatheredFeatures {
 /**
  * Every feature dir's mutation keys, publisher reference and reachable `/fate/live` targets.
  *
- * `live.ts` is scanned even for a feature with no `mutations.ts`, so a binding that is only ever
- * delegated through (report → pano/sözlük) still contributes its targets to the closure.
+ * `live.ts` is scanned even for a feature with no `mutations.ts`, so a binding that only ever
+ * delegates to other features still contributes their targets to the closure.
  */
 const gatherFeatures = (
 	root: string,
@@ -133,7 +132,7 @@ const annotationsFor = (
 				atFile(
 					"error",
 					MANIFEST_PATH,
-					`\`${key}\` is not classified — add a row deciding fanned: true|false, so a fanned mutation can never silently omit its /fate/live publish (ADR 0155).`,
+					`\`${key}\` is not classified — add a row deciding fanned: true|false, so a fanned mutation can never silently omit its /fate/live publish.`,
 				),
 			),
 			...verdict.stale.map((key) =>
@@ -150,7 +149,7 @@ const annotationsFor = (
 			atFile(
 				"error",
 				`${FEATURES_DIR}/${featureOf.get(key) ?? ""}/${MUTATIONS_FILE}`,
-				`\`${key}\` is fanned but this feature never reaches WorkerLivePublisher — publish the /fate/live invalidation after the write, or reclassify the mutation fanned: false (ADR 0155).`,
+				`\`${key}\` is fanned but this feature never reaches WorkerLivePublisher — publish the /fate/live invalidation after the write, or reclassify the mutation fanned: false.`,
 			),
 		);
 	}
@@ -160,14 +159,14 @@ const annotationsFor = (
 				atFile(
 					"error",
 					MANIFEST_PATH,
-					`\`${key}\` is fanned but declares no topics: [...] — name the /fate/live target(s) it publishes to (#2554).`,
+					`\`${key}\` is fanned but declares no topics: [...] — name the /fate/live target(s) it publishes to.`,
 				),
 			),
 			...verdict.misaimed.map((m) =>
 				atFile(
 					"error",
 					`${FEATURES_DIR}/${m.feature}/${LIVE_FILE}`,
-					`\`${m.key}\` declares ${m.declared.join(", ")} but this binding no longer targets ${m.unreachable.join(", ")} — fix the aim, or correct the manifest row (#2554).`,
+					`\`${m.key}\` declares ${m.declared.join(", ")} but this binding no longer targets ${m.unreachable.join(", ")} — fix the aim, or correct the manifest row.`,
 				),
 			),
 		];
@@ -190,7 +189,7 @@ const judgeRoot = (
 		const manifest = yield* readManifest(root);
 		if (manifest.length === 0) {
 			return zeroScope(
-				`${VERB}: parsed ZERO rows from ${MANIFEST_PATH} — the manifest is empty or its row shape changed, so the classification is broken. Fail-closed (ADR 0092/0155).`,
+				`${VERB}: parsed ZERO rows from ${MANIFEST_PATH} — the manifest is empty or its row shape changed, so the classification is broken. Fail-closed.`,
 			);
 		}
 		const liveTopicMap = yield* readLiveTopicMap(root);

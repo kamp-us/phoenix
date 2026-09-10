@@ -10,6 +10,7 @@ export {
 	type HostErrorPhase,
 	type InterpretHandlers,
 	type OnError,
+	type SubFailure,
 	type SubscribeHandlers,
 } from "./definition.ts";
 export {
@@ -18,4 +19,9 @@ export {
 	subscribeDisposerBridge,
 	toDemlikMachine,
 } from "./demlik-bridges.ts";
-export {ActorStoppedError, StoreError, SubDisposeError} from "./errors.ts";
+export {
+	ActorNameCollisionError,
+	ActorStoppedError,
+	StoreError,
+	SubDisposeError,
+} from "./errors.ts";

@@ -42,10 +42,10 @@ index b6ab9e6..187a501 100644
  const items = read();
 +// biome-ignore lint/suspicious/noExplicitAny: not now
  return items.length;
-diff --git "a/s\\303\\266zl\\303\\274k-ba\\305\\237l\\304\\261k.test.ts" "b/s\\303\\266zl\\303\\274k-ba\\305\\237l\\304\\261k.test.ts"
+diff --git "a/\\303\\274nl\\303\\274-ba\\305\\237l\\304\\261k.test.ts" "b/\\303\\274nl\\303\\274-ba\\305\\237l\\304\\261k.test.ts"
 index fce2e4b..09058a9 100644
---- "a/s\\303\\266zl\\303\\274k-ba\\305\\237l\\304\\261k.test.ts"
-+++ "b/s\\303\\266zl\\303\\274k-ba\\305\\237l\\304\\261k.test.ts"
+--- "a/\\303\\274nl\\303\\274-ba\\305\\237l\\304\\261k.test.ts"
++++ "b/\\303\\274nl\\303\\274-ba\\305\\237l\\304\\261k.test.ts"
 @@ -1,3 +1,2 @@
  it("x", () => {
 -	expect(sozluk(10)).toBe("on");
@@ -99,7 +99,7 @@ describe("changedLines", () => {
 	it("gives a quoted-path file its own name and line numbers, unescaped back to the real path", () => {
 		const lines = changedLines(QUOTED_DIFF);
 		expect(lines).toContainEqual({
-			file: "sözlük-başlık.test.ts",
+			file: "ünlü-başlık.test.ts",
 			line: 2,
 			kind: "removed",
 			text: '	expect(sozluk(10)).toBe("on");',
@@ -159,7 +159,7 @@ describe("tierMHits", () => {
 			},
 			{
 				kind: "removed-assertion",
-				file: "sözlük-başlık.test.ts",
+				file: "ünlü-başlık.test.ts",
 				line: 2,
 				token: 'expect(sozluk(10)).toBe("on");',
 			},

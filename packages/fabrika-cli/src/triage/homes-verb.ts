@@ -12,13 +12,13 @@
  * same degrade disposition the rest of the corpus declares for that file. Only a roadmap that exists
  * and could not be read is UNKNOWN.
  *
- * Curating the milestone set is a human roadmap act (ADR 0072 §3), so this verb creates none. It
+ * Curating the milestone set is a human roadmap act, so this verb creates none. It
  * offers only open, roadmap-joined milestones, which designs out the mismatch where a closed
  * milestone reports as a valid home.
  *
  * A row can carry a **running** marker: an `active` campaign is closed to new intake unless the work
- * is p0 or blocks one of that milestone's own in-flight lanes (#6080). Which milestones those are, is
- * data — `ROADMAP.md`'s `## Campaigns` table, the same permission `build pick` fences on, read
+ * is p0 or p1, or blocks one of that milestone's own in-flight lanes. Which milestones those are,
+ * is data — `ROADMAP.md`'s `## Campaigns` table, the same permission `build pick` fences on, read
  * through the same parser off the roadmap text this verb already has open. A marked row is still
  * offered: the two exceptions are real, and a removed row cannot carry them.
  */
@@ -44,7 +44,7 @@ type RoadmapSide =
 	| {readonly _tag: "Present"; readonly text: string; readonly rows: RoadmapRows};
 
 /** What the marked row says, on both channels — the subtraction, not a routing instruction. */
-export const RUNNING_MARKER = "running: p0/blocker only";
+export const RUNNING_MARKER = "running: p0/p1 or blocker";
 
 export interface HomesOptions {
 	readonly roadmap: string;
@@ -92,7 +92,7 @@ export const runHomes = Effect.fn("runHomes")(function* (options: HomesOptions) 
 
 	// The declared set is a candidate list, never the answer: a lane is offered only once this board
 	// is observed to carry its label, which is the same evidence the `triage apply --lane` write it
-	// routes to depends on (#6440). An unreadable label list is UNKNOWN — never "this repo has no
+	// routes to depends on. An unreadable label list is UNKNOWN — never "this repo has no
 	// lanes", which is the reading that silently shortens the menu.
 	let lanes: ReadonlyArray<StandingLane> = [];
 	if (options.standingLanes.length > 0) {
@@ -119,7 +119,7 @@ export const runHomes = Effect.fn("runHomes")(function* (options: HomesOptions) 
 	if (milestones.value.length === 0) {
 		return refuse(
 			ZERO_SCOPE,
-			`triage homes: ${repo} has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).`,
+			`triage homes: ${repo} has 0 open milestones — refusing to answer, since "no home exists" routes to a kill.`,
 			[scope, laneScope, ...laneNotices(lanes)],
 		);
 	}

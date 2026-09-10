@@ -1,0 +1,35 @@
+.kp-agent-chat__suggestion:where([data-scope="button"][data-part="root"]) {
+	justify-content: flex-start;
+	min-width: 0;
+	min-height: var(--tap-min);
+	padding: var(--s-2);
+	text-align: start;
+}
+
+.kp-agent-chat__suggestion[aria-selected="true"] {
+	background: var(--accent-faint);
+	color: var(--text-primary);
+}
+
+.kp-agent-chat__suggestion-main {
+	min-width: 0;
+	font: var(--t-mono);
+	color: inherit;
+}
+
+.kp-agent-chat__suggestion-detail {
+	margin-inline-start: auto;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--text-muted);
+	font: var(--t-meta);
+	text-align: end;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+@media (max-width: 40rem) {
+	.kp-agent-chat__suggestion-detail {
+		display: none;
+	}
+}

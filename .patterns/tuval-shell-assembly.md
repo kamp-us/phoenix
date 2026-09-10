@@ -1,0 +1,611 @@
+# Assembling the Tuval shell: kernel, socket, page
+
+**Reference.** How `apps/tuval` goes from a config module to a desk a founder drives by keyboard —
+what runs each of the shell core's Cmds, how a program row's services reach its handlers, who serves
+the page, which of the app's two entries a module belongs to, and how the three end-to-end proofs
+are written. Read it before touching `apps/tuval/src/shell/host/`, `apps/tuval/src/page/`,
+`apps/tuval/src/bin.ts`, `apps/tuval/tsconfig.browser.json`, or the launch/spawn seam in
+`apps/tuval/src/launch/`.
+
+The parts below it are their own docs: the command framework is
+[tuval-spells.md](./tuval-spells.md), the layout binding is
+[layout-tree-with-resizable-panels.md](./layout-tree-with-resizable-panels.md).
+
+## The four pieces, and who owns what
+
+```
+.tuval/tuval.config.ts     the shell row + the demo rows + the graph        (user-owned)
+  └─ boot / start          registry → wiring → kernel → launch → restore    (src/boot.ts)
+       ├─ shell process    the desk's state; its Cmds run in src/shell/host/effects.ts
+       ├─ serveDesk        one WebSocket per page                           (src/shell/host/serve.ts)
+       └─ servePage        Vite, in this same process                       (src/page/dev-server.ts)
+            └─ the page    attach → render <Desk> → send Msgs back          (src/page/)
+```
+
+One rule holds the whole picture together: **the desk is the shell process's state, and the page is
+a view of it.** Nothing on the page is authoritative, which is why two tabs show one desk and why a
+dropped socket is repaired by attaching again rather than by replaying anything.
+
+## A program row's `R` is satisfied at spawn, not by the row
+
+`shellProgram({effects})` needs `Registry`, `Processes` and `ProcessTable` to run `openProgram` and
+`attachProcess` — the picker spawns. A row is pure data built before the kernel exists, so it cannot
+close over them; it declares them as its `R` instead, and the spawner provides them:
+
+```ts
+// src/boot.ts
+const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
+  Effect.provideContext(spawnerNeeds),
+);
+```
+
+`launch` merges that context into each spawn's `SpawnOptions.services` beside the node's own
+`ProcessPorts`. `SpawnOptions.services` is the only seam a program row's requirements can arrive
+through, and handing them over is a wiring decision rather than a capability grant — local program
+code is fully trusted, there is no sandbox (#7484 R1.1). The `provideContext` above is `launch`'s
+own `R` and not a second route to a handler: what a spawner is *called* under reaches nothing it
+spawns.
+
+**The spawn set is exactly what a handler resolves, and that is enforced** (#7972). `toDefinition`
+runs every command and sub handler under an `Effect.updateContext`, which sets the fiber's context
+outright, rather than under `Effect.provideContext(handlerServices)`, which merges over whatever the
+fiber that dispatched happened to carry (rc.112, `src/internal/effect.ts:2197`). What it sets is the
+spawn set over the ambient's `effect/…` keys and nothing else — the paragraph below says why those
+ride through. Two things follow, and both used to be false:
+
+- **A removal is a removal.** The picker's `Context.omit(ProcessPorts)` really does keep the shell's
+  ports out of the child, including when the shell forwards a key into it from its own handler fiber
+  — the path that made the guard a no-op.
+- **The two dispatch paths agree.** `handle.dispatch` runs on the caller's fiber and a follow-up Msg
+  runs on a forked one with no ambient (`src/host/actor.ts`), so before the seal a handler could
+  resolve a service on one and not the other, and a proof written over the wrong fiber passed for
+  the wrong reason.
+
+Effect's own runtime rides through the seal — the clock, the scheduler, the loggers and log level,
+the tracer and its parent span, and the `Scope` a sub handler is given, every one of them keyed
+`effect/…` and re-derived by `FiberImpl.setContext` on each replace (rc.112,
+`src/internal/effect.ts:709`). Everything else is the spawn set's alone.
+
+**So every spawner names what it passes.** `start` hands `restore` the kernel as its `services`
+argument, and that argument is now the single route (`src/boot.ts`); the picker passes on the
+context its own shell process was launched with (`src/shell/picker/open.ts`); and the `process spawn`
+spell reads its own caller's context and passes that on beside the child's ports
+(`src/commands/core/process.ts`) — it used to hand over `Context.make(ProcessPorts, ports)` and let
+the merge cover the rest, which under the seal would have left an agent-spawned row dead at its
+first kernel call.
+
+`ProcessPorts` is the one service no spawner passes down — a port binding emits from one node, so a
+child holding its spawner's would emit out of the wrong one. Every spawner replaces it with a pair
+keyed to the child's own id, and **what that pair can do differs by who owns a route to the child**.
+`launch` binds the node's to the graph's wiring, and the `process spawn` spell mints outbox-latch
+ports (`ProcessPorts.of({emit: emitter(id, row, outboxes)})`), because the spell itself is the
+route — that is what a later `read` on the spawned process takes from. `restore` and the picker have
+no route to bind, so both mint an `unwired` pair: the process has ports, and an emit fails
+`PortNotWired` naming the port rather than dropping the payload (#7789). `restore` merges one in
+second; the picker removes the spawner's (`Context.omit(ProcessPorts)`) and adds the child's,
+minting the process id a call early so the ports know which node they are. Under the seal it has to:
+a row declaring `ProcessPorts` has nothing to fall back on, and before the seal it silently fell back
+on the shell's (#7972). `src/demo/counter.ts` is the example under those two — its `announce` handler
+wants `ProcessPorts` and gets an un-wired pair either way.
+
+**Nothing checks the pairing, so the failure is at the handler.** `SpawnOptions.services` is typed
+`Context.Context<never>`, which every context satisfies, so a row asking for a service its spawner
+does not hold spawns fine and dies on the first handler that reaches for it — deterministically now,
+whichever fiber dispatched. Where the requirement is
+visible is the row's own type: `aiAgentProgram` is generic over the leftover requirement of the layer
+it is handed (`src/ai-agent/program.ts`), so an agent row over a layer that still needs `SpellBridge`
+says `SpellBridge` on its services rather than closing it.
+
+The `claude-session` row in `apps/tuval/.tuval/tuval.config.ts` is the live instance, and it is why
+the seam has to work this way: a config module is imported inside `boot`, before the bridge exists,
+so the only thing it can name is the `scope` its kernel tools call under — the bridge itself has to
+arrive at spawn (#7958).
+
+`pi-session` is the second instance, over `Features` — the merged feature flags as a kernel service
+(`src/feature-flags.ts`). Same forcing constraint: `loadLayeredConfig` merges the layers *after*
+every config module has been evaluated, so a row built inside one is a closure that cannot read the
+merge. Before the flags rode this seam, `PiAiAgent`'s host read `featuresDefault` directly and a
+config layer stating a flag moved the browser and nothing on the node side (#8595). Any node-side
+flag reads it through `Features`; `featuresDefault` is what a caller with no config layers to merge
+gets, which is every `start` caller but `boot`.
+
+## Which Cmds the kernel runs, and which the surface does
+
+The shell core emits eight Cmds, and the type says which side runs each: `KernelCmd` and `PageCmd`
+in `src/shell/core/machine.ts`, with `ShellCmd` defined as their union so a ninth arm has to land on
+a side ([ADR 0353](../.decisions/0353-kernel-sends-the-prefix-table.md)).
+`src/shell/host/effects.ts` runs three of the five kernel arms and states why the rest are inert:
+
+| Cmd | Who runs it |
+|---|---|
+| `openProgram`, `attachProcess` | the kernel — `runPickerIntent`, whose answer is the follow-up Msgs |
+| `forwardKey` | the kernel — `Processes.handle(id)` then `dispatch({type: "key", key})` |
+| `runCommand` | nobody: the name is a user binding the command table does not hold; logged at debug |
+| `startRepeatTimer`, `cancelRepeatTimer` | **the surface** — see below |
+| `openCommandLine` | the surface — the line is a page element, not a process |
+| `reloadConfig` | nobody yet: `Booted.reload` sits above the kernel, out of a handler's reach (#7743) |
+
+**An armed prefix is never timed, and the only countdown is the repeat window's.** tmux waits
+indefinitely after its prefix and phoenix follows it (founder ruling on #7842), so `PrefixTable` has
+no arm-timeout field, `KeysConfig` has none to merge, and the armed snapshot carries
+`repeatWindowMs: null`. The prefix drops on a completed sequence, an unbound key (Escape is one), or
+a lapsed repeat window — never on its own. The one bounded window is tmux's `repeat-time`, which a
+`repeatable: true` binding opens.
+
+**That countdown is the surface's, and that is structural.** A kernel handler returns its follow-up
+Msgs and has no way to dispatch one later, so it cannot run a timer. The snapshot carries the repeat
+window's length, so the page runs the countdown off state alone (`Desk.tsx`) — over the table the
+kernel sent it, and no other (ADR 0353). Three consequences a caller must hold:
+
+- Anything driving the kernel with no page attached — a test, a script — has to fire
+  `{type: "prefix.repeatLapsed"}` itself after a repeatable binding (`<c-h>`, `<c-l>`), which
+  deliberately leaves the prefix armed; with no countdown it stays armed, swallowing the next key.
+- That Msg disarms **only** a repeat window. A stale one cannot drop a prefix armed by hand, which
+  is what keeps the indefinite wait indefinite.
+- The countdown's effect must depend on the prefix's **value**, never on a prefix object. Every
+  snapshot arrives freshly decoded, so an effect keyed on `state.prefix` re-arms on unrelated kernel
+  traffic and never fires — a demo counter ticking once a second starved it indefinitely (#7782).
+  The dispatcher is read through the `latest` ref for the same reason.
+- It runs off the snapshot, and the snapshot now moves on the **acknowledgement** for the press
+  rather than on the state pump, so the window opens when the repeatable command completed rather
+  than whenever the next broadcast happens to arrive (#8274, below).
+
+## `forwardKey` delivers a program's own `key` Msg
+
+With the prefix unarmed every key belongs to the focused window, and the core answers with a
+`forwardKey` Cmd naming the window's process. The host dispatches `{type: "key", key}` into it.
+
+**A program is only sent a key it asked for, and asking is a row field.** `Program.takesKeys`
+(`src/registry/program.ts`) is `true` or absent; the picker reads it off the row it just resolved
+and the `window.bind` Msg carries it, so the window node holds it beside `processId` and the core's
+`keys.press` cell emits `forwardKey` only for a window that declared one. A program with no `key`
+cell — every agent session — is therefore never sent a key at all (#7973). Best-effort delivery
+stays underneath that: a process that stopped between the Cmd and the dispatch drops the key at
+debug, because a keystroke is not worth ending a desk over and the shell's error channel is `never`.
+
+The declaration is the shell's half. The host's half is that a wire `Msg` with no update cell fails
+that one dispatch as `MsgNotAcceptedError` (`src/host/errors.ts`) instead of reaching supervision as
+`UserCodeThrew` — Demlik throws `NoCellError` before any of the machine's own code runs, so it says
+the program does not take the Msg, never that the program is faulty. Without that split one stray
+key closed the process gate under the `stop` default and every later prompt was refused.
+
+**One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
+into the process, the page hands the same key to that window's React renderer. Both come from one
+routing decision — the kernel's — stated twice inside one fold: as the `forwardKey` Cmd, and as the
+answer the fold records on `state.lastPress`. That is why `forwardKey` is a `KernelCmd` although the
+page also acts on the key, and what the walk in `src/shell/ui/key-agreement.unit.test.ts` holds
+against each other.
+
+**The kernel is the only router; the page acts on the answer.** The page used to route every key a
+second time, over the last snapshot it had — and the snapshot moves a whole round trip after the
+press that moved it, so a sequence typed faster than that trip was read two ways at once: the page
+read `<c-b> h` as "arm, then `h` to the window" while the kernel read it as "arm, then focus-left",
+and `<c-b> |` typed a pipe into the composer and split (#8274). Two page-side schemes for keeping a
+prefix of its own in step with the kernel's both drifted, so the second copy is gone rather than
+repaired:
+
+- The page sends `keys.press` stamped with a `pressId` it minted, and **waits**. The
+  acknowledgement carries the process's public state as it stands after the Msg (`DispatchedFrame`'s
+  `Delivered` arm, `src/shell/transport/wire.ts`), the page reads `lastPress` out of it under its own
+  stamp (`replyIn` in `src/shell/ui/press.ts`), and forwards a key to the window's renderer only when
+  that answer says `ToWindow`. A dispatch the socket dropped answers `ProcessGone`, which reads as
+  `Refused`: nothing is forwarded, and nothing drifts, because there is no second copy.
+- The stamp is not decoration. A second page attached to the same shell writes `lastPress` too, and
+  reading its answer as this page's would forward a key nobody here pressed.
+- **The ack is also a snapshot.** The page delivers the state it carried to the desk, taking the
+  newer of the two carriers by the kernel's own `revision` (`AttachedDesk.tsx`) — the state pump and
+  the ack run on different fibers and nothing orders them. The high-water mark it compares against
+  starts at "nothing seen yet" and not at `0`: a fresh kernel's shell *is* at revision 0 until a row
+  exists to commit against, so a zero start would drop the only snapshot the page is sent and leave
+  the desk on its placeholder. Past that first frame the comparison is monotone and holds nothing
+  that can go stale.
+- **The ack's state is the fold's, not a later read.** The kernel answers a dispatch with the summary
+  taken inside the same critical section the Msg folded in (`ProcessHandle.dispatchFolded`,
+  `src/process/Processes.ts`). A second read taken after the fold is the process's *latest* state,
+  which with two presses in flight is the other press's — and `replyIn`, finding a stamp that is not
+  its own, answers `Refused` and forwards nothing, so the key is gone with no trace.
+- **One thing is still decided at the press, and it is ownership, not routing.** A default action
+  cannot wait for a round trip, so `shellOwnsKey` (`src/shell/ui/frame.ts`) answers whose key it is —
+  over the kernel's own table, through the same `route`. While any answer is outstanding the shell
+  owns whatever follows: the kernel may have armed the prefix on a key this page has not heard back
+  about, and guessing there would be routing. That is what stops `<prefix> |` typing a pipe, and its
+  cost is that a key pressed inside one round trip of another has its default prevented even if the
+  answer turns out to be the window's.
+- **Ownership is bounded.** A press that is never answered — a server fiber that dies between the
+  fold and the send, with the socket still open — would otherwise hold the desk's keys for good, and
+  every later key including the composer's is swallowed until reload. `DeskProps.pressTimeoutMs`
+  releases ownership after 5 s; an answer arriving past its own bound is ignored rather than
+  forwarded into whatever holds focus by then.
+
+The round trip is local — a WebSocket on loopback to a kernel in the same machine. Measured over
+the real socket in `transport.integration.test.ts` with a temporary timing block since removed, 150
+warm dispatches: **p50 0.26 ms, p95 0.37 ms,
+max 1.76 ms** — under a frame at 60 Hz, which is why waiting is affordable and the round-trip-per-key
+ADR 0353 rejected is not what this is: nothing about the *display* waits, only the forwarding of one
+key into a renderer.
+
+## What the page can and cannot see
+
+The page reads four things off the wire: the shell process's state, the process table, the **catalog
+of windowed programs** (the `registry` frame, #7788), and the **prefix table** (the `keys` frame,
+ADR 0353). The catalog is what a page could spawn, never what a process holds, so the frames stay
+program-blind: a process's state still crosses as `unknown`.
+
+- The prefix table is the one frame that is neither state nor catalog — it is the grammar the page
+  reads a key against, and it may read against no other. It routes nothing now (above), but it still
+  asks that grammar whose key a press is. `DeskProps.table` is required and
+  `AttachedDesk` renders the placeholder until the frame lands, so a page that has been told no
+  grammar shows no desk rather than inventing one. `Duration` does not survive JSON, so the frame
+  carries `repeatTimeoutMs` and `toWirePrefixTable`/`fromWirePrefixTable` convert.
+
+- **The grammar has one namer, and it is the shell row.** `shellProgram` resolves its `table` option
+  against `defaultPrefixTable` and publishes the answer on the row it returns; `shellPrefixTable`
+  reads it back off a config's rows, `boot` reports that as `Booted.keyTable`, and `src/bin.ts`
+  hands that value to `serveDesk`. Before this the bin named the default itself, so a config that
+  passed `shellProgram` a table put the kernel on its grammar and every page on the default, with
+  nothing failing (#7890). A new caller that needs the grammar reads it off the row the same way —
+  it never reaches for `defaultPrefixTable`, which is why the single namer holds.
+
+- The kernel decides what is in the catalog, and it decides with `showsInAWindow`
+  (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
+  never crosses, so `WireProgram.renderer` is required and a page cannot be offered a program it
+  would then fail to render.
+- The page's renderer table (`src/page/renderers.tsx`) is keyed by the `RendererRef.ref` a row
+  declares, and `resolverFromTable` (`src/shell/window/renderer.ts`) resolves it — kind checked, so
+  an `isolated-frame` reference is never answered by the `host-native` renderer of the same name. A
+  fourth windowed program that names a reference this table already answers needs no edit here.
+- The page's picker offers both sections: every windowed program, and every running process. Opening
+  by name still works through `prefix : window:open <program>`, and both routes end in the same
+  `window.open` Msg, so the picker and the command line cannot drift into two spawn paths.
+- **A picker's two inputs answer in one union.** `pickerKey` takes a key and `pickerPointer` takes a
+  row index plus `"hover"` / `"click"`, and both return the same `PickerKeyAnswer`
+  (`src/shell/picker/view.ts`) — one shared `movedTo`, one cursor in the window's view slot. The
+  surface holds one switch over that union and no second write path, so `aria-activedescendant` is
+  the single highlight the mouse and the keyboard both move and a screen reader announces. Why it has
+  to be one structure and not two is ADR
+  [0368](../.decisions/0368-picker-one-cursor-both-inputs.md), which binds every Tuval picker
+  (#8655).
+- **The `/` filter narrows before anything reads the list.** `visibleEntries`
+  (`src/shell/picker/filter.ts`) runs the `fzf` package over each section's own `label`, and
+  `visibleFor` is the one door every reader goes through — `cursorOf`, `highlighted`, `pickerKey`,
+  `pickerPointer` and `pickerFrame` all address the narrowed list, so the highlight, the frame and
+  the intent `<enter>` runs cannot name three different rows. The filter text lives in the window's
+  view slot (`PickerView.filter`, `null` until `/` opens it) and every mount starts at `null`.
+  While the filter exists it is a `combobox` and the DOM focus holder, so it carries
+  `aria-activedescendant` and the listbox drops it: that attribute is announced only off the focused
+  element (#7499), and a highlight on an unfocused listbox is a highlight nobody hears.
+- **The match count is a debounced, alternating status region.** The count is a WCAG 2.2 SC 4.1.3
+  status message — `role="status"`, `aria-live="polite"`, `aria-atomic="true"`, focus untouched —
+  announced 1000 ms after the typing stops rather than per keystroke, because a per-keystroke live
+  region turns one search into a run of interruptions. `pickerFrame` names **two** region ids and
+  `PickerView.tsx` writes into them by turns: a live region rewritten with the string it already
+  holds is not a change and is read out by nothing, so two queries that leave the same count would
+  otherwise announce once. `role="alert"` stays the refusal's alone.
+- **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
+  message (#7617 R1.3), so the catalog goes out as the socket opens and again on
+  `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
+  Nothing calls it in production, and a call would change nothing: `Registry.layer` builds one frozen
+  map, so the catalog is fixed for the life of the kernel process and every publish would re-send
+  what the socket already got on open (#7841). `Booted.reload` writes only the spell registry
+  (#7743).
+
+`AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
+with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
+
+## A windowed program: the reference, the shared window, the extras slot
+
+Three files, and the split between them is forced rather than stylistic.
+
+- **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
+  of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
+  — `src/pi/renderer-ref.ts` for `pi-session`, `src/claude/renderer-ref.ts` for `claude-session`.
+  Retyping the name at both ends instead would drift
+  silently: an unresolved reference is a returned value, never a throw
+  (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
+- **That leaf sits beside the row, not inside the renderer's directory.** The strict lens
+  (`tsconfig.json`) is `composite` and must list every file it compiles, and a renderer directory is
+  excluded from it whole because it imports `@kampus/design`, which needs the relaxed lens
+  (`tsconfig.design.json`). A file the row imports out of an excluded directory is a `TS6307` on
+  every build.
+- **The leaf carries the program id too, and both names are imported rather than retyped.** The
+  page's table keys on the `RendererRef.ref` the row declares (`src/page/renderers.tsx`), and it
+  reads that reference off the leaf through `src/pi/window/index.ts`. The program id sits on the
+  same leaf for the same reason: importing it from the row would pull `node:path` and Pi's model
+  runtime into the page bundle, which is the black page of #7836 — so `PI_SESSION_PROGRAM` is
+  declared on the leaf and `src/pi/program.ts` re-exports it.
+- **The page's three React modules moved to the relaxed lens with it.** `main.tsx`,
+  `AttachedDesk.tsx` and `renderers.tsx` reach `@kampus/design` through the table, so they are named
+  in `tsconfig.json`'s `exclude` and in `tsconfig.design.json`'s `include`. `src/page/dev-server.ts`
+  stays in the strict lens: it is Node-side and `src/bin.ts` imports it, so excluding `src/page`
+  whole would `TS6307` the bin.
+- **The renderer is a thin binding, and its extras go through one slot.** Both AI-agent programs
+  render the one shared `ChatWindow` (founder ruling 2026-09-02, amended on #7572 / #7584):
+  `chatWindow({extras})` takes a `(state) => ReactNode` that lands in the window's status bar beside
+  the phase line and the mode switch, and that is the whole of what a program adds. Neither program
+  passes one today: the founder's 2026-09-05 ruling (#8190) sent Pi's usage line and Claude's
+  session line to the desk inspector, so both bars carry the phase line alone. **The slot is the
+  binding's, and its type says so.** A binding takes `ThinChatWindowOptions` — every window option
+  but `extras` — so a caller reaching the slot through `piChatWindow` or `claudeChatWindow` is a
+  compile error rather than an argument the binding overwrites without a signal (#7957); a caller
+  that wants its own extras wants the shared `chatWindow`, under its own name. Each
+  renderer directory is named in `tsconfig.json`'s `exclude` and `tsconfig.design.json`'s `include`,
+  for the lens reason above. It is a function of the live state because a renderer *is*
+  `f(state, view)`; a renderer that accumulated its own totals would disagree with the checkpoint
+  and with the other window over the same process. Wrapping the shared window in a program-specific
+  container is the wrong shape for a second reason: `chat.css` re-declares the `@kampus/design`
+  typography roles inside `.tuval-chat`, so a package primitive mounted *outside* that scope reads
+  Tuval's two-part `--t-*` values as invalid shorthand and loses its whole `font` declaration.
+
+- **The composer is driven through its bridge, and the bridge is built once and pushed to.**
+  `AgentChatInput` takes no `onSubmit`: it reads its whole world off an `AgentChatInputBridge` and
+  re-runs all four of its loads whenever that object's identity changes, so a bridge rebuilt per
+  state change drops the composer back to `loading` on every turn.
+  `src/shell/chat/composer-bridge.ts` is therefore built once in a `useMemo` whose dependencies are
+  only the dispatch closures — `phase`, `models` and `commands` *seed* it and are deliberately not
+  dependencies — and each later change reaches the mounted composer through a setter that pushes one
+  event at the bridge's own subscription: `setPhase` pushes `agent_start` / `agent_settled`, and
+  `setModels` / `setCommands` push a `harness_status` carrying the offered models with the current
+  one (#7981) and the slash-command catalog (#8060).
+  Two rules make that work. The bridge answers a capability it does not have **empty, never a
+  rejection** — a rejection puts the composer in `unavailable` and disables the send button, while
+  an empty answer only hides the control. And a setter **also replays on subscribe**: the composer
+  subscribes *after* its four loads resolve, so a catalog that landed in that window was pushed at a
+  listener that did not exist yet, and on a session nobody switches again the next event never
+  comes.
+
+## A program declares three renderers; the shell composes two of them
+
+A program never draws outside its own window (#7500 ruling 4). The two surfaces outside it — the
+desk inspector beside the tiling area, and the middle of the status bar — are therefore renderers a
+program *declares* and the shell composes from the Snapshot, never regions a program pushes into.
+The row carries three optional references (`src/registry/program.ts`): `renderer` for its window,
+`inspector`, and `status`.
+
+- The two desk renderers take the same `WindowHost` the window renderer takes, so all three are
+  transport-blind and all three read the program's selection state out of the one process the
+  focused window shows.
+- **An inspector renders whatever its surface renders**, so its output is a free `Out`, exactly like
+  a window renderer's. **A status renderer returns segments**, a fixed `{id, text, tone?}` list — not
+  a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
+  facts) because `statusFor` derives them itself and a program's segments can only ever arrive in
+  `middle` (#7500 ruling 5).
+- `inspectorFor` and `statusFor` (`src/shell/desk/compose.ts`) walk one chain — focused window → its
+  process → its program row → the reference it declares → the renderer that reference names — and
+  answer with a value on every step that does not resolve (`DeskEmptyReason`). A region is never a
+  hole and never a throw; the surface renders its placeholder and reads nothing else.
+- **The inspector's open/collapsed flag is desk state, not workspace state**: it lives on
+  `ShellState.desk` (`src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
+  `desk.inspector.toggle` is the one Msg that writes it, reachable from the `desk:inspector-toggle`
+  command row like any other.
+- `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
+  test is the gate, as `src/shell/window/`'s is.
+- **The snapshot is assembled on the surface**, in `src/shell/ui/desk-snapshot.ts`, because half of
+  it only exists there: the live `WindowHost` a renderer mounts into, and the two renderer tables a
+  page assembles from its own imports. `Desk.tsx` takes the rest as one `DeskTables` prop — kernel
+  facts, process rows, program rows, both renderer tables — and the page fills it from the frames it
+  already reads for the windows' sake (`src/page/AttachedDesk.tsx`). The host comes back through the
+  one `MountResolver` the tiling area already asks per window, so the inspector cannot mount a host
+  the windows do not also hold.
+- **The region is mounted or not mounted**, never a collapsed shell with its own disclosure: the
+  open/closed bit is desk state the kernel holds, so a `Collapsible` beside it would be a second
+  authority over one bit. Both regions read one snapshot, so they cannot disagree about which window
+  is focused.
+
+## Three error boundaries, and what each one is allowed to cost
+
+A render throw with nothing above it unmounts React's whole tree, and on this surface that is a
+black tab with the reason only in a console nobody is reading. It has cost the project twice —
+#7560, then a `<c-b> |` that took the desk down on its own headline key
+([#7839](https://github.com/kamp-us/phoenix/issues/7839)). `ErrorBoundary` in
+`src/shell/ui/ErrorBoundary.tsx` is the answer, and it is mounted in exactly three places, each sized
+to what a throw there may cost:
+
+| Where | Wraps | What survives |
+|---|---|---|
+| `Desk.tsx` | the tiling area alone | the inspector, the status line, the command line, the desk's keyboard |
+| `DeskInspector.tsx` | the program's inspector alone | the windows, and the rest of the desk |
+| `main.tsx` | everything the page renders | the tab, with the reason on it |
+
+The inspector's boundary is why `DeskInspector.tsx` runs the program's renderer inside its own
+component rather than in the panel's body: called in the parent it throws during the *parent's*
+render, above the boundary and past it.
+
+**Recovery is not a button that re-throws.** The boundary takes `resetKeys`, and the desk hands it
+`layoutSignature(workspace.layout)` — the layout tree serialized to one string
+(`src/shell/layout/tree.ts`) — so the next kernel snapshot that changes the layout clears the panel
+with no gesture at all. The button is the fallback for the case where nothing new arrives. The
+inspector's key is the same shape at its own scale: the focused window and its process, spelled as
+one string, so moving focus clears a caught throw and unrelated kernel traffic does not.
+
+**The key is a signature and never the layout object**, and that is the whole rule for anything else
+mounting this boundary: `resetKeys` are compared with `Object.is`, and every snapshot the page
+receives is decoded afresh, so a tree object is a new identity on every frame whether or not
+anything moved. Keyed on the object, the panel is unmounted and rebuilt on unrelated kernel traffic
+— `<details>` snaps shut, focus on the reset button is lost with the node, and `role="alert"`
+re-announces once per frame, which is the reader's whole recovery gone in the exact case the panel
+exists for. It is the same identity trap the desk's prefix countdown avoids by depending on the
+prefix's *values* (#7782); `error-boundary.unit.test.tsx` drives the boundary with JSON-decoded
+snapshots to pin it.
+
+The panel is a `role="alert"` carrying the throw's own message plus its component stack in a
+`<details>`, because the reason a founder can paste is the point; showing "something went wrong" is
+the failure mode again in nicer words.
+
+## `pnpm dev` is one process
+
+`src/bin.ts` boots the kernel, calls `serveDesk` (ephemeral port, a launch token minted in memory),
+then `servePage`, which starts Vite through its **Node API in this same process**. That is why the
+token never touches disk: the middleware answering `/__tuval/launch` closes over the URL directly. A
+second `vite` command would have to be handed the token through a file or an environment variable,
+and a token on disk outlives the boot that minted it.
+
+`vite` is a devDependency and is imported dynamically, so `node src/bin.ts --no-page` boots a kernel
+with no bundler present. A page that will not start is reported and the kernel keeps running.
+
+**One process, but two ports — and the handshake's origin fence has to be told the second one.** The
+socket and the page bind separately, so the `Origin` a browser puts on the WebSocket upgrade is the
+*page* server's, never the socket's. A fence derived from the socket's port alone refuses the very
+page it exists to admit, and every Node-client test still passes, because a Node WebSocket client
+sends no `Origin` at all — the one input `checkHandshake` lets through unconditionally. That
+combination shipped once and rendered a blank desk (#7560).
+
+The rule that keeps it fixed: **the fence's origin set must include the page server's origin.**
+`servePage` takes the `TransportServer` rather than its URL and calls `admitLoopbackPort` on it the
+moment Vite binds, so serving a page and admitting its origin are one act and no caller can do the
+first without the second. A change to either half owes the proof in
+`src/shell/proof/end-to-end.integration.test.ts` that replays the upgrade **with** an `Origin`
+header; nothing that attaches the ordinary way can fail when this breaks.
+
+## Two entry points, two import surfaces
+
+The app has exactly two entries and they run on different platforms: `src/bin.ts` under Node, and
+`src/page/main.tsx` in the browser. **A module the browser entry reaches may not import `node:*`.**
+Vite externalizes those specifiers, so the import survives the bundle and throws on first access —
+the page is black before React mounts anything, and no test that drives the page's code under Node
+can see it (#7836).
+
+`apps/tuval/tsconfig.browser.json` is the whole guard, and there is deliberately no lint rule and no
+bundler plugin beside it:
+
+```jsonc
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": [],                      // no @types/node in scope
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/page/main.tsx", "src/page/assets.d.ts"]
+}
+```
+
+`exactOptionalPropertyTypes: false` rides along because the entry reaches `@kampus/design` through
+the page's renderer table (#7573), and the package is source-consumed under that flag —
+`tsconfig.design.json` carries the same relaxation for the same reason. This lens exists for
+`types: []`; relaxing the other flag costs it nothing it was built to catch.
+
+`types: []` is what does it: with no `@types/node`, `node:crypto` resolves to nothing, so any module
+in this project's file set that imports one is a plain `tsc` error —
+
+```
+src/shell/ui/Desk.tsx(1,26): error TS2591: Cannot find name 'node:crypto'. Do you need to install
+type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field
+in your tsconfig.
+```
+
+The `include` is the entry alone. Everything else in the browser surface arrives by import, which is
+what makes the project's file set *the entry's import graph* and nothing wider — a module no browser
+entry reaches is not judged here, and that is correct. `apps/tuval`'s `typecheck` script runs this
+project after the Node one, so both lenses are in the one gate.
+
+**A barrel is the usual way a `node:` import gets in, so a shared slice keeps two.** `index.ts` is
+the whole slice, for the kernel; `browser.ts` is the half a page may reach, and `index.ts` re-exports
+it. Two slices carry the split today, and both were live routes into the black page:
+
+| Slice | `browser.ts` | What `index.ts` adds |
+|---|---|---|
+| `src/shell/transport/` | `client.ts`, `errors.ts`, `wire.ts` | `handshake.ts` (`node:crypto`), `server.ts` (`node:http`) |
+| `src/shell/picker/` | everything but `open.ts` | `open.ts` → `src/process/Processes.ts` (`node:crypto`) |
+
+So `src/shell/ui/` and `src/page/` import `../picker/browser.ts` and `../transport/browser.ts`, and
+`src/shell/host/effects.ts` — the kernel side — keeps importing `../picker/index.ts`. Adding a
+Node-only module to a slice means adding it to `index.ts`, never to `browser.ts`; getting that wrong
+reddens the browser project rather than the page.
+
+## The design layer on the page
+
+`apps/tuval` consumes `@kampus/design`, and three things about that are not obvious from the import.
+
+**Three stylesheets, in this order, in `src/page/main.tsx`.** Manti's base first
+(`@manti-ui/styles/index.css`) — a `@kampus/design` primitive *is* a Manti component, and without the
+base its dialog has no positioning at all and lands in the document flow, which is what a palette
+rendered full-width at the bottom of the desk looks like. Then `@kampus/design`'s fonts and tokens,
+then `src/shell/ui/tokens.css`. The last two both declare role tokens at `:root`, and the desk's own
+values have to win that tie, which is what the order buys.
+
+**The theme is two attributes on `index.html`.** `data-theme="dark"` and
+`data-color-theme="indigo"`. The desk is dark-only window chrome — there is no light branch and
+nothing reads `prefers-color-scheme` — and `indigo` is the accent nearest the desk's own blue, so the
+palette and the surface behind it read as one system. A component sets neither: it inherits.
+
+**`exactOptionalPropertyTypes` is off in both tsconfigs, and it is not a preference.** The
+`@manti-ui/react` declarations spell an optional prop `foo?: T` where React's own attribute types
+spell `foo?: T | undefined`. Turning the flag back on gives 8 errors on each lens, and all 8 are in
+`packages/design/src` — `AgentChatInput.tsx` (×3), `Avatar.tsx`, `Button.tsx`, `CommandPalette.tsx`,
+`CountToggle.tsx`, `Switch.tsx` — measured with `tsc -p <lens> --exactOptionalPropertyTypes` at
+#7851's head. `apps/web/tsconfig.app.json` turns it off for the same cause, and
+[#7856](https://github.com/kamp-us/phoenix/issues/7856) is where it goes back on: fix those sources,
+then drop the opt-out in all three consumers.
+
+**An optional prop authored here spells its own `| undefined`**, so no `apps/tuval` file rides the
+loosened rule and the count above stays a design-package number. `PaletteProps.window` was the one
+that did not, and it put two `apps/tuval` files into that list until #7851 widened it. If you hit a
+TS2375 in your own file under the flag, it is yours to fix at the prop, not something this section
+excuses. The optional-key idiom (`...(x === undefined ? {} : {x})`) is still the shape every module
+here is written in.
+
+A slice that is browser-only end to end keeps one `index.ts` rather than the `index.ts`/`browser.ts`
+pair a *shared* slice needs; `src/palette/` is the one today. What still binds it is the rule above:
+no module the page reaches may import `node:*`, and `tsconfig.browser.json` is what says so.
+
+## The proofs
+
+`src/shell/proof/end-to-end.integration.test.ts` is the shape to copy for anything driving the whole
+app. Two rules make it a proof rather than a rehearsal:
+
+- **Read state off the transport.** Never off the shell process's handle, never off a DOM. The page's
+  view of the desk is the thing under test.
+- **Drive it with keys.** `keys.press` for everything the prefix table binds, and for the two Msgs a
+  *surface* derives from a key, call the function the surface calls — `pickerKey` for a chosen row,
+  `readCommandLine` for a typed line — rather than hand-writing the Msg.
+
+Two mechanics worth copying. A dispatch is acknowledged when the Msg reaches the actor, and the state
+frame is a *separate* write on the same socket, so assert by waiting for the next state that
+satisfies a predicate (`deskWhere`) and not on the ack. And give that wait its own timeout that dies
+naming the last desk it saw — a bare vitest timeout tells you nothing about which key was lost.
+
+A third mechanic the Pi vertical added (`src/pi/proof/pi-vertical.integration.test.ts`): the desk
+stops emitting once the keys stop, so a predicate wait asked for a state that has *already gone past*
+blocks until its timeout. Reading "what does it look like now" is a separate move — drain whatever is
+queued with a short per-take timeout and keep the last frame (`settled`).
+
+**A proof that reads off the transport says nothing about paint, so a range that renders ships a
+browser harness beside it.** jsdom has no layout, so height, scroll and contrast are unfalsifiable in
+the unit tier; the harness is what lets a reviewer reproduce a load instead of taking a report for it
+(#7610). Two shapes exist and they answer different questions: a Vite page over a test double for one
+component (`pnpm proof:chat`, `pnpm proof:pi-window`), and a bin that boots the whole app on a faux
+provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve.ts`) for a claim
+about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
+to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.
+
+**A state you can only reach by typing owes a proof page that starts in it.** `fabrika ui render`
+navigates a bare route and drives nothing, so a surface behind a keystroke — the window picker is
+behind `<c-b> w`, its filter behind a further `/` — is invisible to the design gate however well it
+paints, and `ship gate` then refuses the PR with `review-ui absent` (#8450 on PR #8914). The fix is
+one page that mounts the state directly rather than one surface per sub-state:
+`src/shell/picker/proof/` renders two empty windows through the real `WindowView`, one plain and one
+with a query already in its filter. Two things that page has to get right and neither is obvious.
+Only one element on a page holds the caret, so the pane whose focus is under judgment is the focused
+one and the other is not. And a capture is taken at network-idle, so any product delay longer than
+the page's own load — the picker's 1000 ms announce pause — is missed unless a request outlives it
+(`proof/vite.config.ts`'s `/announce-pause`, whose body the page must *read*: an unread response
+stream leaves the request in flight and network-idle never arrives). The wider fix, letting a capture
+set be produced by an interaction script so no gated state owes its own surface, is [#7306](https://github.com/kamp-us/phoenix/issues/7306).
+
+Two more mechanics the Claude vertical added
+(`apps/tuval/src/claude/proof/claude-vertical.integration.test.ts`).
+
+**Keep a log beside the queue when the claim is about the whole sequence.** A predicate wait consumes
+frames, so "the card opened and closed exactly once" cannot be asked of the queue afterwards — the
+frames that would answer it are gone. The watcher pushes each published value into an array as well
+as the queue, and the count is taken off the array at the end.
+
+**Standing a second `SpellExecutor` up over a booted kernel needs two deliberate moves.** `boot`'s
+own `WindowIndex` reads the running desk (#7894), so a proof with no desk — one that names a window
+and the process behind it directly, to parent a `process spawn` — has to supply its own. Composing
+it with `Layer.provide` does not work and does not look broken: `SpellExecutor.layer` is one
+module-level `Layer` value `boot` has already built, so the build hands back the memoized executor
+holding boot's index, and every call answers `NoSuchWindow` while the wiring reads correct. Wrap it
+in `Layer.fresh`, and merge the contexts one step at a time — `Context.merge(self, that)` lets
+`that` override, so each step names its winner rather than leaving it to composition order.

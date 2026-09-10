@@ -9,7 +9,7 @@
  *
  * The scan inherits `review diff`'s completeness proof, so a truncated diff reds here too — an
  * under-reported hit list beside a `None.` reads as a checked-clean disclosure that was never
- * checked. It inherits the same commit binding for the same reason (`head.ts`, #5122): a hit list
+ * checked. It inherits the same commit binding for the same reason (`head.ts`): a hit list
  * read from a head nobody scoped is under- or over-reported against the disclosure it is printed
  * beside, and the falsified-`None.` read this verb exists to make possible is only as good as the
  * tree the tokens came from.
@@ -75,7 +75,7 @@ export const runDeviations = (
 		// stating plainly — the scanned bytes carry every entry this second read lists. It does not
 		// prove the range is the right one, and a fault that shortens both reads alike is invisible to
 		// it. GitHub's `changed_files` is a third party's answer over its own base and its own rename
-		// detection, so it is reported in the diagnostics and never refused on (#5157).
+		// detection, so it is reported in the diagnostics and never refused on.
 		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
@@ -97,7 +97,7 @@ export const runDeviations = (
 		];
 		if (inRange !== pull.changedFiles) {
 			diagnostics.push(
-				`${VERB}: git and GitHub disagree on #${pr}'s file count (${inRange} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on (#5157).`,
+				`${VERB}: git and GitHub disagree on #${pr}'s file count (${inRange} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on.`,
 			);
 		}
 		if (seen < inRange) {

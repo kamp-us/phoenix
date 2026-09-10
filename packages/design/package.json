@@ -6,11 +6,14 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./a11y": "./src/a11y/check.ts",
+		"./Diff": "./src/Diff.tsx",
 		"./tokens.css": "./src/tokens.css",
-		"./fonts.css": "./src/fonts.css"
+		"./fonts.css": "./src/fonts.css",
+		"./visually-hidden.css": "./src/visually-hidden.css"
 	},
 	"scripts": {
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run --config vitest.config.ts",
 		"test:a11y": "vitest run --config vitest.a11y.config.ts"
 	},
@@ -22,9 +25,13 @@
 		"@manti-ui/react": "catalog:",
 		"@fontsource/ibm-plex-sans": "catalog:",
 		"@fontsource/jetbrains-mono": "catalog:",
-		"lucide-react": "catalog:"
+		"@pierre/diffs": "catalog:",
+		"lucide-react": "catalog:",
+		"marked": "catalog:",
+		"mermaid": "catalog:"
 	},
 	"devDependencies": {
+		"@effect/tsgo": "catalog:",
 		"@testing-library/react": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",

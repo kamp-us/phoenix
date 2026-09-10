@@ -51,7 +51,8 @@ export type DriftOutcome = "drifted" | "current" | "unanchored" | "unborn";
 /**
  * **`unanchored` is not a clearance.** It says the doc cites nothing this verb can follow, so drift
  * is *unanswerable* — read the source by hand. Reporting it as `current` would be a clean pass over
- * nothing, which is the shape ADR 0092 exists to forbid; the group expresses that in vocabulary
+ * nothing, and a check that passes over nothing is the one shape a fail-closed gate must never
+ * produce; the group expresses that in vocabulary
  * rather than in an exit code, because a verb that refused would break the pipe its answer crosses.
  */
 export const driftOutcome = (input: {

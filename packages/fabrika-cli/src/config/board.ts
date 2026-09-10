@@ -103,7 +103,7 @@ const ownershipFor = (
 	// directions. `^p\d+$` is deliberately wider than `p0..p2` so a retired priority is still
 	// cleaned up, and that width is worth keeping for a repo that merely drops `p2` — but a repo
 	// whose priorities are `sev1, sev2` is not owned by it at all, and inheriting there would write
-	// a label the facet can never supersede (#4285).
+	// a label the facet can never supersede.
 	return containmentRefusal(key, [{name, owns: inherited, values}]) === null
 		? inherited
 		: {_tag: "Set", labels: values};

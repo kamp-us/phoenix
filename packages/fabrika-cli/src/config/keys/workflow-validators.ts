@@ -2,7 +2,7 @@
  * `workflowValidators` — the repo's own commands that machine-read `.github/workflows/**`.
  *
  * Declared rather than compiled in, because the commands that machine-read a repo's workflows are
- * that repo's own and fabrika installs into repos it does not control (ADR 0273). An argv array
+ * that repo's own and fabrika installs into repos it does not control. An argv array
  * rather than a command line: fabrika spawns it directly, and splitting a string would put a quoting
  * grammar between the config and the process.
  *
@@ -25,7 +25,7 @@ export type Argv = readonly [string, ...ReadonlyArray<string>];
  *
  * `reads` is what makes the surface's green checkable per file. A declared guard takes no path
  * arguments — it reads a fixed set — so without this the verb can only prove that *something* ran,
- * and a diff touching a workflow nobody opens greens with an empty `unvalidated` list (#5991).
+ * and a diff touching a workflow nobody opens greens with an empty `unvalidated` list.
  */
 export interface WorkflowValidator {
 	readonly argv: Argv;

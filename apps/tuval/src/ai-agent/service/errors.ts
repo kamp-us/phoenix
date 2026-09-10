@@ -1,5 +1,6 @@
 /**
- * One tagged error per `TuvalAiAgent` method, plus the one the event stream can fail with.
+ * One tagged error per `TuvalAiAgent` method, plus the one the event stream can fail with and the
+ * one that only ever rides it (`InterruptError`, ADR 0356).
  *
  * The shape is the founder's API-walk ruling 3 (#7570): six classes keyed by the method that
  * raises them, each enumerating its own cases in a `reason` field, rather than one class per
@@ -66,8 +67,49 @@ export class ModeUnsupported extends Schema.TaggedError<ModeUnsupported>()(
 	}
 }
 
-/** Why a page of history did not come back. History is the backend's store, so it can be missing. */
-export const PageReason = Schema.Literals(["unknown-cursor", "store-unreadable", "disconnected"]);
+/**
+ * `setModel` named a model this agent does not offer. `available` is the offered set — the
+ * auth-filtered list the layer advertised, never a backend's raw catalog (#7981) — as the ids a
+ * window would render, so nothing backend-shaped rides the error either.
+ */
+export class ModelUnsupported extends Schema.TaggedError<ModelUnsupported>()(
+	"tuval/ai-agent/ModelUnsupported",
+	{model: Schema.String, available: Schema.Array(Schema.String)},
+) {
+	override get message(): string {
+		return `model "${this.model}" is not offered; available: ${this.available.join(", ") || "none"}`;
+	}
+}
+
+/**
+ * `setThinkingLevel` named a level this agent does not offer for the model it is running on.
+ * `available` is that offered set — Claude's effort axis has neither `off` nor `minimal`, and Pi
+ * advertises `off` alone for a model that does not reason (#8062).
+ */
+export class ThinkingUnsupported extends Schema.TaggedError<ThinkingUnsupported>()(
+	"tuval/ai-agent/ThinkingUnsupported",
+	{level: Schema.String, available: Schema.Array(Schema.String)},
+) {
+	override get message(): string {
+		return `thinking level "${this.level}" is not offered; available: ${this.available.join(", ") || "none"}`;
+	}
+}
+
+/**
+ * Why a page of history did not come back. History is the backend's store, so it can be missing.
+ *
+ * The two subagent cases are separate from `store-unreadable` because a subagent's transcript is a
+ * file of its own: a subagent nobody stored and a store that would not open are different answers,
+ * and so is a file that opened and then held a line nothing can parse. Collapsing any of them into
+ * an empty transcript would say the subagent spoke and said nothing (#8404).
+ */
+export const PageReason = Schema.Literals([
+	"unknown-cursor",
+	"store-unreadable",
+	"disconnected",
+	"subagent-not-found",
+	"subagent-malformed",
+]);
 export type PageReason = typeof PageReason.Type;
 
 export class PageError extends Schema.TaggedError<PageError>()("tuval/ai-agent/PageError", {
@@ -76,6 +118,51 @@ export class PageError extends Schema.TaggedError<PageError>()("tuval/ai-agent/P
 }) {
 	override get message(): string {
 		return `a page of history could not be read (${this.reason}): ${this.detail}`;
+	}
+}
+
+/**
+ * Why a stored transcript did not come back. `sessionTranscript` reads the store off disk with no
+ * session open, so its cases are the store's and never the connection's — the same split
+ * `ListError` draws for `listSessions`.
+ *
+ * `session-not-found` is the whole reason this is not `PageError`: a store that does not hold the
+ * named session is a different answer from an empty page, and a read that could not tell them
+ * apart would render a lost session as a session that said nothing (epic #8070, ruling 2).
+ */
+export const TranscriptReason = Schema.Literals([
+	"session-not-found",
+	"store-unreadable",
+	"unknown-cursor",
+]);
+export type TranscriptReason = typeof TranscriptReason.Type;
+
+export class TranscriptError extends Schema.TaggedError<TranscriptError>()(
+	"tuval/ai-agent/TranscriptError",
+	{reason: TranscriptReason, sessionId: Schema.String, detail: Schema.String},
+) {
+	override get message(): string {
+		return `the stored transcript for "${this.sessionId}" could not be read (${this.reason}): ${this.detail}`;
+	}
+}
+
+/**
+ * Why a session listing did not come back. Listing reads the backend's store off disk without the
+ * session transport in it at all, so its cases are the store's, not the connection's.
+ *
+ * `unsupported` is a real answer rather than an empty list: a backend that cannot enumerate has not
+ * told the operator he has no sessions, and the session list must be able to say which of the two
+ * it heard.
+ */
+export const ListReason = Schema.Literals(["store-unreadable", "unsupported"]);
+export type ListReason = typeof ListReason.Type;
+
+export class ListError extends Schema.TaggedError<ListError>()("tuval/ai-agent/ListError", {
+	reason: ListReason,
+	detail: Schema.String,
+}) {
+	override get message(): string {
+		return `the session list could not be read (${this.reason}): ${this.detail}`;
 	}
 }
 
@@ -89,5 +176,29 @@ export class TransportError extends Schema.TaggedError<TransportError>()(
 ) {
 	override get message(): string {
 		return `the agent transport failed (${this.reason}): ${this.detail}`;
+	}
+}
+
+/**
+ * Why a backend would not stop the running turn. The one class here no call ever raises: `interrupt`
+ * declares `Effect.Effect<void>` and keeps it, so a refusal travels as an `AgentFailure` on the
+ * event stream instead — the route ADR 0356 rules, taken because a tag on the stream reaches the
+ * fold, the checkpoint and the restore, where an error channel reaches only the caller.
+ *
+ * The two cases are the fold's whole input. `turn-running` means the backend said no with the turn
+ * still going, and the phase must stay `prompting`; `no-live-turn` means there was nothing left to
+ * stop, and the turn ends `interrupted` with the session back at `ready`. `AgentFailure` carries
+ * `tag` / `reason` / `detail` and nothing else, so `reason` is where that distinction has to live —
+ * and only the adapter that was refused knows which half it is on.
+ */
+export const InterruptReason = Schema.Literals(["turn-running", "no-live-turn"]);
+export type InterruptReason = typeof InterruptReason.Type;
+
+export class InterruptError extends Schema.TaggedError<InterruptError>()(
+	"tuval/ai-agent/InterruptError",
+	{reason: InterruptReason, detail: Schema.String},
+) {
+	override get message(): string {
+		return `the agent would not stop the turn (${this.reason}): ${this.detail}`;
 	}
 }

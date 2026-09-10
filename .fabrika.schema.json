@@ -8,6 +8,53 @@
 			"type": "string",
 			"description": "Path to the JSON Schema for this file — e.g. \"./.fabrika.schema.json\". Gives an editor autocomplete and validation for the keys below."
 		},
+		"assemblyRefresh": {
+			"type": "object",
+			"description": "Whether the driver merges the trunk into an epic's assembly branch before the tail enters review and before a child shell is dispatched off it.",
+			"properties": {
+				"onReview": {
+					"type": "string",
+					"description": "What `lane refresh --on-review` does: `off` (declines and merges nothing — the shipped default, and today's path into review) or `on` (performs the merge, so the tail review binds to a head the queue can take). A hand-called `lane refresh` is never gated by this.",
+					"enum": [
+						"off",
+						"on"
+					]
+				},
+				"onDispatch": {
+					"type": "string",
+					"description": "What `lane dispatch`'s pre-dispatch refresh does before it cuts a child's worktree off the assembly branch: `off` (declines and merges nothing — the shipped default, and today's dispatch path) or `on` (performs the merge, so the child builds and runs its verbs in a tree at least as new as the trunk). A hand-called `lane refresh` is never gated by this.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"assemblyReplay": {
+			"type": "object",
+			"description": "Whether a child whose merge collides with the epic run's assembly branch is replayed onto its tip.",
+			"properties": {
+				"onCollision": {
+					"type": "string",
+					"description": "What `lane integrate` does with a colliding child: `off` (abort the merge and refuse — the shipped default, and today's behaviour) or `on` (replay the child's commits onto the tip, keep both sides of a plain keep-both hunk, and send the child back for one review round over the moved range). A hunk that is not a plain keep-both parks under either.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"auditCatalogs": {
+			"type": "array",
+			"description": "Repo-relative markdown paths holding extra smell catalogs for `architecture-audit`'s coverage gate, in the same table shape the shipped catalog uses. Add-only: their rows are emitted after the shipped rows, and no entry can remove or replace a shipped smell. Empty (or absent) means the gate runs at its shipped coverage.",
+			"items": {
+				"type": "string",
+				"minLength": 1,
+				"pattern": "\\.md$"
+			}
+		},
 		"boardVocabulary": {
 			"type": "object",
 			"description": "The statuses, types, priorities, audiences and standing lanes this repo's board runs on. Every sub-key is independently optional.",
@@ -83,7 +130,7 @@
 		},
 		"campaignAuthors": {
 			"type": "array",
-			"description": "Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `fabrika campaign state`), narrowing the repository's collaborator ACL — an entry here still needs `write` or above on the repo (ADR 0294). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may declare.",
+			"description": "Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `fabrika campaign state`), narrowing the repository's collaborator ACL — an entry here still needs `write` or above on the repo. Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may declare.",
 			"items": {
 				"type": "string",
 				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
@@ -198,12 +245,6 @@
 			],
 			"additionalProperties": false
 		},
-		"designHarness": {
-			"type": "string",
-			"description": "The design-harness file declaring the dev server `ui render` renders at, repo-relative.",
-			"minLength": 1,
-			"pattern": "^(?!/)(?!\\.\\.).+"
-		},
 		"docLeakExempt": {
 			"type": "array",
 			"description": "Docs whose subject IS path hygiene — `build check --surface prose` skips its leak scan on them. Repo-relative path suffixes. Empty (or absent) means nothing is exempt.",
@@ -220,6 +261,67 @@
 				"minLength": 1
 			},
 			"minItems": 1
+		},
+		"laneConcurrencyCap": {
+			"type": [
+				"integer",
+				"null"
+			],
+			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
+			"minimum": 1
+		},
+		"machineryLaps": {
+			"type": "object",
+			"description": "Whether an emitted epic machine carries the machinery event class, whose laps are counted apart from the repair budget.",
+			"properties": {
+				"onEmit": {
+					"type": "string",
+					"description": "What `lane emit` writes: `off` (today's machine, byte for byte — the shipped default) or `on` (the machinery `LAP` arms beside the existing ones, each task's lap counter seeded, and lap exhaustion parking on `human:machinery-stall` rather than freezing). The machine is fixed at emission, so flipping this moves no lane already on disk.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"parkCause": {
+			"type": "object",
+			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",
+			"properties": {
+				"uncaused": {
+					"type": "string",
+					"description": "What a BLOCKED carrying no `--cause` gets: `record` (the bare park, which routes to a human) or `refuse` (unappended, so every park names why).",
+					"enum": [
+						"record",
+						"refuse"
+					]
+				},
+				"driverRouted": {
+					"type": "string",
+					"description": "What `recipe unpark` does with a park whose cause routes `driver`: `refuse` (exit 12, the park routes to a human) or `clear` (the driver clears it on its own --rationale, recorded on the UNBLOCKED).",
+					"enum": [
+						"refuse",
+						"clear"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"portability": {
+			"type": "object",
+			"description": "What `fabrika guard portability-guard check` treats as this repository's own. `repoNames` are the product, org and directory names fabrika's shipped text may not carry; they are matched whole and case-insensitively. Absent or empty means this repo keeps no names of its own out — the guard's four other rules are unaffected.",
+			"properties": {
+				"repoNames": {
+					"type": "array",
+					"description": "Names that resolve only in this repository.",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					}
+				}
+			},
+			"additionalProperties": false
 		},
 		"roadmapFile": {
 			"type": "string",
@@ -260,7 +362,7 @@
 					"design-prohibitions",
 					"design-inventory",
 					"golden-pointer",
-					"design-harness",
+					"ui-surfaces",
 					"dev-server",
 					"preview-deployment",
 					"codeowners",
@@ -324,6 +426,100 @@
 				"required": [
 					"name",
 					"values"
+				],
+				"additionalProperties": false
+			}
+		},
+		"uiCapture": {
+			"type": "object",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"properties": {
+				"viewport": {
+					"type": "object",
+					"description": "The capture viewport in CSS px. Defaults to 1280x900.",
+					"properties": {
+						"width": {
+							"type": "integer",
+							"description": "Viewport width in CSS px."
+						},
+						"height": {
+							"type": "integer",
+							"description": "Viewport height in CSS px."
+						}
+					},
+					"required": [
+						"width",
+						"height"
+					],
+					"additionalProperties": false
+				},
+				"evidenceStore": {
+					"type": [
+						"string",
+						"null"
+					],
+					"description": "The evidence store captures are uploaded to. Null (or absent) hosts evidence on GitHub as an attachment."
+				},
+				"storageState": {
+					"type": [
+						"string",
+						"null"
+					],
+					"description": "A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
+					"minLength": 1,
+					"pattern": "^(?!/).+"
+				}
+			},
+			"required": [],
+			"additionalProperties": false
+		},
+		"uiSurfaces": {
+			"type": "array",
+			"description": "The runnable apps this repo renders, one row per app. An empty list means no rendered gate: no path raises the ui class and `ui render` refuses.",
+			"items": {
+				"type": "object",
+				"description": "One runnable app: where its rendered source lives, how to start it, and what it serves.",
+				"properties": {
+					"name": {
+						"type": "string",
+						"description": "Kebab-case app name, unique across the list.",
+						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+					},
+					"prefix": {
+						"type": "string",
+						"description": "The repo-relative source root whose changed files raise the ui class, ending in `/`.",
+						"minLength": 1,
+						"pattern": "^(?!/)(?!\\.\\.).*/$"
+					},
+					"mount": {
+						"type": "string",
+						"description": "The prefix of the surface namespace this app owns, unique across the list.",
+						"pattern": "^/"
+					},
+					"basePath": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "Where this app serves its mounted pages, when that is not the mount itself. Defaults to the mount.",
+						"pattern": "^/"
+					},
+					"command": {
+						"type": "string",
+						"description": "The shell command that starts the app. Must carry a bare `{{port}}` placeholder; `{{port:<name>}}` allocates further ports.",
+						"minLength": 1
+					},
+					"readyPath": {
+						"type": "string",
+						"description": "The path polled for a 200 before any capture. Defaults to `/`.",
+						"pattern": "^/"
+					}
+				},
+				"required": [
+					"name",
+					"prefix",
+					"mount",
+					"command"
 				],
 				"additionalProperties": false
 			}

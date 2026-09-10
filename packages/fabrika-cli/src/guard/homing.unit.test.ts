@@ -1,8 +1,8 @@
 /**
- * The `homing-guard` decision (#3939, extended to both directions in #4069): the four-way
- * home-xor-exempt disposition, the verdict over a scanned set, the two zero-scope forks (backlog
- * fails closed per ADR 0092, a single non-triaged issue passes as out-of-scope), the report, and the
- * seat each verdict takes on the guard exit taxonomy. No IO — the board read is crossed in
+ * The `homing-guard` decision, in both directions: the four-way home-xor-exempt disposition, the
+ * verdict over a scanned set, the two zero-scope forks (backlog fails closed, a single non-triaged
+ * issue passes as out-of-scope), the report, and the seat each verdict takes on the guard exit
+ * taxonomy. No IO — the board read is crossed in
  * `./homing-verb.ts`.
  */
 import {describe, expect, it} from "vitest";
@@ -34,7 +34,7 @@ const issue = (
 const BACKLOG: Scope = {_tag: "backlog"};
 
 // Issue scope defaults to a repo that HAS the label — the ordinary case. The absent reading is
-// spelled out where it is the subject (#4272).
+// spelled out where it is the subject.
 const issueScope = (number: number, universe: LabelUniverse = PRESENT): Scope => ({
 	_tag: "issue",
 	number,
@@ -44,7 +44,7 @@ const issueScope = (number: number, universe: LabelUniverse = PRESENT): Scope =>
 const ABSENT: LabelUniverse = {_tag: "absent", missing: ["status:triaged"]};
 
 describe("EXEMPT_LABELS", () => {
-	it("is EXACTLY the two ADR-0208 standing lanes — a third needs a founder ruling", () => {
+	it("is EXACTLY the two standing lanes — a third needs a founder ruling", () => {
 		expect([...EXEMPT_LABELS]).toEqual(["wayfinder:backlog", "axis:pipeline-hardening"]);
 	});
 });
@@ -70,7 +70,7 @@ describe("disposition", () => {
 
 	it.each([
 		...EXEMPT_LABELS,
-	])("a milestone AND %s is double-marked — ADR 0208 bans it, and it is never homed", (label) => {
+	])("a milestone AND %s is double-marked — banned outright, and it is never homed", (label) => {
 		expect(disposition(issue(1, 17, [label]))).toBe("double-marked");
 	});
 
@@ -166,7 +166,7 @@ describe("judge — violations", () => {
 	});
 });
 
-describe("judge — zero scope (ADR 0092)", () => {
+describe("judge — zero scope", () => {
 	it("FAILS CLOSED on an empty BACKLOG scan — a vacuous pass would hide every floater", () => {
 		const v = judge([], BACKLOG);
 		expect(v.pass).toBe(false);
@@ -185,7 +185,7 @@ describe("judge — zero scope (ADR 0092)", () => {
 	});
 
 	// The two readings of the SAME empty per-issue result, which the verb cannot tell apart from the
-	// issue alone — the vacuous pass #4272 closes. The pass above is the first reading.
+	// issue alone — the vacuous pass this guard closes. The pass above is the first reading.
 	it("FAILS the same empty scan when the label is absent from the REPO — not out of scope", () => {
 		const v = judge([], issueScope(9, ABSENT));
 		expect(v.pass).toBe(false);
@@ -196,7 +196,7 @@ describe("judge — zero scope (ADR 0092)", () => {
 });
 
 describe("renderReport", () => {
-	it("emits what it scanned on a pass (ADR 0092 §1)", () => {
+	it("emits what it scanned on a pass", () => {
 		const report = renderReport(judge([issue(1, 17), issue(2, null, ["wayfinder:backlog"])]));
 		expect(report).toContain("scanned 2 triaged issue(s)");
 		expect(report).toContain("1 milestone-homed");
@@ -218,7 +218,7 @@ describe("renderReport", () => {
 	it("explains the zero-scope refusal rather than just failing", () => {
 		const report = renderReport(judge([], BACKLOG));
 		expect(report).toContain("ZERO status:triaged issues");
-		expect(report).toContain("ADR 0092");
+		expect(report).toContain("fail-closed");
 	});
 
 	it("lists each un-homed issue and the three remediation outcomes", () => {
@@ -234,7 +234,7 @@ describe("renderReport", () => {
 		const report = renderReport(judge([issue(1, 17), issue(2, 24, ["wayfinder:backlog"])]));
 		expect(report).toContain("Carry BOTH a milestone and a standing-lane label");
 		expect(report).toContain("#2 issue 2 — milestone 24 + wayfinder:backlog");
-		expect(report).toContain("ADR 0208");
+		expect(report).toContain("banned outright");
 		expect(report).toContain("drop the MILESTONE");
 		expect(report).toContain("drop the STANDING-LANE LABEL");
 	});

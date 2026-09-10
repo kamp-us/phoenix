@@ -31,25 +31,25 @@ const row = (id: string, ports: Readonly<Record<string, PortSchema>>): AnyProgra
 /** The agent half: emits the tail, answers page requests, takes prompts, decisions and mode sets. */
 export const agentPorts = {
 	transcript: transcript.outbound(),
-	pageRequest: transcriptPage.inbound(),
-	pageReply: transcriptPage.outbound(),
+	pageRequest: transcriptPage.ends.request.inbound(),
+	pageReply: transcriptPage.ends.page.outbound(),
 	prompt: prompt.inbound(),
-	permissionPending: permission.outbound(),
-	permissionDecision: permission.inbound(),
-	modeState: mode.outbound(),
-	modeSet: mode.inbound(),
+	permissionPending: permission.ends.pending.outbound(),
+	permissionDecision: permission.ends.decision.inbound(),
+	modeState: mode.ends.state.outbound(),
+	modeSet: mode.ends.set.inbound(),
 };
 
 /** The window half: the exact mirror, so every route is one kind meeting itself. */
 export const windowPorts = {
 	transcript: transcript.inbound(),
-	pageRequest: transcriptPage.outbound(),
-	pageReply: transcriptPage.inbound(),
+	pageRequest: transcriptPage.ends.request.outbound(),
+	pageReply: transcriptPage.ends.page.inbound(),
 	prompt: prompt.outbound(),
-	permissionPending: permission.inbound(),
-	permissionDecision: permission.outbound(),
-	modeState: mode.inbound(),
-	modeSet: mode.outbound(),
+	permissionPending: permission.ends.pending.inbound(),
+	permissionDecision: permission.ends.decision.outbound(),
+	modeState: mode.ends.state.inbound(),
+	modeSet: mode.ends.set.outbound(),
 };
 
 export const agentSide = row("ai-agent-fixture", agentPorts);

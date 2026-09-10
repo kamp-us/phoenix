@@ -75,7 +75,7 @@ describe("runRead", () => {
 		expect(second).toMatchObject({assignees: ["rmoreno"], assigneesObserved: true});
 	});
 
-	it("refuses zero sub-issue children on 7, with nothing on stdout (ADR 0092)", async () => {
+	it("refuses zero sub-issue children on 7, with nothing on stdout", async () => {
 		const out = await run([
 			[EPIC, epic()],
 			[SUBS, subIssues()],

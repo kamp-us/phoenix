@@ -14,6 +14,7 @@ import {
 	ENV as env,
 	epic,
 	epicBody,
+	issueUrl,
 	planSeams,
 	type Scripted,
 	SUB_ISSUES,
@@ -28,7 +29,7 @@ const CYCLE = CYCLE_DOC;
 const VIEWER = new RegExp(`^GET ${API}\\/user$`);
 const TRUNK = new RegExp(`^GET ${API}\\/repos\\/o\\/r$`);
 const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
-const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`);
+const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/o\\/teams\\/control-plane\\/members`);
 const POST = new RegExp(`^POST ${API}\\/repos\\/o\\/r\\/issues\\/4300\\/comments$`);
 const GET_COMMENT = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/comments\\/512346$`);
 
@@ -44,15 +45,15 @@ const ledger: ReadonlyArray<Scripted> = [
 ];
 
 const acl: ReadonlyArray<Scripted> = [
-	[VIEWER, served({login: "usirin"})],
+	[VIEWER, served({login: "noor"})],
 	[TRUNK, served({default_branch: "main"})],
-	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
-	[MEMBERS, served([{login: "usirin"}, {login: "cansirin"}])],
+	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"}],
+	[MEMBERS, served([{login: "noor"}, {login: "mira"}])],
 ];
 
 const POSTED: HttpReply = {
 	status: 201,
-	body: JSON.stringify({id: 512346, html_url: "https://github.com/o/r/issues/4300#c"}),
+	body: JSON.stringify({id: 512346, html_url: `${issueUrl(4300)}#c`}),
 };
 
 const run = (script: ReadonlyArray<Scripted>) => {
@@ -88,7 +89,7 @@ describe("runApprove", () => {
 			answer: "approved",
 			epic: 4300,
 			digest,
-			by: "usirin",
+			by: "noor",
 			at: "2026-08-16T07:16:03Z",
 			comment: 512346,
 		});
@@ -132,7 +133,7 @@ describe("runApprove", () => {
 	});
 
 	/**
-	 * The #4223 collapse, refused: a roster nobody could read is neither "approved" nor "not
+	 * The collapse, refused: a roster nobody could read is neither "approved" nor "not
 	 * approved". Both readings are wrong and the exit code is the one that says so.
 	 */
 	it("refuses 11 on a failed roster read — neither approved nor unapproved", async () => {

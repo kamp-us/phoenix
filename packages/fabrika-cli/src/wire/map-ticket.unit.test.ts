@@ -1,13 +1,13 @@
 import {describe, expect, it} from "vitest";
 import {emit, emitFromFields, parseFields, read, readToLines} from "./map-ticket.ts";
 
-const marker = "map-ticket: #9140 · research · 7f3a9c21";
+const marker = "map-ticket: #4 · research · 7f3a9c21";
 
 describe("read", () => {
 	it("finds the marker's three fields", () => {
 		expect(read(`${marker}\n`)).toEqual({
 			_tag: "Found",
-			value: {map: 9140, kind: "research", nonce: "7f3a9c21"},
+			value: {map: 4, kind: "research", nonce: "7f3a9c21"},
 		});
 	});
 
@@ -20,10 +20,10 @@ describe("read", () => {
 	});
 
 	it.each([
-		["an off-vocabulary kind", "map-ticket: #9140 · investigation · 7f3a9c21"],
-		["a lane key two runs would collide on", "map-ticket: #9140 · research · run-1"],
+		["an off-vocabulary kind", "map-ticket: #4 · investigation · 7f3a9c21"],
+		["a lane key two runs would collide on", "map-ticket: #4 · research · run-1"],
 		["a missing map field", "map-ticket: research · 7f3a9c21"],
-		["a separator that drifted", "map-ticket: #9140 - research - 7f3a9c21"],
+		["a separator that drifted", "map-ticket: #4 - research - 7f3a9c21"],
 	])("answers Malformed, not Absent, on %s", (_drift, artifact) => {
 		const result = read(`${artifact}\n`);
 		expect(result._tag).toBe("Malformed");
@@ -38,29 +38,29 @@ describe("read", () => {
 
 describe("emit", () => {
 	it("round-trips through read", () => {
-		const composed = emit({map: 9140, kind: "decision", nonce: "0a1b2c3d" as never});
+		const composed = emit({map: 4, kind: "decision", nonce: "0a1b2c3d" as never});
 		expect(read(composed)).toMatchObject({_tag: "Found"});
 	});
 });
 
 describe("parseFields", () => {
 	it("takes the fields in any order", () => {
-		expect(parseFields("nonce: 7f3a9c21\nkind: prototype\nmap: 9140")).toMatchObject({
+		expect(parseFields("nonce: 7f3a9c21\nkind: prototype\nmap: 4")).toMatchObject({
 			_tag: "Fields",
-			marker: {map: 9140, kind: "prototype", nonce: "7f3a9c21"},
+			marker: {map: 4, kind: "prototype", nonce: "7f3a9c21"},
 		});
 	});
 
 	it("tolerates a leading # on the map field, which is how a human writes it", () => {
-		expect(parseFields("map: #9140\nkind: research\nnonce: 7f3a9c21")._tag).toBe("Fields");
+		expect(parseFields("map: #4\nkind: research\nnonce: 7f3a9c21")._tag).toBe("Fields");
 	});
 
 	it.each([
 		["a missing field", "kind: research\nnonce: 7f3a9c21"],
-		["a duplicated field", "map: 9140\nmap: 9141\nkind: research\nnonce: 7f3a9c21"],
-		["an unknown key", "map: 9140\nkind: research\nnonce: 7f3a9c21\nowner: someone"],
-		["an off-vocabulary kind", "map: 9140\nkind: investigation\nnonce: 7f3a9c21"],
-		["a bad nonce", "map: 9140\nkind: research\nnonce: run-1"],
+		["a duplicated field", "map: 4\nmap: 5\nkind: research\nnonce: 7f3a9c21"],
+		["an unknown key", "map: 4\nkind: research\nnonce: 7f3a9c21\nowner: someone"],
+		["an off-vocabulary kind", "map: 4\nkind: investigation\nnonce: 7f3a9c21"],
+		["a bad nonce", "map: 4\nkind: research\nnonce: run-1"],
 	])("refuses %s rather than composing a weaker marker", (_case, fields) => {
 		expect(emitFromFields(fields)._tag).toBe("Unusable");
 	});
@@ -70,7 +70,7 @@ describe("readToLines", () => {
 	it("renders one <field>\\t<value> line per field", () => {
 		expect(readToLines(`${marker}\n`)).toEqual({
 			_tag: "Found",
-			value: ["map\t9140", "kind\tresearch", "nonce\t7f3a9c21"],
+			value: ["map\t4", "kind\tresearch", "nonce\t7f3a9c21"],
 		});
 	});
 });

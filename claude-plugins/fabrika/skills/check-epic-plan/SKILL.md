@@ -47,25 +47,30 @@ fabrika build claim $epic_number --purpose gate
 
 The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as
 `--token`. A session runs several lanes, so a verb handed only the session id cannot tell a sibling
-lane's claim from yours (#6037).
+lane's claim from yours.
 
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
 and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
-binds build-purpose claims only.
-A `gate` claim is admitted without the label; the scope axis still binds, so an out-of-scope epic is still exit
-`20`. Never reach for `--override` to get past the audience axis — that is the fail-open convention
-the purpose exists to remove.
+binds build-purpose claims only. A `gate` claim is admitted without the label; the scope axis still
+binds, so an out-of-scope epic is still exit `20`. Never reach for `--override` to get past the
+audience axis — that is the fail-open convention the purpose exists to remove.
+
+The blockedness gate does not bind a `gate` claim either: gating writes no code, so an epic waiting
+on an open blocker is gateable now and only its children's build claims wait. The claim prints
+`build claim: blockedness: the gate binds a build claim only — …` and reads no edges, so exit `16`
+is unreachable here at the claim as well as everywhere else in this skill. A founder ruling scoped
+the gate that way, and the decision corpus records the matrix.
 
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
 the session identity from the environment (`FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, else
-`PI_SUBAGENT_PARENT_SESSION` — #6960), and an unset chain is exit `1` — a claim without
+`PI_SUBAGENT_PARENT_SESSION`), and an unset chain is exit `1` — a claim without
 an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
 postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
-is a proven out-of-scope epic. Exit `21` is no longer reachable at this step, because a `gate` claim
-is not bound by the audience axis.
+is a proven out-of-scope epic. Exits `21` and `16` are not reachable at this step: a `gate` claim is
+bound by neither the audience axis nor the blockedness gate.
 
 ```bash
 fabrika plan read $epic_number
@@ -76,14 +81,16 @@ document a caller could hand it. Done when it prints the child set with each chi
 assignee slot, criteria token, stories and containment.
 
 **Then the approval precondition, ahead of the floor.** No plan reaches the gate without a founder
-approval bound to the scope it now derives (ADR
-[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md)):
+approval bound to the scope it now derives:
 
 ```bash
 fabrika plan approval $epic_number
 ```
 
-It exits `0` on every arm and the answer's `state` is the discriminator — `current`, `stale` or
+It exits `0` on every **state** arm — `current`, `stale` or `absent` — and that `state` is the
+discriminator; a missing approval is this verb's answer, not a refusal. It still refuses non-zero on
+everything else (`4`, `7`, `10`, `11` and the reserved codes), and a refusal is not a fourth state:
+the opening UNKNOWN rule holds, so read the code, then re-run or stop, and never read one as
 `absent`. Only `current` proceeds to step 2. On `stale` or `absent` end at `PLAN-UNAPPROVED`,
 **naming which**: `absent` means nobody with authority has approved this plan, `stale` means the plan
 moved after he read it and a re-plan does not inherit the old approval. You never write the marker
@@ -101,7 +108,7 @@ fabrika plan check $epic_number
 ```
 
 This is the **whole pass/fail decision** over the closed hard-defect enum
-(`fabrika wire doc-section --heading "The floor — fourteen defect types" < <skill-base>/contract.md`).
+(`fabrika wire doc-section --heading "The floor — fifteen defect types" < <skill-base>/contract.md`).
 Do not read the ledger and form your own verdict beside it: two
 answers to one question is how a gate contradicts itself. Both arms exit `0` — read `answer`
 (`clean` or `defective`), and carry `digest` forward to every verb that writes.
@@ -114,7 +121,8 @@ your terminal says so.
 defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back to it. Say so when
 every defect is `UNENFORCED_DEP`, because that one is the cheap case: the plan is right and only the
 `blocked_by` graph is behind it, which `plan-epic` clears with `fabrika ledger edges` and no
-re-plan.
+re-plan. `DROPPED_EPIC_BLOCKER` is not that case: the plan itself is missing a ref, so it goes back
+for a re-plan that writes the epic's own open blocker onto every child.
 
 ## 3 — Flip, and report what you observed
 
@@ -134,8 +142,10 @@ signal plus its enforcement, composed, not rivals.
 `ready-for:agent`, and this gate is that flip's only owner.** Under the single-PR model the operator
 picks the epic up, so the epic's own audience label decides whether the epic is pickable at all. The
 planner never writes it — an ungated plan would become pickable. The operator never writes it — it
-would be admitting itself. Only this gate has already proven the floor clean, so only this gate may
-write it, and the verb writes it **last**, after every child's re-read proves it moved: an epic that
+would be admitting itself. Triage never writes it either — on an epic sent to the agent audience
+`triage apply` stamps no audience label at all, and its own contract carries why a second writer
+made the label ambiguous. Only this gate has proven the floor clean, so only this gate may write it,
+and the verb writes it **last**, after every child's re-read proves it moved: an epic that
 became pickable over a half-flipped ledger is exactly the failure the ordering removes. You never
 write the label by hand; the verb writes it and reads it back.
 
@@ -220,8 +230,8 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
   reading of this plan to relay. Say which of the two it was. Then release the claim with
   `fabrika build release $epic_number --token <claim-token>` before you end: this refusal lands ahead
   of everything, and an epic waiting on a founder must not also be waiting on a lock nobody can
-  reclaim (ADR [0059](../../../../.decisions/0059-epic-plan-lock.md)). The epic goes back to the
-  founder — a re-plan is `plan-epic`'s, and a fresh approval is his.
+  reclaim. The epic goes back to the founder — a re-plan is `plan-epic`'s, and a fresh approval is
+  his.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
 - `FLIP-PARTIAL` — `22`: the floor was clean and something did not move — some children, or the

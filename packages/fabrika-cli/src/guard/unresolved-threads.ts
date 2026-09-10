@@ -3,23 +3,22 @@
  * hands off: is every live-unresolved review thread NAMED in the latest authorized `review-code:`
  * verdict?
  *
- * The rule ADR 0158 states as reviewer prose, given teeth. A `review-code` agent could post
- * `PASS … merge-ready` and omit the unresolved-thread accounting entirely, and on a §CP PR — which
+ * The rule the review contract states as reviewer prose, given teeth. A `review-code` agent could
+ * post `PASS … merge-ready` and omit the unresolved-thread accounting entirely, and on a §CP PR — which
  * banks for a manual merge and never reaches the enqueue refusal — that prose was the only thing
- * standing between an unaddressed finding and a human clicking merge. #3329 is what that costs: a
- * CodeQL inline finding reached a merger under a merge-ready flag (#3331).
+ * standing between an unaddressed finding and a human clicking merge. That is what it costs: a
+ * CodeQL inline finding once reached a merger under a merge-ready flag.
  *
  * So: a live-unresolved inline thread, human or bot, is unaccounted-for unless the verdict body
  * names its `path:line`. The check is **polarity-blind** — a `[FAIL] unresolved-threads — path:line`
  * row accounts for the thread exactly as a PASS row does, because the FAIL blocks the merge on its
  * own and the thing being gated here is the silent omission, not the reviewer's call. It re-decides
- * nothing about substantive-vs-nit: a genuine nit is discharged ADR 0158's way, by resolving the
+ * nothing about substantive-vs-nit: a genuine nit is discharged the sanctioned way, by resolving the
  * thread with a written rationale, which takes it out of the live set.
  *
  * **Zero threads is a clean pass, not zero scope.** A PR with no review threads is the common,
- * valid state — there is nothing to account for. The fail-closed case ADR 0092 asks for is an
- * UNREADABLE thread channel, and that lives in `./unresolved-threads-verb.ts` where the read
- * happens.
+ * valid state — there is nothing to account for. The fail-closed case is an UNREADABLE thread
+ * channel, and that lives in `./unresolved-threads-verb.ts` where the read happens.
  */
 
 import type {ReviewThread} from "../ship/github.ts";
@@ -39,7 +38,7 @@ const VERB = "guard unresolved-threads check";
 const PR_LEVEL = "(pr-level review thread)";
 
 /**
- * The accounting key: the exact `path:line` ADR 0158's row format asks a reviewer to write.
+ * The accounting key: the exact `path:line` the verdict row format asks a reviewer to write.
  *
  * Not `ship threads`' `siteOf` — that one renders a site for a human to read, and renders a missing
  * line as `?`. This one is compared against what a reviewer typed, so it degrades the other way: a
@@ -88,7 +87,7 @@ const describeThread = (thread: ReviewThread): string => {
 };
 
 const REMEDIATION = [
-	"Per ADR 0158, discharge each by EITHER resolving the thread with a written rationale (a genuine nit),",
+	"Discharge each by EITHER resolving the thread with a written rationale (a genuine nit),",
 	"OR surfacing it in the review-code verdict as a `[FAIL] unresolved-threads — path:line ...` row (a real",
 	"objection, which routes back to write-code). A review-code PASS cannot silently omit an unresolved thread.",
 ];
@@ -109,7 +108,7 @@ const violationReport = (
 	].join("\n");
 
 const annotationFor = (thread: ReviewThread): Annotation => {
-	const message = `${VERB}: this review thread is unresolved and the latest review-code verdict does not name ${siteToken(thread)}. Resolve it with a written rationale, or surface it as a \`[FAIL] unresolved-threads — ${siteToken(thread)}\` row (ADR 0158).`;
+	const message = `${VERB}: this review thread is unresolved and the latest review-code verdict does not name ${siteToken(thread)}. Resolve it with a written rationale, or surface it as a \`[FAIL] unresolved-threads — ${siteToken(thread)}\` row.`;
 	if (thread.path === null) return unlocated("error", message);
 	return thread.line === null
 		? atFile("error", thread.path, message)

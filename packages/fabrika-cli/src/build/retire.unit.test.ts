@@ -51,7 +51,7 @@ describe("classify — the terminal-ticket license", () => {
 	});
 
 	it("releases a terminal ticket's worktree WITHOUT reading dirtiness — dirty is not a refusal", () => {
-		// The founder's ruling on #6610: an agent routinely leaves a worktree dirty after its ticket
+		// The ruling behind the predicate: an agent routinely leaves a worktree dirty after its ticket
 		// merged, so dirtiness is a false negative for "work in progress". The predicate takes no
 		// dirtiness input at all, which is what makes that unrepresentable rather than merely unused.
 		expect(Object.keys(board())).not.toContain("dirty");
@@ -64,7 +64,7 @@ describe("classify — the terminal-ticket license", () => {
 		const verdict = classify(subject(), board({sessionByNonce: {[NONCE]: "s-9f2e"}}), NOBODY);
 
 		expect(verdict._tag).toBe("Hold");
-		expect(verdict._tag === "Hold" && verdict.because).toMatch(/#4312 is open/);
+		expect(verdict._tag === "Hold" && verdict.because).toMatch("#4312 is open");
 	});
 });
 
@@ -159,7 +159,7 @@ describe("sessionsByNonce", () => {
 		expect(map).toEqual({[NONCE]: "s-9f2e", [SIBLING_NONCE]: "s-9f2e"});
 	});
 
-	it("counts no unauthorized marker — content is not authority (ADR 0055)", () => {
+	it("counts no unauthorized marker — content is not authority", () => {
 		expect(sessionsByNonce([{token: LANE_TOKEN, session: "s-9f2e", authorized: false}])).toEqual(
 			{},
 		);

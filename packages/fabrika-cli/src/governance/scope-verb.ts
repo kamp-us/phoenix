@@ -8,12 +8,12 @@
  *
  * Zero changed files is a refusal, never `not-required`: the whole value of a `not-required` answer is
  * that it was computed over everything (v1's `class-probe` read 0 files and classified `has-code` at
- * exit 0 — #4060). The file list is read at the **bound commit** and the head printed is that same
- * commit, because the list is the derivation's only input (#5117).
+ * exit 0). The file list is read at the **bound commit** and the head printed is that same
+ * commit, because the list is the derivation's only input.
  *
- * **With `--base`/`--tip` the subject is a range instead of a pull request (#6064).** An epic child
- * has no PR mid-run (ADR 0285), so without that form §1 of the skill is unrunnable on what ADR 0293
- * makes the normal path for every `claude-plugins/**` child — and `self`, which only this verb
+ * **With `--base`/`--tip` the subject is a range instead of a pull request.** An epic child
+ * has no PR mid-run, so without that form §1 of the skill is unrunnable on the range form that is
+ * the normal path for every `claude-plugins/**` child — and `self`, which only this verb
  * derives, is the self fence's own precondition. Both modes read the same three-dot range and refuse
  * the same three ways: unreadable is UNKNOWN, empty and provably short are refusals, and none of the
  * three is ever `not-required`.
@@ -106,7 +106,7 @@ const pullSubject = (
 			requireOpen: true,
 			closedReason: "nothing to derive.",
 			requireFiles: true,
-			emptyReason: "refusing to derive over an empty diff (ADR 0092).",
+			emptyReason: "refusing to derive over an empty diff.",
 			unknownMessage: (reason) =>
 				`${VERB}: cannot read PR #${pr} in ${repo}: ${reason} — whether the namespace is required is UNKNOWN, never "not-required".`,
 		});
@@ -127,11 +127,11 @@ const pullSubject = (
 		if (listed.value.length < pull.changedFiles) {
 			// The contract seats a short read on `13` explicitly, and this stays the fail-closed
 			// direction even where git and GitHub legitimately disagree — git pairs a rename into one
-			// path where GitHub counts two (#5154), so a rename-only PR refuses here rather than
+			// path where GitHub counts two, so a rename-only PR refuses here rather than
 			// deriving from a list it cannot prove complete.
 			return refused(
 				INCOMPLETE_SCAN,
-				`${VERB}: ${head.sha} carries ${listed.value.length} of the ${pull.changedFiles} files #${pr} declares — refusing to derive from a short read (#3999).`,
+				`${VERB}: ${head.sha} carries ${listed.value.length} of the ${pull.changedFiles} files #${pr} declares — refusing to derive from a short read.`,
 				[boundLine(VERB, head)],
 			);
 		}
@@ -192,14 +192,14 @@ const rangeSubject = (
 		if (declared.value.length === 0) {
 			return refused(
 				ZERO_SCOPE,
-				`${VERB}: ${named} changes no path — refusing to derive over an empty diff (ADR 0092).`,
+				`${VERB}: ${named} changes no path — refusing to derive over an empty diff.`,
 				[bound],
 			);
 		}
 		if (listed.value.length < declared.value.length) {
 			return refused(
 				INCOMPLETE_SCAN,
-				`${VERB}: ${named} carries ${listed.value.length} of the ${declared.value.length} files its ends change — refusing to derive from a short read (#3999).`,
+				`${VERB}: ${named} carries ${listed.value.length} of the ${declared.value.length} files its ends change — refusing to derive from a short read.`,
 				[bound],
 			);
 		}

@@ -5,7 +5,7 @@
  * row and the verb's own `DESCRIPTION` block. The convention
  * (`claude-plugins/fabrika/docs/cli-interface-convention.md` §1) makes the block the full contract —
  * shape, exit codes, an example — so reusing it as the list row emitted rows over a thousand
- * characters, unwrapped and untruncated (#5208). `Command.withShortDescription` adds the row's own
+ * characters, unwrapped and untruncated. `Command.withShortDescription` adds the row's own
  * string without touching the contract, and this module is what keeps it a row.
  *
  * The budget is derived from the renderer, not chosen: `renderTable` (`effect@4.0.0-beta.92`,

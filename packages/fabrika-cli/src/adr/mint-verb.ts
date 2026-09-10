@@ -2,13 +2,13 @@
  * `adr mint` — allocate the next free id and scaffold its record in one invocation.
  *
  * `adr next` then `adr new` is two calls with an author's whole drafting turn between them, and an
- * id read in the first call is stale by the second: that check-to-mint gap is what put 0284 on two
- * pull requests and cost a dismissed approval (#5841). Fusing the pair does not make allocation
+ * id read in the first call is stale by the second: that check-to-mint gap is what puts one id on
+ * two pull requests and costs a dismissed approval. Fusing the pair does not make allocation
  * atomic across lanes — nothing local can, since an id only becomes visible to the in-flight set
  * when its pull request opens — but it removes the one window an author controls, leaving only the
- * mint-to-open window. Nothing closes that one downstream either: `decisions-index` now reads the
- * batched `merge_group` ref and reports a duplicate there, but that job is not a required context,
- * so the batch merges and the lane that opened second renumbers on `main` (#5869).
+ * mint-to-open window. A duplicate-reporting job over the batched merge ref does not close that one
+ * either while it is not a required context: the batch merges anyway and the lane that opened
+ * second renumbers on the default branch.
  *
  * Both halves are the existing ones: {@link resolveAllocation} is `adr next`'s read and
  * {@link scaffold} is `adr new`'s write, so this verb decides only the order and what it reports.

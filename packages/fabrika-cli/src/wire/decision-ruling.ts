@@ -1,10 +1,10 @@
 /**
  * The decision-ruling marker — the comment a human on the control plane posts to record that a
  * `type:decision` issue has been ruled, so the normal build lane picks it up instead of a driver
- * hand-driving it (ADR 0289's mechanism, over the surface the founder's 2026-08-16 scope addition on
- * epic #5843 added; #5842 is consolidated there).
+ * hand-driving it — the same marker mechanism `./plan-approval.ts` uses, over a decision issue
+ * rather than an epic.
  *
- *     decision-ruled: #6569 @ a1b2c3d4e5f6 · ruling:https://github.com/o/r/issues/6569#issuecomment-9 · 2026-08-20T05:11:02Z
+ *     decision-ruled: #8 @ a1b2c3d4e5f6 · ruling:https://github.com/o/r/issues/8#issuecomment-9 · 2026-08-20T05:11:02Z
  *
  * **One mechanism, two surfaces.** The binding half is `./issue-marker.ts`, the same walk
  * `./plan-approval.ts` reads through — `#<n> @ <digest>`, the number carried in the bytes so a quoted
@@ -14,8 +14,8 @@
  *
  * **The ruling field is why this marker is worth more than a label.** A builder that picks the issue
  * up reads the founder's own words at the URL the marker names, rather than inferring the choice from
- * a thread; it is the value `build claim --cites` takes, and the reason ADR 0300 calls a cited ruling
- * the thing that makes a decision buildable. The URL is checked against the issue the marker binds
+ * a thread; it is the value `build claim --cites` takes, and a cited ruling is what makes a
+ * decision buildable at all. The URL is checked against the issue the marker binds
  * here, in the read: a ruling recorded on some other issue rules nothing on this one, and admitting
  * one would let a single comment unlock every decision on the board.
  *

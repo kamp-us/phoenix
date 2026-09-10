@@ -3,7 +3,7 @@
  *
  * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`); everything else
  * is `3` and up, the band a verb owns for outcomes it PROVED. `2` is allocated by nothing anywhere
- * in fabrika — it is the harness's block code on `PreToolUse` (`../hook/harness-exit.ts`, #5423).
+ * in fabrika — it is the harness's block code on `PreToolUse` (`../hook/harness-exit.ts`).
  *
  * **The split that is the whole point of this group.** Three different things can go wrong while
  * looking for a format in an artifact, and collapsing any two of them is what blinds a reader:
@@ -36,15 +36,14 @@ export const EMPTY_ARTIFACT = 5;
  *
  * Deliberately not {@link ABSENT}: "I could not see it" and "it is not there" are the two the
  * group exists to keep apart. Deliberately not `1` either — `1` is also what a bad flag and a
- * failed module load return, so a proven outcome seated there is unreadable as proof (#4208).
+ * failed module load return, so a proven outcome seated there is unreadable as proof.
  */
 export const ARTIFACT_UNKNOWN = 6;
 /**
- * Zero scope: `--format` names no registered format, or the registry holds no rows at all
- * (ADR 0092).
+ * Zero scope: `--format` names no registered format, or the registry holds no rows at all.
  *
  * A checker asked for a format it does not have must red, not pass — a `check` that judged
- * nothing and exited 0 is a vacuous pass, the exact fail-open shape ADR 0092 forbids.
+ * nothing and exited 0 is a vacuous pass, the fail-open shape every guard in this tree refuses.
  */
 export const ZERO_SCOPE = 7;
 /** The fields on stdin hold nothing this format can compose a block from. */

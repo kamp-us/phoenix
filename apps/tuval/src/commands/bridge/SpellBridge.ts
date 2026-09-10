@@ -4,8 +4,13 @@
  * `list` and `call` are the whole surface, and neither mentions a program: the Claude program's
  * `KernelBridge` (#7620) is a wrapper over this, and a second agent program costs an adapter and
  * no new spell (founder's walk on #7642, 2026-09-03). What makes it program-blind is where the
- * allowlist comes from — the calling program's own registry row supplies it at layer build, so no
- * program id is written in this directory.
+ * allowlist comes from — the calling program's own registry row supplies it, so no program id is
+ * written in this directory.
+ *
+ * The allowance is a rule, never a snapshot: `call` resolves it at the moment of the call, so a
+ * config reload that moves the registry moves what the bridge allows with it. Holding a list read
+ * out of the live registry at layer build is what let `list` and `call` answer from two eras of one
+ * config (#7743).
  *
  * `call` takes the caller's `Scope` and puts only its window on the wire: the executor re-resolves
  * the process from that window through `WindowIndex`, exactly as it does for a page, so a caller
@@ -28,14 +33,35 @@ export interface ScriptedCall {
 	readonly answer: unknown;
 }
 
+/**
+ * What `call` may reach. Both arms are rules rather than lists the layer holds: `every-registered`
+ * is re-read from the registry on each call, and `paths` names constants the caller wrote down, so
+ * neither can be a stale reading of state that has since moved.
+ */
+export type SpellAllowance =
+	| {readonly kind: "every-registered"}
+	| {readonly kind: "paths"; readonly paths: ReadonlyArray<SpellPath>};
+
+/** Whatever the registry holds when the call is made — a reload moves `list` and `call` together. */
+export const everyRegistered: SpellAllowance = {kind: "every-registered"};
+
+/** Exactly these paths, whatever the registry holds. */
+export const onlyPaths = (paths: ReadonlyArray<SpellPath>): SpellAllowance => ({
+	kind: "paths",
+	paths,
+});
+
 const clientOf = (scope: Scope): Client => ({id: scope.client, workspace: scope.workspace});
 
 const make = Effect.fn("Tuval.SpellBridge.make")(function* (options: {
-	readonly allow: ReadonlyArray<SpellPath>;
+	readonly allow: SpellAllowance;
 }) {
 	const executor = yield* SpellExecutor;
 	const registry = yield* SpellRegistry;
-	const allowed = new Set(options.allow.map(renderPath));
+	const allowed: Effect.Effect<ReadonlySet<string>> =
+		options.allow.kind === "paths"
+			? Effect.succeed(new Set(options.allow.paths.map(renderPath)))
+			: Effect.map(registry.list, (rows) => new Set(rows.map((row) => renderPath(row.path))));
 
 	const call = Effect.fn("Tuval.SpellBridge.call")(function* (
 		path: SpellPath,
@@ -44,7 +70,7 @@ const make = Effect.fn("Tuval.SpellBridge.make")(function* (options: {
 	) {
 		const rendered = renderPath(path);
 		// Refused before the executor is reached, so a path outside the allowlist never runs.
-		if (!allowed.has(rendered)) return yield* new SpellNotAllowed({path: rendered});
+		if (!(yield* allowed).has(rendered)) return yield* new SpellNotAllowed({path: rendered});
 		const reply = yield* executor.execute(
 			new SpellCall({
 				type: "spell.call",
@@ -77,7 +103,7 @@ export class SpellBridge extends Context.Service<SpellBridge, SpellBridgeApi>()(
 	"tuval/SpellBridge",
 ) {
 	static readonly layer = (options: {
-		readonly allow: ReadonlyArray<SpellPath>;
+		readonly allow: SpellAllowance;
 	}): Layer.Layer<SpellBridge, never, SpellExecutor | SpellRegistry> =>
 		Layer.effect(SpellBridge, make(options));
 

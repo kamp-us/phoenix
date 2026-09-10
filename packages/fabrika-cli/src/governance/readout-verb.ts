@@ -4,7 +4,7 @@
  *
  * **Non-blocking by construction.** This verb writes a comment and nothing else. It sets no label,
  * touches no PR, and has no exit code meaning "the corpus is in a bad state" — a digest that could red
- * would be the human gate the #4927 ruling retired, wearing a new name. Every outcome here is either
+ * would be the retired human gate wearing a new name. Every outcome here is either
  * "the readout landed" or "the readout did not land".
  *
  * **The artifact issue is resolved, never a constant.** `$FABRIKA_GOVERNANCE_READOUT_ISSUE`, else the
@@ -170,7 +170,7 @@ export const runReadout = (
 		if (found._tag === "Absent") {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: issue #${issue} not found in ${repo} — the readout artifact is absent; front-door creates it (#4952).`,
+				`${VERB}: issue #${issue} not found in ${repo} — the readout artifact is absent; front-door creates it.`,
 			);
 		}
 		if (found._tag === "Unknown") {

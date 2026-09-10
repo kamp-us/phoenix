@@ -6,7 +6,7 @@
  * (`SKILL.md` §2, anchor `NEVER-DISPATCH`). Two runs over one strand must write the same word, so
  * this is pure and lives beside `stall.ts` rather than in whichever caller composes the line —
  * the scheduled sweep hardcoded `nobody` on every row and told every reader the detector had found
- * nothing for anyone to do, on the two classes the skill exists to catch (#7209).
+ * nothing for anyone to do, on the two classes the skill exists to catch.
  *
  * Each arm is the lane the skill's own step for that class names. Where the class alone cannot name
  * one — a `red` needs the log classification step 3 runs, which no classifier ran here — the answer

@@ -10,7 +10,7 @@
  * what is registered.
  *
  * The one thing that happens before the runner is the unknown-subcommand guard, which the runner
- * cannot do for itself — see `unknown-subcommand.ts` for why (#4822).
+ * cannot do for itself — see `unknown-subcommand.ts` for why.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Effect, Layer} from "effect";
@@ -30,7 +30,7 @@ if (unknown !== undefined) {
 fabrikaCommand.pipe(
 	Command.run({version: VERSION}),
 	// `NodeServices.layer` carries the spawner, filesystem, path and terminal but no HTTP client, so
-	// the GitHub fetch client (ADR 0315) needs its transport merged in here.
+	// the GitHub fetch client needs its transport merged in here.
 	Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
 	NodeRuntime.runMain,
 );

@@ -9,15 +9,21 @@
  * therefore be neither placed (`24`, dangling) nor retired (`10`, not a sub-issue) — created,
  * unusable, and unreachable by every other verb in the group.
  *
- * **A home is required too** (#5969): a child born with neither an open milestone nor a standing lane
- * is refused by the claim fence at exit `20`, so it can never be built — and ADR 0208 names that
- * milestone-less-and-lane-less category as one that must not exist.
+ * **A home is required too**: a child born with neither an open milestone nor a standing lane is
+ * refused by the claim fence at exit `20`, so it can never be built. Homeless is a category the
+ * pipeline does not admit, so the refusal is here at birth rather than a lane's later surprise.
  *
- * `--ready-for` is required and has no default (#4780); `--ready-for human` requires `--assignee`
- * (#4693) — the label is the routing signal, born-assignment is the enforced hold, and neither
- * substitutes for the other. That pair is not merely a convention: the gate's floor reds
+ * `--ready-for` is required and has no default; `--ready-for human` requires `--assignee` — the label
+ * is the routing signal, born-assignment is the enforced hold, and neither substitutes for the other. That pair is not merely a convention: the gate's floor reds
  * `HELD_CHILD_UNASSIGNED` over the **whole epic**, so one held-and-unassigned child blocks every
  * sibling.
+ *
+ * **A `type:decision` child is never born `ready-for:agent`.** A build claim admits a decision only
+ * against a ruling comment recorded on that same decision issue, and a child a second old carries
+ * none — so the pair publishes a child every builder refuses on its type axis, which parks the epic
+ * lane. The refusal sits with the other pre-write input checks; the supported route is
+ * `ready-for:human` with an assignee, then `fabrika decision rule <n> --cites <child-comment-url>`
+ * once the ruling is recorded on the child.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -55,22 +61,25 @@ import {appendChild, loadManifest, loadRun, maskedLeakRefusal, rewriteChild} fro
 
 const VERB = "ledger child";
 
+/** The one type whose audience is constrained: see the cross-field refusal in {@link runChild}. */
+export const DECISION = "type:decision";
+
 export const TYPES: ReadonlyArray<string> = [
 	"type:bug",
 	"type:feature",
 	"type:chore",
-	"type:decision",
+	DECISION,
 	"type:investigation",
 ];
 
-/** `p3` is retired, not admitted (#4101, #2413). */
+/** `p3` is retired, not admitted. */
 export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
 
 /**
- * A home is a milestone **or** a standing lane, read off the one set the claim fence reads (ADR 0208)
- * — never a second copy of it here, which is how the two seams drift into disagreeing.
+ * A home is a milestone **or** a standing lane, read off the one set the claim fence reads — never a
+ * second copy of it here, which is how the two seams drift into disagreeing.
  */
 const isStandingLane = (label: string): label is StandingLaneLabel =>
 	(STANDING_LANE_LABELS as ReadonlyArray<string>).includes(label);
@@ -85,7 +94,7 @@ export interface ChildOptions extends OpenOptions {
 	readonly title: string;
 	readonly type: string;
 	readonly priority: string;
-	/** Optional at the parser and refused here: an absent value is a decision nobody made (#4780). */
+	/** Optional at the parser and refused here: an absent value is a decision nobody made. */
 	readonly readyFor: string | null;
 	readonly assignee: string | null;
 	readonly milestone: string | null;
@@ -109,7 +118,7 @@ export const runChild = (
 		if (options.readyFor === null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --ready-for is required — a child must never inherit its audience by omission (#4780).`,
+				`${VERB}: --ready-for is required — a child must never inherit its audience by omission.`,
 			);
 		}
 		if (!AUDIENCES.includes(options.readyFor)) {
@@ -121,13 +130,19 @@ export const runChild = (
 		if (options.readyFor === "human" && (options.assignee ?? "").trim() === "") {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --ready-for human requires --assignee — a held child is born assigned (#4693).`,
+				`${VERB}: --ready-for human requires --assignee — a held child is born assigned.`,
 			);
 		}
 		if (!TYPES.includes(options.type)) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --type ${options.type} is off the closed set (${TYPES.join(", ")}).`,
+			);
+		}
+		if (options.type === DECISION && options.readyFor === "agent") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --type ${DECISION} with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.`,
 			);
 		}
 		if (!PRIORITIES.includes(options.priority)) {
@@ -139,7 +154,7 @@ export const runChild = (
 		if (options.milestone === null && !options.labels.some(isStandingLane)) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child is refused at the claim fence, so it can never be built (#5969).`,
+				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child is refused at the claim fence, so it can never be built.`,
 			);
 		}
 
@@ -199,7 +214,7 @@ export const runChild = (
 			if (taxonomy.value.includes(label)) continue;
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it (#4285).`,
+				`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it.`,
 				notes,
 			);
 		}

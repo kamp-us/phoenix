@@ -1,5 +1,5 @@
 /**
- * The `ci` verb group — the workflow plumbing that used to live in the v1 CLI (epic #5720).
+ * The `ci` verb group — the workflow plumbing a repo's release and build paths call.
  *
  * Not guards. These four are the release path and the CI build path: `ci changelog` and
  * `ci pr-body` are what let a release cut at all, `ci annotate` is what puts a failed typecheck on
@@ -63,7 +63,7 @@ const changelog = leafCommand(
 ).pipe(
 	Command.withShortDescription("Derive one Keep-a-Changelog release section from shipped work."),
 	Command.withDescription(
-		"Derive one Keep a Changelog release section from a gathered entries JSON — the closed-issue titles and their triaged `type:*` labels for a release range, with a merged-PR backlink each. CHANGELOG.md is a projection of that pipeline metadata rather than a hand-edited doc (ADR 0069), and an entry whose issue carries no recognized `type:*` lands under Uncategorized instead of being dropped. Prints the changelog on stdout, or writes it to --out with the progress line on stderr. Exits 4 (the entries file is not valid JSON, or not a ChangelogEntry[]), 8 (--out could not be written, so whether it landed is UNKNOWN), 11 (the entries file could not be read). Example: fabrika ci changelog --entries entries.json --version 0.3.1 --out CHANGELOG.md",
+		"Derive one Keep a Changelog release section from a gathered entries JSON — the closed-issue titles and their triaged `type:*` labels for a release range, with a merged-PR backlink each. CHANGELOG.md is a projection of that pipeline metadata rather than a hand-edited doc, and an entry whose issue carries no recognized `type:*` lands under Uncategorized instead of being dropped. Prints the changelog on stdout, or writes it to --out with the progress line on stderr. Exits 4 (the entries file is not valid JSON, or not a ChangelogEntry[]), 8 (--out could not be written, so whether it landed is UNKNOWN), 11 (the entries file could not be read). Example: fabrika ci changelog --entries entries.json --version 0.3.1 --out CHANGELOG.md",
 	),
 );
 
@@ -153,9 +153,9 @@ const evidence = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Map a crabbox run to the ADR 0054 run-evidence manifest."),
+	Command.withShortDescription("Map a crabbox run to the run-evidence manifest."),
 	Command.withDescription(
-		"Map a crabbox run-summary (and optionally its JUnit and externally-produced checks) to the ADR 0054 §2 run-evidence manifest that `fabrika ship evidence` reads back. `commit` is the binding key the gate asserts against, so it is stamped from --commit — on pull_request that is the PR head, never github.sha's synthetic merge commit — or resolved from HEAD, and a manifest is NEVER emitted with a blank or half-formed one. Prints the manifest JSON on stdout, or writes it to --output. Exits 4 (the run-summary, the JUnit or the --extra-checks file parsed and is not the shape), 8 (--output could not be written, so whether it landed is UNKNOWN), 11 (an input could not be read, or HEAD could not be resolved). Example: fabrika ci evidence --run-summary summary.json --commit $HEAD_SHA --output bundle/manifest.json",
+		"Map a crabbox run-summary (and optionally its JUnit and externally-produced checks) to the run-evidence manifest that `fabrika ship evidence` reads back. `commit` is the binding key the gate asserts against, so it is stamped from --commit — on pull_request that is the PR head, never github.sha's synthetic merge commit — or resolved from HEAD, and a manifest is NEVER emitted with a blank or half-formed one. Prints the manifest JSON on stdout, or writes it to --output. Exits 4 (the run-summary, the JUnit or the --extra-checks file parsed and is not the shape), 8 (--output could not be written, so whether it landed is UNKNOWN), 11 (an input could not be read, or HEAD could not be resolved). Example: fabrika ci evidence --run-summary summary.json --commit $HEAD_SHA --output bundle/manifest.json",
 	),
 );
 

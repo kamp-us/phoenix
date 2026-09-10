@@ -1,5 +1,5 @@
 /**
- * The roll-up core: summing, grouping, the window, and every number it declines to count (#5010).
+ * The roll-up core: summing, grouping, the window, and every number it declines to count.
  */
 import {assert, describe, it} from "@effect/vitest";
 import type {LedgerRead, LedgerRow} from "./ledger.ts";

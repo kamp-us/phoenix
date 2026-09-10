@@ -1,19 +1,20 @@
 /**
  * The chore drive's two closed tables: which recipe verb a chore state applies, and which one of the
- * machine's six events a run's exit records.
+ * machine's operator events a run's exit records.
  *
  * This is `relay.ts`'s sibling one level up. `relay.ts` re-seats another *verb's* exit on this
  * group's table; this module re-seats this group's exit on the *machine's* event vocabulary — the
  * same discipline, because the operator that routes a chore lane holds no recipe knowledge and must
- * not compose one. Both halves are data with a pure reader, so `operate`'s chore drive is a relay
- * (ADR 0228) rather than a table restated in prose that drifts from the exits it describes.
+ * not compose one. Both halves are data with a pure reader, so `operate`'s chore drive relays an
+ * answer it does not derive, rather than restating a table in prose that drifts from the exits it
+ * describes.
  *
  * **Every exit lands on exactly one event.** A code with no row is `BLOCKED` and says so — the same
  * refusal-shaped default `relay.ts` takes, for the same reason: an exit this table has no reading
  * for has proven nothing, and the permissive reading of a code nobody seated is how a chore comes to
- * report a fix it never applied. `PARK_NOVEL` is the seat the founder's grill answer sits on (epic
- * #5840): it folds to `BLOCKED`, which every chore machine routes to a `human:` park, so novel
- * reaches a human by the machine's own cell rather than by an operator deciding to escalate.
+ * report a fix it never applied. `PARK_NOVEL` is the seat the known/novel split sits on: it folds to
+ * `BLOCKED`, which every chore machine routes to a `human:` park, so novel reaches a human by the
+ * machine's own cell rather than by an operator deciding to escalate.
  */
 import type {OperatorEvent} from "../lane/machine.ts";
 import {
@@ -23,6 +24,7 @@ import {
 	PARK_HOLDS,
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
+	RATIONALE_ABSENT,
 	READBACK_MISMATCH,
 	RERUN_UNKNOWN,
 	TARGET_ABSENT,
@@ -61,7 +63,7 @@ export interface RecipeRoute {
  *
  * A chore state routes to a whole recipe, not to a stage of one: `recipe unpark` classifies, clears
  * and reads the clear back inside a single invocation, so the machine holds one state for it and the
- * verb owns the sequence (ADR 0228). Splitting it back into per-stage states would put the recipe's
+ * verb owns the sequence. Splitting it back into per-stage states would put the recipe's
  * order in the machine document, where two chores would then spell it differently.
  */
 export const RECIPE_ROUTES: ReadonlyArray<RecipeRoute> = [
@@ -125,6 +127,10 @@ const UNPARK_EXITS: Readonly<Record<number, Disposition>> = {
 	[PARK_NOVEL]: disposition(
 		"BLOCKED",
 		"the park's cause is outside the recipe table and nothing was written — the machine routes it to a human",
+	),
+	[RATIONALE_ABSENT]: disposition(
+		"BLOCKED",
+		"the park routes to the driver and the run named no rationale, so nothing was written — a driver clears it by re-running with one, and a chore drive carries none to add",
 	),
 	[WRITE_UNKNOWN]: disposition(
 		"FAIL",

@@ -10,7 +10,7 @@ import {sha256Of} from "./png.ts";
 
 const ROOT = "/repo/trees/lane-a";
 const POINTER = `${ROOT}/packages/design-capture/golden-pointer.json`;
-const CANDIDATE = "/scratch/after/pano.png";
+const CANDIDATE = "/scratch/after/board.png";
 
 const REV_PARSE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
@@ -35,7 +35,7 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runGolden({
-				surface: "/pano",
+				surface: "/board",
 				candidate: overrides.candidate ?? null,
 				env: {},
 				tmpRoot: "/tmp",
@@ -50,7 +50,7 @@ describe("runGolden", () => {
 		const outcome = await run({files: {[POINTER]: pointer({})}});
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toEqual({
-			surface: "/pano",
+			surface: "/board",
 			blessed: false,
 			golden: null,
 			diff: null,
@@ -64,10 +64,10 @@ describe("runGolden", () => {
 	});
 
 	it("resolves the blessed golden content-addressed under the temp root", async () => {
-		const outcome = await run({files: {[POINTER]: pointer({"/pano": GOLDEN_SHA})}});
+		const outcome = await run({files: {[POINTER]: pointer({"/board": GOLDEN_SHA})}});
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toEqual({
-			surface: "/pano",
+			surface: "/board",
 			blessed: true,
 			golden: {sha256: GOLDEN_SHA, path: `/tmp/fabrika-ui-goldens/${GOLDEN_SHA}.png`},
 			diff: null,
@@ -78,7 +78,7 @@ describe("runGolden", () => {
 		const changed = solid(2, 2, [0, 0, 0, 255]);
 		changed.set([255, 255, 255, 255], 0);
 		const outcome = await run(
-			{files: {[POINTER]: pointer({"/pano": GOLDEN_SHA}), [CANDIDATE]: encodePng(2, 2, changed)}},
+			{files: {[POINTER]: pointer({"/board": GOLDEN_SHA}), [CANDIDATE]: encodePng(2, 2, changed)}},
 			{candidate: CANDIDATE},
 		);
 		expect(outcome.code).toBe(0);
@@ -87,7 +87,7 @@ describe("runGolden", () => {
 		expect(outcome.stdout).not.toMatch(/PASS|FAIL/);
 	});
 
-	/** #4501: an unreadable pointer resolving to an empty blessed set is the fail-open this refuses. */
+	/** An unreadable pointer resolving to an empty blessed set is the fail-open this refuses. */
 	it("refuses an unparseable pointer on 4 rather than reading it as unblessed", async () => {
 		const outcome = await run({files: {[POINTER]: "{"}});
 		expect(outcome.code).toBe(BAD_SECTIONS);
@@ -96,7 +96,7 @@ describe("runGolden", () => {
 	});
 
 	it("refuses on 11 when the golden bytes cannot be fetched", async () => {
-		const outcome = await run({files: {[POINTER]: pointer({"/pano": GOLDEN_SHA})}}, {fetch: dead});
+		const outcome = await run({files: {[POINTER]: pointer({"/board": GOLDEN_SHA})}}, {fetch: dead});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain('blessing is UNKNOWN, never "unblessed"');
 	});
@@ -104,14 +104,17 @@ describe("runGolden", () => {
 	it("refuses on 11 when the store answers bytes that hash to something else", async () => {
 		const wrong: FetchLeg = () =>
 			Effect.succeed({_tag: "Ok", bytes: encodePng(2, 2, solid(2, 2, [1, 2, 3, 255]))});
-		const outcome = await run({files: {[POINTER]: pointer({"/pano": GOLDEN_SHA})}}, {fetch: wrong});
+		const outcome = await run(
+			{files: {[POINTER]: pointer({"/board": GOLDEN_SHA})}},
+			{fetch: wrong},
+		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("hash to something other than");
 	});
 
 	it("refuses an invalid candidate on 16", async () => {
 		const outcome = await run(
-			{files: {[POINTER]: pointer({"/pano": GOLDEN_SHA}), [CANDIDATE]: new Uint8Array(0)}},
+			{files: {[POINTER]: pointer({"/board": GOLDEN_SHA}), [CANDIDATE]: new Uint8Array(0)}},
 			{candidate: CANDIDATE},
 		);
 		expect(outcome.code).toBe(CAPTURE_INVALID);

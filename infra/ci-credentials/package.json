@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"deploy:ci-credentials": "alchemy deploy github.ts",
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run"
 	},
 	"dependencies": {

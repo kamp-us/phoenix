@@ -1,7 +1,7 @@
 import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
 import {registry} from "./fixtures.ts";
-import {buildSpellIndex, describeExpected, readParams} from "./spell-index.ts";
+import {describeExpected, readParams} from "./spell-index.ts";
 
 describe("readParams", () => {
 	// The whole index rests on two properties of the JSON Schema a `SpellDescription` carries, so
@@ -58,6 +58,9 @@ describe("readParams", () => {
 		expect(readParams(undefined)).toEqual([]);
 		expect(readParams("not a schema")).toEqual([]);
 		expect(readParams({schema: {type: "object"}})).toEqual([]);
+		// The bare JSON Schema object the wire type refuses (#7758): the reader no longer reads it
+		// as a root, so the drift it used to hide cannot come back through here.
+		expect(readParams({type: "object", properties: {name: {type: "string"}}})).toEqual([]);
 		// A ref into definitions that hold nothing of that name stays total.
 		expect(readParams({schema: {$ref: "#/$defs/Missing"}, definitions: {}})).toEqual([]);
 	});
@@ -82,13 +85,5 @@ describe("buildSpellIndex", () => {
 		expect([...(window?.children.keys() ?? [])]).toEqual(["close", "move", "focus"]);
 		expect(window?.spell).toBeUndefined();
 		expect(window?.children.get("close")?.spell?.path).toEqual(["window", "close"]);
-	});
-
-	it("drops a row whose path decode would have refused, staying total", () => {
-		const index = buildSpellIndex([
-			{path: [], describe: "unreachable", params: undefined, capabilities: []},
-			{path: ["ok"], describe: "reachable", params: undefined, capabilities: []},
-		]);
-		expect(index.spells.map((spell) => spell.path)).toEqual([["ok"]]);
 	});
 });

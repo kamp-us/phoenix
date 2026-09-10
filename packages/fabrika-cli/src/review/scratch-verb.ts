@@ -6,7 +6,7 @@
  * reviewer whose diff exceeded one read picked a generic filename in the session scratchpad, a
  * concurrent lane writing the same name replaced the bytes between two offset reads, and the verdict
  * graded one PR's criteria against another PR's diff while carrying the correct head — which nothing
- * downstream, `ship`'s re-derivation included, can detect (#7246, live on PR #7232).
+ * downstream, `ship`'s re-derivation included, can detect.
  *
  * **The nonce is derived, because this group has no claim to take it from.** `build scratch` and
  * `triage scratch` key on the nonce of a claim token their lane holds; `review` ships no claim verb,

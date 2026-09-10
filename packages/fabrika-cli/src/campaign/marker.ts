@@ -1,18 +1,18 @@
 /**
  * The `campaign-approve:` marker — the only thing `--cites` proves about a comment's text.
  *
- *     campaign-approve: #47 active · 2026-08-20T04:11:09Z
+ *     campaign-approve: #<milestone> active · 2026-08-20T04:11:09Z
  *
  * Anchored to the comment's **first line**, split off rather than matched whole. v1 required the
  * whole body to *be* the marker, so a founder who wrote their approval and then explained it read as
- * malformed (#3831); splitting closes the inverse at the same time, since a marker quoted mid-body
- * inside somebody else's comment is a quotation, never a grant.
+ * malformed; splitting closes the inverse at the same time, since a marker quoted mid-body inside
+ * somebody else's comment is a quotation, never a grant.
  *
  * **The timestamp is compared to nothing** — no staleness window, no ordering, no binding against
  * the comment's own `created_at`. It is evidence a human reader dates the ruling by, and its only
  * mechanical job is to make the marker a deliberate line rather than a phrase typed in passing.
  * Stated because a validated input with no stated effect is where one implementer adds a freshness
- * rule and another does not (ADR 0247).
+ * rule and another does not.
  */
 
 import type {CampaignState} from "../build/scope-admission.ts";

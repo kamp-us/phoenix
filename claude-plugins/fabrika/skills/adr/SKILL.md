@@ -1,6 +1,6 @@
 ---
 name: adr
-description: "Record one architecture decision as a `.decisions/NNNN-slug.md` file. Trigger on \"/adr\", \"save this as an ADR\", \"record this decision\", \"ADR for X\" — and reach for it whenever a technical preference, convention, or invariant gets settled in conversation that future agents must respect, even when nobody asks for an ADR."
+description: "Record one architecture decision as an `NNNN-slug.md` file in the repo's decision corpus. Trigger on \"/adr\", \"save this as an ADR\", \"record this decision\", \"ADR for X\" — and reach for it whenever a technical preference, convention, or invariant gets settled in conversation that future agents must respect, even when nobody asks for an ADR."
 ---
 
 # adr
@@ -8,7 +8,7 @@ description: "Record one architecture decision as a `.decisions/NNNN-slug.md` fi
 One decision per file; the pull request adds nothing but that file plus the status-line edits it
 implies, because discovery is the CLAUDE.md contract and there is no index. A settled preference
 earns a file even when nobody asks for an ADR — an unrecorded ruling is one the next session
-re-decides differently. Examples run id `0240`.
+re-decides differently. Examples run id `9240`.
 
 ## 1 — Claim the number and write the file, in one call
 
@@ -17,9 +17,9 @@ fabrika adr mint only-landed-adrs-may-be-cited
 ```
 
 One call allocates the id and scaffolds the record, and that is why it is one call: it unions the
-freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting at `0150`
-while origin is at `0151` cannot mint a duplicate — **and an id you allocate now and write later is
-already stale**, which is how 0284 landed on two pull requests at once (#5841). The slug is
+freshly fetched merged set with the ids open ADR PRs already claim, so a checkout one id behind
+origin cannot mint a duplicate — **and an id you allocate now and write later is
+already stale**, which is how one id has landed on two pull requests at once. The slug is
 kebab-case, at most 5 words; it prints the path written. How the union is computed, and the exact
 bytes it scaffolds, are the verb's section
 (`fabrika wire doc-section --heading "adr mint" < <skill-base>/contract.md`).
@@ -39,7 +39,7 @@ keeps no corpus at all, and then every verb of this group refuses on `22` naming
 nothing to read and nothing to write into, and that is a settled fact no retry changes, unlike the
 `11` an unreadable directory earns.
 
-`fabrika adr next` still answers the id on its own, and `fabrika adr new 0240 <slug>` still
+`fabrika adr next` still answers the id on its own, and `fabrika adr new 9240 <slug>` still
 scaffolds against an id you name (`fabrika wire doc-section --heading "adr next" < <skill-base>/contract.md`,
 then `--heading "adr new"`). Reach for the pair only when you genuinely need the id before the
 file — the gap between them is the race, so do not re-open it out of habit. Whichever route, the
@@ -66,7 +66,7 @@ questions** — *"may an open issue exist without a milestone?"* — not as a su
 for a question you cannot phrase. Then rank the uncited live-accepted ADRs your domain touches:
 
 ```bash
-fabrika adr sweep --new 0240
+fabrika adr sweep --new 9240
 ```
 
 How the ranking is computed, and why it caps where it does, are the verb's section
@@ -91,7 +91,7 @@ append a dated `- **#NNNN — <what changed> (YYYY-MM-DD).**` line under its `##
 ## 4 — Resolve every reference, then edit the status lines
 
 ```bash
-fabrika adr resolve 0164 0023 0126
+fabrika adr resolve 9164 9023 9126
 ```
 
 Answers against a freshly fetched base ref, printing `live`, `landed`, `in-flight` or `absent` with
@@ -105,10 +105,10 @@ each state is proven against the fetched base is the verb's section
 (`fabrika wire doc-section --heading "adr resolve" < <skill-base>/contract.md`).
 
 ```bash
-fabrika adr supersede 0126 --by 0240
+fabrika adr supersede 9126 --by 9240
 ```
 
-Where the rest of that ADR still stands, `fabrika adr amend-in-part 0023 --by 0240` instead.
+Where the rest of that ADR still stands, `fabrika adr amend-in-part 9023 --by 9240` instead.
 Either verb touches the `status:` line and nothing else — an accepted ADR's decision text is
 immutable, so name the relationship in your own `## Context` rather than editing theirs. Which line
 each rewrites, and what each refuses, is their shared section:
@@ -126,18 +126,19 @@ on **exactly one** outcome; the explicit "none" separates *considered it* from *
 ## 6 — Check, then report
 
 ```bash
-fabrika adr resolve 0240
+fabrika adr resolve 9240
 ```
 
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
 another lane opened its PR first, so **renumber now — the lane that opened first keeps the id, and
 this check is the only place a renumber is still cheap.** Skip it and nothing else stops the
-duplicate: `decisions-index` reads the merge queue's batched ref and reports it, but that job is not
-a required context, so the batch merges anyway. Both records land, `main` goes red, and you renumber
+duplicate: a repo's own duplicate-id check reads the merge queue's batched ref and reports it, but a
+job that is not a required context does not hold the batch. Both records land, the default branch
+goes red, and you renumber
 there instead — a second pull request, a second review, and the approval on this one already spent.
 
 **Whether this PR needs a control-plane approval is `cp-classify`'s answer, not yours** — it routes
-on CODEOWNERS, and how a repo owns `.decisions/` decides it
+on CODEOWNERS, and how a repo owns its decision corpus decides it
 ([control-plane classification](../../docs/control-plane-classification.md)). **That gate is the
 authority: do not predict it, and never reword the ADR to change its verdict.** A wrong
 control-plane call costs one approval; a wrong ordinary call reaches `main` with none. If you think

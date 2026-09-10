@@ -9,7 +9,7 @@ This is the builder's door. For what kamp.us *is* — the products and the ethos
 ```bash
 pnpm install
 pnpm dev          # vite (SPA + HMR) + alchemy dev (worker on local workerd)
-pnpm typecheck    # tsc (Effect-patched) across project references
+pnpm typecheck    # tsc, then effect-tsgo diagnostics --strict, across project references
 pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolation)
 ```
 
@@ -27,7 +27,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code calls its `run`/`batch` capability methods. |
 | Live state | `LiveDO` on `state.storage` KV | One Durable Object fans out SSE. State is KV — subscriber rows + a per-connection counter. No DO SQL, no DO migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |
-| Type-check | `typescript@7` + `@effect/tsgo` | One compiler: the native `tsc`, patched at install with Effect's language service so its diagnostics reach the CLI gate (ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md)). |
+| Type-check | `typescript@7` + `@effect/tsgo` | Two steps per package: the native `tsc`, then `effect-tsgo diagnostics --project tsconfig.json --strict`. No install-time compiler patch, so CI, an agent worktree and your machine run the same gate ([.patterns/typecheck-two-step.md](./.patterns/typecheck-two-step.md), ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md) as history). |
 | Lint / format | Biome 2 | Tabs, 100 col, no bracket spacing. |
 | Package manager | pnpm 10 (workspace catalog) | All commands use `pnpm`; `pnpm dlx`, never `npx`. |
 
@@ -96,6 +96,7 @@ apps/tuval/
 │   ├── durability/        # saving and restoring process state
 │   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
 │   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
+│   ├── claude/            # the Claude backend: the Agent SDK layer, SDK-message mapping, the generic kernel tools
 │   └── demo/              # the programs that ship in the box
 └── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
 ```
@@ -110,7 +111,7 @@ apps/tuval/
 | `pnpm dev:worker` | Just `alchemy dev` (worker only). |
 | `pnpm build` | `vite build` into `dist/client`. |
 | `pnpm deploy` | `pnpm build && alchemy deploy`. Append `--stage <name>` for an isolated worker + D1 + DO. |
-| `pnpm typecheck` | `tsc` (Effect-patched) across project references. |
+| `pnpm typecheck` | `tsc`, then `effect-tsgo diagnostics --strict`, across project references. |
 | `pnpm test` | Integration suite — boots the stack on local workerd in `globalSetup`, runs the black-box HTTP suite against it. |
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
@@ -129,21 +130,34 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 
 ## Rendering surfaces
 
-[`design-harness.json`](./design-harness.json) at the repo root is how `fabrika ui render` gets a headless browser onto a phoenix page. Without it every surface refuses on exit `19`, no capture is ever produced, and a rendered change ships judged only from reading CSS ([#7395](https://github.com/kamp-us/phoenix/issues/7395)).
+The `uiSurfaces` key in [`.fabrika.jsonc`](./.fabrika.jsonc) is how `fabrika ui render` gets a headless browser onto a phoenix page — and it is the same list `review scope` / `ship scope` raise the `ui` class from, so a rendered file and a rendered page can never be two different declarations ([#7369](https://github.com/kamp-us/phoenix/issues/7369)). With no row declared every surface refuses on exit `19`, no capture is ever produced, and a rendered change ships judged only from reading CSS ([#7395](https://github.com/kamp-us/phoenix/issues/7395)).
 
-| Key | Value | Why |
+The key declares a **list of apps**, because this repo runs two (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)) and one base URL could only ever reach one of them ([#7992](https://github.com/kamp-us/phoenix/issues/7992)). Each entry owns a `mount` — a prefix of the surface namespace — and a surface goes to the app whose mount is its longest match. Only the apps some requested surface resolves to are started, so rendering a Tuval proof page never boots `apps/web`.
+
+| Key | Where | Why |
 |---|---|---|
-| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm dev` | Both dev legs. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
-| `url` | `http://localhost:3000` | Vite's port, which also proxies `/api` and `/fate` to the worker. |
-| `readyPath` | `/api/health` | 200 only once **both** legs answer. `/` would go green on Vite alone, and every capture would then show `şu an yüklenemedi` where the data belongs. |
+| `name` | required, kebab-case | Names the app in every refusal, so "the harness did not come up" says *which* server. |
+| `command` | required, must carry `{{port}}`, must bind it strictly | The port is **allocated at start, never declared**: `{{port}}` becomes a free port the render leg just bound and let go, and `{{port:<name>}}` allocates a second one for the same command (that is how `web` passes its worker port to both `alchemy dev` and the Vite proxy). The command has to pass its server's own strict-port flag, so losing the race between the allocation and the bind fails the start loudly. A server that falls back to the next free port instead leaves the capture origin pointing at whatever else answers on the allocated one, which on a machine running several worktrees is a green capture of another tree. Two worktrees can therefore render at once and neither can reach the other's tree. Output goes to stderr, which is the stream a failed readiness probe quotes back. |
+| `mount` | required, distinct per app | The prefix of the surface namespace this app owns. `/` is the catch-all. |
+| `basePath` | optional, defaults to `mount` | What the mount maps to on the app's own server. The default is the identity; a Tuval proof server rooted at `/` says `"basePath": "/"` so `/tuval/chat` reaches its `/`. |
+| `prefix` | required, repo-relative, ends in `/` | The source root whose changed files raise the `ui` class. `web` and `web-lab` share `apps/web/src/`, because they are two mounts over one app; the three Tuval rows share `apps/tuval/src/`. |
+| `readyPath` | optional, defaults to `/` | Polled for 200 **per app**. `web` uses `/api/health` so a data-backed capture never goes green on Vite alone; `web-lab` uses `/`, because `/lab/*` is client-only and waiting on a worker it does not need was the second half of #7992. |
+
+The five apps declared today: `web` (mount `/`, both dev legs, ready on `/api/health`), `web-lab` (mount `/lab`, Vite alone), and one per rendering `apps/tuval` proof script — `tuval-chat`, `tuval-pi-window`, `tuval-pi-vertical`, each mounted under `/tuval/…` and rooted at `/`.
+
+Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude/proof/serve.ts`](./apps/tuval/src/claude/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
+
+`apps/web` reads both dev ports through [`apps/web/dev-ports.ts`](./apps/web/dev-ports.ts) (`PHOENIX_SPA_PORT`, `PHOENIX_WORKER_PORT`), which is the one place the Vite proxy and the worker it proxies to can agree. Unset, they are the historical `3000` and `1337`, so `pnpm dev` by hand is unchanged.
 
 **Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/mecmua`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
 
-**A session-gated route does not refuse — it captures the signed-out view and exits `0`.** [`apps/web/src/App.tsx`](./apps/web/src/App.tsx) routes entirely client-side, and Vite serves `index.html` at 200 for any path it does not otherwise own, so the navigation always succeeds; [`browser.ts`](./packages/fabrika-cli/src/ui/browser.ts) calls a surface unreachable only on a navigation failure, status `0`, or status `>= 400`. There is no route-level auth wrapper either — each page gates itself, so what lands in the PNG differs per page: `/profile` client-redirects to `/auth`, `/bildirimler` renders its `giriş yapmalısın` prompt, a flag-dark page self-404s. Each is a valid, non-empty capture that `ui evidence` accepts. **The harness cannot tell you it showed you the wrong thing**, so a gated surface is only judgeable with a real session — `storageState` is the schema's slot for that, and minting one is tracked on [#7398](https://github.com/kamp-us/phoenix/issues/7398). Until then, treat a capture of a gated route as UNKNOWN however plausible it looks.
+**A session-gated route does not refuse — it captures the signed-out view and exits `0`.** [`apps/web/src/App.tsx`](./apps/web/src/App.tsx) routes entirely client-side, and Vite serves `index.html` at 200 for any path it does not otherwise own, so the navigation always succeeds; [`browser.ts`](./packages/fabrika-cli/src/ui/browser.ts) calls a surface unreachable only on a navigation failure, status `0`, or status `>= 400`. There is no route-level auth wrapper either — each page gates itself, so what lands in the PNG differs per page: `/profile` client-redirects to `/auth`, `/bildirimler` renders its `giriş yapmalısın` prompt, a flag-dark page self-404s. Each is a valid, non-empty capture that `ui evidence` accepts. **The harness cannot tell you it showed you the wrong thing**, so a gated surface is only judgeable with a real session — `uiCapture.storageState` is the schema's slot for that, and minting one is tracked on [#7398](https://github.com/kamp-us/phoenix/issues/7398). Until then, treat a capture of a gated route as UNKNOWN however plausible it looks.
 
 Exit `15` is real but narrower than a UI route: it needs a response that is genuinely `>= 400`, which under this harness means an `/api/*` or `/fate/*` path proxied to a worker that is down. It refuses per surface, so that one path names itself while the rest of the repo still renders, rather than everything falling back to the repo-wide `19`. No SPA path produces it — not even one the router has no route for, which renders `NotFoundPage` at 200.
 
-`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust.
+A surface that falls outside **every** declared mount is exit `10`, and the refusal lists the mounts. That is a hole in the declaration rather than a broken page, so the fix is a new `uiSurfaces` row, not a retry.
+
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment to render anything under the `web` app. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` naming `web` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust. The other four apps need no credentials, so `/lab/*` and every `/tuval/*` surface renders without them.
 
 ## Conventions
 
@@ -166,7 +180,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 
 | Guard | What it checks | What trips it |
 |---|---|---|
-| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
+| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (`tsc`, then `effect-tsgo diagnostics --strict`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
 | [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, an absolute home path, a vault, or a sibling-repo path — or an operator email — in a changed doc or script. |
 | [`gitleaks`](./.github/workflows/gitleaks.yml) | The files this PR adds or edits, read at HEAD, for secrets (API keys, tokens, private keys) — the merge result, not the branch's commits (ADR 0338). | A credential standing in a changed file at HEAD. Removing it at head clears the gate; a secret added and reverted inside the PR is not caught. |
 | [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |

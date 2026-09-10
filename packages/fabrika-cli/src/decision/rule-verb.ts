@@ -5,8 +5,7 @@
  * The gap this closes: triage routes a decision to `ready-for:human` because its deliverable is a
  * judgement, and once the founder has made that judgement in a comment there is no path back. The
  * label still says "a human must decide" about a question a human decided, so every ruled decision
- * costs a driver bypass around the park (#5842, consolidated into epic #5843 by the founder's
- * 2026-08-16 scope addition).
+ * costs a driver bypass around the park.
  *
  * **The digest is derived here and taken from nowhere.** There is no `--digest` flag, and adding one
  * would be the defect: a ruling whose scope its caller supplies attests whatever the caller pleased,
@@ -19,13 +18,13 @@
  * because of an authority nobody can point at, which is the exact failure this verb exists to close.
  *
  * A roster that could not be read is `11` — never "not authorized" and never "authorized". That is
- * the collapse `ship cp-approval` already refuses to make (#4223), and it is worth more here: this
+ * the collapse `ship cp-approval` already refuses to make, and it is worth more here: this
  * verb's whole output is an authority claim.
  *
  * **The guard sits on the flip, never on the ruling.** A ruled decision whose body carries no
  * acceptance-criteria block still earns its marker — the founder's judgement is the durable thing —
  * but not the audience, because `ready-for:agent` promises a builder can grade the issue cold and a
- * criteria-less one only parks the lane at `build claim` exit 32 (#6734).
+ * criteria-less one only parks the lane at `build claim` exit 32.
  */
 
 import {Effect} from "effect";
@@ -156,7 +155,7 @@ export const runRule = (
 		if (roster._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${roster.reason} — whether ${viewer.value} may rule is UNKNOWN, neither authorized nor refused (#4223). Nothing was written.`,
+				`${VERB}: cannot read ${roster.reason} — whether ${viewer.value} may rule is UNKNOWN, neither authorized nor refused. Nothing was written.`,
 			);
 		}
 		const notes = [
@@ -194,7 +193,7 @@ export const runRule = (
 		const audience = flipWrites(target.issue.labels, criteria);
 		if (audience.add) {
 			// Only the label this run would POST is guarded: it is the POST that mints an unknown
-			// label, and a DELETE of a label the repo never defined removes nothing (#4285).
+			// label, and a DELETE of a label the repo never defined removes nothing.
 			const labels = yield* listLabels(repo);
 			if (labels._tag === "Failure") {
 				return refuse(
@@ -206,7 +205,7 @@ export const runRule = (
 			if (!labels.value.includes(READY_FOR_AGENT)) {
 				return refuse(
 					NO_TARGET,
-					`${VERB}: label "${READY_FOR_AGENT}" is absent from ${repo}'s taxonomy — refusing to create it (#4285).`,
+					`${VERB}: label "${READY_FOR_AGENT}" is absent from ${repo}'s taxonomy — refusing to create it.`,
 					notes,
 				);
 			}

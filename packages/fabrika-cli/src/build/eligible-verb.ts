@@ -1,10 +1,9 @@
 /**
  * `build eligible` — one issue's dependency gate, **derived from GitHub's native `blocked_by` graph
- * and nothing else** (#5913). A label is a claim and a prose block is a rendering; the graph is the
- * fact (#5387, ADR 0301).
+ * and nothing else**. A label is a claim and a prose block is a rendering; the graph is the fact.
  *
  * The edges are the issue's own, so the gate no longer hangs off a parent ledger: a standalone
- * issue is gated exactly like an epic child, which is the population ADR 0301 extended the rule to.
+ * issue is gated exactly like an epic child — one rule over both populations.
  * The parent is still resolved, because the assembly-branch discharge below is named from it and
  * the answer carries it.
  *
@@ -13,11 +12,11 @@
  * blocked", and the whole derivation lives in [`./blockedness.ts`](./blockedness.ts), the one reader
  * over that one source.
  *
- * **A blocker is discharged by a closed issue OR by a landed commit** (`./discharge.ts`, #6063).
+ * **A blocker is discharged by a closed issue OR by a landed commit** (`./discharge.ts`).
  * That derivation is shared with the claim seam, which once carried none and refused an edge this
- * verb had already discharged (#7035). Under
- * ADR 0285 an epic run's children stay open until the single tail PR merges, so inside a run the
- * closed-state proxy answers "is the issue closed" where the gate means "did the work land" — and
+ * verb had already discharged. An epic run's children stay open until the single tail PR merges, so
+ * inside a run the closed-state proxy answers "is the issue closed" where the gate means "did the
+ * work land" — and
  * reading only the first makes every later-phase child unbuildable until the epic it blocks has
  * shipped. The second source is evidence, not a skip: no assembly branch, no discharge — and the
  * evidence is only what the run added over the trunk, never the history the branch was cut from.

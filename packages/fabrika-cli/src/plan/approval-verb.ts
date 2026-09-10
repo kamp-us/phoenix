@@ -11,7 +11,7 @@
  * **What the state is safe to be read as.** `current` means a marker whose author the control-plane
  * roster resolves *at this read* — the author gate lives here, in the read, not only in `plan
  * approve`'s write, because bytes carrying the right digest can reach the epic from any account that
- * can comment on it (ADR 0289; `./approval.ts` says why).
+ * can comment on it (`./approval.ts` says why).
  *
  * Both digests are printed, the marker's and the freshly derived one, so a `stale` answer shows what
  * moved rather than asserting that something did.
@@ -40,7 +40,7 @@ export const MESSAGES: PlanMessages = {
 	verb: VERB,
 	grammar: (reason) => `${VERB}: the ledger grammar refused: ${reason}`,
 	zeroChildren: (epic) =>
-		`${VERB}: #${epic} has zero children — there is no plan scope to bind an approval to (ADR 0092).`,
+		`${VERB}: #${epic} has zero children — there is no plan scope to bind an approval to.`,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to read an approval on it.`,
 	unreadable: (what, reason) =>
 		`${VERB}: cannot read ${what}: ${reason} — the approval state is UNKNOWN, not absent.`,

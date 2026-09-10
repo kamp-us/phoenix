@@ -6,7 +6,7 @@
  * resolve the announced preview, **bind the preview to the head**, then render each surface and
  * classify what came back. Full success is the only `0` — v1's capture leg carried no status
  * assertion and no capture-count check, so a crashed helper meant zero surfaces judged, zero
- * violations, PASS (#3925).
+ * violations, PASS.
  *
  * The renderer is an injected seam ({@link RenderLeg}) so every refusal below is testable without a
  * browser; `render-leg.ts` is the one that drives the capture machinery.
@@ -14,22 +14,22 @@
  * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
  * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
  * than shot, because a state nothing renders captures the default pixels under a variant's name,
- * which is coverage claimed and not held (#7051). Every realized state names the **tier** it renders
+ * which is coverage claimed and not held. Every realized state names the **tier** it renders
  * at, and a tier-naming surface is refused three times over, all on `11`: before a browser launches
  * when that tier's credentials are incomplete — an unset tier token is a tier `preview-seed
  * test-account` did not seed, and falling back to the seeded one would shoot the wrong audience
- * clean (#7398); when the shot's own session proof does not come back signed in; and when that proof
+ * clean; when the shot's own session proof does not come back signed in; and when that proof
  * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
  * page nobody asked for, which no byte check can tell from the real thing.
  *
  * `--viewport <name>` picks the widths the surfaces are shot at, over `plan.ts`'s closed set, and
- * defaults to `desktop` alone so every caller written before it is unchanged (#7706). Viewports
+ * defaults to `desktop` alone so every caller written before it is unchanged. Viewports
  * cross the surfaces: two of each is four captures in one set, distinguished on disk and in the
  * manifest by the viewport label. Each shot then proves its own width off the PNG header — the
  * narrow half of the design law is only answerable from narrow pixels, and a desktop-width shot
  * filed under `mobile` would answer it from the wrong ones, on `19`.
  *
- * `--flag <key>=<on|off>` forces a dark-shipped flag for the run (ADR 0336, #7218), and it is
+ * `--flag <key>=<on|off>` forces a dark-shipped flag for the run, and it is
  * refused twice over on the same shape: on `10` when an operand is unreadable or names an anonymous
  * surface — the preview honors the override cookie only for an authorized platform-admin actor — and
  * on `11` when the shot's own flag probe says the forced key evaluated at its default anyway.
@@ -179,11 +179,11 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} captured: ${render.entry.width}x${render.entry.height}, ${errors.rows.length + errors.more} page error(s)`;
 		}
 		case "Unreachable":
-			return `${VERB}: ${subject} is unreachable at the preview (${render.reason}) — judge what renders, and hold the gap against the PR's Deviations (#4305).`;
+			return `${VERB}: ${subject} is unreachable at the preview (${render.reason}) — judge what renders, and hold the gap against the PR's Deviations.`;
 		case "Crashed":
 			return `${VERB}: ${subject} threw during render: ${render.firstError} — the render is red; a broken page is not composition to judge.`;
 		case "Invalid":
-			return `${VERB}: ${subject} captured invalid bytes (${render.detail}) — a capture nobody can open is not evidence (#3925's class).`;
+			return `${VERB}: ${subject} captured invalid bytes (${render.detail}) — a capture nobody can open is not evidence.`;
 		case "Unauthenticated":
 			return `${VERB}: ${subject} did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
 		case "WrongTier":
@@ -212,7 +212,7 @@ export const runRender = (
 		if (options.surfaces.length === 0) {
 			return refuse(
 				FAILED,
-				`${VERB}: no --surface operands — "rendered nothing, found nothing wrong" is not an answer (ADR 0092).`,
+				`${VERB}: no --surface operands — "rendered nothing, found nothing wrong" is not an answer.`,
 			);
 		}
 		if (!isKebabSetName(options.out)) {
@@ -222,7 +222,7 @@ export const runRender = (
 			);
 		}
 		// A state is admitted only when something puts it on screen. Parsing one and shooting the
-		// default pixels under a variant's name is coverage claimed and not held (#7051).
+		// default pixels under a variant's name is coverage claimed and not held.
 		const unrealized = options.surfaces.find((surface) => {
 			const state = stateOf(surface);
 			return state !== null && !isRealizedState(state);
@@ -251,7 +251,7 @@ export const runRender = (
 			);
 		}
 		// Omitted is desktop alone, which is what every invocation written before this operand asked
-		// for implicitly (#7706).
+		// for implicitly.
 		const viewports: readonly Viewport[] =
 			options.viewports.length === 0
 				? [DEFAULT_VIEWPORT]
@@ -269,7 +269,7 @@ export const runRender = (
 		// for a request whose actor holds platform Admin (`flagship/override-authz.ts`, untouched).
 		// So an anonymous surface cannot carry a forced flag at all — it would render the default
 		// state cleanly under the forced name, which is the coverage-claimed-and-not-held class this
-		// verb already refuses a stateless `:state` for (#7051, #7218).
+		// verb already refuses a stateless `:state` for.
 		if (isForcing(forcedFlags)) {
 			const anonymous = options.surfaces.find((surface) => !provesSession(stateOf(surface)));
 			if (anonymous !== undefined) {
@@ -323,11 +323,11 @@ export const runRender = (
 		const announced = preview.value;
 
 		// The pixels bind the tree they were taken from. A preview that lags the push would stamp an
-		// old tree with a new head — the stale-verdict class at the capture seam (#4808, ADR 0058).
+		// old tree with a new head — the stale-verdict class at the capture seam.
 		if (!prefixMatch(head, announced.deployedSha)) {
 			return refuse(
 				STALE_TREE,
-				`${VERB}: the preview deploys ${shortSha(announced.deployedSha)}, the live head is ${shortSha(head)} — stale preview; pixels of an old tree must not bind a new head (#4808's class).`,
+				`${VERB}: the preview deploys ${shortSha(announced.deployedSha)}, the live head is ${shortSha(head)} — stale preview; pixels of an old tree must not bind a new head.`,
 				[scanned],
 			);
 		}
@@ -336,7 +336,7 @@ export const runRender = (
 		// visitor's page — or worse, as the one tier this preview did seed — under the named tier's
 		// name. That is the "unseen ground reading as clean" this whole axis exists to stop, so an
 		// incomplete credential set is UNKNOWN here, before a browser launches. A tier whose token is
-		// unset is a tier `preview-seed test-account` did not seed on this preview (#7398).
+		// unset is a tier `preview-seed test-account` did not seed on this preview.
 		const wantedTiers = options.surfaces.flatMap((surface) => {
 			const tier = tierOf(stateOf(surface));
 			return tier === null ? [] : [tier];

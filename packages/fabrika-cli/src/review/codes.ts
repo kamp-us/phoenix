@@ -6,7 +6,7 @@
  * codes meet the shipped writing verbs' — `3`, `5`, `6`, `7`, `8`, `9`, `10`, `11` — the values are
  * *imported* from `../exit-codes.ts` and `../triage/codes.ts` rather than restated as numerals
  * here. A restated numeral is a second source that can drift silently; an import cannot, and the
- * checked-in `/report` contract already sits behind its own binary on `7` and `11` (#4752), which is
+ * checked-in `/report` contract already sits behind its own binary on `7` and `11`, which is
  * why the shipped package is the authority and no prose copy is.
  *
  * **`12`-`17` are this group's private band, and are deliberately not cleared against sibling
@@ -40,7 +40,7 @@ export const LEAKED_PATH = SHARED_LEAKED_PATH;
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files or zero
- * declared check runs, or a required block is proven absent or malformed (ADR 0092).
+ * declared check runs, or a required block is proven absent or malformed.
  *
  * *Proven* is the operative word. A 404 is a fact about the repository; an unreachable GitHub is not
  * a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
@@ -59,18 +59,17 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
  * Refused: the live head moved past the inspected `--sha`.
  *
  * The one code whose absence would let a verdict formed over one tree land on another — `bindToHead`'s
- * `Stale` arm applied at the write seam (#3769 / #4338's class, ADR 0058).
+ * `Stale` arm applied at the write seam.
  */
 export const STALE_HEAD = 12;
 /**
  * Refused: the read completed and its scope is **provably incomplete**.
  *
  * Neither {@link PRECONDITION_UNKNOWN} (nothing failed) nor {@link ZERO_SCOPE} (scope exists; it just
- * was not all seen). Folding it into either renders a half-seen PR as a fully-judged one — the class
- * of #3925 and #4060.
+ * was not all seen). Folding it into either renders a half-seen PR as a fully-judged one.
  */
 export const INCOMPLETE_SCAN = 13;
-/** Refused: the invoking token resolves below `write`, or the ACL lookup failed (ADR 0055). */
+/** Refused: the invoking token resolves below `write`, or the ACL lookup failed. */
 export const ACL_DENIED = 14;
 /** Refused: the write is not provably the prior rows plus one — the append-only fence. */
 export const APPEND_ONLY = 15;
@@ -79,7 +78,7 @@ export const APPEND_ONLY = 15;
  *
  * Neither {@link ZERO_SCOPE} (runs exist) nor {@link INCOMPLETE_SCAN} (all of them were seen). The
  * enumeration is complete and every run passed — and not one gate inspected the bytes, which is the
- * state that reads as safety while carrying none (#6522).
+ * state that reads as safety while carrying none.
  */
 export const NO_GATE_COVERAGE = 16;
 /**
@@ -89,7 +88,7 @@ export const NO_GATE_COVERAGE = 16;
  * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
  * vocabulary — the write is legitimate and one flag away. What it costs is the record: a FAIL
  * overwritten by a PASS leaves nothing showing a gate ever blocked, and GitHub keeps no comment-body
- * history to recover it from (#7247). Nothing is written on this refusal.
+ * history to recover it from. Nothing is written on this refusal.
  */
 export const SUPERSEDES_VERDICT = 17;
 

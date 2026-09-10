@@ -7,8 +7,9 @@
  * declared data rather than hiding in a layer (#7371).
  *
  * A prompt replays its turn's events verbatim, so a fixture reads as the conversation it stands
- * for. The three calls that carry an argument the script cannot know — `answer`, `setMode`, and
- * `start`'s resume — emit events built from that argument, and nothing else is synthesized.
+ * for. The five calls that carry an argument the script cannot know — `answer`, `setMode`,
+ * `setModel`, `setThinkingLevel` and `start`'s resume — emit events built from that argument, and
+ * nothing else is synthesized.
  *
  * A turn may also carry a `plan`, and then this layer is where a scripted session reaches the
  * kernel: the plan names one spell at a time out of what it has already been answered, the call
@@ -22,24 +23,40 @@ import {renderPath} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
 import {
 	boundToolResult,
+	type CommandRef,
 	ItemId,
 	isJsonValue,
 	type JsonValue,
 	type Mode,
+	type ModelRef,
 	type PermissionDecision,
 	type PermissionRequest,
+	sameModel,
+	type ThinkingLevel,
 	type TranscriptItem,
 } from "../ports/index.ts";
+import {withTurnResult} from "../turn-result.ts";
 import {
+	ListError,
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
 	StartError,
+	ThinkingUnsupported,
+	TranscriptError,
 	type TransportError,
 	UnknownRequest,
 } from "./errors.ts";
 import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "./script.ts";
-import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
+import {newestFirst} from "./sessions.ts";
+import {
+	type StartOptions,
+	type TranscriptPage,
+	type TranscriptQuery,
+	TuvalAiAgent,
+	type TuvalAiAgentApi,
+} from "./TuvalAiAgent.ts";
 
 interface ScriptState {
 	readonly started: boolean;
@@ -49,6 +66,10 @@ interface ScriptState {
 	readonly keys: ReadonlySet<string>;
 	readonly pending: ReadonlyMap<string, PermissionRequest>;
 	readonly mode: Mode | null;
+	readonly model: ModelRef | null;
+	/** What the last `commands` event carried, which is what the `commands` read answers. */
+	readonly commands: ReadonlyArray<CommandRef>;
+	readonly thinking: ThinkingLevel | null;
 	/** False once a scripted disconnect landed. Nothing sets it back — that is the point. */
 	readonly live: boolean;
 }
@@ -59,6 +80,9 @@ const initial = (script: AgentScript): ScriptState => ({
 	keys: new Set(),
 	pending: new Map(),
 	mode: script.modes.current,
+	model: script.models.current,
+	commands: [],
+	thinking: script.thinking.current,
 	live: true,
 });
 
@@ -91,6 +115,28 @@ const toolItem = (id: string, answered: ScriptedAnswer): TranscriptItem => ({
 /** A plan that never ends is a fixture bug; the cap turns a hung run into a named failure. */
 const PLAN_CALL_LIMIT = 1_000;
 
+/**
+ * One page of a script's history, oldest-first, or `null` when `before` names no item in it.
+ *
+ * The two reads that serve it — `page` off the live session and `sessionTranscript` off the store —
+ * differ only in what refuses them, so the slicing is written once and each maps `null` onto its
+ * own unknown-cursor case.
+ */
+const historyPage = (
+	history: ReadonlyArray<TranscriptItem>,
+	before: string | null,
+	limit: number,
+): TranscriptPage | null => {
+	const end = before === null ? history.length : history.findIndex((item) => item.id === before);
+	if (end < 0) return null;
+	const from = Math.max(0, end - limit);
+	return {items: history.slice(from, end), hasMore: from > 0};
+};
+
+/** The port declares `limit > 0`; a caller that broke it has a bug this interface does not model. */
+const brokenLimit = (limit: number): Effect.Effect<never> =>
+	Effect.die(new Error(`a page was asked for ${limit} items; the port declares limit > 0`));
+
 const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.Scope> =>
 	Effect.gen(function* () {
 		// Acquired against the caller's Scope, so closing it shuts the queue: this layer's whole
@@ -101,12 +147,22 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 		);
 		const state = yield* Ref.make(initial(script));
 
+		// The `commands` read answers whatever the last `commands` event carried, so the one funnel
+		// every event passes through is where it is remembered: a turn pushing a second catalog
+		// replaces the first here, with no second place for a script to say so.
+		const remember = (events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
+			Effect.forEach(
+				events.filter((event) => event.kind === "commands"),
+				(event) => Ref.update(state, (previous) => ({...previous, commands: event.available})),
+				{concurrency: 1, discard: true},
+			);
+
 		const emit = (events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
 			// Serial on purpose: one subscription, one ordering — a parallel offer would shuffle a turn.
 			Effect.forEach(events, (event) => Queue.offer(queue, event), {
 				concurrency: 1,
 				discard: true,
-			});
+			}).pipe(Effect.andThen(remember(events)));
 
 		const runPlan = Effect.fn("TuvalAiAgent.plan")(function* (plan: ScriptedPlan, turn: number) {
 			const spells = script.spells;
@@ -133,10 +189,8 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			}
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (options: {
-			readonly cwd: string;
-			readonly resume?: string;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (options: StartOptions) {
+			if (script.startRefusal !== undefined) return yield* script.startRefusal;
 			const current = yield* Ref.get(state);
 			if (!current.live) {
 				return yield* new StartError({
@@ -145,23 +199,51 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 					detail: "the scripted transport is down and nothing reconnects it",
 				});
 			}
-			if (options.resume !== undefined && options.resume !== script.sessionId) {
+			const resuming = options.resume?.sessionId;
+			if (resuming !== undefined && resuming !== script.sessionId) {
 				return yield* new StartError({
 					reason: "session-not-found",
 					cwd: options.cwd,
-					detail: `the script holds session ${script.sessionId}, not ${options.resume}`,
+					detail: `the script holds session ${script.sessionId}, not ${resuming}`,
 				});
 			}
 			yield* emit([{kind: "phase", phase: "starting"}]);
-			if (options.resume !== undefined) {
+			if (resuming !== undefined) {
 				yield* emit(script.history.map((item) => ({kind: "item", item}) as const));
+				const resumed = script.resumed ?? [];
+				yield* emit(resumed);
+				yield* Ref.update(state, (previous) => ({
+					...previous,
+					pending: foldPending(previous.pending, resumed),
+				}));
 			}
+			// `state` is per build and seeded from the script, so a rebuilt layer holds the script's
+			// mode rather than the operator's. The caller's mode is the session's, and announcing it
+			// here rather than re-applying it later is what keeps the announced mode and the mode the
+			// session runs on one fact (#7953).
+			const openedOn =
+				options.mode !== undefined && script.modes.available.includes(options.mode)
+					? options.mode
+					: current.mode;
 			yield* emit([
-				{kind: "mode", current: current.mode, available: script.modes.available},
+				{kind: "mode", current: openedOn, available: script.modes.available},
+				{kind: "model", current: current.model, available: script.models.available},
+				{kind: "commands", available: script.commands ?? []},
+				{kind: "thinking", current: current.thinking, available: script.thinking.available},
 				{kind: "phase", phase: "ready"},
 			]);
-			yield* Ref.update(state, (previous) => ({...previous, started: true}));
-			return {sessionId: script.sessionId};
+			yield* Ref.update(state, (previous) => ({
+				...previous,
+				started: true,
+				mode: openedOn,
+				...(resuming === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
+			}));
+			// A resume hands back the whole scripted history, the way a real store-backed layer hands
+			// back what its open read (#8855). A fresh open has no session to have read one from.
+			return {
+				sessionId: script.sessionId,
+				...(resuming === undefined ? {} : {history: script.history}),
+			};
 		});
 
 		const prompt = Effect.fn("TuvalAiAgent.prompt")(function* (text: string, key?: string) {
@@ -226,6 +308,30 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* emit([{kind: "mode", current: mode, available: script.modes.available}]);
 		});
 
+		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (model: ModelRef) {
+			const offered = script.models.available.find((candidate) => sameModel(candidate, model));
+			if (offered === undefined) {
+				return yield* new ModelUnsupported({
+					model: model.id,
+					available: script.models.available.map((candidate) => candidate.id),
+				});
+			}
+			// The script's own ref is what lands, not the caller's: the label a picker sent is the
+			// picker's, and the session runs on the model the backend named.
+			yield* Ref.update(state, (previous) => ({...previous, model: offered}));
+			yield* emit([{kind: "model", current: offered, available: script.models.available}]);
+		});
+
+		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
+			level: ThinkingLevel,
+		) {
+			if (!script.thinking.available.includes(level)) {
+				return yield* new ThinkingUnsupported({level, available: script.thinking.available});
+			}
+			yield* Ref.update(state, (previous) => ({...previous, thinking: level}));
+			yield* emit([{kind: "thinking", current: level, available: script.thinking.available}]);
+		});
+
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
 			const current = yield* Ref.get(state);
 			if (!current.live) {
@@ -234,24 +340,48 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 					detail: "the scripted transport is down and nothing reconnects it",
 				});
 			}
-			if (!Number.isInteger(limit) || limit < 1) {
-				return yield* Effect.die(
-					new Error(`page was asked for ${limit} items; the port declares limit > 0`),
-				);
-			}
-			const end =
-				before === null
-					? script.history.length
-					: script.history.findIndex((item) => item.id === before);
-			if (end < 0) {
-				return yield* new PageError({
-					reason: "unknown-cursor",
-					detail: `no item "${before}" is in this session's history`,
+			if (!Number.isInteger(limit) || limit < 1) return yield* brokenLimit(limit);
+			const planned = historyPage(script.history, before, limit);
+			return planned === null
+				? yield* new PageError({
+						reason: "unknown-cursor",
+						detail: `no item "${before}" is in this session's history`,
+					})
+				: planned;
+		});
+
+		// The store is the script's, so this answers before `start`, after a scripted disconnect and
+		// under a `startRefusal` — the same independence `listSessions` below has, and the whole
+		// point of the member (#8233).
+		const sessionTranscript = Effect.fn("TuvalAiAgent.sessionTranscript")(function* (
+			query: TranscriptQuery,
+		) {
+			if (query.sessionId !== script.sessionId) {
+				return yield* new TranscriptError({
+					reason: "session-not-found",
+					sessionId: query.sessionId,
+					detail: `the script holds session ${script.sessionId}`,
 				});
 			}
-			const from = Math.max(0, end - limit);
-			return {items: script.history.slice(from, end), hasMore: from > 0};
+			if (!Number.isInteger(query.limit) || query.limit < 1) {
+				return yield* brokenLimit(query.limit);
+			}
+			const planned = historyPage(script.history, query.before, query.limit);
+			return planned === null
+				? yield* new TranscriptError({
+						reason: "unknown-cursor",
+						sessionId: query.sessionId,
+						detail: `no item "${query.before}" is in this session's history`,
+					})
+				: planned;
 		});
+
+		// The store is the script's, not the session's: it answers before `start` and after a
+		// scripted disconnect, because listing never went down the transport that died.
+		const listSessions = Effect.suspend(() => {
+			const held = script.sessions ?? [];
+			return held instanceof ListError ? Effect.fail(held) : Effect.succeed(newestFirst(held));
+		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
 
 		return {
 			start,
@@ -259,8 +389,13 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			interrupt,
 			answer,
 			setMode,
+			setModel,
+			commands: Effect.map(Ref.get(state), (current) => current.commands),
+			setThinkingLevel,
 			page,
-			events: Stream.fromQueue(queue),
+			sessionTranscript,
+			listSessions,
+			events: withTurnResult(Stream.fromQueue(queue)),
 		};
 	});
 

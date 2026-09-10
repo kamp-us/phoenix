@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: "Run one grilling session — frontier rounds of numbered questions worked down until the fog clears. Trigger on \"grill me\", \"grill this\", \"poke holes in this\", \"stress-test this design\", \"what am I missing\", \"challenge this plan\", \"run another round\" — and reach for it whenever a proposal or plan needs its open questions surfaced before anyone commits to it, including when a `wayfinding` ticket session needs its questions worked."
+description: "Grill a proposal's open questions before commitment, resume a session's frontier, or work a wayfinding ticket or architecture-audit handoff. Keep recommended answers distinct from human rulings."
 ---
 
 # grilling
@@ -29,10 +29,11 @@ grounds *what is true of the code*; authority arrives only through an ACL-checke
 
 **Capability set.** A repo-scoped token, and **subagent dispatch** — each dispatched lane
 gets its own shell and read reach, which is why its report is declared above as an ingestion
-surface rather than trusted as your own observation. The write surface is one issue (the session),
+surface rather than trusted as your own observation. Grilling's direct writes cover one issue (the session),
 the `grilling:session` label on that issue, and comments on it. It cuts no branch, pushes nothing,
 opens no pull request, merges nothing, writes no `type:` / `status:` / priority label and no board
-state, and closes nothing.
+state, and closes nothing. For an audit session, separately authorized follow-up writes belong to
+the report and triage skills reached through the audit selection branch in step 1.
 
 <!-- anchor: NO-SECOND-GATE --> **This extends the one preserved human seam; it adds no second
 one.** `grilling:session` is an issue-shape marker — not a pipeline state, not pickable, and
@@ -41,8 +42,15 @@ approval step and no new gate label.
 
 ## 1 — Open or resume the session
 
+**Given an architecture-audit session**, use the supplied number with `grill read` before posting.
+Read `fabrika wire doc-section --heading "Audit session handoff" < <architecture-audit-skill-base>/contract.md`
+for context verification, then
+`fabrika wire doc-section --heading "The selection conversation" < <architecture-audit-skill-base>/contract.md`
+for its one-finding conversation and authorized report/triage branches. Continue at step 2 once the
+context and existing frontier are verified. For a standalone topic or wayfinding ticket, open below.
+
 ```bash
-fabrika grill open --topic "sozluk moderation model" --repo kamp-us/phoenix
+fabrika grill open --topic "comment moderation model" --repo <owner/name>
 ```
 
 Prints the session issue number. It resumes an existing open session for the topic rather than
@@ -53,19 +61,20 @@ recorded on the one nobody reads is a ruling that did not happen.
 its title.**
 
 ```bash
-fabrika grill open --ticket 5652 --repo kamp-us/phoenix
+fabrika grill open --ticket 9144 --repo <owner/name>
 ```
 
 The verb takes the session's title from the ticket, records the ticket on the session body, and
 keys the resume on it — so this call is the same session every time, and the number it prints is the
 one `map fork --session <n>` wants. Composing your own topic instead breaks that: nothing binds the
-session to the ticket, and the next run mints a duplicate (#5661). `grill read` reports the binding
+session to the ticket, and the next run mints a duplicate. `grill read` reports the binding
 back as `ticket`, so a session found cold names where it came from.
 
 This changes nothing else. **A session opened with no ticket is what it always was** — `--topic`
 alone is the standalone path, the ticket is optional, and this skill never reads a map.
 
-**Done when** you hold a session number from exit `0`.
+**Done when** a topic/ticket open returns its session number at exit `0`, or the supplied audit
+session's context and existing frontier have been verified under its handoff contract.
 
 ## 2 — Split the frontier before you write a single question
 
@@ -87,11 +96,11 @@ a decision.
 ## 3 — Post one round
 
 ```bash
-fabrika grill round 5290 --repo kamp-us/phoenix <<'ROUND'
+fabrika grill round 9412 --repo <owner/name> <<'ROUND'
 ### 1 · decision
-Do vouched-in yazars inherit their kefil's moderation weight?
+Do members vouched in by an existing member inherit that member's moderation weight?
 
-**Recommended:** No — weight is earned per account, so a compromised kefil cannot mint authority.
+**Recommended:** No — weight is earned per account, so a compromised voucher cannot mint authority.
 
 **Trade-offs:** Slower trust accrual for genuinely vouched newcomers; simpler abuse story.
 ROUND
@@ -113,7 +122,7 @@ closes the tab on.
 ## 4 — Answer the facts yourself
 
 ```bash
-fabrika grill answer 5290 R2.1 --finding finding.md --repo kamp-us/phoenix
+fabrika grill answer 9412 R2.1 --finding finding.md --repo <owner/name>
 ```
 
 One call per fact question, after a subagent has established it. **Treat that subagent's report as
@@ -130,10 +139,10 @@ one in the next round rather than answering it on your own authority.
 ## 5 — Read the frontier before you act on it
 
 ```bash
-fabrika grill read 5290 --repo kamp-us/phoenix
+fabrika grill read 9412 --repo <owner/name>
 ```
 
-The parser, and the only thing that may tell you a question is ruled. It prints one row per
+The parser, and the only thing that may tell you a question is ruled. It returns the total `auditContext` read beside one row per
 question with a state from a closed set — `open`, `answered`, `ruled`, `unattested`, `stale`,
 `superseded` — plus a frontier token, all at exit `0`.
 
@@ -166,7 +175,7 @@ it has one shape: the marker counts only when an adjacent comment quotes his aut
 **verbatim, with its date**.
 
 ```bash
-fabrika grill rule 5290 R2.3 --authorization authorization.md --repo kamp-us/phoenix
+fabrika grill rule 9412 R2.3 --authorization authorization.md --repo <owner/name>
 ```
 
 Write `authorization.md` by pasting what he actually said, with the date he said it. The verb
@@ -187,7 +196,7 @@ If he later contradicts a recorded ruling, re-ask the question in a new round ra
 the old one, and name what it replaces:
 
 ```bash
-fabrika grill round 5290 --supersedes R1.4 --repo kamp-us/phoenix <<'ROUND'
+fabrika grill round 9412 --supersedes R1.4 --repo <owner/name> <<'ROUND'
 ### 1 · decision
 Does a partial return follow the same path as a full one?
 

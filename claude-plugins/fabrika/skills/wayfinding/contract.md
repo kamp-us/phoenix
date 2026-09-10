@@ -1,6 +1,6 @@
 # `/wayfinding` — derived CLI contract
 
-**Skill:** [`wayfinding`](SKILL.md) · **Authoring brief:** [#5018](https://github.com/kamp-us/phoenix/issues/5018) · **Date:** 2026-08-10
+**Skill:** [`wayfinding`](SKILL.md) · **Date:** 2026-08-10
 
 **Where these verbs land.** `packages/fabrika-cli/`, under a **`map`** subcommand group registered
 in [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts). Each leaf is built with
@@ -9,12 +9,12 @@ so an undeclared operand is refused rather than ignored. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
 spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** No verb here invokes
-anything under `claude-plugins/kampus-pipeline/` or `packages/pipeline-cli/`, in a fence, behind a
-wrapper, or as a contract clause (ADR
-[0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every v1 module
-named in a **Grounding** block below is cited as a **scar to design out**, never as a dependency —
-those citations are non-normative and an implementer opens none of them to build this.
+**This group reimplements what it needs and calls the predecessor pipeline nowhere, and neither
+does the skill.** A reimplementation that shells out to the tooling it replaced keeps that tooling
+alive and inherits every scar with it, so no verb here invokes a v1 script or CLI, in a fence,
+behind a wrapper, or as a contract clause. Every v1 module named in a **Grounding** block below is
+cited as a **scar to design out**, never as a dependency — those citations are non-normative and an
+implementer opens none of them to build this.
 
 **The group name.** `map`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
@@ -36,7 +36,7 @@ a transcription drifts and a pointer to code cannot:
 - [`src/report/dedup.ts`](../../../../packages/fabrika-cli/src/report/dedup.ts) — `tokenize`,
   `scoreTitle`, `rank`, `TOKEN_FLOOR`. Pure. `map open`'s already-charted check is built on this
   **module**, not on a call to `report dedup`; a verb whose only behaviour was relaying that answer
-  is what ADR 0238 forbids.
+  would earn no seat.
 - [`src/report/compose.ts`](../../../../packages/fabrika-cli/src/report/compose.ts) —
   `normalizeForReadback`. Read-backs compare normalized, never byte-identical.
 - [`src/review/append.ts`](../../../../packages/fabrika-cli/src/review/append.ts) — `appendOnly`,
@@ -61,17 +61,18 @@ its own registration row below.
 
 - **A `map assess` verb.** An earlier draft had one: it would have reported whether a destination is
   fog before `map open` minted anything. Dropped, because its whole behaviour is relaying the
-  answer `map open` already computes on its own refusal path — the wrapper shape ADR 0238 names.
+  answer `map open` already computes on its own refusal path — a wrapper that earns no seat.
   The gate is `map open`'s refusal instead, which is strictly better: the check fires at the moment
   the claim is made, and **nothing is written when it fails**.
 - **A verb that decides whether a destination is fog.** That judgment is the wrapper's
-  ([`SKILL.md`](SKILL.md) §1) and, at intake, ADR
-  [0203](../../../../.decisions/0203-fog-reports-route-to-wayfinder-backlog.md)'s. A verb guessing
-  it would be a stochastic answer wearing a deterministic exit code, **and** a second answer to a
-  question already ruled. `map open` checks only the mechanical half — that questions were supplied,
-  that none is already answered, that the destination is not already charted or descoped.
-- **A verb that closes or graduates the map.** Emission is `graduate`'s (#5017 amendment, ADR
-  0246). v1 scripted only the destructive half of this — closing the map — and left the safe half
+  ([`SKILL.md`](SKILL.md) §1) and, before that, intake's: a report with no buildable deliverable is
+  routed to the fog backlog there, not here. A verb guessing it would be a stochastic answer wearing
+  a deterministic exit code, **and** a second answer to a question already ruled. `map open` checks
+  only the mechanical half — that questions were supplied, that none is already answered, that the
+  destination is not already charted or descoped.
+- **A verb that closes or graduates the map.** Emission is `graduate`'s, and the homonym is
+  resolved by namespace rather than by a second spelling. v1 scripted only the destructive half of
+  this — closing the map — and left the safe half
   (annotate, stay open) as prose, so the ergonomic branch was the irreversible one. Here neither
   branch is ours.
 - **A verb that runs question rounds.** `grilling` is the shared primitive and owns rounds,
@@ -81,7 +82,7 @@ its own registration row below.
   ([`src/review/classes.ts`](../../../../packages/fabrika-cli/src/review/classes.ts)) and emits no
   verdict marker, so `wire/verdict-marker.ts`'s `NAMESPACE` regex and its separate
   `NAMESPACE_PREFIXES` gate are **not** widened. Nothing recorded here can block a merge; widening
-  either would create the second human gate #4631 rules out.
+  either would create the second human gate this layer exists not to add.
 - **A second answer to triage's classification, to control-plane membership, or to pitch approval.**
   Each is enforced at its own gate. This group states expectations and computes none of them.
 
@@ -104,14 +105,14 @@ Five sections, in this order, and nothing else:
 
 ```markdown
 ## Destination
-How vouched yazars earn moderation weight.
+How vouched members earn moderation weight.
 
 ## Decisions
-- Weight is earned per account, never inherited from a kefil. — ruled on #9301 R2.3
+- Weight is earned per account, never inherited from a voucher. — ruled on #9301 R2.3
 
 ## Frontier
 - #9142 · research — does better-auth mint a single-use token without a new table?
-- #9144 · decision — does an invited çaylak start at 0 karma? — forked to #9301
+- #9144 · decision — does an invited newcomer start at 0 reputation? — forked to #9301
 
 ## Fog
 - Whether weight decays, and on what clock.
@@ -161,8 +162,8 @@ this map's ticket, whatever the sub-issue edge says — the edge can be added by
 
 **Stated, not yet enforced.** This marker's schema module and its row in
 [`src/wire/registry.ts`](../../../../packages/fabrika-cli/src/wire/registry.ts) land with the
-implementation ([#5022](https://github.com/kamp-us/phoenix/issues/5022)). Until then nothing in the
-shipped package recognizes the key, and no claim here describes present behaviour.
+implementation. Until then nothing in the shipped package recognizes the key, and no claim here
+describes present behaviour.
 
 ## The body digest, and its neutrality invariant
 
@@ -186,8 +187,8 @@ The implementation owes a deterministic test that a body round-tripped through
 ## The edge reads
 
 Frontier topology is stored in GitHub's native issue-dependency and sub-issue relationships, never
-in the body. Four endpoints, all REST (skill conventions
-[§11](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)), all paginated:
+in the body. Four endpoints, all REST ([skill conventions
+§11](../../docs/skill-conventions.md)), all paginated:
 
 | Read | Endpoint | Proven-empty vs unknown |
 |---|---|---|
@@ -203,8 +204,8 @@ Writes: `POST repos/<repo>/issues/<n>/dependencies/blocked_by` and
 [`src/build/blockedness.ts`](../../../../packages/fabrika-cli/src/build/blockedness.ts) is the one
 reader, and `build claim`, `build pick` and `build eligible` all gate on it — so a destination
 carrying an open frontier ticket is answered blocked until that ticket closes. No edge is carved out
-by who wrote it: ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md), ruled
-for map edges at [#6271](https://github.com/kamp-us/phoenix/issues/6271#issuecomment-5362260727).
+by who wrote it: the native dependency graph is the one carrier of blockedness, and a map edge is a
+real edge on it like any other.
 
 <!-- anchor: EDGE-BODY-TAKES-AN-INTERNAL-ID --> **Both POST bodies take the target's internal `id`,
 not its issue number**, and the sub-issue key is the singular `sub_issue_id`. Passing a number
@@ -216,9 +217,9 @@ interpolates a number into either body.
 about its edges.** The endpoint returns `200 []` for a real issue with no edges and `404` for an
 issue that does not exist, so the two are distinguishable — but only if existence is established
 separately. A verb that read `[]` and reported "no blocking edges" without knowing the issue exists
-would print a proven negative over zero scope, which is #4752's class and ADR
-[0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)'s prohibition. Every edge
-read here is preceded by an `Existence` read of the ticket, and a `404` is `13`.
+would print a proven negative over zero scope — a gate that cannot prove what it looked at fails
+closed instead. Every edge read here is preceded by an `Existence` read of the ticket, and a `404`
+is `13`.
 
 **Verified against the live platform**, not asserted from documentation: the two dependency
 endpoints answer `200 []` on an existing issue and `404` on a nonexistent one, and
@@ -336,9 +337,8 @@ added the second human gate the skill's `NO-SECOND-GATE` anchor rules out.
 **One vocabulary this group is NOT a member of, stated because it bites the ship gate rather than
 the code.** the retired eval corpus's `STAGES` is `["triage", "build", "review", "ship-it"]`, so the
 ideation layer has no stage to declare an eval entry under. That is a corpus-wide gap affecting the
-whole quintet, owned by [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s harness rather
-than by this contract, and it is recorded here so an implementer meets it as a known absence rather
-than as a surprise.
+whole quintet, owned by the eval harness rather than by this contract, and it is recorded here so
+an implementer meets it as a known absence rather than as a surprise.
 
 ---
 
@@ -347,7 +347,7 @@ than as a surprise.
 **Invocation**
 
 ```
-fabrika map open --destination "how vouched yazars earn moderation weight" [--repo <owner/name>]
+fabrika map open --destination "how vouched members earn moderation weight" [--repo <owner/name>]
 ```
 
 Reads the caller's enumerated open questions from stdin, one per line.
@@ -362,7 +362,7 @@ Reads the caller's enumerated open questions from stdin, one per line.
 **Output** — machine. One JSON object:
 
 ```json
-{"map":9140,"created":true,"destination":"how moderation weight is earned","questions":2,"answeredCandidates":[{"question":"does weight inherit from a kefil?","candidates":[{"issue":9098,"score":7,"title":"Moderation weight is earned per account"}]}],"digest":"a1b2c3d4e5f6","scanned":{"maps":7,"candidates":0}}
+{"map":9140,"created":true,"destination":"how moderation weight is earned","questions":2,"answeredCandidates":[{"question":"does weight inherit from a voucher?","candidates":[{"issue":9098,"score":7,"title":"Moderation weight is earned per account"}]}],"digest":"a1b2c3d4e5f6","scanned":{"maps":7,"candidates":0}}
 ```
 
 `created` is `false` on a resume. `questions` counts the supplied lines that parsed as questions and are now the map's
@@ -398,9 +398,9 @@ is a judgment about whether the fog is worth charting.
 half, and it is deliberately not the whole test.** Whether something is genuinely fog is a judgment
 the skill carries; what a verb can prove is that the caller enumerated questions, that they are
 still open, and that nobody has charted or rejected this destination already. That is what makes a
-wrong classification catchable at the point it is made rather than well-formed and wrong (#4227) —
-the claim is bound to an enumerable artifact instead of to the caller's confidence. It is **not** a
-second answer to ADR 0203's discriminator, which is seated at intake and which this verb expects
+wrong classification catchable at the point it is made rather than well-formed and wrong — the
+claim is bound to an enumerable artifact instead of to the caller's confidence. It is **not** a
+second answer to intake's fog discriminator, which is seated there and which this verb expects
 rather than recomputes.
 
 **Exit status**
@@ -487,15 +487,16 @@ $ echo $?
 - v1 searched for nothing before minting: *"With no map yet, open a new issue carrying the
   `wayfinder:map` label"* (`wayfinder/SKILL.md:195`), so two maps for one destination is its
   ordinary outcome and the decisions recorded on the unread one did not happen.
-- ADR 0203 seats the fog-versus-buildable call at intake. This verb expects that answer and checks
+- The fog-versus-buildable call is seated at intake. This verb expects that answer and checks
   evidence; it does not recompute the routing.
-- #4227 — a well-formed wrong classification propagating unchallenged. The `17` path is what makes
-  the classification refutable at the moment it is asserted.
-- #4154 / #4148 — `intake-dedup` matches only the issue itself on a 12-token AND query, and is
-  open-only so a charted-and-closed destination reads as new. This verb uses the pure `dedup`
-  module with its own scope (open maps, and closed issues for the answered-question check) rather
-  than inheriting either scar.
-- #3086 — a machine-local path leaked into a posted body; the title is scanned, not only the body.
+- A well-formed wrong classification propagates unchallenged. The `17` path is what makes the
+  classification refutable at the moment it is asserted.
+- v1's `intake-dedup` matches only the issue itself on a 12-token AND query, and is open-only so a
+  charted-and-closed destination reads as new. This verb uses the pure `dedup` module with its own
+  scope (open maps, and closed issues for the answered-question check) rather than inheriting either
+  scar.
+- A machine-local path has leaked into a posted body before; the title is scanned, not only the
+  body.
 
 ---
 
@@ -609,8 +610,8 @@ edge read that could not complete is `11`, never an empty frontier.
 
 <!-- anchor: NEVER-PASS-ON-A-FAILED-READ --> v1's dangling-reference check disabled itself whenever
 the sub-issue read came back empty (`wayfinder-map/validate.ts:130`, `if (subIssues.length > 0)`),
-so a rate-limited call silently removed the check rather than refusing — the zero-scope pass ADR 0092
-forbids. Here an empty read that cannot be proven empty is `11`.
+so a rate-limited call silently removed the check rather than refusing — the zero-scope pass a gate
+must fail closed on. Here an empty read that cannot be proven empty is `11`.
 
 **Examples**
 
@@ -741,7 +742,7 @@ $ echo $?
 ```
 
 ```
-$ fabrika map ticket 9140 --digest 000000000000 --kind decision --question "does an invited çaylak start at 0 karma?"
+$ fabrika map ticket 9140 --digest 000000000000 --kind decision --question "does an invited newcomer start at 0 reputation?"
 map ticket: #9140's body moved since --digest 000000000000 (now b2c3d4e5f6a1) — nothing was written. Re-read and re-apply.
 $ echo $?
 12
@@ -794,9 +795,9 @@ held it — a re-run is not an error).
 
 <!-- anchor: LANE-KEY-IS-THE-RUN-NONCE --> **The lane key is the caller's run nonce, never a
 session id and never a process id.** The session id (`FABRIKA_SESSION_ID`, else
-`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION` — #6960) is **pane-constant, not
-per-run** (#5028), and sibling subagents of one parent share it (#4516), so two lanes of one charting run
-would key onto one namespace and each would classify the other's claim as its own. The nonce is
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`) is **pane-constant, not per-run**, and
+sibling subagents of one parent share it, so two lanes of one charting run would key onto one
+namespace and each would classify the other's claim as its own. The nonce is
 generated once per run by the caller and passed explicitly, which is also what keeps it out of
 session memory: no verb infers it from the environment.
 
@@ -839,11 +840,11 @@ $ echo $?
 
 **Grounding**
 
-- #4516 / #5028 — the scratch namespace keyed on a session id collides across sibling lanes and
-  roles, and `(session, pid)` is pane-constant rather than per-run. The nonce is the fix, and it is
-  an argument rather than an environment read so nothing can re-derive it wrongly.
-- #4060 — a classifier that read zero files under parallel invocation and silently defaulted to a
-  plausible answer. A lane that cannot prove it is free refuses.
+- A scratch namespace keyed on a session id collides across sibling lanes and roles, and
+  `(session, pid)` is pane-constant rather than per-run. The nonce is the fix, and it is an argument
+  rather than an environment read so nothing can re-derive it wrongly.
+- A classifier that read zero files under parallel invocation once silently defaulted to a plausible
+  answer. A lane that cannot prove it is free refuses instead.
 - v1 has no lane concept at all: its one-ticket-per-session law is prose with *"no counter, no
   marker, no check"* (`wayfinder/SKILL.md:282, :344`). This verb is the marker that law needed.
 - `epic-lock`'s scars, designed out: it never reads back the presence stamp it writes
@@ -884,8 +885,8 @@ carries it. `no-evidence` means the lane looked and the evidence is not there �
 the finding, when given, records where it looked. `unreachable` means the lane could not look at
 all: the source was unavailable, the dispatch failed, the lane returned nothing. A verb that
 accepted a silent empty finding would let all three arrive as one, which is exactly how a
-zero-files-read classifier ships a plausible answer (#4060). There is no fourth value and no
-default: `--outcome` is required, and an off-vocabulary value is a usage error at parse (`1`).
+zero-files-read classifier ships a plausible answer. There is no fourth value and no default:
+`--outcome` is required, and an off-vocabulary value is a usage error at parse (`1`).
 
 This verb writes a comment on the **ticket** and releases the lane. It does **not** touch the map
 body — that is `map record`, deliberately separate, so the lane traffic of a parallel burndown never
@@ -935,10 +936,10 @@ $ echo $?
 
 **Grounding**
 
-- #4060 — the distinguishability requirement in full: a lane that returned nothing and a lane whose
-  answer is "nothing is there" are different facts with different next steps.
-- #3709 — parallel lanes conflicting on one shared file. Lane traffic writes to the ticket, not to
-  the map, so the shared body sees one write per *resolution* rather than one per lane event.
+- The distinguishability requirement in full: a lane that returned nothing and a lane whose answer
+  is "nothing is there" are different facts with different next steps.
+- Parallel lanes conflict on one shared file. Lane traffic writes to the ticket, not to the map, so
+  the shared body sees one write per *resolution* rather than one per lane event.
 - v1 records an answer straight into the map body via a CLI verb that does not exist
   (`wayfinder/SKILL.md:328`), so in practice the agent hand-edits the body — the unguarded
   read-modify-write this split removes.
@@ -1038,8 +1039,8 @@ $ echo $?
   accepts both type labels identically, so an agent that mislabels a fork resolves the founder's
   decision on its own authority and no artifact records that it did. Here `kind` is a closed set in
   a marker and `13` is the refusal.
-- #4441 — a relayed ruling is indistinguishable from a fabricated one at the point it is recorded.
-  This group does not record rulings at all; it points at the session that does.
+- A relayed ruling is indistinguishable from a fabricated one at the point it is recorded. This
+  group does not record rulings at all; it points at the session that does.
 
 ---
 
@@ -1076,8 +1077,7 @@ see the resume paragraph below.
 **The finding is folded to one line before it is composed**, the same expression `map descope`
 folds its `--reason` with (`src/map/body.ts`, `foldEntryText`): both sections are one entry per
 bullet, so a multi-line input written verbatim lands as lines the parser reads as neither an entry
-nor a continuation. `map record` shipped without the fold and corrupted a live map
-([#5550](https://github.com/kamp-us/phoenix/issues/5550)).
+nor a continuation. `map record` shipped without the fold once and corrupted a live map.
 
 **The lockstep, and the order that makes a partial application safe.** Three writes, one guard:
 
@@ -1107,8 +1107,7 @@ fork to it. So finishing an interrupted lockstep is this verb again rather than 
 the map with `map read` for its new digest, then re-run the command against that digest — the body
 write that landed moved the digest, so the literal same command exits `12`. A re-run can never record
 the same answer twice, and the recorded entry stands as written — a wrong answer is retracted in the
-open with a new entry (#4227), never overwritten by a re-run, so the resume ignores `--finding`'s
-text.
+open with a new entry, never overwritten by a re-run, so the resume ignores `--finding`'s text.
 
 **A landed body write is never rolled back.** There is no transaction across two GitHub writes, and
 an undo PATCH is itself a write that can fail, leaving a state no reader can name. The composed
@@ -1136,12 +1135,11 @@ returns. The closed set is `open`, `answered`, `ruled`, `unattested`, `stale`, `
 `R<round>.<n>`. `map fork` checks only that `--session` carries the `grilling:session` label, which
 is a plain label read and needs no import.
 
-**Sequencing this creates, stated because an implementer inherits it:** the `grill` group ships from
-[#5023](https://github.com/kamp-us/phoenix/issues/5023) and this group from
-[#5022](https://github.com/kamp-us/phoenix/issues/5022). Until that reader exists, `map record` on a
-`forked` ticket refuses `11` — the ruling's state is UNKNOWN, never assumed `ruled` — and the
-research path is unaffected. Both groups are fabrika's own; nothing here reaches outside it (ADR
-0238).
+**Sequencing this creates, stated because an implementer inherits it:** the `grill` group and this
+one ship from separate tickets, and this group's ruling reader is the `grill` group's. Until that
+reader exists, `map record` on a `forked` ticket refuses `11` — the ruling's state is UNKNOWN, never
+assumed `ruled` — and the research path is unaffected. Both groups are fabrika's own; nothing here
+reaches outside it.
 
 **Exit status**
 
@@ -1194,9 +1192,9 @@ $ echo $?
 **Grounding**
 
 - The lockstep invariant is v1's own, stated and unenforced.
-- #4227 — a wrong recorded answer is retracted in the open, never quietly overwritten. This verb
-  appends; it never rewrites an existing decision entry. A superseded decision is a new entry naming
-  what it replaces, which is also what keeps the body digest's guarantee meaningful.
+- A wrong recorded answer is retracted in the open, never quietly overwritten. This verb appends; it
+  never rewrites an existing decision entry. A superseded decision is a new entry naming what it
+  replaces, which is also what keeps the body digest's guarantee meaningful.
 - v1's `MALFORMED_DECISION_ENTRY` requires a `— from #N` origin on every entry
   (`wayfinder-map/Defect.ts:32`) and nothing ever ran the validator (`wayfinder/SKILL.md:226`).
   Here the citation is composed by the verb, so it cannot be omitted.
@@ -1285,9 +1283,9 @@ $ echo $?
 
 **Grounding**
 
-- #4644's adopt list — a never-graduating out-of-scope section is one of the four deltas this
-  rebuild exists to carry. v1 has no such section: its four sections all graduate, so a rejected
-  direction leaves no trace once the fog it lived in clears.
+- A never-graduating out-of-scope section is one of the four deltas this rebuild exists to carry.
+  v1 has no such section: its four sections all graduate, so a rejected direction leaves no trace
+  once the fog it lived in clears.
 - Skill conventions §7 — the plugin-layer scope law this is the map-level twin of.
 
 ---
@@ -1326,7 +1324,8 @@ The five hand-checks those tests cannot perform:
 
 **The shared-state law has one surface here, and it is the map body.** Every artifact this group
 touches otherwise lives on GitHub keyed by issue and comment id; no verb writes a temp directory, so
-the session-keyed collision recorded at #4516 cannot occur through a scratch path. The body is
-guarded by `--digest` compare-and-set, and lane traffic is routed to the ticket rather than the body
-precisely so a parallel burndown does not serialize on it. Stated because an absent answer to that
-question reads as one nobody asked.
+the session-keyed scratch collision — sibling lanes of one parent share a session id, so a
+session-keyed path is one namespace for several lanes — cannot occur through a scratch path. The
+body is guarded by `--digest` compare-and-set, and lane traffic is routed to the ticket rather than
+the body precisely so a parallel burndown does not serialize on it. Stated because an absent answer
+to that question reads as one nobody asked.

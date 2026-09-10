@@ -119,7 +119,7 @@ a comment body, and its section says which
 
 **When the correction belongs in the body rather than under it, amend — never rewrite.** GitHub
 keeps no issue-body history, so a hand-rolled `gh api -X PATCH -f body=@file` that posts the path
-instead of the file destroys the body it was correcting (#6708, #6736). `fabrika report amend
+instead of the file destroys the body it was correcting. `fabrika report amend
 --issue <n>` appends your section under a separator and a dated heading it composes, leaves the
 prior body verbatim, and proves both halves on the read-back
 (`fabrika wire doc-section --heading "report amend" < <skill-base>/contract.md`).

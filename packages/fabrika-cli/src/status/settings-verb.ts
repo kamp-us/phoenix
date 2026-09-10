@@ -1,7 +1,7 @@
 /**
  * `status settings` — every key on the config surface, its resolved value, and where that value
  * came from. The one place a skill asks what `.fabrika.jsonc` resolves to, so no skill document has
- * to restate a value (R9.1, #6293).
+ * to restate a value.
  *
  * **Provenance is the load-bearing column.** "the governance roots are the five shipped defaults"
  * and "the governance roots are five values this repo declared" are different facts, and an agent
@@ -18,7 +18,7 @@
  * an id-to-word map, and a map is not what the front door relays to a human — it relays what each
  * surface *is* alongside what happens here when it is missing, and that half only exists as the
  * registry's notes. The expansion joins the two and appends `surface` rows to the same answer, so
- * the config surface still has one resolver and one path (#6301).
+ * the config surface still has one resolver and one path.
  *
  * It reads. It writes nothing.
  */
@@ -120,7 +120,7 @@ export interface SettingsInput {
 	 *
 	 * The blob answers "what happens here" for a caller that already knows the ids. A human at the
 	 * front door does not, and the id-to-word pairs alone tell them nothing about what the surface
-	 * *is* — that half lives in the registry's notes and reached no output at all (#6301).
+	 * *is* — that half lives in the registry's notes and reached no output at all.
 	 */
 	readonly surfaces: boolean;
 }
@@ -148,7 +148,7 @@ export const runSettings = ({source, rows, asOf, json, surfaces}: SettingsInput)
 	if (rows.length === 0) {
 		return refuse(
 			ZERO_SCOPE,
-			`${VERB}: the config surface registers zero keys — there is nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092).`,
+			`${VERB}: the config surface registers zero keys — there is nothing to resolve, and a readout over an empty surface is not an answer.`,
 		);
 	}
 	const state = settingsState(rows);
@@ -167,7 +167,7 @@ export const runSettings = ({source, rows, asOf, json, surfaces}: SettingsInput)
 	if (surfaces && dispositions === null) {
 		return refuse(
 			ZERO_SCOPE,
-			`${VERB}: the config surface registers no \`${SURFACE_DISPOSITIONS}\` key, so there are no surfaces to expand (ADR 0092).`,
+			`${VERB}: the config surface registers no \`${SURFACE_DISPOSITIONS}\` key, so there are no surfaces to expand.`,
 			[scope],
 		);
 	}

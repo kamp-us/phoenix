@@ -7,9 +7,9 @@
  * workspace-derived field `null`) while the same absence is a refusal (`12`) in the mutating verbs —
  * two consumers, two correct treatments, and the asymmetry is stated rather than left to be "fixed".
  *
- * **The bound on that near-totality is ADR 0092.** `4` and `11` still refuse: a workspace that cannot
- * be described is not "absent", and an unreadable state rendered as a plausible default is exactly the
- * failure that rule exists to prevent.
+ * **The bound on that near-totality is that a state it cannot read is never rendered as a plausible
+ * default.** `4` and `11` still refuse: a workspace that cannot be described is not "absent", and a
+ * default standing in for an unreadable field would be a green report over nothing.
  *
  * An **absent `evidence.jsonl` under a present workspace** yields `runs: 0`, `lastCommandExit: null`
  * and `evidenceDigest: null`, also a fact: a log that was never written is not a log that hashes to

@@ -4,7 +4,7 @@
  *
  * `lane/command.ts` resolves its workflow templates by path off `import.meta.url`, and `tsc` copies
  * no file it does not compile, so `dist/lane/templates/` never existed and every install outside
- * this checkout booted nothing (#6011). No in-process test could see it: read from `src/`, the
+ * this checkout booted nothing. No in-process test could see it: read from `src/`, the
  * templates are right there. What is under test is the *build output*, so this suite builds and
  * packs for real and drives the tarball's own `dist/bin.js`.
  *
@@ -44,7 +44,7 @@ interface Run {
 /**
  * `FABRIKA_SKIP_INFER` pins the invocation to the unpacked tarball rather than this checkout, and the
  * emptied `PATH` keeps the run off the network: an issue key makes `lane open` ask the board whether
- * the issue is an epic (#7024), and with no `git` and no `gh` to resolve a repo or a token, that read
+ * the issue is an epic, and with no `git` and no `gh` to resolve a repo or a token, that read
  * refuses the same way in every environment instead of hitting the API from a packaging test.
  */
 const bootLane = (key: string, root: string): Run => {
@@ -101,8 +101,8 @@ describe("the packed package ships what it reads at run time (#6011)", {
 
 	/**
 	 * The general guard: an asset added under `src/` tomorrow and read by path is caught the same
-	 * way the two templates are, without anyone naming it here. Zero assets is a red, not a pass
-	 * (ADR 0092) — a walk that stopped finding files reads exactly like a build that ships them.
+	 * way the two templates are, without anyone naming it here. Zero assets is a red, not a pass — a
+	 * walk that stopped finding files reads exactly like a build that ships them.
 	 */
 	it("copies every non-TypeScript file under src/ into dist/, byte for byte", () => {
 		const assets = assetsUnder(SRC);
@@ -129,8 +129,8 @@ describe("the packed package ships what it reads at run time (#6011)", {
 
 	it("resolves the coder template's path from the tarball on an issue boot", () => {
 		// An issue key cannot reach the write here: `lane open` asks the board whether the issue is an
-		// epic, and this run has nothing to ask it with (#7024). The template read runs first and is
-		// the thing #6011 is about, so its silence is what this asserts — the bytes are the test above.
+		// epic, and this run has nothing to ask it with. The template read runs first and is the thing
+		// this file exists for, so its silence is what this asserts — the bytes are the test above.
 		const run = bootLane("6011", join(scratch, "lanes"));
 
 		expect(run.stderr).not.toContain("cannot read the committed template");

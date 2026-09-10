@@ -1,7 +1,7 @@
 /**
  * The PNG decoder the `ui` group validates and diffs with — `node:zlib` and nothing else.
  *
- * A capture nobody can open is not evidence (#3925's class), so "is this PNG valid?" has to be
+ * A capture nobody can open is not evidence, so "is this PNG valid?" has to be
  * answered by actually decoding it: zero bytes, a truncated stream, a corrupt IDAT and a zero-area
  * image are all facts a header sniff would miss. The decoder is deliberately dependency-free —
  * fabrika is a published package an adopter installs, and a codec dependency for a few hundred lines

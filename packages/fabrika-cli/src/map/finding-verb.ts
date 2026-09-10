@@ -6,12 +6,12 @@
  * carries it. `no-evidence` means the lane looked and the evidence is not there — a **result**, and
  * the finding, when given, records where it looked. `unreachable` means the lane could not look at
  * all. A verb that accepted a silent empty finding would let all three arrive as one, which is
- * exactly how a zero-files-read classifier ships a plausible answer (#4060). There is no fourth value
- * and no default.
+ * exactly how a zero-files-read classifier ships a plausible answer. There is no fourth value and
+ * no default.
  *
  * This verb writes on the **ticket** and never touches the map body — that is `map record`,
  * deliberately separate, so the lane traffic of a parallel burndown never contends on the one body
- * every lane shares (#3709).
+ * every lane shares.
  */
 
 import {Effect, type FileSystem} from "effect";

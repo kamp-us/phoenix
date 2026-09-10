@@ -23,13 +23,19 @@ describe("the park table", () => {
 		for (const cause of named) expect(Object.hasOwn(PARK_CAUSES, cause)).toBe(true);
 	});
 
-	// ADR 0339: the pairing binds one direction only. Every row keys on a real cause (above), and a
-	// cause may stand with no row — it then names the park instead of clearing it.
+	// The pairing binds one direction only. Every row keys on a real cause (above), and a cause may
+	// stand with no row — it then names the park instead of clearing it.
 	it("lets a cause stand with no row, so the two tables need not be the same size", () => {
 		const covered = new Set(KNOWN_PARKS.flatMap((row) => (row.cause === null ? [] : [row.cause])));
 		const rowless = Object.keys(PARK_CAUSES).filter((cause) => !covered.has(cause));
 
 		expect(rowless).toContain("head-behind-base");
+	});
+
+	// A rowless cause still carries the verb that removes it: naming and clearing are decoupled, and
+	// `head-behind-base` names `lane refresh` without buying the autonomous clear a row would.
+	it("lets a rowless cause name its remedy, since naming is not what a row buys", () => {
+		expect(PARK_CAUSES["head-behind-base"].remedy).toBe("fabrika lane refresh");
 	});
 });
 
@@ -48,7 +54,7 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("branch-free");
 	});
 
-	it("is Known for a BLOCKED whose cause is the campaign-paused shape (#7217)", () => {
+	it("is Known for a BLOCKED whose cause is the campaign-paused shape", () => {
 		const parked = classifyPark("blocked", "campaign-paused");
 
 		expect(parked._tag).toBe("Known");
@@ -57,7 +63,7 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
 	});
 
-	it("is Known for a BLOCKED whose cause is the spawn-dead shape (#6770)", () => {
+	it("is Known for a BLOCKED whose cause is the spawn-dead shape", () => {
 		const parked = classifyPark("blocked", "spawn-dead");
 
 		expect(parked._tag).toBe("Known");
@@ -80,7 +86,17 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Novel" && parked.reason).toMatch(/some-cause-nobody-wrote-a-row-for/);
 	});
 
-	it("is Novel for the §CP park carrying a cause — a row matches the cause it names", () => {
+	it("is Known for the §CP leaf carrying the red-CI cause, without shadowing the null-cause row", () => {
+		const red = classifyPark("human:cp-approval", "head-ci-red");
+		const approval = classifyPark("human:cp-approval", null);
+
+		expect(red._tag === "Known" && red.recipe.clearance).toBe("ci-green");
+		expect(approval._tag === "Known" && approval.recipe.clearance).toBe("cp-approval");
+		// Turning a red head green is `heal-ci`'s repair work, so this row runs no remedy first.
+		expect(red._tag === "Known" && red.recipe.remedy).toBeNull();
+	});
+
+	it("is Novel for the §CP park carrying a cause no row on that leaf names", () => {
 		const parked = classifyPark("human:cp-approval", "worktree-holds-branch");
 
 		expect(parked._tag).toBe("Novel");

@@ -23,7 +23,7 @@ export {
 } from "../ship/fixtures.test-support.ts";
 
 /**
- * The nine reads this group makes over the HTTP client, matched on `METHOD url` (ADR 0315).
+ * The nine reads this group makes over the HTTP client, matched on `METHOD url`.
  *
  * `RUN` ends on the run id so it cannot also match `runs/<id>/jobs` — two patterns that overlap are
  * a script whose second entry is unreachable, and the answer would come from whichever is listed

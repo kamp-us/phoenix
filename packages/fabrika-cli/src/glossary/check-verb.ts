@@ -3,12 +3,11 @@
  *
  * **All three outcomes exit 0**, because the outcome is this verb's own verdict: a caller must never
  * read its own finding list as a failed run, which is the mistake v1's `adr-sweep` made by exiting
- * non-zero on the one case it was asked to produce (#4723).
+ * non-zero on the one case it was asked to produce.
  *
  * **Zero scope is a red, with one carved-out exception.** A register present and holding zero rows is
- * `7` — a check that scanned nothing must never report `clean` (ADR 0092). An *absent* register is
- * `bootstrap` on exit `0`: refusing there would leave a fresh repo unable to run the skill at all
- * (#4776).
+ * `7` — a check that scanned nothing must never report `clean`. An *absent* register is
+ * `bootstrap` on exit `0`: refusing there would leave a fresh repo unable to run the skill at all.
  *
  * Two defect classes are deliberately not computed here — machine-local paths and dead internal links
  * — because a merge-blocking gate already decides each, and a second answer could contradict it.
@@ -40,7 +39,7 @@ const VERB = "glossary check";
 export interface CheckOptions {
 	readonly register: string;
 	readonly dir: string;
-	/** `--decisions`, or `null` to resolve the corpus from `decisionsDir` (#6433). */
+	/** `--decisions`, or `null` to resolve the corpus from `decisionsDir`. */
 	readonly decisions: string | null;
 	readonly json: boolean;
 	readonly cwd: string;
@@ -57,7 +56,7 @@ const messages = {
  * Every cited id resolved against the corpus, or the reason the corpus could not be read.
  *
  * `wanted` is non-empty by precondition — `runCheck` answers the no-citations case as `Empty` before
- * any corpus is consulted, so this never reports an unread corpus nobody asked about (#6433).
+ * any corpus is consulted, so this never reports an unread corpus nobody asked about.
  */
 const resolveCitations = (
 	dir: string,
@@ -133,7 +132,7 @@ export const runCheck = (options: CheckOptions): GlossaryEffect<VerbOutcome> =>
 			if (rows.length === 0) {
 				return refuse(
 					ZERO_SCOPE,
-					`${VERB}: ${file.display} holds 0 rows — refusing to report a clean scan of an empty register (ADR 0092).`,
+					`${VERB}: ${file.display} holds 0 rows — refusing to report a clean scan of an empty register.`,
 					scope,
 				);
 			}
@@ -170,7 +169,7 @@ export const runCheck = (options: CheckOptions): GlossaryEffect<VerbOutcome> =>
 		);
 		if (corpus._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, corpus.message, scope);
 		// The empty-citation answer is decided above the corpus fork, so both arms give it the same
-		// answer: with nothing cited there is nothing a corpus could settle (#6433).
+		// answer: with nothing cited there is nothing a corpus could settle.
 		const citations: CitationScope =
 			wanted.size === 0
 				? {_tag: "Empty"}

@@ -8,7 +8,8 @@
  *
  * **The body is a value, never a path.** There is deliberately no `--body` flag, no `--body-file`
  * and no temp file: a flag that accepts a path turns the body into a string the verb could post
- * verbatim, which is how #3086 and #3945 happened. A shell redirect is fine and expected — the
+ * verbatim, and a posting call that does not expand `@` then ships the literal path into a public
+ * artifact. A shell redirect is fine and expected — the
  * *shell* reads the file, so what reaches the verb is already the bytes.
  */
 import {Effect, Option} from "effect";

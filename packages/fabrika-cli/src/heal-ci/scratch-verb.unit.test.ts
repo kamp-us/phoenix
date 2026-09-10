@@ -26,7 +26,7 @@ describe("runScratch keys the namespace on the session and the PR", () => {
 
 	/**
 	 * The failure this verb exists to make unconstructible: two healers writing a fixed-name note body
-	 * into one working directory clobbered each other mid-post (#7209/#7210).
+	 * into one working directory clobbered each other mid-post.
 	 */
 	it("hands two concurrent healers two directories for one PR", async () => {
 		const first = await run();

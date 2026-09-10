@@ -58,7 +58,7 @@ const taxonomy = (...names: ReadonlyArray<string>): HttpReply => ({
 
 const TAXONOMY = taxonomy("status:awaiting-release", "status:triaged", "type:bug");
 
-const PLAIN_DIFF = `diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+const PLAIN_DIFF = `diff --git a/apps/site/src/App.tsx b/apps/site/src/App.tsx
 +const a = 1;
 `;
 
@@ -85,7 +85,7 @@ const runObserved = (script: ReadonlyArray<Scripted>, http: ReadonlyArray<Script
 	}));
 };
 
-const twoFiles = served(files("apps/web/src/App.tsx", "README.md"));
+const twoFiles = served(files("apps/site/src/App.tsx", "README.md"));
 
 describe("runRelease", () => {
 	it("answers n/a when no signal fires", async () => {
@@ -186,7 +186,7 @@ describe("runRelease", () => {
 		expect(out.code).toBe(READBACK_MISMATCH);
 	});
 
-	it("refuses on 23 when status:awaiting-release is absent — never minting it (#4285)", async () => {
+	it("refuses on 23 when status:awaiting-release is absent — never minting it", async () => {
 		const {out, calls} = await runObserved(
 			[
 				pullRecord({body: "Fixes #4287\n\nFlag: sozluk-vote-widget\n"}),
@@ -198,7 +198,6 @@ describe("runRelease", () => {
 		);
 		expect(out.code).toBe(LABEL_ABSENT);
 		expect(out.stderr.at(-1)).toContain('label "status:awaiting-release" is absent');
-		expect(out.stderr.at(-1)).toContain("#4285");
 		expect(out.stderr.at(-1)).toContain("A real dark ship is not queued");
 		expect(calls.some((line) => LABEL.test(line))).toBe(false);
 	});

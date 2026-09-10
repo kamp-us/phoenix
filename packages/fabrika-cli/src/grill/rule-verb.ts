@@ -3,7 +3,7 @@
  *
  * The four clauses are conjunctive and any miss resolves to *not recorded*, never to a warning: the
  * invoking token resolves `write+` at the ACL, the question exists, its round digests, and the
- * quoted authorization is present and dated. A bare stamp is void (#4938), which is why
+ * quoted authorization is present and dated. A bare stamp is void, which is why
  * `--authorization` is required rather than inferred.
  *
  * **Write ordering is an invariant, not an implementation detail.** The authorization comment lands
@@ -22,8 +22,8 @@
  *
  * **What `ruled` proves, exactly.** That a `write+` account posted a marker binding this question's
  * current text, with a dated authorization comment beside it. It does not prove the quoted
- * authorization is a truthful record of what the founder said; nothing mechanical can, and #4441 is
- * open on it.
+ * authorization is a truthful record of what the founder said, and nothing mechanical can: a
+ * relayed ruling is indistinguishable from a fabricated one at the point it is recorded.
  */
 
 import {Effect} from "effect";
@@ -101,7 +101,7 @@ export const runRule = <R = never>(
 		if (quoted.trim() === "") {
 			return refuse(
 				AUTHORIZATION_ABSENT,
-				`grill rule: --authorization ${authorizationPath} is empty — a ruling with no quoted authorization is void (#4938).`,
+				`grill rule: --authorization ${authorizationPath} is empty — a ruling with no quoted authorization is void.`,
 			);
 		}
 		if (!ISO_DATE.test(quoted)) {

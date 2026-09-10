@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {complete} from "./complete.ts";
+import {complete, subsequenceScore} from "./complete.ts";
 import {registry, snapshot} from "./fixtures.ts";
 
 const values = (input: string) => complete(input, registry, snapshot).map((c) => c.value);
@@ -63,6 +63,30 @@ describe("complete — fuzzy subsequence over user-named values", () => {
 
 	it("offers nothing for a parameter that names no live set", () => {
 		expect(values("workspace rename ws-2 ")).toEqual([]);
+	});
+
+	it("scores the tightest run in the value, not the first run it finds (#7757)", () => {
+		// `ab` sits in `a-xb-ab` twice: scattered at 0-3, contiguous at 5-6. The greedy walk locked
+		// on the first `a` and answered 3000; the tightest run is 5-6.
+		expect(subsequenceScore("a-xb-ab", "ab")).toBe(1005);
+	});
+
+	it("ranks a tight run behind a looser earlier one ahead of an only-looser value (#7757)", () => {
+		// `a-b` matches at 0-2 and nowhere tighter, so it trails `a-xb-ab`'s contiguous run.
+		expect(values("workspace activate ab")).toEqual(["a-xb-ab", "a-b"]);
+	});
+});
+
+describe("complete — one case rule over both matchers (#7757)", () => {
+	it("matches a prefix-ranked kind regardless of case", () => {
+		expect(values("W")).toEqual(values("w"));
+		expect(values("window move L")).toEqual(["left"]);
+		expect(values("process spawn C")).toEqual(["counter"]);
+	});
+
+	it("matches a fuzzy-ranked kind regardless of case", () => {
+		expect(values("workspace activate SCR")).toEqual(values("workspace activate scr"));
+		expect(values("workspace activate SCR")).toEqual(["scratch", "super-carrier"]);
 	});
 });
 

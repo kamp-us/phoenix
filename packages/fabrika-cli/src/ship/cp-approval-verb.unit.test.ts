@@ -13,7 +13,7 @@ const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4321\/comments\?/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
 const COMPARE = /\/repos\/o\/r\/compare\//;
-const ROSTER = /\/orgs\/kamp-us\/teams\/control-plane\/members/;
+const ROSTER = /\/orgs\/acme\/teams\/control-plane\/members/;
 const REVIEWS = /\/repos\/o\/r\/pulls\/4321\/reviews/;
 
 const members = (...logins: ReadonlyArray<string>): HttpReply => ({
@@ -88,7 +88,7 @@ describe("runCpApproval", () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
-				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, OWNED],
@@ -248,7 +248,7 @@ describe("runCpApproval", () => {
 				[FILES, CP_FILES],
 			],
 			[
-				[OWNERS, {status: 200, body: "/.github/ @kamp-us/control-plane @outsider\n"}],
+				[OWNERS, {status: 200, body: "/.github/ @acme/control-plane @outsider\n"}],
 				[COMPARE, behind(0)],
 				[ROSTER, members("usirin")],
 				[REVIEWS, reviewPage([{login: "outsider", state: "APPROVED", commit: HEAD}])],
@@ -272,7 +272,7 @@ describe("runCpApproval", () => {
 		expect(out.stdout).toBe("cp-approval\tstop\tzero-owners\n");
 	});
 
-	it("refuses a failed boundary read on 11 whatever the repo's config says (ADR 0220 §4)", async () => {
+	it("refuses a failed boundary read on 11 whatever the repo's config says", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
@@ -305,11 +305,11 @@ describe("runCpApproval", () => {
 		expect(out.stderr.at(-1)).toContain('the discharge is UNRESOLVED, not "awaiting approval"');
 	});
 
-	it("notices base drift so the approval is not spent on a head that must move (#4477)", async () => {
+	it("notices base drift so the approval is not spent on a head that must move", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
-				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
+				[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, OWNED],

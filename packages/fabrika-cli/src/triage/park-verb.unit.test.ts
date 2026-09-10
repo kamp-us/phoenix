@@ -420,7 +420,7 @@ describe("runPark", () => {
 	});
 });
 
-/** #5644: the claim protocol only holds if the mutating verbs re-read it. */
+/** The claim protocol only holds if the mutating verbs re-read it. */
 describe("runPark — the target guard", () => {
 	const MINE = "session-mine";
 	const THEIRS = "session-theirs";

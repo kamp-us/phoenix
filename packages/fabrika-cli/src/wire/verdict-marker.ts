@@ -10,13 +10,13 @@
  * no empty inhabitant), and the staleness question is its own answer rather than a fold into the
  * read.
  *
- * **What makes a verdict survive a head move is the content field, and its absence never does**
- * (ADR 0276, ruled on #5508). The SHA alone was doing two jobs — invalidating on any branch push,
- * and invalidating on base drift — and it was over-broad on the first: an update-from-main that
- * leaves both the diff and every touched file byte-identical re-reviewed content nobody changed.
- * {@link bindToContent} is where the ruled rule lives. A marker with **no** content field falls back
- * to head equality, which is the pre-ruling answer and strictly the stricter one, so a legacy or
- * hand-written marker can never gain survival it did not earn.
+ * **What makes a verdict survive a head move is the content field, and its absence never does.**
+ * The SHA alone was doing two jobs — invalidating on any branch push, and invalidating on base
+ * drift — and it was over-broad on the first: an update-from-main that leaves both the diff and
+ * every touched file byte-identical re-reviewed content nobody changed. So a marker that carries a
+ * content digest binds to that digest instead, and {@link bindToContent} is where that comparison
+ * lives. A marker with **no** content field falls back to head equality, which is strictly the
+ * stricter of the two, so a legacy or hand-written marker can never gain survival it did not earn.
  *
  * `read` is total and its three answers are the design (see `./format.ts`). The discrimination that
  * carries the weight is **Absent vs Malformed**: bytes carrying no marker of this format at all are
@@ -24,10 +24,9 @@
  * the polarity is unknown, the SHA is missing or not hex, the clause is gone — are `Malformed`. A
  * gate whose marker drifted must never read as a PR nobody reviewed.
  *
- * v1's `claude-plugins/kampus-pipeline/skills/shared/gate-verdict-contract.md` §VERDICT and
- * v1's `verdict-match.ts` are where the semantics and the scars
- * come from — read as prior art, never called (ADR 0238). v1's upsert keying, its advisory line and
- * its read-back guard are deliberately not carried here.
+ * An older pipeline's gate-verdict contract and its matcher are where the semantics and the scars
+ * come from — read as prior art, never called. Their upsert keying, advisory line and read-back
+ * guard are deliberately not carried here.
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
@@ -124,7 +123,7 @@ export const read = (artifact: string): VerdictMarkerRead => {
 	// The content field is optional and sits between the SHA and the separator, so it is taken only
 	// when the next token reaches for it. A token that reaches and fails is `Malformed`, never
 	// stepped over into the clause: a dropped content field would silently re-bind the verdict to
-	// the head alone, which is the strictly weaker rule (ADR 0276).
+	// the head alone, which is the strictly weaker rule.
 	const afterContent = takeToken(afterSha);
 	let content: ContentDigest | null = null;
 	let remainder = afterSha;
@@ -156,7 +155,7 @@ export const read = (artifact: string): VerdictMarkerRead => {
  *
  * One nullable answer rather than {@link read}'s three, because `Absent` and `Malformed` both mean
  * *not this gate's verdict* to such a caller. It lives here so a caller never re-derives the
- * namespace test off its own regex, which is how a second copy of this grammar starts (ADR 0251).
+ * namespace test off its own regex, which is how a second copy of this grammar starts.
  * A body reaching for the format and failing it is `null` too: a drifted marker is not a verdict,
  * and reading it as one is the permissive direction.
  */
@@ -178,7 +177,7 @@ export const emit = ({namespace, polarity, sha, content, clause: text}: VerdictM
  * relation between the marker and a head only the caller knows. Equally deliberately three answers
  * rather than a boolean — a caller handed a head it could not resolve gets `Unbindable`, never
  * `Stale` and never `Current`, because a comparison that could not be made is not a negative result.
- * Fold any two of these together and a stale PASS reads as a current one (ADR 0058).
+ * Fold any two of these together and a stale PASS reads as a current one.
  */
 export type Binding =
 	| {readonly _tag: "Current"; readonly sha: HeadSha; readonly via: "head" | "content"}
@@ -199,7 +198,8 @@ export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
 };
 
 /**
- * Whether a verdict claim still binds once the head has moved — the ruled question (ADR 0276).
+ * Whether a verdict claim still binds once the head has moved — decided on the content digest when
+ * the marker carries one, and on head equality when it does not.
  *
  * It takes the two bound fields rather than a whole marker so the advisory carrier and the native
  * review fold, which are verdict claims carrying no marker, resolve through this one derivation
@@ -216,9 +216,11 @@ export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
  *
  * 1. An unresolvable head is `Unbindable` — nothing below can be asked.
  * 2. The head the marker names is still the head ⇒ `Current` via `head`, and no digest is needed.
- *    This is the pre-ruling answer, untouched, and it is why the common path costs no git read.
- * 3. A marker carrying **no** content field is `Stale`, exactly as before the ruling. Absence of a
- *    binding is never a binding; a legacy marker earns nothing by predating the field.
+ *    This is the answer that predates the content field, untouched, and it is why the common path
+ *    costs no git read.
+ * 3. A marker carrying **no** content field is `Stale`, exactly as it was before the content field
+ *    existed. Absence of a binding is never a binding; a legacy marker earns nothing by predating
+ *    the field.
  * 4. `digest === null` — the caller holds a content-bound marker but could not compute the head's
  *    own digest — is `Unbindable`. Reading it as `Current` would let an unverifiable claim ship;
  *    reading it as `Stale` would be safe but would lie about *why*, and the reason is what tells an
@@ -257,7 +259,7 @@ export type VerdictMarkerFields =
 /** `<key>: <value>` or `<key><TAB><value>`, so `wire read`'s own output pipes back into `wire emit`. */
 const FIELD_LINE = /^([A-Za-z-]+)[ \t]*[:\t][ \t]*(.*)$/;
 const KEYS = ["namespace", "polarity", "sha", "clause"] as const;
-/** The one field that may be absent: a marker with no content binding is well-formed (ADR 0276). */
+/** The one field that may be absent: a marker with no content binding is well-formed. */
 const OPTIONAL_KEYS = ["content"] as const;
 type FieldKey = (typeof KEYS)[number] | (typeof OPTIONAL_KEYS)[number];
 

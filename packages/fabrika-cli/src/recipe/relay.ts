@@ -2,8 +2,8 @@
  * How another group's verb outcome is re-seated on this group's table.
  *
  * A recipe verb relays: it reads a lane through `lane status`, records the clear through
- * `lane transition`, and asks `ship cp-approval` whether a §CP park's cause is gone (ADR 0228 — the
- * verb answers, the caller relays, neither derives a decision it does not own). Those verbs answer
+ * `lane transition`, and asks `ship cp-approval` whether a §CP park's cause is gone (the verb
+ * answers, the caller relays, neither derives a decision it does not own). Those verbs answer
  * on **their** tables, and two of `lane`'s private codes sit on numbers this group spells
  * differently, so passing an exit through unchanged would report a refused event as a novel park.
  *
@@ -51,7 +51,7 @@ export const laneExit = (code: number): number => {
 			return PRECONDITION_UNKNOWN;
 		// Both are the machine refusing the UNBLOCKED with the log unappended, and a recipe does the
 		// same thing on either: stop and route to a human. They stay two codes on the lane's own table
-		// because only one of them is fixed by recording a clearance (ADR 0312).
+		// because only one of them is fixed by recording a clearance event.
 		case LANE_EVENT_REFUSED:
 		case LANE_RESUME_UNBUDGETED:
 			return UNPARK_REFUSED;

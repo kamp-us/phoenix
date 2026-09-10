@@ -5,7 +5,7 @@
  * looks for can exist — a governance verdict is written by an agent that has to read the diff first.
  * The job reads comment state at its own start, finds no verdict at the head, exits 18, and no
  * comment write can re-fire a `pull_request`-triggered job. Every governance-root PR therefore reds
- * at least once and only a re-run clears it (#5585).
+ * at least once and only a re-run clears it.
  *
  * The founder ruled the fix direction on 2026-08-16: the gate's own post asserts the floor at its own
  * head. The gate is the one actor with no ordering problem — it knows it just wrote the verdict — and
@@ -14,9 +14,9 @@
  *
  * **Asserting is re-deriving, never claiming.** Nothing here writes a check-run or a status: it
  * re-fires the floor job, which re-runs `ship floor` against live comment state and reaches its own
- * verdict. A fabricated green is the one outcome this module must never be able to produce. Since
- * #6161 the job publishes that verdict as a check-run and succeeds whenever it published one, so
- * what a re-fire is owed to is the check-run's state and no longer the job's conclusion.
+ * verdict. A fabricated green is the one outcome this module must never be able to produce. The job
+ * publishes that verdict as a check-run and succeeds whenever it published one, so what a re-fire
+ * is owed to is the check-run's state and not the job's conclusion.
  *
  * The run IO is imported from the two homes that already serve it — `../ship/github.ts` for the runs
  * at a head, `../heal-ci/github.ts` for one run and the rerun request. A third copy of either is how
@@ -65,7 +65,7 @@ const floorCheckRun = (
 /**
  * Whether the floor's state at this head is one a re-fire could move.
  *
- * The job's conclusion is no longer the floor's answer: since #6161 the job succeeds whenever it
+ * The job's conclusion is not the floor's answer: the job succeeds whenever it
  * *published* one, and the answer itself is the check-run's — which is pending exactly when the
  * verdict has not landed, the state this whole module exists to clear. So the check-run decides when
  * there is one, and the job's conclusion decides when there is not.
@@ -87,7 +87,7 @@ export type FloorAssertion =
 	/**
 	 * The re-fire took but GitHub has not published its attempt number yet: the run this verb read as
 	 * completed-and-red a moment ago is running again under the same id. That transition is proof from
-	 * run state, so it is a re-fire to wait on rather than an unread one to escalate (#5982).
+	 * run state, so it is a re-fire to wait on rather than an unread one to escalate.
 	 */
 	| {readonly _tag: "Restarting"; readonly run: number; readonly status: string}
 	/** The floor state could not be read or the re-fire could not be proven. Never a pass. */
@@ -149,7 +149,7 @@ export const assertFloorAt = (
 		}
 		if (after.value.runAttempt <= before.value.runAttempt) {
 			// The attempt counter lags the dispatch, and reading its absence as UNKNOWN sent three agents
-			// to `heal-ci` over re-fires that had taken (#5982). A run this verb just read as
+			// to `heal-ci` over re-fires that had taken. A run this verb just read as
 			// completed-and-red that is running again under the same id can only be running because of
 			// this dispatch — that is proof from run state, which is the one thing the counter was here
 			// to supply. A still-`completed` run proves nothing and stays UNKNOWN.
@@ -190,7 +190,7 @@ export const floorLine = (verb: string, assertion: FloorAssertion): string => {
 		case "InFlight":
 			return `${verb}: ${FLOOR_WORKFLOW_NAME} run ${assertion.run} is still in flight, so it may judge comment state older than this verdict — re-read the check and re-post if it reds.`;
 		case "Refired":
-			return `${verb}: re-fired ${FLOOR_WORKFLOW_NAME} run ${assertion.run} at attempt ${assertion.attempt} — it re-derives \`ship floor\` against this verdict (#5585).`;
+			return `${verb}: re-fired ${FLOOR_WORKFLOW_NAME} run ${assertion.run} at attempt ${assertion.attempt} — it re-derives \`ship floor\` against this verdict.`;
 		case "Restarting":
 			return `${verb}: re-fired ${FLOOR_WORKFLOW_NAME} run ${assertion.run} — it is ${assertion.status} again and GitHub has not published the new attempt number yet; wait and re-read run ${assertion.run}, there is nothing to escalate.`;
 		case "Unknown":

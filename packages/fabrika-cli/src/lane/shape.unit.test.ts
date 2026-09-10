@@ -1,4 +1,4 @@
-/** The machine-versus-board judgement — #7024's wrong-template lane, as a total function. */
+/** The machine-versus-board judgement — the wrong-template lane, as a total function. */
 import {describe, expect, it} from "vitest";
 import {judgeShape, originOf} from "./shape.ts";
 
@@ -79,6 +79,43 @@ describe("judgeShape", () => {
 
 	it("flags an emitted machine on an issue the board says has no children", () => {
 		const verdict = judgeShape(42, {_tag: "Generated", epic: 42}, {_tag: "Single"});
+
+		expect(verdict).toMatchObject({_tag: "Mismatched"});
+		if (verdict._tag !== "Mismatched") return;
+		expect(verdict.reason).toContain("no sub-issue links");
+	});
+
+	it("calls a booted lane over an epic's child a duplicate and names the parent's lane", () => {
+		const verdict = judgeShape(
+			7046,
+			{_tag: "Booted", template: "coder"},
+			{_tag: "Child", parent: 4304},
+		);
+
+		expect(verdict).toMatchObject({_tag: "Duplicate", parent: 4304});
+		if (verdict._tag !== "Duplicate") return;
+		expect(verdict.reason).toContain("#4304");
+		expect(verdict.reason).toContain("lane 4304");
+	});
+
+	it("still calls a booted child lane a duplicate when the parent's number does not parse", () => {
+		const verdict = judgeShape(
+			7046,
+			{_tag: "Booted", template: "coder"},
+			{_tag: "Child", parent: null},
+		);
+
+		expect(verdict).toMatchObject({_tag: "Duplicate", parent: null});
+		if (verdict._tag !== "Duplicate") return;
+		expect(verdict.reason).toContain("cannot be named here");
+	});
+
+	it("keeps an emitted machine over a child mismatched — the duplicate arm is for booted lanes", () => {
+		const verdict = judgeShape(
+			7046,
+			{_tag: "Generated", epic: 4304},
+			{_tag: "Child", parent: 4304},
+		);
 
 		expect(verdict).toMatchObject({_tag: "Mismatched"});
 		if (verdict._tag !== "Mismatched") return;

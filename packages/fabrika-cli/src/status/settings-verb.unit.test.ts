@@ -36,15 +36,12 @@ describe("settingRows", () => {
 			_tag: "Text",
 			text: `{
 				// the roots this repo governs
-				"${GOVERNED_ROOTS}": [".decisions/", ".fabrika.jsonc"]
+				"${GOVERNED_ROOTS}": ["docs/adr/", ".fabrika.jsonc"]
 			}`,
 		});
 		const roots = rowFor(rows, GOVERNED_ROOTS);
 		expect(roots.provenance).toBe("declared");
-		expect(roots.provenance === "declared" && roots.value).toEqual([
-			".decisions/",
-			".fabrika.jsonc",
-		]);
+		expect(roots.provenance === "declared" && roots.value).toEqual(["docs/adr/", ".fabrika.jsonc"]);
 		expect(rows.filter((one) => one.provenance === "default").length).toBe(rows.length - 1);
 	});
 
@@ -55,7 +52,7 @@ describe("settingRows", () => {
 	});
 
 	it("renders every key unknown when a load refusal names one of them", () => {
-		const rows = settingRows({_tag: "Text", text: `{"${GOVERNED_ROOTS}": [".decisions/"]}`});
+		const rows = settingRows({_tag: "Text", text: `{"${GOVERNED_ROOTS}": ["docs/adr/"]}`});
 		expect(rows.every((one) => one.provenance === "unknown")).toBe(true);
 		expect(rows.every((one) => one.detail.includes("cannot un-govern itself"))).toBe(true);
 	});
@@ -63,12 +60,12 @@ describe("settingRows", () => {
 	it("prints a decoded value back in the spelling the file carries", () => {
 		const rows = settingRows({
 			_tag: "Text",
-			text: `{"${CAP_CLEAR_AUTHORS}": ["@usirin", "@kamp-us/founders"]}`,
+			text: `{"${CAP_CLEAR_AUTHORS}": ["@octocat", "@acme/founders"]}`,
 		});
 		const authors = rowFor(rows, CAP_CLEAR_AUTHORS);
 		expect(authors.provenance === "declared" && authors.value).toEqual([
-			"@usirin",
-			"@kamp-us/founders",
+			"@octocat",
+			"@acme/founders",
 		]);
 	});
 

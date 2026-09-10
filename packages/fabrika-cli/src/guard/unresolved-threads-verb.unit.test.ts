@@ -33,7 +33,7 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 const SITE = ".github/workflows/commands-guard.yml:35";
 
-/** The #3329 exemplar thread: an unresolved GHAS finding on the commands-guard workflow. */
+/** The exemplar thread: an unresolved GHAS finding on a workflow file. */
 const codeqlPage = (isResolved = false): HttpReply =>
 	served(
 		threadPage(1, [
@@ -55,10 +55,10 @@ const codeqlPage = (isResolved = false): HttpReply =>
 
 const PASS_NO_ACCOUNTING =
 	"review-code: PASS @ 4da28749abc0000000000000000000000000000 — AC met, merge-ready";
-const PASS_ACCOUNTED = `review-code: PASS @ 4da28749abc0000000000000000000000000000 — merge-ready\n- [FAIL] unresolved-threads — ${SITE} @github-advanced-security: substantive (ADR 0158)`;
+const PASS_ACCOUNTED = `review-code: PASS @ 4da28749abc0000000000000000000000000000 — merge-ready\n- [FAIL] unresolved-threads — ${SITE} @github-advanced-security: substantive`;
 
 describe("runUnresolvedThreadsGuard", () => {
-	it("REDS the #3329 shape: a live thread the authorized PASS never names", async () => {
+	it("REDS the core shape: a live thread the authorized PASS never names", async () => {
 		const out = await run([
 			[PULL, served(pull({comments: 1}))],
 			[COMMENTS, served(comments({id: 1, body: PASS_NO_ACCOUNTING, author: "reviewer"}))],

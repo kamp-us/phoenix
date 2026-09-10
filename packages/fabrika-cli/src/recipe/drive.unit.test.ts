@@ -51,7 +51,7 @@ describe("the state → recipe table", () => {
 });
 
 describe("the exit → event table", () => {
-	it("records exactly one of the machine's six events for every exit, seated or not", () => {
+	it("records exactly one of the machine's operator events for every exit, seated or not", () => {
 		for (const verb of RECIPE_VERBS) {
 			for (const code of [...runExits(), 0, 99]) {
 				expect(isOperatorEvent(dispositionOf(verb, code).event)).toBe(true);

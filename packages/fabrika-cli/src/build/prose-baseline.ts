@@ -3,8 +3,8 @@
  * already carried at the merge base.
  *
  * **The shape is a merge-base baseline, and `cli-invocation-guard` reached the same one** for the
- * same class of problem in #4250 — a guard must not red a PR for a violation it neither introduced
- * nor can fix. Its `attribute()` classifies each head finding against the merge base's findings,
+ * same class of problem — a guard must not red a PR for a violation it neither introduced nor can
+ * fix. Its `attribute()` classifies each head finding against the merge base's findings,
  * keyed on file plus the exact offending text with the line number deliberately dropped, consumed
  * as a multiset budget. That is this module, with the file folded into the key. The convergence is
  * the argument for the pick: two guards arrived independently at the same three properties.
@@ -49,7 +49,7 @@ import type {DocLeak} from "./doc-leaks.ts";
  *
  * Keyed as a JSON pair rather than a delimited string: no separator means no separator to collide
  * with, and no non-printing byte in this file's source (a raw NUL here made git call the whole
- * module binary, so no diff of it could be read — #5755).
+ * module binary, so no diff of it could be read).
  */
 const identity = (leak: DocLeak): string => JSON.stringify([leak.reason, leak.matched]);
 

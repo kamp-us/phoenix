@@ -2,11 +2,11 @@
  * `guard pitch-guard check` — the decision: does every pickable piece of lane-entering work carry a
  * well-formed, founder-approved pitch?
  *
- * The invariant and the five-field set are defined once in `.glossary/TERMS.md` (§pitch, founder
- * ruling #3909); this module is that contract's teeth, not a second definition of it.
+ * The invariant and the five-field set are defined once in `.glossary/TERMS.md` (§pitch, a founder
+ * ruling); this module is that contract's teeth, not a second definition of it.
  *
- * The guard binds at INTAKE only. Its inverse is half the founder ruling: no merge-blocking
- * conformance gate on shipped work, so nothing here may ever be wired to red a PR (#3909).
+ * The guard binds at INTAKE only. Its inverse is half the same ruling: no merge-blocking
+ * conformance gate on shipped work, so nothing here may ever be wired to red a PR.
  *
  * IO-free and total; the board read lives in `./pitch-verb.ts`.
  */
@@ -37,7 +37,7 @@ export type PitchField = (typeof PITCH_FIELDS)[number];
 /** One comment reduced to what the approval rule reads. */
 export interface Comment {
 	readonly author: string;
-	/** Resolved at the GitHub ACL by the IO shell — `write+` only, fail-closed (ADR 0055). */
+	/** Resolved at the GitHub ACL by the IO shell — `write+` only, fail-closed. */
 	readonly authorized: boolean;
 	readonly body: string;
 }
@@ -59,7 +59,7 @@ export interface Candidate {
  *
  * Issue scope carries the label `universe` for the same reason `homing-guard`'s does: an empty issue
  * scope reads either "not lane-entering work" or "this repo has none of the scoping labels", and
- * only the label universe separates them (#4272).
+ * only the label universe separates them.
  */
 export type Scope =
 	| {readonly _tag: "backlog"}
@@ -141,10 +141,10 @@ export const APPROVAL_RE = /^\s*[*_]{0,2}\s*pitch-approved\s*[*_]{0,2}\s*:\s*(.*
 const APPETITE_IN_MARKER = /appetite\s+(\d+)\s*cycles?\b/i;
 
 /**
- * The agent-provenance tells (ADR 0159's signal applied to approval).
+ * The agent-provenance tells — the pipeline's provenance signal, applied to approval.
  *
  * GitHub authorship cannot separate founder from agent — both write through one shared token, the
- * degeneracy ADR 0115 removes for the claim marker — so the tell is the STAMP. Every agent-posted
+ * same degeneracy the claim marker works around — so the tell is the STAMP. Every agent-posted
  * pipeline comment is provenance-stamped and no agent has a `pitch-approved:` write path, so a
  * stamped marker is by construction not an approval.
  */
@@ -229,7 +229,7 @@ const APPROVAL_DETAIL: {
 	readonly [K in Exclude<Approval["_tag"], "approved" | "appetite-mismatch">]: string;
 } = {
 	none: "carries a well-formed pitch but no founder `pitch-approved:` comment — awaiting the founder",
-	unauthorized: "its only `pitch-approved:` comment is not from a write+ collaborator (ADR 0055)",
+	unauthorized: "its only `pitch-approved:` comment is not from a write+ collaborator",
 	"agent-authored":
 		"its only `pitch-approved:` comment is agent-provenance-stamped — approval is a founder seat, never agent-satisfiable",
 	"malformed-marker":
@@ -272,9 +272,9 @@ export type PitchVerdict =
 			readonly scanned: number;
 			readonly pitched: number;
 	  }
-	/** No lane-entering work in scope — fail closed, never a vacuous pass (ADR 0092). */
+	/** No lane-entering work in scope — fail closed, never a vacuous pass. */
 	| {readonly pass: false; readonly reason: "zero-scope"; readonly scope: Scope}
-	/** The labels that define scope do not exist in the repo at all — unmet prerequisite (#4272). */
+	/** The labels that define scope do not exist in the repo at all — unmet prerequisite. */
 	| {
 			readonly pass: false;
 			readonly reason: "vocabulary-absent";
@@ -295,10 +295,10 @@ export type PitchVerdict =
  *
  * Zero scope forks on what was scanned, exactly as `homing-guard` forks it. Over the whole
  * **backlog** an empty lane-entering set is indistinguishable from a broken query (a renamed label, a
- * lost token, a wrong repo) — the silent no-op ADR 0092 makes fail closed. Over a single **issue**
+ * lost token, a wrong repo) — the silent no-op every guard here fails closed on. Over a single **issue**
  * empty is the ordinary answer "that issue is not lane-entering work", so it passes — but only where
  * the scoping labels exist. Where they do not, every issue takes that fork and the guard reports
- * clean forever, having checked nothing (#4272).
+ * clean forever, having checked nothing.
  */
 export const judge = (
 	candidates: ReadonlyArray<Candidate>,
@@ -336,13 +336,13 @@ const scopeLabel = (scope: Scope): string =>
 /** The remediation, stated once — the draft/approve split is the whole point. */
 const REMEDY =
 	"Each issue above is pickable lane-entering work with no founder-approved pitch. Direction binds\n" +
-	"at intake (founder ruling #3909); see §pitch in .glossary/TERMS.md:\n" +
+	"at intake (a founder ruling); see §pitch in .glossary/TERMS.md:\n" +
 	`  1. triage DRAFTS a ## Pitch section with all five fields (${PITCH_FIELDS.join(" / ")}),\n` +
-	"     where Arc restates the home the ADR 0202 rubric step already assigned;\n" +
+	"     where Arc restates the home the triage rubric already assigned;\n" +
 	"  2. the FOUNDER approves it with a `pitch-approved: appetite <N> cycles · <ISO-8601-UTC>` comment\n" +
 	"     naming the same <N> the body declares. Approval is a founder seat — an agent never posts it.";
 
-/** Render the report for a verdict (ADR 0092 — "emit what you scanned"). */
+/** Render the report for a verdict — always emit what you scanned, never a bare all-clear. */
 export const renderReport = (verdict: PitchVerdict): string => {
 	if (verdict.pass) {
 		if (verdict.scanned === 0) {
@@ -356,7 +356,7 @@ export const renderReport = (verdict: PitchVerdict): string => {
 	if (verdict.reason === "zero-scope") {
 		return (
 			`pitch-guard: scanned ${scopeLabel(verdict.scope)} and found ZERO lane-entering issues — ` +
-			"fail-closed (ADR 0092). An empty set is indistinguishable from a broken read " +
+			"fail-closed, like every guard here. An empty set is indistinguishable from a broken read " +
 			"(renamed label, missing token, wrong repo), and a vacuous pass would hide every unpitched bet."
 		);
 	}
@@ -364,7 +364,7 @@ export const renderReport = (verdict: PitchVerdict): string => {
 		return (
 			`pitch-guard: ${scopeLabel(verdict.scope)} is not lane-entering work, but the label(s) that ` +
 			`define scope do not exist in this repo at all: ${verdict.missing.join(", ")} — unmet ` +
-			"prerequisite (#4272), not an out-of-scope issue. Create the missing labels; adopting the " +
+			"prerequisite, not an out-of-scope issue. Create the missing labels; adopting the " +
 			"pipeline means adopting its taxonomy."
 		);
 	}

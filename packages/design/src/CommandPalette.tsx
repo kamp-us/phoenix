@@ -51,14 +51,44 @@ export interface CommandPaletteProps {
 	readonly filter?: (item: CommandPaletteItem, query: string) => boolean;
 	readonly maxResults?: number;
 	readonly closeOnSelect?: boolean;
+	/** Hand Escape to the caller's own key handling instead of letting the dialog close on it. */
+	readonly closeOnEscape?: boolean;
 	readonly shortcut?: boolean;
 	readonly variant?: "flush" | "inset";
+	/**
+	 * Where the palette lives. `dialog` (default) is the modal ⌘K surface. `inline` renders the same
+	 * field, listbox and ARIA spine in place, for a caller whose whole surface *is* the search — it
+	 * is always open, so `open`, `trigger`, `disabled`, `closeOnSelect`, `closeOnEscape` and the ⌘K
+	 * shortcut are dialog-only and have nothing to act on — each of them is about opening, closing or
+	 * offering the modal, and an inline palette does none of the three.
+	 */
+	readonly presentation?: "dialog" | "inline";
 	readonly showSearchIcon?: boolean;
 	readonly scopes?: readonly CommandPaletteScope[];
 	readonly scopeHintLabel?: string;
 	readonly onScopeChange?: (sigil: string | undefined) => void;
 	readonly footer?: ReactNode;
 	readonly className?: string;
+	/**
+	 * Runs before the palette's own key handling, with the option `aria-activedescendant` currently
+	 * names. Calling `preventDefault` claims the key, so a caller can spend Tab on its own completion
+	 * without re-implementing arrow / Home / End movement.
+	 */
+	readonly onKeyDown?: (
+		event: KeyboardEvent<HTMLInputElement>,
+		active: CommandPaletteItem | undefined,
+	) => void;
+	/**
+	 * Asked before Enter selects the active item. Returning `true` spends the key on the caller's
+	 * action instead; anything else leaves the default — the active item wins — in place.
+	 */
+	readonly onEnter?: () => boolean;
+	/** Reports the option `aria-activedescendant` names, so a caller can describe it beside the list. */
+	readonly onActiveChange?: (active: CommandPaletteItem | undefined) => void;
+	/** A sentence the polite live region holds until the caller replaces it. */
+	readonly announcement?: ReactNode;
+	/** A refusal. Its presence marks the field invalid and shows the message under it. */
+	readonly error?: ReactNode;
 }
 
 const parseScope = (query: string, scopes: readonly CommandPaletteScope[]) => {
@@ -90,11 +120,15 @@ const nextEnabledIndex = (
 
 /**
  * @component CommandPalette
- * @whenToUse A modal, keyboard-first search surface over a caller-owned result set.
- *   The caller owns copy, filtering overrides and what selecting a result does.
+ * @whenToUse A keyboard-first search surface over a caller-owned result set — modal by default,
+ *   or inline in place at `presentation="inline"`. The caller owns copy, filtering overrides and
+ *   what selecting a result does.
  * @slot trigger Optional element that opens the palette. Rendered disabled, not removed,
  *   when the palette is disabled.
  * @slot footer Optional key legend or contextual hint below the results.
+ * @slot announcement Optional sentence for the palette's polite live region, held until the caller
+ *   replaces it. It is heard, never seen — the visible copy is the caller's own.
+ * @slot error Optional refusal for the search field: the invalid state and the message under it.
  */
 export function CommandPalette({
 	items,
@@ -115,6 +149,7 @@ export function CommandPalette({
 	filter,
 	maxResults,
 	closeOnSelect = true,
+	closeOnEscape = true,
 	shortcut = true,
 	variant = "flush",
 	showSearchIcon = true,
@@ -123,7 +158,14 @@ export function CommandPalette({
 	onScopeChange,
 	footer,
 	className = "",
+	onKeyDown,
+	onEnter,
+	onActiveChange,
+	announcement,
+	error,
+	presentation = "dialog",
 }: CommandPaletteProps) {
+	const inline = presentation === "inline";
 	const baseId = useId();
 	const inputRef = useRef<HTMLInputElement>(null);
 	const keyboardIntentRef = useRef(false);
@@ -131,7 +173,8 @@ export function CommandPalette({
 	const [internalQuery, setInternalQuery] = useState(defaultQuery);
 	const [activeIndex, setActiveIndex] = useState(-1);
 	const [keyboardFocused, setKeyboardFocused] = useState(false);
-	const isOpen = !disabled && (open ?? internalOpen);
+	// An inline palette has no closed state to be in: it is the surface itself.
+	const isOpen = inline || (!disabled && (open ?? internalOpen));
 	const searchQuery = query ?? internalQuery;
 
 	const setOpen = (next: boolean) => {
@@ -179,7 +222,11 @@ export function CommandPalette({
 	}, [activeIndex, baseId, isOpen]);
 
 	useEffect(() => {
-		if (!shortcut) return;
+		onActiveChange?.(activeIndex < 0 ? undefined : visibleItems[activeIndex]);
+	}, [activeIndex, visibleItems, onActiveChange]);
+
+	useEffect(() => {
+		if (!shortcut || inline) return;
 		const handleShortcut = (event: globalThis.KeyboardEvent) => {
 			if (event.key.toLocaleLowerCase() !== "k" || (!event.metaKey && !event.ctrlKey)) return;
 			event.preventDefault();
@@ -187,7 +234,7 @@ export function CommandPalette({
 		};
 		window.addEventListener("keydown", handleShortcut);
 		return () => window.removeEventListener("keydown", handleShortcut);
-	}, [isOpen, shortcut]);
+	}, [isOpen, shortcut, inline]);
 
 	useEffect(() => {
 		const clearKeyboardIntent = () => {
@@ -204,6 +251,13 @@ export function CommandPalette({
 	};
 
 	const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+		onKeyDown?.(event, visibleItems[activeIndex]);
+		if (event.defaultPrevented) return;
+		if (event.key === "Tab") {
+			keyboardIntentRef.current = true;
+			setKeyboardFocused(true);
+			return;
+		}
 		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
 			event.preventDefault();
 			setActiveIndex((current) =>
@@ -217,27 +271,28 @@ export function CommandPalette({
 			setActiveIndex(nextEnabledIndex(visibleItems, start, event.key === "Home" ? 1 : -1));
 			return;
 		}
-		if (event.key === "Enter" && activeIndex >= 0) {
+		if (event.key !== "Enter") return;
+		if (onEnter?.() === true) {
 			event.preventDefault();
-			const item = visibleItems[activeIndex];
-			if (item) select(item);
+			return;
 		}
+		if (activeIndex < 0) return;
+		event.preventDefault();
+		const item = visibleItems[activeIndex];
+		if (item) select(item);
 	};
 
 	let previousGroup: string | undefined;
 	const activeOptionId = activeIndex >= 0 ? `${baseId}-option-${activeIndex}` : undefined;
 	const hasScopeHint = scopes !== undefined && scopes.length > 0;
+	// The popup is the list of options, so a palette showing the empty or loading status is not
+	// expanded — a combobox that always claims one sends a reader to a listbox holding nothing.
+	const expanded = !loading && visibleItems.length > 0;
 
-	return (
-		<Dialog
-			trigger={disabled && trigger ? cloneElement(trigger, {disabled: true}) : trigger}
-			title={title}
-			showCloseButton={false}
-			open={isOpen}
-			onOpenChange={setOpen}
-			size="lg"
-			className={`kp-command-palette kp-command-palette--${variant} ${className}`.trim()}
-		>
+	const frame = `kp-command-palette kp-command-palette--${variant} ${className}`.trim();
+
+	const body = (
+		<>
 			<div className="kp-command-palette__header">
 				<Input
 					ref={inputRef}
@@ -246,11 +301,12 @@ export function CommandPalette({
 					role="combobox"
 					aria-label={title}
 					aria-autocomplete="list"
-					aria-expanded="true"
+					aria-expanded={expanded}
 					aria-controls={`${baseId}-results`}
 					aria-activedescendant={activeOptionId}
 					aria-describedby={hasScopeHint ? `${baseId}-scopes` : undefined}
 					aria-busy={loading || undefined}
+					error={error}
 					focusRing={keyboardFocused ? "control" : "none"}
 					placeholder={placeholder}
 					value={searchQuery}
@@ -263,14 +319,14 @@ export function CommandPalette({
 						keyboardIntentRef.current = false;
 						setKeyboardFocused(false);
 					}}
-					onKeyDown={(event) => {
-						if (event.key === "Tab") {
-							keyboardIntentRef.current = true;
-							setKeyboardFocused(true);
-						}
-						handleKeyDown(event);
-					}}
+					onKeyDown={handleKeyDown}
 				/>
+			</div>
+
+			{/* Mounted empty rather than conditionally: a region inserted with its first sentence
+			    already inside it is a mutation no screen reader was watching for. */}
+			<div className="kp-command-palette__announce" aria-live="polite">
+				{announcement}
 			</div>
 
 			<div
@@ -351,6 +407,32 @@ export function CommandPalette({
 					{footer ? <div className="kp-command-palette__legend">{footer}</div> : null}
 				</div>
 			) : null}
+		</>
+	);
+
+	// Inline is a `<section>` rather than a bare `div` because the dialog's own accessible name goes
+	// with the dialog: without a landmark carrying `title`, the field and the listbox would be the
+	// only things on the surface a reader could name, and neither says what the surface is.
+	if (inline) {
+		return (
+			<section aria-label={title} className={`${frame} kp-command-palette--inline`}>
+				{body}
+			</section>
+		);
+	}
+
+	return (
+		<Dialog
+			trigger={disabled && trigger ? cloneElement(trigger, {disabled: true}) : trigger}
+			title={title}
+			showCloseButton={false}
+			closeOnEscape={closeOnEscape}
+			open={isOpen}
+			onOpenChange={setOpen}
+			size="lg"
+			className={frame}
+		>
+			{body}
 		</Dialog>
 	);
 }
