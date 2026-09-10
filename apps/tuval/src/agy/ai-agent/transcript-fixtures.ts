@@ -89,3 +89,47 @@ export const unrecognised =
 
 /** What the tail of a live log looks like while agy is still writing to it. */
 export const halfWritten = '{"step_index":8,"source":"MODEL","type":"PLANNER_RES';
+
+/**
+ * **Both sides of one conversation**, captured from agy **v1.2.0**: the NDJSON it streamed and the
+ * log it wrote, for the same three turns. It is the only capture in this repo that holds the stream
+ * and the log together, and that is what makes it evidence about the seam #8900 reported broken —
+ * the window pages by sending a live row's own id back as a cursor, so the two sides' `step_index`
+ * numbering *is* the join, and nothing but a paired capture can say what it is.
+ *
+ * The turns were driven the way the layer drives them (`launch.ts`'s `sessionArgv`): a first prompt
+ * forcing two `view_file` calls into one planner step, a second running no tools, then the child was
+ * stopped and a **third turn driven on a child that resumed the conversation** with
+ * `--conversation=<id>` — which is the desk-restart shape, and why the resumed stream is its own
+ * file. The numbering it measured, stream against log:
+ *
+ * | step | stream                      | log                                  |
+ * | ---- | --------------------------- | ------------------------------------ |
+ * | 0    | `user_input`, no delta      | `USER_INPUT` (ordinal 0)             |
+ * | 1    | `agent_response`, no delta  | `PLANNER_RESPONSE`, 2 calls (ord. 2) |
+ * | 2    | `tool` `view_file`          | `GENERIC`, first call's outcome (1)  |
+ * | 3    | `tool` `view_file`          | `GENERIC`, second call's outcome (3) |
+ * | 4    | `agent_response`, the reply | `PLANNER_RESPONSE`, content (ord. 4) |
+ * | 5    | `user_input`, no delta      | `USER_INPUT` (ordinal 5)             |
+ * | 6    | `agent_response`, the reply | `PLANNER_RESPONSE`, content (ord. 6) |
+ * | 7    | `user_input`, no delta      | `USER_INPUT` (ordinal 7) — resumed   |
+ * | 8    | `system_message`, no delta  | `SYSTEM`/`SYSTEM_MESSAGE` (ord. 8)   |
+ * | 9    | `agent_response`, the reply | `PLANNER_RESPONSE`, content (ord. 9) |
+ *
+ * Three facts fall out of it. A tool row's live step is its *outcome* line's, never its call line's.
+ * The log's file order is again not the conversation's (`step_index` 0,2,1,3,… over ordinals 0,1,2,3).
+ * And `step_index` continues across the resume rather than restarting, so a restored child's ids land
+ * in the same space as the ones the stopped child minted.
+ *
+ * The only edits are the two substitutions this file's head declares: the workspace reads
+ * `/Users/founder/agyprobe` and the home `/Users/founder`, so nothing machine-local lands in the repo.
+ */
+export const liveJoinLines = capture("live-join-transcript.jsonl");
+export const liveJoinFullLines = capture("live-join-transcript_full.jsonl");
+export const liveJoinStreamLines = capture("live-join-stream.ndjson");
+
+/** The third turn's stream, off a child that resumed the conversation the two files above hold. */
+export const liveJoinResumedStreamLines = capture("live-join-resumed-stream.ndjson");
+
+/** The conversation the paired capture above was driven as. */
+export const liveJoinConversationId = "8377fd63-b158-49b9-b2c1-2d89ed9135ce";
