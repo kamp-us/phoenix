@@ -100,6 +100,21 @@ export interface StartOptions {
 
 export interface StartedSession {
 	readonly sessionId: string;
+	/**
+	 * The whole stored transcript of a resumed session, oldest-first — the rows the open already
+	 * read, handed back so the core can plan a fresh window over them (#8855).
+	 *
+	 * A checkpointed tail is replayed verbatim by `restore`, so one written under an older window
+	 * rule stays unrenderable after every boot: `planTranscriptWindow` runs per arriving live item
+	 * and can shed rows, never bring back rows already in `omitted`. This is the one field that
+	 * lets a resume re-plan instead of re-trust.
+	 *
+	 * **Whole, or absent.** The core replaces `transcript.omitted` with what the fresh plan left
+	 * out, so a partial slice would report a session with 5000 older rows as having none. A layer
+	 * that cannot read the whole stored transcript in the open omits this and the resumed tail
+	 * stays exactly as it was. A fresh open never carries one — there is no session to have read.
+	 */
+	readonly history?: ReadonlyArray<TranscriptItem>;
 }
 
 /** One page of history, oldest-first. `hasMore` is false once the page reaches the beginning. */

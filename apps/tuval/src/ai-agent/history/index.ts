@@ -17,7 +17,7 @@ export {
 	weighGroup,
 } from "./groups.ts";
 export {KERNEL_TOOL_SERVER, type KernelSpawn, kernelSpawnOf} from "./kernel-spawn.ts";
-export {withoutLocalEchoes} from "./local-turns.ts";
+export {localEchoes, withoutLocalEchoes} from "./local-turns.ts";
 export {
 	type PageOptions,
 	planTranscriptPage,

@@ -161,7 +161,10 @@ export const aiAgentHandlers = <RIn = never>(
 			};
 			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
 			if (Result.isSuccess(started)) {
-				return [{type: "started", sessionId: started.success.sessionId}];
+				// The stored history rides through untouched: the core plans the window, because the
+				// bounds are its own and a layer planning them would answer to a second copy of them.
+				const {sessionId, history} = started.success;
+				return [{type: "started", sessionId, ...(history === undefined ? {} : {history})}];
 			}
 			const error = started.failure;
 			return [
