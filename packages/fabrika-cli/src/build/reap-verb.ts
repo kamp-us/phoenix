@@ -138,7 +138,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 
 		const seated: Array<{facts: CheapFacts; verdict: Verdict}> = [];
 		for (const tree of population) {
-			const observed = yield* observe(tree.path, tree.prunable);
+			const observed = yield* observe(tree.path);
 			const cheap: CheapFacts = {
 				path: tree.path,
 				branch: tree.branch,
@@ -379,11 +379,20 @@ const uncommittedIn = (
  * The one stat, read into both facts it answers: is the directory still there, and does it read
  * as in use?
  *
- * **Absence is proved by the error's own reason, never by a failed read.** `FileSystem.stat` folds
- * both into a `PlatformError`, and only `reason._tag === "NotFound"` is a not-there; a
- * `PermissionDenied` or an unmounted volume arrives as some other tag and keeps the tree. Verified
- * against this repo's `effect@4.0.0-beta.92` under `NodeServices.layer`: a missing path answered
- * `NotFound` and an unreadable one `PermissionDenied`.
+ * **Absence is proved by this stat's own `NotFound`, never by a failed read and never by another
+ * program's hint.** `FileSystem.stat` folds every failure into a `PlatformError`, and only
+ * `reason._tag === "NotFound"` is a not-there; a `PermissionDenied` or an unmounted volume arrives
+ * as some other tag and keeps the tree. Verified against this repo's `effect@4.0.0-beta.92` under
+ * `NodeServices.layer`: a missing path answered `NotFound` and an unreadable one `PermissionDenied`.
+ *
+ * git's own `prunable` flag is **not** that proof and is not consulted here. Its condition is the
+ * `<worktree>/.git` file, not the `<worktree>` directory, so a checkout whose `.git` file was
+ * deleted while its files stayed reports prunable with uncommitted work still on disk — measured
+ * against real git in `./stale-registration.git.test.ts`. Seating `Gone` off it would clear that
+ * registration and delete `.git/worktrees/<id>`, taking the only ref a commit living solely in that
+ * worktree has. The stat is the wider source anyway: every registration git calls prunable *because*
+ * its directory is gone answers `NotFound` here, and the locked-and-gone entries git's own prune
+ * skips are reached only through this read.
  *
  * The liveness signal is the worktree root's own mtime, and that tracks the root's **entry list** —
  * a create, delete or rename directly in it — not a write to a file inside it. So for a seat that
@@ -397,7 +406,6 @@ const uncommittedIn = (
  */
 const observe = (
 	path: string,
-	prunable: boolean,
 ): Effect.Effect<
 	{readonly presence: Presence; readonly liveness: Liveness},
 	never,
@@ -409,9 +417,6 @@ const observe = (
 				presence: {_tag: "Gone" as const, because},
 				liveness: {_tag: "Unknown" as const, reason: "its directory is gone"},
 			}) as const;
-		if (prunable) {
-			return gone("git already calls the registration prunable — its working directory is gone");
-		}
 
 		const fs = yield* FileSystem.FileSystem;
 		const stat = yield* Effect.result(fs.stat(path));

@@ -456,6 +456,17 @@ describe("runReap — the removals are proven, never reported", () => {
 });
 
 describe("runReap — the stale registrations go in the same pass", () => {
+	/**
+	 * The stat is what proves {@link DEAD} absent. Every fixture below still prints git's `prunable`
+	 * line, because git does print it for this state — the point is that the verb reaches the same
+	 * verdict without reading it.
+	 */
+	const GONE_FS: FakeFsOptions = {
+		directories: [HERE, OTHER],
+		mtimes: {[HERE]: ago(2_592_000), [OTHER]: ago(2_592_000)},
+		unprobeable: [DEAD],
+	};
+
 	const gone: ReadonlyArray<Scripted> = [
 		...GROUND,
 		[once(TREES), trees(PRIMARY, {path: DEAD, prunable: true})],
@@ -463,26 +474,47 @@ describe("runReap — the stale registrations go in the same pass", () => {
 		[TREES, trees(PRIMARY)],
 	];
 
-	it("plans a PRUNE for a registration git already calls prunable, and prunes nothing", async () => {
-		const {out, calls} = await run([
-			...GROUND,
-			[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
-		]);
+	it("plans a PRUNE for a registration whose directory the stat proves gone, and prunes nothing", async () => {
+		const {out, calls} = await run(
+			[...GROUND, [TREES, trees(PRIMARY, {path: DEAD, prunable: true})]],
+			false,
+			GONE_FS,
+		);
 
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "planned", stale: [{path: DEAD}]});
 		expect(out.stderr.join("\n")).toMatch(new RegExp(`PRUNE ${DEAD}`));
 		expect(calls.some((line) => PRUNE.test(line))).toBe(false);
 	});
 
+	// git reports `prunable` off the worktree's `.git` FILE, so it fires over a checkout that is
+	// still on disk and still dirty (measured in ./stale-registration.git.test.ts). Seating Gone on
+	// that flag cleared such a record — and `.git/worktrees/<id>` with it, the only ref a commit
+	// living in that worktree alone has.
+	it("keeps a prunable registration whose directory is still there — the flag is a hint, the stat is the proof", async () => {
+		const {out, calls} = await run([
+			...GROUND,
+			[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
+			[STATUS, okOut(" M unsaved.txt\n")],
+		]);
+
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "planned", stale: [], removable: []});
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`KEEP ${DEAD}`));
+		expect(calls.some((line) => PRUNE.test(line))).toBe(false);
+	});
+
 	it("pays no git read for it — a registration with no directory has nothing to ask git about", async () => {
-		const {calls} = await run([...GROUND, [TREES, trees(PRIMARY, {path: DEAD, prunable: true})]]);
+		const {calls} = await run(
+			[...GROUND, [TREES, trees(PRIMARY, {path: DEAD, prunable: true})]],
+			false,
+			GONE_FS,
+		);
 
 		expect(calls.some((line) => STATUS.test(line))).toBe(false);
 		expect(calls.some((line) => ANCESTOR.test(line))).toBe(false);
 	});
 
 	it("prunes it under --execute and proves it off the read-back", async () => {
-		const {out, calls} = await run(gone, true);
+		const {out, calls} = await run(gone, true, GONE_FS);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "reaped", pruned: [DEAD], unpruned: []});
@@ -509,6 +541,28 @@ describe("runReap — the stale registrations go in the same pass", () => {
 		);
 	});
 
+	it("reports an unlock git refused, leaves that registration standing, and reds nothing", async () => {
+		const {out, calls} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD, locked: "claude agent (pid 84894)"})],
+				[UNLOCK, errOut("permission denied")],
+				[PRUNE, okOut("")],
+				[TREES, trees(PRIMARY, {path: DEAD, locked: "claude agent (pid 84894)"})],
+			],
+			true,
+			{directories: [HERE], unprobeable: [DEAD]},
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({pruned: [], unpruned: [DEAD]});
+		expect(out.stderr.join("\n")).toMatch(
+			new RegExp(`FAILED to unlock ${DEAD}: permission denied`),
+		);
+		// The prune still runs: a refused unlock costs its own entry, never the pass.
+		expect(calls).toContain("git worktree prune");
+	});
+
 	it("reports a registration that survived the prune without redding the sweep", async () => {
 		const {out} = await run(
 			[
@@ -518,6 +572,7 @@ describe("runReap — the stale registrations go in the same pass", () => {
 				[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
 			],
 			true,
+			GONE_FS,
 		);
 
 		expect(out.code).toBe(0);
@@ -534,12 +589,13 @@ describe("runReap — the stale registrations go in the same pass", () => {
 				[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
 			],
 			true,
+			GONE_FS,
 		);
 
 		expect(out.stderr.join("\n")).toMatch(/FAILED to prune: permission denied/);
 	});
 
-	it("clears what a removal just left behind — one prune covers both sources", async () => {
+	it("clears what a removal just left behind — one clone-wide prune ends the pass", async () => {
 		const {calls} = await run(
 			[
 				...GROUND,

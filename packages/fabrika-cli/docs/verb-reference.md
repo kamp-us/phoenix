@@ -131,13 +131,16 @@ reclaimable set on the clone this was measured against — 78 removable trees at
 [0386](../../../.decisions/0386-worktree-accumulation-is-bounded-at-provisioning.md)).
 
 **A registration whose directory is gone is PRUNE, a third verdict beside KEEP and REMOVE.** There is
-no checkout to be unsafe about, so the sweep clears the record rather than a tree, and one `git
-worktree prune` in the same `--execute` pass covers both sources — the entries that were already
-stale and the ones each removal just left behind. `--limit` does not bound it. An entry locked by a
-dead process with its directory gone is unlocked first, because prune skips a locked entry and a lock
-whose tree is gone guards nothing; absence is the only license for that unlock, and it is proved by
-the stat error's own `NotFound` rather than by a read that merely failed. A stale registration that
-survives the prune is reported and does not red the sweep.
+no checkout to be unsafe about, so the sweep clears the record rather than a tree. One `git worktree
+prune` in the same `--execute` pass does the clearing, and it is clone-wide: it reaches the entries
+that were already stale, the ones each removal just left behind, and any stale entry outside the
+swept population too — the population filter bounds what is judged, not what is cleared. `--limit`
+does not bound it. An entry locked by a dead process with its directory gone is unlocked first,
+because prune skips a locked entry and a lock whose tree is gone guards nothing; absence is the only
+license for that unlock, and it is proved by one stat's own `NotFound` — never by a read that merely
+failed, and never by git's `prunable` flag, which tracks the worktree's `.git` file rather than its
+directory and so reports a checkout still holding uncommitted work. A stale registration that
+survives the prune is reported and does not red the sweep, as is an unlock git refuses.
 
 **Only the cheap arms run for every tree.** The registration's own fields plus one stat settle most
 of a population — 230 of 243 on that clone — and the `git status` and containment scan are paid only

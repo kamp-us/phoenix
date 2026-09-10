@@ -197,16 +197,19 @@ export interface WorktreeRegistration {
 	readonly branch: string | null;
 	/** git's own lock reason, `""` when locked without one, `null` when unlocked. */
 	readonly locked: string | null;
-	/** Set when git already considers the record stale — its working directory is gone. */
-	readonly prunable: boolean;
 }
 
 /**
- * Every registration of this clone, with the four facts a bulk sweep judges on.
+ * Every registration of this clone, with the three facts a bulk sweep judges on.
  *
  * {@link worktreeCheckouts} answers a narrower question — who holds a branch — and drops the
  * detached majority on the floor. The harness detaches the trees it registers, so a reclaimer built
  * on that reader would be blind to most of what it exists to reclaim.
+ *
+ * git's `prunable` line is deliberately not among them: its condition is the worktree's `.git` file
+ * rather than its directory, so it is a hint and not a proof of absence, and reading it into a fact
+ * this module carries is how a caller comes to judge on it. `./reap-verb.ts`'s `observe` states the
+ * ground; `./stale-registration.git.test.ts` measures it.
  */
 export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistration>>> =
 	Effect.gen(function* () {
@@ -215,11 +218,9 @@ export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistra
 		const records: Array<WorktreeRegistration> = [];
 		let open: {path: string; head: string; branch: string | null; locked: string | null} | null =
 			null;
-		let prunable = false;
 		const close = () => {
-			if (open !== null) records.push({...open, prunable});
+			if (open !== null) records.push(open);
 			open = null;
-			prunable = false;
 		};
 		for (const line of r.stdout.split("\n")) {
 			if (line.startsWith("worktree ")) {
@@ -231,7 +232,7 @@ export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistra
 				open.branch = line.slice("branch refs/heads/".length).trim();
 			} else if (line === "locked" || line.startsWith("locked ")) {
 				open.locked = line.slice("locked".length).trim();
-			} else if (line === "prunable" || line.startsWith("prunable ")) prunable = true;
+			}
 		}
 		close();
 		return ok(records);

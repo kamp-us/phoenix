@@ -37,8 +37,10 @@ import type {Containment} from "../io/containment.ts";
  * The two namings a harness-provisioned agent worktree arrives under.
  *
  * `<repo>/.claude/worktrees/agent-<id>` is `hook worktree-create`'s own layout. The second is the
- * harness's, and it does not sit under the repository at all — measured over this clone's 417
- * registrations: 243 under the first naming, 93 under the second, split between
+ * harness's, and it does not sit under the repository at all: of the operator clone's 352
+ * harness-provisioned registrations measured on 2026-09-10, 243 carried the first naming and 109 the
+ * second — the same snapshot the governing decision record's table reports — and the second's paths
+ * split between
  * `/private/tmp/worktrees/<slug>/pi-worktree-<uuid>-s0-0` and
  * `<some-checkout>/worktrees/pi-worktree-<uuid>-s0-0`. So the second is matched on the leaf's own
  * name and nothing about where it sits: keying it to a temp root would narrow out the copies that do
@@ -119,10 +121,12 @@ export type Liveness =
  *
  * `Gone` is the one fact that licenses clearing a registration rather than removing a tree, and it
  * is the strongest proof this whole module deals in: there is no checkout, so there is nothing to
- * salvage and no session whose fate anybody has to attest to. It has two sources — git's own
- * `prunable`, and a stat that came back not-found, which is the wider one. Fourteen of this clone's
- * registrations were locked by a harness process dead since August with their directories long gone,
- * and `git worktree prune` skips a locked entry, so git alone never called those prunable and they
+ * salvage and no session whose fate anybody has to attest to. It has exactly one source — a stat
+ * that came back not-found. git's own `prunable` flag is a hint about the worktree's `.git` file
+ * and not about its directory, so it never seats this; `./reap-verb.ts`'s `observe` carries the
+ * measurement. The stat is the wider reading anyway: fourteen of this clone's registrations were
+ * locked by a harness process dead since August with their directories long gone, and
+ * `git worktree prune` skips a locked entry, so git alone never called those prunable and they
  * survived every sweep.
  *
  * `Unknown` is a stat that failed for any *other* reason — a permission, an unmounted volume — and

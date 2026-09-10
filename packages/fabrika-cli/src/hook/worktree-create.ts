@@ -165,13 +165,11 @@ export const pruneWorktreesArgs: ReadonlyArray<string> = ["worktree", "prune"];
 /**
  * How the sweep re-enters this CLI, and how much of the spawn it may spend.
  *
- * **Whatever creates a worktree reaps first**, and that is the one mechanism bounding accumulation,
- * because nothing else in the pipeline ever runs `build reap`. Provisioning
- * is where the bound belongs: one tree is created per spawn, so reaping up to
- * {@link REAP_LIMIT} at the same moment makes the population shrink whenever anything is reclaimable
- * and drain a backlog rather than merely hold. It runs *before* the fetch and the add because the
- * failure it exists to prevent is a full volume refusing the add — freeing the disk after that
- * refusal is a spawn too late.
+ * **Whatever creates a worktree reaps first.** Why the bound belongs at provisioning, and which
+ * alternatives that ruling refused, is the decision record linked from `build reap`'s entry in
+ * `docs/verb-reference.md` — not restated here. What is local: it runs *before* the fetch and the
+ * add, because the failure it exists to prevent is a full volume refusing the add, and freeing the
+ * disk after that refusal is a spawn too late.
  *
  * It is a **child process** rather than a call into `runReap`, for the one thing a child gives that
  * a call does not: `cwd`. This package's git seam runs every command in the process's own cwd, and a

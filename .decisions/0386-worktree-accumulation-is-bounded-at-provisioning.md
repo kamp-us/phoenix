@@ -32,8 +32,8 @@ Three gaps sat under the symptom, and the ruling answers each.
 worktree-create`'s own layout. The harness registers a second population under its own naming,
 `pi-worktree-<uuid>-sN-0`, and that one does not sit under the repository at all.
 
-Measured on the operator clone: of 352 harness-provisioned registrations, 243 carried the first
-naming and 109 the second. Every removable tree the widened sweep found — **78 of them** — was of the
+Measured on the operator clone on 2026-09-10, the one snapshot every surface quotes: of 352
+harness-provisioned registrations, 243 carried the first naming and 109 the second. Every removable tree the widened sweep found — **78 of them** — was of the
 second naming, each carrying its own installed `node_modules` (ADR
 [0109](0109-worktree-deps-provision-not-share.md)) at 1.81 GB, so roughly **141 GB** was structurally
 invisible to the only sanctioned sweep.
@@ -92,17 +92,31 @@ the disk.
 
 A registration whose directory is gone is now seated **`Prune`** rather than `Remove` or `Keep`: there
 is no checkout to be unsafe about, so the sweep clears the record instead of a tree. That runs in the
-same `--execute` pass and covers both sources at once — the entries whose directory was already gone,
-and the ones each removal just left behind. `--limit` does not bound it: a registration is a line in
-a file, not a tree to delete.
+same `--execute` pass, and the one `git worktree prune` it runs is clone-wide: it clears the entries
+the sweep seated `Prune`, the registrations each removal just left behind, and any stale entry
+outside the swept population too. The population filter bounds what is **judged**, not what is
+cleared, and that is git's own absence-and-lock criteria doing the deciding rather than this verb's.
+`--limit` does not bound it either: a registration is a line in a file, not a tree to delete.
 
 It answers to the same read-back discipline as a removal, but a survivor is **reported without
 redding the sweep** — a stale record costs disk nothing and risks no work.
 
-**Absence is proved by the error's own reason, never by a failed read.** `FileSystem.stat` folds both
-into a `PlatformError`, and only `reason._tag === "NotFound"` is a not-there; a `PermissionDenied` or
-an unmounted volume arrives as some other tag and keeps the tree. Verified against this repo's
-`effect@4.0.0-beta.92` under `NodeServices.layer`.
+**Absence is proved by one stat's own `NotFound`, never by a failed read and never by git's
+`prunable` flag.** `FileSystem.stat` folds every failure into a `PlatformError`, and only
+`reason._tag === "NotFound"` is a not-there; a `PermissionDenied` or an unmounted volume arrives as
+some other tag and keeps the tree. Verified against this repo's `effect@4.0.0-beta.92` under
+`NodeServices.layer`.
+
+git's `prunable` is deliberately **not** a second source, and reading it as one was the mistake this
+record's first draft shipped. Its condition is the worktree's `.git` file, not the worktree
+directory: measured against real git 2.40.1, a linked worktree whose `.git` file is deleted while its
+directory stays reports `prunable gitdir file points to non-existent location` with uncommitted work
+still on disk, and pruning it deletes `.git/worktrees/<id>` — the HEAD, index and reflog of that
+worktree, so a commit that exists only there loses its only ref. Seating `Gone` off that flag would
+have cleared exactly such a record. The stat costs nothing extra, since the sweep already performs it
+for every other tree, and it is the wider source anyway: a registration that really is prunable
+because its directory is gone answers `NotFound`, and the locked-and-gone entries below are reachable
+only through the stat.
 
 **A lock whose tree is gone is dropped first.** `git worktree prune` skips a locked entry, which is
 right while a checkout exists and wrong once it does not. Fourteen of the operator clone's
@@ -110,10 +124,11 @@ registrations sat in exactly that state, locked by a harness process dead since 
 directories long gone, and no sweep could ever have reached them. Absence is the license, and it is
 the only one: `git worktree unlock` runs only where the directory is proved gone.
 
-All three claims about git are measured against real git in
+All four claims about git are measured against real git in
 `packages/fabrika-cli/src/build/stale-registration.git.test.ts`, not reasoned about — that a direct
-prune needs no `--expire` window, that it skips a locked stale entry, and that it leaves a live
-registration alone however often it runs.
+prune needs no `--expire` window, that it skips a locked stale entry, that it leaves a live
+registration alone however often it runs, and that `prunable` tracks the `.git` file rather than the
+directory, so a registration reports prunable while its checkout still holds uncommitted work.
 
 ## What does not change
 
@@ -124,7 +139,7 @@ nothing. Nothing here makes a dirty, locked, or unreadable tree removable. The `
 widening of that rule rather than a hole in it — absence is the strongest positive proof the sweep
 deals in.
 
-## Measured on the operator clone
+## Measured on the operator clone, 2026-09-10
 
 | | before | after |
 |---|---|---|

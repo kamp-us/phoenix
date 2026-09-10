@@ -149,16 +149,13 @@ describe("classify — everything short of a proof is KEEP", () => {
 });
 
 describe("classify — a registration whose directory is gone is pruned, not kept", () => {
-	it("prunes a registration git already calls prunable", () => {
+	it("prunes a registration the stat proved absent", () => {
 		const verdict = classify(
-			facts({presence: {_tag: "Gone", because: "git already calls the registration prunable"}}),
+			facts({presence: {_tag: "Gone", because: "its directory does not exist"}}),
 			TRUNK,
 			NOBODY,
 		);
-		expect(verdict).toEqual({
-			_tag: "Prune",
-			because: "git already calls the registration prunable",
-		});
+		expect(verdict).toEqual({_tag: "Prune", because: "its directory does not exist"});
 	});
 
 	it("prunes a LOCKED registration whose directory is gone — the lock guards no checkout", () => {
