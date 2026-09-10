@@ -634,6 +634,18 @@ describe("the process board flag", () => {
 
 			const dialog = screen.getByRole("dialog", {name: "Processes"});
 			assert.isNotNull(dialog.querySelector(`[data-process="${counterProcess}"]`));
+			// Modal and focused: the two halves of "announced and reachable". Both are the shared
+			// `Dialog`'s (`packages/design/src/Dialog.tsx` over Manti's zag machine), which is why they
+			// are asserted here rather than implemented anywhere in this app.
+			assert.strictEqual(dialog.getAttribute("aria-modal"), "true");
+			yield* Effect.tryPromise({
+				try: () =>
+					act(async () => {
+						await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
+					}),
+				catch: (cause) => new TestIo({cause}),
+			}).pipe(Effect.orDie);
+			assert.isTrue(dialog.contains(document.activeElement));
 		}),
 	);
 
