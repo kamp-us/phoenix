@@ -1,7 +1,7 @@
 ---
 id: 0312
 title: A lane's repair budget is anchored to a recorded clearance event, never derived from mutable context
-status: amended-in-part by [0374](0374-driver-seat-on-a-spent-repair-budget.md), [0377](0377-machinery-lap-narrows-repair-budget.md)
+status: amended-in-part by [0378](0378-driver-seat-on-a-spent-repair-budget.md), [0377](0377-machinery-lap-narrows-repair-budget.md)
 date: 2026-08-20
 tags: [fabrika, lane, pipeline, state-machine]
 ---

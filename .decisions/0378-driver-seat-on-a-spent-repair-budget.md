@@ -1,12 +1,12 @@
 ---
-id: 0374
+id: 0378
 title: A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
 status: accepted
 date: 2026-09-10
 tags: [fabrika, lane, pipeline, state-machine]
 ---
 
-# 0374 — A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
+# 0378 — A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
 
 **What this decides:** the leaf a spent repair budget falls into is renamed so a recipe can see it as
 a park, its finality is unchanged, and the clearance that reopens its door may now be recorded by the

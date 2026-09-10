@@ -19,7 +19,7 @@ The founder ruled the axis on the walk at
 [the ruling comment](https://github.com/kamp-us/phoenix/issues/8807#issuecomment-5611016081): *"yes,
 but i think fabrika proved enough that we can increase the cap"*, in a turn whose complaint was that
 almost every session was *"about you telling me that something is parked."* R5.2 raises the repair
-cap to 3, which ADR [0374](0374-driver-seat-on-a-spent-repair-budget.md) records. R5 also splits the
+cap to 3, which ADR [0378](0378-driver-seat-on-a-spent-repair-budget.md) records. R5 also splits the
 budget, and that is this record.
 
 `FAIL` was one event doing two jobs. A reviewer grading an artifact wrong and a child colliding at
@@ -112,7 +112,7 @@ epic [#8810](https://github.com/kamp-us/phoenix/issues/8810) and its children
 [#8821](https://github.com/kamp-us/phoenix/issues/8821);
 ADRs [0312](0312-event-anchored-retry-budget.md) (amended in part by this record),
 [0313](0313-a-queue-dwell-is-a-wait-not-a-park.md),
-[0374](0374-driver-seat-on-a-spent-repair-budget.md) and
+[0378](0378-driver-seat-on-a-spent-repair-budget.md) and
 [0376](0376-driver-seat-for-non-product-parks.md);
 [`packages/fabrika-cli/src/retry-budget.ts`](../packages/fabrika-cli/src/retry-budget.ts),
 [`packages/fabrika-cli/src/lane/machine.ts`](../packages/fabrika-cli/src/lane/machine.ts),

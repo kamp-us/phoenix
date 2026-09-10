@@ -36,9 +36,9 @@ actually asking, because until now nothing on a park said **whose failure it was
 behind by a driver's own session and a paused campaign both folded to the same `Novel` park, and both
 cost a person.
 
-ADR [0374](0374-driver-seat-on-a-spent-repair-budget.md) moved exactly one park — the spent repair
+ADR [0378](0378-driver-seat-on-a-spent-repair-budget.md) moved exactly one park — the spent repair
 budget — onto the driver's seat, and said so in as many words: *"That is one park, named, and not a
-general licence."* This record is the general one R5.1 rules, and 0374's park is the instance of it
+general licence."* This record is the general one R5.1 rules, and 0378's park is the instance of it
 that shipped first.
 
 ## Decision
@@ -125,7 +125,7 @@ epic [#8810](https://github.com/kamp-us/phoenix/issues/8810) and its children
 [#8816](https://github.com/kamp-us/phoenix/issues/8816);
 ADRs [0302](0302-known-parks-clear-novel-routes-human.md) (amended in part by this record),
 [0339](0339-park-cause-may-stand-alone.md) and
-[0374](0374-driver-seat-on-a-spent-repair-budget.md);
+[0378](0378-driver-seat-on-a-spent-repair-budget.md);
 [`packages/fabrika-cli/src/lane/report.ts`](../packages/fabrika-cli/src/lane/report.ts),
 [`packages/fabrika-cli/src/recipe/parks.ts`](../packages/fabrika-cli/src/recipe/parks.ts),
 [`packages/fabrika-cli/src/recipe/unpark-verb.ts`](../packages/fabrika-cli/src/recipe/unpark-verb.ts),
