@@ -44,6 +44,7 @@ import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEve
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
+import {remarkCutReplies} from "../../ai-agent/core/state.ts";
 import type {Mode, SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import {useForwardedKey} from "../ui/forwarded-key.tsx";
@@ -846,7 +847,11 @@ function ChatWindow({
 					return;
 				}
 				const page = outcome.page;
-				setOlder((held) => mergeOlder(held, page.items));
+				// The store's copy of a reply the operator cut says it finished — agy records no stop in
+				// its own log — so the page is re-marked against the session's own record before it is
+				// held, the same way a resume's refill re-marks (`ai-agent/core/fold.ts`, #8985).
+				const paged = remarkCutReplies(page.items, completed.cutReplies);
+				setOlder((held) => mergeOlder(held, paged));
 				setPageError(null);
 				reanchorRef.current = true;
 				commit((current) => ({

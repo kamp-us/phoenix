@@ -143,6 +143,23 @@ export interface AiAgentSessionState {
 	readonly transcript: TranscriptPayload;
 	/** The assistant turn a restart cut short, so the window can offer the resend. */
 	readonly interrupted: ItemId | null;
+	/**
+	 * Every assistant row this session cut, newest last — the record a paged-in row re-acquires its
+	 * mark from (#8985).
+	 *
+	 * The mark itself rides the row, and the row lives in a tail the window bounds, so outside that
+	 * tail the store's bare copy is the only copy and it reads as a reply the model finished. No
+	 * backend can answer for the difference: agy's own `transcript.jsonl` records an operator stop as
+	 * a `MODEL`/`PLANNER_RESPONSE` with `status: "DONE"` and no field naming the stop — measured at
+	 * agy 1.2.0 against the real CLI
+	 * (https://github.com/kamp-us/phoenix/issues/8895#issuecomment-5617179504) — so this process's
+	 * own record is the only place the fact can be kept across the window.
+	 *
+	 * Bounded at `cutReplyLimit`, oldest dropped. It is checkpointed, so unbounded it would pay
+	 * storage per session for a set that only grows, and one that outlives its conversation: the
+	 * `session-reset` arm empties it with the transcript it describes (`./fold.ts`).
+	 */
+	readonly cutReplies: ReadonlyArray<ItemId>;
 	/** An interruption asked for and not yet confirmed by an event; `null` when none is in flight. */
 	readonly interruption: Interruption | null;
 	readonly usage: UsageLedger;
@@ -258,6 +275,10 @@ export const checkpointFields = [
 	"cwd",
 	"transcript",
 	"interrupted",
+	// Decided to survive a restart, and the whole point of it: the mark on a cut reply is carried by
+	// the row, the row is carried by a bounded tail, and a row the tail drops comes back from the
+	// store bare. This is what a paged-in row re-acquires the mark from (#8985).
+	"cutReplies",
 	"interruption",
 	"usage",
 	"agentVersion",
@@ -298,6 +319,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	cwd,
 	transcript: {items: [], omitted: emptyOmission},
 	interrupted: null,
+	cutReplies: [],
 	interruption: null,
 	usage: emptyUsage,
 	agentVersion: null,
@@ -476,16 +498,40 @@ export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | 
 	return null;
 };
 
-/** The cut-short turn, marked in the tail so a window renders the break off the transcript alone. */
-const markInterrupted = (
+/**
+ * How many cut replies one session remembers — the bound on `cutReplies`.
+ *
+ * Sized against what a window can page back to rather than against how often Escape is pressed: the
+ * operator pages through history by hand, and a session with more than this many cut turns has a
+ * record whose oldest entries name rows nobody is scrolling to. Oldest is dropped, so the entries
+ * that survive are the ones a page-back is most likely to reach.
+ */
+export const cutReplyLimit = 64;
+
+/** One cut reply recorded, oldest dropped past the bound. Idempotent: a row is named once. */
+export const noteCutReply = (cut: ReadonlyArray<ItemId>, id: ItemId): ReadonlyArray<ItemId> =>
+	cut.includes(id) ? cut : [...cut, id].slice(-cutReplyLimit);
+
+/**
+ * Every row the record names, marked cut — so a window renders the break off the transcript alone.
+ *
+ * The one place the mark is applied, and it is applied wherever the store's rows enter this process:
+ * `restore` over the loaded tail, `refillTranscript` over a resumed session's history (`./fold.ts`),
+ * and the window's own page-back (`../../shell/chat/ChatWindow.tsx`). A row already wearing the mark
+ * is returned untouched, so the held copy a rebase keeps is not rewritten.
+ */
+export const remarkCutReplies = (
 	items: ReadonlyArray<TranscriptItem>,
-	cut: ItemId | null,
-): ReadonlyArray<TranscriptItem> =>
-	cut === null
-		? items
-		: items.map((item) =>
-				item.id === cut && item.kind === "assistant" ? {...item, interrupted: true} : item,
-			);
+	cut: ReadonlyArray<ItemId>,
+): ReadonlyArray<TranscriptItem> => {
+	if (cut.length === 0) return items;
+	const named = new Set<string>(cut);
+	return items.map((item) =>
+		item.kind === "assistant" && item.interrupted !== true && named.has(item.id)
+			? {...item, interrupted: true}
+			: item,
+	);
+};
 
 /**
  * The checkpoint's parse boundary: what a saved session comes back as.
@@ -548,6 +594,9 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	// carries the resend — and a turn that wrote no reply has only the second of them (#8699).
 	const reply = interrupted ? lastAssistantId(loaded.transcript.items) : null;
 	const cut = interrupted ? cutPromptId(loaded.transcript.items) : null;
+	// The record the mark is applied from, and the restart's own cut reply added to it: the row is in
+	// the tail now, and the first page-back past it is what the record exists for (#8985).
+	const cutReplies = reply === null ? loaded.cutReplies : noteCutReply(loaded.cutReplies, reply);
 	const settled =
 		loaded.phase === "gone"
 			? closeOfferedCatalogs(settleRunningSubagents(loaded))
@@ -555,8 +604,12 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	return {
 		...settled,
 		phase: loaded.phase === "gone" ? "gone" : "idle",
-		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, reply)},
+		transcript: {
+			...loaded.transcript,
+			items: remarkCutReplies(loaded.transcript.items, cutReplies),
+		},
 		interrupted: cut ?? loaded.interrupted,
+		cutReplies,
 		interruption: null,
 		agentVersion: null,
 		account: null,

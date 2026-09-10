@@ -232,7 +232,14 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								failure: null,
 								...(msg.history === undefined
 									? {}
-									: {transcript: refillTranscript(state.transcript, msg.history, limits)}),
+									: {
+											transcript: refillTranscript(
+												state.transcript,
+												msg.history,
+												limits,
+												state.cutReplies,
+											),
+										}),
 							},
 							noCmds,
 						]),

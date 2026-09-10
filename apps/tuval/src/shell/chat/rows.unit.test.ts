@@ -6,6 +6,7 @@
 
 import {describe, expect, it} from "vitest";
 import {promptItem} from "../../ai-agent/core/fold.ts";
+import {remarkCutReplies} from "../../ai-agent/core/state.ts";
 import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
 import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
@@ -1096,6 +1097,31 @@ describe("chatRows folds a settled turn", () => {
 		expect(turnRow(rows)?.label).toBe("You stopped after 2.0s");
 		// The reply itself is the terminal row and stays visible, so its marker and Resend do too.
 		expect(carriedIds(rows)).toEqual(["u", "a"]);
+	});
+
+	/**
+	 * The same turn after the operator paged past it and back. The store's copy of a cut reply says it
+	 * finished — agy records no operator stop in its own log — so without the re-mark the window draws
+	 * this turn as "Worked for 2.0s" and a half-written answer reads as the model's last word (#8985).
+	 * The record it is re-marked from is the session's own `cutReplies` (`ai-agent/core/state.ts`).
+	 */
+	it("still says the operator stopped it when the turn came back from the store", () => {
+		const stored = [
+			userItem("u", "go", AT),
+			thinkingItem("k", "weighing it", AT + 100),
+			assistantItem("a", "half an ans", AT + 2_000),
+			userItem("u2", "never mind", AT + 9_000),
+			assistantItem("a2", "summarized", AT + 10_000),
+		];
+		const paged = (items: ReadonlyArray<TranscriptItem>) =>
+			chatRows({...base, atOldest: true, older: mergeOlder([], items)});
+		expect(paged(stored).find((row) => row.kind === "turn" && row.id === "u")).toMatchObject({
+			label: "Worked for 2.0s",
+		});
+		const remarked = remarkCutReplies(stored, [ItemId.make("a")]);
+		expect(paged(remarked).find((row) => row.kind === "turn" && row.id === "u")).toMatchObject({
+			label: "You stopped after 2.0s",
+		});
 	});
 
 	it("falls back to the bare verb when the items do not say how long it took", () => {
