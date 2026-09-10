@@ -275,3 +275,20 @@ no vocabulary impact
 > **What does not move.** The graph is still the one carrier, `status:blocked` stays retired, the
 > purpose matrix stands as written, and discharge still only ever admits. What changes is that the
 > per-child edge stops being something a planner may or may not think to write.
+
+> Amendment 2026-09-10 — **a mention is not a landing.** The 2026-08-29 amendment above names
+> `issueRefsIn` as the rule that discharges an edge off the assembly branch. That matcher reads a
+> bare `#<n>` anywhere in a message, so a commit the run itself put on `epic/<parent>` saying
+> `refactor(tracer): rework the helper; does not touch #6008` discharged #6008's edge and a child
+> lane started against a predecessor that does not exist. The rule is now `landingRefsIn`
+> (`packages/fabrika-cli/src/build/commit-message.ts`), which recognises three shapes and nothing
+> else: a subject's trailing `(#<n>)`, a line-anchored `Closes`/`Fixes`/`Resolves`/`Part of` trailer,
+> and the ref inside the `Merge branch 'build/<n>-…'` subject `lane integrate` writes. It sits beside
+> `issueRefsIn` rather than narrowing it, because `lane prove` and `build commit`'s foreign-ref
+> refusal both want the loose read.
+>
+> **What does not move.** Discharge still only ever admits, the range is still
+> `<merge base with the trunk>..epic/<parent>`, and the two bounds stay independent — the range says
+> which commits may speak, the landing rule says what counts as speaking. Recognition failure is
+> silence, never a landing: an unrecognised shape leaves the edge as the board reads it and the gate
+> refuses. Filed against [#7238](https://github.com/kamp-us/phoenix/issues/7238).

@@ -7,28 +7,34 @@
  * the one a dependency gate means.
  *
  * The evidence is the git graph, never the lane's own fold — a machine's self-report is not
- * evidence, which is why `lane prove` reads commits too. The ref-matching rule is
- * {@link issueRefsIn}, the same one `build commit` and `lane prove` read messages with, so a
- * predecessor cannot be discharged here by a spelling nothing else recognises.
+ * evidence, which is why `lane prove` reads commits too.
  *
- * **The read is the run's own commits, never everything reachable from the branch tip.** The set is
- * `<merge base with the trunk>..epic/<N>`, the two-dot shape `lane prove` locates a child's range
- * with. A one-dot walk sweeps in the whole trunk history the branch was cut from, and since
- * `issueRefsIn` matches a bare `#<n>` anywhere in a message, a years-old commit writing "blocked on
- * #<n>" would then discharge an edge whose work was never built — the fail-open `build eligible`
- * exists to remove.
+ * **A mention that is not a landing cannot discharge.** The rule is {@link landingRefsIn}, which
+ * recognises only the three message shapes the pipeline writes onto an assembly branch — a subject's
+ * trailing `(#<n>)`, a line-anchored closing trailer, and `lane integrate`'s
+ * `Merge branch 'build/<n>-…'`. `issueRefsIn` matches a bare `#<n>` anywhere, so reading *it* as
+ * evidence let `refactor(tracer): rework the helper; does not touch #<n>` discharge that number's
+ * edge. Recognition runs one way only: a shape the rule does not know is no evidence, so the edge
+ * keeps the board's state and the gate refuses.
+ *
+ * **The read is also the run's own commits, never everything reachable from the branch tip.** The
+ * set is `<merge base with the trunk>..epic/<N>`, the two-dot shape `lane prove` locates a child's
+ * range with. A one-dot walk sweeps in the whole trunk history the branch was cut from, where a
+ * years-old commit closing its own `#<n>` would discharge an edge this run never built. The two
+ * bounds are independent: the range says which commits may speak, the landing rule says what
+ * counts as speaking.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {mergeBase, noMergeBaseReason, rangeCommits, resolveCommit} from "../io/git.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
-import {issueRefsIn} from "./commit-message.ts";
+import {landingRefsIn} from "./commit-message.ts";
 import {defaultBranch} from "./github.ts";
 
-/** Every issue number these commit messages name — the set whose work this branch carries. */
+/** Every issue number these commit messages claim to land — the set whose work this branch carries. */
 export const landedRefs = (messages: ReadonlyArray<string>): ReadonlySet<number> =>
-	new Set(messages.flatMap((message) => [...issueRefsIn(message)]));
+	new Set(messages.flatMap((message) => [...landingRefsIn(message)]));
 
 /**
  * What the assembly branch said, or why it said nothing.
