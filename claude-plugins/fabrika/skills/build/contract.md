@@ -29,8 +29,11 @@ rebuild inherits, because a wrapper around a retired tool keeps the retired tool
 
 - `packages/fabrika-cli/src/wire/acceptance-criteria.ts` — the total `read` over an issue body's
   `### Acceptance criteria` block (`Found` / `Absent` / `Malformed`). `build issue` imports it.
-- `packages/fabrika-cli/src/wire/verdict-marker.ts` — the verdict-marker `read` and its
-  head-binding (`bindToHead`). `build verdicts` imports both.
+- `packages/fabrika-cli/src/wire/verdict-marker.ts` — the verdict-marker `read` and its binding
+  (`bindToContent`: head equality first, then the marker's `content:` digest). `build verdicts`
+  imports both, and takes the head's own digest from
+  `packages/fabrika-cli/src/review/head-content.ts` — the one derivation `ship gate` reads too, so
+  the repair loop and the merge gate cannot disagree about a marker.
 - `packages/fabrika-cli/src/report/leaks.ts` — `scanBody` and `isBareAtReference`, the
   machine-local-path predicates for a **body this skill posts**. `build pr` and `build note` import
   them.
@@ -88,7 +91,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
 | `build deviations` | post an epic child's `## Deviations` disclosure as the ONE `build-deviations` marker on its issue, edited in place on every later round and carrying every standing entry; `--standing` reads what stands | a claim-gated upsert with a read-back, over a section validated by the wire format and compared against the standing disclosure; *authoring* the disclosure stays in the skill |
-| `build verdicts` | the paginated, per-gate verdict fold: current-head on a PR, range-bound on an epic child | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
+| `build verdicts` | the paginated, per-gate verdict fold: content-bound at a PR's live head, range-bound on an epic child | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
 
 **Considered and not derived: a surface classifier.** Naming the surface (code / prose / plan) is
@@ -2951,9 +2954,17 @@ empty set.
 
 The fold: resolve the PR's current head; fetch **every** comment and **every** review, paginated
 in full; parse each comment through the imported `verdict-marker` read; keep the latest marker
-per gate namespace; bind each to the current head (`current: true|false` — a stale marker is
+per gate namespace; bind each against the current head (`current: true|false` — a stale marker is
 visible *as stale*, never dropped, because "the FAIL is old" and "there is no FAIL" are different
-facts). **Native reviews are their own row kind**, not coerced into markers —
+facts). **The binding is the content one, not the head one.** `bindToContent` takes head equality
+first and, where the head has moved, the marker's `content:` digest against this head's own — so a
+rebase that changed no content keeps its verdicts, and this verb and `ship gate` cannot answer one
+marker differently, because both read the digest from the same `review/head-content.ts`. The head
+digest is read only when a content-bound marker has already failed the head test, so the common path
+touches no git; a digest this checkout could not derive resolves `Unbindable`, which reports
+`current: false` with the reason on stderr — a failed derivation never launders a stale verdict.
+A marker with no `content:` field falls back to head equality, unchanged.
+**Native reviews are their own row kind**, not coerced into markers —
 whether a `CHANGES_REQUESTED` with no marker drives a repair is an open decision; this
 verb reports the state honestly and pre-rules nothing. `rounds` counts the distinct heads the FAIL
 markers name, computed over the *full* comment set. The predecessor pipeline counted off a truncated
