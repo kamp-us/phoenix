@@ -10,6 +10,10 @@ const complete = assembleSchema(KEY_GROUPS);
 if (complete._tag !== "Complete") throw new Error("fixture: registry is not complete");
 const committed = serializeSchema(complete.schema);
 
+// The count is read off the registry, not written down: a new key is a one-line registration, and a
+// literal here turns that into a two-file change with no extra assurance.
+const KEY_COUNT = KEY_GROUPS.length;
+
 const AT_ROOT: SchemaRoot = {_tag: "Root", root: "/repo"};
 
 const run = (opts: {
@@ -49,7 +53,7 @@ describe("reconcile", () => {
 	it("agrees when the committed file matches the assembled schema", () => {
 		const {outcome} = run({write: false, read: {_tag: "Text", text: committed}});
 		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toContain("schema\tagrees\t20");
+		expect(outcome.stdout).toContain(`schema\tagrees\t${KEY_COUNT}`);
 	});
 
 	it("agrees whatever the committed file's whitespace, comparing content not bytes", () => {
@@ -87,7 +91,7 @@ describe("write", () => {
 	it("renders the file from the registry and reports written", () => {
 		const {outcome, saves} = run({write: true, read: {_tag: "Absent"}});
 		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toContain("schema\twritten\t20");
+		expect(outcome.stdout).toContain(`schema\twritten\t${KEY_COUNT}`);
 		expect(saves).toHaveLength(1);
 		expect(saves[0]).toBe(committed);
 	});

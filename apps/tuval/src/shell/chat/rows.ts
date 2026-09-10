@@ -60,6 +60,13 @@ export type ChatRow =
 	| {readonly kind: "loading"}
 	| {readonly kind: "page-error"; readonly detail: string}
 	/**
+	 * The window is showing a subagent whose slot the session no longer holds — cleared by a
+	 * `session-reset`, or never restored. Its own row rather than an empty list, because the
+	 * alternative the window had was falling through to the agent's own rows under the worker's
+	 * label, which reads as the worker having said what the agent said (#8814).
+	 */
+	| {readonly kind: "slot-gone"}
+	/**
 	 * A run of consecutive session notices as one row. A burst of hook frames landing mid-turn is a
 	 * row that grows rather than N rows that push everything the reader was looking at down the page.
 	 */
@@ -673,6 +680,15 @@ export const subagentRows = (
 		head: slot.id,
 		...(unfolded === undefined ? {} : {unfolded}),
 	});
+
+/**
+ * The list a window shows in place of a subagent's transcript when the session holds no slot for
+ * the one being viewed. One frozen value for the life of the module, for `NO_SUBAGENTS`' reason:
+ * the memo that reaches for it must not see a changed list on every frame.
+ */
+export const SLOT_GONE_ROWS: ReadonlyArray<ChatRow> = Object.freeze([
+	Object.freeze({kind: "slot-gone"} as const),
+]);
 
 /** The prepend anchor: the oldest item the list holds, including a local echo and a folded one. */
 export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null =>

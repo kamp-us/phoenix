@@ -21,6 +21,7 @@ resolution and doc-surface placement here.
   here.
 - **Never rewrite a filed issue body** — append a dated `## Amendment`. The tracker keeps no body
   history, so an overwrite destroys what the issue used to say with nothing to recover it from.
-- **Sentence-level writing discipline lives in the shared writing rubric skill**, consumed by
-  `build` and `review` both, so one rewrite of a rule reaches both stages. This file carries only
-  placement and sourcing rules; do not grow style guidance here.
+- **Sentence-level writing discipline lives in
+  [`writing-for-agents`](../../writing-for-agents/SKILL.md)**, consumed by `build` and `review`
+  both, so one rewrite of a rule reaches both stages. Read it inline as a reference. This file
+  carries placement and sourcing rules alone; style guidance belongs there.

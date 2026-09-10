@@ -1,7 +1,7 @@
 ---
 id: 0099
 title: The architecture-audit pipeline skill emits triageable issues (not a repo doc); `.glossary/` is a 4th committed doc surface; `glossary` + `architecture-audit` join the pipeline suite
-status: accepted
+status: amended-in-part by [0371](0371-audit-findings-gated-by-founder-pick.md)
 date: 2026-06-20
 tags: [pipeline, doc-surfaces, glossary, architecture-audit, plugin]
 ---

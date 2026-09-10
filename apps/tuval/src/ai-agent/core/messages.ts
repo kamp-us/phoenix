@@ -9,12 +9,27 @@
 
 import {type Sub, type SubId, subId} from "@demlik/tea";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, PermissionDecision, ThinkingLevel} from "../ports/index.ts";
+import type {
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+	TranscriptItem,
+} from "../ports/index.ts";
 import type {AgentFailure, HistoryPage} from "./state.ts";
 
 export type AiAgentSessionMsg =
 	| {readonly type: "start"; readonly cwd: string; readonly resume: string | null}
-	| {readonly type: "started"; readonly sessionId: string}
+	/**
+	 * The open landed. `history` is the resumed session's whole stored transcript when the layer
+	 * read one (`../service/TuvalAiAgent.ts`, `StartedSession`), and the `started` cell re-plans the
+	 * tail over it rather than keeping the one the checkpoint carried (#8855).
+	 */
+	| {
+			readonly type: "started";
+			readonly sessionId: string;
+			readonly history?: ReadonlyArray<TranscriptItem>;
+	  }
 	/** The slot was rebuilt, but its start call refused; the subscription lifetime still changed. */
 	| {readonly type: "openFailed"; readonly failure: AgentFailure}
 	/**
