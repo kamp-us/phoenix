@@ -39,11 +39,17 @@ const defined = <T>(value: T | undefined): T => {
 
 /**
  * One driven event: a bare name, or one carrying a payload its own line records — the waits it
- * grants, or whether the merge it reports left the issue open.
+ * grants, whether the merge it reports left the issue open, or whether the terminal it reports was
+ * proven off a diagnosis comment.
  */
 type Step =
 	| string
-	| {readonly event: string; readonly waitGrant?: number; readonly partial?: boolean};
+	| {
+			readonly event: string;
+			readonly waitGrant?: number;
+			readonly partial?: boolean;
+			readonly diagnosis?: boolean;
+	  };
 
 /** Drive one task's events through `applyEvent`, answering with the leaf each one folded to. */
 const drive = (
@@ -70,6 +76,7 @@ const drive = (
 			index === 0 ? classes : null,
 			typeof step === "string" ? null : (step.waitGrant ?? null),
 			typeof step === "string" ? false : (step.partial ?? false),
+			typeof step === "string" ? null : (step.diagnosis ?? null),
 		);
 		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
 		log.push(applied.entry);
@@ -200,9 +207,13 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual([
 			CANCELLED_STATE,
 			LANDED_STATE,
+			"diagnosed",
 			"human:budget-spent",
 			"shipped",
 		]);
+		// The investigation terminal, named off the `done:diagnosis` arm that targets it — which is
+		// what `deriveStatus` reads to answer "diagnosed" instead of collapsing it into `complete`.
+		expect([...defined(lane.tasks.issue).diagnosisFinals]).toEqual(["diagnosed"]);
 		// The spent-budget leaf is a final that carries a door — in `errorFinals` so the phase folds
 		// and the lane trips loud, and in `openFinals` so the door stays walkable. Renaming it out of
 		// `frozen` changed which of those sets it is in not at all; what changed is that `isPark`
@@ -511,6 +522,28 @@ describe("the compiler — refusals", () => {
 		expect(defectsOf(workflow)).toContain('unknown machine-level state "compleet"');
 	});
 
+	it("refuses a guard spelled like a routing one that matches none of the three", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "doing").on["TASK_A.DONE"] = [
+			{target: "checking", guard: "done:diagnosiss"},
+			{target: "doing"},
+		];
+
+		// Read as the budget guard it would compile, match nothing, spend a wait and land in the arm
+		// the routing exists to divert from — the silent fallthrough the namespace is there to stop.
+		expect(defectsOf(workflow)).toContain('guarded on "done:diagnosiss"');
+	});
+
+	it("leaves a bare guard word the budget guard it has always been", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "doing").on["TASK_A.DONE"] = [
+			{target: "checking", guard: "retriesRemaining"},
+			{target: "doing"},
+		];
+
+		expect(compile(workflow)._tag).toBe("Compiled");
+	});
+
 	it("pins the coder template's compiled cell table", () => {
 		expect(cellTable(compiled(coderWorkflow()), "issue")).toEqual(
 			readGoldenFixture(import.meta.url, "./__fixtures__/coder.cells.golden.txt"),
@@ -535,6 +568,47 @@ describe("the compiler — refusals", () => {
 	it("refuses a document that is not machine-shaped at all", () => {
 		expect(defectsOf(null)).toContain("machine.states");
 		expect(defectsOf({})).toContain("machine.states");
+	});
+});
+
+describe("`done:diagnosis` — an investigation's terminal skips the review it opened nothing for", () => {
+	const lane = () => compiled(coderWorkflow());
+
+	it("carries a diagnosis-proven DONE straight to `diagnosed`, never through `review`", () => {
+		expect(leaves(lane(), "issue", ["WIP", {event: "DONE", diagnosis: true}])).toEqual([
+			"build",
+			"diagnosed",
+		]);
+	});
+
+	// All three builder terminals report one DONE, so the fallthrough is what keeps a shipped build
+	// and an epic child on the route they have always taken.
+	it("leaves a PR-backed DONE — `SHIPPED-PR` — folding to `review`", () => {
+		expect(leaves(lane(), "issue", ["WIP", "DONE"])).toEqual(["build", "review"]);
+	});
+
+	it("leaves an epic child's DONE — `BUILT-NO-PR` — folding to `review` too", () => {
+		// The prover answers `diagnosis` off its no-PR arm alone, and a child's DONE is proven off the
+		// commits its range adds; the payload it carries here is the `false` that stands for both.
+		expect(leaves(lane(), "issue", ["WIP", {event: "DONE", diagnosis: false}])).toEqual([
+			"build",
+			"review",
+		]);
+	});
+
+	it("is a terminal the lane cannot walk out of — nothing follows a finished investigation", () => {
+		expect(() =>
+			leaves(lane(), "issue", ["WIP", {event: "DONE", diagnosis: true}, "PASS"]),
+		).toThrow(/diagnosed/);
+	});
+
+	it("spends neither budget reaching it", () => {
+		expect(drive(lane(), "issue", ["WIP", {event: "DONE", diagnosis: true}]).state).toMatchObject({
+			type: "diagnosed",
+			retries: 0,
+			waits: 0,
+			laps: 0,
+		});
 	});
 });
 

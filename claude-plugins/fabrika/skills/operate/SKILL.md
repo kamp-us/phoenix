@@ -353,7 +353,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
-| a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
+| a task's own final — `landed`, `shipped`, `diagnosed` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `diagnosed` is where an investigation ends — the builder's `SUCCESS-NO-PR`, proven off its diagnosis comment — and it is a finish, never a park: it needs no review, opens no PR, and owes you nothing |
 | `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you**, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
 | `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
@@ -1082,6 +1082,15 @@ entered `build` — the artifact the builder's terminal names, read off the issu
 the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
 is the range's own commits — a child opens no PR to prove one against.
 
+**That proof is also what routes the fold, and only the investigation's is.** All three builder
+terminals map to one `DONE`, so the machine reads the prover's answer rather than the token: a
+`DONE` proven off the diagnosis comment carries `diagnosis: true` onto its recorded line and takes
+the `done:diagnosis` arm straight to `diagnosed`, a final. It never enters `review`, and you never
+park it — the review it used to reach needs an open PR an investigation never opens, so `lane brief`
+refused at `20` and the only move left was a `BLOCKED` over a lane that had finished correctly.
+A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
+they always did.
+
 **A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
@@ -1442,7 +1451,7 @@ fold reads (`human:novel-park` is the named park a recipe refusal folds to), and
 caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
-**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, `board:cancelled`,
+**A terminal fold (`status: done` — `shipped`, `complete`, `diagnosed`, `tripped`, `board:cancelled`,
 `board:landed`, and a chore's `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
@@ -1533,7 +1542,7 @@ comment body.
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
 **`LANE-TERMINAL`** (the machine folded to a final state with no door out — `shipped`, `complete`,
-`tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
+`diagnosed`, `tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
