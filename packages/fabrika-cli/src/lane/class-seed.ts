@@ -36,6 +36,15 @@ export const classesFromLabels = (labels: ReadonlyArray<string>): ReadonlyArray<
 	return [...known, ...declared.filter((name) => !CLASSES.includes(name))];
 };
 
+/**
+ * The declared names outside {@link CLASSES}, in the order they were declared.
+ *
+ * One reader for the whole seed side, so `lane open`'s pre-placement refusal, `lane emit`'s and
+ * {@link seedClasses}'s own cannot disagree about which spelling is off the set.
+ */
+export const offSetClasses = (classes: ReadonlyArray<string>): ReadonlyArray<string> =>
+	classes.filter((name) => !CLASSES.includes(name));
+
 export type Seed =
 	| {readonly _tag: "Seeded"; readonly text: string; readonly classes: ReadonlyArray<string>}
 	/** The document was copied through untouched — no class stands, so the bytes are the template's. */
@@ -55,7 +64,7 @@ export type Seed =
  * template byte-identically whenever no class stands.
  */
 export const seedClasses = (text: string, classes: ReadonlyArray<string>): Seed => {
-	const offSet = classes.filter((name) => !CLASSES.includes(name));
+	const offSet = offSetClasses(classes);
 	if (offSet.length > 0) return {_tag: "OffSet", names: offSet};
 	if (classes.length === 0) return {_tag: "Unchanged", text};
 

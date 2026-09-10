@@ -898,8 +898,12 @@ describe("emitMachine — the machinery lap axis", () => {
 
 /**
  * The class axis: an unclassed emission is the bytes it always was, and a `ui` child carries the
- * seed AND the two guarded arms. Without the arms the seed reaches an emitted child and turns
- * nothing — the half of the ui-lane wiring a folded report named from the other end.
+ * seed AND the guarded arm into `build:ui`. Without the arm the seed reaches an emitted child and
+ * turns nothing — the half of the ui-lane wiring a folded report named from the other end.
+ *
+ * The rendered REVIEW cell is asserted absent, because the decision record on a child's rendered
+ * review rules it the epic tail's: a `review:ui` cell a child entered dispatches a gate over a range
+ * with no pull request and proves nothing.
  */
 describe("emitMachine — the class axis", () => {
 	const classedChildren = [open(4301, ["ui"]), open(4302), open(4303)];
@@ -918,18 +922,26 @@ describe("emitMachine — the class axis", () => {
 		expect(document.machine.context.epic_4300).not.toHaveProperty("classes");
 	});
 
-	it("gives the classed child the two ui states, and no sibling one of them", () => {
+	it("gives the classed child build:ui and NO review:ui, and no sibling either", () => {
 		const classed = regionOf(classedText(), "issue_4301") as {
 			states: Record<string, unknown>;
 		};
 		const plain = regionOf(classedText(), "issue_4302") as {states: Record<string, unknown>};
 
 		expect(Object.keys(classed.states)).toContain("build:ui");
-		expect(Object.keys(classed.states)).toContain("review:ui");
+		expect(Object.keys(classed.states)).not.toContain("review:ui");
 		expect(Object.keys(plain.states)).not.toContain("build:ui");
 	});
 
-	it("routes the classed child's FIRST WIP to build:ui, and its PASS to review:ui", () => {
+	it("leaves the classed child's review PASS a plain target into integrate", () => {
+		const classed = regionOf(classedText(), "issue_4301") as {
+			states: Record<string, {on: Record<string, unknown>}>;
+		};
+
+		expect(classed.states.review?.on["ISSUE_4301.PASS"]).toBe("integrate");
+	});
+
+	it("routes the classed child's FIRST WIP to build:ui, and its PASS straight to integrate", () => {
 		const lane = laneOf(classedText());
 		const log = driveLog(lane, [
 			["issue_4301", "WIP"],
@@ -938,16 +950,15 @@ describe("emitMachine — the class axis", () => {
 		]);
 
 		expect(lane.tasks.issue_4301?.initial.classes).toEqual(["ui"]);
-		expect(statesOf(lane, log).issue_4301?.type).toBe("review:ui");
 		expect(statesOf(lane, log.slice(0, 1)).issue_4301?.type).toBe("build:ui");
+		expect(statesOf(lane, log).issue_4301?.type).toBe("integrate");
 	});
 
-	it("still lands the classed child through integrate — the ui arms add a leg, not a detour", () => {
+	it("still lands the classed child through integrate — the ui arm adds a shell, not a leg", () => {
 		const lane = laneOf(classedText());
 		const log = driveLog(lane, [
 			["issue_4301", "WIP"],
 			["issue_4301", "DONE"],
-			["issue_4301", "PASS"],
 			["issue_4301", "PASS"],
 			["issue_4301", "DONE"],
 		]);

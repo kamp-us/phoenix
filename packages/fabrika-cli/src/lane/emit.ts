@@ -32,9 +32,10 @@
  * already on disk.
  *
  * The class axis rides each child's own `classes`, off the `sub_issues` payload's labels: a classed
- * child seeds `context.<task>.classes` and takes the class-guarded arms, an unclassed one is the
- * bytes it always was. Same fixed-at-emission rule — a class stamped after the emit reaches this
- * machine only through an event.
+ * child seeds `context.<task>.classes` and takes the class-guarded arm, an unclassed one is the
+ * bytes it always was ([`class-seed.ts`](class-seed.ts) carries why that seed matters). Same
+ * fixed-at-emission rule — a class stamped after the emit reaches this machine only through an
+ * event.
  */
 import {findCycle, readDeclared} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
@@ -78,10 +79,13 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * The rendered-surface class and the guard spelling that routes on it — the same two strings the
  * committed coder template carries, so a child region and a single-issue lane read one grammar.
  *
- * A child carrying the class gets `build:ui` / `review:ui` states and the two guarded arms into
- * them; a child carrying none is emitted byte-for-byte as it was before this axis existed. That
- * asymmetry is the whole of the epic half: while the emitted regions had no class-guarded arm at
- * all, a seed reached them and turned nothing.
+ * A child carrying the class gets the `build:ui` construction cell and the guarded arms into it; a
+ * child carrying none is emitted byte-for-byte as it was before this axis existed.
+ *
+ * **The rendered REVIEW cell is deliberately not emitted**, on the decision record that rules an
+ * epic child's rendered review the tail's by construction. A child opens no pull request, so a
+ * `review:ui` cell it entered could produce nothing: `wire/lane-brief.ts` maps the state to
+ * `ui-reviewer` with no child arm, and `prove.ts`'s `claimOf` gates its `PASS` on `&& !child`.
  */
 const UI_CLASS = "ui";
 const UI_GUARD = `class:${UI_CLASS}`;
@@ -139,10 +143,12 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  * loud — under a name `recipe/parks.ts` can see. `isPark` matches `blocked` and `human:*` and
  * matched `frozen` never, so a child at its cap parked where every recipe answered `NotParked`.
  *
- * A `ui`-classed child carries two more states and two guarded arms into them — `queued`'s `WIP` and
- * `review`'s `PASS`, the pair the committed coder template already had. Without them the class seed
- * reached an emitted child and turned nothing — the half of this axis a folded report named from
- * the other end.
+ * A `ui`-classed child carries one more state — `build:ui` — and the guarded `queued.WIP` arm into
+ * it, so its first construction pass runs in the rendered shell. Without that pair the class seed
+ * reached an emitted child and turned nothing, the half of this axis a folded report named from the
+ * other end. The template's `review:ui` cell has no counterpart here, for the reason
+ * {@link UI_CLASS} carries; a `review` FAIL therefore retries in `build` on every child alike,
+ * because a two-arm guarded array holds one guard and this one spends the repair budget.
  */
 const region = (
 	ns: string,
@@ -164,9 +170,7 @@ const region = (
 			...(ui ? {"build:ui": {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}}} : {}),
 			review: {
 				on: {
-					[`${ns}.PASS`]: ui
-						? [{target: "review:ui", guard: UI_GUARD}, {target: "integrate"}]
-						: "integrate",
+					[`${ns}.PASS`]: "integrate",
 					[`${ns}.BLOCKED`]: "blocked",
 					[`${ns}.FAIL`]: [
 						{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
@@ -174,24 +178,6 @@ const region = (
 					],
 				},
 			},
-			...(ui
-				? {
-						"review:ui": {
-							on: {
-								[`${ns}.PASS`]: "integrate",
-								[`${ns}.BLOCKED`]: "blocked",
-								[`${ns}.FAIL`]: [
-									{
-										target: "build:ui",
-										guard: "retriesRemaining",
-										actions: "incrementRetries",
-									},
-									{target: "human:budget-spent"},
-								],
-							},
-						},
-					}
-				: {}),
 			integrate: {
 				on: {
 					[`${ns}.DONE`]: "landed",

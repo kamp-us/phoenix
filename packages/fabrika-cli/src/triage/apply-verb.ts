@@ -21,9 +21,9 @@
  * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close.
  *
  * `--class` is the last column, and it is the **producer** the lane's `context.<task>.classes` seed
- * had none of: `lane open` and `lane emit` read the `class:<name>` labels it stamps, so a
- * rendered-surface issue routes to `build:ui` on its first pass rather than after a `review-ui` FAIL
- * raised the class off a diff. Its vocabulary is closed in code, never on the board.
+ * had none of — [`lane/class-seed.ts`](../lane/class-seed.ts) carries what that gap cost. Its
+ * vocabulary is closed in code rather than on the board, which is the one asymmetry against the
+ * other five facets.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

@@ -1,14 +1,10 @@
 /**
  * `lane open` — boot one single-issue lane from the committed coder template.
  *
- * **Byte-identical when no class stands, and seeded when one does.** The template's
- * `context.<task>.classes` had no producer at all, so a rendered-surface lane's first build ran in
- * the plain builder and reached `build:ui` only after a `review-ui` FAIL had raised the class off a
- * diff. The producer is `triage apply --class`, and this verb is where its label becomes the seed:
- * the names ride the expectation read's own payload ([`expectation.ts`](expectation.ts)), and
- * [`class-seed.ts`](class-seed.ts) writes them into the bytes placed. An off-set spelling refuses on
- * {@link CLASS_UNRECOGNISED} before placement, because the compiler's own check fires on read and so
- * would refuse every later fold of the lane rather than this one boot.
+ * **Byte-identical when no class stands, and seeded when one does.** The names ride the expectation
+ * read's own payload ([`expectation.ts`](expectation.ts)), and [`class-seed.ts`](class-seed.ts)
+ * writes them into the bytes placed and carries the why. An off-set spelling refuses on
+ * {@link CLASS_UNRECOGNISED} before placement.
  *
  * The boot an operator used to do by hand as `mkdir -p && cp`, as a verb
  * that refuses instead of overwriting: an existing lane dir is a loud {@link LANE_EXISTS}, because

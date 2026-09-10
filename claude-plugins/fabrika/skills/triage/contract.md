@@ -1851,13 +1851,16 @@ its own exit `38`.
 the issue was carrying. A facet that only added would leave two classes standing and route on
 whichever was read first — the delete this engine exists to make deliberate.
 
-**Both boot verbs read the label, and both refuse an off-set spelling before placement.** `lane open`
-takes it off the expectation read it already makes and writes it into the placed bytes; `lane emit`
-takes each child's off the `sub_issues` payload and seeds that child's context entry, giving a `ui`
-child the `build:ui` / `review:ui` states the coder template already had. The compiler refuses an
-off-set spelling too, but on *read*, so it is the backstop rather than the guard: a document that
-compiles `Malformed` is refused by every later fold of that lane, which bricks it rather than
-stopping the boot.
+**Both boot verbs read the label, and both refuse an off-set spelling before placement** — `lane
+open` on the issue's own labels, `lane emit` on every live child's, each at its own exit `38` with
+nothing written. The compiler refuses an off-set spelling too, but on *read*, so it is the backstop
+rather than the guard: a document that compiles `Malformed` is refused by every later fold of that
+lane, which bricks it rather than stopping the boot.
+
+**What a `ui` class buys differs by path.** A single-issue lane gets the
+template's own pair, `build:ui` and `review:ui`. An emitted epic child gets `build:ui` and **no**
+`review:ui`: a child opens no pull request, so a rendered-review cell it entered could produce
+nothing, and its rendered review is the epic tail's by construction.
 
 ### The owned facets — what `apply` may remove
 

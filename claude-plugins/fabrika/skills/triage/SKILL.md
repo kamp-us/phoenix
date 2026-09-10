@@ -247,7 +247,7 @@ lane-exempt issue is banned outright.
 
 **Repeatable `--class <name>` says which shells the lane runs, and `ui` is the one that changes a
 route.** Pass `--class ui` when the deliverable is a rendered surface, so the lane boots into
-`build:ui` and `review:ui` instead of the plain pair. This stamp is the *only* producer of that
+`build:ui` — and, on a single-issue lane, `review:ui` too. This stamp is the *only* producer of that
 routing before a head has graded a diff: `lane open` and `lane emit` read the `class:<name>` label
 and seed the lane document from it, and without it a rendered ticket builds its first round in a
 shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
