@@ -81,7 +81,10 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 	});
 
 	it("declares every hook on an event whose real envelope is committed beside this test", () => {
-		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual(["SessionStart"]);
+		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual([
+			"PreToolUse",
+			"SessionStart",
+		]);
 	});
 
 	/**
@@ -174,6 +177,37 @@ describe("the WorktreeCreate provider, run against the captured envelope", {
 			["--dry-run"],
 		);
 		expect(run.code).toBe(MALFORMED_ENVELOPE);
+		expect(run.stdout).toBe("");
+	});
+});
+
+describe("the pre-bash guard, run against the captured Bash envelope", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	const declared = declaredOn("PreToolUse");
+
+	/**
+	 * The capture's `cwd` is a throwaway directory under no working tree, which is the arm that
+	 * matters most for a hook consulted on every Bash call: where there is nothing to escape from,
+	 * the answer carries no permission decision at all.
+	 */
+	it("allows the captured command, and puts no permission decision on the wire", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/pre-tool-use.payload.golden.json"),
+		);
+
+		expect(run.code).toBe(0);
+		expect(JSON.parse(run.stdout)).not.toHaveProperty("hookSpecificOutput");
+	});
+
+	it("refuses an envelope for an event it does not judge, rather than deciding from it", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
+		);
+
+		expect(run.code).toBe(WRONG_EVENT);
 		expect(run.stdout).toBe("");
 	});
 });

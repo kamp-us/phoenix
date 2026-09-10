@@ -12,6 +12,18 @@
 					}
 				]
 			}
+		],
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "fabrika hook pre-bash",
+						"timeout": 10
+					}
+				]
+			}
 		]
 	}
 }
