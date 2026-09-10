@@ -113,7 +113,9 @@ Deviations` headings and refuses two as undecidable, so a stacked marker leaves 
 reading `malformed`; and because `wire read` judges bytes on stdin and cannot see which comment is
 newer, the one-marker rule lives where the bytes are written — `fabrika build deviations <issue>`
 edits the standing marker in place and retracts any superseded one, and it is the only sanctioned
-way this marker is posted.
+way this marker is posted. Editing in place puts the whole-range completeness of the disclosure at
+that same seam: the verb compares each replacement against the standing one and refuses a section
+that drops an entry, because a reader of these bytes sees only the round that wrote them.
 
 ### `verdict-marker`
 

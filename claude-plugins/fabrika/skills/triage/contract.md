@@ -159,7 +159,7 @@ or the search index could not be read.
 | `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
 | `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — |
-| `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
+| `16` | refused: the `ready-for:agent` audience over a body whose acceptance-criteria block the wire reader does not answer `Found` on — stamped by `--ready-for agent`, or composed by `enrich` over a target already carrying the label; the `epic` surface is exempt at both doors | — | — | — | — | — | ✓ | ✓ | — | — | — |
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
@@ -1342,9 +1342,11 @@ to bold text.**
 `pitch-guard`'s, at the `status:triaged` seam `triage apply` trips; this spec computes no second
 verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
 This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
-machine-local path (`5`), a bare `@` reference (`6`), and an acceptance-criteria block the wire
-reader rejects (`15`, below) — and `--epic` **adds no exit code of its own**: reaching those same
-refusals is the removal of a restriction, not a new outcome.
+machine-local path (`5`), a bare `@` reference (`6`), an acceptance-criteria block the wire
+reader rejects (`15`, below), and a missing one over a target already stamped `ready-for:agent`
+(`16`, below) — and `--epic` **adds no exit code of its own**: reaching those same
+refusals is the removal of a restriction, not a new outcome, and `16` is one it does not reach at
+all.
 
 **The re-enrich detector is the marker this verb writes — one rule, mode-independent**, settled by a
 founder ruling. A body counts as already-enriched **when, and only when, it carries a marker line
@@ -1501,8 +1503,21 @@ carry the weight:
   foreign content, and a legacy `##` heading buried in it would otherwise refuse every
   re-enrichment of that issue forever.
 
-`Absent` is **not** a refusal. An epic pitch, a decision, a parked ticket may legitimately carry no
-criteria block; a verb that demanded one would be a different verb.
+`Absent` is **not** a refusal on its own. An epic pitch, a decision, a parked ticket may legitimately
+carry no criteria block; a verb that demanded one would be a different verb.
+
+**Over a target already carrying `ready-for:agent`, `Absent` is a broken promise and `16` is the
+refusal.** That label says a builder can pick the issue up cold, and the criteria block is what the
+promise is made of — so a rewrite composing none over a stamped issue leaves the label standing on no
+contract, and nothing re-reads it until `build claim` refuses a lane that has already been spawned.
+One issue shipped exactly that and cost a claim and a back-off. The check runs on the same authored
+region the reader above scans, against the **live** labels the verb already fetched, and writes
+nothing. The two escapes are on the refusal line: author the block into the rewrite and re-send, or
+drop the audience label first with `fabrika triage apply <n> --ready-for human`. **`--epic` is
+exempt**, for the reason `triage apply` exempts `--type epic`: an epic's criteria arrive per child
+from the plan ledger, so demanding a block on an epic body would make every epic un-enrichable. An
+issue carrying no `ready-for:agent` label is untouched by this — a criteria-less rewrite there is
+still accepted, exactly as it was.
 
 ### A stated ordering must be an edge, and `20` is the refusal
 
@@ -1557,6 +1572,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, its `blocked_by` edges, or a number a stated ordering names could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
+| `16` | the issue's live labels carry `ready-for:agent` and the composed body's **authored region** carries no acceptance-criteria block the wire reader answers `Found` on — never with `--epic` |
 | `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
 
 **Errors**
@@ -1579,6 +1595,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `triage enrich: PATCH failed: <reason> — UNKNOWN whether the body changed; re-read #<n> before retrying.` | 8 | refusal |
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
 | `triage enrich: the rewrite composes an acceptance-criteria block the wire reader rejects — <reader's reason> (<evidence>). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.` | 15 | refusal |
+| `triage enrich: #<n> carries ready-for:agent and the rewrite composes no acceptance-criteria block the wire reader answers Found on — <reader's reason>. That label promises a builder can pick the issue up cold, and the block is what the promise is made of. Either author a "### Acceptance criteria" block into the rewrite and re-send, or drop the audience label first with `fabrika triage apply <n> --ready-for human`. Nothing was written.` | 16 | refusal |
 
 **Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
 issue proven absent is `7`; a body that could not be read is `11`; a body that *was* read and is
@@ -1618,6 +1635,17 @@ override: either wire the edge — `fabrika triage apply 5 --blocked-by 4` — a
 the body so it states no ordering it does not own. Nothing was written.
 $ echo $?
 20
+```
+
+```
+$ fabrika triage enrich 9 < enriched.md
+triage enrich: #9 carries ready-for:agent and the rewrite composes no acceptance-criteria block the
+wire reader answers Found on — no heading in the body reaches for "### Acceptance criteria". That
+label promises a builder can pick the issue up cold, and the block is what the promise is made of.
+Either author a "### Acceptance criteria" block into the rewrite and re-send, or drop the audience
+label first with `fabrika triage apply 9 --ready-for human`. Nothing was written.
+$ echo $?
+16
 ```
 
 **Grounding**

@@ -13,6 +13,7 @@ import {
 import {
 	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
+	CRITERIA_REQUIRED,
 	EMPTY_STDIN,
 	LEAKED_PATH,
 	MALFORMED_CRITERIA,
@@ -38,14 +39,14 @@ const REWRITE = "## What to build\n\nKeep focus on the editor across a save.";
 const PITCH =
 	"**Problem:** yazars lose their place\n**Arc:** fabrika campaign\n**Appetite:** 2 cycles\n**Rabbit-holes:** none\n**No-gos:** no rewrite";
 
-const issue = (body: string): HttpReply => ({
+const issue = (body: string, labels: ReadonlyArray<string> = []): HttpReply => ({
 	status: 200,
 	body: JSON.stringify({
 		number: 4312,
 		title: "t",
 		body,
 		state: "open",
-		labels: [],
+		labels: labels.map((name) => ({name})),
 		html_url: "https://example.test/issues/4312",
 		milestone: null,
 	}),
@@ -76,9 +77,13 @@ const written = (seams: GuardedSeams): string | null => {
  * A live GitHub round-trip returns what was written, so a fake that returned a fixed body would
  * make every read-back assertion a statement about the fixture rather than about the verb.
  */
-const run = async (before: string, overrides: Partial<typeof options> = {}) => {
+const run = async (
+	before: string,
+	overrides: Partial<typeof options> = {},
+	labels: ReadonlyArray<string> = [],
+) => {
 	const shell = guardedShell([
-		[once(READ), issue(before)],
+		[once(READ), issue(before, labels)],
 		[PATCH, ACCEPTED],
 	]);
 	// Two passes: the first to learn what the verb writes, the second to feed it back as the read-back.
@@ -88,9 +93,9 @@ const run = async (before: string, overrides: Partial<typeof options> = {}) => {
 	const patched = written(shell);
 	if (patched === null) return {outcome: probe, body: null, requests: shell.requests};
 	const echoing = guardedShell([
-		[once(READ), issue(before)],
+		[once(READ), issue(before, labels)],
 		[PATCH, ACCEPTED],
-		[READ, issue(patched)],
+		[READ, issue(patched, labels)],
 	]);
 	const outcome = await Effect.runPromise(
 		Effect.provide(runEnrich({...options, ...overrides}), echoing.layer),
@@ -326,6 +331,50 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 		});
 		expect(outcome.code).toBe(0);
 		expect(body).toContain("## Acceptance criteria");
+	});
+
+	it("refuses a criteria-less rewrite over a target already labelled ready-for:agent, on 16", async () => {
+		const shell = guardedShell([[READ, issue(ORIGINAL, ["ready-for:agent", "status:triaged"])]]);
+		const outcome = await Effect.runPromise(Effect.provide(runEnrich(options), shell.layer));
+		expect(outcome.code).toBe(CRITERIA_REQUIRED);
+		expect(outcome.code).not.toBe(MALFORMED_CRITERIA);
+		const said = outcome.stderr.at(-1) ?? "";
+		expect(said).toContain("ready-for:agent");
+		// Both escapes, because one of them is a move no re-send can make.
+		expect(said).toContain("re-send");
+		expect(said).toContain("--ready-for human");
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
+	});
+
+	it("writes a rewrite that DOES carry a block over the same label", async () => {
+		const {outcome, body} = await run(
+			ORIGINAL,
+			{
+				stdin: Effect.succeed<StdinRead>({
+					_tag: "Text",
+					text: `${REWRITE}\n\n### Acceptance criteria\n\n- [ ] keep focus\n`,
+				}),
+			},
+			["ready-for:agent"],
+		);
+		expect(outcome.code).toBe(0);
+		expect(body).toContain("### Acceptance criteria");
+	});
+
+	it("exempts an --epic pitch: a criteria-less epic body over ready-for:agent still writes", async () => {
+		const {outcome, body} = await run(
+			ORIGINAL,
+			{epic: true, stdin: Effect.succeed<StdinRead>({_tag: "Text", text: PITCH})},
+			["ready-for:agent"],
+		);
+		expect(outcome.code).toBe(0);
+		expect(body).toContain(PITCH);
+	});
+
+	it("leaves the criteria-less allowance standing wherever the label is absent", async () => {
+		const {outcome, body} = await run(ORIGINAL, {}, ["status:triaged", "ready-for:human"]);
+		expect(outcome.code).toBe(0);
+		expect(body).toContain(REWRITE);
 	});
 
 	it("refuses a drifted block in an --epic pitch too, where the envelope heads it with `## Pitch`", async () => {

@@ -30,12 +30,12 @@ import {
 	commitsDropped,
 	ensureCommitPresent,
 	headSha,
-	isAncestor,
 	push,
 	remoteSha,
 	upstreamOf,
 } from "../build/git.ts";
 import {execCapture} from "../io/exec.ts";
+import {isAncestor} from "../io/git.ts";
 import {currentBranch} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";

@@ -191,6 +191,33 @@ describe("runChild", () => {
 	});
 
 	/**
+	 * A decision claim's citation names a comment on the decision issue, and a child a second old
+	 * carries none — so the pair publishes a child every builder refuses.
+	 */
+	it("refuses a decision child routed to an agent before it reads anything", async () => {
+		const {outcome, calls, written} = await run({type: "type:decision"});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			"ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with `fabrika decision rule <n> --cites <child-comment-url>`.",
+		);
+		expect(calls).toEqual([]);
+		expect(written.size).toBe(0);
+	});
+
+	/** The supported route: the decision is held by a named human until its own ruling exists. */
+	it("mints a decision child held by an assigned human", async () => {
+		const labels = ["type:decision", "p1", "status:planned", "ready-for:human"];
+		const minted = await run({type: "type:decision", readyFor: "human", assignee: "usirin"}, [
+			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
+			[LABELS, labelSet(...DEFAULT_LABELS, "type:decision")],
+			[READBACK, childIssue({number: 4301, labels, milestone: HOME, assignees: ["usirin"]})],
+		]);
+		expect(minted.outcome.code).toBe(0);
+		expect(sent(minted, CREATE).labels).toEqual(labels);
+		expect(sent(minted, CREATE).assignees).toEqual(["usirin"]);
+	});
+
+	/**
 	 * A child with neither an open milestone nor a standing lane is refused by the claim fence
 	 * at exit 20, so it can never be built. The three cases are the whole homing axis.
 	 */

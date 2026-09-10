@@ -222,6 +222,26 @@ surfaces at all — walk all six and land every one in this PR.
 fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token <claim-token>
 ```
 
+**The base is the verb's to pick, and that line is complete without one.** It reads the issue's own
+parent and cuts an epic child off the run's assembly branch `epic/<parent>`, a proven-standalone
+issue off `origin/main`, and refuses rather than guessing when either read fails — so never hand it
+`--base` to "make sure" a child lands on the epic branch. It says which base it used and where that
+came from on stderr; read that line instead of re-deriving it. Pass `--base` only when you mean a
+ref the derivation would not pick, and expect it to be honoured verbatim — qualified against `origin`
+when it names no remote, because every base is fetched and none is read off a local ref.
+
+**The answer names the commit, so prove the cut off it rather than off a `git merge-base` of your
+own.** A create-mode success prints a second line — `cut build/… off origin/epic/7497 at <sha>.`, or
+`… already existed and carries origin/epic/7497 at <sha>` on a re-run — and that line beside the base
+note above it is the whole proof that this branch stands where the lane needs it. A re-run over a
+branch that does **not** carry the base refuses on `36` instead of switching to it, naming the commit
+the two actually share: that branch was cut off something else, or the base has moved since. **Clear
+a `36` with git, never with a verb** — the refusal spells out the one `git rebase --onto` that moves
+the branch onto the base, and deleting the branch is the other way out when it carries nothing you
+need; `build retire-branch` cannot do it, because the branch a `36` names is never the superseded one
+it retires. Four builders on one epic run each caught a wrong base by hand because the verb named
+none; none of that is yours to redo.
+
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
 invalid states unrepresentable. Before the first `build branch` cut, re-run
 `fabrika build tree --require-clean`; after that cut, re-run `fabrika build tree --issue
@@ -256,6 +276,15 @@ fabrika build check --surface code
 ```
 
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, in this tree.
+
+**Every run also sweeps the shipped local-tree guards, whatever the surface**, so a guard that would
+red in CI reds here first. A passing member is named in the green's `ran` as `guard <name> <leaf>`; a
+failing one reds the whole run on `18` and the failing line names it — fix that guard's finding like
+any other red. A member that **refused** — zero scope, or a read it could not make — lands in the
+green's `skipped` array as `<name> (<reason>)` and on stderr. **A skip is not a pass**: it says CI's
+own gate will answer that one, so read the line rather than treating the green as covering it.
+Membership is a property each guard declares beside its own registration, so there is no list here to
+keep in step with it and none to pass on the command line.
 
 A green names the files it did not read in `unvalidated`. When that list holds a file class another
 surface validates, run `build check` again there: markdown beside your code — the common case — goes
@@ -340,6 +369,22 @@ issue state. **Never post this marker with a raw `gh issue comment`** — that a
 round leaves two markers, and the reader refuses two conforming headings as undecidable, which is an
 UNKNOWN the tail review cannot pass. Re-run the verb on every round: it edits the standing
 marker in place.
+
+**On every round after the first, the section you send is the whole range's disclosure, not the
+round's.** Editing in place means what you send *replaces* what stands, so the entries the round
+before yours disclosed — still true of the range a reviewer grades — leave with your rewrite unless
+you carry them. Read what stands first, and build this round's section out of it:
+
+```bash
+fabrika build deviations <n> --token <claim-token> --standing > round.md
+```
+
+That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
+`round.md`: keep every entry still true, add this round's, and **retire an entry by restating it
+with a `Disposition` that says what became of it** — `corrected — the revert in <sha> removes it`,
+never by deleting the bullet. Entries match on `Said`, so revise `Did`, `Why` and `Disposition`
+freely. Send the result on stdin as above; a section that drops a standing entry is exit `35`,
+naming each one.
 
 The epic-tail review reads every landed child's comment from there, so a child with nothing to
 disclose still posts the checked `None.` — an absent comment reads as "never considered it", not as
@@ -607,6 +652,10 @@ and report that terminal with `--cause worktree-holds-branch`, the park this exa
 `recipe unpark` can clear it without a person. From
 there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
+**That comment discloses this child's whole `base..tip` range, not the commits this round added** —
+so run `build deviations <n> --standing` before you author it, judge every entry it prints against
+the range as it now stands, and send back all of them plus your own. The verb refuses a section that
+drops one.
 `build clear` is not the door on this path — it is pull-request-keyed from its first line, and a
 child opens none — so a child at its cap escalates to the driver, whose `lane clear` records the
 grant against the lane's own log instead. That is still not yours to run: you escalate, the driver

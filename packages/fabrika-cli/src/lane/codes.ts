@@ -14,11 +14,30 @@
 
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
 	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
+
+/**
+ * Stdin was read and held nothing — `lane assembly-body`, the group's one verb that takes authored
+ * bytes. Distinct from a read that failed, which is `1`: an unread pipe is UNKNOWN, and collapsing
+ * it into "empty" would let the guard answer over a body it never saw.
+ */
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
+
+/** The authored body carries a machine-local path headed for a public pull request. */
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
+
+/**
+ * The authored body IS a bare `@` path reference. Its own seat because the remedies are opposite: a
+ * leak is redacted and resent, while a body that is a pointer has to be written first.
+ */
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 
 /**
  * The lane is not there: no `workflow.json` under the lane directory. A proven absence — the lane
@@ -478,3 +497,52 @@ export const CHILD_UNSEATED = 54;
  * "cleared".
  */
 export const WAIT_TOO_SOON = 55;
+
+/**
+ * The issue the assembly PR's prose was asked for is not an epic — it carries no `type:epic`.
+ *
+ * Its own seat rather than {@link ISSUE_UNRESOLVED}'s: the issue resolved fine, and what is wrong is
+ * which issue was named. A non-epic's title would take a `chore`/`fix` prefix and the `(epic)` scope
+ * would be a lie about a subject that is going to land on `main` — so the refusal names the number
+ * rather than deriving a title nobody meant.
+ */
+export const NOT_AN_EPIC = 56;
+
+/**
+ * The assembled `## About this epic` section is one `build pr`'s body guard would refuse — a closing
+ * keyword the swap did not reach, or a classification claim the block quote did not cover, each
+ * named.
+ *
+ * Both should be impossible while the swap list matches that module's `CLOSING_RE` and the lifted
+ * text stays quoted, and this seat is what keeps it so: the section is read back through the guard's
+ * own predicates, and the refusal is fail-closed rather than an assumption that the two still agree.
+ * The remedy is a person's — reword the epic's Problem paragraph, or write the section by hand. The
+ * title is unaffected and a second call with `--field title` still answers.
+ */
+export const ABOUT_UNSAFE = 57;
+
+/**
+ * The assembly PR body handed to `lane assembly-body` carries no closing keyword aimed at the epic —
+ * refused, and nothing is printed for a `gh pr create` to open.
+ *
+ * An epic run is one branch and one PR, so that PR is the run's landing: a tail merging as
+ * `Part of #<epic>`, or closing only its children, folds the lane to `shipped` over an epic the
+ * board still calls open, and an operator re-dispatched on it parks on `LANE-TERMINAL` with no door
+ * out. Its own seat rather than {@link MALFORMED_RECORD}'s, which is a record on disk:
+ * nothing here is on disk yet, and the remedy is the author's — write `Fixes #<epic>` into the body,
+ * or do not open the run's PR yet.
+ */
+export const TAIL_NOT_CLOSING = 58;
+
+/**
+ * The tree behind the brief's own `fabrika:` entrypoint does not carry a lane verb the brief
+ * instructs the shell to run — so the brief is not emitted and no shell is spawned.
+ *
+ * Its own seat rather than {@link LANE_UNREADABLE}'s, which is the entrypoint the driver could not
+ * resolve at all: this one resolved, is node-runnable, and names a tree whose copy of this CLI is
+ * older than the contract the brief hands out. An epic run cuts its assembly branch once and every
+ * child shell runs that branch's own in-tree fabrika, so a lane verb that landed on the trunk after
+ * the cut is absent there — the shell does real work, produces a real verdict, and cannot record it.
+ * The remedy is the driver's `lane refresh`, named on the refusal beside every missing verb.
+ */
+export const BRIEFED_VERB_ABSENT = 59;

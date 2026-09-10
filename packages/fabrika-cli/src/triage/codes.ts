@@ -117,9 +117,10 @@ export const UNREPAIRABLE = 14;
  *
  * Every downstream consumer (`build issue`, `review criteria`) reads the block through
  * `../wire/acceptance-criteria.ts` and rejects exactly what it rejects, so writing it to a body only
- * defers the refusal to a lane that cannot fix it. `Absent` stays allowed: an
+ * defers the refusal to a lane that cannot fix it. `Absent` stays allowed here: an
  * issue with no criteria block is a fact, not a defect, and this code never turns enrich into
- * "every issue must have criteria".
+ * "every issue must have criteria". Over a target already carrying `ready-for:agent` that fact
+ * becomes a broken promise instead, and {@link CRITERIA_REQUIRED} is where enrich refuses it.
  *
  * Distinct from {@link UNREPAIRABLE}, which is `repair-criteria`'s answer about a block already on
  * the board. This one is `enrich`'s answer about a block that has not landed yet, so the fix is a
@@ -127,17 +128,25 @@ export const UNREPAIRABLE = 14;
  */
 export const MALFORMED_CRITERIA = 15;
 /**
- * Refused: `--ready-for agent` over a body whose acceptance-criteria block the wire reader does not
- * answer `Found` on.
+ * Refused: the `ready-for:agent` audience asserted over a body whose acceptance-criteria block the
+ * wire reader does not answer `Found` on.
  *
  * `ready-for:agent` is the promise that a builder can pick the issue up cold, and the criteria block
- * is what the promise is made of — so the stamp asserts it at the cheapest door there is. Without
+ * is what the promise is made of — so every door onto that state asserts it. Without
  * this seat the contract is first read at `review criteria`, once a branch, a build, a push, a PR
  * and a CI run have already been spent on an issue that never carried one.
  *
- * Its own code rather than {@link MALFORMED_CRITERIA}'s: that one is `enrich`'s answer about a body
- * it composed and has not written yet, and it allows `Absent` deliberately. This one is `apply`'s
- * answer about a body already on the board, where `Absent` is the case it exists to refuse.
+ * **Three doors, one code**, because the fact a caller routes on is the same at all three: the
+ * label-writing pair — `triage apply --ready-for agent` and `decision rule`'s audience flip — and
+ * the body-writing one, `triage enrich` over a target already carrying the label. The last was the
+ * hole: enrich never read the target's labels, so a re-enrichment could compose a criteria-less body
+ * and leave the stamp standing over no contract, and nothing re-checked until `build claim` refused
+ * a lane that had already been spawned.
+ *
+ * Its own code rather than {@link MALFORMED_CRITERIA}'s: that one is `enrich`'s answer about the
+ * *shape* of a block, fixed by re-sending corrected markdown, and it allows `Absent` deliberately.
+ * This one is about the audience, where `Absent` is the case it exists to refuse — and its second
+ * escape is one no re-send covers, dropping the label.
  */
 export const CRITERIA_REQUIRED = 16;
 /**
@@ -273,7 +282,7 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: CRITERIA_REQUIRED,
 		meaning:
-			"refused: --ready-for agent over a body carrying no acceptance-criteria block the wire reader answers Found on",
+			"refused: the ready-for:agent audience over a body carrying no acceptance-criteria block the wire reader answers Found on — stamped by --ready-for agent, or composed by enrich over a target already labelled",
 	},
 	{
 		code: CLAIMED_ELSEWHERE,

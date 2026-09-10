@@ -279,10 +279,16 @@ export const PATTERN_SEATS: SharedSeats = {
  * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
  * (`LANE_UNREADABLE`). `lane claim` adds the fifth: it posts a marker and reads it back, so alone in
  * this group it can establish *the write landed and the read-back contradicts it*
- * (`MARKER_READBACK`). The private band runs `12`-`39`, skipping `27` and `28` because the base
- * already speaks for both.
+ * (`MARKER_READBACK`). `lane assembly-body` adds the three authored-text seats: it is the group's
+ * one verb taking a body on stdin, so it alone can establish the read-but-empty pipe
+ * (`EMPTY_STDIN`), the machine-local path headed for a public PR (`LEAKED_PATH`), and the body that
+ * is a pointer rather than a body (`BARE_AT_PATH`). The private band runs `12`-`39`, skipping `27`
+ * and `28` because the base already speaks for both, and reaches `58` for the epic-tail body seat.
  */
 export const LANE_SEATS: SharedSeats = {
+	EMPTY_STDIN: "EMPTY_STDIN",
+	LEAKED_PATH: "LEAKED_PATH",
+	BARE_AT_PATH: "BARE_AT_PATH",
 	MALFORMED_RECORD: "BAD_SECTIONS",
 	LANE_ABSENT: "NO_TARGET",
 	APPEND_UNKNOWN: "WRITE_UNKNOWN",

@@ -1,9 +1,10 @@
 /**
  * The agy fold, over captured stream lines rather than a live CLI — v1.1.27 throughout, plus the
- * v1.1.28 usage census and interrupted `result` that `fixtures.ts` declares as such.
+ * v1.1.28 usage census and interrupted `result`, and the v1.2.0 `error_message` pair, each of which
+ * `fixtures.ts` declares as such.
  *
  * **Nothing here enumerates the observed `step_type`s as exhaustive.** The cases below name the
- * five that were observed and the eleven that were not, and every one of them is a claim about
+ * six that were observed and the eleven that were not, and every one of them is a claim about
  * that value alone — an assertion that the observed set is closed would rebuild the exact defect
  * the default arm exists to prevent, on a wire that ships no version field to warn anyone.
  */
@@ -156,7 +157,7 @@ describe("a line the reader cannot use", () => {
 	});
 });
 
-describe("the five observed step types", () => {
+describe("the six observed step types", () => {
 	it("takes no transcript row from a user_input step, which carries no text at v1.1.27", () => {
 		expect(items(fold([fixtures.userInput]).events)).toEqual([]);
 	});
@@ -196,6 +197,108 @@ describe("the five observed step types", () => {
 			fold([patchStep(fixtures.systemMessage, {text_delta: "context compacted"})]).events,
 		);
 		expect(rendered[0]).toMatchObject({kind: "system", text: "context compacted"});
+	});
+
+	it("emits nothing at the error_message step itself, which cannot know yet whether to", () => {
+		expect(fold([fixtures.errorMessageStep]).events).toEqual([]);
+		expect(
+			fold([patchStep(fixtures.errorMessageStep, {text_delta: "blocked by safety filters"})])
+				.events,
+		).toEqual([]);
+	});
+});
+
+/**
+ * The v1.2.0 step, over `fixtures.errorMessageStep` and `fixtures.resultContentFiltered` — both
+ * verbatim lines off one real drive of the binary, which is where the fixture says they came from.
+ *
+ * Two facts make the arm shaped the way it is. The step cannot tell whether the turn was interrupted:
+ * `wasInterrupted` reads the *terminal* `result`, which arrives after it. And at v1.2.0 the step
+ * carries no `text_delta` at all, so the with-text cases below patch the captured envelope rather than
+ * claiming a capture — they hold the arm for the release that starts sending one.
+ */
+describe("the error_message step", () => {
+	const withText = (text: string): string =>
+		patchStep(fixtures.errorMessageStep, {text_delta: text});
+
+	it("never reaches the default arm, so no unrecognised-type row can be minted for it", () => {
+		const {events} = fold([
+			fixtures.init,
+			fixtures.responseActive,
+			fixtures.errorMessageStep,
+			fixtures.resultContentFiltered,
+		]);
+		const rows = items(events).filter((item) => item.kind === "system");
+		expect(rows.some((item) => item.kind === "system" && item.text.includes("unrecognised"))).toBe(
+			false,
+		);
+		expect(rows.some((item) => item.kind === "system" && item.text.includes("error_message"))).toBe(
+			false,
+		);
+	});
+
+	it("renders nothing when the turn's result reads interrupted — the cut reply's mark is the signal", () => {
+		const {events} = fold([
+			fixtures.init,
+			fixtures.responseActive,
+			withText("blocked by safety filters"),
+			patchResult(fixtures.resultInterrupted, {conversation_id: CONVERSATION}),
+		]);
+		const rendered = items(events);
+		expect(rendered.filter((item) => item.kind === "system")).toEqual([]);
+		expect(rendered.at(-1)).toMatchObject({kind: "assistant", interrupted: true});
+	});
+
+	it("renders the message's own text as a system row when the turn was not interrupted", () => {
+		const {events} = fold([
+			fixtures.init,
+			withText("blocked by safety filters"),
+			fixtures.resultContentFiltered,
+		]);
+		const row = items(events).find((item) => item.kind === "system");
+		expect(row).toMatchObject({kind: "system", text: "blocked by safety filters", timestamp: AT});
+	});
+
+	it("takes no row from the captured step, which carries no text at v1.2.0", () => {
+		const {events} = fold([
+			fixtures.init,
+			fixtures.errorMessageStep,
+			fixtures.resultContentFiltered,
+		]);
+		expect(items(events).filter((item) => item.kind === "system")).toEqual([]);
+	});
+
+	/**
+	 * Which is why dropping the row loses nothing: the safety-filter abort the capture came from is
+	 * still named, by the terminal event the message itself rides.
+	 */
+	it("leaves the filter's own message on the failure the terminal result reports", () => {
+		const {events} = fold([fixtures.init, fixtures.resultContentFiltered]);
+		const failure = events.find((event) => event.kind === "failure");
+		expect(failure).toMatchObject({kind: "failure", failure: {reason: "ERROR"}});
+		expect(failure?.kind === "failure" && failure.failure.detail).toContain(
+			"blocked by content safety filters",
+		);
+	});
+
+	it("clears the carry at the terminal event, so the next turn inherits no message", () => {
+		const {turn} = fold([withText("blocked"), fixtures.resultContentFiltered]);
+		expect(turn.errorMessages).toEqual([]);
+	});
+
+	it("keeps two messages on one turn apart rather than superseding one with the other", () => {
+		const {events} = fold([
+			fixtures.init,
+			withText("first block"),
+			patchStep(fixtures.errorMessageStep, {step_index: 4, text_delta: "second block"}),
+			fixtures.resultContentFiltered,
+		]);
+		const rows = items(events).filter((item) => item.kind === "system");
+		expect(rows.map((item) => (item.kind === "system" ? item.text : ""))).toEqual([
+			"first block",
+			"second block",
+		]);
+		expect(rows[0]?.id).not.toBe(rows[1]?.id);
 	});
 });
 

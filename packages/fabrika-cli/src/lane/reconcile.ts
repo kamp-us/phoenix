@@ -166,8 +166,12 @@ export type ClosureRead =
  * nothing would be the justification for leaving alone exactly the lane this sweep exists to catch —
  * and that empty answer is the common case, not the rare one. The PR-less fallback lands on it by
  * construction, a merged `Part of #N` being invisible to both nomination reads; so does a named PR
- * that is not merged; so does one whose body carries both link kinds, since `issueRefsOf` drops
- * every `Part of` number when it does.
+ * that is not merged.
+ *
+ * A body carrying both link kinds does not land there and must not: `landedFor` reads
+ * `referencedIssues`, so an epic tail reaches this judgement over its epic, and `traceClosure` tests
+ * the closing kind per issue rather than body-wide — the tail closes its children and answers
+ * `Partial` for the epic it named with `Part of`. Reading it as `Closes` is the permissive fold.
  *
  * So the absence of a closure proof is `Unknown`, and only a merged pull request that really links
  * this issue reaches the judgement. Both verbs land on it: `lane prove`'s ship stage reaches
