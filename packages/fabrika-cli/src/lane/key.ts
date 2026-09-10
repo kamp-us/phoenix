@@ -84,3 +84,31 @@ export const laneRef = (key: LaneKey, root: string | null): LaneRef => ({
  */
 export const templateFile = (kind: LaneKey["_tag"]): string =>
 	kind === "Chore" ? "chore.workflow.json" : "coder.workflow.json";
+
+/**
+ * A lane key's leading numeric segment, dot-separated from whatever follows it.
+ *
+ * The separator is required rather than optional: `8012abc` names no issue, and resolving it to
+ * 8012 would send a board read at an issue this directory does not drive.
+ */
+const ISSUE_SEGMENT = /^(\d+)(?:\.[^/]+)?$/;
+
+/**
+ * The issue a key drives, or `null` when it names none — a chore lane, or a directory name carrying
+ * no leading issue number.
+ *
+ * The one place this parse lives. Reading a whole directory name as a number yields `NaN` for the
+ * quarantine convention `<issue>.frozen-deadlock-<timestamp>`, which every board read then asks
+ * about as `#NaN` and refuses UNKNOWN — stranding the seat with no verb able to free it.
+ */
+export const keyIssue = (key: LaneKey): number | null => {
+	if (key._tag === "Chore") return null;
+	const matched = ISSUE_SEGMENT.exec(key.lane);
+	return matched?.[1] === undefined ? null : Number(matched[1]);
+};
+
+/** The same resolution from a raw key, for a sweep reading directory names off a root. */
+export const rawKeyIssue = (raw: string): number | null => {
+	const parsed = parseKey(raw);
+	return parsed._tag === "Key" ? keyIssue(parsed.key) : null;
+};

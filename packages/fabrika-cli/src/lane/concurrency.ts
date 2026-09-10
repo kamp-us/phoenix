@@ -28,6 +28,7 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {CONCURRENCY_CAPPED, LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, standingCauses} from "./fold.ts";
+import {rawKeyIssue} from "./key.ts";
 import {loadLane} from "./store.ts";
 
 /** One lane holding a seat, and why it is not free. */
@@ -51,7 +52,9 @@ export type Seats =
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
 /** Numeric lane ids in numeric order, so a refusal reads the same twice over one root. */
-const byLane = (a: string, b: string): number => Number(a) - Number(b) || a.localeCompare(b);
+const byLane = (a: string, b: string): number =>
+	(rawKeyIssue(a) ?? Number.POSITIVE_INFINITY) - (rawKeyIssue(b) ?? Number.POSITIVE_INFINITY) ||
+	a.localeCompare(b);
 
 export const seatsIn = <R = never>(
 	root: string,
