@@ -20,7 +20,7 @@
  */
 
 import type {DepKeyedSub, Interpret} from "@demlik/tea";
-import {Effect, Option} from "effect";
+import {Context, Effect, Option, Result} from "effect";
 import type {
 	PortAnswersNothing,
 	PortRefused,
@@ -48,7 +48,13 @@ import type {
 	Receiver,
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
-import {type AnyArgRefs, argKeys} from "./args.ts";
+import {
+	type AnyArgRefs,
+	type ArgUnfilled,
+	argContext,
+	argKeys,
+	resolveSpawnTarget,
+} from "./args.ts";
 import {
 	type CommandArgTypes,
 	type CommandHandlers,
@@ -164,6 +170,21 @@ export interface AuthoredProgram<
 	/** The args the config hands a process, as `programArgs` declared them (`./args.ts`). */
 	readonly args?: AnyArgRefs;
 	/**
+	 * What *this* registration hands those args — the config call's half of `args`. Every
+	 * program-valued value is checked against its declared shape here, at definition time, and a
+	 * mismatch refuses on the spot rather than at the process that would have spawned it; what
+	 * passes becomes the `Context` this row's handlers read an arg back through, which is how a
+	 * `spawn` on a shaped arg reaches the program the config chose (#8762).
+	 *
+	 * A row that states none still compiles — a program is registered once per fill, and a
+	 * registration with nothing to give says so by leaving this off. Its handlers then refuse a
+	 * spawn on an unfilled arg at the spawn (`ArgUnfilled`) rather than silently naming the key.
+	 *
+	 * Typed as a plain record: `args` has already erased the declarations its refs were built
+	 * from, so there is nothing on this record for the checker to hold a fill against (#8954).
+	 */
+	readonly fill?: Readonly<Record<string, unknown>>;
+	/**
 	 * The commands this program offers, compiled into the row's spells (`./commands.ts`). The key
 	 * is the command's own path and never carries a prefix: the group is the program id, and the
 	 * spell registry composes it from the row's id (#8716 R16.1).
@@ -201,6 +222,8 @@ export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any>;
 export interface CompileContext {
 	readonly id: ProgramId;
 	readonly ports: Readonly<Record<string, PortSchema>>;
+	/** What this registration filled its args with, as the row's handlers read them back (#8762). */
+	readonly args: Context.Context<never>;
 }
 
 /**
@@ -262,11 +285,17 @@ const spawnHandler = (cmd: SpawnEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
 		const self = yield* ProcessSelf;
+		// What the author wrote `spawn` against is a program id or a program-valued arg's own
+		// service key, and only the second needs answering: the key is read back through this
+		// handler's `R`, where the row's fill put the program the config chose, so the registry is
+		// only ever asked for a real id and both cases take this one line (#8762). The `spawned`
+		// event carries the same resolved id, so the author's `update` reads what actually started.
+		const program = yield* resolveSpawnTarget(cmd.program);
 		// The parent is stamped here, off the process this interpretation is running for, and is
 		// never something the `spawn` effect carries (#8757). `on` rides along as that same
 		// process's routing table, so a named child port arrives as this process's own event.
-		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.some(self.id), cmd.on);
-		return [spawned(child, cmd.program)];
+		const child = yield* processes.spawn(ProgramId.make(program), Option.some(self.id), cmd.on);
+		return [spawned(child, program)];
 	});
 
 const sendHandler = (cmd: SendEffect) =>
@@ -307,6 +336,7 @@ const stopHandler = (cmd: StopEffect) =>
 
 /** Everything an authored program's effects can fail with, gathered off the services they run on. */
 export type EffectFailure =
+	| ArgUnfilled
 	| PayloadRejected
 	| PortNotWired
 	| UnknownProgram
@@ -344,6 +374,33 @@ const COMMAND_HANDLERS: CommandHandlers<EffectFailure, CommandEffectServices> = 
 	reply: replyHandler,
 	stop: stopHandler,
 };
+
+/**
+ * Put this row's filled args into what its handlers resolve. Merged onto the ambient context
+ * rather than replacing it, because the kernel seals a handler to the spawner's own services
+ * (`../process/Processes.ts`) and this runs inside that seal — a fill adds arg keys and takes
+ * nothing away.
+ *
+ * Every handler is bound, not only `spawn`: an arg is read through `R` and which handler reads
+ * which arg is the author's business. A row whose registration filled nothing keeps the shared
+ * record, so the common program compiles to the same handlers it did before args existed.
+ */
+type AnyHandlers = Readonly<Record<string, (cmd: never) => Effect.Effect<any, any, any>>>;
+
+const bindArgs = <H extends AnyHandlers>(handlers: H, args: Context.Context<never>): H =>
+	args.mapUnsafe.size === 0
+		? handlers
+		: (Object.fromEntries(
+				Object.entries(handlers as AnyHandlers).map(([type, run]) => [
+					type,
+					(cmd: never) =>
+						Effect.updateContext(run(cmd), (ambient: Context.Context<unknown>) =>
+							Context.merge(ambient, args),
+						),
+				]),
+				// One wrapper per key, each at the handler's own Cmd type; iterating the record erases
+				// that correspondence, which is what this cast buys back.
+			) as H);
 
 /** Demlik demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576). */
 const dead = (): Promise<void> => Promise.resolve();
@@ -403,6 +460,24 @@ const compileReceive = (
 		]),
 	);
 
+/** A command's spell runs the same effects an `update` cell does, so it reads the same filled args. */
+const compileSpells = (authored: AnyAuthoredProgram, context: CompileContext) =>
+	compileCommands(authored.commands, bindArgs(COMMAND_HANDLERS, context.args));
+
+/**
+ * What this registration filled its args with. Refused here, at definition time, where the config
+ * that got it wrong is the only thing on the stack: `defineProgram` answers a plain row rather than
+ * an Effect, so a `ShapeMismatch` has no channel to fail on and `./commands.ts` refuses a malformed
+ * command name the same way. The error thrown is the `ShapeMismatch` itself, which names the arg,
+ * the program and the port that did not fit.
+ */
+const filledArgs = (authored: AnyAuthoredProgram): Context.Context<never> => {
+	if (authored.args === undefined || authored.fill === undefined) return Context.empty();
+	const filled = argContext(authored.args, authored.fill as never);
+	if (Result.isFailure(filled)) throw filled.failure;
+	return filled.success as Context.Context<never>;
+};
+
 const compileIdentity = (authored: AnyAuthoredProgram): DefinitionIdentity => ({
 	...defaultIdentity(authored.id),
 	...authored.identity,
@@ -418,9 +493,9 @@ export const FIELD_COMPILERS = {
 	core: (authored) => compileCore(authored),
 	ports: (_authored, context) => context.ports,
 	receive: (authored) => compileReceive(authored),
-	handlers: () => HANDLERS,
+	handlers: (_authored, context) => bindArgs(HANDLERS, context.args),
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
-	spells: (authored) => compileCommands(authored.commands, COMMAND_HANDLERS),
+	spells: (authored, context) => compileSpells(authored, context),
 	takesKeys: (authored) => compileTakesKeys(authored),
 	resume: (authored) => compileResume(authored),
 	renderer: (authored, context) => compileWindow(authored, context),
@@ -446,6 +521,7 @@ export const defineProgram = <
 	const context: CompileContext = {
 		id,
 		ports: {...compilePorts(id, authored.ports ?? {}), ...selfReportPorts(authored)},
+		args: filledArgs(authored),
 	};
 	// The record above proved each field's type one key at a time; iterating it erases them, which
 	// is what the closing cast buys back.
