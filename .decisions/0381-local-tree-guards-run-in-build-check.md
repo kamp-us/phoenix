@@ -1,12 +1,12 @@
 ---
-id: 0380
+id: 0381
 title: build check runs every local-tree guard by name, never a repo declaration and never a blind loop
 status: accepted
 date: 2026-09-10
 tags: [fabrika, cli, pipeline, gates, build]
 ---
 
-# 0380 — build check runs every local-tree guard by name, never a repo declaration and never a blind loop
+# 0381 — build check runs every local-tree guard by name, never a repo declaration and never a blind loop
 
 **What this decides:** a builder's local `fabrika build check` now runs the shipped guards that only
 need the checked-out tree, and names each one in its answer, so a guard that reds in CI reds on the
@@ -55,7 +55,8 @@ member on every surface and reports each by name.**
   the expected members — `portability-guard`, `patch-guard`, `catalog-guard`, `readme-guard`,
   `fanout-guard`, `i18n-guard`, `decisions-index` — and the expected non-members —
   `unresolved-threads-guard`, `homing-guard`, `pitch-guard`. The other twelve registered guards are
-  classified by the predicate, not by this list.
+  classified by the predicate, not by this list. A member is invoked under its own leaf, which is
+  not always `check` — the decisions-index guard's is `validate`.
 - **Every surface runs them, not `code` alone.** `portability-guard` reads shipped markdown, so a
   prose-only diff is exactly the diff that has been reaching review red. `--surface` stays an anchor
   over the repo's declared validators; the local-tree set is not anchored by it.

@@ -347,18 +347,17 @@ found it wrong, and keeping the two words apart is the point of having two count
 
 ### The local-tree guard
 
-The subset of `fabrika guard <name> check` that a builder can run offline: argument-free, reading
-only the checked-out tree, needing no PR number, no board read and no auth. Membership is declared
-per guard beside its registration in
-[`packages/fabrika-cli/src/guard/command.ts`](../packages/fabrika-cli/src/guard/command.ts), and
-`fabrika build check` runs every member on every surface, naming each in its answer — the ruling is
-ADR [0380](../.decisions/0380-local-tree-guards-run-in-build-check.md).
+A shipped fabrika guard a builder can run offline: argument-free, reading only the checked-out tree,
+needing no PR number, no board read and no auth. That predicate is the whole definition, and each
+guard answers it beside its own registration in
+[`packages/fabrika-cli/src/guard/command.ts`](../packages/fabrika-cli/src/guard/command.ts) — read
+membership there, never off a list kept anywhere else. A member runs under its own leaf, which is
+not always `check`: the decisions-index guard's is `validate`.
 
-`portability-guard`, `patch-guard`, `catalog-guard`, `readme-guard`, `fanout-guard`, `i18n-guard`
-and the decisions-index guard are members; `unresolved-threads-guard`, `homing-guard` and `pitch-guard`
-are not, because each needs a PR number or the live board. **A member that refuses is skipped, not
-passed**: a zero-scope or UNKNOWN exit is named as `skipped: <name> (<reason>)` on the local run,
-and the CI gate — which fails closed on the same exit under ADR
+`fabrika build check` runs every member on every surface and names each in its answer — the ruling is
+ADR [0381](../.decisions/0381-local-tree-guards-run-in-build-check.md). **A member that refuses is
+skipped, not passed**: a zero-scope or UNKNOWN exit is named as `skipped: <name> (<reason>)` on the
+local run, and the CI gate — which fails closed on the same exit under ADR
 [0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) — still owns the verdict.
 
 ### Diátaxis-lite README shape
