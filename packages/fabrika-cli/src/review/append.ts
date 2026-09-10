@@ -11,14 +11,39 @@
  * A composition that inserted the row somewhere the parser does not see it passes the first and reds
  * on the second, which is the whole reason both exist.
  */
+import type {CommitRange} from "../io/git.ts";
 import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
+import {renderRange} from "../wire/range-verdict-marker.ts";
+import type {HeadSha} from "../wire/verdict-marker.ts";
+
+/**
+ * What the round was judged over — the half of the provenance tag that is not the round number.
+ *
+ * An epic child has no pull request mid-run, so the subject there is the commit range the
+ * reviewer read, spelled exactly as `range-verdict-marker.ts` spells it so a later reader resolves
+ * one range against `lane prove`'s verdicts and this row with the same bytes.
+ */
+export type CriterionProvenance =
+	| {readonly _tag: "Pull"; readonly pr: number}
+	| {readonly _tag: "Ranged"; readonly range: CommitRange<HeadSha>};
 
 /** The provenance tag — what makes a routed row auditable after the fact. */
-export const provenanceTag = (pr: number, round: number): string =>
-	`<!-- ac:review pr:#${pr} round:${round} -->`;
+export const provenanceTag = (provenance: CriterionProvenance, round: number): string =>
+	provenance._tag === "Pull"
+		? `<!-- ac:review pr:#${provenance.pr} round:${round} -->`
+		: `<!-- ac:review range:${renderRange(provenance.range)} round:${round} -->`;
 
-export const criterionRow = (text: string, pr: number, round: number): string =>
-	`- [ ] ${text.trim()} ${provenanceTag(pr, round)}`;
+/** How a refusal or an escalation names the subject in prose. */
+export const provenanceSubject = (provenance: CriterionProvenance): string =>
+	provenance._tag === "Pull"
+		? `PR #${provenance.pr}`
+		: `the range ${renderRange(provenance.range)}`;
+
+export const criterionRow = (
+	text: string,
+	provenance: CriterionProvenance,
+	round: number,
+): string => `- [ ] ${text.trim()} ${provenanceTag(provenance, round)}`;
 
 export type Composition =
 	| {readonly _tag: "Composed"; readonly body: string}

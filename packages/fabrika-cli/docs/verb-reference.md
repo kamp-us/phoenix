@@ -865,7 +865,7 @@ back. Contract:
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head |
-| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
+| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
