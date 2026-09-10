@@ -6,14 +6,13 @@
  */
 
 import {readFileSync} from "node:fs";
-import {resolve} from "node:path";
+import {dirname, resolve} from "node:path";
 import {describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {expect} from "vitest";
 import config from "../../../.tuval/tuval.config.ts";
 import {buildRegistry, lookupRow} from "../../commands/registry.ts";
 import {ClientId, type Scope, WorkspaceId} from "../../commands/spell.ts";
-import {featuresDefault} from "../../features.ts";
 import {ProcessId} from "../../process/process.ts";
 import {type AnyProgram, programLabel} from "../../registry/program.ts";
 import {emit, spawn} from "../effect.ts";
@@ -37,9 +36,15 @@ describe("authoring.example.pr-review is short enough to copy", () => {
 	});
 
 	it("imports only the authoring layer and `effect`, so no reviewer's SDK rides along", () => {
-		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1]);
+		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
 		expect(specifiers).not.toEqual([]);
-		expect(specifiers.filter((from) => from !== "effect" && !from?.startsWith("../"))).toEqual([]);
+		// Resolved, not prefix-matched: `../../codex/program.ts` starts with `../` too, and it is
+		// exactly the cross-package import this criterion exists to forbid.
+		const authoring = resolve(import.meta.dirname, "..");
+		const outside = specifiers.filter(
+			(from) => from !== "effect" && dirname(resolve(import.meta.dirname, from)) !== authoring,
+		);
+		expect(outside).toEqual([]);
 	});
 });
 
@@ -71,7 +76,10 @@ describe("authoring.example.pr-review, driven with testProgram", () => {
 		expect(run.effects).toContainEqual(emit("verdict", "ship it"));
 	});
 
-	it("lands the `review` command's payload on its own `pr` port", () => {
+	// The scope here is fabricated: a real one carries the *calling* window's process, and this
+	// program declares no window, so `scope.process` is never one of its own (#8898). What the case
+	// pins is that the command composes the send it says it does.
+	it("composes the `review` command's send against the process its scope carries", () => {
 		const process = ProcessId.make("proc-pr-review");
 		const scope: Scope = {
 			process,
@@ -92,7 +100,9 @@ describe("authoring.example.pr-review, registered", () => {
 	});
 
 	it("is absent from the booted config while its flag is off", () => {
-		expect(featuresDefault.prReviewExample).toBe(false);
+		// The config layer's own block, not `featuresDefault`: that block is what gates the row, and a
+		// row is built before boot has a merged record to read (#8595, ADR 0373).
+		expect(config.features?.prReviewExample).toBe(false);
 		const ids = config.programs.map((row) => (row as AnyProgram).id);
 		expect(ids).not.toContain("pr-review");
 		expect(config.graph.nodes.map((node) => node.program)).not.toContain("pr-review");

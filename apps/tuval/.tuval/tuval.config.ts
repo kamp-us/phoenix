@@ -4,7 +4,8 @@
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
 // The ninth is the worked `pr-review` example (#8734), and it is the only row behind a flag —
-// `prReviewExample` in src/features.ts, default-off, so a desk booted today carries the eight.
+// `prReviewExample` in the `features` block below, default-off, so a desk booted today carries the
+// eight. Flip that line and restart the desk to get the ninth.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -30,7 +31,7 @@ import {prReview} from "../src/authoring/example/pr-review.ts";
 import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
-import {featuresDefault, type TuvalConfigInput} from "../src/config.ts";
+import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
 import {ProcessId} from "../src/process/process.ts";
@@ -56,6 +57,17 @@ export const claudeSessionScope = {
  */
 const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope});
 
+/**
+ * This layer's stated flags — the `features` block ADR 0363 names, so turning a flag on is editing
+ * the line below and restarting the desk. It is read twice: boot merges it over the global layer for
+ * everything that takes the record off the `Features` service, and the `programs` list below reads
+ * it directly, because a row is built while this module is being evaluated and the merge does not
+ * exist yet (#8595). One consequence, and it is the whole difference between a row's flag and every
+ * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
+ * — a row is this file's to state. ADR 0373 records that.
+ */
+const features = {prReviewExample: false};
+
 export default {
 	version: 1,
 	programs: [
@@ -80,10 +92,11 @@ export default {
 		codexReviewer,
 		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
 		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
-		...(featuresDefault.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
+		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),
 	],
+	features,
 	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
 } satisfies TuvalConfigInput;

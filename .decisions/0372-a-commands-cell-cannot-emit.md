@@ -63,7 +63,10 @@ and with one there is an out-port belonging to somebody else.
 
 - A program that wants to announce does it from an `update` cell. A command that should cause an
   announcement `send`s into the program's own in-port and lets the cell emit — which is the same
-  route any other caller takes.
+  route any other caller takes. **That route is not offered yet**: a command's `Scope.process` is the
+  caller's, as this record's Context says, and the authoring layer has no way to name a process of
+  the declaring program. Filed as [#8898](https://github.com/kamp-us/phoenix/issues/8898); until it
+  is settled, the sentence above is where the decision points, not something an author can write.
 - `apps/tuval/src/authoring/commands.unit.test.ts` no longer hand-provides a `ProcessPorts`: its
   effect test drives a `send` through a capturing `SpawnedProcesses`, and a `@ts-expect-error` case
   holds the refusal in place, so deleting the narrowing turns that test red.
