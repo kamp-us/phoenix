@@ -207,3 +207,14 @@ export const WORKTREE_HELD = 33;
  * candidate's lane nonce there is nothing to rename.
  */
 export const SURVIVOR_UNATTESTED = 34;
+/**
+ * Proven: the replacement disclosure drops a standing entry the marker still owes.
+ *
+ * A *proven* refusal about two artifacts both read in full — the standing marker's disclosure and
+ * the section on stdin — so it never borrows {@link PRECONDITION_UNKNOWN}. Its own seat rather than
+ * {@link BAD_SECTIONS}'s: `4` says the bytes on stdin are not a section, and this says they are a
+ * perfectly well-formed section that discloses less than the round before it. The remedies share
+ * nothing — `4` is a rewrite of the grammar, this is carrying an entry forward — and a `4` here
+ * would send an author to re-read a shape that was never wrong.
+ */
+export const DISCLOSURE_INCOMPLETE = 35;

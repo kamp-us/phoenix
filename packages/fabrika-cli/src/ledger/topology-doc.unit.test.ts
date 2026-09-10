@@ -147,6 +147,26 @@ describe("checkTopology", () => {
 		});
 	});
 
+	/**
+	 * The epic exists, so the boundary prove answers Present and the line would stage — and
+	 * `findCycle` walks the declared lines, whose nodes are all children, so the self-parent edge is
+	 * invisible to it. The pure check is the only thing that catches it.
+	 */
+	it("refuses a prerequisite naming the epic that owns the child", () => {
+		expect(checkTopology(4300, [line(4301, 1), line(4303, 2, [4300])], [4301, 4303])).toEqual({
+			_tag: "Invalid",
+			reason:
+				"#4303 requires #4300, the epic that owns it — an epic closes only once its children close, so that edge can never clear and #4303 would never be claimable.",
+		});
+	});
+
+	/** The refusal reaches the epic's own number and leaves the sanctioned cross-epic edge alone. */
+	it("still accepts a prerequisite naming another epic's issue alongside the refusal", () => {
+		expect(checkTopology(4300, [line(4301, 1), line(4303, 2, [7511])], [4301, 4303])).toMatchObject(
+			{_tag: "Ok", external: [7511]},
+		);
+	});
+
 	it("refuses a child declared twice", () => {
 		expect(checkTopology(4300, [line(4301, 1), line(4301, 2)], [4301])).toEqual({
 			_tag: "Invalid",

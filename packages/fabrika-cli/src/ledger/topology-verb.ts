@@ -10,8 +10,9 @@
  * as an epic every one of whose children is orphaned. A refused scope is not an invalid topology.
  *
  * **The external half of the check is this verb's, because it is the boundary.** `checkTopology` is
- * pure and hands back every prerequisite outside the run manifest; proving one names a real issue is a
- * read, and it happens here — before anything is staged, so a topology naming a target that is proven
+ * pure and hands back every prerequisite outside the run manifest — bar the epic's own number, which
+ * it refuses itself, since that target *does* exist and so would probe Present here; proving the rest
+ * name real issues is a read, and it happens here — before anything is staged, so a topology naming a target that is proven
  * absent, unreadable, or a pull request leaves the run directory untouched. A pull request refuses
  * because the decision corpus names a blocking pull request by the issue its merge closes, and the
  * issues endpoint serves PRs too — so the 404 arm never fires for one and only this check catches it.

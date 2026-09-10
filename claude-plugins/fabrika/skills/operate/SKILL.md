@@ -186,6 +186,16 @@ same way: git still lists a record for it, the verb reads that record's `prunabl
 registration and places the branch again, so the path it prints is always one you can `cd` into. So
 run it at the top of any pass that is about to integrate rather than carrying a path you remembered.
 
+**A branch whose content already landed is the verb's problem, not yours.** An epic that ships an
+intermediate tail and still has phases left comes back to a branch holding nothing `main` lacks and
+conflicting with everything `main` took since — a base guaranteed to break every remaining child.
+Every resume now fetches and asks whether `origin/HEAD` contains that branch's head, and a contained
+one is re-cut off the trunk in the same command that places the tree, with the reason on stderr. So
+do not prove a branch dead by hand: reading a tail PR's head off the board, diffing both ways and
+deleting the branch is a derivation, and a driver relays verdicts rather than judging whether a
+branch is safe to destroy — getting that wrong loses unlanded work with no way back. Nothing weaker
+than containment opens that arm, so a branch still carrying work resumes as it always did.
+
 The boot used to be `git switch --create epic/$lane_key` in whatever tree invoked this skill, which
 in practice is a human's working tree: it then sat on the epic branch for hours, every tool reading
 files there read the epic branch instead of the default one, and a second epic had no checkout left
@@ -195,9 +205,11 @@ integrate side by side, each in its own tree.
 The verb's refusals are all parks, not retries: `33` is `epic/<lane-key>` already checked out in the
 main working tree — switch that tree off it and run the verb again, never assemble there; `8` is a
 placement that ran and did not read back, UNKNOWN — a stale record git would not let go of reads as
-this too, since nothing can be placed over a registration that survives (an existing
-`epic/<lane-key>`, with or without its tree, is not this: it is the resume above, and the verb
-answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
+this too, and so does a contained branch's seat git refused to drop because it holds uncommitted
+work. Nothing can be placed over a registration or a tree that survives, and which one survived
+tells you where to look: a pruned record leaves no tree at all, a refused seat leaves a dirty one
+(an existing `epic/<lane-key>`, with or without its tree, is neither — it is the resume above, and
+the verb answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
 Done when `lane status` folds and prints a `stateValue`.
@@ -471,8 +483,9 @@ Every later integration pushes the same branch and **appends that child's closin
 body, so the set of references tracks the set of landed children rather than the plan's intent.
 
 **Refresh the assembly branch before the tail enters review, so the review binds to a head the queue
-can take.** Nothing else moves this branch onto trunk: `lane assembly` fetches and cuts off
-`origin/HEAD` on a first cut only, so the branch drifts behind `main` while the children build, and
+can take.** Nothing else moves this branch onto trunk: `lane assembly` cuts off `origin/HEAD` on a
+first cut only and a resume fetches just to judge containment, so the branch drifts behind `main`
+while the children build, and
 the queue ejects the tail for it — three times on one run. Run it from the assembly worktree, before
 you dispatch the tail's review:
 
