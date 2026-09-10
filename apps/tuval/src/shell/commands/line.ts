@@ -18,13 +18,22 @@ import {
 	unknownCommand,
 } from "./errors.ts";
 import {type AnyShellCommand, commandName, isOptionalParameter, parameterNames} from "./row.ts";
-import {resolveVerb, verbSpellings} from "./table.ts";
+import {type CommandIndex, shellCommandIndex} from "./table.ts";
 
 export type CommandLineResult =
 	| {readonly _tag: "Msg"; readonly command: AnyShellCommand; readonly msg: ShellMsg}
 	| {readonly _tag: "Refused"; readonly refusal: CommandRefusal};
 
-export interface RegisteredLineOptions {
+export interface CommandLineOptions {
+	/**
+	 * The rows this line may name. Absent is the ungated table, which is what a caller that has
+	 * resolved no feature flags is entitled to — a surface that has them passes `commandIndexFor`'s
+	 * answer, so a flag-gated row is unreadable here exactly when it is unbindable (#8867).
+	 */
+	readonly commands?: CommandIndex | undefined;
+}
+
+export interface RegisteredLineOptions extends CommandLineOptions {
 	readonly registry: SpellIndex;
 	readonly snapshot: Snapshot;
 	readonly id: CallId;
@@ -41,32 +50,34 @@ const refused = (refusal: CommandRefusal): CommandLineResult => ({_tag: "Refused
  * Read one line. A verb resolves by its full name (`window:open`) or by its last segment when no
  * other row claims that segment (`open`), which is what makes `prefix :open counter` read.
  */
-export function readCommandLine(input: string): CommandLineResult;
+export function readCommandLine(input: string, options?: CommandLineOptions): CommandLineResult;
 export function readCommandLine(
 	input: string,
 	options: RegisteredLineOptions,
 ): RegisteredLineResult;
 export function readCommandLine(
 	input: string,
-	options?: RegisteredLineOptions,
+	options?: CommandLineOptions | RegisteredLineOptions,
 ): RegisteredLineResult {
+	const registered = options !== undefined && "registry" in options ? options : undefined;
+	const table = options?.commands ?? shellCommandIndex;
 	const {tokens} = tokenize(input);
 	const [verb, ...args] = tokens;
 	if (verb === undefined) return refused(emptyCommandLine(input.length));
 
-	const command = resolveVerb(verb.text);
+	const command = table.resolveVerb(verb.text);
 	if (command === undefined) {
-		if (options !== undefined) {
-			const parsed = parse(input, options.registry, options.snapshot);
+		if (registered !== undefined) {
+			const parsed = parse(input, registered.registry, registered.snapshot);
 			if (parsed._tag === "Complete")
 				return {
 					_tag: "Spell",
 					call: new SpellCall({
 						type: "spell.call",
 						version: PROTOCOL_VERSION,
-						id: options.id,
+						id: registered.id,
 						...parsed.call,
-						...(options.window === undefined ? {} : {window: options.window}),
+						...(registered.window === undefined ? {} : {window: registered.window}),
 					}),
 				};
 			return refused(
@@ -87,7 +98,9 @@ export function readCommandLine(
 						},
 			);
 		}
-		return refused(unknownCommand(verb.text, verb.start, didYouMean(verb.text, verbSpellings)));
+		return refused(
+			unknownCommand(verb.text, verb.start, didYouMean(verb.text, table.verbSpellings)),
+		);
 	}
 
 	const name = String(commandName(command.path));

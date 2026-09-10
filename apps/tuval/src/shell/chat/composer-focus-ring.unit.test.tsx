@@ -38,8 +38,13 @@ import {initialChatView} from "./view.ts";
 
 installDomShims();
 
-/** The gated rule the desk paints its one ring with. Read back off the sheet by the first case. */
-const RING_SELECTOR = '.tuval-surface:not([data-input-modality="pointer"]) :focus-visible';
+/**
+ * The one rule the desk paints its ring with, read back off the sheet by the first case. The board's
+ * overlay is named beside the surface because a `Dialog` portals out of every `.tuval-surface` root
+ * (#8867); it is still one rule, which is the law this file holds.
+ */
+const RING_SELECTOR =
+	'.tuval-board-overlay :focus-visible,\n.tuval-surface:not([data-input-modality="pointer"]) :focus-visible';
 
 const deskSheet = (): string =>
 	readFileSync(fileURLToPath(import.meta.resolve("../ui/tokens.css")), "utf8");
@@ -106,12 +111,14 @@ const modalityOf = (root: HTMLElement): string | null =>
 
 /** Does the desk's one ring rule reach this element as the desk currently stands? */
 const wearsTheRing = (element: Element): boolean =>
+	// The rule's own selector list, newlines and all, is what `querySelectorAll` is handed — so this
+	// asks the exact question the sheet answers rather than a re-spelling of it.
 	[...document.querySelectorAll(RING_SELECTOR)].includes(element);
 
 describe("the composer's focus ring", () => {
 	it("is the desk's one rule, gated on the modality the desk publishes", () => {
 		expect(deskSheet()).toMatch(
-			/\.tuval-surface:not\(\[data-input-modality="pointer"\]\) :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
+			/\.tuval-board-overlay :focus-visible,\s*\.tuval-surface:not\(\[data-input-modality="pointer"\]\) :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
 		);
 		// One rule and no second: a component sheet under `apps/tuval/src` that painted its own ring
 		// would be the per-component outline Pillar 4 forbids, and the gate would not reach it.

@@ -21,7 +21,7 @@ import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
 import type {ProgramId} from "../registry/program.ts";
-import {ProcessBoard} from "../shell/board/index.ts";
+import {ProcessBoardOverlay} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
 import type {
@@ -63,9 +63,10 @@ export interface AttachedDeskProps {
 	readonly statuses?: Readonly<Record<string, AnyStatusRenderer>>;
 	readonly reducedMotion: boolean;
 	/**
-	 * Draw the process board over the desk — the page's half of `features.processBoard`
-	 * (`../features.ts`), off by default. Off, this component renders exactly the tree it rendered
-	 * before the flag existed: no board, and no wrapper around the desk (#8723).
+	 * The process board is reachable on this desk — the page's half of `features.processBoard`
+	 * (`../features.ts`), off by default. On, `<c-b> p` pulls it up as an overlay and the desk keeps
+	 * its full height until it does; off, this component renders exactly the tree it rendered before
+	 * the flag existed, and there is no command row or binding to reach it with either (#8867).
 	 */
 	readonly board?: boolean;
 	/**
@@ -370,6 +371,7 @@ export function AttachedDesk({
 		(processId: ProcessId) => dispatch(openProcessMsg(processId)),
 		[dispatch],
 	);
+	const closeBoard = useCallback(() => dispatch({type: "desk.board.close"}), [dispatch]);
 
 	// The half of a `DeskSnapshot` the shell state does not carry. Everything here is already on the
 	// page for the windows' sake; this is the same two frames read for the desk's own regions.
@@ -414,6 +416,7 @@ export function AttachedDesk({
 			call={page.call}
 			registry={spells}
 			commandsConnected={attachment.status === "attached" && refusal === null}
+			board={board}
 			windowTitles={windowTitles}
 		/>
 	);
@@ -421,17 +424,20 @@ export function AttachedDesk({
 	return (
 		<>
 			<ConnectionBanner status={attachment.status} reason={attachment.lastDrop} refusal={refusal} />
+			{deskElement}
+			{/* The overlay is a sibling of the desk, not a wrapper around it: it takes no height from
+			    the windows, and with the flag off it is not rendered at all — the tree the page had
+			    before the board existed. Its visibility is the shell's `desk.boardOpen`, read off the
+			    snapshot like every other desk-level fact (#8867). */}
 			{board ? (
-				// The desk is `block-size: 100%` of this column, so it is the item that gives the board
-				// its room back (`../shell/board/board.css`). Flag off, there is no wrapper at all and
-				// the page is the tree it was before the board existed.
-				<div className="tuval-surface tuval-board-page" data-scheme="dark">
-					<ProcessBoard rows={boardRows} onOpen={openProcess} reducedMotion={reducedMotion} />
-					{deskElement}
-				</div>
-			) : (
-				deskElement
-			)}
+				<ProcessBoardOverlay
+					open={desk.desk.boardOpen}
+					onClose={closeBoard}
+					rows={boardRows}
+					onOpen={openProcess}
+					reducedMotion={reducedMotion}
+				/>
+			) : null}
 		</>
 	);
 }

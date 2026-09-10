@@ -7,6 +7,7 @@ import {buildSpellIndex} from "../../commands/parse/spell-index.ts";
 import {CallId, type WindowId} from "../../protocol/ids.ts";
 import type {Snapshot} from "../../protocol/messages.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
+import type {CommandIndex} from "../commands/index.ts";
 import {readCommandLine, refusalMessage} from "../commands/index.ts";
 import type {ShellMsg} from "../core/index.ts";
 import type {PageAttachment} from "../transport/browser.ts";
@@ -19,6 +20,11 @@ export interface CommandLineProps {
 	readonly snapshot?: Snapshot | undefined;
 	readonly call?: PageAttachment["call"] | undefined;
 	readonly window?: WindowId | undefined;
+	/**
+	 * The rows this line may name. Absent is the ungated table; a desk with feature flags resolved
+	 * passes the gated index, so a row a flag turned off is as unreadable here as it is unbindable.
+	 */
+	readonly commands?: CommandIndex | undefined;
 }
 
 export function CommandLine({
@@ -28,6 +34,7 @@ export function CommandLine({
 	snapshot,
 	call,
 	window,
+	commands,
 }: CommandLineProps): ReactElement {
 	const [line, setLine] = useState("");
 	const [refusal, setRefusal] = useState<string | null>(null);
@@ -66,12 +73,13 @@ export function CommandLine({
 		if (pending.current) return;
 		const answer =
 			index === null || snapshot === undefined
-				? readCommandLine(line)
+				? readCommandLine(line, {commands})
 				: readCommandLine(line, {
 						registry: index,
 						snapshot,
 						id: CallId.make(crypto.randomUUID()),
 						window,
+						commands,
 					});
 		setOutput(null);
 		if (answer._tag === "Refused") {

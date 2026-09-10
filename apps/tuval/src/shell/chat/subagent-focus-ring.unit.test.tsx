@@ -80,7 +80,7 @@ describe("the subagent rows' focus ring", () => {
 
 	it("is the desk's one rule, declared off the ring tokens", () => {
 		expect(deskSheet()).toMatch(
-			/\.tuval-surface:not\(\[data-input-modality="pointer"\]\) :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
+			/\.tuval-board-overlay :focus-visible,\s*\.tuval-surface:not\(\[data-input-modality="pointer"\]\) :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
 		);
 	});
 

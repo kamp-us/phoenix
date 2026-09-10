@@ -73,6 +73,27 @@ export const defaultPrefixTable: PrefixTable = {
 	],
 };
 
+/**
+ * The bindings a feature flag adds. tmux pulls its tree picker up with `choose-tree` on `prefix s`;
+ * the founder ruled `p`, for processes, and `p` is free in the table above (#8867).
+ */
+const boardBindings: ReadonlyArray<Binding> = [
+	{sequence: "p", command: command("desk:board-toggle"), repeatable: false},
+];
+
+/** The flags a binding can be gated on — the shell's own read of `../../features.ts`. */
+export interface KeyFeatures {
+	readonly processBoard: boolean;
+}
+
+/**
+ * The grammar these flags leave standing. A gated binding names a gated command row
+ * (`../commands/table.ts`), and both are gated on the one flag, so a key can never name a row this
+ * build does not hold.
+ */
+export const prefixTableFor = (table: PrefixTable, features: KeyFeatures): PrefixTable =>
+	features.processBoard ? {...table, bindings: [...table.bindings, ...boardBindings]} : table;
+
 /** A config value naming a sequence — or a prefix — the key grammar cannot read. */
 export interface UnreadableSequenceError {
 	readonly _tag: "UnreadableSequenceError";

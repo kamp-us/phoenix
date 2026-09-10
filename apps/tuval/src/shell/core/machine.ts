@@ -21,8 +21,14 @@
 
 import {defineMachine} from "@demlik/tea";
 import {Duration} from "effect";
-import {msgForCommandName} from "../commands/table.ts";
-import {type DeskMsg, initialDesk, toggleInspector} from "../desk/state.ts";
+import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
+import {
+	closeBoard,
+	type DeskMsg,
+	initialDesk,
+	toggleBoard,
+	toggleInspector,
+} from "../desk/state.ts";
 import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import {
@@ -552,7 +558,10 @@ const attachHome = (
 	return [next, activeWorkspace(next)?.focused ?? target];
 };
 
-export const cellsFor = (table: PrefixTable): ShellCells => {
+export const cellsFor = (
+	table: PrefixTable,
+	commands: CommandIndex = shellCommandIndex,
+): ShellCells => {
 	const apply = (state: ShellState, msg: ShellMsg): Step => runCell(cells, state, msg);
 
 	/**
@@ -602,7 +611,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		// The command table is the one place a name becomes a Msg, so a bound key and a typed line
 		// run the same row. A name it does not hold — or a row needing an argument a key sequence
 		// has nowhere to carry — leaves as a `runCommand` Cmd for a surface to answer.
-		const commanded = msgForCommandName(answer.name);
+		const commanded = commands.msgForCommandName(answer.name);
 		if (commanded === null) return [routed, [...timer, {type: "runCommand", name: answer.name}]];
 		const [next, cmds] = apply(routed, commanded);
 		return [next, [...timer, ...cmds]];
@@ -659,6 +668,8 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
 		// Desk-level, so every workspace cell above leaves it untouched by spreading `...state`.
 		"desk.inspector.toggle": (state) => [{...state, desk: toggleInspector(state.desk)}, NO_CMDS],
+		"desk.board.toggle": (state) => [{...state, desk: toggleBoard(state.desk)}, NO_CMDS],
+		"desk.board.close": (state) => [{...state, desk: closeBoard(state.desk)}, NO_CMDS],
 		"keys.press": pressKey,
 		// A lapse disarms a repeat window and nothing else: a timer left over from a spent window
 		// must not drop a prefix the user has since armed by hand, which waits indefinitely.
@@ -689,13 +700,19 @@ export const applyMsg = (table: PrefixTable, state: ShellState, msg: ShellMsg): 
 export interface ShellCoreOptions {
 	/** The grammar `keys.press` routes against — configuration, never state (it holds `Duration`s). */
 	readonly table: PrefixTable;
+	/**
+	 * The rows a bound key's name resolves against. It travels with the table because both are
+	 * gated on the same flags: a core routing over a table that binds a row its own index does not
+	 * hold would answer `runCommand` for a key the desk was told it had.
+	 */
+	readonly commands?: CommandIndex;
 }
 
 /** The shell's core machine. One `defineMachine`; the registry row that carries it lands with #7558. */
-export const shellCore = ({table}: ShellCoreOptions) =>
+export const shellCore = ({table, commands}: ShellCoreOptions) =>
 	defineMachine<ShellState, ShellMsg, ShellCmd, never, unknown>({
 		init: (loaded) => [loaded ?? initialState(), []],
-		update: cellsFor(table),
+		update: cellsFor(table, commands),
 		// Demlik's `Machine` demands a Promise `interpret` beside the row's own handlers; the host
 		// never reads it (#7576). The shell's Effect handlers land with its registry row (#7558).
 		interpret: {

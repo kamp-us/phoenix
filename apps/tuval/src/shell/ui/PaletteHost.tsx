@@ -9,19 +9,21 @@ import {WindowId} from "../../protocol/ids.ts";
 import type {SpellReply} from "../../protocol/messages.ts";
 import {PROTOCOL_VERSION, SpellCall, SpellReplyError} from "../../protocol/messages.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
-import {shellCommands} from "../commands/table.ts";
+import type {CommandIndex} from "../commands/table.ts";
+import {shellCommandIndex} from "../commands/table.ts";
 import type {ShellState} from "../core/index.ts";
 import {activeWorkspace} from "../core/index.ts";
 import {type PageAttachment, SHELL_PROGRAM_ID} from "../transport/browser.ts";
 import {commandSnapshot} from "./command-snapshot.ts";
 
-/** Every shell row as the wire describes a spell. Built once: the table is a module constant. */
-const shellDescriptions: RegistryDescription = shellCommands.map((command) => ({
-	path: [...command.path],
-	describe: command.describe,
-	params: Schema.toJsonSchemaDocument(command.params),
-	capabilities: [],
-}));
+/** Every shell row this desk holds, as the wire describes a spell. */
+const describeShellRows = (commands: CommandIndex): RegistryDescription =>
+	commands.commands.map((command) => ({
+		path: [...command.path],
+		describe: command.describe,
+		params: Schema.toJsonSchemaDocument(command.params),
+		capabilities: [],
+	}));
 
 const refusal = (call: SpellCall, tag: string, message: string): SpellReply =>
 	new SpellReplyError({
@@ -47,6 +49,8 @@ export interface PaletteHostProps {
 	/** The window focused when the palette opened — the call's scope, never the layout's. */
 	readonly window: WindowId | undefined;
 	readonly onClose: () => void;
+	/** The rows this palette offers. Absent is the ungated table (`../commands/table.ts`). */
+	readonly commands?: CommandIndex | undefined;
 }
 
 export function PaletteHost({
@@ -55,8 +59,10 @@ export function PaletteHost({
 	call,
 	window,
 	onClose,
+	commands = shellCommandIndex,
 }: PaletteHostProps): ReactElement {
 	const catalog = useMemo(() => {
+		const shellDescriptions = describeShellRows(commands);
 		const shortcuts = shellDescriptions.flatMap((shortcut) => {
 			if (live === undefined) return [shortcut];
 			const registered = live.find(
@@ -75,7 +81,7 @@ export function PaletteHost({
 				),
 			],
 		};
-	}, [live]);
+	}, [live, commands]);
 	const descriptions = catalog.descriptions;
 	const registry = useMemo(() => buildSpellIndex(descriptions), [descriptions]);
 	const [reply, setReply] = useState<SpellReply | null>(null);

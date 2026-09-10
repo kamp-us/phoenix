@@ -4,4 +4,8 @@
  */
 
 export {ProcessBoard, type ProcessBoardProps} from "./ProcessBoard.tsx";
+export {
+	ProcessBoardOverlay,
+	type ProcessBoardOverlayProps,
+} from "./ProcessBoardOverlay.tsx";
 export {enteredSince, type Tile, tileIds, tilesOf} from "./tiles.ts";

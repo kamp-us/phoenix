@@ -31,7 +31,7 @@ import {dispatchConfigChanged} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import type {PrefixTable} from "./shell/keys/index.ts";
-import {shellId, shellPrefixTable} from "./shell/program.ts";
+import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
 import type {ModuleRendererRef} from "./shell/window/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
@@ -240,7 +240,9 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const layers = {global: options.global, project: projectConfig(options.project)};
 	const config = yield* loadLayeredConfig(layers);
 	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
-	const programs = config.programs as ReadonlyArray<AnyProgram>;
+	// The flags are applied once, here: a config module is evaluated before the merge exists (#8595),
+	// so this is the only place that holds both the rows and what the layers said about them (#8867).
+	const programs = withShellFeatures(config.programs as ReadonlyArray<AnyProgram>, config.features);
 	const stateDir = projectDir(options.project);
 	const started = yield* start({
 		programs,
@@ -272,7 +274,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 
 	const reload = Effect.fn("Tuval.reload")(function* () {
 		const next = yield* loadLayeredConfig(layers);
-		const rows = next.programs as ReadonlyArray<AnyProgram>;
+		const rows = withShellFeatures(next.programs as ReadonlyArray<AnyProgram>, next.features);
 		const set = yield* SpellSet;
 		yield* set.reload({core: coreSpells, programs: rows, keys: next.keys});
 		const notified = yield* dispatchConfigChanged(yield* Ref.getAndSet(generation, rows), rows);
