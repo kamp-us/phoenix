@@ -42,7 +42,7 @@ export interface WorkerPanoFeedCache {
 
 export interface PanoFeedCacheOptions {
 	/** In production `ctx.cache.purge`; in tests a recording/failing/slow stub. */
-	readonly purge: (options: {tags: string[]}) => Promise<unknown>;
+	readonly purge: (options: {tags: string[]}) => Promise<CachePurgeResult | undefined>;
 	readonly waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -51,9 +51,19 @@ export function panoFeedCacheFor(options: PanoFeedCacheOptions): WorkerPanoFeedC
 	// swallow-with-log contract.
 	const schedule = (): void => {
 		options.waitUntil(
-			Promise.resolve(options.purge({tags: [PANO_FEED_CACHE_TAG]})).catch((error: unknown) => {
-				console.error(`pano feed cache purge tag:${PANO_FEED_CACHE_TAG} failed`, error);
-			}),
+			Promise.resolve(options.purge({tags: [PANO_FEED_CACHE_TAG]}))
+				.then((result) => {
+					// Cloudflare reports quota rejection as a fulfilled result, not a rejected promise.
+					if (result && !result.success) {
+						console.error(
+							`pano feed cache purge tag:${PANO_FEED_CACHE_TAG} refused`,
+							result.errors,
+						);
+					}
+				})
+				.catch((error: unknown) => {
+					console.error(`pano feed cache purge tag:${PANO_FEED_CACHE_TAG} failed`, error);
+				}),
 		);
 	};
 

@@ -1,6 +1,6 @@
 # The stack & deploy
 
-> Current resource/dev APIs checked against `alchemy@2.0.0-beta.77`. Historical cloud observations below retain their original versions; the upgrade has not been deployed.
+> Current resource/dev APIs checked against `alchemy@2.0.0-beta.77`. Historical cloud observations below retain their original versions.
 
 How phoenix is declared and shipped. The short answer: `alchemy.run.ts` is an Effect program — an `Alchemy.Stack` — that declares the resources (the D1 database, the worker) and returns the stack's outputs. `alchemy deploy` runs it against the Cloudflare API; `alchemy dev` runs it locally. There is no `wrangler.jsonc`.
 

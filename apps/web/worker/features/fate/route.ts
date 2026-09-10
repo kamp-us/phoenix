@@ -81,7 +81,7 @@ export const handleFate = Effect.gen(function* () {
 		raw.headers.get("cookie"),
 	);
 	const feedCache = panoFeedCacheFor({
-		purge: (options) => executionCtx.cache?.purge(options) ?? Promise.resolve(),
+		purge: (options) => executionCtx.cache?.purge(options) ?? Promise.resolve(undefined),
 		waitUntil,
 	});
 
