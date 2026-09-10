@@ -1,5 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {SHELL_STATES, shellOf} from "../wire/lane-brief.ts";
+import {coderWorkflow} from "./fixtures.test-support.ts";
+import {eventForToken} from "./report.ts";
 import {
 	BUILD_CLAIM_BUDGET_MINUTES,
 	budgetMinutesFor,
@@ -81,5 +83,39 @@ describe("livenessOf", () => {
 
 	it("is Unreadable on an instant that does not parse — never Dead, never Live", () => {
 		expect(livenessOf("whenever", at("2026-09-09T00:00:00.000Z"), 40)._tag).toBe("Unreadable");
+	});
+});
+
+interface CoderShape {
+	readonly machine: {
+		readonly states: {
+			readonly pipeline: {
+				readonly states: {
+					readonly issue: {
+						readonly states: Record<string, {readonly on?: Record<string, unknown>}>;
+					};
+				};
+			};
+		};
+	};
+}
+
+// A budget that flags a dead shell is worth nothing if the death has no route onto the ledger, and
+// the two used to disagree: `SHELL-DEAD` mapped to the machine's `LAP` while three budgeted states
+// carried no `ISSUE.LAP` edge, so a dead reviewer was refused at exit 12 with the log unappended.
+describe("every budgeted state can record the death its budget detects", () => {
+	const lapCell = (state: string): unknown =>
+		(coderWorkflow() as CoderShape).machine.states.pipeline.states.issue.states[state]?.on?.[
+			"ISSUE.LAP"
+		];
+
+	it("maps SHELL-DEAD to the machine's LAP", () => {
+		expect(eventForToken("SHELL-DEAD")).toMatchObject({_tag: "Mapped", event: "LAP"});
+	});
+
+	it("gives the coder machine an ISSUE.LAP edge in every state that carries a budget", () => {
+		for (const state of SHELL_STATES) {
+			expect(lapCell(state), `${state} has a budget and no ISSUE.LAP edge`).toBeDefined();
+		}
 	});
 });

@@ -6,7 +6,8 @@
  * the `spawn-dead` park open, and a person has to run `build adopt` and `build release` by hand for
  * a failure nobody chose. This module is the proof that lets a verb retract it instead.
  *
- * **The proof is the claim's own age, because there is no heartbeat to read.** A claim older than
+ * **The proof is the claim's own age, because there is no heartbeat to read.** See ADR 0373, which
+ * narrows the claim protocol's age ban to exactly this caller. A claim older than
  * the budget for the kind of work it took (`../lane/shell-budget.ts`) is a claim whose shell is
  * dead by the only definition available. Everything short of that proof leaves the claim standing:
  * an unreadable board, an unreadable timestamp, and a claim still inside its budget all answer with

@@ -1,7 +1,9 @@
 /**
  * How long one shell may hold a lane before the shell driving it is judged dead.
  *
- * **There is no heartbeat, and that is the ruling rather than an omission.** A spawned shell writes
+ * **There is no heartbeat, and that is the ruling rather than an omission** — see ADR 0373, which
+ * also narrows the claim protocol's age ban to the one caller that reads these numbers against a
+ * claim marker. A spawned shell writes
  * nothing between its claim and its terminal, so liveness is not observable at all: the only instant
  * on disk is the one the work began at. What is left to judge against is a budget — how long this
  * kind of work takes when it is going well — and silence past that budget is the death.
@@ -19,7 +21,7 @@
  * reads once and records a verdict, a shipper walks a guard chain and enqueues — so
  * `build > review > ship` holds however the numbers move.
  */
-import {SHELL_STATES, type ShellState, shellState} from "../wire/lane-brief.ts";
+import {type ShellState, shellState} from "../wire/lane-brief.ts";
 
 /** One kind of work's horizon, with the shape of the work that horizon is measuring. */
 export interface ShellBudget {
@@ -94,9 +96,6 @@ export const budgetMinutesFor = (leaves: ReadonlyArray<string>): number => {
  * against whichever state the lane happens to be parked in now.
  */
 export const BUILD_CLAIM_BUDGET_MINUTES = SHELL_BUDGETS.build.minutes;
-
-/** Every shell state that carries a budget — the listing a refusal quotes. */
-export const BUDGETED_STATES: ReadonlyArray<ShellState> = SHELL_STATES;
 
 /**
  * Whether the shell that started work at an instant is still inside its budget.

@@ -630,9 +630,14 @@ this order:
   spawn would have.
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
   is the whole act: the spawn ran under your session id, so its marker resolves as
-  this session's and the verb that already exists retracts it. No new verb and no widened one — a
-  founder ruling rejected a lease, a TTL and steal outright, and eviction by inference from absence
-  stays banned: a claim is released under a proven identity, never inferred gone.
+  this session's and the verb that already exists retracts it. No new verb and no widened one. **A
+  claim ends under a proven identity or a budget-proved death, and never on any weaker reading** —
+  this release is the first proof, the `spawn-dead` row's retraction below is the second, and a lease,
+  a steal and eviction inferred from plain absence all stay banned. ADR
+  [0373](../../../../.decisions/0373-shell-budget-claim-retraction.md) is that rule: it narrows the
+  age ban of ADRs [0295](../../../../.decisions/0295-board-attested-claim-succession.md) and
+  [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5 to exactly the
+  `spawn-dead` park a driver already recorded, and leaves it standing everywhere else.
 - **Retire the worktree it left**, with `fabrika build retire <n>`. A tree left standing holds the
   lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
   exit `11`. The verb does the two dead-spawn steps in their order —
@@ -661,8 +666,10 @@ heartbeat, so what proves a shell dead is its claim outliving the budget for the
 took — forty minutes for a build, fifteen for a review, ten for a ship. Past that budget the recipe
 retracts the marker and re-reads the board to prove it gone, so the number is re-claimable with no
 `build adopt` and no `build release`; inside it, the shell may still be working and the park holds at
-exit `13`. A retraction the re-read does not confirm is exit `9`, never a clear. The hand succession
-below is what remains for a claim no budget covers.
+exit `13`. A retraction the re-read does not confirm is exit `9`, never a clear. This is the one
+place an age test may end a claim, and ADR
+[0373](../../../../.decisions/0373-shell-budget-claim-retraction.md) is what authorizes it. The hand
+succession below is what remains for a claim no budget covers.
 
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
