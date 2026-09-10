@@ -339,11 +339,11 @@ comments. Contract:
 
 | Verb | Answers |
 |---|---|
-| `grill open` | opens, or resumes, the session issue for a topic — `created` says which |
+| `grill open` | opens/resumes a topic or ticket, or preserves initial research from `--audit-context`; audit success adds run identity and digest; `--audit-recover` never creates, and `--audit-session` targets a known partial create |
 | `grill round` | validates one round from stdin, posts it, and returns its number, digest and ids |
 | `grill answer` | records an agent-established answer to a `fact` question, behind a kind guard |
 | `grill rule` | records a founder ruling, refusing without a verbatim dated authorization |
-| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token |
+| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token and total `auditContext` result; malformed research does not hide readable questions |
 
 **Exit codes.** The shared table, plus `12` the invoking token is below `write` · `13` the question
 id names no question · `14` the round could not be digested · `15` `--authorization` is missing,
@@ -566,19 +566,20 @@ snapshot. Lane state is local and never committed.
 |---|---|
 | `lane status` | the derived state: compound `stateValue`, active/done, per-task context, tripped tasks |
 | `lane transition` | records one operator event after the machine accepts it |
-| `lane report` | a shell's terminal token, mapped to one operator event — refusing a `ship:queued` re-fold at `52` until the wait axis's elapsed-time floor has run, so the budget measures a dwell rather than a driver's pace |
+| `lane clear` | one repair round granted to a lane whose budget is spent and whose seat has no pull request for `build clear` to read — an epic child, a chore lane. It appends the same `<TASK>.CLEARED` event and moves no task, so the park's door is still the `UNBLOCKED` and the two land in either order. The round is DERIVED off the task's own declared cap against the grants already in its log, never typed, so one call buys exactly one round; a task that still has budget is exit `47`, and a blank or absent `--rationale` is `53` — that line is the driver's only audit of a grant no pull request carries (ADR 0378) |
+| `lane report` | a shell's terminal token, mapped to one operator event — plus the machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`, `SHELL-DEAD`), which belongs to no shell, maps to the machine's `LAP`, and carries its own park cause with no `--cause` typed; it also refuses a `ship:queued` re-fold at `55` until the wait axis's elapsed-time floor has run, so the budget measures a dwell rather than a driver's pace |
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
-| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, naming the parent whose lane already carries it as a task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run |
+| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, naming the parent whose lane already carries it as a task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run. `emit` reads `.fabrika.jsonc`'s `machineryLaps.onEmit`: `off` (the shipped default) writes today's bytes exactly, `on` adds the machinery `LAP` arms and seeds each task's lap counter, so a collision or a queue ejection spends laps rather than the repair budget and exhaustion parks on `human:machinery-stall` instead of freezing. The machine is fixed at emission, so the key reaches no lane already on disk |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane dispatch` | run one active task through Codex in a verified worktree; [contract](./codex-dispatch.md) |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
-| `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |
-| `lane stale` | which lanes have gone quiet with something owed on them — offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
+| `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch and pushes nothing. Under `assemblyReplay.onCollision` (shipped `off`) a colliding child is replayed onto the tip instead of stopping the run: the plain keep-both hunks are kept both ways, the child's own branch is moved onto the replayed range so its next integrate is up to date rather than a second collision, and that range is merged `--no-ff` like any other landing; the verdict is `INTEGRATE-VERDICT: REPLAYED` over a machinery event naming the moved range the child owes one review round over. A hunk that is not a plain keep-both restores, proves the reset, and parks on `--cause replay-conflict`; a child branch that will not move is exit `54` with nothing merged, and a working tree standing on it is the usual reason. A refusal below a replayed merge puts the child branch back on the revision its reviewer graded as well as resetting the assembly branch, so a replay the verb did not keep moves no range — and a branch that will not go back is `8`, never the red |
+| `lane stale` | which lanes have gone quiet with something owed on them, each judged against its OWN horizon — the budget of the work driving it (a build shell's, a review shell's, a ship shell's, or the dispatch budget for a task nothing picked up), reported per row as `budgetMinutes`. `--older-than` overrides that horizon for every lane; without it the answer's `olderThanMinutes` is `null`, which says the budgets did the judging. Offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
 | `lane reconcile` | which lanes recorded a merge closure the board never confirmed, and the `<TASK>.CORRECTED` line that records what the board says — `partial: true` sends the lane round again (`corrected`), `partial: false` confirms the closure and moves no task (`confirmed`); either way the lane stops nominating, so a sweep costs one PR read per never-confirmed lane rather than hundreds every time (ADR 0351). Two kinds of line nominate: one carrying no `partial`, and one whose `partial: false` names no `landed` evidence, which is the mark of the nominator blind to a merged `Part of #N` that wrote every `false` before the ship stage began reading closures off the named PR. The evidence is what tells the two apart, never the line's timestamp: a cutoff date would hold only while that fix's own merge beat it (#7457). `--check` reports and appends nothing, so it buys nothing for the next sweep and pays the same reads twice; a read that proves no closure is `unknown`, never `closes`; ordered after `lane migrate`, which is what an `unmigrated` row names (ADR 0350) |
 | `lane archive` | one lane whose log will never replay, moved out of the swept root — refused unless BOTH the lane's issue reads closed AND the log fails the same `Unreplayable` judgement `lane migrate` makes, so a genuinely broken lane still shows up on every sweep. The archived root is a sibling of the lanes root, so `reconcile` and `migrate` are never handed it and need no skip rule; the record stays readable through `lane history --root <archived-root>` (ADR 0352) |
-| `lane settle` | one lane whose own flow never reached a terminal, ended against its issue's own closure as a recorded event. Two stranded shapes: a lane parked while its issue closed `not_planned`/`duplicate` owes no artifact, and a lane sitting in `build`/`review` while its issue closed `completed` over a merged PR was hand-shipped past the ledger. Neither is reachable by the operator's six (`DONE` claims an open PR that is not there, `BLOCKED` only parks, `UNBLOCKED` resumes work already over), and the only prior remedy was deleting the ledger. The issue's own `state_reason` is the whole entitlement: not-planned/duplicate appends `<TASK>.CANCELLED`; `completed` PLUS at least one merged PR whose body links the issue (closing keyword or `Part of`) appends `<TASK>.LANDED` carrying those PR numbers as `landed` and the merge commit as `sha`. An open issue refuses at `49`; a failed read, a close with no `state_reason`, a reason outside the three, and a `completed` close naming no merged linking PR are all UNKNOWN at `11` with the log unappended. `--landed-by <pr>` supplies the link that last read lacks — the closure a human made by hand over a merge whose body cites another issue — and nothing more: the board must still read that PR merged, so an unmerged one refuses at `23`, one this repository does not hold at `22`, and an unreadable read stays UNKNOWN at `11`. A body-proven landing is judged first and wins, so the flag can only fill a gap; the line it appends carries `assertedBy: "caller"`, which is how a reader of the verb's own stdout or `lane history` tells an asserted link from a body-proven one, and a body-proven line carries no such field. `lane view` does not show it: the viewer page rebuilds every log line as `{task, event, at}` and drops the rest — `landed` and `sha` already among them — so that screen reads an asserted landing and a body-proven one identically. A live authorized lane claim refuses at `31` unless `--token` names it. The lane folds to `board:cancelled` or `board:landed` — its own terminals, neither `complete` nor `tripped` — so `lane status`, `lane stale` and `lane view` read it terminal and it holds no seat against `laneConcurrencyCap`; the directory stays where it is and `lane history` still reads the whole log. stdout is `{answer:"settled", lane, issue, previous, event, current, taskAffected, outcome}` plus `landed`/`sha` on a landing and `assertedBy` on an asserted one (ADR 0365) |
+| `lane settle` | one lane whose own flow never reached a terminal, ended against its issue's own closure as a recorded event. Two stranded shapes: a lane parked while its issue closed `not_planned`/`duplicate` owes no artifact, and a lane sitting in `build`/`review` while its issue closed `completed` over a merged PR was hand-shipped past the ledger. Neither is reachable by the operator's own events (`DONE` claims an open PR that is not there, `BLOCKED` only parks, `UNBLOCKED` resumes work already over), and the only prior remedy was deleting the ledger. The issue's own `state_reason` is the whole entitlement: not-planned/duplicate appends `<TASK>.CANCELLED`; `completed` PLUS at least one merged PR whose body links the issue (closing keyword or `Part of`) appends `<TASK>.LANDED` carrying those PR numbers as `landed` and the merge commit as `sha`. An open issue refuses at `49`; a failed read, a close with no `state_reason`, a reason outside the three, and a `completed` close naming no merged linking PR are all UNKNOWN at `11` with the log unappended. `--landed-by <pr>` supplies the link that last read lacks — the closure a human made by hand over a merge whose body cites another issue — and nothing more: the board must still read that PR merged, so an unmerged one refuses at `23`, one this repository does not hold at `22`, and an unreadable read stays UNKNOWN at `11`. A body-proven landing is judged first and wins, so the flag can only fill a gap; the line it appends carries `assertedBy: "caller"`, which is how a reader of the verb's own stdout or `lane history` tells an asserted link from a body-proven one, and a body-proven line carries no such field. `lane view` does not show it: the viewer page rebuilds every log line as `{task, event, at}` and drops the rest — `landed` and `sha` already among them — so that screen reads an asserted landing and a body-proven one identically. A live authorized lane claim refuses at `31` unless `--token` names it. The lane folds to `board:cancelled` or `board:landed` — its own terminals, neither `complete` nor `tripped` — so `lane status`, `lane stale` and `lane view` read it terminal and it holds no seat against `laneConcurrencyCap`; the directory stays where it is and `lane history` still reads the whole log. stdout is `{answer:"settled", lane, issue, previous, event, current, taskAffected, outcome}` plus `landed`/`sha` on a landing and `assertedBy` on an asserted one (ADR 0365) |
 | `lane claim` / `release` | who is driving this lane |
 
 **Exit codes.** `4` the lane read in full and is not the shape · `7` the lane is absent · `8` the
@@ -595,19 +596,25 @@ tree is not on the run's assembly branch · `29` the push would not fast-forward
 and the ref did not move · `31` this session does not hold the driver's claim · `32` the terminal
 token is no shell's · `33` an assembly git write was aimed at the main working tree · `34` the
 assembly branch tracks another ref and clearing that upstream did not take · `35` the `--cause` is
-outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state with no budget left
-— read the refusal for which budget: retries want a recorded `CLEARED` (`build clear`), waits want
+outside the closed park-cause set, or rides on an event that is neither `BLOCKED` nor `LAP` · `36` the `UNBLOCKED` would restore a state with no budget left
+— read the refusal for which budget: retries want a recorded `CLEARED` (`build clear` where a pull
+request carries the founder's grant, `lane clear` where the lane has none), waits want
 the grant on this same resume (`--grant-wait`, else `recipe unpark`) · `47` the `--grant-wait` is
-not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED`
+not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED` — and on
+`lane clear`, the task still has budget to spend, so there is no round to grant
 · `37` a booted lane's machine cannot be replaced by the template without moving the lane · `49` an archive or a settlement was aimed at a lane whose issue is still open · `50` an archive was aimed at a lane whose log replays, so every sweep can judge it · `38`
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
 branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not
 install, or the install changed a tracked file · `44` the merged tree failed a code validator · `45`
-the assembly worktree already held modified tracked files before the merge, so nothing was merged.
+the assembly worktree already held modified tracked files before the merge, so nothing was merged ·
+`52` a `BLOCKED` named no cause in a repo declaring `parkCause.uncaused: "refuse"` · `53` the
+`--rationale` says nothing, rides on an event that is not `UNBLOCKED`, or is absent on
+`lane clear` · `55` a `ship:queued` re-fold arrived inside the wait axis's elapsed-time floor, or
+the clock on that task's last line reads as no date — the log is unappended and the wait unspent.
 
-To open a lane, copy a template in and speak the operator's six events — `DONE` / `PASS` / `FAIL` /
-`BLOCKED` / `WIP` / `UNBLOCKED`:
+To open a lane, copy a template in and speak the operator's events — `DONE` / `PASS` / `FAIL` /
+`BLOCKED` / `WIP` / `UNBLOCKED` / `LAP`:
 
 ```bash
 mkdir -p .fabrika/lanes/5673
@@ -778,9 +785,9 @@ read-back.
 
 | Verb | Answers |
 |---|---|
-| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — and on the queue-stall row grants the waits that clear buys, on the same recorded event |
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
 | `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a head-bound `governance` PASS |
-| `recipe route` | which recipe a chore-lane state applies, and which of the six events one exit folds to |
+| `recipe route` | which recipe a chore-lane state applies, and which operator event one exit folds to |
 
 **Exit codes.** `4` a record read in full is not the shape · `7` the target is absent · `8` the
 fix's own write did not land · `9` the write landed and the read-back contradicts it · `11` a
@@ -788,12 +795,21 @@ precondition read failed · `12` the park's cause is outside the known-recipe se
 recipe whose clearing condition is not met yet · `14` the task's leaf state is not a park · `15`
 the task could not be resolved · `16`–`18` the `governance` verdict is absent, stale, or FAIL ·
 `19` no run at the head concluded in failure · `20` the machine refused the `UNBLOCKED` · `21` the
-rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `39`
+rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `23`
+the park routes to the driver and the run named no `--rationale` · `39`
 the cwd is not in a repository, so `unpark` has none to derive its default lanes root off.
 
 **Known clears, novel escalates, and both are exit codes.** `12` is nothing-written, route it to a
 human; `13` is wait. `recipe route --exit` folds the first to `BLOCKED` and the second to `WIP`, so
 how autonomous a chore drive is never depends on a caller's reading.
+
+**A novel park is not automatically a human's.** Every park cause carries a route
+([`lane/report.ts`](../src/lane/report.ts)), and `driver` says the park is machinery a driver session
+owns rather than a call only the founder can make. Under `.fabrika.jsonc`'s
+`parkCause.driverRouted: "clear"` such a park clears here on the driver's own `--rationale`, which
+rides the recorded `UNBLOCKED` and reads back as the task's standing `rationale` — the whole audit of
+a clear no proving read stands behind, which is why omitting it is `23` rather than a silent clear.
+A `founder` route, and every park under the shipped `refuse`, still lands on `12`.
 
 ## The `report` group
 
@@ -1080,7 +1096,7 @@ Three things are load-bearing:
   hardcodes empty stdout — so a refusal would leave the front door silent on exactly the cold start
   it exists for. Every source it cannot read becomes a field state; its one refusal seat is a bad
   `--field`. It composes by **importing** the sibling cores, never by spawning a verb. The `lanes`
-  field renders the `lane stale` sweep at that verb's 60-minute threshold, so a dead operator's
+  field renders the `lane stale` sweep at each lane's own shell budget, so a dead operator's
   silent lane surfaces on every cold session. It reports; it never resumes.
 - **`7` and `11` are the pair.** An *implicitly* resolved roster holding zero skills is neither —
   it is `empty` at exit `0`.

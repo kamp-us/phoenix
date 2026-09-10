@@ -235,6 +235,35 @@
 	color: var(--text-primary);
 }
 
+/* The `/` filter at the top of the list. Same box as the command line's input, because it is the
+   same gesture: a prompt the desk hands the caret to. */
+.tuval-picker-filter {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+}
+
+.tuval-picker-filter label {
+	color: var(--text-muted);
+	font: var(--t-mono);
+}
+
+.tuval-picker-filter input {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	min-block-size: var(--tap-min);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	font: var(--t-mono);
+	padding: 0 var(--s-2);
+}
+
+.tuval-picker-filter input::placeholder {
+	color: var(--text-muted);
+}
+
 .tuval-picker-detail {
 	color: var(--text-muted);
 	font: var(--t-meta);

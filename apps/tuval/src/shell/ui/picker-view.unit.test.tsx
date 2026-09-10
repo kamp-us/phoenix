@@ -65,12 +65,12 @@ describe("the picker answers the pointer through the keyboard's own cursor", () 
 			{
 				type: "window.setView",
 				windowId,
-				view: {cursor: 2, refusal: null, previous: null},
+				view: {cursor: 2, refusal: null, previous: null, filter: null},
 			},
 		]);
 
 		// The desk folds that view back in; the highlight the mouse moved is the one ARIA announces.
-		const moved = mount({cursor: 2, refusal: null, previous: null});
+		const moved = mount({cursor: 2, refusal: null, previous: null, filter: null});
 		expect(moved.listbox.getAttribute("aria-activedescendant")).toBe("picker-window-1-option-2");
 		expect(rowAt(moved.options, 2).getAttribute("aria-selected")).toBe("true");
 	});

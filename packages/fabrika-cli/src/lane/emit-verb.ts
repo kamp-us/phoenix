@@ -16,6 +16,8 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {MACHINERY_LAPS, type MachineryLapsSurface} from "../config/keys/machinery-laps.ts";
 import type {Read} from "../config/read-key.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -44,6 +46,14 @@ export interface EmitOptions<R = never> {
 	readonly cap: Read<number | null>;
 	/** Which lanes under this root a driver is holding — only a claimed one takes a seat. */
 	readonly claimed: ClaimHoldReader<R>;
+	/**
+	 * The repo's declared `machineryLaps` — whether this emission carries the machinery event class.
+	 *
+	 * Unreadable refuses rather than falling back to the shipped default, on `park-cause-rule.ts`'s
+	 * reasoning: which machine a repo asked for is then UNKNOWN, and a machine is emitted once and
+	 * driven for the life of the lane.
+	 */
+	readonly machinery: Read<MachineryLapsSurface>;
 }
 
 const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}>): VerbOutcome => {
@@ -111,7 +121,18 @@ export const runEmit = <R = never>(
 				`${VERB}: cannot read #${options.epic}'s children: ${listed.reason} — nothing was emitted.`,
 			);
 		}
-		const emitted = emitMachine(options.epic, target.issue.body, listed.value);
+		if (options.machinery._tag === "Refused") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read \`${MACHINERY_LAPS}\` from ${CONFIG_PATH} (${options.machinery.reason}) — which machine this epic gets is UNKNOWN, and a machine is emitted once, so nothing was emitted.`,
+			);
+		}
+		const emitted = emitMachine(
+			options.epic,
+			target.issue.body,
+			listed.value,
+			options.machinery.value.onEmit === "on",
+		);
 		if (emitted._tag !== "Emitted") return emitRefusal(options.epic, emitted);
 		const ref: LaneRef = {root: options.root, lane: String(options.epic)};
 		const capped = yield* capRefusal(VERB, options.cap, options.root, options.claimed);

@@ -12,6 +12,8 @@
  */
 import {serveLaneViewer, type TransitionRequest} from "@demlik/tea/chart/lane/server";
 import {Effect, type FileSystem, type Path, Result, Schema} from "effect";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {readDir} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
@@ -52,6 +54,13 @@ const ORIGINS = {
 export interface ViewOptions {
 	readonly root: string;
 	readonly port: number;
+	/**
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * The viewer relays whatever event the browser sends, `BLOCKED` among them, so the rule binds
+	 * this door exactly as it binds the CLI's — a park recorded from a button is still a park.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
 }
 
 export const runView = (
@@ -81,8 +90,10 @@ export const runView = (
 					event: req.event,
 					task: req.task ?? null,
 					cause: null,
+					parkCause: options.parkCause,
 					classes: [],
 					waitGrant: null,
+					rationale: null,
 				}).pipe(
 					// The transition verb's own words, either way: a refusal it proved beats anything
 					// this file could compose, and its answer line already names what it appended.

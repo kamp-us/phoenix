@@ -8,6 +8,36 @@
 			"type": "string",
 			"description": "Path to the JSON Schema for this file — e.g. \"./.fabrika.schema.json\". Gives an editor autocomplete and validation for the keys below."
 		},
+		"assemblyRefresh": {
+			"type": "object",
+			"description": "Whether the driver merges the trunk into an epic's assembly branch on its way into review.",
+			"properties": {
+				"onReview": {
+					"type": "string",
+					"description": "What `lane refresh --on-review` does: `off` (declines and merges nothing — the shipped default, and today's path into review) or `on` (performs the merge, so the tail review binds to a head the queue can take). A hand-called `lane refresh` is never gated by this.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"assemblyReplay": {
+			"type": "object",
+			"description": "Whether a child whose merge collides with the epic run's assembly branch is replayed onto its tip.",
+			"properties": {
+				"onCollision": {
+					"type": "string",
+					"description": "What `lane integrate` does with a colliding child: `off` (abort the merge and refuse — the shipped default, and today's behaviour) or `on` (replay the child's commits onto the tip, keep both sides of a plain keep-both hunk, and send the child back for one review round over the moved range). A hunk that is not a plain keep-both parks under either.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
 		"auditCatalogs": {
 			"type": "array",
 			"description": "Repo-relative markdown paths holding extra smell catalogs for `architecture-audit`'s coverage gate, in the same table shape the shipped catalog uses. Add-only: their rows are emitted after the shipped rows, and no entry can remove or replace a shipped smell. Empty (or absent) means the gate runs at its shipped coverage.",
@@ -231,6 +261,44 @@
 			],
 			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
+		},
+		"machineryLaps": {
+			"type": "object",
+			"description": "Whether an emitted epic machine carries the machinery event class, whose laps are counted apart from the repair budget.",
+			"properties": {
+				"onEmit": {
+					"type": "string",
+					"description": "What `lane emit` writes: `off` (today's machine, byte for byte — the shipped default) or `on` (the machinery `LAP` arms beside the existing ones, each task's lap counter seeded, and lap exhaustion parking on `human:machinery-stall` rather than freezing). The machine is fixed at emission, so flipping this moves no lane already on disk.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"parkCause": {
+			"type": "object",
+			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",
+			"properties": {
+				"uncaused": {
+					"type": "string",
+					"description": "What a BLOCKED carrying no `--cause` gets: `record` (the bare park, which routes to a human) or `refuse` (unappended, so every park names why).",
+					"enum": [
+						"record",
+						"refuse"
+					]
+				},
+				"driverRouted": {
+					"type": "string",
+					"description": "What `recipe unpark` does with a park whose cause routes `driver`: `refuse` (exit 12, the park routes to a human) or `clear` (the driver clears it on its own --rationale, recorded on the UNBLOCKED).",
+					"enum": [
+						"refuse",
+						"clear"
+					]
+				}
+			},
+			"additionalProperties": false
 		},
 		"portability": {
 			"type": "object",

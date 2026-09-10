@@ -186,7 +186,7 @@ export const readoutField = (read: ReadoutRead): Field => {
 
 /** What `lanes` reads out of `fabrika lane stale`'s documented answer object. */
 interface StaleSweep {
-	readonly olderThanMinutes: number;
+	readonly olderThanMinutes: number | null;
 	readonly lanes: ReadonlyArray<{
 		readonly key: string;
 		readonly verdict: string;
@@ -277,7 +277,9 @@ export const lanesField = (
 		detail:
 			sweep.lanes.length === 0
 				? "no lanes on disk"
-				: `${sweep.lanes.length} lane(s), none silent past ${sweep.olderThanMinutes}m`,
+				: sweep.olderThanMinutes === null
+					? `${sweep.lanes.length} lane(s), none silent past its own shell budget`
+					: `${sweep.lanes.length} lane(s), none silent past ${sweep.olderThanMinutes}m`,
 		source,
 		asOf,
 	};

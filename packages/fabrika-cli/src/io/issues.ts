@@ -135,9 +135,21 @@ const capped = (): string =>
  * `issueTimeline`, the dedup sweep in `openIssuesWithLabel` — where a short list is a wrong answer
  * rather than a short one.
  */
-const provenList = (token: string, path: string): Api<Attempt<ReadonlyArray<unknown>>> =>
-	Effect.map(pagedWithLinkProof(token, path), (read) =>
-		then(read, (proof) => (proof.exhausted ? ok(proof.entries) : fail(capped()))),
+const provenList = (
+	token: string,
+	path: string,
+	pageLimit?: number,
+): Api<Attempt<ReadonlyArray<unknown>>> =>
+	Effect.map(pagedWithLinkProof(token, path, pageLimit), (read) =>
+		then(read, (proof) =>
+			proof.exhausted
+				? ok(proof.entries)
+				: fail(
+						pageLimit === undefined
+							? capped()
+							: `the read reached its ${pageLimit}-page cap before the terminal page`,
+					),
+		),
 	);
 
 const NOT_ISSUES = "GitHub answered 200 but its body is not a list of issues";
@@ -810,6 +822,34 @@ export const openQueueIssues = (
  */
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	openIssueRecords(`repos/${repo}/issues?state=open`);
+
+/** All issues, including closed and unlabelled partial creates; no search index is involved. */
+export const listAllIssueRecords = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
+	withToken((token) =>
+		Effect.map(
+			provenList(token, `repos/${repo}/issues?state=all&sort=created&direction=asc`, 1_000),
+			(read) =>
+				then(read, (entries) => {
+					const rows: IssueRecord[] = [];
+					for (const entry of entries) {
+						if (
+							!isRecord(entry) ||
+							(typeof entry.body !== "string" && entry.body !== null) ||
+							!Array.isArray(entry.labels) ||
+							(entry.state !== "open" && entry.state !== "closed")
+						) {
+							return fail("the all-issue read contains an incomplete issue record");
+						}
+						const row = toIssueRecord(entry);
+						if (row === null) return fail("the all-issue read contains a malformed issue");
+						if (!row.isPullRequest) rows.push(row);
+					}
+					if (new Set(rows.map((row) => row.number)).size !== rows.length)
+						return fail("the all-issue read repeats an issue across pages");
+					return ok(rows);
+				}),
+		),
+	);
 
 /**
  * Every **open** issue in `repo` carrying `label`, as full records, paged, pull requests filtered

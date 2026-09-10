@@ -12,7 +12,7 @@ import {
 	TOPOLOGY_CYCLE,
 	TOPOLOGY_FOREIGN,
 } from "./codes.ts";
-import {runEmit} from "./emit-verb.ts";
+import {type EmitOptions, runEmit} from "./emit-verb.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const WORKFLOW = ".fabrika/lanes/4300/workflow.json";
@@ -48,6 +48,8 @@ const OPTIONS = {
 	>,
 	// No cap declared — the cap's own arms live in [`concurrency.unit.test.ts`](concurrency.unit.test.ts).
 	cap: {_tag: "Value", value: null, note: "test"} as const,
+	// The axis off — the machinery arms have their own coverage in [`emit.unit.test.ts`](emit.unit.test.ts).
+	machinery: {_tag: "Value", value: {onEmit: "off"}, note: "test"} as const,
 	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 };
 
@@ -172,5 +174,40 @@ describe("lane emit", () => {
 
 	it("keeps the emit refusal seats distinct", () => {
 		expect(new Set([LANE_EXISTS, TOPOLOGY_ABSENT, TOPOLOGY_FOREIGN, TOPOLOGY_CYCLE]).size).toBe(4);
+	});
+});
+
+describe("lane emit — the machinery lap key", () => {
+	const runWith = (machinery: EmitOptions["machinery"], fs = fakeFs({files: {}})) =>
+		Effect.runPromise(
+			Effect.provide(
+				runEmit({...OPTIONS, machinery}),
+				Layer.mergeAll(
+					fs.layer,
+					fakeShell([]).layer,
+					fakeHttp([
+						[ISSUE, epic()],
+						[SUBS, children],
+					]).layer,
+				),
+			),
+		).then((out) => ({out, fs}));
+
+	it("writes the machine with the lap arms when the repo declares the axis on", async () => {
+		const {out, fs} = await runWith({_tag: "Value", value: {onEmit: "on"}, note: "test"});
+
+		expect(out.code).toBe(0);
+		const written = fs.written.get(".fabrika/lanes/4300/workflow.json") ?? "";
+		expect(written).not.toBe(golden());
+		expect(written).toContain("human:machinery-stall");
+		expect(written).toContain("lapsRemaining");
+	});
+
+	it("refuses an unreadable key as UNKNOWN, and writes no machine at all", async () => {
+		const {out, fs} = await runWith({_tag: "Refused", reason: "malformed"});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("machineryLaps");
 	});
 });

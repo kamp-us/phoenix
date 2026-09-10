@@ -9,7 +9,7 @@ import {noEntries, type PickerEntries, programEntries} from "./entries.ts";
 import {processId, programId, programRow, windowId} from "./fixtures.ts";
 import {pickerFrame} from "./frame.ts";
 import {processGone} from "./refusal.ts";
-import {mountPicker, withRefusal} from "./view.ts";
+import {mountPicker, withFilter, withRefusal} from "./view.ts";
 
 const window = windowId("window-1");
 
@@ -45,7 +45,12 @@ describe("picker frame", () => {
 	});
 
 	it("names the active option by id, and marks exactly one option selected", () => {
-		const frame = pickerFrame(window, entries, {cursor: 2, refusal: null, previous: null});
+		const frame = pickerFrame(window, entries, {
+			cursor: 2,
+			refusal: null,
+			previous: null,
+			filter: null,
+		});
 		const options = frame.groups.flatMap((group) => group.options);
 		expect(frame.activeDescendant).toBe("picker-window-1-option-2");
 		expect(options.filter((option) => option.selected).map((option) => option.id)).toEqual([
@@ -82,6 +87,8 @@ describe("picker frame", () => {
 		expect(pickerFrame(window, entries, mountPicker()).announcement).toEqual({
 			role: "status",
 			live: "polite",
+			atomic: true,
+			alternates: null,
 			text: "2 programs, 2 running processes.",
 		});
 		expect(
@@ -120,6 +127,7 @@ describe("picker frame", () => {
 		expect(pickerFrame(window, entries, mountPicker()).keyHelp.map((row) => row.action)).toEqual([
 			"Move between rows",
 			"Jump to the first or last row",
+			"Filter the rows by typing",
 			"Open or attach the highlighted row",
 			"Dismiss the message",
 		]);
@@ -145,6 +153,80 @@ describe("picker frame", () => {
 		// The help still offers the return: the attach handler is where a dead id becomes a refusal.
 		expect(frame.keyHelp.map((row) => row.action)).toContain(
 			"Return to the process this window was showing",
+		);
+	});
+});
+
+/** The filter's own contract (#8450): what it renders, what it counts, and what it announces. */
+describe("picker frame under a filter", () => {
+	const filtered = (text: string) => pickerFrame(window, entries, withFilter(mountPicker(), text));
+
+	it("offers no filter until `/` opens one", () => {
+		expect(pickerFrame(window, entries, mountPicker()).filter).toBeNull();
+		expect(pickerFrame(window, entries, withFilter(mountPicker(), "")).filter).toEqual({
+			role: "combobox",
+			expanded: true,
+			autocomplete: "list",
+			controls: "picker-window-1",
+			id: "picker-window-1-filter",
+			label: "Filter rows by name",
+			placeholder: "Type to narrow",
+			value: "",
+			matches: 4,
+			total: 4,
+		});
+	});
+
+	it("renders only the rows that matched, both sections narrowed together", () => {
+		const frame = filtered("pi");
+		expect(frame.groups.map((group) => group.options.map((option) => option.detail))).toEqual([
+			["pi"],
+			[],
+		]);
+		expect(frame.filter?.matches).toBe(1);
+	});
+
+	it("carries the count as a polite, atomic status message and never as an alert", () => {
+		expect(filtered("pi").announcement).toEqual({
+			role: "status",
+			live: "polite",
+			atomic: true,
+			text: "1 of 4 windows",
+			alternates: ["picker-window-1-status-a", "picker-window-1-status-b"],
+		});
+	});
+
+	it("says so when nothing matched, rather than announcing a count of none", () => {
+		const frame = filtered("zzzz");
+		expect(frame.announcement.text).toBe("No windows match this filter.");
+		expect(frame.announcement.role).toBe("status");
+		expect(frame.activeDescendant).toBeNull();
+		expect(frame.groups.map((group) => group.emptyMessage)).toEqual([
+			"No program matches this filter.",
+			"No running process matches this filter.",
+		]);
+	});
+
+	it("keeps the assertive channel for a refusal even while a filter is on", () => {
+		const refused = pickerFrame(
+			window,
+			entries,
+			withRefusal(withFilter(mountPicker(), "pi"), processGone("p-9")),
+		);
+		expect(refused.announcement).toEqual({
+			role: "alert",
+			live: "assertive",
+			text: 'Process "p-9" is no longer running.',
+		});
+	});
+
+	it("tells the reader `/` is the key, and what Escape does once it is open", () => {
+		expect(pickerFrame(window, entries, mountPicker()).keyHelp).toContainEqual({
+			keys: "/",
+			action: "Filter the rows by typing",
+		});
+		expect(filtered("pi").keyHelp.map((row) => row.action)).toContain(
+			"Close the filter and show every row",
 		);
 	});
 });
