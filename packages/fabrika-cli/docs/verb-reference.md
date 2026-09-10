@@ -100,7 +100,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
 | `build check` | this surface's validators plus every shipped local-tree guard, run in this tree — each guard named in `ran`, or in `skipped` when it refused |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
-| `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head |
+| `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head, beside the PR's own mergeability |
 | `build clear` | the founder's clearance of one extra repair round |
 | `build reap` | which finished harness worktrees — both namings — are provably safe to remove, and which registrations have no tree left at all; a dry run unless `--execute`, journalled per removal, bounded by `--limit` |
 | `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
@@ -115,6 +115,12 @@ cannot disagree about one marker (ADR
 [0276](../../../.decisions/0276-verdict-binds-content-not-only-head.md)). A marker carrying no
 `content:` field falls back to head equality, and a digest this checkout could not derive is
 `Unbindable`, which reads as not-current — a failed derivation never launders a stale verdict.
+
+**Its `mergeability` field is the one fact no gate grades.** `mergeable` / `conflicting` /
+`unknown`, read off the same single-PR GET the head comes from
+([`io/pulls.ts`](../src/io/pulls.ts)), with GitHub's lazily computed `null` kept as `unknown`. A PR
+conflicting against its base is repair work no gate emits a FAIL for, so without this field an
+all-PASS fold over one reads as the proven no-work answer a repair lane routes on.
 
 `build reap` is the bulk counterpart to `build retire`. `retire` targets the trees holding ONE
 number's lane branch and needs a board statement to release them; `reap` sweeps the whole agent

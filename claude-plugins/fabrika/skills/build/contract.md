@@ -2915,7 +2915,7 @@ fabrika build verdicts --pr 8 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```
-{"head": "03135b91", "rows": [
+{"head": "03135b91", "mergeability": "conflicting", "rows": [
    {"gate": "review-code", "polarity": "FAIL", "sha": "03135b91", "current": true,
     "commentId": 512001, "kind": "marker", "body": "review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."},
    {"gate": "native-review", "polarity": "CHANGES_REQUESTED", "sha": null, "current": null,
@@ -2934,6 +2934,15 @@ which is what keeps AC 3's one-door property over the repair path. `capReached` 
 `rounds >= <the cap>`, where the cap is the `CAP_ROUND` in `src/retry-budget.ts` — the package's one
 declared retry budget — raised to the round after the highest one the founder cleared through
 `build clear`; it is computed here so the cap is a field read, not a number remembered.)
+
+**`mergeability` is the fold's third value beside the rows: `mergeable`, `conflicting`, or
+`unknown`.** It is read off the same single-PR GET the head comes from — `mergeable` judged against
+`mergeable_state`, exactly as `ship`'s landing verbs judge it — and GitHub computes that field
+lazily, so a `null` read is `unknown` and never `mergeable`. It exists because a PR conflicting
+against its base is repair work no gate emits a FAIL for: the field is what keeps an all-PASS fold
+over a conflicting PR from reading as the proven no-work answer a repair lane routes on. Every value
+gets its own stderr line, and the `conflicting` one names the base ref. Who clears a conflict is not
+this verb's to say — it reports the state and routes nothing.
 
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
 `honoured` only when four clauses hold: its author is in `.fabrika.jsonc`'s `capClearAuthors` set at
@@ -2979,14 +2988,16 @@ repair effort and burned the cap at twice the real rate. `frozenCriteria` lists
 review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
-comment/review counts. An unreadable page is `11` — never a shorter list.** All content passes
+comment/review counts — a proven answer about the gates, never about the PR's mergeability, which
+is its own field.** An unreadable page is `11` — never a shorter list. All content passes
 the content gate.
 
 **The child arm (`--issue`).** An epic child opens no PR, so the same fold is asked of the
 range-bound comments on the child issue — this is where a lane sent to repair by
 `build claim --resume` reads its findings, through a verb rather than a raw fetch. Each row names the
 `range` it was formed over instead of a `sha`/`current` pair, `kind` is `range-marker`, and there is
-no `head` and no `frozenCriteria`, because neither exists on this surface. A round is one graded
+no `head`, no `mergeability` and no `frozenCriteria`, because none of the three exists on this
+surface — a child opens no PR, so it has nothing to merge and nothing to conflict with. A round is one graded
 **tip** — the range analogue of one graded head, folded through the same counter — so two gates over
 one range are one round. `clearances` is always empty and stderr says why: a grant is recorded
 against a PR's base branch and a child has none, so a child at its cap escalates to the operator
@@ -3011,14 +3022,15 @@ it is named on stderr, never dropped.
 | `build verdicts: give either --pr <n> or --issue <n>, never both and never neither.` | 10 | usage error |
 | `build verdicts: #<n> is a pull request — its verdicts are head-bound; drop --issue and pass --pr.` | 7 | refusal |
 
-**Scope** — one PR: its head, all comments, all reviews. The stderr scope line names the head SHA
-and both counts, so an empty `rows` is auditable as "N comments read, none carried a marker".
+**Scope** — one PR: its head, its mergeability, all comments, all reviews. The stderr scope line
+names the head SHA and both counts, so an empty `rows` is auditable as "N comments read, none
+carried a marker", and the line under it names the mergeability whichever of the three it is.
 
 **Example**
 
 ```
 $ fabrika build verdicts --pr 8
-{"head":"03135b91","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
+{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
 ```
 
 **Grounding**
@@ -3032,6 +3044,9 @@ $ fabrika build verdicts --pr 8
 - A proven-empty fold and an unreadable fold sit on different codes.
 - A founder-cleared round had no representation either enforcement site could read, so it
   could only land as an edit outside the loop; `clearances` is that representation.
+- A conflicting PR folded as an all-PASS, `rounds: 0` answer while `mergeable` read `CONFLICTING` at
+  the same head, and the lane read that as nothing to do; `mergeability` is the fact the fold was
+  missing.
 
 ---
 
