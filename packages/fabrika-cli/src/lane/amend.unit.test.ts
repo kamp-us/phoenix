@@ -6,7 +6,7 @@ import type {LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 
 const links = (...numbers: ReadonlyArray<number>) =>
-	numbers.map((number) => ({number, state: "open" as const, stateReason: null}));
+	numbers.map((number) => ({number, state: "open" as const, stateReason: null, classes: []}));
 
 const bodyOf = (...lines: ReadonlyArray<string>): string =>
 	["## Dependencies", "", ...lines].join("\n");
@@ -96,8 +96,8 @@ describe("judgeAmendment", () => {
 		// The board closed the second child as completed since emission, so its region now BOOTS in
 		// `landed` — a final holding no `WIP` cell, which is the leaf its own recorded log cannot reach.
 		const emitted = emitMachine(900, ONE_PHASE, [
-			{number: 901, state: "open", stateReason: null},
-			{number: 902, state: "closed", stateReason: "completed"},
+			{number: 901, state: "open", stateReason: null, classes: []},
+			{number: 902, state: "closed", stateReason: "completed", classes: []},
 		]);
 		if (emitted._tag !== "Emitted") throw new Error("fixture did not emit");
 		const compiled = compileText(emitted.text);

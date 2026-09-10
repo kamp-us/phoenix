@@ -33,7 +33,7 @@ makes the implementer guess.
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes this repo declares AND carries the labels for, with every `active` campaign's milestone marked `running: p0/p1 or blocker` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
-| `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
+| `triage apply` | apply the whole triaged transition — type, priority, audience, class, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
 | `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts) are mechanical; the verdict is judgment |
 
@@ -1704,6 +1704,7 @@ fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47
 fabrika triage apply 7 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
 fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
 fabrika triage apply 5 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 4
+fabrika triage apply 7 --type feature --priority p2 --ready-for agent --home 47 --class ui
 ```
 
 **Inputs**
@@ -1716,6 +1717,7 @@ fabrika triage apply 5 --type bug --priority p1 --ready-for agent --home 47 --bl
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
 | `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
+| `--class` | enum | no | none | the artifact class its lane routes shells off, stamped as `class:<name>`; **repeatable**, one of `code`, `doc`, `skill`, `ui` |
 | `--blocked-by` | integer | no | none | an issue this one waits on, written as a native `blocked_by` edge; **repeatable**, idempotent, and never a pull request (`21`) |
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
@@ -1793,10 +1795,12 @@ still stamps on every type, because parking an epic for a person is triage's own
 gate never makes.
 
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
-`<ready-for>`, `<home>`, `<blocked-by>` — where `<home>` is the milestone number or the lane label,
-and `<blocked-by>` is the edge set **this run read back**, rendered `#a,#b`. With `--json`, an object
-with those keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as numbers)
-and `readBack`, an object of `{labels, milestone}` observed after the write.
+`<ready-for>`, `<home>`, `<blocked-by>`, `<classes>` — where `<home>` is the milestone number or the
+lane label, `<blocked-by>` is the edge set **this run read back**, rendered `#a,#b`, and `<classes>`
+is the class set this run stamped, rendered `a,b` and empty when none was asked for. With `--json`,
+an object with those keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as
+numbers), `classes` (the stamped stems) and `readBack`, an object of `{labels, milestone}` observed
+after the write.
 
 **`<ready-for>` reports the stamp, not the flag.** On the one run that writes no audience label —
 `--type epic --ready-for agent` — the column is the literal `none` and `--json` carries
@@ -1822,6 +1826,42 @@ re-reads the issue's labels and milestone and asserts the positive shape require
 milestone number equals the flag; **with `--lane`, the milestone is `null`**. It does **not** assert on the
 absence of an imagined failure, and it never reports the requested classification as the landed one.
 
+### `--class` — the producer of the lane's build/review routing
+
+The lane machine reads `context.<task>.classes` and routes its `class:<name>`-guarded arms off it —
+`build:ui` instead of `build`, `review:ui` instead of `review`. Until this flag **nothing in the tree
+wrote that field**: the committed coder template shipped `"classes": []`, `lane open` copied it
+byte-identically, and every class a lane ever carried arrived on an event a head had already raised
+off a diff. So half of the wiring the ui-lane decision record added was unreachable on the ordinary
+path — a rendered-surface lane's *first* build ran in the plain `builder`, which has none of the
+design law loaded, and reached `build:ui` only after a `review-ui` FAIL.
+
+The direction is a founder ruling: **triage writes the class, and the lane reads it at open.** The
+plan-ledger alternative was not taken.
+
+**The vocabulary is closed in code, not declared on the board.** It is `SHIP_CLASS_NAMES` — the same
+partition `review scope` and `ship scope` derive a diff's classes from — so a repo cannot declare a
+class no gate can ever raise. That is the one asymmetry against the other five facets, whose values
+come off `boardVocabulary`. An off-set spelling refuses on **`10`** with the known set printed,
+before any label is written, because a `class:UI` label matches no `class:<name>` arm: the lane
+routes as unclassed and says nothing, which is the same silent miss `lane report --class` refuses at
+its own exit `38`.
+
+**The facet owns `class:*` whatever a run keeps**, so re-triaging without `--class` strips the class
+the issue was carrying. A facet that only added would leave two classes standing and route on
+whichever was read first — the delete this engine exists to make deliberate.
+
+**Both boot verbs read the label, and both refuse an off-set spelling before placement** — `lane
+open` on the issue's own labels, `lane emit` on every live child's, each at its own exit `38` with
+nothing written. The compiler refuses an off-set spelling too, but on *read*, so it is the backstop
+rather than the guard: a document that compiles `Malformed` is refused by every later fold of that
+lane, which bricks it rather than stopping the boot.
+
+**What a `ui` class buys differs by path.** A single-issue lane gets the
+template's own pair, `build:ui` and `review:ui`. An emitted epic child gets `build:ui` and **no**
+`review:ui`: a child opens no pull request, so a rendered-review cell it entered could produce
+nothing, and its rendered review is the epic tail's by construction.
+
 ### The owned facets — what `apply` may remove
 
 Closed input enums fix the *write*. They do not fix the *delete*, and that incident's actual
@@ -1835,6 +1875,7 @@ in the keep set. So the ownership rule is stated here rather than left for an im
 | status | `^status:(needs-triage\|triaged\|needs-info)$` | `status:triaged` |
 | audience | `^ready-for:` | `ready-for:<--ready-for>`, or **none** with `--type epic --ready-for agent` |
 | lane | the two lane labels `triage homes` lists | `<--lane>`, or none when `--home` was given |
+| class | `^class:` | `class:<--class>` for each, or **none** when the flag was not passed |
 | **milestone** | the issue's milestone, whatever it is | `--home`'s number, or **none** when `--lane` was given |
 
 **Every label matching an owned pattern and not in the keep set is removed; every label matching no
@@ -1857,8 +1898,8 @@ implementer adding a facet must re-check that containment.
 
 Before any write, the verb asserts that **the labels this invocation will actually write** exist in
 the repository: `type:<--type>`, `<--priority>`, `status:triaged`, `ready-for:<--ready-for>`, and,
-with `--lane`, the lane label. Five labels, not the whole vocabulary. A missing one **refuses on
-`7`** rather than writing.
+with `--lane`, the lane label, and with `--class`, each class label. Only what this run writes, not
+the whole vocabulary. A missing one **refuses on `7`** rather than writing.
 
 **This is the narrow reading, deliberately.** A single `apply` writes one type, one priority, one
 audience — so checking all six types and all three priorities would refuse a perfectly good
