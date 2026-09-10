@@ -13,6 +13,7 @@ import {type EmitResult, emitMachine} from "./emit.ts";
 import {parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
+import {declaresClosureGuard} from "./reconcile.ts";
 import {routeForCause} from "./report.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -453,6 +454,38 @@ describe("emitMachine", () => {
 		expect(
 			drive(compiled, [...LAND_ALL, ["epic_4300", "PASS"], ["epic_4300", "DONE"]]),
 		).toMatchObject({stateValue: "complete", status: "done"});
+	});
+
+	// The tail declares no `merge:partial` arm, and that is a decision rather than the
+	// omission it looks like: a tail body that does not close its epic is refused where it is
+	// written (`lane assembly-body`), so the merge such an arm would route is one the run cannot
+	// produce. Both polarities are driven here so the absence stays deliberate under a later reader.
+	it("folds the tail's DONE to `shipped` whether or not the merge carried `Part of #N`", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const toShip: ReadonlyArray<readonly [string, string]> = [...LAND_ALL, ["epic_4300", "PASS"]];
+
+		expect(drive(compiled, [...toShip, ["epic_4300", "DONE"]])).toMatchObject({
+			stateValue: "complete",
+			status: "done",
+		});
+
+		const log = driveLog(compiled, toShip);
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, log),
+			"epic_4300",
+			"DONE",
+			AT,
+			null,
+			null,
+			true,
+		);
+		if (applied._tag !== "Applied") throw new Error(applied.reason);
+		expect(deriveStatus(compiled, statesOf(compiled, [...log, applied.entry]))).toMatchObject({
+			stateValue: "complete",
+			status: "done",
+		});
+		expect(declaresClosureGuard(compiled)).toBe(false);
 	});
 
 	it("takes a FAIL at the epic ship back to review, and parks it once the retries are spent", () => {
