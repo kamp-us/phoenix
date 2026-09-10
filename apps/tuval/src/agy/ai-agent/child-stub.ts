@@ -159,7 +159,9 @@ export const agyChildrenStub = Effect.gen(function* () {
 		child: (index: number) =>
 			childAt(index).pipe(
 				Effect.timeoutOrElse({
-					duration: "5 seconds",
+					// Under the 5000ms per-test default this wait has to end early enough to say so:
+					// bounded at the budget itself, the die message below is unreachable (#8940).
+					duration: "2 seconds",
 					orElse: () => Effect.die(new Error(`no child was launched at index ${index}`)),
 				}),
 			),

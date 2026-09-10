@@ -7,6 +7,10 @@
  * asserted separately: the second launch carries `--conversation=<id>`, the phase the window ends on
  * is `ready`, and the stream the window subscribed to is still the same live stream afterwards.
  *
+ * The interleaved second press is not here: it is covered at the claim's own seam
+ * (`stop-claim.unit.test.ts`), because forcing the race through this path needed the run loop's yield
+ * budget cut to a value that starved under CI load (#8940). The *sequential* second press is below.
+ *
  * Limits of the proof: the spawner is a stub, so the signal is recorded rather than delivered and
  * the exit is the test's. What is real is everything above the pipe — `follow`'s fold, the exit
  * watch's own reading of the stop, and `respawn`. The scripted binary beside this file
@@ -14,13 +18,20 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Fiber, Option, Queue, Scheduler, Stream} from "effect";
+import {Cause, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
 import type {AgentEvent, StartError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
 import {init, resultInterrupted, userInput} from "./fixtures.ts";
 
 const CWD = "/tuval/agy-interrupt-respawn";
+
+/**
+ * What every wait in this file is bounded by, and it is strictly under the 5000ms per-test budget the
+ * `unit` project runs on: at the budget itself a starved wait never reaches its own message and
+ * vitest's bare `Test timed out in 5000ms` is all a CI log carries (#8940).
+ */
+const INNER_BOUND = "2 seconds";
 
 /** The conversation id the captured `init` line opens, which is what a relaunch has to carry. */
 const CONVERSATION = "9dcbb5a5-9a5f-4f9c-989b-ede03e790bbf";
@@ -34,7 +45,7 @@ const collectTo = (
 	Effect.gen(function* () {
 		const seen: Array<AgentEvent> = [];
 		while (true) {
-			const next = yield* Queue.take(events).pipe(Effect.orDie, Effect.timeoutOption("5 seconds"));
+			const next = yield* Queue.take(events).pipe(Effect.orDie, Effect.timeoutOption(INNER_BOUND));
 			if (Option.isNone(next)) {
 				assert.fail(`timed out waiting for ${what}; saw ${JSON.stringify(seen)}`);
 			}
@@ -49,7 +60,7 @@ const signalled = (child: StubChild): Effect.Effect<void> =>
 		seen.length === 0 ? Effect.andThen(Effect.sleep("5 millis"), signalled(child)) : Effect.void,
 	).pipe(
 		Effect.timeoutOrElse({
-			duration: "5 seconds",
+			duration: INNER_BOUND,
 			orElse: () => Effect.die(new Error("the stop sent no signal")),
 		}),
 	);
@@ -71,7 +82,7 @@ const writtenTo = (child: StubChild): Effect.Effect<ReadonlyArray<string>> =>
 			: Effect.succeed(lines),
 	).pipe(
 		Effect.timeoutOrElse({
-			duration: "5 seconds",
+			duration: INNER_BOUND,
 			orElse: () => Effect.succeed<ReadonlyArray<string>>([]),
 		}),
 	);
@@ -146,62 +157,6 @@ describe("an agy turn the operator stops", () => {
 				assert.isTrue(
 					after.some(isInterruptedItem),
 					"the cut reply lost its interrupted mark across the relaunch",
-				);
-			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
-		}),
-	);
-
-	/**
-	 * Two stops that interleave, rather than one after the other.
-	 *
-	 * The sequential second press is covered above; this is the one a read-then-write guard lets
-	 * through (#8883). Two forked `interrupt` fibers would otherwise each run their synchronous steps
-	 * straight to the first async boundary and never interleave, so the yield budget is cut to 3: at
-	 * that value the run loop really does suspend one fiber inside the guard — with the read-then-write
-	 * guard in place this test sees two SIGINTs and three launches. Three, not 1 or 2, because a
-	 * budget under 3 starves the fibers entirely and no signal is ever sent.
-	 */
-	it.live("claims the stop once when two presses interleave", () =>
-		Effect.gen(function* () {
-			const children = yield* agyChildrenStub;
-
-			yield* Effect.gen(function* () {
-				const agent = yield* TuvalAiAgent;
-				yield* opened(children);
-				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
-				yield* agent.prompt("something long");
-				yield* collectTo(events, "the turn's prompting", isPrompting);
-
-				const stopping = yield* Effect.forkChild(
-					Effect.all([agent.interrupt, agent.interrupt], {
-						concurrency: "unbounded",
-						discard: true,
-					}).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, 3)),
-				);
-				const first = yield* children.child(0);
-				yield* signalled(first);
-				yield* first.say(userInput);
-				yield* first.say(resultInterrupted);
-				yield* first.exit(1);
-				yield* Effect.flatMap(children.child(1), (child) => child.say(init));
-				yield* Fiber.join(stopping);
-
-				assert.deepStrictEqual(
-					yield* first.signals,
-					["SIGINT"],
-					"an interleaved second press sent its own signal",
-				);
-				const launches = yield* children.launches;
-				assert.strictEqual(
-					launches.length,
-					2,
-					"the interleaved presses relaunched more than once: the child the first stop reopened was torn down again",
-				);
-				assert.include(launches[1] ?? [], `--conversation=${CONVERSATION}`);
-				const after = yield* collectTo(events, "the session back at ready", isReady);
-				assert.isEmpty(
-					after.filter((event) => event.kind === "phase" && event.phase === "gone"),
-					"the second press narrated a session the layer went on to keep",
 				);
 			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
 		}),
