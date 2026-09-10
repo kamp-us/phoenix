@@ -1,6 +1,14 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once, type Scripted} from "../fakes.test-support.ts";
+import {
+	errOut,
+	type FakeFsOptions,
+	fakeFs,
+	fakeShell,
+	okOut,
+	once,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {runReap} from "./reap-verb.ts";
@@ -61,9 +69,18 @@ const GROUND: ReadonlyArray<Scripted> = [
 	[TRUNK, okOut("origin/main\n")],
 ];
 
-const run = (script: ReadonlyArray<Scripted>, execute = false) => {
+const ago = (seconds: number): Date => new Date(Date.now() - seconds * 1000);
+
+/** Every tree in the default fixture is a month cold, so the git facts alone decide its verdict. */
+const QUIET_FS: FakeFsOptions = {
+	directories: [HERE, DEAD, OTHER],
+	mtimes: {[HERE]: ago(2_592_000), [DEAD]: ago(2_592_000), [OTHER]: ago(2_592_000)},
+};
+
+const run = (script: ReadonlyArray<Scripted>, execute = false, fs: FakeFsOptions = QUIET_FS) => {
 	const shell = fakeShell(script as ReadonlyArray<readonly [RegExp, never]>);
-	return Effect.runPromise(Effect.provide(runReap({execute}), shell.layer)).then((out) => ({
+	const layer = Layer.merge(shell.layer, fakeFs(fs).layer);
+	return Effect.runPromise(Effect.provide(runReap({execute}), layer)).then((out) => ({
 		out,
 		calls: shell.calls,
 	}));
@@ -234,6 +251,96 @@ describe("runReap — an unreachable merge base names its remedy when there is o
 		expect(keptReason(out)).toBe(
 			"whether its work landed is UNKNOWN: it shares no merge base with origin/main: git merge-base exited 1",
 		);
+	});
+});
+
+describe("runReap — a live seat is read off the tree, not off git", () => {
+	/** The incident shape: a seat's tree, clean, unlocked, HEAD on the trunk, touched minutes ago. */
+	const seat: ReadonlyArray<Scripted> = [
+		...GROUND,
+		[TREES, trees(PRIMARY, {path: DEAD})],
+		[STATUS, okOut("")],
+		[ANCESTOR, okOut("")],
+	];
+
+	it("keeps it, and never asks git to remove it", async () => {
+		const {out, calls} = await run(seat, true, {
+			directories: [HERE, DEAD],
+			mtimes: {[HERE]: ago(2_592_000), [DEAD]: ago(2_400)},
+		});
+
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "reaped", removed: []});
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+		expect(out.stderr.join("\n")).toMatch(
+			new RegExp(`KEEP ${DEAD} \\(detached\\) — it reads live`),
+		);
+	});
+
+	it("names the signal that held, so the plan says why the seat survived", async () => {
+		const {out} = await run(seat, false, {
+			directories: [HERE, DEAD],
+			mtimes: {[HERE]: ago(2_592_000), [DEAD]: ago(2_400)},
+		});
+
+		expect(JSON.parse(out.stdout).kept[0].reason).toMatch(
+			/directory was last written 40m ago, inside the 1d quiet window/,
+		);
+	});
+
+	it("keeps it when its directory cannot be stat'd at all — UNKNOWN never licenses a removal", async () => {
+		const {out, calls} = await run(seat, true, {directories: [HERE], unprobeable: [DEAD]});
+
+		expect(JSON.parse(out.stdout).kept).toMatchObject([{path: DEAD}]);
+		expect(out.stderr.join("\n")).toMatch(/whether it is still in use is UNKNOWN/);
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+
+	it("keeps it when the platform reports no modification time", async () => {
+		const {out} = await run(seat, false, {directories: [HERE, DEAD]});
+
+		expect(JSON.parse(out.stdout).kept[0].reason).toMatch(/no modification time/);
+	});
+
+	it("removes the same tree once it has gone cold", async () => {
+		const {out} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD})],
+				[STATUS, okOut("")],
+				[ANCESTOR, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
+			true,
+		);
+
+		expect(JSON.parse(out.stdout).removed).toMatchObject([{path: DEAD, license: "ancestor"}]);
+	});
+
+	it("one tree's failed liveness read costs its own row, not the sweep", async () => {
+		const {out} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD}, {path: OTHER})],
+				[STATUS, okOut("")],
+				[ANCESTOR, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY, {path: DEAD})],
+			],
+			true,
+			{
+				directories: [HERE, OTHER],
+				unprobeable: [DEAD],
+				mtimes: {[HERE]: ago(2_592_000), [OTHER]: ago(2_592_000)},
+			},
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "reaped",
+			removed: [{path: OTHER}],
+			kept: [{path: DEAD}],
+		});
 	});
 });
 
