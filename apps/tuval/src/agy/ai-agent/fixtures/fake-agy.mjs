@@ -22,6 +22,9 @@
  *   ledger already holds, and a fake that did so would hide the defect #8695 was about.
  * - SIGINT emits a well-formed terminal `result` with `status: "ERROR"` and `error: "interrupted"`,
  *   then exits 1. There is no `INTERRUPTED` *status*, because the real binary never emits one either.
+ * - A prompt beginning `tools:` replays a captured **multi-call** planner step as the binary
+ *   serialises one on the live wire: a `tool` step per call, each with its own `step_index` and its
+ *   own `tool_info.output` (`CAPTURED_CALLS`).
  *
  * Every invocation appends its argv to `$AGY_FAKE_LOG` as one JSON line, which is how a test
  * asserts a composed argv against the thing that actually received it.
@@ -141,8 +144,46 @@ process.on("SIGINT", () => {
 	process.exit(1);
 });
 
+/**
+ * The two calls of one multi-call planner step, as the real binary serialises them on the live wire:
+ * **one `tool` step each, with its own `step_index` and its own `tool_info.output`** — measured at
+ * v1.1.28 against the same turn `transcript-fixtures.ts`' capture comes from, where the *on-disk*
+ * log instead puts both calls on one `PLANNER_RESPONSE` and pairs them with their outcomes by
+ * `step_index` (`transcript.ts`). A fake that merged the two outputs into one step would hide #8689.
+ */
+const CAPTURED_CALLS = [
+	{path: "/Users/founder/agyprobe/one.txt", output: "1: alpha\n2: beta\n3: gamma\n4: \n"},
+	{
+		path: "/Users/founder/agyprobe/two.txt",
+		output: "1: bir\n2: iki\n3: uc\n4: dort\n5: bes\n6: \n",
+	},
+];
+
+const runCall = async (index, call) => {
+	const info = {name: "view_file", parameters: {AbsolutePath: call.path}};
+	const step = {
+		conversation_id: conversationId,
+		step_index: index,
+		step_type: "tool",
+		tool_name: "view_file",
+	};
+	write({event: "step_update", step_update: {...step, state: "ACTIVE", tool_info: info}});
+	await sleep(10);
+	write({
+		event: "step_update",
+		step_update: {
+			...step,
+			state: "DONE",
+			duration_seconds: 0.01,
+			tool_info: {...info, output: call.output},
+		},
+	});
+};
+
 const runTurn = async (content) => {
 	await sleep(TURN_DELAY_MS);
+	// `tools:` asks for the captured multi-call step; anything else is the plain reply turn.
+	if (content.startsWith("tools:")) return await runToolTurn();
 	const index = state.steps;
 	state = {...state, steps: index + 2};
 	write({
@@ -190,6 +231,52 @@ const runTurn = async (content) => {
 			conversation_id: conversationId,
 			status: "SUCCESS",
 			response: `you said ${content}`,
+			num_turns: state.turns,
+			usage: cumulative(),
+		},
+	});
+};
+
+const runToolTurn = async () => {
+	const index = state.steps;
+	state = {...state, steps: index + 4};
+	write({
+		event: "step_update",
+		step_update: {
+			conversation_id: conversationId,
+			step_index: index,
+			state: "DONE",
+			step_type: "user_input",
+		},
+	});
+	await runCall(index + 1, CAPTURED_CALLS[0]);
+	await runCall(index + 2, CAPTURED_CALLS[1]);
+	const reply = "one.txt: 4 lines, two.txt: 6 lines";
+	write({
+		event: "step_update",
+		step_update: {
+			conversation_id: conversationId,
+			step_index: index + 3,
+			state: "DONE",
+			step_type: "agent_response",
+			text_delta: reply,
+			usage: {
+				input_tokens: 7,
+				output_tokens: 3,
+				thinking_tokens: 0,
+				cache_read_tokens: 0,
+				total_tokens: 10,
+			},
+		},
+	});
+	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
+	saveState();
+	write({
+		event: "result",
+		result: {
+			conversation_id: conversationId,
+			status: "SUCCESS",
+			response: reply,
 			num_turns: state.turns,
 			usage: cumulative(),
 		},

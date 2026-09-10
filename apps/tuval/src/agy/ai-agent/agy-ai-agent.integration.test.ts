@@ -183,6 +183,31 @@ describe("the agy layer over a scripted binary", () => {
 		expect(assistant.at(-1)).toBe("you said list the files");
 	});
 
+	it("carries each call of a multi-call step its own result, over a real pipe", async () => {
+		const collectedItems = await drive((collected) =>
+			Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: "/repo"});
+				yield* agent.prompt("tools: read both files");
+				yield* until(collected, turnEnded);
+				return [...collected];
+			}),
+		);
+		// A call crosses twice, `running` then settled; the settled pair is what a reader ends up on.
+		const tools = collectedItems.flatMap((event) =>
+			event.kind === "item" && event.item.kind === "tool" && event.item.status === "ok"
+				? [event.item]
+				: [],
+		);
+		// Two rows with two distinct results: the live wire serialises a batch one `tool` step per
+		// call, so a row borrowing its neighbour's output is a mapping defect, not a wire ambiguity.
+		expect(tools.map((item) => item.name)).toEqual(["view_file", "view_file"]);
+		expect(tools[0]?.result.text).toContain("1: alpha");
+		expect(tools[0]?.result.text).not.toContain("1: bir");
+		expect(tools[1]?.result.text).toContain("1: bir");
+		expect(tools[1]?.result.text).not.toContain("1: alpha");
+	});
+
 	it("refuses a malformed turn before it reaches stdin", async () => {
 		const refusal = await drive(() =>
 			Effect.gen(function* () {
