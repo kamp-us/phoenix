@@ -3,7 +3,8 @@
  * a head the merge queue can take.
  *
  * Nothing else in this package touches trunk after the first cut. `lane assembly` fetches `origin`
- * and cuts `epic/<n>` off `origin/HEAD` once; a resume fetches nothing. So the branch drifts behind
+ * and cuts `epic/<n>` off `origin/HEAD` once; a resume fetches only to judge whether that branch is
+ * already contained in the trunk, and merges nothing. So the branch drifts behind
  * trunk with nothing to notice, the queue ejects the tail, and `lane integrate` then reds on what is
  * really staleness. `lane push` names "fetch and re-merge" as the remedy for its exit 29 and no verb
  * performed it — this is that verb.
