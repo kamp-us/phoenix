@@ -107,7 +107,7 @@ describe("lane transition — refuse without append", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	it("refuses an event outside the operator's six the same way", async () => {
+	it("refuses an event outside the operator's set the same way", async () => {
 		const fs = freshLane();
 
 		const out = await run(fs, "MERGE");

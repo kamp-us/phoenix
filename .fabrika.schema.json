@@ -262,6 +262,21 @@
 			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
 		},
+		"machineryLaps": {
+			"type": "object",
+			"description": "Whether an emitted epic machine carries the machinery event class, whose laps are counted apart from the repair budget.",
+			"properties": {
+				"onEmit": {
+					"type": "string",
+					"description": "What `lane emit` writes: `off` (today's machine, byte for byte — the shipped default) or `on` (the machinery `LAP` arms beside the existing ones, each task's lap counter seeded, and lap exhaustion parking on `human:machinery-stall` rather than freezing). The machine is fixed at emission, so flipping this moves no lane already on disk.",
+					"enum": [
+						"off",
+						"on"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
 		"parkCause": {
 			"type": "object",
 			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",

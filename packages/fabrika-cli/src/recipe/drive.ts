@@ -1,6 +1,6 @@
 /**
  * The chore drive's two closed tables: which recipe verb a chore state applies, and which one of the
- * machine's six events a run's exit records.
+ * machine's operator events a run's exit records.
  *
  * This is `relay.ts`'s sibling one level up. `relay.ts` re-seats another *verb's* exit on this
  * group's table; this module re-seats this group's exit on the *machine's* event vocabulary — the

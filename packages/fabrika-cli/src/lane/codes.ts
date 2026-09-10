@@ -57,7 +57,7 @@ export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the
- * task's current state (tea's `NoCellError`), the event is outside the operator's six, the task is
+ * task's current state (tea's `NoCellError`), the event is outside the operator's set, the task is
  * not in the active phase, or the workflow is already done. A proven refusal — the loud surface
  * a silently event-swallowing state library never gives its reader.
  */

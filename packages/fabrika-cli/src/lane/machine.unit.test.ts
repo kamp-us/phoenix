@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {classifyPark, isPark} from "../recipe/parks.ts";
+import {MACHINERY_LAP_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	choreWorkflow,
@@ -18,6 +19,7 @@ import {
 	LANDED_EVENT,
 	LANDED_STATE,
 	type LaneMsg,
+	MACHINERY_EVENT,
 	OPERATOR_EVENTS,
 	type TaskState,
 	topology,
@@ -129,8 +131,8 @@ const cellTable = (lane: CompiledLane, taskId: string): string => {
 		for (const event of Object.keys(cells)) {
 			for (const classes of [[] as ReadonlyArray<string>, ["ui"]]) {
 				for (const retries of [0, 2]) {
-					// One "spent" axis drives both counters, so the 2/2 rows pin the fallthrough of a
-					// FAIL arm and of a wait arm alike without doubling the table again.
+					// One "spent" axis drives all three counters, so the 2/2 rows pin the fallthrough of a
+					// FAIL arm, a wait arm and a lap arm alike without tripling the table.
 					const from: TaskState = {
 						type: state,
 						retries,
@@ -139,12 +141,14 @@ const cellTable = (lane: CompiledLane, taskId: string): string => {
 						classes: [],
 						waits: retries === 0 ? 0 : WAIT_BUDGET,
 						maxWaits: WAIT_BUDGET,
+						laps: retries === 0 ? 0 : MACHINERY_LAP_BUDGET,
+						maxLaps: MACHINERY_LAP_BUDGET,
 						was: "review",
 					};
 					const [next] = defined(cells[event])(from, {type: event, classes});
 					const carried = classes.length === 0 ? "-" : classes.join(",");
 					rows.push(
-						`${state}\t${event}\t${carried}\t${retries}/2\t-> ${next.type}\t${next.retries}/2`,
+						`${state}\t${event}\t${carried}\t${retries}/2\t-> ${next.type}\t${next.retries}/2\t${next.laps}/${MACHINERY_LAP_BUDGET}`,
 					);
 				}
 			}
@@ -188,6 +192,8 @@ describe("the compiler — structural recognition", () => {
 			classes: [],
 			waits: 0,
 			maxWaits: WAIT_BUDGET,
+			laps: 0,
+			maxLaps: MACHINERY_LAP_BUDGET,
 		});
 		// `cancelled` is the compiler's own final on every task, so it sits beside the document's two
 		// and in neither of the two derived sets: a cancellation did not trip, and it has no door out.
@@ -279,6 +285,7 @@ describe("the compiler — structural recognition", () => {
 			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states.ship).toEqual([
+			MACHINERY_EVENT,
 			"DONE",
 			"WIP",
 			"BLOCKED",
@@ -288,6 +295,7 @@ describe("the compiler — structural recognition", () => {
 			LANDED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states["ship:queued"]).toEqual([
+			MACHINERY_EVENT,
 			"DONE",
 			"BLOCKED",
 			"WIP",
@@ -384,6 +392,8 @@ describe("the compiler — structural recognition", () => {
 			classes: ["ui"],
 			waits: 0,
 			maxWaits: WAIT_BUDGET,
+			laps: 0,
+			maxLaps: MACHINERY_LAP_BUDGET,
 		});
 	});
 
@@ -401,12 +411,14 @@ describe("the compiler — structural recognition", () => {
 			classes: [],
 			waits: 0,
 			maxWaits: WAIT_BUDGET,
+			laps: 0,
+			maxLaps: MACHINERY_LAP_BUDGET,
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
 	});
 
-	it("holds the chore template to the same six events as every other lane", () => {
+	it("holds the chore template to the same operator events as every other lane", () => {
 		const summary = topology(compiled(choreWorkflow()));
 		const listened = new Set(Object.values(defined(summary.tasks.park_sweep).states).flat());
 		// Both injected cells are the compiler's on every lane, so neither is an event this document
@@ -447,7 +459,7 @@ describe("the compiler — structural recognition", () => {
 });
 
 describe("the compiler — refusals", () => {
-	it("refuses an event outside the operator's six, naming them", () => {
+	it("refuses an event outside the operator's set, naming them", () => {
 		const workflow = twoPhaseWorkflow();
 		stateNode(workflow, "task_a", "doing").on["TASK_A.MERGE"] = "checking";
 

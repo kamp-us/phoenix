@@ -23,11 +23,16 @@
  * produce the same machine bytes. A child's state is part of the input: a closed child boots its
  * region in a final state, so re-emitting a partly-built epic yields a machine that can still
  * terminate.
+ *
+ * The machinery lap axis rides one boolean, off by default (`machineryLaps.onEmit`): on, each task
+ * seeds a lap counter and the collision and queue states take a `LAP` arm; off, every byte is what
+ * it was before the axis existed. The machine is fixed at emission, so the flag reaches no lane
+ * already on disk.
  */
 import {type Ref, readTopology} from "../build/dependencies.ts";
 import {type DeclaredLine, findCycle} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
-import {RETRY_BUDGET} from "../retry-budget.ts";
+import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 
 export type EmitResult =
 	| {
@@ -59,6 +64,19 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 };
 
 /**
+ * The machinery arm, whose two targets are the whole of the lap axis in a document: go round again
+ * while laps remain, else park on `human:machinery-stall`.
+ *
+ * The park is a plain state with an `UNBLOCKED` door rather than a final, because a spent lap is not
+ * a verdict against the work — nothing about the artifact is wrong, the pipeline failed to carry it
+ * — so freezing the task would tell a reader the opposite of what happened.
+ */
+const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
+	{target, guard: "lapsRemaining", actions: "incrementLaps"},
+	{target: "human:machinery-stall"},
+];
+
+/**
  * One child's region — the local loop, namespaced to the child's task id.
  *
  * It ends at `landed`: the child's commits are on the epic's shared branch and nothing was pushed,
@@ -88,7 +106,11 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * `human:replay-stall` rather than `frozen` because a replay that will not settle is a collision
  * between two children a person reads, not a child that failed its review.
  */
-const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<string, unknown> => ({
+const region = (
+	ns: string,
+	initial: "queued" | "landed" | "frozen",
+	machinery: boolean,
+): Record<string, unknown> => ({
 	initial,
 	states: {
 		queued: {on: {[`${ns}.WIP`]: "build", [`${ns}.BLOCKED`]: "blocked"}},
@@ -115,10 +137,12 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "frozen"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		landed: {type: "final"},
 		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
@@ -149,7 +173,7 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
  * `final` + `UNBLOCKED` door `frozen` does: a twice-failed epic review is a park a human resumes,
  * not the end of the run.
  */
-const epicRegion = (ns: string): Record<string, unknown> => ({
+const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
 	states: {
 		review: {
@@ -171,6 +195,7 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:epic-review"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
 			},
 		},
 		"ship:queued": {
@@ -185,11 +210,13 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:epic-review"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:queue-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		shipped: {type: "final"},
 		"human:epic-review": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
@@ -197,6 +224,16 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 });
 
 const taskId = (child: number): string => `issue_${child}`;
+
+/**
+ * One task's seeded context. The lap pair is appended rather than interleaved, so an emission with
+ * the axis off is the object it always was — key order included, which is what makes the byte
+ * comparison a test can hold.
+ */
+const taskContext = (machinery: boolean): Record<string, unknown> =>
+	machinery
+		? {retries: 0, maxRetries: RETRY_BUDGET, laps: 0, maxLaps: MACHINERY_LAP_BUDGET}
+		: {retries: 0, maxRetries: RETRY_BUDGET};
 
 /** The tail phase's name and its one task id. Neither can collide with a `phase<N>`/`issue_<n>`. */
 const EPIC_PHASE = "epic";
@@ -210,6 +247,7 @@ export const emitMachine = (
 	epic: number,
 	body: string,
 	children: ReadonlyArray<SubIssueLink>,
+	machinery = false,
 ): EmitResult => {
 	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
 	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
@@ -277,14 +315,14 @@ export const emitMachine = (
 	const states: Record<string, unknown> = {};
 	for (const [index, phase] of order.entries()) {
 		const members = ascending(phases.get(phase) ?? []);
-		for (const child of members) context[taskId(child)] = {retries: 0, maxRetries: RETRY_BUDGET};
+		for (const child of members) context[taskId(child)] = taskContext(machinery);
 		const next = order[index + 1];
 		states[phaseName(phase)] = {
 			type: "parallel",
 			states: Object.fromEntries(
 				members.map((child) => [
 					taskId(child),
-					region(taskId(child).toUpperCase(), initialOf(child)),
+					region(taskId(child).toUpperCase(), initialOf(child), machinery),
 				]),
 			),
 			onDone: [
@@ -293,10 +331,10 @@ export const emitMachine = (
 			],
 		};
 	}
-	context[epicTaskId(epic)] = {retries: 0, maxRetries: RETRY_BUDGET};
+	context[epicTaskId(epic)] = taskContext(machinery);
 	states[EPIC_PHASE] = {
 		type: "parallel",
-		states: {[epicTaskId(epic)]: epicRegion(epicTaskId(epic).toUpperCase())},
+		states: {[epicTaskId(epic)]: epicRegion(epicTaskId(epic).toUpperCase(), machinery)},
 		onDone: [{target: "complete", guard: "noErrors"}, {target: "tripped"}],
 	};
 	states.complete = {type: "final"};
