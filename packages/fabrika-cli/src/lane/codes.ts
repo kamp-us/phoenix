@@ -546,3 +546,20 @@ export const TAIL_NOT_CLOSING = 58;
  * The remedy is the driver's `lane refresh`, named on the refusal beside every missing verb.
  */
 export const BRIEFED_VERB_ABSENT = 59;
+
+/**
+ * An issue-keyed boot was pointed at an issue the board says already had a lane — refused with
+ * nothing written.
+ *
+ * A lane's ledger is the whole of its state and it is gitignored, so deleting the directory and
+ * booting again mints a lane at a full repair budget with no record anywhere that a round was
+ * granted. That is how one frozen lane's spent budget came back, and a successor driver cannot tell
+ * the rebuilt ledger from a first boot.
+ *
+ * Its own seat rather than {@link LANE_EXISTS}'s, which says the directory is in the way and the
+ * remedy is to drive it; here nothing is in the way and that is the problem. Rather than
+ * {@link SHAPE_MISMATCH}'s or {@link LANE_IS_CHILD}'s too, whose remedies are a different verb and a
+ * different lane: the remedy here is neither, because a spent repair budget comes back only through
+ * a recorded round grant.
+ */
+export const PRIOR_LANE = 60;

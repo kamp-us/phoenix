@@ -22,6 +22,14 @@
  * nothing. That refusal is {@link LANE_IS_CHILD} and names the parent's lane as the one to
  * drive. Epic wins the precedence, so a sub-epic still routes to `lane emit`.
  *
+ * **A lane the board says already ran is refused too, with {@link PRIOR_LANE}.** The ledger is a
+ * lane's whole state and `.fabrika/` is gitignored, so removing the directory and booting again
+ * restores a spent repair budget and leaves no record that a round was granted — the laundering this
+ * refusal exists to stop, and the reason a spent budget comes back only through a recorded
+ * clearance. The fact is a caller-passed [`prior-lane.ts`](prior-lane.ts) read, asked only when the
+ * directory is absent, so an existing lane still answers {@link LANE_EXISTS} and a driver's tolerated
+ * resume is unchanged.
+ *
  * The repo's declared `laneConcurrencyCap` is the last gate before the write, and an issue lane's
  * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat: a lane under this
  * root whose log folds to `active` AND whose issue carries a live `lane claim`, plus every lane no
@@ -32,11 +40,12 @@ import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
-import {LANE_IS_CHILD, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
+import {LANE_IS_CHILD, LANE_UNREADABLE, PRIOR_LANE, SHAPE_MISMATCH} from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
+import type {PriorLaneReader} from "./prior-lane.ts";
 import {placementRefusal} from "./refusals.ts";
-import {type LaneRef, placeMachine} from "./store.ts";
+import {type LaneRef, placeMachine, probeLane} from "./store.ts";
 
 const VERB = "fabrika lane open";
 
@@ -47,6 +56,13 @@ export interface OpenOptions<R = never> extends LaneRef {
 	readonly issue: number | null;
 	/** The board reader, or `null` for the offline boot a caller gets by passing none. */
 	readonly expectation: ExpectationReader<R> | null;
+	/**
+	 * Whether the board says this issue already had a lane, or `null` for the same offline boot.
+	 *
+	 * Asked for an issue key only, and only when no lane directory is there: a chore lane drives no
+	 * issue, and a lane already on disk is a resume its own refusal already names.
+	 */
+	readonly priorLane: PriorLaneReader<R> | null;
 	/**
 	 * The repo's declared `laneConcurrencyCap`, read off `.fabrika.jsonc` by the adapter.
 	 *
@@ -102,6 +118,27 @@ export const runOpen = <R = never>(
 						? `${VERB}: #${issue} hangs under a parent issue, whose lane already carries it as a task — the board carried the edge and no number that reads, so find the parent and drive its lane instead. A child gets no lane of its own. Nothing was written.`
 						: `${VERB}: #${issue} hangs under #${parent}, whose lane already carries it as a task — drive that lane (\`fabrika lane status ${parent}\`), never a second ledger for the child. Nothing was written.`,
 				);
+			}
+		}
+		if (issue !== null && options.priorLane !== null) {
+			// Only over an absent directory: a lane already there is the resume `lane open`'s own
+			// `LANE_EXISTS` names, and answering this code instead would stop a driver mid-drive.
+			const presence = yield* probeLane(options);
+			if (presence._tag === "Absent") {
+				const read = yield* options.priorLane(issue);
+				if (read._tag === "Unknown") {
+					return refuse(
+						LANE_UNREADABLE,
+						`${VERB}: cannot establish whether #${issue} already had a lane: ${read.reason} — refusing to boot over UNKNOWN. Nothing was written.`,
+					);
+				}
+				if (read._tag === "Prior") {
+					const pulls = read.pulls.map((pull) => `#${pull}`).join(", ");
+					return refuse(
+						PRIOR_LANE,
+						`${VERB}: #${issue} already had a lane — the board hangs ${read.pulls.length === 1 ? "pull request" : "pull requests"} ${pulls} off it, which only a driven lane opens, and the ledger that drove them is not under ${options.root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there; a spent budget comes back only through a granted round recorded on the board — \`build clear ${read.pulls[0]}\` on the lane's pull request, or \`lane clear\` on a lane that has none — never a retire and re-open. Nothing was written.`,
+					);
+				}
 			}
 		}
 		// Last, so a permanent defect — the wrong template for this issue, a child that gets no lane —

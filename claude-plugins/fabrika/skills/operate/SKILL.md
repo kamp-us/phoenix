@@ -192,10 +192,25 @@ lane on disk is never re-emitted over, so `lane emit` answers `14` and names the
 the lane directory, then re-run it.
 `lane migrate --check` is what finds those lanes; see its `46` below.
 
+**That retire is the wrong-template case and nothing else.** It is the one retire this skill
+sanctions, and it is safe because the lane it removes was booted on the wrong machine and
+has driven nothing — no builder, no pull request, no spent budget. **Retiring a `frozen` lane's
+directory to give it its retries back is not a driver's move.** The ledger is a lane's whole state
+and `.fabrika/` is gitignored, so the removal destroys the record of the spend and the boot that
+follows mints a full budget nothing granted — laundering, silent and indistinguishable from a first
+boot. A spent budget comes back through a granted round recorded on the board and no other way:
+`build clear` on the lane's pull request, `lane clear` on a lane that has none. `lane open` now
+refuses the re-boot itself at `60`.
+
+**Exit `60` out of `lane open` says the board shows this issue already had a lane** — it names every
+pull request that proves it. Nothing here is bootable: end `STOPPED` naming the code, and drive the
+pull request the refusal names, or record the clearance that reopens the frozen lane's door. Never
+retire a directory to get past it.
+
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
-the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess. End
-`STOPPED` naming the code.
+the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess; `60` is
+the issue's prior lane above. End `STOPPED` naming the code.
 
 A lane `lane emit` booted is an epic run, and an epic run is **one branch and one PR**: its children
 open none of their own and the run publishes once. That is structural, not a label
