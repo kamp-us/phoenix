@@ -194,22 +194,24 @@ describe("restoring a saved session", () => {
 		expect(restore(saved).permissions).toEqual(saved.permissions);
 	});
 
-	it("marks the assistant turn the restart cut, in state and in the tail", () => {
+	// Two rows for one cut turn: the reply carries the flag the fold label is read off, the prompt
+	// carries the marker the resend is anchored on (#8699).
+	it("marks the assistant turn the restart cut, and anchors the resend on the prompt", () => {
 		const cut: AiAgentSessionState = {
 			...saved,
 			transcript: {...saved.transcript, items: [userItem("i0"), assistantItem("i1")]},
 		};
 		const restored = restore(cut);
-		expect(restored.interrupted).toBe("i1");
+		expect(restored.interrupted).toBe("i0");
 		expect(restored.transcript.items[1]).toEqual({...assistantItem("i1"), interrupted: true});
 	});
 
-	it("marks nothing when the cut turn had no assistant item yet", () => {
+	it("has nothing to flag when the cut turn had no assistant item yet, and still offers it back", () => {
 		const firstTurn: AiAgentSessionState = {
 			...saved,
 			transcript: {...saved.transcript, items: [userItem("i0")]},
 		};
-		expect(restore(firstTurn).interrupted).toBeNull();
+		expect(restore(firstTurn).interrupted).toBe("i0");
 		expect(restore(firstTurn).transcript.items).toEqual([userItem("i0")]);
 	});
 
@@ -247,7 +249,7 @@ describe("restoring a saved session", () => {
 		});
 		expect(restored.transcript.items).toHaveLength(2);
 		// The cut-short marking is the other half of a `prompting` checkpoint and is untouched by it.
-		expect(restored.interrupted).toBe("i1");
+		expect(restored.interrupted).toBe(promptItemId("k1"));
 		expect(restored.transcript.items[1]).toEqual({...assistantItem("i1"), interrupted: true});
 	});
 });
