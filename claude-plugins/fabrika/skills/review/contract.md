@@ -597,9 +597,14 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 
 **A `--wait` call must be invoked with a caller-side timeout above `--budget-seconds`.** The budget
 bounds the verb, not the process around it: a shell timeout below the budget kills the CLI mid-poll,
-no `settle` token is printed, and the caller has an `UNKNOWN` instead of an answer. Against the `600`
-default, use `1800` seconds — headroom for the `gh` reads, and a practical value rather than a
-guaranteed CLI maximum, so a raised budget needs a raised caller deadline too.
+no `settle` token is printed, and the caller has an `UNKNOWN` instead of an answer. In an agent shell
+that deadline is the Bash tool's `timeout`, whose ceiling is `600000` ms unless the environment sets
+`BASH_MAX_TIMEOUT_MS` above it — a larger request is silently clamped to the ceiling rather than
+refused, so no deadline past it can be asked for. That leaves the `600` default budget with no
+headroom on either side: pair `timeout: 600000` with `--budget-seconds 480` instead, which keeps the
+deadline strictly above the budget with room for the `gh` reads. A practical pairing, not a
+guaranteed CLI maximum, and a budget raised past the ceiling needs `BASH_MAX_TIMEOUT_MS` raised
+with it.
 
 **Output** — machine channel. Under `--wait`, a first line
 `settle\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`; without it that
