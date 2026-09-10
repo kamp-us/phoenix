@@ -17,6 +17,7 @@ import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./con
 import {Checkpoints} from "./durability/Checkpoints.ts";
 import {restore} from "./durability/restore.ts";
 import {fileStores} from "./durability/stores.ts";
+import {Features} from "./feature-flags.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {compile} from "./ports/compile.ts";
 import type {Graph} from "./ports/graph.ts";
@@ -45,6 +46,10 @@ export const projectConfig = (project: string): string =>
 
 export type Kernel =
 	| Registry
+	// The merged feature flags. A program row's layer reads what the config layers resolved through
+	// this and nothing else: the row is built while a config module is being evaluated, which is
+	// before the merge exists (#8595).
+	| Features
 	// The session-list spell's own requirement, filled from the built kernel below: the union it
 	// answers builds each backend's layer under the context a spawn of that row would run under.
 	| AiAgentSessionList
@@ -81,6 +86,11 @@ export interface StartOptions {
 	 * Absent for a caller that has no config layers to offer, which is every caller but `boot`.
 	 */
 	readonly keys?: ReadonlyArray<BindingSource>;
+	/**
+	 * The merged feature flags this kernel runs under. Absent for a caller with no config layers to
+	 * merge — every caller but `boot` — which is what `featuresDefault` means.
+	 */
+	readonly features?: TuvalFeatures;
 }
 
 export interface Started {
@@ -103,6 +113,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	graph,
 	stateDir,
 	keys,
+	features,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.layer(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -125,7 +136,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		),
 	);
 	const built = yield* Layer.build(
-		Layer.mergeAll(ProcessTablePort.layer, commands).pipe(
+		Layer.mergeAll(ProcessTablePort.layer, Features.layer(features), commands).pipe(
 			Layer.provideMerge(Processes.layer),
 			Layer.provideMerge(Checkpoints.layer(fileStores(stateDir))),
 			Layer.provideMerge(Layer.succeedContext(registry)),
@@ -231,7 +242,13 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
 	const programs = config.programs as ReadonlyArray<AnyProgram>;
 	const stateDir = projectDir(options.project);
-	const started = yield* start({programs, graph: config.graph, stateDir, keys: config.keys});
+	const started = yield* start({
+		programs,
+		graph: config.graph,
+		stateDir,
+		keys: config.keys,
+		features: config.features,
+	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),
 	);

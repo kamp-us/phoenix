@@ -24,6 +24,7 @@ import {ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
 import {checkpointFields} from "../ai-agent/restore/index.ts";
 import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
 import {projectConfig} from "../boot.ts";
+import {ClientId, type Scope as SpellScope, WorkspaceId} from "../commands/spell.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {Processes} from "../process/Processes.ts";
@@ -55,6 +56,12 @@ const tempProject = (): string => {
 
 const CWD_UNDER_TEST = tempProject();
 
+/** The scope a row built without a substitute layer names; nothing here reaches a kernel through it. */
+const PROBE_SCOPE = {
+	workspace: WorkspaceId.make("default"),
+	client: ClientId.make("pi-program-test"),
+} satisfies SpellScope;
+
 const script = {
 	sessionId: "pi-program-test",
 	history: [],
@@ -80,7 +87,14 @@ describe("the pi-session program row", () => {
 		assert.strictEqual(declared.id, ProgramId.make(PI_SESSION_PROGRAM));
 		assert.strictEqual(declared.identity.program, PI_SESSION_PROGRAM);
 		assert.deepStrictEqual(declared.placement, {host: "local"});
-		assert.deepStrictEqual(declared.capabilities, []);
+		// The row claims `process-control` because it now really does spawn: its three kernel tools
+		// reach the kernel through `KernelBridge` (#8720), the same claim the Claude and Codex rows make.
+		assert.deepStrictEqual(declared.capabilities, [
+			{
+				family: "process-control",
+				detail: "spawns, sends to and reads other processes through the three kernel tools",
+			},
+		]);
 		assert.deepStrictEqual(declared.renderer, PI_CHAT_WINDOW_REF);
 		assert.isFunction(declared.resume, "a restored Pi session has no way back without a resume");
 	});
@@ -116,7 +130,7 @@ describe("the pi-session program row", () => {
 		const forwarded: Pick<AgentSessionHostOptions, "streamPartialText"> = pi;
 		assert.strictEqual(forwarded.streamPartialText, true);
 		assert.strictEqual(
-			piSessionProgram({cwd: tempProject(), pi}).id,
+			piSessionProgram({cwd: tempProject(), pi, scope: PROBE_SCOPE}).id,
 			ProgramId.make(PI_SESSION_PROGRAM),
 		);
 	});

@@ -82,11 +82,23 @@ export const readThread = Effect.fn("Codex.readThread")(function* (
 	return thread;
 });
 
+// A stored paginated history Codex has not projected yet answers thread/read with zero turns and
+// exhausted paging cursors, so nothing in the read-only protocol separates it from a session that
+// really is empty. Only the legacy loader's empty answer is evidence of emptiness; the thread preview
+// is evidence neither way. See reports/2026-09-09-codex-history-8464.md.
+const certifiesEmptiness = (thread: Thread) => thread.historyMode === "legacy";
+
 export const readHistory = Effect.fn("Codex.history")(function* (
 	connection: CodexConnection,
 	id: string,
 ) {
 	const thread = yield* readThread(connection, id);
+	if (thread.turns.length === 0 && !certifiesEmptiness(thread))
+		return yield* protocolError(
+			`Codex returned no turns for session ${id} under history mode ${
+				thread.historyMode ?? "none reported"
+			}; this read cannot tell an empty session from history the store has not projected`,
+		);
 	return yield* Effect.try({
 		try: () =>
 			thread.turns.flatMap((turn) =>

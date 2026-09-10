@@ -1,6 +1,6 @@
 /*
- * The inspector panel's own layout, and nothing else. Every value is a role token the shell already
- * declares (`../../shell/ui/tokens.css`); no token is added here (#7884, #8190).
+ * The inspector panel's own layout, and nothing else. Every value is a `@kampus/design` role token;
+ * no token is added here (#7884, #8190).
  */
 
 /* A `fieldset` ships a browser border and padding; the panel's own frame is the inspector Card's. */

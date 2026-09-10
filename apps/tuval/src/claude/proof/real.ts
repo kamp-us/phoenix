@@ -48,7 +48,13 @@ export default {
 				client: ClientId.make("claude-real-cli-proof"),
 			},
 		}),
-		piSessionProgram({cwd: root}),
+		piSessionProgram({
+			cwd: root,
+			scope: {
+				workspace: WorkspaceId.make("default"),
+				client: ClientId.make("claude-real-cli-proof"),
+			},
+		}),
 	],
 	graph: {nodes: [shellGraphNode]},
 } satisfies TuvalConfigInput;

@@ -58,6 +58,12 @@ import {
 	statusFrame,
 	zoomedWindow,
 } from "./frame.ts";
+import {
+	INITIAL_INPUT_MODALITY,
+	INPUT_MODALITY_ATTRIBUTE,
+	type InputModality,
+	inputModalityHandlers,
+} from "./input-modality.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
 import {focusedWindowOf, PaletteHost} from "./PaletteHost.tsx";
@@ -110,6 +116,13 @@ export interface DeskProps {
 	readonly call?: PageAttachment["call"];
 	readonly registry?: RegistryDescription | undefined;
 	readonly commandsConnected?: boolean | undefined;
+	/**
+	 * The operator's `windowTitles` flag (`../../features.ts`, #8721), as the desk's two halves of it
+	 * read it: a window titled by its process's `title@1` line, and the process id under the
+	 * inspector's heading. Off — the default — leaves both exactly as they were, and the resolver
+	 * that builds the mounts is handed the same flag on the page (`../../page/AttachedDesk.tsx`).
+	 */
+	readonly windowTitles?: boolean;
 }
 
 export function Desk({
@@ -126,9 +139,12 @@ export function Desk({
 	call,
 	registry,
 	commandsConnected = true,
+	windowTitles = false,
 }: DeskProps): ReactElement {
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
+	const [modality, setModality] = useState<InputModality>(INITIAL_INPUT_MODALITY);
+	const modalityHandlers = useMemo(() => inputModalityHandlers(setModality), []);
 	const seq = useRef(0);
 	const desk = useRef<HTMLDivElement>(null);
 
@@ -326,6 +342,11 @@ export function Desk({
 			// prefix — the acknowledgement for `<c-b>` carries it, so the mark lands with the answer
 			// rather than with the next broadcast (#8274).
 			{...(state.prefix.armed ? {[PREFIX_ARMED_ATTRIBUTE]: "true"} : {})}
+			// Which input the operator last used, so the ring rule in `./tokens.css` can paint on a Tab
+			// and stay off a click — a text field matches `:focus-visible` either way (#8786). The pair
+			// below maintains it and routes nothing; the desk's one key router is the listener above.
+			{...{[INPUT_MODALITY_ATTRIBUTE]: modality}}
+			{...modalityHandlers}
 		>
 			<div className="tuval-desk-body">
 				<ForwardedKeyProvider value={forwarded}>
@@ -354,7 +375,13 @@ export function Desk({
 						)}
 					</ErrorBoundary>
 				</ForwardedKeyProvider>
-				{inspector === null ? null : <DeskInspector region={inspector} resetKeys={[inspecting]} />}
+				{inspector === null ? null : (
+					<DeskInspector
+						region={inspector}
+						resetKeys={[inspecting]}
+						processId={windowTitles ? (snapshot.focused?.processId ?? null) : null}
+					/>
+				)}
 			</div>
 			{commandLineOpen ? (
 				<CommandLine

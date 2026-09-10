@@ -29,23 +29,17 @@ const proof = Command.make(
 			Flag.withDescription("Port for the page (default: a free one)"),
 			Flag.withDefault(0),
 		),
-		strictPort: Flag.boolean("strict-port").pipe(
-			Flag.withDescription(
-				"Bind --page-port exactly or fail the start, instead of falling back to the next free port",
-			),
-			Flag.withDefault(false),
-		),
 	},
-	Effect.fn(function* ({pagePort, strictPort}) {
+	Effect.fn(function* ({pagePort}) {
 		const vertical = yield* bootChattedVertical({prompts: [PROMPT_1, PROMPT_2]});
 		const transport = yield* serveDesk({
 			kernel: vertical.kernel,
 			port: 0,
 			table: defaultPrefixTable,
 		});
-		const page = yield* servePage({root: appRoot, transport, port: pagePort, strictPort}).pipe(
-			Effect.orDie,
-		);
+		// A named `--page-port` binds exactly that port on every loopback address or refuses the start
+		// (ADR 0370), which is the guarantee the screenshot origin this harness prints needs (#7992).
+		const page = yield* servePage({root: appRoot, transport, port: pagePort}).pipe(Effect.orDie);
 		yield* Console.log(`pi-vertical proof: project ${vertical.project}`);
 		yield* Console.log(
 			`pi-vertical proof: process ${vertical.agent.id}, ${vertical.replies()} reply(ies) on the tail`,

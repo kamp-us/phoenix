@@ -1,14 +1,42 @@
 import {describe, it} from "@effect/vitest";
-import {Deferred, Effect, Exit, Fiber, Stream} from "effect";
+import {Deferred, Effect, Exit, Fiber, Option, Queue, Stream} from "effect";
 import {expect} from "vitest";
 import {foldEvent} from "../ai-agent/core/fold.ts";
 import {initialState} from "../ai-agent/core/state.ts";
 import {Mode} from "../ai-agent/ports/index.ts";
-import {TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
-import {itemMessage, modelRows, onCodex, opened, thread, turn, turnMessage} from "./fixtures.ts";
+import {type AgentEvent, TransportError, type TuvalAiAgentApi} from "../ai-agent/service/index.ts";
+import {
+	fixtureTurns,
+	itemMessage,
+	modelRows,
+	onCodex,
+	opened,
+	storedThread,
+	thread,
+	turn,
+	turnMessage,
+} from "./fixtures.ts";
 
 const take = (agent: TuvalAiAgentApi, count: number) =>
 	agent.events.pipe(Stream.take(count), Stream.runCollect);
+
+const isReady = (event: AgentEvent): boolean => event.kind === "phase" && event.phase === "ready";
+
+/** Every event up to and including the first one `found` accepts, off one subscription. */
+const collectTo = (
+	events: Queue.Dequeue<AgentEvent, unknown>,
+	what: string,
+	found: (event: AgentEvent) => boolean,
+) =>
+	Effect.gen(function* () {
+		const seen: Array<AgentEvent> = [];
+		while (true) {
+			const next = yield* Queue.take(events).pipe(Effect.orDie, Effect.timeoutOption("5 seconds"));
+			if (Option.isNone(next)) return yield* Effect.die(`timed out waiting for ${what}`);
+			seen.push(next.value);
+			if (found(next.value)) return seen;
+		}
+	});
 const start = (agent: TuvalAiAgentApi) =>
 	agent.start({cwd: thread.cwd}).pipe(Effect.andThen(take(agent, 6)));
 const approval = {
@@ -406,6 +434,175 @@ describe("Codex implements TuvalAiAgent", () => {
 		),
 	);
 
+	it.effect.each([
+		{shape: "default-selected paginated (001)", id: "session-1"},
+		{shape: "explicit paginated (003)", id: "session-3"},
+	])("refuses the unprojected $shape fixture rather than reporting it empty", ({id}) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				storedThread(fake, {
+					...thread,
+					id,
+					historyMode: "paginated",
+					preview: "fixture user 1",
+					turns: [],
+				});
+				const failure = yield* Effect.flip(
+					agent.sessionTranscript({cwd: thread.cwd, sessionId: id, before: null, limit: 10}),
+				);
+				expect(failure).toMatchObject({
+					reason: "store-unreadable",
+					sessionId: id,
+					detail: expect.stringContaining("cannot tell an empty session from history"),
+				});
+				expect(failure.detail).toContain("paginated");
+				expect(fake.calls.map((call) => call.method)).toEqual([
+					"thread/list",
+					"thread/list",
+					"thread/read",
+				]);
+				expect(fake.state).toEqual({opened: 1, closed: 1});
+				expect(fake.replies).toEqual([]);
+			}),
+		),
+	);
+
+	it.effect.each([
+		{mode: "paginated with a blank preview", patch: {historyMode: "paginated", preview: ""}},
+		{mode: "no reported history mode", patch: {preview: "fixture user 1"}},
+		{mode: "an unrecognized history mode", patch: {historyMode: "transcriptV2"}},
+	])("cannot certify an empty history read under $mode", ({mode, patch}) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const {historyMode: _reported, ...modeless} = thread;
+				storedThread(fake, {...modeless, ...patch, turns: []});
+				expect(
+					yield* Effect.flip(
+						agent.sessionTranscript({
+							cwd: thread.cwd,
+							sessionId: thread.id,
+							before: null,
+							limit: 10,
+						}),
+					),
+				).toMatchObject({
+					reason: "store-unreadable",
+					sessionId: thread.id,
+					detail: expect.stringContaining(
+						mode === "no reported history mode" ? "none reported" : "cannot tell",
+					),
+				});
+				expect(fake.calls.some((call) => call.method === "thread/resume")).toBe(false);
+				expect(fake.state).toEqual({opened: 1, closed: 1});
+			}),
+		),
+	);
+
+	it.effect("keeps the known-fresh active session's empty page, which reads no store", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				yield* start(agent);
+				expect(yield* agent.page(null, 10)).toEqual({items: [], hasMore: false});
+				expect(fake.calls.some((call) => call.method === "thread/read")).toBe(false);
+				yield* fake.push(turnMessage("started"));
+				yield* take(agent, 1);
+				storedThread(fake, {...thread, historyMode: "paginated", turns: []});
+				expect(yield* Effect.flip(agent.page(null, 10))).toMatchObject({
+					reason: "store-unreadable",
+					detail: expect.stringContaining("cannot tell an empty session from history"),
+				});
+				expect(fake.calls.some((call) => call.method === "turn/start")).toBe(false);
+			}),
+		),
+	);
+
+	it.effect("refuses an explicit resume whose stored paginated history reads empty", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				storedThread(fake, {...thread, historyMode: "paginated", turns: []});
+				expect(
+					yield* Effect.flip(
+						agent.start({
+							cwd: thread.cwd,
+							resume: {sessionId: thread.id, holdsTranscript: false},
+						}),
+					),
+				).toMatchObject({
+					reason: "transport",
+					detail: expect.stringContaining("cannot tell an empty session from history"),
+				});
+				expect(fake.calls.some((call) => call.method === "turn/start")).toBe(false);
+			}),
+		),
+	);
+
+	it.effect.each([
+		{
+			label: "legacy",
+			mode: "legacy",
+			ids: ["item-1", "item-2", "item-3", "item-4"] as const,
+		},
+		{
+			label: "projected paginated",
+			mode: "paginated",
+			ids: ["user-1", "assistant-1", "user-2", "assistant-2"] as const,
+		},
+	])("reads the four $label fixture messages oldest first, a whole turn at a time", ({mode, ids}) =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				storedThread(fake, {...thread, historyMode: mode, turns: fixtureTurns(ids)});
+				const query = {cwd: thread.cwd, sessionId: thread.id, before: null, limit: 1};
+				const newest = yield* agent.sessionTranscript(query);
+				expect(newest).toMatchObject({
+					items: [
+						{id: ids[2], text: "fixture user 2", timestamp: 4000},
+						{id: ids[3], text: "fixture assistant 2", timestamp: 4000},
+					],
+					hasMore: true,
+				});
+				expect(yield* agent.sessionTranscript({...query, before: ids[2]})).toMatchObject({
+					items: [
+						{id: ids[0], text: "fixture user 1", timestamp: 3000},
+						{id: ids[1], text: "fixture assistant 1", timestamp: 3000},
+					],
+					hasMore: false,
+				});
+				expect(yield* agent.sessionTranscript({...query, limit: 10})).toMatchObject({
+					items: ids.map((id) => ({id})),
+					hasMore: false,
+				});
+				expect(fake.calls.some((call) => call.method === "thread/resume")).toBe(false);
+				expect(fake.state.opened).toBe(fake.state.closed);
+			}),
+		),
+	);
+
+	it.effect("keeps unsupported and malformed history reads distinct from an uncertain empty", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const query = {cwd: thread.cwd, sessionId: thread.id, before: null, limit: 10};
+				storedThread(fake, {...thread, turns: [{...turn("completed"), items: [{type: 23}]}]});
+				expect(yield* Effect.flip(agent.sessionTranscript(query))).toMatchObject({
+					reason: "store-unreadable",
+					detail: expect.stringContaining("SchemaError"),
+				});
+				fake.handlers.set("thread/read", () =>
+					Effect.fail(
+						new TransportError({
+							reason: "refused",
+							detail: "thread/items/list is not supported yet",
+						}),
+					),
+				);
+				expect(yield* Effect.flip(agent.sessionTranscript(query))).toMatchObject({
+					reason: "store-unreadable",
+					detail: expect.stringContaining("not supported yet"),
+				});
+				expect(fake.state.opened).toBe(fake.state.closed);
+			}),
+		),
+	);
+
 	it.effect("publishes one complete usage report at the end of the turn", () =>
 		onCodex((agent, fake) =>
 			Effect.gen(function* () {
@@ -605,6 +802,40 @@ describe("Codex implements TuvalAiAgent", () => {
 					current: "ultra",
 					available: ["ultra"],
 				});
+			}),
+		),
+	);
+
+	/**
+	 * The per-turn `result` this layer owes beside its turn-end phase (#8724).
+	 *
+	 * One subscription for the whole turn, unlike the takes above: the tracker behind
+	 * `withTurnResult` is per subscription, so a turn read across two of them has no bracket to
+	 * close. That is the shape the host runs in — one `runForEach` over `events` per connection.
+	 */
+	it.live("owes one result per finished turn, ahead of the phase that closes it", () =>
+		onCodex((agent, fake) =>
+			Effect.gen(function* () {
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* agent.start({cwd: thread.cwd});
+				const opening = yield* collectTo(events, "the opened session's ready", isReady);
+				expect(opening.filter((event) => event.kind === "result")).toEqual([]);
+
+				yield* agent.prompt("hello");
+				yield* fake.push(
+					itemMessage("completed", {type: "agentMessage", id: "reply-1", text: "Hi"}),
+				);
+				yield* fake.push(turnMessage("completed"));
+
+				const turn = yield* collectTo(events, "the turn's ready", isReady);
+				const results = turn.filter((event) => event.kind === "result");
+				expect(results).toMatchObject([
+					{
+						kind: "result",
+						result: {text: "Hi", items: [{kind: "assistant", text: "Hi"}], ok: true},
+					},
+				]);
+				expect(turn.indexOf(results[0]!)).toBe(turn.length - 2);
 			}),
 		),
 	);

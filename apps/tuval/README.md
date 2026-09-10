@@ -24,6 +24,7 @@ pnpm test             # both tiers (vitest)
 pnpm test:unit        # the unit tier
 pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
+pnpm proof:board      # the process board in a real browser, on fixture rows — see "Paint proofs"
 pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
 pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
 pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
@@ -47,6 +48,13 @@ be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
 tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
 kernel or agent session, so the default page proves paint and keyboard only. Pass `--port <n>`
 when the default is taken.
+
+`pnpm proof:board` serves `src/shell/board/proof/`: the process board over five fixture rows —
+an agent with both generic ports, its child, a grandchild that publishes neither, a demo counter
+and a stopping shell — nested three deep, so the tile rhythm, the nesting and where a long status
+line wraps are visible somewhere a jsdom test cannot look. It is the page the design gate captures
+as the `tuval-board` surface. The rows are a still life: a board that spawned a process on a timer
+would capture differently on every run, and what the entry animation *does* is the unit tier's.
 
 The same server's `/session-refusal` fixture mounts the production read-only transcript with a
 missing-folder row beside a refused initial read, using the page's stylesheet entry. Both keep
@@ -111,14 +119,17 @@ tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: transport on 127.0.0.1:58319
-tuval: desk at http://127.0.0.1:5173/
+tuval: desk at http://localhost:5173/ — 127.0.0.1 and [::1]
 tuval: running — Ctrl-C stops and checkpoints
 count 1
 count 2
 ```
 
 Those are two ports on purpose — the socket and the page bind separately — and the transport admits
-the page's origin as it starts, so the browser's attach goes through (#7560).
+the page's origin as it starts, so the browser's attach goes through (#7560). The desk answers
+`localhost` on both loopback addresses, so it cannot be shadowed by another program holding the same
+port on the family it did not bind; a `--page-port` either family has taken refuses the start and
+names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-both-loopback-families.md)).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
@@ -580,6 +591,25 @@ renderer, the picker for an empty window, a placeholder for a gone process. The 
 marked twice over — a heavier border, and a glyph plus `aria-current` in its title row — because no
 state here may be carried by colour alone.
 
+**A window's title is its process's own line.** `windowTitle` (`src/shell/ui/window-title.ts`) reads
+the newest value the process published on its generic `title@1` out-port, latched by the kernel and
+carried on the process row, and renders it as-is: a Claude session reads
+`claude-session · Opus 5 · phoenix` because the AI-agent program published that string, not because
+the shell composed it — the shell reads nothing AI-specific (ruling R8.1 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715)). The AI-agent program composes it as
+`program · model · cwd` (`src/ai-agent/self-report.ts`, ruling R3.1), leaving out any segment it
+cannot fill — a session that has not heard its model yet reads `claude-session · phoenix`. The
+program segment is the row's `identity.program`, which defaults to the row id, so it is the id and
+not a display name: nothing on a row carries a shorter one, and `label` (`src/registry/program.ts`)
+is the picker's name and is not read here
+([#8722](https://github.com/kamp-us/phoenix/issues/8722) narrowed it there deliberately). A program
+re-emitting `title@1` mid-turn moves the title with no remount, a process that published no title is
+named by its program, and the empty and gone windows keep the strings they have. The process id
+moved to the desk inspector's
+heading (ruling R3.1). All of it ships behind the default-off `windowTitles` flag
+([#8721](https://github.com/kamp-us/phoenix/issues/8721)); off, every window is `process <uuid>`
+again and the inspector carries no id.
+
 There is one **application-level** keyboard listener, on the document, and it is the only thing that
 dispatches `keys.press`. Two elements read their own keys and neither is a second shell listener:
 the command line's input, and each `Separator`, whose arrow-key resizing the library attaches per
@@ -729,10 +759,12 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. Three backends fill it today: `PiAiAgent.layer`,
-`CodexAiAgent.layer`, and `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`). Claude is a
-`Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
-the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
+`layer`, `cwd` and the identity. Four backends fill it today: `PiAiAgent.layer`,
+`CodexAiAgent.layer`, `ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) and
+`AgyAiAgent.layer` (`src/agy/ai-agent/AgyAiAgent.ts`). The first three are a
+`Layer<TuvalAiAgent, never, KernelBridge>` — never-failing, asking only for the kernel-tools bridge
+the row provides; agy reaches no kernel tool, so its layer asks for nothing
+(`src/agy/program.ts`). The `claude-session` row that wires it into the config
 graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
@@ -840,14 +872,30 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 
 ## The Pi AI agent layer
 
-`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
-requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
-building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
-one loopback server and one client, and closing that scope closes the client, the server and every
-session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
-plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
-type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
-no event, no method's answer and no log line.
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
+`Layer<TuvalAiAgent, never, KernelBridge | Features>`, never-failing, asking for two of Tuval's own
+services and no Pi type in either channel. `KernelBridge` is what the row's three kernel tools call
+through, provided by the row from its own scope the way the Claude and Codex rows provide it (ruling
+R9.1 on [#8715](https://github.com/kamp-us/phoenix/issues/8715)); `Features` is the merged flag
+record the row's spawner hands over
+([#8595](https://github.com/kamp-us/phoenix/issues/8595)). Founder ruling 4
+([#7570](https://github.com/kamp-us/phoenix/issues/7570)) is what puts the runtime inside the layer,
+and it required nothing at all until those two landed; what the ruling guards is unchanged, since
+both are Tuval services. Building it inside the process's scope stands up Pi's model runtime, the
+`PiSessionHost` over it, one loopback server and one client, and closing that scope closes the
+client, the server and every session exactly once. A process therefore holds no Pi value of its own
+— `PiAiAgentOptions` carries plain strings, and `agentDir` is the only path it usually sets. Nothing
+on that surface is a Pi type, and the per-launch token is unwrapped once, into the transport
+factory's closure, and reaches no event, no method's answer and no log line.
+
+**The three kernel tools.** `spawn`, `send` and `read` reach a Pi session as plain `customTools` on
+`createAgentSession`, at those bare names — a third adapter over the one `KernelBridge`, where
+Claude's is an in-process MCP server and Codex's an HTTP one (`src/pi/tools.ts`,
+[#8720](https://github.com/kamp-us/phoenix/issues/8720)). They ship behind the default-off
+`piKernelTools` flag; off, the host passes no `customTools` key and opens exactly the session it
+opened before. Pi has no error flag on a tool result, so a bridge refusal is a rejected `execute`,
+which is what the agent loop renders as the model's tool error. The `pi-subagents` extension and its
+own flag are untouched by any of it.
 
 `start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
 `start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped
@@ -877,9 +925,10 @@ through a user's config module (`desk.ts`) with `ScriptedAiAgent.layer` where th
 and `pi-session` beside it on Pi's own faux provider. It calls no model API and spends nothing, so
 `pnpm test:integration` runs it and so does CI. Five cases: the picker opening a Claude chat under
 the shell with a tool row that runs and settles, one permission card answered and one mode switched;
-Pi and Claude side by side with process-table rows that differ only by program id and state summary;
-a restart that brings the transcript back with the cut turn interrupted; a dropped socket re-attached;
-and a child spawned through the three kernel tools, prompted with `send` and read back with `read`.
+Pi and Claude side by side with process-table rows that differ only by program id, state summary and
+self-report; a restart that brings the transcript back with the cut turn interrupted; a dropped
+socket re-attached; and a child spawned through the three kernel tools, prompted with `send` and
+read back with `read`.
 
 `pnpm proof:claude-real` is the real-CLI variant, and it is **local only — the founder's own run, on
 their own Claude Code login, spending real tokens.** No workflow reaches it and none may: it boots

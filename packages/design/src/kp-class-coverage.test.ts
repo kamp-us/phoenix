@@ -28,10 +28,7 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const UNSTYLED_HOOKS: Readonly<Record<string, string>> = {
 	"kp-card": "Card's naming hook over Surface, which carries every rule the card renders with.",
 	"kp-edited-indicator": "Marker for consumers to target; the indicator's own styling is Tag's.",
-	"kp-agent-chat__delivery": "Hook on the delivery Select; the control's styling is Manti's.",
 	"kp-agent-chat__error": "Hook on the error Alert; the styling is Alert's own.",
-	"kp-agent-chat__setting-select--model":
-		"Modifier hook beside the styled `kp-agent-chat__setting-select` base.",
 };
 
 const walk = (dir: string): ReadonlyArray<string> =>

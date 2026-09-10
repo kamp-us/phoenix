@@ -16,8 +16,8 @@ import {
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
-import type {TranscriptItem, TranscriptPayload} from "../ports/index.ts";
-import {INTERRUPT_ERROR, PROMPT_ERROR} from "./failures.ts";
+import {Mode, type ModelRef, type TranscriptItem, type TranscriptPayload} from "../ports/index.ts";
+import {INTERRUPT_ERROR, PROMPT_ERROR, START_ERROR} from "./failures.ts";
 import {foldEvent, foldItem, upsertItem, type WindowLimits} from "./fold.ts";
 import type {SendOutcome} from "./sends.ts";
 import {type AiAgentSessionState, initialState} from "./state.ts";
@@ -357,5 +357,73 @@ describe("folding the account a layer reports", () => {
 		const start: AiAgentSessionState = {...initialState("/repo"), phase: "prompting"};
 		const folded = foldEvent(start, {kind: "account", account}, limits);
 		expect({...folded, account: null}).toEqual(start);
+	});
+});
+
+/**
+ * #8634: the catalogs belong to the session they were read off, so both routes to `gone` end them.
+ * The layer's own teardown clear reaches only a session torn down in this process, and these two
+ * are the lifetimes it does not reach.
+ */
+describe("folding a session's end over its catalogs", () => {
+	const limits: WindowLimits = {};
+	const opus: ModelRef = {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"};
+	const sonnet: ModelRef = {provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"};
+	const offering: AiAgentSessionState = {
+		...initialState("/repo"),
+		phase: "ready",
+		modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},
+		models: {current: opus, available: [opus, sonnet]},
+		commands: [{name: "compact", description: "Summarise the conversation."}],
+		thinking: {current: "medium", available: ["low", "medium", "high"]},
+	};
+
+	const empties = (state: AiAgentSessionState) => {
+		expect(state.models.available).toEqual([]);
+		expect(state.thinking.available).toEqual([]);
+		expect(state.modes.available).toEqual([]);
+		expect(state.commands).toEqual([]);
+	};
+
+	// The pick is the operator's, not the session's, and the next open re-validates it (#7981).
+	const keepsThePicks = (state: AiAgentSessionState) => {
+		expect(state.models.current).toEqual(opus);
+		expect(state.thinking.current).toBe("medium");
+		expect(state.modes.current).toBe(Mode.make("plan"));
+	};
+
+	it("empties every offered catalog on the phase a layer narrates", () => {
+		const gone = foldEvent(offering, {kind: "phase", phase: "gone"}, limits);
+		expect(gone.phase).toBe("gone");
+		empties(gone);
+		keepsThePicks(gone);
+	});
+
+	// The rebuilt layer's route: the resume names a session the backend no longer holds, so no
+	// `start` ran and nothing announced the clear.
+	it("empties them on a refused resume folded from reconnecting", () => {
+		const reconnecting: AiAgentSessionState = {...offering, phase: "reconnecting"};
+		const failure = {
+			tag: START_ERROR,
+			reason: "session-not-found",
+			detail: "the backend does not hold session-1",
+		};
+		const gone = foldEvent(reconnecting, {kind: "failure", failure}, limits);
+		expect(gone.phase).toBe("gone");
+		empties(gone);
+		keepsThePicks(gone);
+	});
+
+	// A reconnect that fails on anything else is a transport worth retrying, so its catalogs are
+	// still the ones this session will re-announce.
+	it("leaves them alone on a reconnect failure that lands back on idle", () => {
+		const reconnecting: AiAgentSessionState = {...offering, phase: "reconnecting"};
+		const failure = {tag: START_ERROR, reason: null, detail: "the socket closed"};
+		const idle = foldEvent(reconnecting, {kind: "failure", failure}, limits);
+		expect(idle.phase).toBe("idle");
+		expect(idle.models.available).toEqual([opus, sonnet]);
+		expect(idle.thinking.available).toEqual(["low", "medium", "high"]);
+		expect(idle.modes.available).toHaveLength(2);
+		expect(idle.commands).toHaveLength(1);
 	});
 });

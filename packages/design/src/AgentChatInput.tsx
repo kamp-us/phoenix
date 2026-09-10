@@ -5,7 +5,6 @@ import {AgentChatError} from "./agent-chat/ErrorAlert";
 import {AgentChatExtensionDialog} from "./agent-chat/ExtensionDialog";
 import {AgentChatField} from "./agent-chat/Field";
 import {AgentChatFrame} from "./agent-chat/Frame";
-import {AgentChatHint} from "./agent-chat/Hint";
 import {AgentChatInspector} from "./agent-chat/Inspector";
 import {AgentChatOverflow} from "./agent-chat/Overflow";
 import {AgentChatPickers} from "./agent-chat/Pickers";
@@ -28,7 +27,6 @@ function AgentChatInputBody() {
 					<AgentChatToolbar />
 				</AgentChatForm>
 
-				<AgentChatHint />
 				<AgentChatError />
 			</AgentChatSurface>
 
@@ -55,7 +53,6 @@ AgentChatInput.Toolbar = AgentChatToolbar;
 AgentChatInput.Attach = AgentChatAttach;
 AgentChatInput.Settings = AgentChatSettings;
 AgentChatInput.Pickers = AgentChatPickers;
-AgentChatInput.Hint = AgentChatHint;
 AgentChatInput.Error = AgentChatError;
 AgentChatInput.Control = AgentChatControl;
 AgentChatInput.PrimaryActions = AgentChatPrimaryActions;

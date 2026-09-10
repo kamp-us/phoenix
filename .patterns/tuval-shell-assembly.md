@@ -101,6 +101,14 @@ the seam has to work this way: a config module is imported inside `boot`, before
 so the only thing it can name is the `scope` its kernel tools call under — the bridge itself has to
 arrive at spawn (#7958).
 
+`pi-session` is the second instance, over `Features` — the merged feature flags as a kernel service
+(`src/feature-flags.ts`). Same forcing constraint: `loadLayeredConfig` merges the layers *after*
+every config module has been evaluated, so a row built inside one is a closure that cannot read the
+merge. Before the flags rode this seam, `PiAiAgent`'s host read `featuresDefault` directly and a
+config layer stating a flag moved the browser and nothing on the node side (#8595). Any node-side
+flag reads it through `Features`; `featuresDefault` is what a caller with no config layers to merge
+gets, which is every `start` caller but `boot`.
+
 ## Which Cmds the kernel runs, and which the surface does
 
 The shell core emits eight Cmds, and the type says which side runs each: `KernelCmd` and `PageCmd`

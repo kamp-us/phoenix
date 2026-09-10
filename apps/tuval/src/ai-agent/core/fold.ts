@@ -27,6 +27,8 @@ import {INTERRUPT_ERROR, START_ERROR} from "./failures.ts";
 import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} from "./sends.ts";
 import {
 	type AiAgentSessionState,
+	closeOfferedCatalogs,
+	cutReplyAfterItem,
 	emptyOmission,
 	lastAssistantId,
 	settleTurn,
@@ -268,7 +270,11 @@ export const foldEvent = (
 ): AiAgentSessionState => {
 	switch (event.kind) {
 		case "item":
-			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
+			return {
+				...state,
+				interrupted: cutReplyAfterItem(state, event.item),
+				transcript: foldItem(state.transcript, event.item, limits),
+			};
 		// The phase line is also where a send in flight learns it crossed, and it takes two events
 		// to say so: the layer narrating the backend *starting* a turn, and then that turn ending.
 		//
@@ -293,7 +299,10 @@ export const foldEvent = (
 		// `gone` is the other half, and it is the terminal arm: a session that ended under a send in
 		// flight can never answer for it, so `settleEndedSession` makes every one of them
 		// recoverable. Refusals reach the send by their own arms below, and they arrive before this
-		// line does — both rows push the turn's failure ahead of the phase that closes it.
+		// line does — both rows push the turn's failure ahead of the phase that closes it. The
+		// catalogs end with it too: `closeOfferedCatalogs` is the core holding the `gone` invariant
+		// itself rather than depending on a layer announcement that reaches one lifetime of three
+		// (#8634).
 		case "phase": {
 			if (coreOwned(event.phase)) return state;
 			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
@@ -302,7 +311,7 @@ export const foldEvent = (
 			const turn = event.phase === "prompting" ? state : settleTurn(state);
 			if (event.phase === "gone") {
 				return {
-					...turn,
+					...closeOfferedCatalogs(turn),
 					phase: event.phase,
 					interruption: interruptionAfter(turn, event.phase),
 					sends: settleEndedSession(turn.sends, null),
@@ -371,6 +380,12 @@ export const foldEvent = (
 				sends: settleAccepted(state.sends),
 				failure: null,
 			};
+		// Replaced, never accumulated: one slot holds the last finished turn, which is what the
+		// `result` port publishes and what a `read` through the kernel answers with (#8724). It
+		// lands ahead of the phase that closes the turn, so a `session-reset` — the one event that
+		// is a turn's end and a conversation swap at once — commits this turn's answer first.
+		case "result":
+			return {...state, result: event.result};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// Replaced, never accumulated: one layer drives one backend, and the newest announcement is
@@ -395,13 +410,17 @@ export const foldEvent = (
 		//
 		// This is the per-turn arm, not the terminal one: `phaseAfterFailure` can walk the session
 		// back to `ready`, so `settleFailedTurn` settles the send this failure is about and leaves
-		// every other in flight `pending` for its own turn's end (#8236).
+		// every other in flight `pending` for its own turn's end (#8236). The one landing that is
+		// terminal is `gone` — a refused resume — and it empties the catalogs on the same terms the
+		// `phase` arm does, which is the route a rebuilt layer takes with nothing to announce the
+		// clear behind it (#8634).
 		case "failure": {
 			if (event.failure.tag === INTERRUPT_ERROR) {
 				return foldInterruptRefusal(state, event.failure);
 			}
 			const phase = phaseAfterFailure(state, event.failure);
-			const turn = settleTurn(state);
+			const settled = settleTurn(state);
+			const turn = phase === "gone" ? closeOfferedCatalogs(settled) : settled;
 			return {
 				...turn,
 				phase,

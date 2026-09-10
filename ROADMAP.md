@@ -48,11 +48,12 @@ flowchart TD
 		camp_ge_it_product_push["Geçit product push"]:::active
 		camp_lane_integrity["Lane integrity"]:::active
 		camp_epic_lanes["Epic lanes"]:::active
-		camp_di_taxis_readme_passes["Diátaxis README passes"]:::active
+		camp_di_taxis_readme_passes["Diátaxis README passes"]:::done
 		camp_tuval["Tuval"]:::done
-		camp_tuval_first_slice["Tuval first slice"]:::active
+		camp_tuval_first_slice["Tuval first slice"]:::done
 		camp_phoenix_i18n["phoenix i18n"]:::active
 		camp_tuval_first_slice_fast_follows["Tuval first slice - fast follows"]:::active
+		camp_tuval_programs["Tuval programs"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -114,13 +115,14 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Geçit product push | #24 | active |
 | Lane integrity | #48 | active |
 | Epic lanes | #49 | active |
-| Diátaxis README passes | #50 | active |
+| Diátaxis README passes | #50 | done |
 | Tuval | #51 | done |
-| Tuval first slice | #52 | active |
+| Tuval first slice | #52 | done |
 | phoenix i18n | #53 | active |
 | Tuval first slice - fast follows | #54 | active |
+| Tuval programs | #55 | active |
 
-**Tuval first slice - fast follows** remains open and active for follow-up repairs discovered during Tuval work, including when its backlog is temporarily empty. Completing the current issues does not close this campaign; closure requires an explicit founder decision.
+**Tuval programs** carries the new Tuval scope after the first slice shipped: the program authoring API (#8716) and the desk showing kernel children (#8715). **Tuval first slice - fast follows** remains open and active for follow-up repairs discovered during Tuval work, including when its backlog is temporarily empty. Completing the current issues does not close this campaign; closure requires an explicit founder decision.
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 

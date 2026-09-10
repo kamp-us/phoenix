@@ -49,6 +49,8 @@ const row: TableRow = {
 	parentId: Option.some(processId("root")),
 	ports: {ticks: {kind: "count/v1", direction: "out"}},
 	stateSummary: {lifecycle: "running", revision: 3},
+	title: Option.some("shell"),
+	status: Option.none(),
 };
 
 const callId = CallId.make("call-1");

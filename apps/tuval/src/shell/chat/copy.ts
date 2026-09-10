@@ -84,12 +84,6 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"admin.agent.status.ready": "The agent is ready",
 	"admin.agent.status.readyWithModel": "The agent is ready · {model}",
 	"admin.agent.status.unavailable": "The agent is unavailable",
-	"admin.agent.hint.send": "send",
-	"admin.agent.hint.newline": "new line",
-	"admin.agent.hint.command": "command",
-	"admin.agent.hint.file": "file",
-	"admin.agent.hint.pasteImage": "paste an image",
-	"admin.agent.hint.addOrPasteImage": "add or paste an image",
 	"admin.agent.inspector": "Inspector",
 	"admin.agent.activity.title": "activity",
 	"admin.agent.activity.empty": "The agent's replies and tool activity show up here.",
@@ -145,6 +139,29 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
  */
 export const subagentViewPlaceholder =
 	"Prompts go to the main agent — go back to its transcript to send (the row above, or Escape).";
+
+/**
+ * What the view slot's live region says about the composer (#8635).
+ *
+ * The placeholder above is the reason the field gives for being off, and a disabled textarea is
+ * neither focusable nor in the tab order — so a screen-reader operator never reaches it and hears
+ * the composer vanish with no reason given. This sentence carries the same reason on the one
+ * surface that is announced, and takes the composer's own `disabled` predicate so the two cannot
+ * say different things.
+ */
+export const composerStateAnnouncement = (disabled: boolean): string =>
+	disabled ? `The composer is off here. ${subagentViewPlaceholder}` : "The composer is on.";
+
+/**
+ * What a slot's label says about the workers it holds, or `null` when there is nothing to say.
+ *
+ * A fan-out is one slot over many workers (founder ruling 2026-09-09 on #8664), and this count is
+ * the only thing on the row telling a reader that its line, its elapsed and its tokens are all of
+ * them together. One worker draws nothing: a "1 workers" on every ordinary row would be noise on
+ * the common case to serve the rare one.
+ */
+export const workerCountLabel = (workers: number): string | null =>
+	workers <= 1 ? null : `${workers} workers`;
 
 const PLACEHOLDER = /\{(\w+)\}/g;
 

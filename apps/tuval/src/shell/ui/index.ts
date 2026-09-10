@@ -31,11 +31,19 @@ export {
 	statusFrame,
 	zoomedWindow,
 } from "./frame.ts";
+export {
+	INITIAL_INPUT_MODALITY,
+	INPUT_MODALITY_ATTRIBUTE,
+	type InputModality,
+	inputModalityAround,
+	inputModalityHandlers,
+} from "./input-modality.ts";
 export {LayoutView, type LayoutViewProps} from "./LayoutView.tsx";
 export {
 	boundMount,
 	type MountResolver,
 	noRenderer,
+	type ProcessName,
 	type ReactWindowRenderer,
 	type WindowMount,
 } from "./mount.ts";
@@ -43,3 +51,4 @@ export {PickerView, type PickerViewProps} from "./PickerView.tsx";
 export {type KeyPress, type KeyReply, refused, replyIn, replyOf} from "./press.ts";
 export {StatusLine, type StatusLineProps} from "./StatusLine.tsx";
 export {WindowView, type WindowViewProps} from "./WindowView.tsx";
+export {windowTitle} from "./window-title.ts";

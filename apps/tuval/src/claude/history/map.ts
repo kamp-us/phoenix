@@ -15,13 +15,15 @@
  */
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {boundToolOutput} from "../../ai-agent/history/index.ts";
-import type {
-	CommandRef,
-	ItemId,
-	JsonValue,
-	SubagentSlot,
-	TranscriptItem,
+import {boundToolOutput, kernelSpawnOf} from "../../ai-agent/history/index.ts";
+import {
+	boundToolResult,
+	byteLength,
+	type CommandRef,
+	type ItemId,
+	type JsonValue,
+	type SubagentSlot,
+	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import {
 	isRecord,
@@ -215,6 +217,8 @@ const openSlot = (id: string, type: string, at: number): SubagentSlot => ({
 	lastLine: "",
 	startedAt: at,
 	tokens: 0,
+	// A sidechain is one worker: the SDK drives each through its own spawning call.
+	workers: 1,
 	items: [],
 	status: "running",
 });
@@ -620,6 +624,31 @@ export const partialReplyEvents = (
 /** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
 const NOTICE_SUMMARY_LIMIT = 200;
 
+/**
+ * How many bytes of a notice's body ride `detail`, marker included.
+ *
+ * A different budget from `NOTICE_SUMMARY_LIMIT`'s, which guards the always-visible line: this one
+ * guards `TRANSCRIPT_WINDOW_BYTE_LIMIT`, the live tail's. `itemBytes` counts the whole item with
+ * `detail` in it, so an unbounded body — a skill frame's is some ten kilobytes — spends the tail's
+ * budget and pushes older groups out of the operator's history (#8765). Sized like a tool result's
+ * own allowance, because a notice's body spends that budget the same way; its own constant rather
+ * than that one, so a change to what a tool result may spend does not silently move this ceiling.
+ */
+const NOTICE_DETAIL_BYTE_LIMIT = 8_000;
+
+/** What an opened disclosure reads at the cut, so the panel never passes a part off as the whole. */
+const NOTICE_DETAIL_CUT = "\n\n… cut to fit the transcript window; the rest is not here.";
+
+/**
+ * A notice's body bounded before the item is minted, cut on a code-point boundary by the same
+ * `boundToolResult` a tool row's output goes through. `SystemItem.detail` has no field to carry an
+ * omission count, so the cut says so inside the string it returns.
+ */
+const boundNoticeDetail = (detail: string): string => {
+	const bound = boundToolResult(detail, NOTICE_DETAIL_BYTE_LIMIT - byteLength(NOTICE_DETAIL_CUT));
+	return bound.omitted.bytes === 0 ? bound.text : `${bound.text}${NOTICE_DETAIL_CUT}`;
+};
+
 const LOCAL_COMMAND_OPEN = "<local-command-stdout>";
 const LOCAL_COMMAND_CLOSE = "</local-command-stdout>";
 
@@ -641,7 +670,8 @@ const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
  *
  * The match is the captured shape and nothing looser: the text must *be* the wrapper, so a prompt
  * quoting or explaining these tags is still the operator's own and stays one. The sibling
- * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s; `<command-name>` is read nowhere yet.
+ * `<local-command-caveat>` frame is `isLocalCommandCaveat`'s, and the `<command-name>` frame
+ * between them is `localCommandInvocationOf`'s.
  */
 const localCommandOutputOf = (text: string): string | null => {
 	const trimmed = text.trim();
@@ -666,8 +696,59 @@ const isLocalCommandCaveat = (text: string): boolean => {
 };
 
 /**
- * One command's output as the collapsed notice's two fields: the line always shown, and the whole
- * output behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`).
+ * One tag of the invocation record, matched at the head of what is left. The set is open rather
+ * than the three the plain slash command writes, because a plugin or skill invocation carries
+ * siblings of its own — `<skill-format>` on every one (`fixtures/local-command-skill-turn.json`).
+ */
+const COMMAND_TAG = /^<([a-z][a-z-]*)>([\s\S]*?)<\/\1>/;
+
+/** The CLI's marker that this frame is a skill's, and that the skill's own body follows its tags. */
+const SKILL_FORMAT = "skill-format";
+
+/**
+ * The command a slash-command invocation names, with its arguments, when this user frame is the
+ * CLI's record of that invocation rather than a turn.
+ *
+ * The middle of the three frames one slash command writes: the caveat, this record, then the
+ * output. Unlike the caveat it carries something a reader wants — which command ran — so it becomes
+ * its own notice rather than nothing (#8665). `<command-message>` restates the name and is dropped.
+ *
+ * Order is not fixed and the tag set is not closed: a plain command writes `<command-name>` first,
+ * a plugin command writes `<command-message>` first, and a skill's frame adds `<skill-format>` and
+ * then the whole skill body. So the read is the tags themselves — every one consumed in turn, each
+ * at most once, and `<command-name>` required. What is left over decides the rest: on a skill frame
+ * it is the body and rides the notice's `detail`, and anywhere else it means an operator wrote
+ * about the markup, which stays their own turn.
+ */
+const localCommandInvocationOf = (
+	text: string,
+): {readonly text: string; readonly detail?: string} | null => {
+	let rest = text.trim();
+	const parts = new Map<string, string>();
+	while (rest.length > 0) {
+		const match = COMMAND_TAG.exec(rest);
+		if (match === null) break;
+		const [whole, tag, inner] = match;
+		if (tag === undefined || inner === undefined || parts.has(tag)) return null;
+		parts.set(tag, inner.replaceAll(sgr, "").trim());
+		rest = rest.slice(whole.length).trimStart();
+	}
+	const name = parts.get("command-name") ?? "";
+	if (name.length === 0) return null;
+	// A skill's own body follows its tags in the same frame, and only there: without the CLI's
+	// `<skill-format>` marker, text past the tags is an operator writing about the markup.
+	if (rest.length > 0 && !parts.has(SKILL_FORMAT)) return null;
+	const args = parts.get("command-args") ?? "";
+	const line = args.length === 0 ? name : `${name} ${args}`;
+	return rest.length === 0
+		? {text: line}
+		: {text: line, detail: boundNoticeDetail(rest.replaceAll(sgr, ""))};
+};
+
+/**
+ * One command's output as the collapsed notice's two fields: the line always shown, and the output
+ * behind the disclosure whenever that line is not all of it (`shell/chat/SessionRow.tsx`), bounded
+ * at `NOTICE_DETAIL_BYTE_LIMIT`.
  */
 const noticeOf = (output: string): {readonly text: string; readonly detail?: string} => {
 	const first =
@@ -677,12 +758,28 @@ const noticeOf = (output: string): {readonly text: string; readonly detail?: str
 			?.trim() ?? "";
 	const line =
 		first.length > NOTICE_SUMMARY_LIMIT ? `${first.slice(0, NOTICE_SUMMARY_LIMIT)}…` : first;
-	return line === output ? {text: line} : {text: line, detail: output};
+	return line === output ? {text: line} : {text: line, detail: boundNoticeDetail(output)};
 };
 
 /**
- * A user frame is either the operator's prompt, a local command's caveat or output, or the results
- * of the calls the last turn opened.
+ * What one user frame stands for: the operator's own turn, or one of the two slash-command frames
+ * the CLI writes under the operator's role — the invocation record and the command's output. Each
+ * is read off its own text alone, so nothing has to survive between the frames of one command.
+ */
+const promptItemOf = (
+	text: string,
+	base: {readonly id: ItemId; readonly timestamp: number; readonly parentId?: ItemId},
+): TranscriptItem => {
+	const output = localCommandOutputOf(text);
+	if (output !== null) return {kind: "system", ...base, ...noticeOf(output)};
+	const invocation = localCommandInvocationOf(text);
+	if (invocation !== null) return {kind: "system", ...base, ...invocation};
+	return {kind: "user", ...base, text};
+};
+
+/**
+ * A user frame is either the operator's prompt, a local command's caveat, invocation record or
+ * output, or the results of the calls the last turn opened.
  *
  * A result whose call this mapping never saw is dropped and counted: the item union has no
  * name-less tool row, and inventing one would put a lie on screen. It happens only to a reader
@@ -706,11 +803,7 @@ export const userEvents = (
 		// A worker's inbound turn is parent-tagged too, and untagged it landed top-level beside the
 		// agent's own prose — seen live on #8400's desk run.
 		const tag = framedParentId === null ? {} : {parentId: itemId(framedParentId)};
-		const output = localCommandOutputOf(text);
-		const prompt: TranscriptItem =
-			output === null
-				? {kind: "user", id: itemId(id), timestamp: at, text, ...tag}
-				: {kind: "system", id: itemId(id), timestamp: at, ...noticeOf(output), ...tag};
+		const prompt = promptItemOf(text, {id: itemId(id), timestamp: at, ...tag});
 		const folded = foldSlots(mapping, [prompt], framedParentId, 0);
 		return {
 			mapping: {...mapping, subagents: folded.subagents},
@@ -761,9 +854,32 @@ export const userEvents = (
 		subagents = new Map(subagents).set(one.id, finished);
 		ended.push({kind: "subagent", slot: finished});
 	}
+	// A kernel child's slot opens here rather than at its call, and after the loop above rather than
+	// before it: the process id is on the *answer*, and a spawn spell answers the instant the child
+	// lands, so a slot opened at the call would have no process to name and one opened before the
+	// loop would be marked finished by its own spawning call settling.
+	const opened: Array<AgentEvent> = [];
+	for (const one of settled) {
+		if (one.kind !== "tool") continue;
+		const spawn = kernelSpawnOf(one);
+		if (spawn === null || subagents.has(one.id)) continue;
+		const slot: SubagentSlot = {
+			id: one.id,
+			type: spawn.program,
+			lastLine: "",
+			startedAt: one.timestamp,
+			tokens: 0,
+			workers: 1,
+			items: [],
+			status: "running",
+			process: spawn.process,
+		};
+		subagents = new Map(subagents).set(one.id, slot);
+		opened.push({kind: "subagent", slot});
+	}
 	return {
 		mapping: {...mapping, toolCalls, subagents, skipped},
-		events: [...events, ...folded.events, ...ended],
+		events: [...events, ...folded.events, ...ended, ...opened],
 	};
 };
 

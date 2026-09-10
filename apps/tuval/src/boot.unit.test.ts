@@ -5,10 +5,20 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Schema} from "effect";
+import {Context, Effect, Layer, Schema} from "effect";
 import {afterEach, expect} from "vitest";
 import {sessionListProgram} from "./ai-agent/session-list.ts";
-import {boot, coreSpells, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
+import {
+	boot,
+	coreSpells,
+	defaultGlobalConfig,
+	type Kernel,
+	projectConfig,
+	projectDir,
+} from "./boot.ts";
+import {Features} from "./feature-flags.ts";
+import {featuresDefault, type TuvalFeatures} from "./features.ts";
+import {subagentExtensionPaths} from "./pi/server/index.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
 /** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
@@ -349,5 +359,73 @@ describe("boot", () => {
 			expect(result.stdout).toContain("--project");
 		},
 		spawnBudget(1),
+	);
+});
+
+/**
+ * The node-side half of the flag route (#8595). The browser half is `page/dev-server.ts`'s generated
+ * module; this half is the kernel service a program row's layer reads at spawn, and the probe below
+ * is built the way `ai-agent/backends.ts` builds a backend's layer — under the boot's own kernel
+ * context. What `PiAiAgent.layer` does with the record it gets there is `subagentExtensionPaths`,
+ * and that its `R` is this service and nothing else is pinned in
+ * `pi/ai-agent/boundary.unit.test.ts`.
+ */
+describe("the merged feature flags on the node side", () => {
+	class Probe extends Context.Service<Probe, {readonly features: TuvalFeatures}>()(
+		"tuval/test/Probe",
+	) {}
+
+	/** A layer shaped like a backend's: `Features` left open, satisfied by the spawner's kernel. */
+	const probe = Layer.effect(
+		Probe,
+		Effect.map(Features, (features) => ({features})),
+	);
+
+	const flagsAtSpawn = (booted: {readonly kernel: Context.Context<Kernel>}) =>
+		Effect.scoped(Layer.build(probe).pipe(Effect.provideContext(booted.kernel))).pipe(
+			Effect.map((built) => Context.get(built, Probe).features),
+		);
+
+	it.effect(
+		"reach a row's layer as the defaults when no layer states one",
+		() =>
+			Effect.gen(function* () {
+				const booted = yield* bootDirect(fixture("two-rows"), freshProject());
+				assert.deepStrictEqual(yield* flagsAtSpawn(booted), featuresDefault);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	// The direction that costs something: `piSubagents` defaults on, so an operator turning it off is
+	// a project layer stating `false` over a global `true` — and before this the layer read
+	// `featuresDefault` and loaded the extension anyway.
+	it.effect(
+		"let the project layer's false beat the global layer's true",
+		() =>
+			Effect.gen(function* () {
+				const booted = yield* bootDirect(
+					fixture("pi-subagents-on"),
+					projectWithConfig("pi-subagents-off"),
+				);
+				const features = yield* flagsAtSpawn(booted);
+				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: false});
+				assert.deepStrictEqual(subagentExtensionPaths(features), []);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"let the project layer's true beat the global layer's false",
+		() =>
+			Effect.gen(function* () {
+				const booted = yield* bootDirect(
+					fixture("pi-subagents-off"),
+					projectWithConfig("pi-subagents-on"),
+				);
+				const features = yield* flagsAtSpawn(booted);
+				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: true});
+				assert.strictEqual(subagentExtensionPaths(features).length, 1);
+			}),
+		DIRECT_BOOT_MS,
 	);
 });

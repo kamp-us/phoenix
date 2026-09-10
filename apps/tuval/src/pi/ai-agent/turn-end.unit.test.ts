@@ -194,6 +194,40 @@ describe("a Pi turn whose pushes coalesced away", () => {
 	);
 
 	/**
+	 * The per-turn `result` this layer owes beside that end (#8724). A layer pays it by wrapping its
+	 * own `events` in `withTurnResult` and nothing makes it, so the assertion is on the real stream:
+	 * one result, immediately ahead of the `ready` that closes the turn, and none at the open.
+	 */
+	it.live("owes one result per finished turn, ahead of the ready that closes it", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				const opening = yield* collectTo(events, "the opened session's ready", isReady);
+				assert.isEmpty(
+					opening.filter((event) => event.kind === "result"),
+					"the open is not a turn, and owes no answer",
+				);
+
+				yield* agent.prompt("say hello");
+				yield* client.endTurn(snapshot([user, reply], "idle", 1));
+
+				const turn = yield* collectTo(events, "the turn's ready", isReady);
+				const results = turn.filter((event) => event.kind === "result");
+				assert.lengthOf(results, 1, "the layer owes exactly one result per finished turn");
+				assert.strictEqual(turn.indexOf(results[0]!), turn.length - 2);
+				assert.deepStrictEqual(
+					{text: results[0]!.result.text, ok: results[0]!.result.ok},
+					{text: "hello", ok: true},
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	/**
 	 * The update stream ending is not the fold ending. `follow` used to race the two, so the moment
 	 * the stream ran out the fold was interrupted with the turn's last update still queued and
 	 * unfolded — the operator's window kept `prompting` under a turn that had finished (#8554).

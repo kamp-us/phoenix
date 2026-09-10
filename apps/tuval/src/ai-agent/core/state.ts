@@ -21,6 +21,7 @@ import type {
 	ThinkingLevel,
 	TranscriptItem,
 	TranscriptPayload,
+	TurnResult,
 	WindowOmission,
 } from "../ports/index.ts";
 import {promptUnqueued} from "./failures.ts";
@@ -212,6 +213,14 @@ export interface AiAgentSessionState {
 	 * (Q9 on #8384).
 	 */
 	readonly subagents: Readonly<Record<string, SubagentSlot>>;
+	/**
+	 * What the last finished turn came to, or `null` before any turn has finished (#8724).
+	 *
+	 * Held rather than only published, so a window re-attaching to a running process is answered
+	 * from the same slot the port is filled from — `republish` reads this, and a second copy
+	 * computed at that moment would be a different answer to the same question.
+	 */
+	readonly result: TurnResult | null;
 	readonly failure: AgentFailure | null;
 }
 
@@ -269,6 +278,10 @@ export const checkpointFields = [
 	// backend's own store answers for the agent's transcript, not for a worker's subtree). What a
 	// restart does change is liveness: `restore` brings every slot back finished.
 	"subagents",
+	// Decided to survive a restart: it is a fact about a turn that finished, like the tail it
+	// summarizes, and a consumer that reads the port after a restore is asking what this session
+	// last answered — not what it answered since the process came back.
+	"result",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
 
@@ -301,6 +314,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	lastPage: null,
 	pageOutcome: null,
 	subagents: {},
+	result: null,
 	failure: null,
 });
 
@@ -344,12 +358,20 @@ export const settlePartialItems = (state: AiAgentSessionState): AiAgentSessionSt
 			}
 		: state;
 
+/**
+ * A worker this session is the one writing the lines of. A kernel child is not one: it is its own
+ * process on the kernel's table, so nothing in this session moves its slot and this session's turn
+ * ending says nothing about whether it is done (#8715).
+ */
+const ownWorker = (slot: SubagentSlot): boolean => slot.process === undefined;
+
 /** Is any subagent still writing? Its slot moves on every line the worker produces. */
 export const holdsRunningSubagent = (state: AiAgentSessionState): boolean =>
-	Object.values(state.subagents).some((slot) => slot.status === "running");
+	Object.values(state.subagents).some((slot) => ownWorker(slot) && slot.status === "running");
 
 /**
- * Mark every running subagent finished, keeping its rows.
+ * Mark every running worker of this session's own finished, keeping its rows. A kernel child is
+ * left alone (`ownWorker`): its process outlives the turn that spawned it.
  *
  * A worker runs inside its parent's turn, so the turn ending is the worker ending — whatever the
  * turn came to. Without this a slot the layer never closed stays `running` for the rest of the
@@ -363,7 +385,9 @@ export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessi
 				subagents: Object.fromEntries(
 					Object.entries(state.subagents).map(([id, slot]) => [
 						id,
-						slot.status === "running" ? {...slot, status: "finished" as const} : slot,
+						ownWorker(slot) && slot.status === "running"
+							? {...slot, status: "finished" as const}
+							: slot,
 					]),
 				),
 			}
@@ -372,6 +396,30 @@ export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessi
 /** Everything a turn's end settles: the reply still being written, and the workers under it. */
 export const settleTurn = (state: AiAgentSessionState): AiAgentSessionState =>
 	settleRunningSubagents(settlePartialItems(state));
+
+/**
+ * A session at `gone` offers no rows: every catalog it read off that session is emptied, and the
+ * operator's held picks stay.
+ *
+ * The four are session-owned and checkpointed, so without this they come back off disk intact and
+ * `offerResolved` (`../../shell/chat/composer-bridge.ts`) paints them as a live offer on a window
+ * whose session is over (#8634). The layer's own teardown clear is announced from
+ * `ClaudeAiAgent.start` and only when a session was torn down in this process, so it reaches one
+ * lifetime of three — a refused reconnect on a rebuilt layer, a checkpoint saved at `gone` and a
+ * live process failing into `gone` all arrive here with no layer announcement behind them. Holding
+ * the invariant in the core covers all three, and agrees with the layer rather than racing it.
+ *
+ * `current` is untouched on purpose: a pick is the operator's, not the session's, and the next open
+ * re-validates it against the catalog it reads (#7981). `commands` has no selection to keep — the
+ * picker inserts a command as prompt text — so it empties whole.
+ */
+export const closeOfferedCatalogs = (state: AiAgentSessionState): AiAgentSessionState => ({
+	...state,
+	modes: {current: state.modes.current, available: []},
+	models: {current: state.models.current, available: []},
+	commands: [],
+	thinking: {current: state.thinking.current, available: []},
+});
 
 /**
  * Is this state worth a checkpoint write? The predicate a program hands the host (`../program.ts`).
@@ -402,6 +450,28 @@ export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | 
 		if (item?.kind === "assistant") return item.id;
 	}
 	return null;
+};
+
+/**
+ * Where the cut-turn marker stands once one more item has landed.
+ *
+ * `lastAssistantId` answers `null` for a turn cut before it wrote anything, so on that path the
+ * marker is set here instead — by the `aborted` row the backend pushes afterwards, which is the
+ * only thing that ever names that turn's reply (#8584). Without it the row rendered plain: no
+ * break, no resend, for the one turn the operator definitely stopped.
+ *
+ * The outstanding `interruption` is the whole gate. It is the operator's request with no event
+ * against it yet, so an `aborted` row arriving under one is that request's answer; a historical
+ * abort replayed by a snapshot arrives under none and leaves the marker alone. A marker already set
+ * stands, so this never re-points the resend away from the row `interrupt` or `restore` chose.
+ */
+export const cutReplyAfterItem = (
+	state: AiAgentSessionState,
+	item: TranscriptItem,
+): ItemId | null => {
+	if (state.interrupted !== null) return state.interrupted;
+	if (state.interruption === null) return null;
+	return item.kind === "assistant" && item.interrupted === true ? item.id : null;
 };
 
 /** The cut-short turn, marked in the tail so a window renders the break off the transcript alone. */
@@ -443,6 +513,10 @@ const markInterrupted = (
  * old account is exactly the wrong answer to "which of my two accounts is this billing" (#8649).
  * The layer re-announces as this session opens.
  *
+ * A checkpoint saved at `gone` comes back with its catalogs emptied (`closeOfferedCatalogs`), and
+ * one saved at any other phase keeps them: it comes back `idle`, where `offerResolved` is false, so
+ * nothing paints them before the reconnect re-announces what this session offers.
+ *
  * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way
  * an interrupted queue is — recoverable, never resent on the operator's behalf.
@@ -468,8 +542,12 @@ const markInterrupted = (
  */
 export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 	const cut = loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null;
+	const settled =
+		loaded.phase === "gone"
+			? closeOfferedCatalogs(settleRunningSubagents(loaded))
+			: settleRunningSubagents(loaded);
 	return {
-		...settleRunningSubagents(loaded),
+		...settled,
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,

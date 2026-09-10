@@ -16,10 +16,12 @@
  * (`./proof/no-recovery.tsx`).
  */
 
+import features from "virtual:tuval/features";
 import moduleLoaders from "virtual:tuval/module-renderers";
 import {Effect} from "effect";
 import {StrictMode, useEffect, useMemo, useState} from "react";
 import {createRoot} from "react-dom/client";
+import {openProcessMsg} from "../shell/core/machine.ts";
 import {ErrorBoundary} from "../shell/ui/index.ts";
 import type {RendererTable} from "../shell/window/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
@@ -77,7 +79,17 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 	// (`./renderers.tsx`): a table held across a re-attach would send this desk's next read down a
 	// socket the page has already thrown away.
 	const renderers = useMemo<RendererTable | null>(
-		() => (link === null || loaded === null ? null : {...pageRenderers(link.page.call), ...loaded}),
+		() =>
+			link === null || loaded === null
+				? null
+				: {
+						// A renderer has no route to the shell, so the page hands it one (#8719).
+						...pageRenderers(
+							link.page.call,
+							(processId) => void Effect.runFork(link.shell.dispatch(openProcessMsg(processId))),
+						),
+						...loaded,
+					},
 		[link, loaded],
 	);
 
@@ -96,6 +108,8 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 			renderers={renderers}
 			inspectors={pageInspectors}
 			reducedMotion={reducedMotion}
+			windowTitles={features.windowTitles}
+			board={features.processBoard}
 		/>
 	);
 };

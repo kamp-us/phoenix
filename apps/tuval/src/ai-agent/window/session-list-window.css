@@ -87,7 +87,7 @@
 
 .tuval-session-transcript-header h2 {
 	margin: 0;
-	font: var(--t-heading-sm);
+	font: var(--t-h-feed);
 	color: var(--text-primary);
 }
 

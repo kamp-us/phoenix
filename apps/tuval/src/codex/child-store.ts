@@ -79,7 +79,9 @@ export const readChildTranscript = Effect.fn("Codex.readChildTranscript")(functi
 			}
 			return {
 				items: [...items.values()],
-				type: metadata.agentRole ?? "agent",
+				// `||`, not `??`: an empty role is no role, and `""` reaching the slot makes the port
+				// refuse it and sink the whole checkpoint (#8701).
+				type: metadata.agentRole || "agent",
 				status: metadata.status.type === "active" ? "running" : "finished",
 				turnId: thread.turns.findLast((turn) => turn.status === "inProgress")?.id ?? null,
 			};

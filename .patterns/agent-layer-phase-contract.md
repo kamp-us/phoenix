@@ -1,21 +1,22 @@
-# The phase a `TuvalAiAgent` layer owes the core, per turn
+# What a `TuvalAiAgent` layer owes the core, per turn
 
 Every agent layer under
 [`apps/tuval/src/ai-agent/service/TuvalAiAgent.ts`](../apps/tuval/src/ai-agent/service/TuvalAiAgent.ts)
-pushes one `AgentEvent` stream, and the core folds it. Two of those events are a promise the layer
-makes about every turn, and nothing in the type system holds the layer to it: `AgentEvent` carries
-no "turn over" shape, so a layer that never says a turn ended compiles clean and passes every
-generic test. Two layers shipped that omission before this was written down
-([#7963](https://github.com/kamp-us/phoenix/issues/7963),
+pushes one `AgentEvent` stream, and the core folds it. Three of those events are a promise the layer
+makes about every turn — two `phase` events and one `result` — and nothing in the type system holds
+the layer to any of them: no signature says a turn ended, so a layer that never says one did
+compiles clean and passes every generic test. Two layers shipped that omission before this was
+written down ([#7963](https://github.com/kamp-us/phoenix/issues/7963),
 [#7897](https://github.com/kamp-us/phoenix/issues/7897)).
 
 ## What the layer owes
 
-Per turn, exactly two `phase` events:
+Per turn, exactly three events — the two `phase` events and the `result` between them:
 
-| Moment | Phase | Who |
+| Moment | Event | Who |
 |---|---|---|
 | The turn starts — the write that hands the backend the operator's text | `prompting` | the layer |
+| The turn ends, however it ended — one payload, just ahead of the phase below | `result` | the layer |
 | The turn ends, however it ended | `ready` | the layer |
 | A session opening or coming back | `starting`, `reconnecting` | the core, never a layer |
 | Before any start | `idle` | the core's `initialState` |
@@ -123,8 +124,18 @@ session's rows, and every pick it then takes is judged against a catalog nothing
 Where the layer says it matters, because a teardown shuts the queue it happened on.
 `ClaudeAiAgent.closeCurrent` empties `models` and `efforts` and says nothing; `start` says it on the
 *new* queue, right behind that queue's `starting` and only when a session was actually torn down.
-That places the clear ahead of the `gone` a refused reconnect emits, which is the one path with no
-later catalog to correct it.
+
+**That announcement covers the in-process teardown, and the core owns the invariant everywhere
+else.** The `start` clear is guarded on there having been a previous session, so a lifetime whose
+layer never ran `start` gets nothing said — a refused reconnect on a rebuilt layer, a checkpoint
+saved at `gone`, and a live process failing into `gone` are all such lifetimes, and `models`,
+`thinking`, `modes` and `commands` are checkpointed, so their dead rows come back off disk intact
+([#8634](https://github.com/kamp-us/phoenix/issues/8634)). So the rule is the core's: **a session at
+`gone` offers no rows.** `closeOfferedCatalogs`
+([`ai-agent/core/state.ts`](../apps/tuval/src/ai-agent/core/state.ts)) empties the four, and every
+route to `gone` runs it — `restore` on a checkpoint loaded at `gone`, and both `fold`'s `phase` arm
+and the `gone` landing of its `failure` arm. The layer's clear then agrees with the core rather than
+being the only thing holding the line.
 
 The selection does not go with the catalog. A pick is the operator's, not the session's, so the
 clear carries `current: <the held pick>` beside `available: []`, and the picker names the pick while
@@ -133,6 +144,62 @@ saying the offer behind it is empty ([`AgentChatInput`](../packages/design/src/A
 drops it there if that catalog does not carry it — the deferred validation of
 [#7981](https://github.com/kamp-us/phoenix/issues/7981), which is also why a setter with no session
 holds a pick rather than refusing it against an empty offer.
+
+## The turn's own answer, beside the phase that ends it
+
+A phase says a turn *ended*; it does not say what the turn **answered**. A consumer outside the
+window — a parent program routing an answer onward, a config route reading an agent's output — has
+no transcript to read it off, so the layer owes one `result` event per finished turn as well
+([#8724](https://github.com/kamp-us/phoenix/issues/8724), ruling R19.3 on
+[#8715](https://github.com/kamp-us/phoenix/issues/8715)). The program folds it and publishes it on
+its `result` out-port, and the kernel's `process read` answers with the last one.
+
+Three things make it the same class of promise as the turn-end phase, so they are written down
+together:
+
+- **Once per finished turn, however the turn ended.** A failed turn, an interrupted one and a turn a
+  local command ended all owe one — marked, not skipped. A consumer told nothing about a failed turn
+  waits for an answer that is never coming, which is the same wedge a missing `ready` is. A failure
+  is a turn's end whether or not a phase follows it, because that is what the core does with one:
+  `phaseAfterFailure` in [`core/fold.ts`](../apps/tuval/src/ai-agent/core/fold.ts) walks a
+  `prompting` session to `ready` off any failure, emitting nothing on the layer's stream, and
+  `foldInterruptRefusal` beside it does the same for every interrupt refusal but `turn-running` —
+  the one case where the reply is still being written. So the fold closes the turn on the failure
+  itself, and a layer that does emit its own closing phase behind one adds no second result.
+- **Ahead of the event that closes the turn**, never behind it. `session-reset` is a turn's end and
+  a conversation swap in one event, and the core's events Sub is keyed on the session id
+  (`core/messages.ts`) — so a result pushed after the swap is dropped by the machine's own identity
+  filter, under an id that no longer names this conversation.
+- **Only inside a turn.** A layer narrates its open on this same stream and the open's `ready` looks
+  exactly like a turn's end (see the section above); an answer published there is one no operator
+  asked for.
+
+**A layer does not hand-roll the bookkeeping.** `withTurnResult` in
+[`apps/tuval/src/ai-agent/turn-result.ts`](../apps/tuval/src/ai-agent/turn-result.ts) derives the
+event from the bracket this contract already requires — it watches `prompting` … turn-end, collects
+the turn's items as they arrive (upserted by id, so a re-sent row is carried once as it last stood),
+takes the newest assistant row's text, and answers `ok: false` for a turn that carried a refusal,
+ended at `gone`, or drew a reply the backend flagged cut short. The layer's whole share is the wrap
+on its own `events` member:
+
+```ts
+events: withTurnResult(Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held)))),
+```
+
+Two things about that wrap are load-bearing. It goes on the `events` member itself, so **one
+subscription carries a whole turn** — the tracker's state is per subscription, and a turn read across
+two of them has no bracket to close (which is exactly what the host does: one `runForEach` over
+`events` per connection). And a layer with a better answer than the fold can derive may push its own
+`result` inside the turn; the fold then adds none, so the two can never both land.
+
+Each layer's own test proves it rather than a shared conformance suite, because a layer that drops
+the wrap compiles clean:
+[`claude/agent/phases.unit.test.ts`](../apps/tuval/src/claude/agent/phases.unit.test.ts),
+[`codex/agent.unit.test.ts`](../apps/tuval/src/codex/agent.unit.test.ts),
+[`pi/ai-agent/turn-end.unit.test.ts`](../apps/tuval/src/pi/ai-agent/turn-end.unit.test.ts),
+[`agy/ai-agent/pays-the-turn-result.unit.test.ts`](../apps/tuval/src/agy/ai-agent/pays-the-turn-result.unit.test.ts)
+and [`ai-agent/service/ScriptedAiAgent.unit.test.ts`](../apps/tuval/src/ai-agent/service/ScriptedAiAgent.unit.test.ts).
+The fold's own cases are [`ai-agent/turn-result.unit.test.ts`](../apps/tuval/src/ai-agent/turn-result.unit.test.ts).
 
 ## Reference shapes
 
@@ -166,6 +233,8 @@ a layer that never sent one.
 
 A conformance test over every layer would be stronger than this doc. The layers differ enough in how
 a turn is driven that its shape is an open question; no such test exists today and none is filed.
+What does exist is the shared fold above — `withTurnResult` is the same bookkeeping in one place, so
+the turn-result half of this contract has one implementation to get right rather than five.
 
 ## An open outcome also ends a subscription lifetime
 

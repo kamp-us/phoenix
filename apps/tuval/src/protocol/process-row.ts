@@ -31,6 +31,8 @@ export const ProcessRow = Schema.Struct({
 	parentId: Schema.NullOr(ProcessId),
 	ports: Schema.Record(Schema.String, PortDeclaration),
 	stateSummary: ProcessStateSummary,
+	title: Schema.NullOr(Schema.String),
+	status: Schema.NullOr(Schema.String),
 	/** Stamped by the kernel when the process is spawned; the completion engine ranks on it. */
 	recency: Recency,
 });

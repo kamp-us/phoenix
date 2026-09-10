@@ -14,6 +14,7 @@
 
 import {Card, EmptyState} from "@kampus/design";
 import type {ReactElement, ReactNode} from "react";
+import type {ProcessId} from "../../process/process.ts";
 import type {DeskEmptyReason, InspectorRegion} from "../desk/index.ts";
 import "./desk.css";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
@@ -51,9 +52,20 @@ export interface DeskInspectorProps {
 	 * `Object.is` and every snapshot arrives decoded afresh (`./ErrorBoundary.tsx`).
 	 */
 	readonly resetKeys?: ReadonlyArray<unknown>;
+	/**
+	 * The focused window's process, shown under the region's own heading. This is where the id went
+	 * when the window title stopped being it (#8721, epic ruling R3.1): still one glance away, and no
+	 * longer the only thing a title could say. `null` means the desk is not naming its windows yet
+	 * — the `windowTitles` flag is off and the title still carries the id — or nothing is focused.
+	 */
+	readonly processId?: ProcessId | null;
 }
 
-export function DeskInspector({region, resetKeys = []}: DeskInspectorProps): ReactElement {
+export function DeskInspector({
+	region,
+	resetKeys = [],
+	processId = null,
+}: DeskInspectorProps): ReactElement {
 	return (
 		<Card
 			as="section"
@@ -65,6 +77,12 @@ export function DeskInspector({region, resetKeys = []}: DeskInspectorProps): Rea
 			tabIndex={0}
 		>
 			<h2 className="tuval-inspector-title">Inspector</h2>
+			{processId === null ? null : (
+				<p className="tuval-inspector-process">
+					<span className="tuval-inspector-process-label">Process</span>
+					<code>{processId}</code>
+				</p>
+			)}
 			{region._tag === "NoInspector" ? (
 				// Centred in what is left of a full-height column rather than sitting under the title:
 				// a sparse region reads as composed, never as a void with its content jammed at the top

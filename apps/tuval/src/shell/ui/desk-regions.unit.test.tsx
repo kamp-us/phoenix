@@ -56,6 +56,7 @@ const boundEverywhere: MountResolver = (windowId, processId) =>
 		? empty
 		: {
 				_tag: "Bound",
+				name: null,
 				host: hostFor(windowId, processId),
 				render: (host) => <p>renderer for {String(host.processId)}</p>,
 			};
@@ -94,6 +95,7 @@ interface HarnessProps {
 	readonly deskTables?: DeskTables;
 	readonly table?: PrefixTable;
 	readonly resolveMount?: MountResolver;
+	readonly windowTitles?: boolean;
 	/** Handed the live `dispatch`, so a test can send the Msg a command row names. */
 	readonly onReady?: (dispatch: (msg: ShellMsg) => void) => void;
 }
@@ -103,6 +105,7 @@ function Harness({
 	deskTables = tables(),
 	table = defaultPrefixTable,
 	resolveMount = boundEverywhere,
+	windowTitles = false,
 	onReady,
 }: HarnessProps): ReactElement {
 	const kernel = useTestKernel(table, initial);
@@ -115,6 +118,7 @@ function Harness({
 			resolveMount={resolveMount}
 			table={table}
 			deskTables={deskTables}
+			windowTitles={windowTitles}
 		/>
 	);
 }
@@ -154,6 +158,16 @@ describe("the desk inspector region", () => {
 			fireEvent.keyDown(document, {key: "i", code: "KeyI"});
 		});
 		expect(region()).not.toBeNull();
+	});
+
+	it("carries the focused window's process id, which is where it went from the title (#8721)", () => {
+		render(<Harness initial={opened(threeWindowDesk())} windowTitles={true} />);
+		expect(within(region() as HTMLElement).getByText("process-1")).toBeTruthy();
+	});
+
+	it("carries no id while the desk still names its windows by one", () => {
+		render(<Harness initial={opened(threeWindowDesk())} />);
+		expect(within(region() as HTMLElement).queryByText("process-1")).toBeNull();
 	});
 
 	it("survives a workspace switch with its state exactly as it was (#7500 ruling 4)", () => {
@@ -233,7 +247,7 @@ describe("the composed status bar", () => {
 		render(<Harness initial={threeWindowDesk()} />);
 		expect(group("Workspace").textContent).toContain("workspace-0");
 		expect(group("Shell").textContent).toContain("2 processes");
-		expect(group("Shell").textContent).toContain("rev 7");
+		expect(group("Shell").textContent).not.toContain("rev");
 		expect(group("Program").textContent).toBe("12 lines");
 		// The program reached the middle and nothing else on the bar.
 		expect(group("Workspace").textContent).not.toContain("12 lines");

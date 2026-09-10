@@ -300,6 +300,13 @@ const filled = (spawn: RunningSpawn, resolution: AsyncSpawn | null | undefined):
 const runIdsOf = (spawn: RunningSpawn): ReadonlyArray<string> =>
 	spawn.runId === null ? (spawn.resolved?.runIds ?? []) : [spawn.runId];
 
+/**
+ * How many workers a spawn's slot holds, off the runs its artifacts are read from. At least one:
+ * a call that has resolved no run yet still started a worker, and a zero would say the slot is of
+ * nothing (founder ruling 2026-09-09 on #8664).
+ */
+const workerCountOf = (runIds: ReadonlyArray<string>): number => Math.max(1, runIds.length);
+
 /** The same rule for the tail, which needs the run ids before the fold has folded the answer. */
 export const spawnRunIds = (
 	spawn: RunningSpawn,
@@ -317,6 +324,7 @@ const runningSlotOf = (spawn: RunningSpawn, child: ChildTranscript): SubagentSlo
 	lastLine: child.lastLine,
 	startedAt: spawn.startedAt,
 	tokens: countOf(child.tokens),
+	workers: workerCountOf(runIdsOf(spawn)),
 	items: childItems(spawn.id, child),
 	status: "running",
 });
@@ -375,6 +383,7 @@ export const subagentSlotsOf = (
 							lastLine: "",
 							startedAt: item.timestamp,
 							tokens: 0,
+							workers: workerCountOf(held?.get(part.toolCallId)?.resolved?.runIds ?? []),
 							items: [],
 							status: "running" as const,
 						},
@@ -395,6 +404,7 @@ export const subagentSlotsOf = (
 					lastLine: "",
 					startedAt: item.timestamp,
 					tokens: 0,
+					workers: 1,
 					items: [],
 					status: "running",
 				},
@@ -406,7 +416,8 @@ export const subagentSlotsOf = (
 	}
 	const runId = runIdOf(item);
 	const finished = carried?.resolved ?? resolved?.get(item.toolCallId) ?? null;
-	const child = childOf(children, runId === null ? (finished?.runIds ?? []) : [runId]);
+	const runIds = runId === null ? (finished?.runIds ?? []) : [runId];
+	const child = childOf(children, runIds);
 	return [
 		{
 			id,
@@ -418,6 +429,7 @@ export const subagentSlotsOf = (
 			tokens: countOf(
 				child === undefined || child.tokens === 0 ? item.usage?.totalTokens : child.tokens,
 			),
+			workers: workerCountOf(runIds),
 			items: child === undefined ? [] : childItems(id, child),
 			status: "finished",
 		},

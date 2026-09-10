@@ -15,12 +15,22 @@
 import {Effect} from "effect";
 import {PortNotWired, ProcessPorts} from "../../ports/index.ts";
 import {ProcessSelf} from "../../process/self.ts";
+import {STATUS_PORT, TITLE_PORT} from "../../process/self-report.ts";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
-import type {ModePayload, PermissionPayload, TranscriptPayload} from "../ports/index.ts";
+import type {
+	ModePayload,
+	PermissionPayload,
+	TranscriptPayload,
+	TurnResult,
+} from "../ports/index.ts";
 
 /**
  * The row's port keys. A two-way kind is played from both ends by one program, and a kernel `ports`
  * record holds one direction per key, so each end is named locally — `compile` matches the kind.
+ *
+ * The last two are the kernel's own key names rather than local ones: the latch that keeps a
+ * process's newest title reads `ports["title@1"]` off the row (`../../process/self-report.ts`), so
+ * a program renaming its end publishes to a board that never looks there.
  */
 export const aiAgentPortNames = {
 	transcript: "transcript",
@@ -31,6 +41,9 @@ export const aiAgentPortNames = {
 	permissionDecision: "permissionDecision",
 	modeState: "modeState",
 	modeSet: "modeSet",
+	result: "result",
+	title: TITLE_PORT,
+	status: STATUS_PORT,
 } as const;
 
 export const transcriptOf = (state: AiAgentSessionState): TranscriptPayload => state.transcript;
@@ -39,6 +52,9 @@ export const pendingOf = (state: AiAgentSessionState): PermissionPayload => ({
 	kind: "pending",
 	requests: state.permissions,
 });
+
+/** The last finished turn, or `null` while this session has yet to finish one (#8724). */
+export const resultOf = (state: AiAgentSessionState): TurnResult | null => state.result;
 
 export const modeStateOf = (state: AiAgentSessionState): ModePayload => ({
 	kind: "state",

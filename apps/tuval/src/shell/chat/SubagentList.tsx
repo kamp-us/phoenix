@@ -12,6 +12,11 @@
  * keyboard reaches them through *these* handlers, the ones the mouse calls, never through a second
  * copy that could drift.
  *
+ * A kernel child is the one row that does something else: it is a process of its own, so it is
+ * marked as one and activating it opens it as a window rather than swapping this window's view
+ * (founder rulings R1.1 and R2.1 on #8715). Its rows are not in this session's state and there is
+ * nothing here to swap to.
+ *
  * The list holds one tab stop, not one per row: `<c-b> a` puts focus on the row the window is
  * showing (`focus()` below, driven by the shell's forwarded key), and the arrows walk from there.
  * Which row holds the stop is component state and never the view slot — where DOM focus sits is not
@@ -35,6 +40,7 @@ import {
 } from "react";
 import type {SubagentSlot} from "../../ai-agent/ports/index.ts";
 import {prefixArmedAround} from "../window/index.ts";
+import {workerCountLabel} from "./copy.ts";
 import {
 	elapsedLabel,
 	runningSubagents,
@@ -105,6 +111,8 @@ function Line({
 }
 
 function RowFields({row, at}: {readonly row: SubagentRow; readonly at: number}): ReactElement {
+	const kernel = row.process !== undefined;
+	const workers = workerCountLabel(row.workers);
 	return (
 		<MetaRow as="span" className="tuval-chat-subagent">
 			{/* A row whose worker named itself nothing draws no name field — and no dot for one. */}
@@ -116,10 +124,41 @@ function RowFields({row, at}: {readonly row: SubagentRow; readonly at: number}):
 					<MetaRow.Dot />
 				</>
 			)}
+			{/* The count sits beside the name, because it qualifies whose line and spend follow it. */}
+			{workers === null ? null : (
+				<>
+					<span className="tuval-chat-subagent-workers" data-field="workers">
+						{workers}
+					</span>
+					<MetaRow.Dot />
+				</>
+			)}
+			{/* The mark is the word, not a colour and not an icon: a reader who cannot see the
+			    styling still reads "process", and the hidden half says what activating it does —
+			    which is the one thing this row does differently from every other (Pillar 4). */}
+			{kernel ? (
+				<>
+					<span className="tuval-chat-subagent-kernel" data-field="kernel">
+						process
+						<span className="kp-visually-hidden"> — opens in its own window</span>
+					</span>
+					<MetaRow.Dot />
+				</>
+			) : null}
 			<span className="tuval-chat-subagent-line" data-field="line">
 				{row.lastLine}
 			</span>
-			{row.status === "finished" ? (
+			{kernel ? (
+				<>
+					<MetaRow.Dot />
+					{/* No token count: this session spawned the process and writes none of its lines,
+					    so it knows nothing of what the child spends. */}
+					<span data-field="elapsed">
+						<span className="kp-visually-hidden">elapsed </span>
+						{elapsedLabel(at - row.startedAt)}
+					</span>
+				</>
+			) : row.status === "finished" ? (
 				<>
 					<MetaRow.Dot />
 					{/* Q2: no elapsed and no token readout once a worker stops. */}
@@ -149,6 +188,7 @@ export function SubagentList({
 	now,
 	viewing,
 	onView,
+	onOpen,
 	onMain,
 	ref,
 }: {
@@ -157,6 +197,8 @@ export function SubagentList({
 	/** The subagent whose transcript the window is showing, or `null` for the agent's own. */
 	readonly viewing: string | null;
 	readonly onView: (id: string) => void;
+	/** Open a kernel child as its own window. Only a row naming a process ever reaches it. */
+	readonly onOpen: (processId: string) => void;
 	readonly onMain: () => void;
 	readonly ref?: Ref<SubagentListHandle>;
 }): ReactElement | null {
@@ -227,12 +269,19 @@ export function SubagentList({
 		moveTo(request.kind === "key" && keys.includes(request.key) ? request.key : keys[0]);
 	}, [request, keys, moveTo]);
 
+	/**
+	 * What activating a row does, which is the one thing the two kinds of row do differently: a
+	 * kernel child is a process of its own and opens as a window, where a worker's rows live inside
+	 * this session and swap the window's view slot (founder rulings R1.1 and R2.1 on #8715). The
+	 * keyboard reaches both through this one handler, the one the mouse calls.
+	 */
 	const pickRow = useCallback(
-		(id: string) => {
-			setHeld(rowKey(id));
-			onView(id);
+		(row: SubagentRow) => {
+			setHeld(rowKey(row.id));
+			if (row.process === undefined) onView(row.id);
+			else onOpen(row.process);
 		},
-		[onView],
+		[onView, onOpen],
 	);
 
 	const expand = useCallback(() => {
@@ -317,7 +366,7 @@ export function SubagentList({
 							current={entry.row.current}
 							stop={stop === entry.key}
 							register={register}
-							onPick={() => pickRow(entry.row.id)}
+							onPick={() => pickRow(entry.row)}
 						>
 							<RowFields row={entry.row} at={at} />
 						</Line>

@@ -114,10 +114,7 @@ describe("statusFor", () => {
 					{id: "mode", text: "normal"},
 					{id: "window", text: "window-1"},
 				]);
-				assert.deepStrictEqual(bar.right, [
-					{id: "processes", text: "1 process"},
-					{id: "revision", text: "rev 7"},
-				]);
+				assert.deepStrictEqual(bar.right, [{id: "processes", text: "1 process"}]);
 				assert.strictEqual(bar.middleEmpty, null);
 			}),
 	);
@@ -125,10 +122,10 @@ describe("statusFor", () => {
 	it.effect("a program cannot write the left or the right, whatever segments it returns", () =>
 		Effect.gen(function* () {
 			const host = yield* testHost();
+			// Every id here is one the shell owns, so each is a real collision, not a nominal one.
 			const greedy = statusRenderer("host-native", () => [
 				{id: "workspace", text: "hijacked"},
 				{id: "processes", text: "hijacked"},
-				{id: "revision", text: "hijacked"},
 			]);
 			const shellOnly = statusFor(deskSnapshot({focused: focusedOn(host)}));
 			const withProgram = statusFor(declaredDesk(host, {statuses: {"counter/status": greedy}}));
@@ -137,7 +134,7 @@ describe("statusFor", () => {
 			assert.deepStrictEqual(withProgram.right, shellOnly.right);
 			assert.deepStrictEqual(
 				withProgram.middle.map((segment) => segment.text),
-				["hijacked", "hijacked", "hijacked"],
+				["hijacked", "hijacked"],
 			);
 		}),
 	);

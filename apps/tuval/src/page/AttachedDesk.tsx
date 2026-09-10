@@ -16,12 +16,14 @@
  * instead of a blank tab (#8004).
  */
 
-import {Effect, Fiber, Stream} from "effect";
+import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
 import type {ProgramId} from "../registry/program.ts";
+import {ProcessBoard} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
+import {openProcessMsg} from "../shell/core/machine.ts";
 import type {
 	AnyInspectorRenderer,
 	AnyStatusRenderer,
@@ -61,10 +63,22 @@ export interface AttachedDeskProps {
 	readonly statuses?: Readonly<Record<string, AnyStatusRenderer>>;
 	readonly reducedMotion: boolean;
 	/**
+	 * Draw the process board over the desk — the page's half of `features.processBoard`
+	 * (`../features.ts`), off by default. Off, this component renders exactly the tree it rendered
+	 * before the flag existed: no board, and no wrapper around the desk (#8723).
+	 */
+	readonly board?: boolean;
+	/**
 	 * Why the page stopped re-attaching, if it has. Set means the desk below is frozen for good and
 	 * says so; `null` means the lifecycle is still working, whatever the socket is doing right now.
 	 */
 	readonly refusal: string | null;
+	/**
+	 * The operator's `windowTitles` flag (`../features.ts`, #8721), read off the generated module at
+	 * the page's root (`./boot.tsx`) and handed down rather than imported here, so a test renders
+	 * this component at either setting without a bundler in the way.
+	 */
+	readonly windowTitles?: boolean;
 }
 
 /**
@@ -143,13 +157,15 @@ export function AttachedDesk({
 	inspectors = EMPTY_RENDERERS,
 	statuses = EMPTY_RENDERERS,
 	reducedMotion,
+	board = false,
 	refusal,
+	windowTitles = false,
 }: AttachedDeskProps): ReactElement {
 	const spells = useSpellRegistry(page);
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
-	/** The shell process's own revision — the bar's `rev`, read off the same view the snapshot is. */
+	/** The shell process's own revision — what the newest-wins compare below and the snapshot read. */
 	const [revision, setRevision] = useState(0);
 	/** Ids an attach has already been started for; a second window must not open a second socket read. */
 	const asked = useRef(new Set<string>());
@@ -300,19 +316,33 @@ export function AttachedDesk({
 			const row = rows.get(id);
 			const process = attached.get(processId);
 			if (row === undefined || process === undefined) return processGone(id);
+			// The row is the whole title (#8721): the newest `title@1` line the kernel latched, and the
+			// program that published it. The flag off is `null`, which is the desk that names its
+			// windows by uuid.
+			const name = windowTitles
+				? {title: Option.getOrNull(row.title), programId: row.programId}
+				: null;
 			const program = catalog.get(row.programId);
 			if (program === undefined) {
 				// Not "declares no renderer": a miss is also what an empty catalog looks like, and both
 				// `rows` and `programs` replay their initial value, so a page can render once before the
 				// registry frame lands. The honest sentence names this page's own catalog, not the kernel's.
-				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`);
+				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`, name);
 			}
 			const resolved = resolveRenderer(program.renderer);
 			if (resolved._tag === "RendererUnresolved" && resolved.reason === "module-load-failed") {
-				return noRenderer(id, `this page could not load a renderer module: ${resolved.detail}`);
+				return noRenderer(
+					id,
+					`this page could not load a renderer module: ${resolved.detail}`,
+					name,
+				);
 			}
 			if (resolved._tag !== "Resolved") {
-				return noRenderer(id, `this page answers to no renderer named ${program.renderer.ref}`);
+				return noRenderer(
+					id,
+					`this page answers to no renderer named ${program.renderer.ref}`,
+					name,
+				);
 			}
 			return boundMount(
 				{
@@ -325,12 +355,21 @@ export function AttachedDesk({
 						Effect.sync(() => dispatch({type: "window.setView", windowId, view: next})),
 				},
 				resolved.renderer.render,
+				name,
 			);
 		},
-		[rows, attached, catalog, resolveRenderer, views, dispatch],
+		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles],
 	);
 
 	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
+
+	// The board's own two operands. The rows are re-listed rather than handed the map's iterator: an
+	// iterator is a fresh object on every render, and the board memoizes its tile model on this value.
+	const boardRows = useMemo(() => [...rows.values()], [rows]);
+	const openProcess = useCallback(
+		(processId: ProcessId) => dispatch(openProcessMsg(processId)),
+		[dispatch],
+	);
 
 	// The half of a `DeskSnapshot` the shell state does not carry. Everything here is already on the
 	// page for the windows' sake; this is the same two frames read for the desk's own regions.
@@ -362,22 +401,37 @@ export function AttachedDesk({
 		);
 	}
 
+	const deskElement = (
+		<Desk
+			state={desk}
+			dispatch={dispatch}
+			press={press}
+			resolveMount={resolveMount}
+			entries={entries}
+			table={attachment.table}
+			deskTables={deskTables}
+			reducedMotion={reducedMotion}
+			call={page.call}
+			registry={spells}
+			commandsConnected={attachment.status === "attached" && refusal === null}
+			windowTitles={windowTitles}
+		/>
+	);
+
 	return (
 		<>
 			<ConnectionBanner status={attachment.status} reason={attachment.lastDrop} refusal={refusal} />
-			<Desk
-				state={desk}
-				dispatch={dispatch}
-				press={press}
-				resolveMount={resolveMount}
-				entries={entries}
-				table={attachment.table}
-				deskTables={deskTables}
-				reducedMotion={reducedMotion}
-				call={page.call}
-				registry={spells}
-				commandsConnected={attachment.status === "attached" && refusal === null}
-			/>
+			{board ? (
+				// The desk is `block-size: 100%` of this column, so it is the item that gives the board
+				// its room back (`../shell/board/board.css`). Flag off, there is no wrapper at all and
+				// the page is the tree it was before the board existed.
+				<div className="tuval-surface tuval-board-page" data-scheme="dark">
+					<ProcessBoard rows={boardRows} onOpen={openProcess} reducedMotion={reducedMotion} />
+					{deskElement}
+				</div>
+			) : (
+				deskElement
+			)}
 		</>
 	);
 }

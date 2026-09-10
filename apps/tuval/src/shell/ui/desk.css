@@ -2,9 +2,9 @@
  * Layout for the two desk-level regions — where they sit, not what they look like.
  *
  * Everything painted here comes from a `@kampus/design` primitive (`Card` for the inspector panel,
- * `Kbd` for the prefix chip) or from a role token already declared in `./tokens.css`. There is no
- * new token in this file and no literal colour, radius or shadow: a rule that wanted one is a rule
- * that should have reached for a primitive instead.
+ * `Kbd` for the prefix chip) or from one of that package's role tokens. There is no new token in
+ * this file and no literal colour, radius or shadow: a rule that wanted one is a rule that should
+ * have reached for a primitive instead.
  */
 
 /* The tiling area and the inspector share one row; the status line stays below both. */
@@ -37,12 +37,32 @@
 
 .tuval-inspector-title {
 	margin: 0 0 var(--s-2);
-	font:
-		var(--t-meta) system-ui,
-		sans-serif;
+	font: var(--t-meta);
 	color: var(--text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
+}
+
+/* Where the process id lives now that the window title is the program's own line (#8721). */
+.tuval-inspector-process {
+	margin: 0 0 var(--s-3);
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-2);
+	color: var(--text-muted);
+}
+
+.tuval-inspector-process-label {
+	font: var(--t-meta);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.tuval-inspector-process code {
+	font: var(--t-meta);
+	font-family: var(--font-mono);
+	/* The id is one long token and the column is 320px: it wraps rather than pushing the panel wide. */
+	overflow-wrap: anywhere;
 }
 
 /* The boundary panel where an inspector threw: the region's box, so the throw costs this column. */

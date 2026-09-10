@@ -26,7 +26,6 @@ import {useDesignT} from "../i18n";
 import {thinkingLevelKeys} from "./catalog";
 import {
 	type AgentChatDeliveryRule,
-	deliveryRuleForVariant,
 	requestedDelivery as resolveRequestedDelivery,
 } from "./delivery";
 import {fileAsImage, MAX_IMAGE_BYTES} from "./image";
@@ -49,16 +48,14 @@ import {
 import type {Activity, ConnectionState, ExtensionRequest, Suggestion} from "./types";
 import {unavailableBridge} from "./unavailable-bridge";
 
+/**
+ * The composer's props. There is no chrome prop: it has one shape for every host — see ADR 0369,
+ * which is where a case for a second one is argued, not here.
+ */
 export interface AgentChatInputProps {
 	readonly bridge?: AgentChatInputBridge;
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
-	/**
-	 * Which chrome the composer carries — the status row, the attach button, the overflow menu —
-	 * and the border it wears; `deliveryRule` decides how a send goes out. It is **not** a size
-	 * prop: the compact shape #8669 ruled is unconditional under both arms.
-	 */
-	readonly variant?: "harness" | "focused";
 	/**
 	 * How a send is delivered.
 	 *
@@ -67,8 +64,7 @@ export interface AgentChatInputProps {
 	 *   picked there queues as a `follow_up` instead of interrupting the run. A send at any other
 	 *   connection state is always a fresh `prompt`.
 	 *
-	 * Unset, it is derived from `variant` — `focused` means `queue-while-working`, `harness` means
-	 * `as-picked` — so a host that never named it keeps the delivery it has today.
+	 * Unset, it is `queue-while-working`, the rule every shipping host runs on.
 	 */
 	readonly deliveryRule?: AgentChatDeliveryRule;
 	readonly mockWhenUnavailable?: boolean;
@@ -101,7 +97,6 @@ export interface AgentChatInputProps {
  */
 export interface AgentChatInputState {
 	readonly disabled: boolean;
-	readonly variant: "harness" | "focused";
 	readonly deliveryRule: AgentChatDeliveryRule;
 	readonly settings: ReactNode;
 	readonly fieldRef: Ref<HTMLTextAreaElement> | undefined;
@@ -171,8 +166,7 @@ export function AgentChatInputRoot({
 	bridge,
 	initialValue = "",
 	disabled = false,
-	variant = "harness",
-	deliveryRule,
+	deliveryRule = "queue-while-working",
 	mockWhenUnavailable = false,
 	onDraftChange,
 	settings,
@@ -180,7 +174,6 @@ export function AgentChatInputRoot({
 	children,
 }: AgentChatInputProps & {readonly children: ReactNode}) {
 	const activeBridge = bridge ?? unavailableBridge;
-	const rule = deliveryRule ?? deliveryRuleForVariant(variant);
 	const t = useDesignT();
 	const inputId = useId();
 	const suggestionsId = `${inputId}-suggestions`;
@@ -387,8 +380,8 @@ export function AgentChatInputRoot({
 			if (nextLevels) {
 				setThinkingLevels(nextLevels);
 				// A level the session has stopped offering is not the level it is running on. Left
-				// standing it reads as an operator selection the backend would refuse — and on the
-				// harness variant it kept rendering as the trigger's own label (#8425).
+				// standing it reads as an operator selection the backend would refuse, and it kept
+				// rendering as the trigger's own label (#8425).
 				setState((current) => {
 					const held = thinkingLevelValue(current?.thinkingLevel);
 					if (held === undefined || nextLevels.includes(held)) return current;
@@ -467,7 +460,7 @@ export function AgentChatInputRoot({
 			return;
 		}
 		try {
-			const requestedDelivery = resolveRequestedDelivery(rule, connection, delivery);
+			const requestedDelivery = resolveRequestedDelivery(deliveryRule, connection, delivery);
 			const streamedPrompt = connection === "working" && requestedDelivery === "prompt";
 			await activeBridge.sendPiPrompt({
 				type: requestedDelivery,
@@ -722,8 +715,7 @@ export function AgentChatInputRoot({
 	const value = useMemo<AgentChatInputContextValue>(
 		() => ({
 			disabled,
-			variant,
-			deliveryRule: rule,
+			deliveryRule,
 			settings,
 			fieldRef: ref,
 			inputId,
@@ -770,8 +762,8 @@ export function AgentChatInputRoot({
 			inspectorOpen,
 			models,
 			projectTrust,
+			deliveryRule,
 			ref,
-			rule,
 			settings,
 			settingsChanging,
 			settingsDisabled,
@@ -779,7 +771,6 @@ export function AgentChatInputRoot({
 			suggestions,
 			suggestionsId,
 			thinkingLevels,
-			variant,
 			widget,
 		],
 	);

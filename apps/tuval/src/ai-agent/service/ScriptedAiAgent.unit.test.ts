@@ -10,7 +10,8 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
-import type {ModelRef} from "../ports/index.ts";
+import type {AgentEvent} from "../events.ts";
+import type {ModelRef, TurnResult} from "../ports/index.ts";
 import {
 	cutShort,
 	disconnects,
@@ -18,6 +19,7 @@ import {
 	emptySession,
 	history,
 	interruptEvents,
+	interruptedPrompt,
 	interruptedPromptTurn,
 	interruptedTurn,
 	listRefused,
@@ -29,6 +31,8 @@ import {
 	permissionRequest,
 	permissionTurn,
 	plainReply,
+	plainReplyPrompt,
+	plainReplyText,
 	plainReplyTurn,
 	runningTool,
 	SESSION_ID,
@@ -67,6 +71,16 @@ const afterStart = (agent: TuvalAiAgentApi, count: number) =>
 	Effect.map(Stream.runCollect(Stream.take(agent.events, START_EVENTS + count)), (events) =>
 		events.slice(START_EVENTS),
 	);
+
+/**
+ * A turn as the layer publishes it: the script's own events, with the per-turn `result` the layer
+ * owes ahead of the phase that closes the turn (#8724). The script narrates the turn and the result
+ * is derived from it, so a layer that stopped wrapping its stream reds on every case below.
+ */
+const replayed = (
+	turn: ReadonlyArray<AgentEvent>,
+	result: TurnResult,
+): ReadonlyArray<AgentEvent> => [...turn.slice(0, -1), {kind: "result", result}, ...turn.slice(-1)];
 
 const take = (agent: TuvalAiAgentApi, count: number) =>
 	Stream.runCollect(Stream.take(agent.events, count));
@@ -198,9 +212,14 @@ describe("prompt", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				yield* agent.prompt("hello");
-				assert.deepStrictEqual(yield* afterStart(agent, plainReplyTurn.length), [
-					...plainReplyTurn,
-				]);
+				assert.deepStrictEqual(
+					yield* afterStart(agent, plainReplyTurn.length + 1),
+					replayed(plainReplyTurn, {
+						text: "hi back",
+						items: [plainReplyPrompt, plainReplyText],
+						ok: true,
+					}),
+				);
 			}),
 		),
 	);
@@ -213,8 +232,12 @@ describe("prompt", () => {
 				yield* agent.prompt("hello", "key-1");
 				yield* agent.setMode(mode("plan"));
 				// The mode event lands right after the one turn: the repeat queued nothing at all.
-				assert.deepStrictEqual(yield* afterStart(agent, plainReplyTurn.length + 1), [
-					...plainReplyTurn,
+				assert.deepStrictEqual(yield* afterStart(agent, plainReplyTurn.length + 2), [
+					...replayed(plainReplyTurn, {
+						text: "hi back",
+						items: [plainReplyPrompt, plainReplyText],
+						ok: true,
+					}),
 					{kind: "mode", current: mode("plan"), available: modes.available},
 				]);
 			}),
@@ -238,7 +261,13 @@ describe("a tool call", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				yield* agent.prompt("read the readme");
-				assert.deepStrictEqual(yield* afterStart(agent, toolCallTurn.length), [...toolCallTurn]);
+				// One item in the result, not two: the settled send supersedes the running one under
+				// its id, and the turn drew no assistant row, so its text is empty rather than a
+				// tool's name.
+				assert.deepStrictEqual(
+					yield* afterStart(agent, toolCallTurn.length + 1),
+					replayed(toolCallTurn, {text: "", items: [settledTool], ok: true}),
+				);
 				assert.strictEqual(runningTool.id, settledTool.id);
 				assert.strictEqual(runningTool.status, "running");
 				assert.strictEqual(settledTool.status, "ok");
@@ -426,9 +455,18 @@ describe("interrupt", () => {
 				yield* agent.interrupt;
 				const events = yield* afterStart(
 					agent,
-					interruptedPromptTurn.length + interruptEvents.length,
+					interruptedPromptTurn.length + interruptEvents.length + 1,
 				);
-				assert.deepStrictEqual(events, [...interruptedPromptTurn, ...interruptEvents]);
+				// The cut turn still owes its one result, `ok: false` off the row the backend marked
+				// — a consumer told nothing here waits for an answer that already ended.
+				assert.deepStrictEqual(
+					events,
+					replayed([...interruptedPromptTurn, ...interruptEvents], {
+						text: cutShort.kind === "assistant" ? cutShort.text : "",
+						items: [interruptedPrompt, cutShort],
+						ok: false,
+					}),
+				);
 				assert.strictEqual(cutShort.kind === "assistant" && cutShort.interrupted, true);
 			}),
 		),

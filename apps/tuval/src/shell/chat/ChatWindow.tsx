@@ -44,14 +44,18 @@ import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEve
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
-import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {Mode, SubagentSlot, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
 import {useForwardedKey} from "../ui/forwarded-key.tsx";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
-import {tuvalDesignTranslate, tuvalSubagentViewTranslate} from "./copy.ts";
+import {
+	composerStateAnnouncement,
+	tuvalDesignTranslate,
+	tuvalSubagentViewTranslate,
+} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
@@ -70,7 +74,7 @@ import {
 } from "./rows.ts";
 import {SessionRow} from "./SessionRow.tsx";
 import {SubagentList, type SubagentListHandle} from "./SubagentList.tsx";
-import {subagentPhrase} from "./subagents.ts";
+import {shownSubagents, subagentPhrase} from "./subagents.ts";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {ToolRunRow} from "./ToolRunRow.tsx";
@@ -109,6 +113,20 @@ export interface ChatWindowOptions {
 	 * (#8405).
 	 */
 	readonly subagentList?: boolean;
+	/**
+	 * The window's half of the config's `features.kernelChildren` flag (`../../config.ts`), off by
+	 * default. On, a process the agent spawned through the kernel shows as a marked row in the list
+	 * and opens as its own window; off, the window is exactly the one it is without the flag — the
+	 * slot is filtered out before anything reads it, so neither the list nor the transcript's
+	 * subagent heads see it (#8719).
+	 */
+	readonly kernelChildren?: boolean;
+	/**
+	 * Open a process as a window — the desk's own `window:attach`, handed in because a renderer has
+	 * no route to the shell (`../../page/renderers.tsx`). A window built without one draws no kernel
+	 * rows whatever the flag says: a row that cannot be opened is a row that lies about what it does.
+	 */
+	readonly openProcess?: (processId: string) => void;
 	readonly pageLimit?: number;
 	readonly overscan?: number;
 	/** First guess per row, before the row is rendered and measured. */
@@ -139,6 +157,8 @@ interface ResolvedOptions {
 	readonly newKey: () => string;
 	readonly now: () => number;
 	readonly subagentList: boolean;
+	readonly kernelChildren: boolean;
+	readonly openProcess: (processId: string) => void;
 	readonly pageLimit: number;
 	readonly overscan: number;
 	readonly estimateRowHeight: number;
@@ -148,11 +168,15 @@ interface ResolvedOptions {
 	readonly scrollToFn?: VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"];
 }
 
+const NO_SLOTS: Readonly<Record<string, SubagentSlot>> = {};
+
 const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	now: options.now ?? (() => Date.now()),
 	subagentList: options.subagentList !== false,
+	kernelChildren: options.kernelChildren === true && options.openProcess !== undefined,
+	openProcess: options.openProcess ?? (() => undefined),
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,
@@ -566,8 +590,12 @@ function ChatWindow({
 
 	// The slots the flag makes rows disappear behind. Off, it is the shared empty set and `chatRows`
 	// folds exactly as it did; on, every row whose parent chain reaches one of these leaves the
-	// transcript (#8405).
-	const subagentSlots = state?.subagents ?? null;
+	// transcript (#8405). The kernel-children flag is contained once, here, so the list and the
+	// heads cannot disagree about which slots exist (#8719).
+	const subagentSlots = useMemo(
+		() => (state === null ? null : shownSubagents(state.subagents, options.kernelChildren)),
+		[options.kernelChildren, state],
+	);
 	const subagents = useMemo(
 		() => subagentHeads(subagentSlots, options.subagentList),
 		[options.subagentList, subagentSlots],
@@ -579,7 +607,13 @@ function ChatWindow({
 	 * was on must not keep a window swapped away once it is off (#8405's containment).
 	 */
 	const viewing = options.subagentList ? view.viewing : null;
-	const viewedSlot = viewing === null ? undefined : state?.subagents[viewing.id];
+	const viewedSlot = viewing === null ? undefined : subagentSlots?.[viewing.id];
+
+	/**
+	 * One predicate behind the composer's `disabled` prop and behind what the view slot's live region
+	 * says about it, so an operator who cannot see the field still hears its state (#8635).
+	 */
+	const composerDisabled = viewing !== null;
 
 	/** The scroll offset `onScroll` is holding for its settle window, and the timer holding it. */
 	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1103,10 +1137,14 @@ function ChatWindow({
 					<>
 						<SubagentList
 							ref={navigatorRef}
-							slots={process.state.subagents}
+							// Empty rather than the unfiltered set: `subagentSlots` is null only where this
+							// window has no state to read, and a fallback to `process.state.subagents` would
+							// be the one path that draws kernel rows with the flag off (#8719).
+							slots={subagentSlots ?? NO_SLOTS}
 							now={options.now}
 							viewing={viewing?.id ?? null}
 							onView={showSubagent}
+							onOpen={options.openProcess}
 							onMain={showMain}
 						/>
 						{/* The one live region for the view slot, and the reason the visible notice below is
@@ -1119,8 +1157,9 @@ function ChatWindow({
 									? "Showing the agent's own transcript."
 									: "Showing a subagent whose transcript is not in this session's state."
 								: viewedSlot.status === "finished"
-									? `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Finished: ${viewedSlot.lastLine}`
-									: `Showing the ${subagentPhrase(viewedSlot.type)}'s transcript. Still running.`}
+									? `Showing the ${subagentPhrase(viewedSlot.type, viewedSlot.workers)}'s transcript. Finished: ${viewedSlot.lastLine}`
+									: `Showing the ${subagentPhrase(viewedSlot.type, viewedSlot.workers)}'s transcript. Still running.`}{" "}
+							{composerStateAnnouncement(composerDisabled)}
 						</p>
 					</>
 				) : null}
@@ -1134,7 +1173,7 @@ function ChatWindow({
 					aria-label={
 						viewedSlot === undefined
 							? "Transcript"
-							: `Transcript: ${subagentPhrase(viewedSlot.type)}`
+							: `Transcript: ${subagentPhrase(viewedSlot.type, viewedSlot.workers)}`
 					}
 					// The scroll container is the only way to older turns on a plain transcript, so a
 					// keyboard user must be able to focus it (axe scrollable-region-focusable).
@@ -1196,7 +1235,7 @@ function ChatWindow({
 								{viewedSlot.lastLine}
 							</>
 						) : (
-							`The ${subagentPhrase(viewedSlot.type)} is still running.`
+							`The ${subagentPhrase(viewedSlot.type, viewedSlot.workers)} is still running.`
 						)}
 					</p>
 				)}
@@ -1228,14 +1267,14 @@ function ChatWindow({
 				/>
 				<AgentChatInput.Root
 					ref={composerRef}
-					variant="focused"
 					bridge={composer.bridge}
 					// Founder ruling on #8466: while the view slot shows a subagent the composer is
 					// disabled, not re-worded. A prompt typed here would land in the transcript the
 					// operator is not reading, and there is no second session to address it to. It stays
 					// mounted — the draft is the component's own state, so unmounting it would drop text
-					// the swap must not touch — and the placeholder swapped above says why.
-					disabled={viewing !== null}
+					// the swap must not touch. The placeholder swapped above says why, and the view slot's
+					// live region says the same for a reader the disabled field never lets in (#8635).
+					disabled={composerDisabled}
 					initialValue={view.draft}
 					onDraftChange={(draft) =>
 						commit((current) => (current.draft === draft ? current : {...current, draft}))
@@ -1260,10 +1299,8 @@ function ChatWindow({
 									<AgentChatInput.Overflow />
 								</AgentChatInput.Toolbar>
 							</AgentChatInput.Form>
-							<AgentChatInput.Hint />
 							<AgentChatInput.Error />
 						</AgentChatInput.Surface>
-						<AgentChatInput.Inspector />
 						<AgentChatInput.ExtensionDialog />
 					</AgentChatInput.Frame>
 				</AgentChatInput.Root>
