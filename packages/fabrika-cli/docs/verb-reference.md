@@ -102,7 +102,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
 | `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
-| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute` |
+| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute`, journalled per removal, bounded by `--limit` |
 | `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
 
 **`build verdicts`' `current` column is the content question, not the head question.** A row reads
@@ -122,6 +122,14 @@ population, which usually holds no lane branch at all (the harness detaches thos
 git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the trunk — reachable
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
+
+A sweep records as it goes rather than at the end. Each removal git reports is appended to
+`.fabrika/reap.jsonl` under the run's own tree root before the next candidate is attempted, so the
+executed set of a run the harness kills mid-loop is still on disk — the terminal JSON of such a run
+was never composed at all, which is what left a 116-of-134 sweep with no record. `--limit` is the
+other half: it bounds the executed set, so a population too large for one 600s watchdog window is
+walked in pieces, and every removable tree past the bound is reported UNATTEMPTED and stays
+registered for the next run.
 
 Those three are git facts, and a fourth one is not, because git has nothing to say about it. An
 operator or reviewer **seat** drives its lane without ever committing and usually without editing a
