@@ -48,7 +48,12 @@ import type {
 } from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import {type AnyArgRefs, argKeys} from "./args.ts";
-import {type CommandArgTypes, type CommandTable, compileCommands} from "./commands.ts";
+import {
+	type CommandArgTypes,
+	type CommandHandlers,
+	type CommandTable,
+	compileCommands,
+} from "./commands.ts";
 import {
 	type AskEffect,
 	type EmitEffect,
@@ -228,8 +233,9 @@ const arrivingPorts = (authored: AnyAuthoredProgram): ReadonlyArray<string> =>
 		.map(([name]) => name);
 
 /**
- * The five effect handlers, written once. Each answers the events its effect produces: `emit` and
- * `send` announce nothing back, `spawn` answers `spawned` and `stop` answers `stopped`.
+ * The six effect handlers, written once. Each answers the events its effect produces: `emit` and
+ * `send` announce nothing back, `spawn` answers `spawned` and `stop` answers `stopped`. A command
+ * reaches five of them; `emit` is an `update` cell's alone (ADR 0372).
  */
 const emitHandler = (cmd: EmitEffect) =>
 	Effect.gen(function* () {
@@ -317,6 +323,21 @@ const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, Effect
 	stop: stopHandler,
 };
 
+/**
+ * What a compiled command needs — `EffectServices` without `ProcessPorts`, because a command may
+ * not declare `emit` (ADR 0372) and `emitHandler` is the only reader of that service.
+ */
+export type CommandEffectServices = Exclude<EffectServices, ProcessPorts>;
+
+/** The same handlers minus `emit`, so no command's spell can reach a process out-port. */
+const COMMAND_HANDLERS: CommandHandlers<EffectFailure, CommandEffectServices> = {
+	spawn: spawnHandler,
+	send: sendHandler,
+	ask: askHandler,
+	reply: replyHandler,
+	stop: stopHandler,
+};
+
 /** Demlik demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576). */
 const dead = (): Promise<void> => Promise.resolve();
 
@@ -392,7 +413,7 @@ export const FIELD_COMPILERS = {
 	receive: (authored) => compileReceive(authored),
 	handlers: () => HANDLERS,
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
-	spells: (authored) => compileCommands(authored.commands, HANDLERS),
+	spells: (authored) => compileCommands(authored.commands, COMMAND_HANDLERS),
 	takesKeys: (authored) => compileTakesKeys(authored),
 	renderer: (authored, context) => compileWindow(authored, context),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,

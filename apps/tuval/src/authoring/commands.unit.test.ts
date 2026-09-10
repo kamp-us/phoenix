@@ -1,13 +1,14 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Schema} from "effect";
 import {expect, expectTypeOf} from "vitest";
+import {SpawnedProcesses} from "../commands/core/process.ts";
 import {buildRegistry} from "../commands/registry.ts";
 import {type AnySpell, ClientId, type Scope, WorkspaceId} from "../commands/spell.ts";
-import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {ProcessId} from "../process/process.ts";
 import type {AnyProgram} from "../registry/program.ts";
+import type {CommandEffect} from "./commands.ts";
 import {defineProgram} from "./define-program.ts";
-import {emit, send} from "./effect.ts";
+import {emit, type ProgramEffect, send} from "./effect.ts";
 import {port} from "./port.ts";
 
 const scope: Scope = {workspace: WorkspaceId.make("w"), client: ClientId.make("c")};
@@ -28,7 +29,9 @@ const authored = {
 		},
 		"session.start": {
 			args: Schema.Struct({name: Schema.String}),
-			run: (args: {readonly name: string}) => [emit("announced", args.name.length)],
+			run: (args: {readonly name: string}) => [
+				send({process: ProcessId.make("p1"), port: "sessions"}, args.name),
+			],
 		},
 	},
 } as const;
@@ -61,15 +64,22 @@ const call = (spell: AnySpell, args: unknown) =>
 		spell.execute(decoded, scope),
 	);
 
-const capturingPorts = (emitted: Array<readonly [string, unknown]>) =>
+const unreachable = (name: string) => () => Effect.die(`a command cannot reach ${name}`);
+
+/** Only `send` is exercised, so the other four members answer by dying rather than by pretending. */
+const capturingSends = (sent: Array<readonly [string, unknown]>) =>
 	Layer.succeed(
-		ProcessPorts,
-		ProcessPorts.of({
-			emit: (portName, payload) =>
+		SpawnedProcesses,
+		SpawnedProcesses.of({
+			send: (_process, portName, payload) =>
 				Effect.sync(() => {
-					emitted.push([portName, payload]);
-					return [];
+					sent.push([portName, payload]);
+					return {delivered: true, evicted: 0};
 				}),
+			spawn: unreachable("spawn"),
+			ask: unreachable("ask"),
+			answer: unreachable("answer"),
+			read: unreachable("read"),
 		}),
 	);
 
@@ -103,15 +113,34 @@ describe("authoring.commands", () => {
 	});
 
 	it.effect("interprets run's effects as an update cell's effects are interpreted", () => {
-		const emitted: Array<readonly [string, unknown]> = [];
+		const sent: Array<readonly [string, unknown]> = [];
 		return Effect.map(
 			Effect.provide(call(spellNamed(reviewer, "session.start"), {name: "umut"}), [
-				capturingPorts(emitted),
+				capturingSends(sent),
 			]),
 			() => {
-				expect(emitted).toEqual([["announced", 4]]);
+				expect(sent).toEqual([["sessions", "umut"]]);
 			},
 		);
+	});
+
+	it("refuses an `emit` in a commands cell where it is written (ADR 0372)", () => {
+		defineProgram({
+			id: "emitting",
+			ports: {announced: port.out(Schema.Number)},
+			init: () => ({}),
+			update: {noop: (state: Record<string, never>) => [state, []]},
+			commands: {
+				announce: {
+					args: Schema.Number,
+					// @ts-expect-error `emit` is not a `CommandEffect`: a spell call's `Scope` carries no
+					// process of the declaring program's, so no out-port here is its to announce on.
+					run: (n: number) => [emit("announced", n)],
+				},
+			},
+		});
+		// The declaration still compiles to a spell; the refusal is the checker's, not the compiler's.
+		expectTypeOf<CommandEffect>().not.toEqualTypeOf<ProgramEffect>();
 	});
 
 	it.effect("lets two programs declare one command name without colliding", () =>

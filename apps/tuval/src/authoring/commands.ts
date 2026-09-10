@@ -14,13 +14,24 @@ import {Effect, Schema} from "effect";
 import {type AnySpell, defineSpell, type Scope, type SpellPath} from "../commands/spell.ts";
 import type {CapabilityRequest, HostHandlers} from "../registry/program.ts";
 import type {AuthoredEvent} from "./define-program.ts";
-import type {ProgramEffect} from "./effect.ts";
+import type {EmitEffect, ProgramEffect} from "./effect.ts";
 
 /** What a command's `args` may be declared over: decodable from `unknown` with no services. */
 export type CommandArgs<A> = Schema.Codec<A, any, never, unknown>;
 
+/**
+ * The effects a command may ask for: every one an `update` cell may, less `emit`.
+ *
+ * `emit` announces on **a running process's** out-port, and a spell call is not a process step. The
+ * `Scope` it runs under names a workspace and a client, and the `process` it may carry is the
+ * *caller's* — so with none there is no out-port at all, and with one the out-port is somebody
+ * else's. Neither case leaves an out-port that is the declaring program's to announce on. Excluding
+ * `emit` here makes that a refusal the checker states where the command is written (ADR 0372).
+ */
+export type CommandEffect = Exclude<ProgramEffect, EmitEffect>;
+
 /** What a command's `run` answers: the effects it asks for, one or a list. */
-export type CommandAnswer = ProgramEffect | ReadonlyArray<ProgramEffect>;
+export type CommandAnswer = CommandEffect | ReadonlyArray<CommandEffect>;
 
 /** One command, as a user writes it. Nothing on it names a spell, a path prefix or an Effect. */
 export interface CommandDecl<A> {
@@ -50,11 +61,15 @@ export type CommandTable<C> = {readonly [K in keyof C]: CommandDecl<C[K]>};
 /** What `defineProgram` binds its command generic to: one argument type per declared name. */
 export type CommandArgTypes = Readonly<Record<string, unknown>>;
 
-/** What the compiled `execute` needs to interpret an effect: the spine's own five handlers. */
-export type EffectHandlers<E, R> = HostHandlers<AuthoredEvent, ProgramEffect, E, R>;
+/**
+ * What the compiled `execute` needs to interpret a command's effects: the spine's handlers for the
+ * five a command may ask for. There is no `emit` key, so the handler that reads `ProcessPorts` is
+ * not reachable from here and a compiled spell never requires that service.
+ */
+export type CommandHandlers<E, R> = HostHandlers<AuthoredEvent, CommandEffect, E, R>;
 
-const asList = (answer: CommandAnswer): ReadonlyArray<ProgramEffect> =>
-	Array.isArray(answer) ? answer : [answer as ProgramEffect];
+const asList = (answer: CommandAnswer): ReadonlyArray<CommandEffect> =>
+	Array.isArray(answer) ? answer : [answer as CommandEffect];
 
 /**
  * Run a command's effects through the spine's handlers, exactly as an `update` cell's effects are
@@ -63,11 +78,11 @@ const asList = (answer: CommandAnswer): ReadonlyArray<ProgramEffect> =>
  */
 const interpret = <E, R>(
 	answer: CommandAnswer,
-	handlers: EffectHandlers<E, R>,
+	handlers: CommandHandlers<E, R>,
 ): Effect.Effect<void, E, R> => {
 	const byType = handlers as {
-		readonly [K in ProgramEffect["type"]]: (
-			cmd: ProgramEffect,
+		readonly [K in CommandEffect["type"]]: (
+			cmd: CommandEffect,
 		) => Effect.Effect<ReadonlyArray<AuthoredEvent>, E, R>;
 	};
 	// Serial on purpose: a command's effects are asked for in the order they were written, exactly
@@ -102,7 +117,7 @@ const NO_CAPABILITIES: ReadonlyArray<CapabilityRequest> = [];
  */
 export const compileCommands = <E, R>(
 	commands: CommandDecls | undefined,
-	handlers: EffectHandlers<E, R>,
+	handlers: CommandHandlers<E, R>,
 ): ReadonlyArray<AnySpell> | undefined => {
 	const declared = Object.entries(commands ?? {});
 	if (declared.length === 0) return undefined;
