@@ -10,7 +10,7 @@ import {classifyPark} from "../recipe/parks.ts";
 import {CAP_ROUND, MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
-import {parkCauseRead} from "./fixtures.test-support.ts";
+import {fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {declaresClosureGuard} from "./reconcile.ts";
@@ -154,17 +154,23 @@ describe("emitMachine", () => {
 		});
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runTransition({
-					root: ".fabrika/lanes",
-					lane: "4300",
-					event: "WIP",
-					task: "issue_4301",
-					cause: null,
-					parkCause: parkCauseRead(),
-					classes: [],
-					waitGrant: null,
-					rationale: null,
-				}),
+				runTransition(
+					{
+						root: ".fabrika/lanes",
+						lane: "4300",
+						event: "WIP",
+						task: "issue_4301",
+						cause: null,
+						parkCause: parkCauseRead(),
+						classes: [],
+						waitGrant: null,
+						rationale: null,
+						repo: "o/r",
+						cwd: "/checkout",
+						env: {},
+					},
+					fakeProver().prove,
+				),
 				fs.layer,
 			),
 		);
@@ -199,17 +205,23 @@ describe("emitMachine", () => {
 		const fs = fakeFs({files: {".fabrika/lanes/4300/workflow.json": text}});
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runTransition({
-					root: ".fabrika/lanes",
-					lane: "4300",
-					event: "WIP",
-					task: "issue_4303",
-					cause: null,
-					parkCause: parkCauseRead(),
-					classes: [],
-					waitGrant: null,
-					rationale: null,
-				}),
+				runTransition(
+					{
+						root: ".fabrika/lanes",
+						lane: "4300",
+						event: "WIP",
+						task: "issue_4303",
+						cause: null,
+						parkCause: parkCauseRead(),
+						classes: [],
+						waitGrant: null,
+						rationale: null,
+						repo: "o/r",
+						cwd: "/checkout",
+						env: {},
+					},
+					fakeProver().prove,
+				),
 				fs.layer,
 			),
 		);

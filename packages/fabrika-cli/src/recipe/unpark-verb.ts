@@ -46,6 +46,7 @@ import {isRecord, parseJson} from "../io/json.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
+import {runProve} from "../lane/prove-verb.ts";
 import {routeForCause} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
@@ -189,16 +190,22 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 					};
 		if (clearance._tag === "Refused") return clearance.outcome;
 
-		const recorded = yield* runTransition({
-			...ref,
-			event: "UNBLOCKED",
-			task,
-			cause: null,
-			parkCause: options.parkCause,
-			classes: [],
-			waitGrant: clearance.waitGrant,
-			rationale,
-		});
+		const recorded = yield* runTransition(
+			{
+				...ref,
+				event: "UNBLOCKED",
+				task,
+				cause: null,
+				parkCause: options.parkCause,
+				classes: [],
+				waitGrant: clearance.waitGrant,
+				rationale,
+				repo: options.repo,
+				cwd: options.cwd,
+				env: options.env,
+			},
+			runProve,
+		);
 		if (recorded.code !== 0) {
 			return relayRefusal(VERB, "fabrika lane transition", recorded, laneExit(recorded.code));
 		}

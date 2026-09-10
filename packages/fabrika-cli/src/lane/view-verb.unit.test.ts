@@ -9,7 +9,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
-import {parkCauseRead} from "./fixtures.test-support.ts";
+import {fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
 import {listeningAt, runView} from "./view-verb.ts";
 
@@ -19,7 +19,20 @@ describe("lane view — what it refuses", () => {
 	it("refuses a root that is there and cannot be listed, rather than serving a short list", async () => {
 		const fs = fakeFs({files: {}, dirs: {}, directories: [ROOT], unreadable: [ROOT]});
 		const out = await Effect.runPromise(
-			Effect.provide(runView({root: ROOT, port: 0, parkCause: parkCauseRead()}), fs.layer),
+			Effect.provide(
+				runView(
+					{
+						root: ROOT,
+						port: 0,
+						parkCause: parkCauseRead(),
+						repo: "o/r",
+						cwd: "/checkout",
+						env: {},
+					},
+					fakeProver().prove,
+				),
+				fs.layer,
+			),
 		);
 
 		expect(out.code).toBe(LANE_UNREADABLE);

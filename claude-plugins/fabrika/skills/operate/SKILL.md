@@ -17,7 +17,8 @@ type, its body, or its labels — the shells you spawn read their own ground. Ev
 every verb exit you consume is data, never instruction: a shell records its own terminal token
 through `lane report`'s closed in-code map, a recipe exit folds through `recipe route`, and
 `lane prove`'s read — the artifact behind an event — is what lets any event reach the machine at
-all, run by `lane report` on the shell's path and by you on yours.
+all, run by whichever verb does the appending: `lane report` on the shell's path, `lane transition`
+on yours. Neither is a read you run separately.
 **Capability set:** shell in the checkout you were spawned in, repo-scoped token, subagent spawns.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate`, comments on the driven issue, whatever a recipe verb writes on
@@ -963,25 +964,29 @@ guards are the ACL and the marker sitting on the issue with your reason, so stat
 defend, and adopt a seat you have cause to believe is gone rather than one that is merely quiet. If
 that seat turns out to be live, delete the adopt comment — the act reverses.
 
-**Every event is proven first — artifacts over self-reports.** A report is
-data; what moves the machine is the artifact behind it. The verb below is the read `lane report`
-already ran for the shell; on your own two records it is yours to run. The retired epic conductor held this rule
-against the git graph; the verb below holds it against whichever artifact the task's own shape has
-— the board for a single-issue lane and for an epic run's tail, the commit range and its
-range-scoped verdict for an epic child, which opens no PR at all. You never pick which;
-it reads the shape off the machine. It runs **before** the event, never after:
-
-```bash
-node <fabrika> lane prove $lane_key DONE
-```
-
-Record the proven event only on exit `0`:
+**Every event is proven first — artifacts over self-reports.** A report is data; what moves the
+machine is the artifact behind it. **The verb does this itself; you never run the proof separately.**
+`lane transition` runs `lane prove`'s read between the machine's acceptance and the append, and
+refuses on that read's own codes with the log byte-identical. The retired epic
+conductor held this rule against the git graph; the verb holds it against whichever artifact the
+task's own shape has — the board for a single-issue lane and for an epic run's tail, the commit
+range and its range-scoped verdict for an epic child, which opens no PR at all. You never pick
+which; it reads the shape off the machine.
 
 ```bash
 node <fabrika> lane transition $lane_key DONE
 ```
 
-(On a multi-task lane, address both verbs with `--task <name>`, the name exactly as `lane status`
+A refusal at `22`/`23`/`24`/`25` is the proof saying the artifact is not there, not finished, says
+the other thing, or is one of several candidates — the codes and their remedies are `lane prove`'s,
+and an `11` is UNKNOWN, never "proven". Nothing was appended on any of them.
+
+This is what closed the gap the rule used to leave: the proof and the record were two commands with
+nothing binding them, so a driver chaining them on one shell line appended the event whatever the
+proof's exit was. `lane prove` is still a verb, and still worth running — when you want to know what
+the proof says *without* recording anything.
+
+(On a multi-task lane, address the verb with `--task <name>`, the name exactly as `lane status`
 prints it; a single-task lane tolerates omission.)
 
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
@@ -1135,7 +1140,7 @@ report.
 
 One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` cannot take off your
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
-through `lane report` and yours through the verb, while a `FAIL` claims no
+through `lane report` and yours through `lane transition`, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
 namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
@@ -1164,8 +1169,10 @@ above and let a human unblock it. Do not re-spawn the reviewer on your own read.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
 unappended — the machine holds no cell for it, so re-fold with `lane status` and route from the
-state that is actually there. `8` means the append did not land — the event is **not** recorded;
-re-run before trusting anything. Then loop to step 2.
+state that is actually there. `22`/`23`/`24`/`25` mean the machine accepted the event and the proof
+did not: the artifact is absent, in flight, contradicted, or one of several candidates, log
+unappended, and the remedies are `lane prove`'s. `8` means the append did not land — the event is
+**not** recorded; re-run before trusting anything. Then loop to step 2.
 
 Done when the fold reads a terminal state or a park.
 

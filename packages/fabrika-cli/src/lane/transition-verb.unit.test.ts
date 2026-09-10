@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
+import {refuse} from "../verb.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
@@ -11,10 +12,11 @@ import {
 	LANE_ABSENT,
 	LANE_UNREADABLE,
 	PARK_UNCAUSED,
+	PROOF_CONTRADICTED,
 	RATIONALE_REFUSED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {PARK_CAUSE_TOKENS} from "./report.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -34,20 +36,27 @@ const run = (
 	waitGrant: number | null = null,
 	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
 	rationale: string | null = null,
+	prover: ReturnType<typeof fakeProver> = fakeProver(),
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runTransition({
-				root: ROOT,
-				lane: "42",
-				event,
-				task,
-				cause,
-				parkCause,
-				classes,
-				waitGrant,
-				rationale,
-			}),
+			runTransition(
+				{
+					root: ROOT,
+					lane: "42",
+					event,
+					task,
+					cause,
+					parkCause,
+					classes,
+					waitGrant,
+					rationale,
+					repo: "o/r",
+					cwd: "/checkout",
+					env: {},
+				},
+				prover.prove,
+			),
 			fs.layer,
 		),
 	);
@@ -326,5 +335,83 @@ describe("lane transition — the rationale a driver's clearance is recorded on"
 		expect(out.code).toBe(0);
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(Object.hasOwn(appended, "rationale")).toBe(false);
+	});
+});
+
+/**
+ * The gate that used to be prose a driver read. `operate` laid the proof and the record out as two
+ * adjacent one-liners, so a driver chaining them on one shell line appended whatever the proof said
+ * — which is how one epic's lane recorded a `BLOCKED` over a `lane prove` that had just refused it.
+ */
+describe("lane transition — the proof gate", () => {
+	it("refuses on the prover's own code with the log byte-identical", async () => {
+		const fs = freshLane(logLine("WIP"));
+		const prover = fakeProver(
+			refuse(PROOF_CONTRADICTED, "fabrika lane prove: unproven — #7954 holds a FAIL"),
+		);
+
+		const out = await run(fs, "DONE", null, null, [], null, undefined, null, prover);
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join(" ")).toContain("holds a FAIL");
+		expect(out.stderr.join(" ")).toContain("log unappended");
+		// The refusal reads as `lane prove`'s, because its remedies are.
+		expect(out.stderr.join(" ")).toContain("fabrika lane prove");
+		expect(fs.written.get(LOG)).toBeUndefined();
+	});
+
+	it("asks the prover for the event and task it is about to append", async () => {
+		const fs = freshLane(logLine("WIP"));
+		const prover = fakeProver();
+
+		const out = await run(fs, "DONE", null, null, [], null, undefined, null, prover);
+
+		expect(out.code).toBe(0);
+		expect(prover.asked).toEqual([
+			{
+				root: ROOT,
+				lane: "42",
+				event: "DONE",
+				task: "issue",
+				classes: null,
+				pr: null,
+				repo: "o/r",
+				cwd: "/checkout",
+				env: {},
+			},
+		]);
+	});
+
+	it("hands the prover the same classes the append carries", async () => {
+		const fs = freshLane(logLine("WIP") + logLine("DONE"));
+		const prover = fakeProver();
+
+		const out = await run(fs, "PASS", null, null, ["ui"], null, undefined, null, prover);
+
+		expect(out.code).toBe(0);
+		expect(prover.asked[0]).toMatchObject({event: "PASS", classes: ["ui"]});
+	});
+
+	it("never reaches the prover for an event the machine refuses", async () => {
+		const fs = freshLane(logLine("WIP"));
+		const prover = fakeProver();
+
+		const out = await run(fs, "WIP", null, null, [], null, undefined, null, prover);
+
+		expect(out.code).toBe(EVENT_REFUSED);
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.get(LOG)).toBeUndefined();
+	});
+
+	it("records the prover's own fields on the driver's line, as `lane report` records them", async () => {
+		const fs = freshLane(logLine("WIP") + logLine("DONE"));
+		const prover = fakeProver(undefined, ["review-ui"], null, []);
+
+		const out = await run(fs, "PASS", null, null, ["ui"], null, undefined, null, prover);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({deferred: ["review-ui"]});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended.deferred).toEqual(["review-ui"]);
 	});
 });
