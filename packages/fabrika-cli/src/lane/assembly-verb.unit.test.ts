@@ -22,14 +22,46 @@ const BRANCHES = /^git for-each-ref /;
 const SET_HEAD = /^git remote set-head /;
 const TRUNK = /^git rev-parse --verify origin\/HEAD/;
 const ANCESTOR = /^git merge-base --is-ancestor /;
+const NAMES = /^git diff .*--name-only/;
+const DIFF = /^git diff .*bbbb222\.\.\./;
+const MERGE_BASE = /^git merge-base bbbb222 /;
+const LOG = /^git log --no-merges -p /;
+const PATCH_ID = /^git patch-id --stable$/;
 const UNSET = /^git branch --unset-upstream /;
 
 const NO_BRANCHES = okOut("main\n");
 const BRANCH_SURVIVED = okOut(`main\n${BRANCH}\n`);
 const TRUNK_HEAD = okOut("bbbb222\n");
+const BASE_SHA = "a".repeat(40);
+/** `io/git.ts`'s config-proof diff flags, as they reach the argv of every read below. */
+const DIFF_FLAGS = "--no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/";
 /** `merge-base --is-ancestor` answers through its status alone: zero is contained, non-zero is not. */
 const CONTAINED = okOut("");
 const DIVERGED = errOut("");
+
+/**
+ * The patch reads the resume takes when ancestry says "not an ancestor" — the only answer this
+ * repository's squash trunk ever gives (#9015). The first `patch-id` is the branch's own cumulative
+ * patch, the second the trunk scan's, and whether those two agree is the whole verdict.
+ */
+const patchReads = (
+	branchPatch: string,
+	trunkPatch: string,
+): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[ANCESTOR, DIVERGED],
+	[NAMES, okOut("x.ts\0")],
+	[DIFF, okOut("diff --git a/x.ts b/x.ts\n@@\n+x\n")],
+	[once(PATCH_ID), okOut(`${branchPatch} 0000000\n`)],
+	[MERGE_BASE, okOut(`${BASE_SHA}\n`)],
+	[LOG, okOut("commit 99ef1f6\ndiff --git a/x.ts b/x.ts\n@@\n+x\n")],
+	[PATCH_ID, okOut(`${trunkPatch} 99ef1f6\n`)],
+];
+
+/** Ancestry says no and no trunk commit carries the branch's patch — it still holds unlanded work. */
+const unlanded = () => patchReads("ffff", "eeee");
+
+/** Ancestry says no and the trunk carries the branch's patch as `99ef1f6` — it squash-landed. */
+const squashed = () => patchReads("d18b491", "d18b491");
 
 const listing = (
 	...blocks: ReadonlyArray<readonly [string, string | null] | readonly [string, string, "prunable"]>
@@ -90,7 +122,7 @@ describe("runAssembly", () => {
 			[FETCH, okOut("")],
 			[SET_HEAD, okOut("")],
 			[TRUNK, TRUNK_HEAD],
-			[ANCESTOR, DIVERGED],
+			...unlanded(),
 		]);
 
 		expect(outcome.code).toBe(0);
@@ -183,7 +215,7 @@ describe("runAssembly", () => {
 			[FETCH, okOut("")],
 			[SET_HEAD, okOut("")],
 			[TRUNK, TRUNK_HEAD],
-			[ANCESTOR, DIVERGED],
+			...unlanded(),
 		]);
 
 		expect(outcome.code).toBe(0);
@@ -215,6 +247,47 @@ describe("runAssembly", () => {
 		// `--no-track` does not clear a `-B` target's pre-existing upstream, so the re-cut arm needs
 		// the same explicit unset the plain resume gets.
 		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
+	});
+
+	// Every landing here is a squash, so ancestry answers "not contained" for the very branch the
+	// guard exists for. The patch id is what decides it, and this is the case that motivated both.
+	it("re-cuts a branch whose content squash-landed on the trunk, naming the commit it landed as", async () => {
+		const {outcome, calls} = await run([
+			[once(LIST), CLEAN],
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			...squashed(),
+			[ADD, okOut("")],
+			[UNSET, okOut("")],
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout.trim()).toBe(EXPECTED);
+		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(outcome.stderr.join("\n")).toContain("already landed on the default branch as 99ef1f6");
+		expect(calls.some((line) => line.includes("--force"))).toBe(false);
+	});
+
+	it("is UNKNOWN, never a re-cut, when the patch read that would prove containment fails", async () => {
+		const {outcome, calls} = await run([
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, DIVERGED],
+			[NAMES, okOut("x.ts\0")],
+			[DIFF, errOut("fatal: bad revision")],
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain("UNKNOWN");
+		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
+		expect(calls.some((line) => line.startsWith("git worktree remove"))).toBe(false);
 	});
 
 	it("drops the seat of a contained branch before re-cutting it, and never forces that removal", async () => {
@@ -288,7 +361,7 @@ describe("runAssembly", () => {
 			[FETCH, okOut("")],
 			[SET_HEAD, okOut("")],
 			[TRUNK, TRUNK_HEAD],
-			[ANCESTOR, DIVERGED],
+			...unlanded(),
 			[ADD, okOut("")],
 		]);
 
@@ -301,6 +374,12 @@ describe("runAssembly", () => {
 			"git remote set-head origin --auto",
 			"git rev-parse --verify origin/HEAD^{commit}",
 			`git merge-base --is-ancestor ${BRANCH} bbbb222`,
+			`git diff ${DIFF_FLAGS} bbbb222...${BRANCH}`,
+			"git patch-id --stable",
+			`git diff ${DIFF_FLAGS} --name-only -z bbbb222...${BRANCH}`,
+			`git merge-base bbbb222 ${BRANCH}`,
+			`git log --no-merges -p ${DIFF_FLAGS} --format=commit %H -n 200 ${BASE_SHA}..bbbb222 -- x.ts`,
+			"git patch-id --stable",
 			`git worktree remove ${EXPECTED}`,
 			"git worktree list --porcelain",
 			`git worktree add ${EXPECTED} ${BRANCH}`,
@@ -316,7 +395,7 @@ describe("runAssembly", () => {
 			[FETCH, okOut("")],
 			[SET_HEAD, okOut("")],
 			[TRUNK, TRUNK_HEAD],
-			[ANCESTOR, DIVERGED],
+			...unlanded(),
 			[REMOVE, errOut("fatal: validation failed, cannot remove working tree")],
 		]);
 

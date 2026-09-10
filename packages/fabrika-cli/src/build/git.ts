@@ -344,7 +344,7 @@ export const remoteSha = (remote: string, ref: string): Shell<Attempt<string | n
  * Make `sha` readable from this object database, fetching `<remote>/<ref>` once if it is not, and
  * answer whether it now is.
  *
- * {@link isAncestor} needs both commits present locally, and a repair lane's published head can be a
+ * `isAncestor` (`../io/git.ts`) needs both commits present locally, and a repair lane's published head can be a
  * commit this clone has never held. A missing object is UNKNOWN — never "not an ancestor" — so this
  * answers presence and leaves the conclusion to the caller.
  */
@@ -384,13 +384,6 @@ export const commitsDropped = (
 			.map((l) => l.trim())
 			.filter((l) => l !== "");
 		return {lines: lines.slice(0, DROPPED_SHOWN), truncated: lines.length > DROPPED_SHOWN};
-	});
-
-/** Whether `ancestor` is reachable from `descendant` — the fast-forward test. */
-export const isAncestor = (ancestor: string, descendant: string): Shell<boolean> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["merge-base", "--is-ancestor", ancestor, descendant]);
-		return r.ok;
 	});
 
 export const push = (remote: string, ref: string, force: boolean): Shell<Attempt<void>> =>
