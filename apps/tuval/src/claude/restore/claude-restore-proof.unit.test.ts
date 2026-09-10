@@ -22,7 +22,11 @@ import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
 import {Effect, type FileSystem, Option, type Scope} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+	promptItemId,
+} from "../../ai-agent/core/index.ts";
 import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
 import type {
 	ModePayload,
@@ -353,7 +357,7 @@ describe("the claude-session row, driven through ports and booted back over its 
 			outcome.second.afterReconnect,
 			"the restored window is not looking at the transcript the stop left",
 		).toEqual(afterTheCut);
-		expect(outcome.second.restored.interrupted).toBe("a3");
+		expect(outcome.second.restored.interrupted).toBe(promptItemId(KEYS.cut));
 		const cut = outcome.second.restored.transcript.items.at(-1);
 		expect(
 			cut?.kind === "assistant" && cut.interrupted === true,

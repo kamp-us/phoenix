@@ -292,7 +292,7 @@ describe("the whole app, stopped mid-reply and booted back over its checkpoints"
 			outcome.second.afterReconnect,
 			"the restored window is not looking at the transcript the stop left",
 		).toEqual(afterTheCut);
-		expect(outcome.second.restored.interrupted).toBe("a3");
+		expect(outcome.second.restored.interrupted).toBe("u3");
 		const cut = outcome.second.restored.transcript.items.at(-1);
 		expect(
 			cut?.kind === "assistant" && cut.interrupted === true,
