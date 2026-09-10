@@ -334,7 +334,7 @@ describe("the agy layer over a scripted binary", () => {
 		expect(refusal._tag).toBe("tuval/ai-agent/UnknownRequest");
 	});
 
-	it("interrupts with SIGINT, and marks the cut turn rather than failing it", async () => {
+	it("interrupts with SIGINT, marks the cut turn, and comes back on the same conversation", async () => {
 		const collectedEvents = await drive((collected) =>
 			Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
@@ -344,15 +344,12 @@ describe("the agy layer over a scripted binary", () => {
 				);
 				yield* agent.prompt("something long");
 				yield* agent.interrupt;
-				yield* until(collected, (events) =>
-					events.some((event) => event.kind === "phase" && event.phase === "gone"),
-				);
 				return [...collected];
 			}),
 		);
 		// The wire names the stop (`error: "interrupted"`, #8694), so the turn is marked rather than
-		// failed — and the child is really gone, which the window has to be told: the exit watch used
-		// to lose a race to stdout's own EOF and the session read `ready` over a dead process (#8693).
+		// failed — and the stop is not the end of the session: the child it killed is relaunched on the
+		// same conversation id, so the window is left able to send again (#8709).
 		expect(
 			collectedEvents.flatMap((event) => (event.kind === "failure" ? [event.failure] : [])),
 		).toEqual([]);
@@ -365,7 +362,13 @@ describe("the agy layer over a scripted binary", () => {
 		const phases = collectedEvents.flatMap((event) =>
 			event.kind === "phase" ? [event.phase] : [],
 		);
-		expect(phases.at(-1)).toBe("gone");
+		expect(phases).not.toContain("gone");
+		expect(phases.at(-1)).toBe("ready");
+		// Two launches, and the second reopens what the first opened: the relaunch is the `respawn`
+		// the three switches take, not a fresh session.
+		const composed = launches();
+		expect(composed).toHaveLength(2);
+		expect(composed[1]?.join(" ")).toContain("--conversation=fake-0000-1111-2222");
 	});
 
 	it("pages history out of agy's own transcript.jsonl", async () => {

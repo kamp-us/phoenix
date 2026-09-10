@@ -16,13 +16,16 @@
  * `--conversation=<id>`, which returns the same conversation id and carries its context. The event
  * queue is *not* replaced across a respawn: a model switch must not end the window's subscription.
  *
- * **`interrupt` ends the session, and the wire does say so.** SIGINT makes agy exit 1 after a
+ * **`interrupt` ends the child, and then relaunches it.** SIGINT makes agy exit 1 after a
  * well-formed terminal `result` reading `status: "ERROR"` / `error: "interrupted"` — measured at
  * v1.1.27 and v1.1.28, correcting ADR 0362's original reading of that string as
  * `"timeout waiting for response"` (#8694). So the stop is named on the stream and `mapper.ts` marks
  * the cut reply off it; the layer's own memory of having sent the signal is still what `refusals.ts`'s
  * `processGone` spends, because a child that dies with no terminal result at all says nothing either
- * way. The way back is another `start({cwd, resume})`.
+ * way. That memory is also what keeps the exit watch off the event queue for a stop, because the
+ * fourth respawn is this one: `interrupt` relaunches on the same conversation id the way the three
+ * switches do, so a stop lands the window back on `ready` with a live child instead of on a session
+ * nothing but a fresh window could replace (#8709).
  *
  * **Two agy behaviours shape this file without being visible in it.** Turns are strictly sequential
  * — stdin lines queue and a second prompt does not preempt a running one — so nothing here
@@ -173,8 +176,10 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		const session = yield* Ref.make<Session | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const commandCache = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
-		// This process's own memory of having sent SIGINT, spent only where the wire said nothing: a
-		// child that exits with no terminal `result` at all (see `refusals.ts`'s `processGone`).
+		// A delivered stop, in flight on this child: set when SIGINT goes, given back by a refused
+		// signal and by the relaunch's own `openSession`. Two members read it — `processGone` spends
+		// it where the wire said nothing (`refusals.ts`), and the exit watch reads it to tell an exit
+		// this layer asked for from one it did not.
 		const interrupted = yield* Ref.make(false);
 		// Whether a turn is in flight: true from the send, false once the envelope says `result`.
 		// It is the reason a refused interrupt carries (ADR 0356), and nothing on agy's wire answers
@@ -238,9 +243,9 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		 * Everything one child says, folded once.
 		 *
 		 * The stdout drain, the stderr drain and the exit watch race: whichever finishes first ends
-		 * the fan, and the exit is the one that fails the queue — a subprocess that is gone is a
-		 * transport that is gone, and nothing relaunches on its own. The way back in is another
-		 * `start`.
+		 * the fan, and the exit is the one that fails the queue — a subprocess that went on its own is
+		 * a transport that is gone, and the way back in is another `start`. An exit this layer asked
+		 * for is the exception, and `interrupt` owns it.
 		 *
 		 * Each line is read twice, on purpose. `eventsOf` is #8178's mapper and owns the whole
 		 * projection onto `AgentEvent`; `decodeLine` is consulted here for the *envelope* only,
@@ -291,10 +296,15 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				const ended = Effect.gen(function* () {
 					const code = yield* child.handle.exitCode.pipe(Effect.orElseSucceed(() => null));
 					yield* Ref.set(turnLive, false);
-					const failure = processGone(code, yield* Ref.get(interrupted));
+					const stopped = yield* Ref.get(interrupted);
+					const failure = processGone(code, stopped);
 					// A child that died before it ever said `init` is a start that failed, and its
 					// caller is still holding that await.
 					yield* Deferred.fail(opened, failure.detail);
+					// A stop's exit is this layer's own doing and `interrupt` relaunches on the same
+					// conversation, so the queue outlives it: failing it here would end the window's
+					// subscription the relaunch exists to keep (#8709).
+					if (stopped) return;
 					yield* emit(into, [{kind: "phase", phase: "gone"}]);
 					yield* Queue.fail(into, failure);
 				});
@@ -501,20 +511,45 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			yield* Queue.offer(current.child.stdin, encoder.encode(composed.line));
 		});
 
+		/**
+		 * Stop the running turn, and come back on the same conversation.
+		 *
+		 * SIGINT makes agy exit, so there is no stop this child survives — which leaves the relaunch
+		 * `respawn` already is as the way back, and that is what makes a stop end on `ready` with a
+		 * live child rather than on a session the operator can only replace (#8709).
+		 *
+		 * The fan is awaited between the signal and the relaunch. `kill` resolves on the exit it
+		 * asked for (`@effect/platform-node-shared`'s `NodeChildProcessSpawner`), and the fold runs a
+		 * fiber behind it: the terminal `result` is what marks the cut reply `interrupted`, so a
+		 * relaunch that announced the session back first would put `ready` ahead of the mark the
+		 * window renders the cut turn from.
+		 */
 		const interrupt = Effect.gen(function* () {
 			const current = yield* Ref.get(session);
 			if (current === null) return;
+			// A stop already in flight has nothing for a second press to send, and a second press must
+			// not be able to take the first one's memory of the signal back: an exit read as one nobody
+			// asked for fails the very queue the relaunch is keeping.
+			if (yield* Ref.get(interrupted)) return;
 			yield* Ref.set(interrupted, true);
-			yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
+			const delivered = yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
+				Effect.as(true),
 				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
 				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
-				// backend that said no from a stop still in flight.
+				// backend that said no from a stop still in flight. The memory of the signal goes back
+				// with it: one that was never delivered must not speak for whatever ends this child.
 				Effect.catch((refusal) =>
-					Effect.flatMap(Ref.get(turnLive), (live) =>
-						publish([{kind: "failure", failure: interruptFailureOf(refusal, live)}]),
-					),
+					Effect.gen(function* () {
+						yield* Ref.set(interrupted, false);
+						const live = yield* Ref.get(turnLive);
+						yield* publish([{kind: "failure", failure: interruptFailureOf(refusal, live)}]);
+						return false;
+					}),
 				),
 			);
+			if (!delivered) return;
+			yield* Fiber.await(current.child.fiber);
+			yield* respawn(yield* Ref.get(settings));
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
 		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (model: ModelRef) {

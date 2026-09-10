@@ -1,15 +1,23 @@
 /**
- * One stubbed agy child, for the tests that drive this layer's real event path without a CLI.
+ * Stubbed agy children, for the tests that drive this layer's real event path without a CLI.
  *
- * A stdout the test writes agy's own captured lines into, an exit that never comes, and a `kill`
- * that always says no. `exitCode` is `Effect.never` on purpose — an exit is what ends `events` with
- * a transport failure, and a refusal must not be confused with the child having gone away.
+ * `agyChildStub` is one child whose `kill` always says no: a stdout the test writes agy's own
+ * captured lines into, and an exit that never comes. `exitCode` is `Effect.never` on purpose — an
+ * exit is what ends `events` with a transport failure, and a refusal must not be confused with the
+ * child having gone away.
+ *
+ * `agyChildrenStub` is the other half, for a stop that is taken: a child per launch, each with the
+ * argv it was launched with, a `kill` that records the signal and resolves on the exit the test
+ * then gives it, and pipes that close with that exit. The resolve-on-exit is not a convenience —
+ * the real `kill` awaits the exit it asked for
+ * (`@effect/platform-node-shared`'s `NodeChildProcessSpawner`), which is the ordering
+ * `interrupt`'s relaunch stands on.
  */
 
 import {NodeFileSystem, NodePath} from "@effect/platform-node";
-import {Effect, Layer, Queue, Ref, Sink, Stream} from "effect";
+import {type Cause, Deferred, Effect, Layer, Queue, Ref, Sink, Stream} from "effect";
 import * as PlatformError from "effect/PlatformError";
-import {ChildProcessSpawner} from "effect/unstable/process";
+import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {aiAgentOverSpawner} from "./AgyAiAgent.ts";
 
@@ -53,6 +61,87 @@ export const agyChildStub = Effect.gen(function* () {
 		/** One agy stdout line, as the fan reads it. */
 		say: (line: string) => Queue.offer(stdout, encoder.encode(`${line}\n`)),
 		kills: Ref.get(kills),
+	};
+});
+
+/** One launched stub child, and the three things a test does to it. */
+export interface StubChild {
+	/** One agy stdout line, as the fan reads it. */
+	readonly say: (line: string) => Effect.Effect<void>;
+	/** Every signal `kill` was asked for, in order. */
+	readonly signals: Effect.Effect<ReadonlyArray<string>>;
+	/** The exit a delivered signal earns: the pipes end, then the code lands. */
+	readonly exit: (code: number) => Effect.Effect<void>;
+}
+
+const stubChild = Effect.gen(function* () {
+	const stdout = yield* Queue.unbounded<Uint8Array, Cause.Done>();
+	// Open and silent, never `Stream.empty`: `follow` races the stdout drain against the stderr one,
+	// and a stderr that completes at once wins that race and ends the fan before a line is read.
+	const stderr = yield* Queue.unbounded<Uint8Array, Cause.Done>();
+	const signals = yield* Ref.make<ReadonlyArray<string>>([]);
+	const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+	const exit = (code: number): Effect.Effect<void> =>
+		Queue.end(stdout).pipe(
+			Effect.andThen(Queue.end(stderr)),
+			Effect.andThen(Deferred.succeed(exited, ChildProcessSpawner.ExitCode(code))),
+			Effect.asVoid,
+		);
+	const handle: ChildProcessSpawner.ChildProcessHandle = ChildProcessSpawner.makeHandle({
+		pid: ChildProcessSpawner.ProcessId(424_243),
+		exitCode: Deferred.await(exited),
+		isRunning: Effect.map(Deferred.isDone(exited), (done) => !done),
+		kill: (options) =>
+			Ref.update(signals, (seen) => [...seen, options?.killSignal ?? "SIGTERM"]).pipe(
+				Effect.andThen(Deferred.await(exited)),
+				Effect.asVoid,
+			),
+		stdin: Sink.drain,
+		stdout: Stream.fromQueue(stdout),
+		stderr: Stream.fromQueue(stderr),
+		all: Stream.fromQueue(stderr),
+		getInputFd: () => Sink.drain,
+		getOutputFd: () => Stream.empty,
+		unref: Effect.succeed(Effect.void),
+	});
+	const child: StubChild = {
+		say: (line: string) => Effect.asVoid(Queue.offer(stdout, encoder.encode(`${line}\n`))),
+		signals: Ref.get(signals),
+		exit,
+	};
+	return {handle, child};
+});
+
+/** A spawner that launches a fresh stub child every time, which is what a respawn asks of it. */
+export const agyChildrenStub = Effect.gen(function* () {
+	const launched = yield* Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]);
+	const children = yield* Ref.make<ReadonlyArray<StubChild>>([]);
+	const spawn = Effect.fnUntraced(function* (command: ChildProcess.Command) {
+		const {handle, child} = yield* stubChild;
+		const argv = ChildProcess.isStandardCommand(command) ? [...command.args] : [];
+		yield* Ref.update(launched, (seen) => [...seen, argv]);
+		yield* Ref.update(children, (seen) => [...seen, child]);
+		return handle;
+	});
+	/** The nth child, waited for: a relaunch is in flight when the test goes looking for it. */
+	const childAt = (index: number): Effect.Effect<StubChild> =>
+		Effect.flatMap(Ref.get(children), (seen) => {
+			const one = seen[index];
+			return one === undefined
+				? Effect.andThen(Effect.sleep("5 millis"), childAt(index))
+				: Effect.succeed(one);
+		});
+	return {
+		layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(spawn)),
+		child: (index: number) =>
+			childAt(index).pipe(
+				Effect.timeoutOrElse({
+					duration: "5 seconds",
+					orElse: () => Effect.die(new Error(`no child was launched at index ${index}`)),
+				}),
+			),
+		/** Every launch's argv, in order. */
+		launches: Ref.get(launched),
 	};
 });
 
