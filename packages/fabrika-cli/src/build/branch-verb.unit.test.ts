@@ -35,7 +35,8 @@ const WRITE = served({permission: "write"});
 const options = {
 	number: 4312 as number | null,
 	slug: "editor-focus-loss" as string | null,
-	base: "origin/main",
+	/** Explicit, so a test that is not about the derivation never reaches the parent read. */
+	base: "origin/main" as string | null,
 	resume: null as number | null,
 	resumeLane: false,
 	token: LANE_TOKEN,
@@ -381,5 +382,147 @@ describe("runBranch — --resume-lane", () => {
 		const out = await run([], {resumeLane: true});
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.at(-1)).toContain("reads the slug off the branch it takes over");
+	});
+});
+
+describe("runBranch — create mode derives the base (#6730)", () => {
+	const PARENT = /^GET \S+\/repos\/o\/r\/issues\/4312\/parent$/;
+	const LS_REMOTE = /^git ls-remote origin refs\/heads\/epic\/6505$/;
+	const FETCH_EPIC = /^git fetch --quiet origin epic\/6505$/;
+	const VERIFY_EPIC = /^git rev-parse --verify --quiet refs\/heads\/epic\/6505/;
+	const VERIFY_LANE = /^git rev-parse --verify --quiet refs\/heads\/build\//;
+	const EPIC_TIP = "1c2b3a49f0e1d2c3b4a5968778695a4b3c2d1e0f";
+	/** No `--base`: the whole point is that a builder passing nothing still lands on the right ref. */
+	const derived = {base: null};
+
+	const parented = (): Scripted => [PARENT, served({number: 6505})];
+	const orphan = (): Scripted => [PARENT, {status: 404, body: '{"message":"Not Found"}'}];
+	const published = (): Scripted => [LS_REMOTE, okOut(`${EPIC_TIP}\trefs/heads/epic/6505\n`)];
+
+	it("cuts an epic child off the run's assembly branch, fetched", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			parented(),
+			published(),
+			[REMOTES, okOut("origin\n")],
+			[FETCH_EPIC, okOut("")],
+			[RESOLVE, okOut(`${EPIC_TIP}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain("git fetch --quiet origin epic/6505");
+		expect(shell.calls).toContain(
+			`git switch -c build/4312-editor-focus-loss-${NONCE} ${EPIC_TIP}`,
+		);
+		expect(out.stderr).toContain(
+			"build branch: base origin/epic/6505 — derived from #4312's parent epic #6505; --base was not given.",
+		);
+	});
+
+	it("cuts a proven-standalone issue off origin/main and invents no epic base", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			orphan(),
+			[REMOTES, okOut("origin\n")],
+			[FETCH, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain("git fetch --quiet origin main");
+		expect(shell.calls.some((line) => /epic\//.test(line))).toBe(false);
+		expect(out.stderr).toContain(
+			"build branch: base origin/main — #4312 is proven standalone (its parent endpoint answered 404), so no epic base was derived.",
+		);
+	});
+
+	it("honours an explicit --base on a child, and never reads the parent at all", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[REMOTES, okOut("origin\n")],
+			[/^git fetch --quiet origin release\/2$/, okOut("")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, base: "origin/release/2"}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain("git fetch --quiet origin release/2");
+		expect(shell.calls.some((line) => PARENT.test(line))).toBe(false);
+		expect(out.stderr).toContain(
+			"build branch: base origin/release/2 — named by the operator with --base; no epic derivation ran.",
+		);
+	});
+
+	it("refuses an unreadable parent on 11 — never a fall back to origin/main", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			[PARENT, {status: 500, body: '{"message":"upstream is having a moment"}'}],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("whether this is an epic child is UNKNOWN");
+		expect(shell.calls.some((line) => /^git fetch/.test(line))).toBe(false);
+		expect(shell.calls.some((line) => /^git switch/.test(line))).toBe(false);
+	});
+
+	it("refuses a proven-absent assembly branch on 7, naming the branch it derived", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			parented(),
+			[LS_REMOTE, okOut("")],
+			[VERIFY_EPIC, errOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("assembly branch epic/6505 is proven absent");
+		expect(shell.calls.some((line) => /^git switch/.test(line))).toBe(false);
+	});
+
+	it("refuses an unreadable assembly-branch read on 11, not on 7", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			parented(),
+			[LS_REMOTE, errOut("fatal: could not read from remote repository")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("which base this child belongs on is UNKNOWN");
+		expect(out.stderr.at(-1)).not.toContain("proven absent");
+	});
+
+	it("stays idempotent on a re-run under the same nonce — resolved and switched to, not re-cut", async () => {
+		const shell = fakeSeams([
+			...CLAIMED,
+			parented(),
+			published(),
+			[REMOTES, okOut("origin\n")],
+			[FETCH_EPIC, okOut("")],
+			[RESOLVE, okOut(`${EPIC_TIP}\n`)],
+			[VERIFY_LANE, okOut(`${EPIC_TIP}\n`)],
+			[/^git switch build\//, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(`build/4312-editor-focus-loss-${NONCE}\n`);
+		expect(shell.calls.some((line) => SWITCH_NEW.test(line))).toBe(false);
 	});
 });

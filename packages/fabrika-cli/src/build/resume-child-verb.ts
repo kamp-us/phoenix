@@ -132,9 +132,9 @@ export const runResumeChild = (
 		const branched = yield* runBranch({
 			number: issue,
 			slug: null,
-			// Inert, not a rebase: the `resumeLane` path returns before it fetches or reads `base`, and a
-			// repair keeps the child's commits where they are. This is the CLI's own default for the flag.
-			base: "origin/main",
+			// Nobody named one, and nothing here needs one: the `resumeLane` path returns before any base
+			// is resolved or fetched, and a repair keeps the child's commits where they are.
+			base: null,
 			resume: null,
 			resumeLane: true,
 			token: won,

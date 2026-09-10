@@ -1463,7 +1463,7 @@ fabrika build branch 9 --resume-lane --token <token>
 |---|---|---|---|---|
 | `<number>` | positional integer | yes (create mode) | — | the claimed issue the branch serves |
 | `--slug` | string | yes (create mode) | — | kebab-case, ≤5 words, must not begin with `-` |
-| `--base` | string | no | `origin/main` | the base ref, **fetched before the branch is cut** |
+| `--base` | string | no | *derived* | the base ref, **fetched before the branch is cut**, honoured verbatim on every lane. Absent, create mode derives it — see below |
 | `--resume` | integer | exclusive with the positional | — | a PR number whose head branch to switch to, for repair |
 | `--resume-lane` | boolean | no | `false` | child-repair mode: take over the local branch a prior lane built `<number>` on. Exclusive with `--resume` and with `--slug` |
 | `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking. Not a claim token, or one carrying another session id, is `1` |
@@ -1484,12 +1484,46 @@ find the lane — the branch name is the record, and there is no
 stamp file to duplicate or go stale (the stamp machinery is the accretion the 2026-08-03
 amendment measured, and it is not rebuilt).
 
-Create mode: fetch `--base`, cut `build/<number>-<slug>-<nonce>` off `FETCH_HEAD` (never a stale
+Create mode: fetch the base, cut `build/<number>-<slug>-<nonce>` off `FETCH_HEAD` (never a stale
 local ref), switch to it. Resume mode: resolve the PR's current head branch, fetch it, and check
 it out under the **local** lane name `build/pr-<pr>-<nonce>` with its upstream set to the remote
 head branch — `build push` publishes via that tracked upstream, so the PR updates while the local
 name carries the *current* repair claim's nonce. Each repair run gets its own local branch, so a
 dead earlier lane can never pin this one. A closed or merged PR refuses (`7`).
+
+**Create mode derives the base; it does not default to the trunk.** `build branch` used to fetch
+whatever `--base` said and cut there, with `origin/main` as the flag's own default — and the skill's
+canonical invocation carries no `--base`, so an epic child landed on the trunk unless its builder
+thought to pass one. That is a silent wrong base: the child's commits sit on code the assembly
+branch does not have, `lane prove` resolves a fork point that is not on the branch, and it surfaces
+at integrate as a conflict or as a clean merge that drops a sibling's work. It cost one epic child a
+whole lane: the trunk lacked the routing fix that child depended on and still carried a commit the
+epic branch had reverted, and the range resolved only because the builder noticed and reset by hand.
+
+So with no `--base`, create mode reads `<number>`'s parent through GitHub's own issue-parent
+endpoint and derives from it. Both endpoints are derived, never taken from the caller, the way
+`readAssembly` derives them: the parent from that endpoint, the branch name from the parent number
+through `epicBranch`. A **`Present`** parent gives the assembly branch `epic/<parent>` —
+`origin/epic/<parent>` when origin carries it, the bare local name when only this clone does, and
+either spelling goes through the same `fetchBase`, so a stale local `epic/<n>` is never the cut. A
+parent **proven `Absent`** (the endpoint's own 404) leaves a standalone lane exactly as it stood:
+`origin/main`, with no epic base invented from a signal nobody read.
+
+Both halves of the ruling are refusals, and they are split on evidence. A parent read that **failed**
+is `11` naming the read — never a fall back to `origin/main`, because that fallback is the defect. A
+derived assembly branch **proven** absent from both origin and this clone is `7` naming the branch it
+derived; a ref read that **failed** is `11`. Nothing fuses the two, per the proven-vs-UNKNOWN split
+`packages/fabrika-cli/src/build/codes.ts` states.
+
+An explicit `--base` is honoured verbatim on every lane, epic child included, and suppresses the
+derivation — the parent is not even read. That is why the flag lost its `origin/main` default:
+"the operator named the trunk" and "nobody passed one" were the same value, and only one of them
+should skip the derivation.
+
+Every run says which base it used and where it came from, on stderr beside the claim's own notes —
+`base <ref> — derived from #<n>'s parent epic #<p>`, `— named by the operator with --base`, or
+`— #<n> is proven standalone`. A builder reading the transcript tells the three apart without
+re-deriving anything.
 
 **Child-repair mode (`--resume-lane`) — resume for the artifact that has no PR to resume.** An epic
 child opens none, so `--resume` has nothing to take, and a fresh cut off the assembly
@@ -1521,9 +1555,9 @@ number, which is the number repair mode claims.
 
 | Code | Trigger |
 |---|---|
-| `7` | `--resume`'s PR is proven absent, closed, or merged; or `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>` |
+| `7` | `--resume`'s PR is proven absent, closed, or merged; `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>`; or the derived assembly branch `epic/<parent>` is proven absent from both origin and this clone |
 | `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; or `--resume-lane` was given beside `--resume` or `--slug` |
-| `11` | the fetch failed, the claim state could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
+| `11` | the fetch failed, the claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
 | `15` | proven: the claim on `<number>` is foreign |
 
 **Errors**
@@ -1532,6 +1566,9 @@ number, which is the number repair mode claims.
 |---|---|---|
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
+| `build branch: cannot read #<n>'s parent through GitHub's issue-parent endpoint: <reason> — whether this is an epic child is UNKNOWN, and cutting off origin/main anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.` | 11 | refusal |
+| `build branch: #<n> is a child of epic #<p>, and whether origin carries its assembly branch epic/<p> could not be read: <reason> — which base this child belongs on is UNKNOWN. Nothing was cut.` | 11 | refusal |
+| `build branch: #<n> is a child of epic #<p>, whose assembly branch epic/<p> is proven absent — origin holds no refs/heads/epic/<p> and neither does this clone. Place the run's branch with "fabrika lane assembly <p>" before building a child on it. Nothing was cut.` | 7 | refusal |
 | `build branch: PR #<n> is proven closed or merged — nothing to resume.` | 7 | refusal |
 | `build branch: --resume-lane takes over the local branch of an epic child, which has no PR — it cannot be combined with --resume <pr>.` | 10 | refusal |
 | `build branch: --resume-lane reads the slug off the branch it takes over — drop --slug "<value>".` | 10 | refusal |
@@ -1549,7 +1586,21 @@ number, which is the number repair mode claims.
 
 ```
 $ fabrika build branch 4 --slug editor-focus-loss --token <token>
+build branch: base origin/main — #4 is proven standalone (its parent endpoint answered 404), so no epic base was derived.
 build/4-editor-focus-loss-c1a4d6f8
+```
+
+```
+$ fabrika build branch 9 --slug prove-requires-review-ui --token <token>
+build branch: base origin/epic/5 — derived from #9's parent epic #5; --base was not given.
+build/9-prove-requires-review-ui-99345500
+```
+
+```
+$ fabrika build branch 9 --slug prove-requires-review-ui --token <token>
+build branch: #9 is a child of epic #5, whose assembly branch epic/5 is proven absent — origin holds no refs/heads/epic/5 and neither does this clone. Place the run's branch with "fabrika lane assembly 5" before building a child on it. Nothing was cut.
+$ echo $?
+7
 ```
 
 ```
@@ -1563,6 +1614,8 @@ $ echo $?
 
 - Branch off `FETCH_HEAD` after a real fetch; a stale local `origin/main` is the recurring wrong
   base.
+- The verb derives an epic child's base rather than trusting prose to make a builder pass it — a
+  guard made of prose fails exactly where a builder does not follow prose.
 - A slug that looks like a flag is refused, so a slug can never be read as an option.
 - Eight trees once shared one stamp file: identity via per-claim nonce makes duplicate lanes
   unconstructible instead of detected.
