@@ -179,13 +179,22 @@ fixing it — take it when the body is not yours to repair, and read the dropped
 the staleness is still on the record. It reports every one of them on both channels, however many
 the descope took, so the record you put on the board is the whole list and never a sample of it. On a refusal out of either, end `STOPPED` naming the code.
 
-**Exit `48` is the mirror: the issue is an epic's *child*, so the lane to drive is the parent's.**
-The parent epic's lane already carries this number as one of its tasks, and a second ledger booted
-over it is two documents describing one piece of work with nothing reconciling them. The `46` guard
-above cannot see this case — both facts it reads are facts about the issue itself, and a child
-carries neither. The refusal names the parent, so end `STOPPED` and drive that lane instead; never
-boot the child. An issue that is both an epic and a child still routes to `lane emit` on `46`,
-because the machine it needs has not changed.
+**Exit `48` is the mirror: the issue is an epic's *child*, so it gets no lane of its own.** A second
+ledger booted over the parent's is two documents describing one piece of work with nothing
+reconciling them. The `46` guard above cannot see this case — both facts it reads are facts about
+the issue itself, and a child carries neither. Never boot the child, on any arm below.
+
+**The refusal reads the parent lane's emitted task set before it speaks, and its three arms route
+differently.** The parent machine holds the child's task: end `STOPPED` and drive the parent lane.
+The parent machine loaded and provably holds no task for this child — a follow-up linked under the
+epic after its lane was emitted — and the line names the route: place the child in the parent
+epic's `## Dependencies` block, run `lane amend` on the parent — the non-destructive re-derive two
+paragraphs below, the one that keeps `events.jsonl` whole — then drive that lane. The task set did
+not read at all — the parent lane is absent, unreadable or malformed, or the parent number itself
+did not read — and the line says so rather than asserting membership either way: that is UNKNOWN,
+so end `STOPPED` naming the code and read the parent lane before choosing between the other two. An
+issue that is both an epic and a child still routes to `lane emit` on `46`, because the machine it
+needs has not changed.
 
 A lane already booted on the coder template before this refusal existed is not repaired in place: a
 lane on disk is never re-emitted over, so `lane emit` answers `14` and names the two steps — retire
