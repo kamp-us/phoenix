@@ -258,10 +258,14 @@ function makeServices() {
 			// What handlers actually get, and under the seal it is all they get: the spawner's set
 			// plus this process's own `ProcessSelf`. Never `options.services` directly — spawn is the
 			// one place `ProcessSelf` is provided, so no caller and no `restore` has to know it
-			// exists (#7603). The spawner's `Scope` is dropped on the way in: a spawner that passes
-			// its whole context on carries one, and the seal would let it beat the Scope the host
-			// forks for a sub handler. A handler that wants this process's own reads `ProcessSelf`.
+			// exists (#7603), and `id` rides along here for the same reason: every spawn path — the
+			// graph's launcher, the picker, an ad-hoc spawn, a restore — mints or carries the id at
+			// this one call, so a handler's `self` is a free read on all four (#8757). The spawner's
+			// `Scope` is dropped on the way in: a spawner that passes its whole context on carries
+			// one, and the seal would let it beat the Scope the host forks for a sub handler. A
+			// handler that wants this process's own reads `ProcessSelf`.
 			const granted = Context.add(Context.omit(Scope.Scope)(options.services), ProcessSelf, {
+				id,
 				scope,
 				state: () => readState(),
 			});

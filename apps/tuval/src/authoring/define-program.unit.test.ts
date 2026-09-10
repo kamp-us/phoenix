@@ -6,6 +6,7 @@ import {SpawnedProcesses} from "../commands/core/process.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import {Processes} from "../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../process/process.ts";
+import {ProcessSelf} from "../process/self.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {type ArrivalEvent, defineProgram} from "./define-program.ts";
 import {emit, send, spawn, stop} from "./effect.ts";
@@ -194,8 +195,14 @@ describe("authoring.defineProgram", () => {
 		Effect.gen(function* () {
 			const sent: Array<readonly [ProcessId, string, unknown]> = [];
 			const child = ProcessId.make("process-child");
+			const self = ProcessId.make("process-self");
+			const parents: Array<Option.Option<ProcessId>> = [];
 			const spells = SpawnedProcesses.of({
-				spawn: () => Effect.succeed(child),
+				spawn: (_program, parent) =>
+					Effect.sync(() => {
+						parents.push(parent);
+						return child;
+					}),
 				send: (process, portName, payload) =>
 					Effect.sync(() => {
 						sent.push([process, portName, payload]);
@@ -204,12 +211,20 @@ describe("authoring.defineProgram", () => {
 				read: () => Effect.succeed(Option.none()),
 			});
 
-			const spawnedEvents = yield* runEffect(counter, spawn({programId: "reviewer", out: {}})).pipe(
-				Effect.provideService(SpawnedProcesses, spells),
+			const spawnedEvents = yield* Effect.scoped(
+				runEffect(counter, spawn({programId: "reviewer", out: {}})).pipe(
+					Effect.provideService(SpawnedProcesses, spells),
+					Effect.provideServiceEffect(
+						ProcessSelf,
+						Effect.map(Effect.scope, (scope) => ({id: self, scope, state: () => undefined})),
+					),
+				),
 			);
 			assert.deepStrictEqual(spawnedEvents, [
 				{type: "spawned", process: child, program: "reviewer"},
 			]);
+			// The handler stamps the parent off `ProcessSelf` and the effect carries no id (#8757).
+			assert.deepStrictEqual(parents, [Option.some(self)]);
 
 			const sentEvents = yield* runEffect(counter, send({process: child, port: "pr"}, 8728)).pipe(
 				Effect.provideService(SpawnedProcesses, spells),
