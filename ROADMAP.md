@@ -115,7 +115,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika everywhere | #47 | done |
 | Geçit product push | #24 | active |
 | Lane integrity | #48 | active |
-| Epic lanes | #49 | active |
+| Epic lanes | #49 | done |
 | Diátaxis README passes | #50 | done |
 | Tuval | #51 | done |
 | Tuval first slice | #52 | done |
