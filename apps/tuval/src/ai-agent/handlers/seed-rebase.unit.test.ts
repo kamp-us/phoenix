@@ -12,6 +12,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Scope} from "effect";
 import {assistantItem} from "../../ai-agent-fixtures/transcripts.ts";
 import {ProcessPorts} from "../../ports/index.ts";
+import {ProcessId} from "../../process/process.ts";
 import {ProcessSelf} from "../../process/self.ts";
 import {
 	type AiAgentSessionMsg,
@@ -57,7 +58,11 @@ describe("the prompt handler's re-seed", () => {
 				) =>
 					effect.pipe(
 						Effect.provideService(Scope.Scope, scope),
-						Effect.provideService(ProcessSelf, {scope, state: () => committed}),
+						Effect.provideService(ProcessSelf, {
+							id: ProcessId.make("seed-rebase"),
+							scope,
+							state: () => committed,
+						}),
 						Effect.provideService(ProcessPorts, {
 							emit: (port: string, payload: unknown) =>
 								Effect.sync(() => {
