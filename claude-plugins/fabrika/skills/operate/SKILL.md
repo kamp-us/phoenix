@@ -530,9 +530,20 @@ another watch, so this costs a driver pass, not a horizon:
 node <fabrika> ship reconcile <pr> --polls 1
 ```
 
-Relay its answer, never your own reading of the PR:
+Relay its answer, never your own reading of the PR. **The recorder is `lane report`, not the
+`lane transition` you use everywhere else in this loop** — every `--token` in the table below is a
+flag on one verb:
 
-| `reconcile` says | Record |
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token <X>
+```
+
+Reach for `lane transition` here and it refuses on exit `12` with the log unappended: `LANDED`,
+`UNRESOLVED`, `EJECTED` and `UNKNOWN` are all outside the operator's seven events
+(`DONE`/`PASS`/`FAIL`/`BLOCKED`/`WIP`/`UNBLOCKED`/`LAP`). The queue token map is `lane report`'s
+alone.
+
+| `reconcile` says | Record — `lane report … --token` |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way |
 | `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
