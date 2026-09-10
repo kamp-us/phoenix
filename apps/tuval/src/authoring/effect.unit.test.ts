@@ -36,6 +36,8 @@ const interpret = (effect: ProgramEffect): string => {
 			return `send ${effect.to.port}`;
 		case "ask":
 			return `ask ${effect.to.port} -> ${effect.reply}`;
+		case "reply":
+			return `reply ${effect.to.correlation}`;
 		case "emit":
 			return `emit ${effect.port}`;
 		case "stop":

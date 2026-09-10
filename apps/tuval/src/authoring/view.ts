@@ -35,12 +35,12 @@ import {windowRenderer} from "../shell/window/index.ts";
 import type {
 	Answer,
 	AnyAuthoredProgram,
-	ArrivalEvent,
+	ArrivalEventOf,
 	ArrivingPortNames,
 	CompileContext,
 } from "./define-program.ts";
 import {emit, type ProgramEffect} from "./effect.ts";
-import type {PortDecls, PortPayload} from "./port.ts";
+import type {PortDecls} from "./port.ts";
 
 /** One line about the program, read off its state. Pure: the compiler calls it twice per transition. */
 export type DerivedLine<S> = (state: S) => string;
@@ -64,7 +64,7 @@ type EventOf<K, H> = H extends (state: any, event: infer E) => any
 export type ProgramEvent<D extends PortDecls, U> =
 	| {[K in keyof U]: EventOf<K & string, U[K]>}[keyof U]
 	| {
-			[K in ArrivingPortNames<D>]: ArrivalEvent<K, PortPayload<D[K & keyof D]>>;
+			[K in ArrivingPortNames<D>]: ArrivalEventOf<D, K & keyof D & string>;
 	  }[ArrivingPortNames<D>];
 
 /** What an authored window is handed: this process's state, and a way into its own events. */

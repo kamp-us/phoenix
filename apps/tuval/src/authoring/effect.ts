@@ -1,5 +1,5 @@
 /**
- * The five things an authored `update` may ask for, and the events that answer them.
+ * The six things an authored `update` may ask for, and the events that answer them.
  *
  * **`effect` here is one of these five constructors and never an `Effect.Effect`** (#8716,
  * `### Vocabulary impact`). The collision is real: this module is named for the word the program
@@ -7,7 +7,10 @@
  * records. Interpreting them into the registry row's Cmds is the spine's (#8728).
  */
 
+import type {ReplyTo} from "../process/inbox.ts";
 import type {ProcessId} from "../process/process.ts";
+
+export type {ReplyTo};
 
 /**
  * A port of some other process, addressed. A process id arrives on `spawned`; the author never
@@ -52,6 +55,17 @@ export interface AskEffect<Event extends string = string> {
 	readonly reply: Event;
 }
 
+/**
+ * The callee's half of `ask` (#8716 R17.1): answer the question this process was asked. `to` is the
+ * bound `reply` its request-port arrival carried — an opaque address the kernel minted — so a
+ * program answers the caller it was asked by without ever naming one.
+ */
+export interface ReplyEffect {
+	readonly type: "reply";
+	readonly to: ReplyTo;
+	readonly payload: unknown;
+}
+
 export interface EmitEffect<Port extends string = string> {
 	readonly type: "emit";
 	readonly port: Port;
@@ -63,7 +77,13 @@ export interface StopEffect {
 	readonly process: ProcessId;
 }
 
-export type ProgramEffect = SpawnEffect | SendEffect | AskEffect | EmitEffect | StopEffect;
+export type ProgramEffect =
+	| SpawnEffect
+	| SendEffect
+	| AskEffect
+	| ReplyEffect
+	| EmitEffect
+	| StopEffect;
 
 /** Start a process of `program`, routing the child's out-ports back into my own events. */
 export const spawn = <Out extends string, Event extends string>(
@@ -91,6 +111,9 @@ export const ask = <Event extends string>(
 	payload: unknown,
 	options: {readonly reply: Event},
 ): AskEffect<Event> => ({type: "ask", to, payload, reply: options.reply});
+
+/** Answer the `ask` whose arrival carried `to`. Spending one twice is refused, not doubled. */
+export const reply = (to: ReplyTo, payload: unknown): ReplyEffect => ({type: "reply", to, payload});
 
 /** Announce on one of my own out-ports. */
 export const emit = <Port extends string>(port: Port, payload: unknown): EmitEffect<Port> => ({

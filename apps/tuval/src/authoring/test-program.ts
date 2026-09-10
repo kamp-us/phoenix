@@ -19,6 +19,7 @@
 
 import {Result, Schema} from "effect";
 import {ClientId, type Scope, WorkspaceId} from "../commands/spell.ts";
+import type {ReplyTo} from "../process/inbox.ts";
 import {describeSchemaError} from "../protocol/issue.ts";
 import type {AnyCommandDecl, CommandAnswer, CommandArgTypes} from "./commands.ts";
 import type {
@@ -28,6 +29,7 @@ import type {
 	ArrivingPortNames,
 	AuthoredEvent,
 	AuthoredProgram,
+	RequestArrivalEvent,
 } from "./define-program.ts";
 import type {ProgramEffect} from "./effect.ts";
 import {KEY_EVENT, type KeyEvent} from "./keys.ts";
@@ -56,7 +58,7 @@ export interface ProgramRun<S, D extends PortDecls, U, C extends CommandArgTypes
 	/**
 	 * A declared command, called with its own args. A command call is not a process step — it moves
 	 * no state and its effects' answer events are dropped, exactly as the compiled spell drops them
-	 * (#8756) — so the run it answers carries the same state and the effects the command asked for.
+	 * — so the run it answers carries the same state and the effects the command asked for.
 	 */
 	readonly call: <K extends keyof C & string>(
 		command: K,
@@ -70,6 +72,9 @@ const TEST_SCOPE: Scope = {
 	workspace: WorkspaceId.make("tuval/test"),
 	client: ClientId.make("tuval/test"),
 };
+
+/** The bound `reply` a driven request-port arrival carries: an address no live kernel is holding. */
+const TEST_REPLY: ReplyTo = {correlation: "tuval/test"};
 
 type Cell = (state: unknown, event: unknown) => Answer<unknown>;
 
@@ -129,10 +134,14 @@ export const testProgram = <
 				if (decl === undefined) {
 					throw new Error(`the program declares no port named "${port}"`);
 				}
-				const arrival: ArrivalEvent<string, unknown> = {
-					type: port,
-					payload: decodeArrival(port, decl, payload),
-				};
+				const decoded = decodeArrival(port, decl, payload);
+				// A request port's cell reads `event.reply`, so a driven arrival owes one. It addresses
+				// no live ask — a test asserts the `reply` effect the cell asked for, and spending this
+				// address against a real kernel is refused (`../process/inbox.ts`).
+				const arrival: ArrivalEvent<string, unknown> | RequestArrivalEvent<string, unknown> =
+					decl.direction === "request"
+						? {type: port, payload: decoded, reply: TEST_REPLY}
+						: {type: port, payload: decoded};
 				return step(arrival);
 			},
 			event: (event) => step(event as AuthoredEvent),

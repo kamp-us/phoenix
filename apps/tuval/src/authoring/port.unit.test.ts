@@ -77,6 +77,17 @@ describe("authoring.port", () => {
 		expect(Result.isSuccess(Schema.decodeUnknownResult(asked.output)({pr: 1}))).toBe(false);
 	});
 
+	it("carries the request port's output schema onto the row as `answers`", () => {
+		const review = compilePort(counter, "review", port.request(Review, Count));
+		const ticks = compilePort(counter, "ticks", port.in(Count));
+		// The row is what the kernel checks an answer against, so the predicate has to survive the
+		// compile — dropping it is what left an `ask` unanswerable (#8756).
+		expect(review.answers?.(4)).toBe(true);
+		expect(review.answers?.("4")).toBe(false);
+		// A one-way in-port answers nothing, and its absence here is what says so.
+		expect(ticks.answers).toBeUndefined();
+	});
+
 	it("infers the payload type at the declaration site from the schema", () => {
 		const ticks = port.in(Count);
 		const announced = port.out(Review);

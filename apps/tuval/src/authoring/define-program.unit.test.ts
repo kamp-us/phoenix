@@ -107,6 +107,7 @@ describe("authoring.defineProgram", () => {
 		expect(Object.keys(counter.core.interpret ?? {}).sort()).toEqual([
 			"ask",
 			"emit",
+			"reply",
 			"send",
 			"spawn",
 			"stop",
@@ -208,6 +209,8 @@ describe("authoring.defineProgram", () => {
 						sent.push([process, portName, payload]);
 						return {delivered: true, evicted: 0};
 					}),
+				ask: () => Effect.die("this test asks nothing"),
+				answer: () => Effect.die("this test answers nothing"),
 				read: () => Effect.succeed(Option.none()),
 			});
 

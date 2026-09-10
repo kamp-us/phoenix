@@ -21,7 +21,9 @@
 import type {DepKeyedSub, Interpret} from "@demlik/tea";
 import {Effect, Option} from "effect";
 import type {
+	PortAnswersNothing,
 	PortRefused,
+	UnclaimedReply,
 	UnknownPort,
 	UnknownProcess,
 	UnknownProgram,
@@ -31,6 +33,7 @@ import type {OpenError} from "../durability/Checkpoints.ts";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {HandlerFailed, ProcessNotFound} from "../process/errors.ts";
+import {isAsked, NO_REPLY, type ReplyTo} from "../process/inbox.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessSelf} from "../process/self.ts";
 import type {
@@ -50,6 +53,7 @@ import {
 	type AskEffect,
 	type EmitEffect,
 	type ProgramEffect,
+	type ReplyEffect,
 	type SendEffect,
 	type SpawnEffect,
 	type StopEffect,
@@ -63,6 +67,7 @@ import {
 	type OutPortDecl,
 	type PortDecls,
 	type PortPayload,
+	type RequestPortDecl,
 } from "./port.ts";
 import {
 	type AuthoredWindow,
@@ -90,6 +95,22 @@ export interface ArrivalEvent<Name extends string, Payload> {
 	readonly payload: Payload;
 }
 
+/**
+ * A `port.request` arrival: the same event as any other, plus the bound `reply` the caller's `ask`
+ * is waiting on (#8716 R17.1). The address is opaque and belongs to this one question, so the cell
+ * answers by handing it back to `reply(event.reply, answer)` and names no process.
+ */
+export interface RequestArrivalEvent<Name extends string, Payload>
+	extends ArrivalEvent<Name, Payload> {
+	readonly reply: ReplyTo;
+}
+
+/** What arrives on one declared port, which is the request kind's arrival for a request port. */
+export type ArrivalEventOf<D extends PortDecls, K extends keyof D & string> =
+	D[K] extends RequestPortDecl<any, any>
+		? RequestArrivalEvent<K, PortPayload<D[K]>>
+		: ArrivalEvent<K, PortPayload<D[K]>>;
+
 /** The declared ports that own a queue — `in` and `request` — which are the ones that arrive. */
 export type ArrivingPortNames<D extends PortDecls> = {
 	[K in keyof D]: D[K] extends OutPortDecl<any> ? never : K;
@@ -110,7 +131,7 @@ export type UpdateTable<S, D extends PortDecls, U> = {
 	[K in keyof U | ArrivingPortNames<D>]: K extends typeof KEY_EVENT
 		? EventHandler<S, KeyEvent>
 		: K extends ArrivingPortNames<D>
-			? EventHandler<S, ArrivalEvent<K & string, PortPayload<D[K & keyof D]>>>
+			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>>
 			: EventHandler<S, any>;
 };
 
@@ -229,9 +250,9 @@ const spawnHandler = (cmd: SpawnEffect) =>
 		const processes = yield* SpawnedProcesses;
 		const self = yield* ProcessSelf;
 		// The parent is stamped here, off the process this interpretation is running for, and is
-		// never something the `spawn` effect carries (#8757). `on` still has nowhere to route the
-		// child's out-ports back to; that half is #8756's.
-		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.some(self.id));
+		// never something the `spawn` effect carries (#8757). `on` rides along as that same
+		// process's routing table, so a named child port arrives as this process's own event.
+		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.some(self.id), cmd.on);
 		return [spawned(child, cmd.program)];
 	});
 
@@ -243,15 +264,24 @@ const sendHandler = (cmd: SendEffect) =>
 	});
 
 /**
- * An `ask` delivers on the target's request port exactly as a `send` does. The answer does not come
- * back yet: a request port compiles to an in-port and the kernel carries no reply channel to
- * correlate `reply` against, so the `Reply` event is owed by the substrate, not by this compiler
- * (#8756). Delivering is the half that exists; failing here would refuse a payload that lands.
+ * An `ask` delivers on the target's request port and hands the kernel the return address: this
+ * process, and the event name the `ask` itself declared as its correlation. When the callee answers,
+ * the kernel dispatches `{type: cmd.reply, payload}` — the `Reply` of `./effect.ts` — into this
+ * process's inbox (`../process/inbox.ts`), so nothing here waits and nothing is matched by hand.
  */
 const askHandler = (cmd: AskEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
-		yield* processes.send(cmd.to.process, cmd.to.port, cmd.payload);
+		const self = yield* ProcessSelf;
+		yield* processes.ask(self.id, cmd.to.process, cmd.to.port, cmd.payload, cmd.reply);
+		return NO_EVENTS;
+	});
+
+/** The callee's half: spend the bound `reply` its request-port arrival carried. */
+const replyHandler = (cmd: ReplyEffect) =>
+	Effect.gen(function* () {
+		const processes = yield* SpawnedProcesses;
+		yield* processes.answer(cmd.to, cmd.payload);
 		return NO_EVENTS;
 	});
 
@@ -269,6 +299,8 @@ export type EffectFailure =
 	| UnknownProgram
 	| UnknownProcess
 	| UnknownPort
+	| PortAnswersNothing
+	| UnclaimedReply
 	| PortRefused
 	| OpenError
 	| HandlerFailed
@@ -281,6 +313,7 @@ const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, Effect
 	spawn: spawnHandler,
 	send: sendHandler,
 	ask: askHandler,
+	reply: replyHandler,
 	stop: stopHandler,
 };
 
@@ -292,6 +325,7 @@ const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
 	spawn: dead,
 	send: dead,
 	ask: dead,
+	reply: dead,
 	stop: dead,
 };
 
@@ -313,14 +347,31 @@ const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, a
  * A receiver per arriving port, so launch can never refuse a compiled row for a missing one. The
  * payload crossed the wire as `unknown` and the port's own `accepts` ran before it was enqueued,
  * so what lands here already fits the schema the author declared.
+ *
+ * A request port's arrival is the one that carries more than the payload: an `ask` enqueues the
+ * kernel's envelope, and this unwraps it into the bound `reply` the cell answers with. A plain
+ * `send` can reach a request port too — nothing forbids it — and that arrival carries `NO_REPLY`,
+ * so answering it is refused loudly rather than addressed at a caller who never asked.
  */
+const receiverFor = (name: string, decl: AnyPortDecl): Receiver<AuthoredEvent> =>
+	decl.direction === "request"
+		? (payload: unknown) =>
+				isAsked(payload)
+					? ({
+							type: name,
+							payload: payload.payload,
+							reply: payload.reply,
+						} satisfies RequestArrivalEvent<string, unknown>)
+					: ({type: name, payload, reply: NO_REPLY} satisfies RequestArrivalEvent<string, unknown>)
+		: (payload: unknown) => ({type: name, payload}) satisfies ArrivalEvent<string, unknown>;
+
 const compileReceive = (
 	authored: AnyAuthoredProgram,
 ): Readonly<Record<string, Receiver<AuthoredEvent>>> =>
 	Object.fromEntries(
 		arrivingPorts(authored).map((name) => [
 			name,
-			(payload: unknown) => ({type: name, payload}) satisfies ArrivalEvent<string, unknown>,
+			receiverFor(name, (authored.ports ?? {})[name] as AnyPortDecl),
 		]),
 	);
 

@@ -34,9 +34,9 @@ export interface OutPortDecl<T> {
 
 /**
  * The Erlang `call` / Akka `ask` shape: a caller asks on this port and gets an answer addressed to
- * it. It carries both schemas; how a caller's `ask` and a callee's bound `reply` spend them is the
- * effect vocabulary's and the spine's. From the declaring program's side the arrival is an
- * in-port, which is what it compiles to.
+ * it. From the declaring program's side the arrival is an in-port, which is what it compiles to —
+ * carrying its output schema as the row port's `answers`, the predicate the kernel runs over the
+ * callee's answer before it reaches the caller.
  */
 export interface RequestPortDecl<In, Out> {
 	readonly direction: "request";
@@ -117,12 +117,17 @@ export const compilePort = <D extends AnyPortDecl>(
 	const compiled: PortSchema =
 		decl.direction === "out"
 			? {kind, direction: "out", accepts: admits(decl.schema)}
-			: {
-					kind,
-					direction: "in",
-					accepts: admits(decl.direction === "in" ? decl.schema : decl.input),
-					bound: decl.bound,
-				};
+			: decl.direction === "in"
+				? {kind, direction: "in", accepts: admits(decl.schema), bound: decl.bound}
+				: {
+						kind,
+						direction: "in",
+						accepts: admits(decl.input),
+						bound: decl.bound,
+						// The output schema is kept, not dropped: it is the only check an answer's shape
+						// gets, and the kernel runs it where the answer is handed back (#8756).
+						answers: admits(decl.output),
+					};
 	return compiled as CompiledPort<D>;
 };
 

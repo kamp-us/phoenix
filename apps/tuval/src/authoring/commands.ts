@@ -59,7 +59,7 @@ const asList = (answer: CommandAnswer): ReadonlyArray<ProgramEffect> =>
 /**
  * Run a command's effects through the spine's handlers, exactly as an `update` cell's effects are
  * run. The events those handlers answer — a `spawn`'s `spawned`, a `stop`'s `stopped` — are
- * dropped here: a spell call is not a process step and has no inbox to dispatch them into (#8756).
+ * dropped here: a spell call is not a process step and has no inbox to dispatch them into.
  */
 const interpret = <E, R>(
 	answer: CommandAnswer,
