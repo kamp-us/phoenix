@@ -1,7 +1,7 @@
 ---
 id: 0302
 title: Only a registered recipe proven by a re-fold clears a lane park without a human
-status: amended-in-part by [0339](0339-park-cause-may-stand-alone.md)
+status: amended-in-part by [0339](0339-park-cause-may-stand-alone.md), [0374](0374-driver-seat-on-a-spent-repair-budget.md)
 date: 2026-08-19
 tags: [fabrika, lane, pipeline, recipes, agents]
 ---

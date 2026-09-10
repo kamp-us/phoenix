@@ -1065,9 +1065,12 @@ defective section and points at the verb that owns the repair — `triage repair
 `--help` is its interface — never restating what that verb does, and never delegating both the what
 and the who to the parking spawn's report. Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
-`UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
-`recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
-left the park. The rule and its actor list are settled elsewhere — a known park clears itself
+`UNBLOCKED`, with two exceptions and only two. The first is yours: `human:budget-spent` above,
+where you record the `UNBLOCKED` yourself after `lane clear`, on the authority of the recorded
+decision that fence names. The second is not: on a **known** park a recipe verb owns, `recipe
+unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task left the
+park — which is not a route out of the spent-budget park, whose cause carries no remedy, as that
+fence says. The rule and its actor list are settled elsewhere — a known park clears itself
 through the verb, a novel one routes to a human — and this section states no park-clearing authority
 of its own. You relay that verb's exit into
 the chore lane's own event and type no `UNBLOCKED` anywhere.

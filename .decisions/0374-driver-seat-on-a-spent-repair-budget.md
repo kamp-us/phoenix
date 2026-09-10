@@ -156,7 +156,8 @@ epic [#8810](https://github.com/kamp-us/phoenix/issues/8810) and its child
 [#8820](https://github.com/kamp-us/phoenix/issues/8820);
 [#6525](https://github.com/kamp-us/phoenix/issues/6525),
 [#8779](https://github.com/kamp-us/phoenix/issues/8779);
-ADRs [0297](0297-frozen-is-a-park-not-an-end.md), [0312](0312-event-anchored-retry-budget.md) and
+ADRs [0297](0297-frozen-is-a-park-not-an-end.md), [0302](0302-known-parks-clear-novel-routes-human.md),
+[0312](0312-event-anchored-retry-budget.md) and
 [0341](0341-a-failed-epic-review-is-a-park.md), each amended in part by this record;
 [`packages/fabrika-cli/src/lane/machine.ts`](../packages/fabrika-cli/src/lane/machine.ts),
 [`packages/fabrika-cli/src/lane/fold.ts`](../packages/fabrika-cli/src/lane/fold.ts),
