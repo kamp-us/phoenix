@@ -7,8 +7,10 @@
 export {type PageCursor, pageCursor} from "./cursor.ts";
 export {
 	type CursorPosition,
+	type GroupWeight,
 	groupBytes,
 	groupTranscript,
+	groupWeight,
 	itemBytes,
 	locateCursor,
 	type NonEmpty,

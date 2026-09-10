@@ -10,6 +10,7 @@ import {describe, expect, it} from "vitest";
 import {
 	assistantItem,
 	compactionItem,
+	nestedUnder,
 	subagentSlot,
 	systemItem,
 	thinkingItem,
@@ -38,6 +39,50 @@ const foldAll = (
 	}
 	return steps;
 };
+
+/**
+ * The window bounds are spent on what the desk renders, so a spawn cannot shave the visible head.
+ *
+ * A worker's rows arrive as ordinary items tagged with the call they ran inside, and `chatRows`
+ * drops every one of them; before #8814 they paid full window freight on the way past, so a few
+ * spawns pushed the operator's own turns out of a tail that then rendered nothing at all.
+ */
+describe("folding turns that spawn subagents", () => {
+	const SPAWNS = 6;
+	const ROWS_PER_WORKER = 12;
+
+	/** `SPAWNS` operator exchanges, each ending in a call whose worker rows arrive tagged. */
+	const withSpawns = (workerOutput = "ok"): ReadonlyArray<TranscriptItem> =>
+		Array.from({length: SPAWNS}).flatMap((_spawnSlot, spawn) => {
+			const call = `spawn-${spawn}`;
+			const worker = Array.from({length: ROWS_PER_WORKER}).flatMap((_workerSlot, index) => [
+				systemItem(`worker-notice-${spawn}-${index}`),
+				assistantItem(`worker-reply-${spawn}-${index}`),
+				toolItem(`worker-tool-${spawn}-${index}`, workerOutput),
+			]);
+			return [
+				userItem(`u${spawn}`),
+				assistantItem(`a${spawn}`),
+				toolItem(call),
+				...worker.map((item) => nestedUnder(item, call)),
+			];
+		});
+
+	const ownIds = (items: ReadonlyArray<TranscriptItem>): ReadonlyArray<string> =>
+		items.filter((item) => item.parentId === undefined).map((item) => item.id);
+
+	it("leaves every one of the operator's own rows in the tail at itemLimit 40", () => {
+		const stream = withSpawns();
+		const tail = foldAll(empty, stream, {itemLimit: 40}).at(-1)?.items ?? [];
+		expect(ownIds(tail)).toEqual(ownIds(stream));
+	});
+
+	it("spends no byte budget on them either", () => {
+		const stream = withSpawns("x".repeat(4_000));
+		const tail = foldAll(empty, stream, {itemLimit: 40, byteLimit: 20_000}).at(-1)?.items ?? [];
+		expect(ownIds(tail)).toEqual(ownIds(stream));
+	});
+});
 
 describe("folding a turn that outgrows the bounds", () => {
 	it("never empties the tail while the open group is still growing", () => {

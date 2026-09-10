@@ -528,6 +528,31 @@ describe("a notice naming a worker", () => {
 });
 
 /**
+ * #8814: the view slot outlives the slot it names — a `session-reset` clears `subagents`, and a
+ * restore brings the view back without them. The window used to fall through to the agent's own
+ * rows there, which is the agent's transcript drawn under the worker's label.
+ */
+describe("a view open on a slot the session no longer holds", () => {
+	const ghost = (): ChatView => ({
+		...atOldest(),
+		viewing: {id: "agent", from: {pinned: false, scroll: 0}},
+	});
+
+	it("draws its own empty state instead of the agent's own rows", async () => {
+		const {rendered} = await openOne(agentSession(), {}, ghost());
+		const root = rendered.container;
+
+		expect(dom(root).rowKinds()).toEqual(["slot-gone"]);
+		expect(dom(root).text()).toBe("This subagent's transcript is not in this session's state.");
+		expect(dom(root).text()).not.toContain("the agent's own call");
+		// One copy of that sentence, not two: the tail notice is the finished/running report, and an
+		// unresolved slot has neither.
+		expect(dom(root).end()).toBeNull();
+		rendered.unmount();
+	});
+});
+
+/**
  * #8680: three sentences and one list field name the worker, and all three sentences already carry
  * the word "subagent". A slot whose call named no agent and whose steps resolved none has
  * `type: null`, and each surface phrases that absence instead of reading a placeholder back out.

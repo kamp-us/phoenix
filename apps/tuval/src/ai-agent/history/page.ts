@@ -80,8 +80,8 @@ export const planTranscriptPage = (
 			break;
 		}
 		taken.unshift(group);
-		items += group.items.length;
-		bytes += group.bytes;
+		items += group.weight.items;
+		bytes += group.weight.bytes;
 	}
 
 	const start = taken[0]?.start ?? itemIndexOf(history, groups, boundary);

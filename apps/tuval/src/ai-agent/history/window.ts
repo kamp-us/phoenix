@@ -43,14 +43,18 @@ export interface WindowOptions {
 	readonly byteLimit?: number;
 }
 
-/** Which bound refuses this group here, in the vocabulary `WindowOmission` speaks. */
+/**
+ * Which bound refuses this group here, in the vocabulary `WindowOmission` speaks. The group's
+ * `weight` rather than everything it carries: a nested worker's rows ride along free
+ * (`./groups.ts`).
+ */
 export const stoppedBy = (
 	group: TranscriptGroup,
 	taken: {readonly items: number; readonly bytes: number},
 	limits: {readonly items: number; readonly bytes: number},
 ): WindowOmission["reason"] | null => {
-	if (taken.items + group.items.length > limits.items) return "item-limit";
-	if (taken.bytes + group.bytes > limits.bytes) return "byte-limit";
+	if (taken.items + group.weight.items > limits.items) return "item-limit";
+	if (taken.bytes + group.weight.bytes > limits.bytes) return "byte-limit";
 	return null;
 };
 
@@ -113,8 +117,8 @@ export const planTranscriptWindow = (
 			break;
 		}
 		taken.unshift(group);
-		items += group.items.length;
-		bytes += group.bytes;
+		items += group.weight.items;
+		bytes += group.weight.bytes;
 	}
 
 	const start = taken[0]?.start ?? itemIndexOf(history, groups, boundary);
