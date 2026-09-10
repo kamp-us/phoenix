@@ -93,6 +93,7 @@ export const runView = (
 					parkCause: options.parkCause,
 					classes: [],
 					waitGrant: null,
+					rationale: null,
 				}).pipe(
 					// The transition verb's own words, either way: a refusal it proved beats anything
 					// this file could compose, and its answer line already names what it appended.

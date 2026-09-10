@@ -39,6 +39,7 @@ const run = (fs: ReturnType<typeof fakeFs>) =>
 				parkCause: parkCauseRead(),
 				classes: [],
 				waitGrant: null,
+				rationale: null,
 			}),
 			fs.layer,
 		),

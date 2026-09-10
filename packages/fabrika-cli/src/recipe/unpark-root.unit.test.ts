@@ -10,6 +10,7 @@ import {Effect, Layer, Option} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams} from "../fakes.test-support.ts";
 import {NOT_A_REPO} from "../lane/codes.ts";
+import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {resolveRootOrRefuse} from "../lane/ground.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {ENV} from "../ship/fixtures.test-support.ts";
@@ -45,7 +46,16 @@ const unparkFrom = (fs: ReturnType<typeof fakeFs>, cwd: string, root: Option.Opt
 			Effect.gen(function* () {
 				const resolved = yield* resolveRootOrRefuse(VERB, root, DEFAULT_LANES_ROOT, cwd);
 				return typeof resolved === "string"
-					? yield* runUnpark({root: resolved, lane: LANE, task: null, repo: null, cwd, env: ENV})
+					? yield* runUnpark({
+							root: resolved,
+							lane: LANE,
+							task: null,
+							repo: null,
+							cwd,
+							env: ENV,
+							parkCause: parkCauseRead(),
+							rationale: null,
+						})
 					: resolved;
 			}),
 			Layer.merge(fs.layer, fakeSeams([]).layer),

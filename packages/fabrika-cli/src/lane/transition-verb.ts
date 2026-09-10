@@ -25,6 +25,7 @@ import {
 	EVENT_REFUSED,
 	GRANT_REFUSED,
 	PARK_UNCAUSED,
+	RATIONALE_REFUSED,
 	RESUME_UNBUDGETED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
@@ -38,6 +39,8 @@ import {
 	classesForEvent,
 	type GrantResolution,
 	grantForEvent,
+	type RationaleResolution,
+	rationaleForEvent,
 } from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -81,6 +84,14 @@ export interface TransitionOptions extends LaneRef {
 	 * run. A resume that needs one and carries none is `applyEvent`'s `unbudgeted-resume`.
 	 */
 	readonly waitGrant: number | null;
+	/**
+	 * Why the park this event clears was cleared, on an `UNBLOCKED` only; `null` records none.
+	 *
+	 * `recipe unpark` passes the driver's own recommendation here when it clears a driver-routed
+	 * park, which is the whole audit of that clearance — the route says a driver may take the park,
+	 * and this says what it took it on.
+	 */
+	readonly rationale: string | null;
 }
 
 export const runTransition = (
@@ -128,6 +139,15 @@ export const runTransition = (
 				if (granted._tag === "Rejected") {
 					return refuse(GRANT_REFUSED, `${VERB}: refused (log unappended): ${granted.reason}.`);
 				}
+				const reasoned: RationaleResolution = isOperatorEvent(event)
+					? rationaleForEvent(options.rationale, event)
+					: {_tag: "Reasoned", rationale: null};
+				if (reasoned._tag === "Rejected") {
+					return refuse(
+						RATIONALE_REFUSED,
+						`${VERB}: refused (log unappended): ${reasoned.reason}.`,
+					);
+				}
 
 				const at = yield* Effect.sync(() => new Date().toISOString());
 				const applied = applyEvent(
@@ -149,6 +169,7 @@ export const runTransition = (
 				const entry: LogEntry = {
 					...applied.entry,
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+					...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 				};
 				const wrote = yield* Effect.result(
 					appendText(loaded.logPath, `${JSON.stringify(entry)}\n`),
@@ -169,6 +190,7 @@ export const runTransition = (
 							...(classed.classes === null ? {} : {classes: classed.classes}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 							...(granted.grant === null ? {} : {waitGrant: granted.grant}),
+							...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 						},
 						null,
 						2,

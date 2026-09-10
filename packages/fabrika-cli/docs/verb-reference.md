@@ -603,7 +603,9 @@ the `--class` is outside the review classes · `39` the cwd is not in a reposito
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
 branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not
 install, or the install changed a tracked file · `44` the merged tree failed a code validator · `45`
-the assembly worktree already held modified tracked files before the merge, so nothing was merged.
+the assembly worktree already held modified tracked files before the merge, so nothing was merged ·
+`52` a `BLOCKED` named no cause in a repo declaring `parkCause.uncaused: "refuse"` · `53` the
+`--rationale` says nothing, or rides on an event that is not `UNBLOCKED`.
 
 To open a lane, copy a template in and speak the operator's six events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED`:
@@ -777,7 +779,7 @@ read-back.
 
 | Verb | Answers |
 |---|---|
-| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — and on the queue-stall row grants the waits that clear buys, on the same recorded event |
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — and on the queue-stall row grants the waits that clear buys, on the same recorded event; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
 | `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a head-bound `governance` PASS |
 | `recipe route` | which recipe a chore-lane state applies, and which of the six events one exit folds to |
 
@@ -787,12 +789,21 @@ precondition read failed · `12` the park's cause is outside the known-recipe se
 recipe whose clearing condition is not met yet · `14` the task's leaf state is not a park · `15`
 the task could not be resolved · `16`–`18` the `governance` verdict is absent, stale, or FAIL ·
 `19` no run at the head concluded in failure · `20` the machine refused the `UNBLOCKED` · `21` the
-rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `39`
+rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `23`
+the park routes to the driver and the run named no `--rationale` · `39`
 the cwd is not in a repository, so `unpark` has none to derive its default lanes root off.
 
 **Known clears, novel escalates, and both are exit codes.** `12` is nothing-written, route it to a
 human; `13` is wait. `recipe route --exit` folds the first to `BLOCKED` and the second to `WIP`, so
 how autonomous a chore drive is never depends on a caller's reading.
+
+**A novel park is not automatically a human's.** Every park cause carries a route
+([`lane/report.ts`](../src/lane/report.ts)), and `driver` says the park is machinery a driver session
+owns rather than a call only the founder can make. Under `.fabrika.jsonc`'s
+`parkCause.driverRouted: "clear"` such a park clears here on the driver's own `--rationale`, which
+rides the recorded `UNBLOCKED` and reads back as the task's standing `rationale` — the whole audit of
+a clear no proving read stands behind, which is why omitting it is `23` rather than a silent clear.
+A `founder` route, and every park under the shipped `refuse`, still lands on `12`.
 
 ## The `report` group
 

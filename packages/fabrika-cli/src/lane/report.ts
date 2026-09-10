@@ -471,3 +471,37 @@ export const grantForEvent = (raw: number | null, event: OperatorEvent): GrantRe
 		? {_tag: "Granted", grant: raw}
 		: {_tag: "Rejected", reason: `--grant-wait ${raw} is no whole grant of at least one wait`};
 };
+
+export type RationaleResolution =
+	| {readonly _tag: "Reasoned"; readonly rationale: string | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--rationale` against the event it rides on — the mirror of {@link causeForEvent},
+ * which seats why a lane parked on the `BLOCKED` that parked it.
+ *
+ * A rationale on a non-`UNBLOCKED` event is refused rather than dropped: only a resume is a
+ * clearance, so anything else carrying one is a caller that misunderstood the field, and recording
+ * it would seat an explanation on a line no unpark and no reader is looking at. A blank one is
+ * refused for the reason the field exists at all — a clearance whose recorded reason says nothing is
+ * exactly as unauditable as one that recorded none.
+ */
+export const rationaleForEvent = (
+	raw: string | null,
+	event: OperatorEvent,
+): RationaleResolution => {
+	if (raw === null) return {_tag: "Reasoned", rationale: null};
+	if (event !== "UNBLOCKED") {
+		return {
+			_tag: "Rejected",
+			reason: `a rationale names why a park was cleared, and this token maps to ${event}, not UNBLOCKED — drop --rationale`,
+		};
+	}
+	const trimmed = raw.trim();
+	return trimmed === ""
+		? {
+				_tag: "Rejected",
+				reason: "--rationale is blank, and a clearance that says nothing is one nobody can review",
+			}
+		: {_tag: "Reasoned", rationale: trimmed};
+};

@@ -63,6 +63,15 @@ export interface LogEntry {
 	readonly pr?: string;
 	readonly comment?: string;
 	readonly cause?: string;
+	/**
+	 * Why the driver cleared this park, on an `UNBLOCKED` it took on its own recommendation.
+	 *
+	 * Evidence, like `cause`, and the mirror of it: a cause says why the lane parked, a rationale
+	 * says why it was let out. It is the whole audit of a driver-routed clear — a clearance no line
+	 * records is one nobody can review afterwards — so `recipe unpark` refuses the clear rather than
+	 * record an `UNBLOCKED` without it.
+	 */
+	readonly rationale?: string;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -126,6 +135,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			pr?: unknown;
 			comment?: unknown;
 			cause?: unknown;
+			rationale?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
@@ -153,6 +163,15 @@ export const parseLog = (text: string): ParseLogResult => {
 			(record.cause !== undefined && typeof record.cause !== "string")
 		) {
 			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\`/\`cause\` field`);
+			continue;
+		}
+		// A blank rationale reads back as a recorded one and says nothing, which is the unauditable
+		// clearance the field exists to prevent — so it is a parse defect, never a present field.
+		if (
+			record.rationale !== undefined &&
+			!(typeof record.rationale === "string" && record.rationale.trim() !== "")
+		) {
+			defects.push(`line ${index + 1} carries a \`rationale\` field that says nothing`);
 			continue;
 		}
 		if (record.round !== undefined && !Number.isInteger(record.round)) {
@@ -293,6 +312,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.pr === undefined ? {} : {pr: record.pr}),
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
+			...(record.rationale === undefined ? {} : {rationale: record.rationale as string}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
@@ -437,6 +457,24 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
  */
 export const standingCauses = (
 	entries: ReadonlyArray<LogEntry>,
+): Readonly<Record<string, string>> => standingField(entries, "cause");
+
+/**
+ * The rationale standing over each task — the `rationale` on that task's latest entry, when it
+ * carries one.
+ *
+ * The mirror of {@link standingCauses}, derived the same way for the same reason: a rationale is a
+ * property of the `UNBLOCKED` that cleared the park, so it stands exactly while that event is the
+ * last thing said about the task, and the next event replaces it. That is what makes a driver's
+ * clearance readable back off the ledger's own re-fold rather than only off the raw log.
+ */
+export const standingRationales = (
+	entries: ReadonlyArray<LogEntry>,
+): Readonly<Record<string, string>> => standingField(entries, "rationale");
+
+const standingField = (
+	entries: ReadonlyArray<LogEntry>,
+	field: "cause" | "rationale",
 ): Readonly<Record<string, string>> => {
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
@@ -444,11 +482,12 @@ export const standingCauses = (
 		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
-	const causes: Record<string, string> = {};
+	const standing: Record<string, string> = {};
 	for (const [task, entry] of Object.entries(latest)) {
-		if (entry.cause !== undefined) causes[task] = entry.cause;
+		const value = entry[field];
+		if (value !== undefined) standing[task] = value;
 	}
-	return causes;
+	return standing;
 };
 
 export interface LaneStatus {
@@ -462,6 +501,7 @@ export const deriveStatus = (
 	lane: CompiledLane,
 	states: Readonly<Record<string, TaskState>>,
 	causes: Readonly<Record<string, string>> = {},
+	rationales: Readonly<Record<string, string>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
@@ -469,6 +509,7 @@ export const deriveStatus = (
 	const context: Record<string, unknown> = {};
 	for (const [taskId, state] of Object.entries(states)) {
 		const cause = causes[taskId];
+		const rationale = rationales[taskId];
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
@@ -480,6 +521,7 @@ export const deriveStatus = (
 			...(state.classes.length === 0 ? {} : {classes: state.classes}),
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
+			...(rationale === undefined ? {} : {rationale}),
 		};
 	}
 	context.errors = errors;
