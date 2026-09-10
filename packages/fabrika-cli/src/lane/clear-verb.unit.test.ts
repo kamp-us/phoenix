@@ -3,8 +3,12 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {runClear} from "./clear-verb.ts";
+import {recordClearedRound} from "./clearance.ts";
 import {APPEND_UNKNOWN, GRANT_REFUSED, LANE_ABSENT, RATIONALE_REFUSED} from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {foldLog, parseLog} from "./fold.ts";
+import {compileText} from "./machine.ts";
+import {runTransition} from "./transition-verb.ts";
 
 const ROOT = ".fabrika/lanes";
 const WORKFLOW = `${ROOT}/42/workflow.json`;
@@ -30,6 +34,82 @@ const laneWith = (log: string, extra: Parameters<typeof fakeFs>[0] = {}) =>
 	fakeFs({files: {[WORKFLOW]: coderTemplateText(), [LOG]: log}, ...extra});
 
 describe("lane clear — the grant", () => {
+	it("resumes a legacy cap-2 lane for exactly one repair without rewriting its history", async () => {
+		const workflow = JSON.parse(coderTemplateText());
+		workflow.machine.context.issue.maxRetries = 2;
+		const workflowText = JSON.stringify(workflow).replaceAll("human:budget-spent", "frozen");
+		const history = `${line("WIP")}${`${line("DONE")}${line("FAIL")}`.repeat(3)}`;
+		const fs = fakeFs({files: {[WORKFLOW]: workflowText, [LOG]: history}});
+		const transition = (event: string) =>
+			Effect.runPromise(
+				Effect.provide(
+					runTransition({
+						root: ROOT,
+						lane: "42",
+						task: "issue",
+						event,
+						cause: null,
+						classes: [],
+						waitGrant: null,
+						parkCause: parkCauseRead(),
+						rationale: null,
+					}),
+					fs.layer,
+				),
+			);
+		const state = (log: string) => {
+			const compiled = compileText(workflowText);
+			if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
+			const parsed = parseLog(log);
+			if (parsed._tag !== "Parsed") throw new Error(parsed.defects.join("; "));
+			const fold = foldLog(compiled.lane, parsed.entries);
+			if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+			return fold.states.issue;
+		};
+
+		expect(CAP_ROUND).toBe(4);
+		expect((await transition("UNBLOCKED")).code).toBe(36);
+		expect(fs.written.size).toBe(0);
+		expect(state(history)).toMatchObject({type: "frozen", retries: 2, maxRetries: 2});
+
+		const grant = await run(fs);
+		expect(grant.code).toBe(0);
+		expect(JSON.parse(grant.stdout)).toMatchObject({answer: "cleared", round: 3, budget: 3});
+		const grantedLog = fs.written.get(LOG) ?? "";
+		expect(grantedLog.slice(0, history.length)).toBe(history);
+		expect(state(grantedLog)).toMatchObject({type: "frozen", retries: 2, maxRetries: 3});
+		expect(state(`${grantedLog}${line("CLEARED", {round: 3})}`)).toEqual(state(grantedLog));
+
+		const repeated = await Effect.runPromise(
+			Effect.provide(recordClearedRound({root: ROOT, lane: "42"}, "issue", 3), fs.layer),
+		);
+		expect(repeated._tag).toBe("AlreadyHeld");
+		expect((await run(fs)).code).toBe(GRANT_REFUSED);
+		expect(fs.written.get(LOG)).toBe(grantedLog);
+
+		const resumed = await transition("UNBLOCKED");
+		expect(resumed.code).toBe(0);
+		expect(JSON.parse(resumed.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+		expect((await transition("FAIL")).code).toBe(0);
+		expect(state(fs.written.get(LOG) ?? "")).toMatchObject({
+			type: "build",
+			retries: 3,
+			maxRetries: 3,
+		});
+		expect((await transition("DONE")).code).toBe(0);
+		expect((await transition("FAIL")).code).toBe(0);
+		expect(state(fs.written.get(LOG) ?? "")).toMatchObject({
+			type: "frozen",
+			retries: 3,
+			maxRetries: 3,
+		});
+		const spentLog = fs.written.get(LOG) ?? "";
+		expect((await transition("UNBLOCKED")).code).toBe(36);
+		expect(fs.written.get(LOG)).toBe(spentLog);
+		expect(spentLog.slice(0, history.length)).toBe(history);
+		expect(fs.written.has(WORKFLOW)).toBe(false);
+	});
+
 	it("appends the derived round with its rationale and answers the new budget", async () => {
 		const fs = laneWith(spent());
 
