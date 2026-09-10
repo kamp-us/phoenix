@@ -231,7 +231,7 @@ that has not started may move to any phase, later ones included.
 It reconciles nothing, and that is deliberate: the block is read exactly as it stands, so a block
 still naming a child the board closed is `fabrika plan restage`'s to repair before you amend.
 
-**Three refusals, and each is proven before anything is written** — on all three the lane's
+**Four refusals, and each is proven before anything is written** — on all four the lane's
 `events.jsonl` is byte for byte what it was:
 
 - **`60`** — the new topology places no phase for a task the ledger records as **landed**, named with
@@ -239,14 +239,40 @@ still naming a child the board closed is `fabrika plan restage`'s to repair befo
   phase, or close the epic over what it built.
 - **`61`** — a task carrying recorded history cannot replay to the leaf it stands on under the
   re-derived machine: it is dropped while mid-flight, or its log reaches a cell the new region does
-  not hold. Each offending task is named. Let it reach a leaf the amendment can carry, or amend a
-  different part of the topology.
+  not hold. Each offending task is named. Let it reach a leaf the amendment can carry, amend a
+  different part of the topology, or — when the change is an authorized descope — name it with
+  `--defer`, the paragraph below.
 - **`62`** — the `## Dependencies` block is not a topology (an unparseable line, a child in two
   phases, a requires subject in none). The defect is the **issue body's**, not the ledger's, so
   `fabrika plan restage` is the repair and nothing under `.fabrika/lanes/` is at fault.
+- **`64`** — a `--defer` does not describe this lane: the task is not in this machine, the new
+  topology still places it, it carries no recorded history to defer, `--defer` and `--defer-reason`
+  were not given together, or a live build claim on the child says a worker is still on it. Every one
+  of those is repaired by changing the flag or the board, never by re-planning the epic.
 
 A topology that already derives the machine on disk answers `{"answer":"current"}` with nothing
 appended and nothing written, so running it when in doubt costs two board reads and changes nothing.
+
+**A child the founder descoped mid-flight takes two verbs, and neither closes it.** `61` refuses that
+drop by design, and the way through is to name it rather than to widen the refusal — a task dropped
+silently leaves recorded lines the ledger no longer accounts for, which is the trade this repo's
+decision on an unreplayable lane already declined. Take the board half first, then the ledger half,
+after the epic body's `## Dependencies` block drops the child:
+
+```bash
+node <fabrika> ledger defer $epic --child <n> --reason "<why>" --token <epic-claim-token>
+node <fabrika> lane amend $lane_key --defer issue_<n> --defer-reason "<why>"
+```
+
+`ledger defer` comments, unlinks and **leaves the issue open** as the follow-up — it never calls the
+close endpoint, which is the whole difference from `ledger supersede`, whose child is work the plan
+abandoned. `lane amend --defer` then admits the historied drop and records it on the amendment line
+it was already appending: the task, the `at` of its last recorded entry as the bound, and the reason.
+Every recorded line stays exactly where it was, a later fold accounts for the bounded ones and
+refuses anything the bound does not cover, and `lane status` prints a `deferred` row so the child
+does not read as completed. Before it writes, the child's issue is read for a live build claim — a
+held one refuses at `64`, an unreadable thread is `11` — so the deferral detaches no worker and
+discards no branch or worktree.
 
 **Exit `63` out of `lane open` says the board shows this issue already had a lane** — it names every
 pull request that proves it. Nothing here is bootable: end `STOPPED` naming the code, and drive the

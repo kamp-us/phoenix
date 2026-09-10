@@ -11,6 +11,7 @@
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
 import {applyCell, foldMsgs, NoCellError} from "@demlik/tea";
+import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {
 	AMENDED_EVENT,
 	BOARD_TERMINALS,
@@ -88,6 +89,16 @@ export interface LogEntry {
 	/** The task set an {@link AMENDED_EVENT} left the lane's machine holding. */
 	readonly tasks?: ReadonlyArray<string>;
 	/**
+	 * The tasks this {@link AMENDED_EVENT} **defers** — the seventh payload, and the only one that
+	 * changes how the lines above it are read.
+	 *
+	 * `deferred` above is a different word for a different thing (the review namespaces a `PASS` was
+	 * short), so this one is spelled for the act rather than the state. Each row names the task
+	 * leaving the plan, the `at` bounding the history the deferral covers, and the reason — see
+	 * [`deferral.ts`](deferral.ts) for what makes a row resolvable.
+	 */
+	readonly defers?: ReadonlyArray<Deferral>;
+	/**
 	 * The board outcome a board-proven terminal stands on — the sixth kind, and evidence rather than
 	 * a payload the fold reads.
 	 *
@@ -117,6 +128,30 @@ export interface LogEntry {
 	 */
 	readonly assertedBy?: string;
 }
+
+/**
+ * Whether a `defers` payload is the shape {@link resolveDeferrals} can judge at all.
+ *
+ * Every field is load-bearing and none has a defaulting reading: a row with no `through` bounds
+ * nothing, and one with no `reason` records that a plan changed without recording why — the same
+ * silent-no-op class a roundless `CLEARED` is, and a parse defect for the same reason. A duplicate
+ * task inside one payload is caught here rather than at the resolve, because the two rows may agree
+ * and still say one plan change twice.
+ */
+const isDeferralList = (value: unknown): value is ReadonlyArray<Deferral> => {
+	if (!Array.isArray(value) || value.length === 0) return false;
+	const tasks = new Set<string>();
+	for (const row of value) {
+		if (typeof row !== "object" || row === null) return false;
+		const {task, through, reason} = row as {task?: unknown; through?: unknown; reason?: unknown};
+		if (typeof task !== "string" || task === "") return false;
+		if (typeof through !== "string" || through === "") return false;
+		if (typeof reason !== "string" || reason.trim() === "") return false;
+		if (tasks.has(task)) return false;
+		tasks.add(task);
+	}
+	return true;
+};
 
 export type ParseLogResult =
 	| {readonly _tag: "Parsed"; readonly entries: ReadonlyArray<LogEntry>}
@@ -152,6 +187,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			landed?: unknown;
 			corrects?: unknown;
 			tasks?: unknown;
+			defers?: unknown;
 			outcome?: unknown;
 			sha?: unknown;
 			assertedBy?: unknown;
@@ -280,6 +316,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		if (record.defers !== undefined && !isDeferralList(record.defers)) {
+			defects.push(
+				`line ${index + 1} carries a \`defers\` field that is not a non-empty list of {task, through, reason} rows`,
+			);
+			continue;
+		}
+		if (!amended && record.defers !== undefined) {
+			defects.push(
+				`line ${index + 1} carries \`defers\` on a "${bareEvent(record.event)}" event — only an ${AMENDED_EVENT} defers a task out of the plan`,
+			);
+			continue;
+		}
 		if (!amended && record.tasks !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`tasks\` on a "${bareEvent(record.event)}" event — only an ${AMENDED_EVENT} names a re-derived task set`,
@@ -361,6 +409,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 			...(record.tasks === undefined ? {} : {tasks: record.tasks as ReadonlyArray<string>}),
+			...(record.defers === undefined ? {} : {defers: record.defers as ReadonlyArray<Deferral>}),
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
@@ -445,11 +494,28 @@ const stateIn = (states: Readonly<Record<string, TaskState>>, taskId: string): T
  * it is a fact about the lane rather than about a task, so the id it carries names the lane's own
  * subject and nothing dispatches on it. Judging it against the task set would make the one line
  * recording a topology change the line that refuses to replay through the topology it recorded.
+ *
+ * A **deferred** task is the one other exemption, and it is narrow by construction: only the tasks
+ * an amendment's `defers` payload names, and only over the history that payload bounds. Everything
+ * else about a deferred task is refused rather than ignored — an unresolvable payload, and any line
+ * the bound does not cover, are defects on this same channel. `pending` carries the deferrals of an
+ * amendment not yet appended, which is the only way {@link judgeAmendment} can fold a log through
+ * the machine the amendment would write before writing it.
  */
-export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): FoldResult => {
+export const foldLog = (
+	lane: CompiledLane,
+	entries: ReadonlyArray<LogEntry>,
+	pending: ReadonlyArray<string> = [],
+): FoldResult => {
+	const resolvedDeferrals = resolveDeferrals(entries);
+	if (resolvedDeferrals._tag === "Undecidable") {
+		return {_tag: "Unreplayable", defects: resolvedDeferrals.defects};
+	}
+	const deferred = new Set([...deferredTasks(resolvedDeferrals.deferrals), ...pending]);
 	const defects: string[] = [];
 	for (const entry of entries) {
 		if (bareEvent(entry.event) === AMENDED_EVENT) continue;
+		if (deferred.has(entry.task)) continue;
 		if (lane.tasks[entry.task] === undefined) {
 			defects.push(`log names task "${entry.task}", which is not in this lane's machine`);
 		}

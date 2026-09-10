@@ -603,3 +603,16 @@ export const TOPOLOGY_MALFORMED = 62;
  * a recorded round grant.
  */
 export const PRIOR_LANE = 63;
+
+/**
+ * A named deferral does not describe this lane — refused with nothing written.
+ *
+ * Its own seat rather than {@link AMEND_UNREPLAYABLE}'s, and the split is what makes either code
+ * actionable. `61` says the LOG cannot survive the amendment, and its remedy is to change the
+ * topology or wait for the task to reach a leaf. This one says the DEFERRAL is wrong — the task is
+ * not this lane's, or the topology still places it, or it carries no history to defer, or a live
+ * worker still holds the child — and every one of those is repaired by changing the flag or the
+ * board, never by changing the plan. Seating them together would send an operator whose `--defer`
+ * had a typo to re-plan the epic.
+ */
+export const DEFERRAL_REFUSED = 64;

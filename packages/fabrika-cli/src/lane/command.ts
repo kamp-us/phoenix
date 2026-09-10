@@ -22,7 +22,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {runAmend} from "./amend-verb.ts";
+import {claimOwnership, runAmend} from "./amend-verb.ts";
 import {closedReader, runArchive} from "./archive-verb.ts";
 import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
@@ -546,6 +546,18 @@ const amend = leafCommand(
 			Argument.withDescription("the epic issue whose running lane takes the amended topology"),
 		),
 		root: rootFlag,
+		defer: Flag.string("defer").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"a task id this amendment DEFERS out of the plan (`issue_<n>`); repeatable, requires --defer-reason, and it is the only way a task carrying history may be dropped",
+			),
+		),
+		deferReason: Flag.string("defer-reason").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"why the deferred tasks are leaving the plan; recorded verbatim on each deferral row, and required with --defer",
+			),
+		),
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -553,7 +565,7 @@ const amend = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({epic, root, repo}) {
+	Effect.fn(function* ({epic, root, defer, deferReason, repo}) {
 		const resolvedRoot = yield* resolveRootOrRefuse(
 			"fabrika lane amend",
 			root,
@@ -573,6 +585,9 @@ const amend = leafCommand(
 					repo: Option.getOrNull(repo),
 					env: process.env,
 					now: new Date().toISOString(),
+					defer,
+					deferReason: Option.getOrNull(deferReason),
+					ownership: claimOwnership,
 				}),
 			),
 		);
@@ -580,7 +595,7 @@ const amend = leafCommand(
 ).pipe(
 	Command.withShortDescription("Re-derive a running epic's machine from its current topology."),
 	Command.withDescription(
-		"Amend one RUNNING epic lane's task set: re-read the epic body's `## Dependencies` block, re-derive the machine `lane emit` would emit from it today, and — only where the lane's own recorded history survives the change — append one `<EPIC_N>.AMENDED` line and write the re-derived `workflow.json`. This is the verb for a plan that changed after emission: a child added to the topology, or a not-started child re-sequenced into a later phase. Before it existed the only routes were retiring the lane directory and re-emitting, which discards `events.jsonl` and every landed child's record with it, or hand-driving the rest of the epic outside its own ledger. **The log is appended to and never rewritten**: no recorded line is edited, reordered or dropped, the amendment line moves no task and reaches no machine (the fold consumes it, exactly as it consumes `lane reconcile`'s CORRECTED), and its `tasks` payload names the set the re-derived machine holds, which is the whole audit of the change. A task new to the topology boots `queued` carrying no history; a task that has not started may move to any phase, later ones included. **It reconciles nothing** — the block is read exactly as it stands, and a block still naming a child the board closed is `fabrika plan restage`'s to repair, never this verb's to guess at. The lap axis is read off the lane's OWN machine and not off `.fabrika.jsonc`, so a repo that flipped `machineryLaps.onEmit` since the emission does not have that flip land as a side effect of adding a child. A topology that already derives the machine on disk answers {answer:\"current\"} with nothing appended and nothing written. stdout on a change is {answer:\"amended\", lane, epic, workflow, tasks, added, dropped, phases, children, bytes}. Every refusal below is proven BEFORE the append and before the machine write, so the lane is byte-identical after it. Exits 4 (the lane record on disk was read in full and is not the shape, or its log already does not replay through the machine it is running — this lane is not one to amend), 7 (no lane there, or the epic is proven absent or closed), 8 (the append or the machine write did not land — the stderr says which, and a recorded amendment whose machine write failed is completed by re-running this verb), 11 (the lane, the epic, its child list or the machine document could not be read — UNKNOWN, nothing written), 15 (no readable `## Dependencies` topology — there is nothing to amend to), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 40 (another writer holds the lane's ledger lock — retry once the holder clears), 60 (the new topology places no phase for a task this ledger records as LANDED, named with the final it landed in — the ledger is the only record that work landed, so put the child back in a phase or close the epic over what it built), 61 (a task carrying recorded history cannot replay to the leaf it stands on under the re-derived machine — it is dropped while mid-flight, or its log reaches a cell the new region does not hold; each offending task is named), 62 (the epic body's `## Dependencies` block was read in full and is not a topology — an unparseable line, a child placed in two phases, or a requires subject placed in none; the defect is the ISSUE BODY's, so `fabrika plan restage` is the repair and nothing on disk is at fault). Example: fabrika lane amend 7499",
+		"Amend one RUNNING epic lane's task set: re-read the epic body's `## Dependencies` block, re-derive the machine `lane emit` would emit from it today, and — only where the lane's own recorded history survives the change — append one `<EPIC_N>.AMENDED` line and write the re-derived `workflow.json`. This is the verb for a plan that changed after emission: a child added to the topology, or a not-started child re-sequenced into a later phase. Before it existed the only routes were retiring the lane directory and re-emitting, which discards `events.jsonl` and every landed child's record with it, or hand-driving the rest of the epic outside its own ledger. **The log is appended to and never rewritten**: no recorded line is edited, reordered or dropped, the amendment line moves no task and reaches no machine (the fold consumes it, exactly as it consumes `lane reconcile`'s CORRECTED), and its `tasks` payload names the set the re-derived machine holds, which is the whole audit of the change. A task new to the topology boots `queued` carrying no history; a task that has not started may move to any phase, later ones included. **It reconciles nothing** — the block is read exactly as it stands, and a block still naming a child the board closed is `fabrika plan restage`'s to repair, never this verb's to guess at. The lap axis is read off the lane's OWN machine and not off `.fabrika.jsonc`, so a repo that flipped `machineryLaps.onEmit` since the emission does not have that flip land as a side effect of adding a child. **`--defer <task>` is the one route out of a mid-flight descope**, and it is the only way a task carrying recorded history may be dropped: without it that drop still refuses at 61. It requires --defer-reason, and it names the plan change on the amendment line rather than dropping the task silently — the appended line gains a `defers` payload carrying, per task, the id, the `at` of that task's last recorded entry (the bound, derived off the log under the append lock, never typed), and the reason. So the ledger goes on accounting for every entry the dropped task recorded, which is what the 61 refusal was protecting: a later fold excuses exactly those bounded lines from the unknown-task check and refuses anything the bound does not cover, including a child quietly reintroduced after the deferral. Before it writes, the deferred child's own issue is read for a live `build-claim:` marker — a held claim refuses at 64 and an unreadable thread is UNKNOWN at 11, never an absence — so a deferral detaches no worker, kills nothing and discards no branch or worktree. It touches the CHILD ISSUE not at all: `fabrika ledger defer <epic> --child <n>` is the board half, which unlinks it and leaves it OPEN as the follow-up. `lane status` then prints the deferred rows so deferred does not read as completed, and `lane history` still prints the child's own events verbatim. A topology that already derives the machine on disk answers {answer:\"current\"} with nothing appended and nothing written. stdout on a change is {answer:\"amended\", lane, epic, workflow, tasks, added, dropped, deferred, phases, children, bytes}. Every refusal below is proven BEFORE the append and before the machine write, so the lane is byte-identical after it. Exits 4 (the lane record on disk was read in full and is not the shape, or its log already does not replay through the machine it is running — this lane is not one to amend), 7 (no lane there, or the epic is proven absent or closed), 8 (the append or the machine write did not land — the stderr says which, and a recorded amendment whose machine write failed is completed by re-running this verb), 11 (the lane, the epic, its child list or the machine document could not be read — UNKNOWN, nothing written), 15 (no readable `## Dependencies` topology — there is nothing to amend to), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 40 (another writer holds the lane's ledger lock — retry once the holder clears), 60 (the new topology places no phase for a task this ledger records as LANDED, named with the final it landed in — the ledger is the only record that work landed, so put the child back in a phase or close the epic over what it built), 61 (a task carrying recorded history cannot replay to the leaf it stands on under the re-derived machine — it is dropped while mid-flight, or its log reaches a cell the new region does not hold; each offending task is named — an authorized descope names it with --defer instead), 62 (the epic body's `## Dependencies` block was read in full and is not a topology — an unparseable line, a child placed in two phases, or a requires subject placed in none; the defect is the ISSUE BODY's, so `fabrika plan restage` is the repair and nothing on disk is at fault), 64 (a --defer does not describe this lane: the task is not in this machine, the new topology still places it, it carries no recorded history to defer, --defer and --defer-reason were not given together, or a live build claim on the child says a worker is still on it; every one of those is repaired by changing the flag or the board, never by re-planning the epic). Example: fabrika lane amend 7499",
 	),
 );
 
