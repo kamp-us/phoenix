@@ -9,6 +9,9 @@
  * The rows are a still life on purpose: a board that spawned a process on a timer would capture
  * differently on every run. What the entry animation does is the unit tier's
  * (`../process-board.unit.test.tsx`).
+ *
+ * The overlay is pinned open, because that is the only state worth capturing: closed, this surface
+ * is the desk and nothing else, which is the whole point of #8867.
  */
 
 import {Option} from "effect";
@@ -17,7 +20,7 @@ import {createRoot} from "react-dom/client";
 import {ProcessId} from "../../../process/process.ts";
 import {ProgramId} from "../../../registry/program.ts";
 import type {PortDeclaration, TableRow} from "../../../table/row.ts";
-import {ProcessBoard} from "../ProcessBoard.tsx";
+import {ProcessBoardOverlay} from "../ProcessBoardOverlay.tsx";
 import "../../../page/styles.ts";
 import "./proof.css";
 
@@ -72,18 +75,20 @@ if (host === null) throw new Error("the proof page has no #proof element");
 
 createRoot(host).render(
 	<StrictMode>
-		<div className="tuval-surface tuval-board-page" data-scheme="dark">
-			<ProcessBoard
-				rows={rows}
-				onOpen={(processId) => {
-					globalThis.console.log(`open ${processId}`);
-				}}
-				reducedMotion={false}
-			/>
-			{/* The desk's seat, so the board is captured at the height it actually gets. */}
-			<div className="tuval-surface proof-desk">
-				<p className="proof-desk-note">The desk sits here.</p>
-			</div>
+		{/* The desk's seat, so the overlay is captured over the surface it actually covers. */}
+		<div className="tuval-surface proof-desk" data-scheme="dark">
+			<p className="proof-desk-note">The desk sits here, at its full height.</p>
 		</div>
+		<ProcessBoardOverlay
+			open={true}
+			onClose={() => {
+				globalThis.console.log("close");
+			}}
+			rows={rows}
+			onOpen={(processId) => {
+				globalThis.console.log(`open ${processId}`);
+			}}
+			reducedMotion={false}
+		/>
 	</StrictMode>,
 );

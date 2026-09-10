@@ -26,7 +26,11 @@ import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, type FileSystem, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionMsg,
+	type AiAgentSessionState,
+	promptItemId,
+} from "../../ai-agent/core/index.ts";
 import {boot, projectDir} from "../../boot.ts";
 import {PI_SESSION_PROGRAM} from "../../pi/renderer-ref.ts";
 import {ProcessId} from "../../process/process.ts";
@@ -820,7 +824,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							);
 							assert.strictEqual(
 								restored.interrupted,
-								"a3",
+								promptItemId(PROMPT_3_KEY),
 								"the cut turn came back unmarked, so no window could offer the resend",
 							);
 

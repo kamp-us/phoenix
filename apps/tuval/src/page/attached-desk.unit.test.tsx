@@ -7,7 +7,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {act, render, screen} from "@testing-library/react";
+import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {counterId} from "../demo/counter.ts";
@@ -66,7 +66,7 @@ const emptyDesk = (): ShellState => ({
 	order: ["workspace-0"],
 	activeWorkspace: "workspace-0",
 	views: {},
-	desk: {inspectorOpen: false},
+	desk: {inspectorOpen: false, boardOpen: false},
 	prefix: {armed: false},
 	nextId: 2,
 });
@@ -88,10 +88,16 @@ const twoWindowDesk = (): ShellState => ({
 	order: ["workspace-0"],
 	activeWorkspace: "workspace-0",
 	views: {},
-	desk: {inspectorOpen: false},
+	desk: {inspectorOpen: false, boardOpen: false},
 	prefix: {armed: false},
 	nextId: 3,
 });
+
+/** A desk whose board the chord has already pulled up. */
+const boardOpenDesk = (): ShellState => {
+	const state = twoWindowDesk();
+	return {...state, desk: {...state.desk, boardOpen: true}};
+};
 
 const counterRow: TableRow = {
 	id: counterProcess,
@@ -565,13 +571,14 @@ describe("the desk across a dropped socket", () => {
 });
 
 /**
- * The board's containment (#8723). Flag off, this component renders the tree it rendered before the
- * board existed — no board and no wrapper — which is the acceptance criterion the flag exists for.
+ * The board's containment (#8723) and its overlay (#8867). Flag off, this component renders the
+ * tree it rendered before the board existed — no board and no wrapper. Flag on, the desk keeps its
+ * whole height until `desk.boardOpen` says otherwise, and every dismissal goes back as a Msg.
  */
 describe("the process board flag", () => {
 	it.effect("draws no board and no wrapper when the flag is off", () =>
 		Effect.gen(function* () {
-			const app = yield* scripted();
+			const app = yield* scripted({state: boardOpenDesk()});
 			render(
 				<AttachedDesk
 					page={app.page}
@@ -584,14 +591,67 @@ describe("the process board flag", () => {
 			yield* settle;
 
 			assert.isNull(document.querySelector(".tuval-board"));
-			assert.isNull(document.querySelector(".tuval-board-page"));
+			assert.isNull(document.querySelector(".tuval-board-overlay"));
 			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
 		}),
 	);
 
-	it.effect("draws a tile per row on, and opens that process in its own window", () =>
+	it.effect("draws no board on first paint with the flag on: the desk keeps its height", () =>
 		Effect.gen(function* () {
 			const app = yield* scripted();
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					board={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			assert.isNull(document.querySelector(".tuval-board"));
+			assert.isNull(screen.queryByRole("dialog", {name: "Processes"}));
+			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
+		}),
+	);
+
+	it.effect("pulls the board up as a named dialog when the shell says it is open", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({state: boardOpenDesk()});
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					board={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			const dialog = screen.getByRole("dialog", {name: "Processes"});
+			assert.isNotNull(dialog.querySelector(`[data-process="${counterProcess}"]`));
+			// Modal and focused: the two halves of "announced and reachable". Both are the shared
+			// `Dialog`'s (`packages/design/src/Dialog.tsx` over Manti's zag machine), which is why they
+			// are asserted here rather than implemented anywhere in this app.
+			assert.strictEqual(dialog.getAttribute("aria-modal"), "true");
+			yield* Effect.tryPromise({
+				try: () =>
+					act(async () => {
+						await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
+					}),
+				catch: (cause) => new TestIo({cause}),
+			}).pipe(Effect.orDie);
+			assert.isTrue(dialog.contains(document.activeElement));
+		}),
+	);
+
+	it.effect("opens the tile's process in a window and closes the board behind it", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({state: boardOpenDesk()});
 			render(
 				<AttachedDesk
 					page={app.page}
@@ -609,7 +669,44 @@ describe("the process board flag", () => {
 			yield* Effect.sync(() => act(() => (tile as HTMLElement).click()));
 			yield* settle;
 
-			assert.deepStrictEqual(app.sent, [openProcessMsg(counterProcess)]);
+			assert.deepStrictEqual(app.sent, [
+				openProcessMsg(counterProcess),
+				{type: "desk.board.close"},
+			]);
+		}),
+	);
+
+	it.effect("closes on Escape from inside the overlay", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({state: boardOpenDesk()});
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					board={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			const dialog = screen.getByRole("dialog", {name: "Processes"});
+			yield* Effect.sync(() =>
+				act(() => {
+					fireEvent.keyDown(dialog, {key: "Escape"});
+				}),
+			);
+			yield* settle;
+
+			// The desk's one document-level listener hears the same Escape and sends it on as any other
+			// key, which is what keeps `<c-b> p` working from inside the overlay. It is inert: Escape is
+			// unbound in the grammar, and `../shell/ui/Desk.tsx` forwards nothing to a window while the
+			// board is open.
+			assert.deepStrictEqual(
+				app.sent.filter((msg) => msg.type !== "keys.press"),
+				[{type: "desk.board.close"}],
+			);
 		}),
 	);
 });

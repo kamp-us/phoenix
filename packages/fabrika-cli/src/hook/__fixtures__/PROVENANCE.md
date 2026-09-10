@@ -52,8 +52,8 @@ no model at all — the two branches the spawn decision has to tell apart.
 **Two things this capture settles that a hand-authored envelope gets wrong.** A spawn's `tool_name`
 is **`Agent`**, not `Task` — the matcher is `Task` and it fired, but the envelope says `Agent`, so a
 guard filtering on `tool_name === "Task"` would never run. And the model arrives as the harness alias
-**`opus`**, never the canonical `claude-opus-4-8` — which is the fact the alias map in
-[`../../models.ts`](../../models.ts) exists for.
+**`opus`**, never the canonical `claude-opus-4-8`. The alias map that used this evidence is retired;
+the captured envelopes remain a record of what the harness sent.
 
 <a id="capture-3--the-worktreecreate-envelope"></a>
 ## Capture 3 — the `WorktreeCreate` envelope

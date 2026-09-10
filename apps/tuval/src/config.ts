@@ -54,27 +54,26 @@ const GraphNode = Schema.Struct({
 const GraphSchema = Schema.Struct({nodes: Schema.Array(GraphNode)});
 
 /**
- * The feature flags a layer *states*. Every key is optional, and that is the whole point: absent
- * means "this layer says nothing", not "off", so a project layer naming one flag cannot put back to
- * its default a flag the global layer turned on. `featuresDefault` is where a flag nobody stated
- * lands.
+ * The feature flags a layer *states*, one optional boolean key per key of `TuvalFeatures`. Every
+ * key is optional, and that is the whole point: absent means "this layer says nothing", not "off",
+ * so a project layer naming one flag cannot put back to its default a flag the global layer turned
+ * on. `featuresDefault` is where a flag nobody stated lands.
+ *
+ * Derived rather than hand-listed, because hand-listing drifted twice: a key on `TuvalFeatures`
+ * that nobody re-typed here was dropped by the decode, so a layer stating it moved the browser and
+ * nothing on the node side (#8595, #8783). The mapped type takes the key set from `TuvalFeatures`
+ * and the runtime fields from `featuresDefault`'s own keys, and `featuresDefault` is annotated
+ * `TuvalFeatures`, so the two cannot name different keys.
  */
-const DeclaredFeatures = Schema.Struct({
-	/**
-	 * The running-subagent list at the top of the agent window, and — the same flag, because they are
-	 * one change — a subagent's rows leaving the agent window's transcript (#8405).
-	 */
-	subagentList: Schema.optionalKey(Schema.Boolean),
-	/**
-	 * Load the `pi-subagents` extension into a Pi session (#8555). A key missing here is a key the
-	 * decode drops, so a layer that stated it reached the browser and nothing else (#8595).
-	 */
-	piSubagents: Schema.optionalKey(Schema.Boolean),
-	kernelChildren: Schema.optionalKey(Schema.Boolean),
-	windowTitles: Schema.optionalKey(Schema.Boolean),
-	processBoard: Schema.optionalKey(Schema.Boolean),
-	prReviewExample: Schema.optionalKey(Schema.Boolean),
-});
+type DeclaredFeatureFields = {
+	readonly [K in keyof TuvalFeatures]: Schema.optionalKey<typeof Schema.Boolean>;
+};
+
+const declaredFeatureFields = Object.fromEntries(
+	Object.keys(featuresDefault).map((key) => [key, Schema.optionalKey(Schema.Boolean)]),
+) as DeclaredFeatureFields;
+
+export const DeclaredFeatures = Schema.Struct(declaredFeatureFields);
 
 export {featuresDefault, type TuvalFeatures} from "./features.ts";
 

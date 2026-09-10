@@ -2,7 +2,7 @@ import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {ConfigLoadError, loadConfigModule, loadLayeredConfig} from "./config.ts";
+import {ConfigLoadError, DeclaredFeatures, loadConfigModule, loadLayeredConfig} from "./config.ts";
 import {featuresDefault} from "./features.ts";
 import {NodeId} from "./ports/graph.ts";
 import {ProgramId} from "./registry/program.ts";
@@ -186,6 +186,36 @@ describe("the feature flags", () => {
 			assert.deepStrictEqual(overGlobalOn.features, {...featuresDefault, piSubagents: false});
 		}),
 	);
+
+	it.effect("keep a stated piKernelTools rather than dropping it at the decode", () =>
+		Effect.gen(function* () {
+			const config = yield* loadConfigModule(fixture("pi-kernel-tools-on"));
+			assert.deepStrictEqual(config.features, {piKernelTools: true});
+		}),
+	);
+
+	it.effect("let a layer turn piKernelTools on against its off default", () =>
+		Effect.gen(function* () {
+			const global = yield* layered(fixture("pi-kernel-tools-on"), fixture("two-rows"));
+			assert.deepStrictEqual(global.features, {...featuresDefault, piKernelTools: true});
+			const project = yield* layered(fixture("two-rows"), fixture("pi-kernel-tools-on"));
+			assert.deepStrictEqual(project.features, {...featuresDefault, piKernelTools: true});
+			const overGlobalOn = yield* layered(
+				fixture("pi-kernel-tools-on"),
+				fixture("pi-kernel-tools-off"),
+			);
+			assert.deepStrictEqual(overGlobalOn.features, {...featuresDefault, piKernelTools: false});
+		}),
+	);
+
+	// The derivation is what makes a hand-listed key impossible to forget, and this is the assertion
+	// that reds if it is ever unwound back to a literal (#8595, #8783).
+	it("declare exactly the keys featuresDefault carries", () => {
+		assert.deepStrictEqual(
+			Object.keys(DeclaredFeatures.fields).sort(),
+			Object.keys(featuresDefault).sort(),
+		);
+	});
 });
 
 describe("loadLayeredConfig", () => {

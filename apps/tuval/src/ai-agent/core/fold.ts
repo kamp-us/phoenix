@@ -28,9 +28,7 @@ import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} f
 import {
 	type AiAgentSessionState,
 	closeOfferedCatalogs,
-	cutReplyAfterItem,
 	emptyOmission,
-	lastAssistantId,
 	settleTurn,
 	type UsageLedger,
 } from "./state.ts";
@@ -83,6 +81,23 @@ export const upsertItem = (
 	return at < 0
 		? [...items, item]
 		: items.map((candidate, index) => (index === at ? item : candidate));
+};
+
+/**
+ * The cut-turn marker after one item folded: a row the echo join re-keys takes the marker with it.
+ *
+ * The marker names the operator's own prompt (`cutPromptId`, #8699) and the echo join replaces that
+ * row with the layer's copy under the layer's own id, so the marker would otherwise name a row no
+ * longer in the tail — the Resend gone the moment the backend echoed the very prompt it is for.
+ * This follows a re-key and decides nothing: with no marker standing there is nothing to move, and
+ * an incoming row that supersedes some other item leaves it alone.
+ */
+const reanchored = (state: AiAgentSessionState, item: TranscriptItem): ItemId | null => {
+	if (state.interrupted === null) return null;
+	const echo = echoOf(state.transcript.items, item);
+	return echo >= 0 && state.transcript.items[echo]?.id === state.interrupted
+		? item.id
+		: state.interrupted;
 };
 
 const addOmission = (carried: WindowOmission, dropped: WindowOmission): WindowOmission => ({
@@ -310,6 +325,10 @@ export const phaseAfterFailure = (
  * late, and the send it belonged to has no other event coming to accept it. `settleFailedTurn` is
  * the wrong settle here and stays unused on both halves: this failure names the interrupt call
  * rather than a send, which is why `sendAfterFailure` (`./sends.ts`) answers `null` for the tag.
+ *
+ * Neither half touches `interrupted`. The `interrupt` cell anchors the marker on the operator's own
+ * prompt at the press, so by the time a refusal can arrive it is already set, and a second decider
+ * here could only re-point it at a reply — which is the anchor #8699 moved away from.
  */
 export const foldInterruptRefusal = (
 	state: AiAgentSessionState,
@@ -322,7 +341,6 @@ export const foldInterruptRefusal = (
 	return {
 		...turn,
 		phase: "ready",
-		interrupted: turn.interrupted ?? lastAssistantId(turn.transcript.items),
 		interruption: null,
 		failure,
 		sends: settleAccepted(turn.sends),
@@ -338,7 +356,7 @@ export const foldEvent = (
 		case "item":
 			return {
 				...state,
-				interrupted: cutReplyAfterItem(state, event.item),
+				interrupted: reanchored(state, event.item),
 				transcript: foldItem(state.transcript, event.item, limits),
 			};
 		// The phase line is also where a send in flight learns it crossed, and it takes two events

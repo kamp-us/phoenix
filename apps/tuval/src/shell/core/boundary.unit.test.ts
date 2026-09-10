@@ -113,6 +113,8 @@ describe("shell core boundary", () => {
 			| "command.open"
 			| "config.reload"
 			| "desk.inspector.toggle"
+			| "desk.board.toggle"
+			| "desk.board.close"
 			| "keys.press"
 			| "prefix.repeatLapsed"
 		>();

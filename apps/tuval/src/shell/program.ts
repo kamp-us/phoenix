@@ -18,7 +18,8 @@ import {NodeId} from "../ports/graph.ts";
 import {ProcessId} from "../process/process.ts";
 import type {AnyProgram, HostHandlers, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
-import {shellSpells} from "./commands/spells.ts";
+import {shellSpells, shellSpellsFor} from "./commands/spells.ts";
+import {commandIndexFor, type ShellCommandFeatures} from "./commands/table.ts";
 import {
 	isShellState,
 	type ShellCmd,
@@ -26,7 +27,7 @@ import {
 	type ShellState,
 	shellCore,
 } from "./core/index.ts";
-import {defaultPrefixTable, type PrefixTable} from "./keys/index.ts";
+import {defaultPrefixTable, type PrefixTable, prefixTableFor} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
 import {type Empty, empty, type ProcessGone, processGone, WindowId} from "./window/index.ts";
 
@@ -43,7 +44,7 @@ export const shellNode = NodeId.make("shell");
  * The definition version a snapshot is checked against. Bumping it refuses every desk saved under
  * the old one rather than replaying it into a changed state shape (#7467).
  */
-export const SHELL_VERSION = "1.1.0";
+export const SHELL_VERSION = "1.2.0";
 
 /**
  * What the core asks its host to do, as the kernel's own handler shape. `E` and `R` ride through to
@@ -165,6 +166,32 @@ export const shellProgram = <E = never, R = never>({
  */
 const isShellRow = (program: AnyProgram): program is ShellRow =>
 	program.id === shellId && "table" in program;
+
+/**
+ * The rows a boot's merged feature flags leave standing. A config module is evaluated before the
+ * merge exists (#8595), so the shell's row is built flag-blind and this is the one seam that knows
+ * both: `boot` calls it once, and everything downstream — the registry, the spell set, the grammar
+ * the transport sends — reads the gated row rather than re-deriving the gate for itself (#8867).
+ *
+ * Gating is additive and lives in two lists, `boardBindings` in `./keys/table.ts` and
+ * `boardCommands` in `./commands/table.ts`. Both are keyed on the one flag, so a key can never name
+ * a row this build does not hold.
+ */
+export const withShellFeatures = (
+	programs: ReadonlyArray<AnyProgram>,
+	features: ShellCommandFeatures,
+): ReadonlyArray<AnyProgram> =>
+	programs.map((program) => {
+		if (!isShellRow(program)) return program;
+		const table = prefixTableFor(program.table, features);
+		const commands = commandIndexFor(features);
+		return {
+			...program,
+			table,
+			core: shellCore({table, commands}),
+			spells: shellSpellsFor(features),
+		} satisfies ShellRow;
+	});
 
 /**
  * The key grammar a config's rows put the kernel on: the shell row's resolved table, or the same

@@ -4,12 +4,14 @@
  */
 
 import {describe, expect, it} from "vitest";
+import {commandIndexFor} from "../commands/index.ts";
 import {
 	CommandName,
 	defaultPrefixTable,
 	FOCUS_LIST_KEY,
 	type Key,
 	type PrefixTable,
+	prefixTableFor,
 } from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {mountPicker} from "../picker/view.ts";
@@ -48,6 +50,8 @@ describe("shell core: the reducer's cells", () => {
 		expect(Object.keys(cellsFor(table)).sort()).toEqual([
 			"command.open",
 			"config.reload",
+			"desk.board.close",
+			"desk.board.toggle",
 			"desk.inspector.toggle",
 			"keys.press",
 			"layout.resize",
@@ -77,7 +81,7 @@ describe("shell core: the reducer's cells", () => {
 		expect(focusedProcess(state)).toBeNull();
 		expect(state.order).toEqual([state.activeWorkspace]);
 		expect(state.prefix).toEqual({armed: false});
-		expect(state.desk).toEqual({inspectorOpen: false});
+		expect(state.desk).toEqual({inspectorOpen: false, boardOpen: false});
 	});
 });
 
@@ -111,7 +115,58 @@ describe("shell core: the desk inspector", () => {
 	it("survives a checkpoint round trip, like the rest of the shell's state", () => {
 		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
 		const restored = JSON.parse(JSON.stringify(opened)) as ShellState;
-		expect(restored.desk).toEqual({inspectorOpen: true});
+		expect(restored.desk).toEqual({inspectorOpen: true, boardOpen: false});
+	});
+});
+
+/**
+ * The board's overlay (#8867). It is desk-level like the inspector, and its chord is feature-gated,
+ * so the cells are driven over the gated table the flag builds rather than over the default one.
+ */
+describe("shell core: the process board", () => {
+	const gated = prefixTableFor(defaultPrefixTable, {processBoard: true});
+	const gatedCells = cellsFor(gated, commandIndexFor({processBoard: true}));
+	const run = (state: ShellState, ...msgs: readonly ShellMsg[]): ShellState =>
+		msgs.reduce(
+			(acc, msg) =>
+				(gatedCells[msg.type] as (s: ShellState, m: ShellMsg) => readonly [ShellState, unknown])(
+					acc,
+					msg,
+				)[0],
+			state,
+		);
+
+	it("desk.board.toggle pulls the board up and puts it away", () => {
+		const [opened] = apply(initialState(), {type: "desk.board.toggle"});
+		const [closed, cmds] = apply(opened, {type: "desk.board.toggle"});
+
+		expect([opened.desk.boardOpen, closed.desk.boardOpen]).toEqual([true, false]);
+		expect(cmds).toEqual([]);
+	});
+
+	it("desk.board.close closes an open board and leaves a closed one alone", () => {
+		const opened = fold(initialState(), {type: "desk.board.toggle"});
+		expect(apply(opened, {type: "desk.board.close"})[0].desk.boardOpen).toBe(false);
+		expect(apply(initialState(), {type: "desk.board.close"})[0].desk.boardOpen).toBe(false);
+	});
+
+	it("the chord opens it, and the same chord closes it again", () => {
+		const opened = run(initialState(), prefix, press("p"));
+		const closed = run(opened, prefix, press("p"));
+
+		expect([opened.desk.boardOpen, closed.desk.boardOpen]).toEqual([true, false]);
+	});
+
+	it("holds its state across a workspace switch, like every desk-level surface", () => {
+		const opened = run(initialState(), {type: "desk.board.toggle"});
+		const created = run(opened, {type: "workspace.create"});
+		expect(created.desk.boardOpen).toBe(true);
+	});
+
+	it("makes `p` an unbound sequence when the flag is off, and opens nothing", () => {
+		const [routed] = apply(fold(initialState(), prefix), press("p"));
+		expect(routed.desk.boardOpen).toBe(false);
+		expect(routed.lastPress?.outcome._tag).toBe("Consumed");
 	});
 });
 
