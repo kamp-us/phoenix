@@ -398,14 +398,19 @@ export const SHAPE_MISMATCH = 46;
 export const GRANT_REFUSED = 47;
 
 /**
- * The issue a boot was pointed at hangs under a parent, whose lane already carries it as a task —
- * the mirror of {@link SHAPE_MISMATCH}, and the one that guard could not reach, since both facts
- * that guard reads are facts about the issue itself. A child booted its own coder-template ledger
- * while the parent epic's lane held the same number, and nothing reconciled the two.
+ * The issue a boot was pointed at hangs under a parent — the mirror of {@link SHAPE_MISMATCH}, and
+ * the one that guard could not reach, since both facts that guard reads are facts about the issue
+ * itself. A child booted its own coder-template ledger while the parent epic's lane held the same
+ * number, and nothing reconciled the two.
  *
  * Its own seat rather than {@link SHAPE_MISMATCH}'s, because the remedies are opposite: an epic
  * needs a machine of its own and is booted with `lane emit`, while a child needs no lane at all —
- * the parent's is the one to drive, and a second boot is exactly the harm.
+ * and a second boot is exactly the harm.
+ *
+ * One code, three routes: the parent lane's emitted task set is read before the refusal speaks, so
+ * a child the parent machine holds says drive that lane, one it provably does not hold says place
+ * the child in the epic's `## Dependencies` block and `lane amend` the parent first, and a task set
+ * that did not read says so instead of asserting membership either way.
  */
 export const LANE_IS_CHILD = 48;
 

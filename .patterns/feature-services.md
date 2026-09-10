@@ -1,5 +1,8 @@
 # Feature services
 
+This pattern applies to `apps/web/worker`. Tuval and operational CLI packages have
+different storage and runtime owners; use the [shared index](index.md) for those tasks.
+
 Each feature directory in phoenix exposes **one** `Context.Service` — a flat record of domain methods that the resolver layer yields. Reads and writes sit together. The service depends on a `Drizzle` service that holds the singleton drizzle builder.
 
 See also [effect-context-service.md](./effect-context-service.md) for service-definition mechanics, [effect-errors.md](./effect-errors.md) for the error model, and [effect-fn-tracing.md](./effect-fn-tracing.md) for the method shape.
@@ -72,10 +75,11 @@ The trade-off, recorded: callers lose the *option* of typeful infra handling (e.
 
 The service earns its keep by:
 
-- Constructing the drizzle builder once per request.
+- Constructing the drizzle builder once at worker initialization.
 - Giving feature services one uniform call pattern for all drizzle operations.
 - Centralizing the promise → Effect boundary so feature code is fully Effect-native.
-- Being trivially swappable for tests that want an in-memory drizzle.
+- Allowing unit tests to substitute `DrizzleAccess` without a database, as described
+  in [effect-testing.md](effect-testing.md).
 
 ### House rule: `Effect.tryPromise` always uses object notation
 
