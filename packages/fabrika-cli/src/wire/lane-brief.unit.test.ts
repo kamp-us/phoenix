@@ -10,6 +10,7 @@ import {describe, expect, it} from "vitest";
 import {
 	artifactUrl,
 	EPIC_RULES,
+	EPIC_TAIL_REPAIR_RULES,
 	EPIC_TAIL_RULES,
 	emit,
 	fabrikaEntry,
@@ -72,6 +73,7 @@ const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> 
 	["Pull, with the lane's PR", {_tag: "Pull", pr: PR}, "review"],
 	["Pull, at the rendered review", {_tag: "Pull", pr: PR}, "review:ui"],
 	["Tail", {_tag: "Tail", pr: PR, epic: EPIC}, "review"],
+	["Tail repair", {_tag: "TailRepair", pr: PR, epic: EPIC, branch: ref("epic/40")}, "build"],
 	["Epic child build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build"],
 	["Epic child UI build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build:ui"],
 ];
@@ -99,7 +101,7 @@ describe("the five shell states route through one table", () => {
 
 describe("the lane-brief carries no repo's own path in its rules", () => {
 	it("names no in-tree fabrika path anywhere in the byte-fixed text", () => {
-		for (const text of [RULES, EPIC_RULES, EPIC_TAIL_RULES]) {
+		for (const text of [RULES, EPIC_RULES, EPIC_TAIL_RULES, EPIC_TAIL_REPAIR_RULES]) {
 			expect(text).not.toContain("packages/fabrika-cli/");
 			expect(text).not.toMatch(/node\s+\S*bin\.[jt]s/);
 		}
@@ -110,6 +112,15 @@ describe("the lane-brief carries no repo's own path in its rules", () => {
 		expect(EPIC_RULES).toContain("node <fabrika> build deviations <child>");
 		expect(EPIC_RULES).toContain("node <fabrika> wire emit --format range-verdict-marker");
 		expect(EPIC_TAIL_RULES).toContain("node <fabrika> wire read --format build-deviations");
+	});
+
+	// #6521's builder note: the repair round is told which shell moves the assembly branch, because the
+	// assembly worktree is the driver's and no spawned shell can reach it.
+	it("tells the tail's repair whose shell moves the assembly branch, and merge over rebase", () => {
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("moved by the lane driver alone");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("`lane assembly`");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("merges `main` into `epic/<lane>`");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("Merge, never rebase");
 	});
 });
 
