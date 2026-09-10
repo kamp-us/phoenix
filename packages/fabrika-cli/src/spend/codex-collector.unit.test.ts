@@ -36,9 +36,8 @@ const context = (turn = "turn-1", model = "model-a") => ({
 	payload: {turn_id: turn, model},
 });
 const response = (thread = "root", id = "response-1", turn = "turn-1") => ({
-	type: "event_msg",
+	type: "token_usage_record",
 	payload: {
-		type: "token_usage_record",
 		thread_id: thread,
 		session_id: "root",
 		turn_id: turn,
@@ -203,4 +202,48 @@ it("preserves absent provider/model/counters and measured zero without inferring
 	expect(record.counters.find((row) => row.category === "reasoning")).toMatchObject({
 		value: {state: "measured", tokens: 0},
 	});
+});
+
+it("filters native root turns and never turns token_count snapshots into responses", async () => {
+	const options = {...fixture(), rootTurn: "turn-1"};
+	const otherTurn = response("root", "other-response", "turn-2");
+	otherTurn.payload.root_turn_id = "turn-2";
+	save(options.sessions, "root", [
+		meta("root"),
+		context(),
+		response(),
+		otherTurn,
+		{type: "event_msg", payload: {type: "token_count", info: {last_token_usage: usage}}},
+	]);
+	await live(collectCodex(options));
+	const measured = readUsageLedger(readFileSync(options.ledger, "utf8")).records.filter(
+		(row) => row.kind === "measurement",
+	);
+	expect(measured).toHaveLength(3);
+	expect(measured.every((row) => row.rootTurn === "turn-1")).toBe(true);
+});
+
+it("reports native identity and counter gaps without manufacturing response usage", async () => {
+	const options = fixture();
+	const missingIdentity = response();
+	missingIdentity.payload.response_id = "";
+	const invalidCounts = response("root", "invalid");
+	invalidCounts.payload.usage = {...usage, input_tokens: -1};
+	const snapshotsOnly = response("root", "snapshots-only");
+	delete (snapshotsOnly.payload as {usage?: unknown}).usage;
+	save(options.sessions, "root", [
+		meta("root"),
+		context(),
+		missingIdentity,
+		invalidCounts,
+		snapshotsOnly,
+	]);
+	const result = await live(collectCodex(options));
+	expect(result.notices.join(" ")).toContain("Unsupported response identity");
+	expect(result.notices.join(" ")).toContain("Unsupported usage");
+	const measured = readUsageLedger(readFileSync(options.ledger, "utf8")).records.filter(
+		(row) => row.kind === "measurement",
+	);
+	expect(measured).toHaveLength(4);
+	expect(measured.every((row) => row.basis.kind === "cumulative")).toBe(true);
 });

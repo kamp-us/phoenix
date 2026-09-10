@@ -125,9 +125,7 @@ export const codexRecords = (
 		const payload = object(row.payload);
 		if (row.type === "turn_context" && id(payload.turn_id))
 			models.set(payload.turn_id as string, id(payload.model));
-		if (row.type !== "event_msg") continue;
-		if (payload.type === "token_count") continue;
-		if (payload.type !== "token_usage_record") continue;
+		if (row.type !== "token_usage_record") continue;
 		if (id(payload.thread_id) !== session.thread) continue;
 		if (rootTurn !== undefined && payload.root_turn_id !== rootTurn) continue;
 		const response = id(payload.response_id),
