@@ -24,6 +24,7 @@ import {
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
 	RATIONALE_ABSENT,
+	READBACK_MISMATCH,
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 	WRITE_UNKNOWN,
@@ -154,6 +155,12 @@ const otherPull = (number: number): HttpReply => ({
 
 const NO_NOMINATIONS: Scripted = [SEARCH, reply(nominatedPulls())];
 
+/**
+ * The clock every run is measured against — twenty minutes after the claim the spawn-dead fixtures
+ * write, so a standing claim is inside the builder's forty-minute budget unless a case moves it.
+ */
+const NOW = "2026-08-29T00:20:00.000Z";
+
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	script: ReadonlyArray<Scripted>,
@@ -161,6 +168,7 @@ const run = (
 	task: string | null = null,
 	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
 	rationale: string | null = null,
+	now: string = NOW,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -171,6 +179,7 @@ const run = (
 				repo: null,
 				cwd: CWD,
 				env: ENV,
+				now,
 				parkCause,
 				rationale,
 			}),
@@ -470,9 +479,9 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	// A claim leaves through a written release or a board-attested adopt succession, never through
-	// this verb inferring the claimant gone — so the residue read holds rather than clears.
-	it("is PARK_HOLDS while the dead shell's claim still stands, naming the token", async () => {
+	// Inside its budget a claim is a shell that may still be working, so nothing is retracted on it:
+	// the horizon is the proof, and short of the horizon there is none.
+	it("is PARK_HOLDS while the claim is inside its budget, naming the token and the horizon", async () => {
 		const fs = lane(PARKED_ON_SPAWN);
 
 		const out = await run(
@@ -489,7 +498,65 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 		);
 
 		expect(out.code).toBe(PARK_HOLDS);
-		expect(out.stderr.join("\n")).toMatch(/build:dead-session:9f2cab41/);
+		const held = out.stderr.join("\n");
+		expect(held).toMatch(/build:dead-session:9f2cab41/);
+		expect(held).toMatch(/20 of its 40 minute\(s\)/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The half this row could not do: past the budget the claim IS the death, so it is retracted, the
+	// board is re-read to prove it gone, and the park clears with nobody running adopt-and-release.
+	it("retracts a claim past its budget, proves it gone by re-reading, and clears", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+		const token = "build:dead-session:9f2cab41-1111-4222-8333-444455556666";
+
+		const out = await run(
+			fs,
+			[[BRANCHES, branchList("main")]],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[once(LANE_COMMENTS), claimComment("owner", token)],
+				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+				[/^DELETE \S+\/repos\/o\/r\/issues\/comments\/1$/, {status: 204, body: ""}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+			null,
+			parkCauseRead(),
+			null,
+			"2026-08-29T01:00:00.000Z",
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			clearance: "spawn-clear",
+			mechanism: `spawn-clear:#${LANE} unclaimed (retracted ${token} at 60m, past the 40-minute budget), no lane branch`,
+		});
+		expect(out.stderr.join("\n")).toMatch(/past the 40-minute budget/);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// A delete that "worked" while the marker survived is the false green the whole protocol refuses:
+	// the write happened and the board disagrees, which is a read-back mismatch, never a clear.
+	it("is READBACK_MISMATCH when the claim still reads held after the retraction", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+		const token = "build:dead-session:9f2cab41-1111-4222-8333-444455556666";
+
+		const out = await run(
+			fs,
+			[],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+				[/^DELETE \S+\/repos\/o\/r\/issues\/comments\/1$/, {status: 204, body: ""}],
+				[LANE_COMMENTS, claimComment("owner", token)],
+			],
+			null,
+			parkCauseRead(),
+			null,
+			"2026-08-29T01:00:00.000Z",
+		);
+
+		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(fs.written.size).toBe(0);
 	});
 
@@ -847,6 +914,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 					repo: null,
 					cwd: CWD,
 					env: ENV,
+					now: NOW,
 					parkCause: parkCauseRead(),
 					rationale: null,
 				}),

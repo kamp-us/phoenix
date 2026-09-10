@@ -40,7 +40,15 @@
 							"build:ui": {
 								"on": {
 									"ISSUE.DONE": "review",
-									"ISSUE.BLOCKED": "blocked"
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "build:ui",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									]
 								}
 							},
 							"review": {
@@ -50,6 +58,14 @@
 										{ "target": "ship" }
 									],
 									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "review",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.FAIL": [
 										{
 											"target": "build",
@@ -64,6 +80,14 @@
 								"on": {
 									"ISSUE.PASS": "ship",
 									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "review:ui",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.FAIL": [
 										{
 											"target": "build:ui",

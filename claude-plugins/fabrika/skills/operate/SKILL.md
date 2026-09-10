@@ -630,9 +630,12 @@ this order:
   spawn would have.
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
   is the whole act: the spawn ran under your session id, so its marker resolves as
-  this session's and the verb that already exists retracts it. No new verb and no widened one — a
-  founder ruling rejected a lease, a TTL and steal outright, and eviction by inference from absence
-  stays banned: a claim is released under a proven identity, never inferred gone.
+  this session's and the verb that already exists retracts it. No new verb and no widened one. **A
+  claim ends under a proven identity or a budget-proved death, and never on any weaker reading** —
+  this release is the first proof, the `spawn-dead` row's retraction below is the second, and a lease,
+  a steal and eviction inferred from plain absence all stay banned. The budget-proved death is a
+  narrow arm on that ban rather than a hole in it: it reaches exactly the `spawn-dead` park a driver
+  already recorded, and the age ban stands everywhere else.
 - **Retire the worktree it left**, with `fabrika build retire <n>`. A tree left standing holds the
   lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
   exit `11`. The verb does the two dead-spawn steps in their order —
@@ -654,8 +657,16 @@ token, whichever role the shell was playing, so `--cause spawn-dead` rides the `
 originate. Its recipe row then clears the park once the two obligations above are discharged: it
 reads that no claim stands on the issue and no working tree holds its lane branch, which is the whole
 of what would refuse the same brief being dispatched again. It never reads whether the provider is
-back — your next dispatch is that test, and a still-down provider re-parks the lane. A claim you
-could not release holds the park at exit `13` instead, which is the succession below.
+back — your next dispatch is that test, and a still-down provider re-parks the lane.
+
+**A stranded claim is retracted by that same row, on the clock rather than by you.** There is no
+heartbeat, so what proves a shell dead is its claim outliving the budget for the kind of work it
+took — forty minutes for a build, fifteen for a review, ten for a ship. Past that budget the recipe
+retracts the marker and re-reads the board to prove it gone, so the number is re-claimable with no
+`build adopt` and no `build release`; inside it, the shell may still be working and the park holds at
+exit `13`. A retraction the re-read does not confirm is exit `9`, never a clear. This is the one
+place an age test may end a claim. The hand succession below is what remains for a claim no budget
+covers.
 
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
@@ -1068,10 +1079,16 @@ forever and nothing here can record the `BLOCKED` a dead spawn is owed — the d
 that would have to record it. What catches it is a driver-side sweep, not a driver's patience:
 
 ```bash
-node <fabrika> lane stale --older-than 60
+node <fabrika> lane stale
 ```
 
-Every `stale` row is a lane something is owed on that has not moved in the threshold; `parked`,
+**The horizon is each lane's own, not one number you pick.** A lane is judged against the budget of
+the work driving it — a builder's forty minutes, a reviewer's fifteen, a shipper's ten, or the
+dispatch budget for a task nothing has picked up — and each row reports the `budgetMinutes` it was
+judged against. `--older-than <n>` overrides that for every lane, which is a different question
+("what has been quiet for two hours") rather than a disagreement with the budgets.
+
+Every `stale` row is a lane something is owed on that has not moved inside its budget; `parked`,
 `terminal` and `unstarted` rows are never reported stale, so the list is exactly the lanes to
 re-spawn. It reports and never resumes: a driver or a human decides, and the resume is the
 re-spawn above.

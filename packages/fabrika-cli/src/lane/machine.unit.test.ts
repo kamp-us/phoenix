@@ -279,6 +279,7 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(summary.tasks.issue).states.review).toEqual([
 			"PASS",
 			"BLOCKED",
+			MACHINERY_EVENT,
 			"FAIL",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,

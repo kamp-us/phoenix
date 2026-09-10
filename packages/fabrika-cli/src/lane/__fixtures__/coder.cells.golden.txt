@@ -50,6 +50,10 @@ build:ui	BLOCKED	-	0/2	-> blocked	0/2	0/16
 build:ui	BLOCKED	-	2/2	-> blocked	2/2	16/16
 build:ui	BLOCKED	ui	0/2	-> blocked	0/2	0/16
 build:ui	BLOCKED	ui	2/2	-> blocked	2/2	16/16
+build:ui	LAP	-	0/2	-> build:ui	0/2	1/16
+build:ui	LAP	-	2/2	-> human:machinery-stall	2/2	16/16
+build:ui	LAP	ui	0/2	-> build:ui	0/2	1/16
+build:ui	LAP	ui	2/2	-> human:machinery-stall	2/2	16/16
 build:ui	CLEARED	-	0/2	-> build:ui	0/2	0/16
 build:ui	CLEARED	-	2/2	-> build:ui	2/2	16/16
 build:ui	CLEARED	ui	0/2	-> build:ui	0/2	0/16
@@ -70,6 +74,10 @@ review	BLOCKED	-	0/2	-> blocked	0/2	0/16
 review	BLOCKED	-	2/2	-> blocked	2/2	16/16
 review	BLOCKED	ui	0/2	-> blocked	0/2	0/16
 review	BLOCKED	ui	2/2	-> blocked	2/2	16/16
+review	LAP	-	0/2	-> review	0/2	1/16
+review	LAP	-	2/2	-> human:machinery-stall	2/2	16/16
+review	LAP	ui	0/2	-> review	0/2	1/16
+review	LAP	ui	2/2	-> human:machinery-stall	2/2	16/16
 review	FAIL	-	0/2	-> build	1/2	0/16
 review	FAIL	-	2/2	-> frozen	2/2	16/16
 review	FAIL	ui	0/2	-> build	1/2	0/16
@@ -94,6 +102,10 @@ review:ui	BLOCKED	-	0/2	-> blocked	0/2	0/16
 review:ui	BLOCKED	-	2/2	-> blocked	2/2	16/16
 review:ui	BLOCKED	ui	0/2	-> blocked	0/2	0/16
 review:ui	BLOCKED	ui	2/2	-> blocked	2/2	16/16
+review:ui	LAP	-	0/2	-> review:ui	0/2	1/16
+review:ui	LAP	-	2/2	-> human:machinery-stall	2/2	16/16
+review:ui	LAP	ui	0/2	-> review:ui	0/2	1/16
+review:ui	LAP	ui	2/2	-> human:machinery-stall	2/2	16/16
 review:ui	FAIL	-	0/2	-> build:ui	1/2	0/16
 review:ui	FAIL	-	2/2	-> frozen	2/2	16/16
 review:ui	FAIL	ui	0/2	-> build:ui	1/2	0/16

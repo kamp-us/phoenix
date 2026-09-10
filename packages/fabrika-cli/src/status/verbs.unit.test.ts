@@ -19,7 +19,6 @@ import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
-import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {
@@ -1387,7 +1386,7 @@ describe("the lanes field renders `lane stale`'s sweep, never a second staleness
 	const sweep = (fs: ReturnType<typeof fakeFs>) =>
 		Effect.runPromise(
 			Effect.provide(
-				runStale({roots: ROOTS, olderThanMinutes: DEFAULT_STALE_MINUTES, now: NOW, claims: null}),
+				runStale({roots: ROOTS, olderThanMinutes: null, now: NOW, claims: null}),
 				fs.layer,
 			),
 		);
@@ -1406,7 +1405,7 @@ describe("the lanes field renders `lane stale`'s sweep, never a second staleness
 			AS_OF,
 		);
 		expect(field.state).toBe("empty");
-		expect(field.detail).toBe(`1 lane(s), none silent past ${DEFAULT_STALE_MINUTES}m`);
+		expect(field.detail).toBe("1 lane(s), none silent past its own shell budget");
 	});
 
 	it("renders a silent lane as `stale`, naming the lane and its age", async () => {
