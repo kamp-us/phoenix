@@ -30,6 +30,13 @@ export interface TranscriptGroup {
 	 * that spawned them.
 	 */
 	readonly weight: GroupWeight;
+	/**
+	 * What the nested worker's rows riding with this group weigh, against the separate ceiling
+	 * `nestedLimitsFor` sets. Free of `weight` is not free of every bound: with the subagent list
+	 * off those rows do render, so exempting them from both bounds outright would lift the ceiling
+	 * on a rendered tail instead of moving it (#8814).
+	 */
+	readonly nested: GroupWeight;
 }
 
 /** One item's weight against the byte bound: its wire form, which is what a transport pays for. */
@@ -38,9 +45,23 @@ export const itemBytes = (item: TranscriptItem): number => byteLength(JSON.strin
 export const groupBytes = (items: ReadonlyArray<TranscriptItem>): number =>
 	items.reduce((total, item) => total + itemBytes(item), 0);
 
-export const groupWeight = (items: ReadonlyArray<TranscriptItem>): GroupWeight => {
-	const own = items.filter((item) => !isNestedItem(item));
-	return {items: own.length, bytes: groupBytes(own)};
+const weigh = (items: ReadonlyArray<TranscriptItem>): GroupWeight => ({
+	items: items.length,
+	bytes: groupBytes(items),
+});
+
+/** A group's rows split by whose they are: the agent's own, and the workers' riding with them. */
+export const weighGroup = (
+	items: ReadonlyArray<TranscriptItem>,
+): Pick<TranscriptGroup, "weight" | "nested"> => ({
+	weight: weigh(items.filter((item) => !isNestedItem(item))),
+	nested: weigh(items.filter(isNestedItem)),
+});
+
+/** The same group with its nested passengers put down, or `null` when they were all it carried. */
+export const withoutNested = (group: TranscriptGroup): NonEmpty<TranscriptItem> | null => {
+	const [head, ...tail] = group.items.filter((item) => !isNestedItem(item));
+	return head === undefined ? null : [head, ...tail];
 };
 
 /**
@@ -72,7 +93,7 @@ export const groupTranscript = (
 			items: members,
 			bytes: groupBytes(members),
 			start: open.start,
-			weight: groupWeight(members),
+			...weighGroup(members),
 		});
 		open = null;
 	};
@@ -84,7 +105,7 @@ export const groupTranscript = (
 				items: [item],
 				bytes: itemBytes(item),
 				start: index,
-				weight: groupWeight([item]),
+				...weighGroup([item]),
 			});
 			return;
 		}

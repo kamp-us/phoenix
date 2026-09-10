@@ -712,8 +712,8 @@ function ChatWindow({
 	// exactly as they were, which is what lets the back action put the window back where it was.
 	//
 	// A view open on a slot the session no longer holds gets its own row, never main's: falling
-	// through showed the agent's own transcript under the worker's label and `aria-label`, which
-	// reads as the worker having said what the agent said (#8814).
+	// through drew the agent's own transcript inside the open subagent view, which reads as the
+	// worker having said what the agent said (#8814).
 	const rows = useMemo(() => {
 		if (viewedSlot !== undefined) return subagentRows(viewedSlot, unfolded);
 		return viewing === null ? mainRows : SLOT_GONE_ROWS;

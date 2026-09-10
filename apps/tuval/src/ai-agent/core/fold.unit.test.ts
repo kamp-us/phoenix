@@ -41,11 +41,13 @@ const foldAll = (
 };
 
 /**
- * The window bounds are spent on what the desk renders, so a spawn cannot shave the visible head.
+ * The agent's own bounds are spent on its own rows, so a spawn cannot shave the visible head.
  *
- * A worker's rows arrive as ordinary items tagged with the call they ran inside, and `chatRows`
- * drops every one of them; before #8814 they paid full window freight on the way past, so a few
- * spawns pushed the operator's own turns out of a tail that then rendered nothing at all.
+ * A worker's rows arrive as ordinary items tagged with the call they ran inside, and with the
+ * subagent list on `chatRows` drops every one of them; before #8814 they paid full window freight
+ * on the way past, so a few spawns pushed the operator's own turns out of a tail that then rendered
+ * nothing at all. They are not free of every bound — `history/window.ts` holds them to a ceiling of
+ * their own, which is what keeps the tail bounded with the list off, where they do render.
  */
 describe("folding turns that spawn subagents", () => {
 	const SPAWNS = 6;

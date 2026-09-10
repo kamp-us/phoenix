@@ -10,11 +10,11 @@ export {
 	type GroupWeight,
 	groupBytes,
 	groupTranscript,
-	groupWeight,
 	itemBytes,
 	locateCursor,
 	type NonEmpty,
 	type TranscriptGroup,
+	weighGroup,
 } from "./groups.ts";
 export {KERNEL_TOOL_SERVER, type KernelSpawn, kernelSpawnOf} from "./kernel-spawn.ts";
 export {withoutLocalEchoes} from "./local-turns.ts";
@@ -27,7 +27,9 @@ export {
 export {isRefusal, type PlanRefusal} from "./refusal.ts";
 export {boundToolOutput, droppedResultBytes, type RawToolItem} from "./tool-output.ts";
 export {
+	nestedLimitsFor,
 	planTranscriptWindow,
+	TRANSCRIPT_NESTED_ALLOWANCE,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
 	TRANSCRIPT_WINDOW_ITEM_LIMIT,
 	type TranscriptWindow,
