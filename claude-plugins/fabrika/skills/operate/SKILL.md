@@ -206,9 +206,10 @@ The verb's refusals are all parks, not retries: `33` is `epic/<lane-key>` alread
 main working tree — switch that tree off it and run the verb again, never assemble there; `8` is a
 placement that ran and did not read back, UNKNOWN — a stale record git would not let go of reads as
 this too, and so does a contained branch's seat git refused to drop because it holds uncommitted
-work, since nothing can be placed over a tree that survives (an existing
-`epic/<lane-key>`, with or without its tree, is not this: it is the resume above, and the verb
-answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
+work. Nothing can be placed over a registration or a tree that survives, and which one survived
+tells you where to look: a pruned record leaves no tree at all, a refused seat leaves a dirty one
+(an existing `epic/<lane-key>`, with or without its tree, is neither — it is the resume above, and
+the verb answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
 Done when `lane status` folds and prints a `stateValue`.

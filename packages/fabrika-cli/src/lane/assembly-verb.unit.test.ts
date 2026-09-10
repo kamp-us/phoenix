@@ -22,6 +22,7 @@ const BRANCHES = /^git for-each-ref /;
 const SET_HEAD = /^git remote set-head /;
 const TRUNK = /^git rev-parse --verify origin\/HEAD/;
 const ANCESTOR = /^git merge-base --is-ancestor /;
+const UNSET = /^git branch --unset-upstream /;
 
 const NO_BRANCHES = okOut("main\n");
 const BRANCH_SURVIVED = okOut(`main\n${BRANCH}\n`);
@@ -203,6 +204,7 @@ describe("runAssembly", () => {
 			[TRUNK, TRUNK_HEAD],
 			[ANCESTOR, CONTAINED],
 			[ADD, okOut("")],
+			[UNSET, okOut("")],
 		]);
 
 		expect(outcome.code).toBe(0);
@@ -210,6 +212,9 @@ describe("runAssembly", () => {
 		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
 		expect(outcome.stderr.join("\n")).toContain("re-cut");
 		expect(calls.some((line) => line.includes("--force"))).toBe(false);
+		// `--no-track` does not clear a `-B` target's pre-existing upstream, so the re-cut arm needs
+		// the same explicit unset the plain resume gets.
+		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
 	});
 
 	it("drops the seat of a contained branch before re-cutting it, and never forces that removal", async () => {

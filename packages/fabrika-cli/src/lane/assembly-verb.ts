@@ -170,7 +170,7 @@ export const runAssembly = (
 			if (recheck.seat._tag !== "Absent") {
 				return refuse(
 					APPEND_UNKNOWN,
-					`${VERB}: ${seat.path} still holds ${branch}${cleared.ok ? "" : `: ${cleared.reason}`} — nothing was placed, because a placement over a tree git still carries is refused.`,
+					`${VERB}: git still carries ${branch} at ${seat.path}${cleared.ok ? "" : `: ${cleared.reason}`} — nothing was placed, because a placement over a registration or a tree that survives is refused.`,
 				);
 			}
 		}
@@ -192,11 +192,13 @@ export const runAssembly = (
 					],
 		);
 		// A branch cut off `origin/HEAD` without `--no-track` records `refs/heads/main` as its
-		// upstream, which aimed the run's pushes at the default branch. `--no-track` covers a
-		// fresh cut; a branch cut by an older fabrika carries the config into every resume, so it is
+		// upstream, which aimed the run's pushes at the default branch. `--no-track` covers a fresh
+		// cut and nothing else: measured on git 2.40.1, `worktree add --no-track -B` leaves a
+		// pre-existing `branch.<name>.remote`/`.merge` in place, so a branch cut by an older fabrika
+		// carries the config through a re-cut exactly as it does through a plain resume. Both arms are
 		// cleared here. There is nothing to unset on a branch that tracks nothing, hence the ignored
 		// result.
-		if (existing && !landed) yield* execCapture("git", ["branch", "--unset-upstream", branch]);
+		if (existing) yield* execCapture("git", ["branch", "--unset-upstream", branch]);
 		const after = yield* seatOf(options.epic, branch);
 		if (after._tag === "Unreadable") {
 			return refuse(
