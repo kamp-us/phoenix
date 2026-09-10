@@ -477,11 +477,11 @@ describe("runApply", () => {
 		});
 
 		/** An epic's criteria arrive per child from the plan ledger, never in its own body. */
-		it("stamps --type epic over an absent block — the exemption the carve-out exists for", async () => {
+		it("takes --type epic over an absent block — the exemption the carve-out exists for", async () => {
 			const out = await run(
 				[
 					[once(ISSUE), issue(["status:needs-triage"], null, NO_CRITERIA_BODY)],
-					[ISSUE, issue(["type:epic", "p2", "status:triaged", "ready-for:agent"], 47)],
+					[ISSUE, issue(["type:epic", "p2", "status:triaged"], 47)],
 					[LABELS, labelSet("type:epic", "p2", "status:triaged", "ready-for:agent")],
 					[MILESTONES, OPEN_MILESTONES],
 					[PATCH, ACCEPTED],
@@ -491,7 +491,7 @@ describe("runApply", () => {
 				{type: "epic"},
 			);
 			expect(out.code).toBe(0);
-			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\tagent\t47\t\n");
+			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\tnone\t47\t\n");
 		});
 
 		it("stamps --ready-for human over an absent block — the promise is made to an agent", async () => {
@@ -509,6 +509,112 @@ describe("runApply", () => {
 			);
 			expect(out.code).toBe(0);
 			expect(out.stdout).toBe("triaged\t4312\tbug\tp2\thuman\t47\t\n");
+		});
+	});
+
+	/**
+	 * `check-epic-plan` documents itself as the only owner of `ready-for:agent` on an epic, and triage
+	 * was a silent second writer — so the label read "triaged" rather than "gated" and an ungated epic
+	 * was pickable to anything filtering on it.
+	 */
+	describe("the epic audience exemption", () => {
+		const EPIC_VOCABULARY = labelSet(
+			"type:epic",
+			"p2",
+			"status:triaged",
+			"ready-for:agent",
+			"ready-for:human",
+		);
+
+		it("writes no ready-for label, and never asks the API for one", async () => {
+			const shell = guardedShell([
+				[once(ISSUE), issue(["status:needs-triage"], null)],
+				[ISSUE, issue(["type:epic", "p2", "status:triaged"], 47)],
+				[LABELS, EPIC_VOCABULARY],
+				[MILESTONES, OPEN_MILESTONES],
+				[PATCH, ACCEPTED],
+				[REMOVE, LABELLED],
+				[ADD, LABELLED],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, type: "epic"}), triageContext(shell)),
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\tnone\t47\t\n");
+			expect(shell.requests.filter((c) => ADD.test(c)).join(" ")).not.toContain("ready-for");
+			expect(out.stderr.join(" ")).toContain("check-epic-plan");
+		});
+
+		/** The gate owns the flip both ways: a re-triage sends the epic back through it. */
+		it("removes a stamp a prior gate run left, rather than preserving it", async () => {
+			const shell = guardedShell([
+				[once(ISSUE), issue(["type:epic", "p2", "status:triaged", "ready-for:agent"], 47)],
+				[ISSUE, issue(["type:epic", "p2", "status:triaged"], 47)],
+				[LABELS, EPIC_VOCABULARY],
+				[MILESTONES, OPEN_MILESTONES],
+				[PATCH, ACCEPTED],
+				[REMOVE, LABELLED],
+				[ADD, LABELLED],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, type: "epic"}), triageContext(shell)),
+			);
+			expect(out.code).toBe(0);
+			expect(shell.requests.some((c) => REMOVE.test(c) && c.includes("ready-for%3Aagent"))).toBe(
+				true,
+			);
+		});
+
+		it("reports readyFor null under --json", async () => {
+			const out = await run(
+				[
+					[once(ISSUE), issue(["status:needs-triage"], null)],
+					[ISSUE, issue(["type:epic", "p2", "status:triaged"], 47)],
+					[LABELS, EPIC_VOCABULARY],
+					[MILESTONES, OPEN_MILESTONES],
+					[PATCH, ACCEPTED],
+					[REMOVE, LABELLED],
+					[ADD, LABELLED],
+				],
+				{type: "epic", json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({type: "epic", readyFor: null});
+		});
+
+		/** Parking an epic for a person is triage's own claim, and the gate never makes it. */
+		it("still stamps --type epic --ready-for human", async () => {
+			const out = await run(
+				[
+					[once(ISSUE), issue(["status:needs-triage"], null)],
+					[ISSUE, issue(["type:epic", "p2", "status:triaged", "ready-for:human"], 47)],
+					[LABELS, EPIC_VOCABULARY],
+					[MILESTONES, OPEN_MILESTONES],
+					[PATCH, ACCEPTED],
+					[REMOVE, LABELLED],
+					[ADD, LABELLED],
+				],
+				{type: "epic", readyFor: "human"},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\thuman\t47\t\n");
+		});
+
+		it("refuses on READBACK_MISMATCH when the epic reads back carrying ready-for:agent", async () => {
+			const out = await run(
+				[
+					[once(ISSUE), issue(["status:needs-triage"], null)],
+					[ISSUE, issue(["type:epic", "p2", "status:triaged", "ready-for:agent"], 47)],
+					[LABELS, EPIC_VOCABULARY],
+					[MILESTONES, OPEN_MILESTONES],
+					[PATCH, ACCEPTED],
+					[REMOVE, LABELLED],
+					[ADD, LABELLED],
+				],
+				{type: "epic"},
+			);
+			expect(out.code).toBe(READBACK_MISMATCH);
+			expect(out.stderr.at(-1)).toContain("no ready-for");
 		});
 	});
 
