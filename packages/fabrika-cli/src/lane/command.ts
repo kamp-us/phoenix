@@ -22,6 +22,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {closedReader, runArchive} from "./archive-verb.ts";
+import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {claimHoldReader} from "./claim-hold.ts";
@@ -558,6 +559,36 @@ const assembly = leafCommand(
 	Command.withShortDescription("Place, resume or remove an epic run's assembly worktree."),
 	Command.withDescription(
 		"Place the working tree an epic run assembles in — `epic/<n>` checked out at `.claude/worktrees/epic-<n>`, both derived from the epic number and never taken from the caller — and print its absolute path on stdout. The invoking checkout is NEVER switched. Idempotent in both directions: a worktree already holding the branch is resumed and its path answered with nothing written, and a branch that outlived its worktree — the state `--remove` at a terminal leaves behind — is checked out again as it stands, never re-cut off a fresh base. A worktree whose directory is gone but whose record git still carries (`prunable`) is that same state: the registration is cleared and the branch placed again, never answered as a live path. `--remove` is the lane's terminal step and never forces — a dirty assembly tree is unlanded work, so git's refusal is the answer. Every mode reads the outcome back off `git worktree list` before answering. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the placement or removal ran and did not read back — UNKNOWN), 11 (the working trees or origin could not be read — nothing was placed or removed), 33 (`epic/<n>` is checked out in the main working tree — switch that tree off it first), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Examples: fabrika lane assembly 5680 · fabrika lane assembly 5680 --remove",
+	),
+);
+
+const assemblyPr = leafCommand(
+	"assembly-pr",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run opens the assembly PR"),
+		),
+		field: Flag.string("field").pipe(
+			Flag.withDescription(
+				`which piece of the PR's prose to print: ${FIELDS.join(" or ")} — one bare value per call, so the caller interpolates rather than parses`,
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({epic, field, repo}) {
+		yield* emit(
+			yield* runAssemblyPr({epic, field, repo: Option.getOrNull(repo), env: process.env}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("The assembly PR's title and About section, derived from the epic."),
+	Command.withDescription(
+		"Derive one piece of the prose an epic run's single assembly PR opens with, and print it bare on stdout so the `gh pr create` fence interpolates a value instead of deriving one. `--field title` prints `feat(epic): <the epic issue's own title>`; the conventional type is `build/pr-title.ts`'s map, reused rather than re-derived, because release-please classifies the squash subject and that rule lives in exactly one place — this verb only stamps the `(epic)` scope over it. `--field about` prints the `## About this epic` section derived from the epic's `## Pitch` **Problem** paragraph, read through the same section reader `guard pitch-guard check` uses. That text is never passed through raw: a closing keyword is swapped for a word GitHub's documented keyword list does not carry (the `#<n>` it aimed at is left as written), the paragraph is cut to its opening sentences under a word budget so a triage-length Problem does not land as the section, with `[…]` marking what was left behind, and what is lifted lands as a block quote in the epic's own words — the shape `build pr`'s body guard already reads as reproduced rather than asserted, so a Problem naming `type:epic`, a priority or control-plane keeps its sentence intact instead of being reworded into something that only looks safe. The result is then re-read through `build pr`'s own body predicates, so a section this verb answers cannot be one that guard refuses. An epic with no `## Pitch`, or a pitch with no Problem paragraph, is an ANSWER and not a refusal — empty stdout with the reason on stderr, so the run still publishes its PR with no section rather than being stranded over prose. It opens, edits and reads back no pull request. Exits 1 (`--field` is not `title` or `about`, or the target repo could not be resolved), 7 (the epic is proven absent or closed), 11 (the epic could not be read — UNKNOWN, never a derived title), 56 (the issue carries no `type:epic`, so an assembly PR's prose is not its to give), 57 (the derived section still carries a stray closing keyword or a classification claim after neutralisation — reword the epic's Problem paragraph, or write the section by hand; `--field title` is unaffected). Examples: fabrika lane assembly-pr 8070 --field title · fabrika lane assembly-pr 8070 --field about",
 	),
 );
 
@@ -1174,6 +1205,7 @@ export const laneCommand = Command.make("lane").pipe(
 		brief,
 		dispatch,
 		assembly,
+		assemblyPr,
 		integrate,
 		refresh,
 		pushLane,

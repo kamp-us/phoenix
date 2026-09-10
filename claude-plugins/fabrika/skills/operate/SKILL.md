@@ -394,9 +394,18 @@ rather than after the fact. The remedy is never a flag: place the run's worktree
 
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.
-Open it yourself; no shell owns this branch. Its body carries two
-things, neither of them a summary you compose:
+Open it yourself; no shell owns this branch. Its body carries three
+things, none of them a summary you compose:
 
+- an **`## About this epic`** section at the top, saying in plain sentences what the epic was for.
+  `lane assembly-pr <n> --field about` prints it, derived from the epic's `## Pitch` **Problem**
+  paragraph — paste the bytes, and never write your own: the verb disarms the closing keywords,
+  lifts the rest as a block quote in the epic's own words, and re-reads its own output through
+  `build pr`'s body predicates, which a hand-written paragraph passes through nothing. A Problem paragraph written as a triage surface
+  arrives cut to its opening sentences with `[…]` marking what was left behind, so the section
+  reads as the two-to-four sentences the hand-written ones carried. An epic with no pitch answers
+  empty stdout and a reason on stderr; that is an answer, so the body simply opens with the closing
+  references instead;
 - **one closing reference per child that has landed so far**, plus one on the epic issue itself.
   The epic's is what makes the PR findable at all — `lane brief` resolves the tail's PR through the
   same nominator `lane prove` uses (GitHub's closing-issue edge unioned with a body search), and a
@@ -414,23 +423,37 @@ things, neither of them a summary you compose:
   own issue, and the tail review's brief names that surface, so the epic reviewer reads
   them there.
 
-Open the draft with the command below as written. `--base` is omitted on purpose — `gh pr create`
-defaults it to the repository's default branch, the same branch the assembly cut from. The title
-is deliberately the lane key rather than the epic's prose title, because a literal title keeps this
-fence expansion-free — but it leads with `feat(epic):`, and that prefix is not decoration.
-**release-please reads this title.** The repo squash-merges with
-`squash_merge_commit_title: COMMIT_OR_PR_TITLE`, so the title becomes the subject on `main`, and the
-node strategy classifies on the subject alone: an untyped one is unroutable and a `chore`/`docs` one
-is hidden, either way dropping every package change the epic carried from the notes. The same rule
-binds a builder PR's title, derived in
-[`pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts). `feat` is the shown type an
-epic earns by construction. `lane brief` still resolves the tail's PR through the body's links, not
-the title:
+Open the draft with the commands below as written. `--base` is omitted on purpose — `gh pr create`
+defaults it to the repository's default branch, the same branch the assembly cut from. The title is
+the epic issue's own, and the verb derives it.
+
+Read the title first, then paste it — two steps, the same shape `lane assembly`'s path takes above.
+The fence expands nothing itself, for two reasons: the derivation is a rule with one home and shell
+is no place to keep it, and a single `$(...)` line hides the verb's exit at the one point you have
+to read it.
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane assembly-pr $lane_key --field title
+```
 
 ```bash
 gh pr create --draft --head epic/$lane_key \
-  --title "feat(epic): #$lane_key one-PR run" --body-file -
+  --title "<the title lane assembly-pr printed>" --body-file -
 ```
+
+A refusal prints nothing, and pasting nothing opens the run's one PR unnamed. Exit `56` says the
+number is not an epic — you have the wrong one — and `11` is UNKNOWN, so re-run it rather than
+opening.
+
+**The `feat(epic):` prefix that title leads with is not decoration: release-please reads this
+title.** The repo squash-merges with `squash_merge_commit_title: COMMIT_OR_PR_TITLE`, so the title
+becomes the subject on `main`, and the node strategy classifies on the subject alone: an untyped one
+is unroutable and a `chore`/`docs` one is hidden, either way dropping every package change the epic
+carried from the notes. The same rule binds a builder PR's title, and `feat` is read out of the same
+map both derivations use — [`pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts),
+where `type:epic` maps to the one shown type an epic earns by construction. Five epics landed before
+this under the literal `#<n> one-PR run`, whose subject on `main` is a lane key with no sentence in
+it. `lane brief` still resolves the tail's PR through the body's links, not the title.
 
 Every later integration pushes the same branch and **appends that child's closing reference** to the
 body, so the set of references tracks the set of landed children rather than the plan's intent.
