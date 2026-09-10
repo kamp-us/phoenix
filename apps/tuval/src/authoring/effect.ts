@@ -115,7 +115,7 @@ export const ask = <Event extends string>(
 /** Answer the `ask` whose arrival carried `to`. Spending one twice is refused, not doubled. */
 export const reply = (to: ReplyTo, payload: unknown): ReplyEffect => ({type: "reply", to, payload});
 
-/** Announce on one of my own out-ports. */
+/** Announce on one of my own out-ports. An `update` cell's alone: a command may not (ADR 0372). */
 export const emit = <Port extends string>(port: Port, payload: unknown): EmitEffect<Port> => ({
 	type: "emit",
 	port,
