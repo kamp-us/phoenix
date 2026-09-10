@@ -92,6 +92,74 @@ closing pull request off the issue. No re-open rule is added here, and none is r
 closed-issue gate". With that gate gone the refusal has no ground left, and a bricked chore ledger is
 the same defect. A chore key names no issue, so there is no claim thread and nothing to retract.
 
+## Reconciliation with ADR 0215 §5 and ADR 0325
+
+§2 puts a second verb in the business of deleting a `lane-claim` marker, and standing law names that
+act. This section is the accounting.
+
+ADR [0215](0215-claim-identity-continuity-proof.md) §5 closes the set of ways a claim ends and bans,
+verbatim:
+
+> A second claim keyspace, a second retraction verb, or a repair-specific claim mechanism.
+
+ADR [0325](0325-lane-namespace-claim-succession.md) carried that enumeration into the `lane`
+namespace unchanged — "Everything else that ruling bans stays banned" — and its own ruling rejected
+the read-the-token-off-the-issue route as "sanctioning exactly the hand-composed token-guessing ADR
+[0295](0295-board-attested-claim-succession.md) was built to prevent".
+
+### It is 0215 §5's first ending, not a fourth one
+
+0215 §5's three endings are affirmative release by its owner, proven claimant death, and operator
+clearance. **`lane archive --token` is the first.** The retraction fires only over markers carrying
+the token the caller presented and over nothing else: it supersedes nobody, probes no pid, evicts on
+no age, and infers from no absence. 0215 §5's binding constraint — "Release retracts only markers
+carrying the token the caller presents" — is exactly what `runArchive` enforces at
+`holder.token !== options.token`. So the enumeration stays closed at three, and this is a second
+*caller* of the first ending rather than a new way for a claim to end.
+
+### It is a second retraction verb, and that is the crossing
+
+Named plainly: before this change `lane release` was the only verb that deleted a `lane-claim`
+comment, and now `lane archive` deletes one too. `lane settle` demands the same `--token` under the
+same comparison but retracts nothing, so archive is the second.
+
+It is taken because the retraction is not separable from the move. §2's ordering argument runs both
+ways: a claim left standing on a lane that has left the swept root is a marker nothing can release,
+and an archive that refused while any claim stood would put a second gate on the route that exists
+because there was no route — the case Rejected below. Routing archive's retraction through `lane
+release` is mechanically possible (release folds no log, so it works on a bricked ledger), but it
+makes archiving a claimed lane a two-command dance for the population that by construction has no
+driver left to run it. What 0215 §5 and 0325 ban is a second way to *acquire* or *infer* ownership —
+a parallel keyspace, a lease, a TTL, a repair-specific claim mechanism. `lane archive` acquires
+nothing and infers nothing: it spends a token its caller already holds.
+
+### Why raw token equality, and what it costs
+
+`runArchive` compares `holder.token` against `--token` as raw equality over the earliest authorized
+claimant. That is `lane settle`'s shape verbatim
+(`packages/fabrika-cli/src/lane/settle-verb.ts`), so the two board-writing lane terminals answer
+ownership the same way, which is the parity one shared marker needs.
+
+It is **not** `lane release`'s shape, and that difference is accepted rather than overlooked.
+`runLaneRelease` binds the presented token to the calling session through `requireCallerToken` and
+then resolves through the shared `resolveOwnership`
+(`packages/fabrika-cli/src/lane/claim-verb.ts`), so it reads an adopted successor as its own;
+archive consults the `adopts` array not at all and reads that same successor as foreign. Two
+consequences follow, both disclosed rather than guarded:
+
+- **A dead seat's claim takes three commands, not two** — `lane adopt`, then `lane release` to delete
+  the marker, then the archive over an unclaimed thread. §2 says so, and the `31` refusal says so.
+- **The `31` refusal prints the holder's token**, which is the string that satisfies the check, so
+  raw equality here is an accident guard and not an authority guard. That is `lane settle`'s standing
+  exposure too, not one introduced here, and the authority guard under both is the poster's
+  repository write permission (ADR [0055](0055-acl-sourced-review-authz.md)).
+
+Whether both verbs should resolve through `resolveOwnership` instead is live and filed as
+[#9145](https://github.com/kamp-us/phoenix/issues/9145). It is deliberately not answered here: it
+moves `lane settle` as much as `lane archive`, so it is a claim-protocol decision rather than a
+consequence of relaxing this verb's gate. If it lands, §2's ownership rule becomes "resolve through
+`resolveOwnership`" and the three-command dead-seat route collapses to one.
+
 ## Rejected
 
 **A separate quarantine verb** for a live bricked lane, distinct from archive's done-and-dusted
@@ -116,6 +184,10 @@ The verb decides; `--token` and `lane adopt` are the two ways a *live* driver st
 - Exit `19` `ISSUE_UNRESOLVED` leaves `lane archive`'s table with the gate that produced it.
 - `lane archive` gains `--token` and a board write. It was a read-and-move verb; it now retracts up
   to a handful of comments before moving, and a failed retraction is a refusal, never a silent move.
+- **The lane namespace now has two verbs that delete a claim marker, and they resolve ownership
+  differently** — `lane release` through succession, `lane archive` by raw token equality. The
+  Reconciliation section accounts for that against ADR 0215 §5 and ADR 0325; #9145 carries the
+  question of collapsing the two.
 - An archived lane's issue reads unclaimed even where the board still shows the work in flight. That
   is the point — the lane is gone, so a claim naming it is a lie — but a driver reading the issue
   alone sees no trace of the archived lane, and the archived ledger is the only record of it.
