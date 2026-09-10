@@ -32,10 +32,12 @@ import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {MACHINERY_LAPS, type MachineryLapsSurface} from "../config/keys/machinery-laps.ts";
 import type {Read} from "../config/read-key.ts";
-import {listSubIssues} from "../plan/github.ts";
+import {listSubIssues, type SubIssueLink} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
+import {offSetClasses, renderClasses} from "./class-seed.ts";
 import {
+	CLASS_UNRECOGNISED,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
 	MALFORMED_RECORD,
@@ -76,6 +78,24 @@ export interface EmitOptions<R = never> {
 	 */
 	readonly children: boolean;
 }
+
+/**
+ * Every child carrying a `class:<name>` label outside the set, as `#<n> <labels>` rows.
+ *
+ * A child's class rides `taskContext` straight into the emitted document, and this verb places what
+ * it emits — so without this read an off-set label lands a machine `compileText` reads back
+ * `Malformed`, which refuses every later fold of the lane. That is a bricked lane rather than a
+ * stopped boot, so the judgement belongs here, ahead of the emission, exactly as `lane open` puts it
+ * ahead of its placement.
+ *
+ * Every live child is judged rather than only the ones the topology places: the label is wrong on
+ * the board either way, and a child a phase does not name today is one `lane amend` seats tomorrow.
+ */
+const offSetChildren = (children: ReadonlyArray<SubIssueLink>): ReadonlyArray<string> =>
+	children.flatMap((link) => {
+		const offSet = offSetClasses(link.classes);
+		return offSet.length === 0 ? [] : [`#${link.number} ${renderClasses(offSet)}`];
+	});
 
 /** The two escapes a `16` names, worded once so the flag and the repair verb are never named apart. */
 const FOREIGN_REMEDIES =
@@ -149,6 +169,13 @@ export const runEmit = <R = never>(
 			return refuse(
 				LANE_UNREADABLE,
 				`${VERB}: cannot read #${options.epic}'s children: ${listed.reason} — nothing was emitted.`,
+			);
+		}
+		const offSet = offSetChildren(listed.value);
+		if (offSet.length > 0) {
+			return refuse(
+				CLASS_UNRECOGNISED,
+				`${VERB}: ${offSet.join("; ")} — no \`class:<name>\` arm matches, so the child's region would route as unclassed and the placed document would compile \`Malformed\`, refusing every later fold of this lane. Respell the label(s), then emit. Nothing was written.`,
 			);
 		}
 		if (options.machinery._tag === "Refused") {

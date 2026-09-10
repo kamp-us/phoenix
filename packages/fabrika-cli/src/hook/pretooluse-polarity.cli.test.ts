@@ -10,10 +10,11 @@
  *
  * The end-to-end leg runs the argv out of a committed `hooks.json` declaration rather than a
  * literal, for the same reason the golden test does: a pass must not be able to exercise a verb the
- * surface does not name. Since the spawn hook was retired the surface declares only
- * `SessionStart`, so that is the row it drives — the property under test is the *exit code* a
- * cannot-run fabrika returns, which is the same whichever hook consulted it, and the code must stay
- * off `2` so a future `PreToolUse` declaration cannot inherit a denying bootstrap. And it reaches a
+ * surface does not name. It drives the `SessionStart` row — the property under test is the *exit
+ * code* a cannot-run fabrika returns, which is the same whichever hook consulted it, and the code
+ * must stay off `2`. That is no longer a precaution against a future declaration: `hook pre-bash`
+ * is declared on `PreToolUse` today, so a denying bootstrap would block every Bash call in the
+ * session. And it reaches a
  * refusal for real rather than mocking one — a temp directory made into a repo root that resolves a
  * *different* `@kampus/fabrika-cli` is the cross-checkout state, measured on real worktrees, and it
  * belongs to any worktree whose install resolves outside its own checkout.

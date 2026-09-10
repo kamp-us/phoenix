@@ -30,6 +30,12 @@
  * seeds a lap counter and the collision and queue states take a `LAP` arm; off, every byte is what
  * it was before the axis existed. The machine is fixed at emission, so the flag reaches no lane
  * already on disk.
+ *
+ * The class axis rides each child's own `classes`, off the `sub_issues` payload's labels: a classed
+ * child seeds `context.<task>.classes` and takes the class-guarded arm, an unclassed one is the
+ * bytes it always was ([`class-seed.ts`](class-seed.ts) carries why that seed matters). Same
+ * fixed-at-emission rule — a class stamped after the emit reaches this machine only through an
+ * event.
  */
 import {findCycle, readDeclared} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
@@ -68,6 +74,21 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 	if (link.state === "open") return "queued";
 	return link.stateReason === "completed" ? "landed" : "frozen";
 };
+
+/**
+ * The rendered-surface class and the guard spelling that routes on it — the same two strings the
+ * committed coder template carries, so a child region and a single-issue lane read one grammar.
+ *
+ * A child carrying the class gets the `build:ui` construction cell and the guarded arms into it; a
+ * child carrying none is emitted byte-for-byte as it was before this axis existed.
+ *
+ * **The rendered REVIEW cell is deliberately not emitted**, on the decision record that rules an
+ * epic child's rendered review the tail's by construction. A child opens no pull request, so a
+ * `review:ui` cell it entered could produce nothing: `wire/lane-brief.ts` maps the state to
+ * `ui-reviewer` with no child arm, and `prove.ts`'s `claimOf` gates its `PASS` on `&& !child`.
+ */
+const UI_CLASS = "ui";
+const UI_GUARD = `class:${UI_CLASS}`;
 
 /**
  * The machinery arm: go round again while laps remain, else park on `human:machinery-stall`, with
@@ -132,50 +153,67 @@ const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "b
  * is the SAME shape — a `final` carrying an `UNBLOCKED` door, so the phase folds and the lane trips
  * loud — under a name `recipe/parks.ts` can see. `isPark` matches `blocked` and `human:*` and
  * matched `frozen` never, so a child at its cap parked where every recipe answered `NotParked`.
+ *
+ * A `ui`-classed child carries one more state — `build:ui` — and the guarded `queued.WIP` arm into
+ * it, so its first construction pass runs in the rendered shell. Without that pair the class seed
+ * reached an emitted child and turned nothing, the half of this axis a folded report named from the
+ * other end. The template's `review:ui` cell has no counterpart here, for the reason
+ * {@link UI_CLASS} carries; a `review` FAIL therefore retries in `build` on every child alike,
+ * because a two-arm guarded array holds one guard and this one spends the repair budget.
  */
 const region = (
 	ns: string,
 	initial: "queued" | "landed" | "frozen",
 	machinery: boolean,
-): Record<string, unknown> => ({
-	initial,
-	states: {
-		queued: {on: {[`${ns}.WIP`]: "build", [`${ns}.BLOCKED`]: "blocked"}},
-		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
-		review: {
-			on: {
-				[`${ns}.PASS`]: "integrate",
-				[`${ns}.BLOCKED`]: "blocked",
-				[`${ns}.FAIL`]: [
-					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:budget-spent"},
-				],
+	classes: ReadonlyArray<string>,
+): Record<string, unknown> => {
+	const ui = classes.includes(UI_CLASS);
+	return {
+		initial,
+		states: {
+			queued: {
+				on: {
+					[`${ns}.WIP`]: ui ? [{target: "build:ui", guard: UI_GUARD}, {target: "build"}] : "build",
+					[`${ns}.BLOCKED`]: "blocked",
+				},
 			},
-		},
-		integrate: {
-			on: {
-				[`${ns}.DONE`]: "landed",
-				[`${ns}.WIP`]: [
-					{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
-					{target: "human:replay-stall"},
-				],
-				[`${ns}.BLOCKED`]: "blocked",
-				[`${ns}.FAIL`]: [
-					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:budget-spent"},
-				],
-				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+			build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
+			...(ui ? {"build:ui": {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}}} : {}),
+			review: {
+				on: {
+					[`${ns}.PASS`]: "integrate",
+					[`${ns}.BLOCKED`]: "blocked",
+					[`${ns}.FAIL`]: [
+						{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+						{target: "human:budget-spent"},
+					],
+				},
 			},
+			integrate: {
+				on: {
+					[`${ns}.DONE`]: "landed",
+					[`${ns}.WIP`]: [
+						{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
+						{target: "human:replay-stall"},
+					],
+					[`${ns}.BLOCKED`]: "blocked",
+					[`${ns}.FAIL`]: [
+						{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+						{target: "human:budget-spent"},
+					],
+					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+				},
+			},
+			blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+			"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+			"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
+			...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
+			hist: {type: "history"},
+			landed: {type: "final"},
+			frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		},
-		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
-		hist: {type: "history"},
-		landed: {type: "final"},
-		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
-	},
-});
+	};
+};
 
 /**
  * The epic's own region — the tail phase's single task: review the one PR, then merge it once, with
@@ -278,14 +316,23 @@ export const taskIdChild = (task: string): number | null => {
 };
 
 /**
- * One task's seeded context. The lap pair is appended rather than interleaved, so an emission with
- * the axis off is the object it always was — key order included, which is what makes the byte
- * comparison a test can hold.
+ * One task's seeded context. The lap pair and the classes are appended rather than interleaved, so
+ * an emission with the axis off and no class is the object it always was — key order included, which
+ * is what makes the byte comparison a test can hold.
+ *
+ * An unclassed task carries no `classes` key at all rather than an empty array, for that same
+ * reason: `machine.ts` reads a missing declaration and an empty one identically, so the key would
+ * buy nothing and cost every existing emission's bytes.
  */
-const taskContext = (machinery: boolean): Record<string, unknown> =>
-	machinery
-		? {retries: 0, maxRetries: RETRY_BUDGET, laps: 0, maxLaps: MACHINERY_LAP_BUDGET}
-		: {retries: 0, maxRetries: RETRY_BUDGET};
+const taskContext = (
+	machinery: boolean,
+	classes: ReadonlyArray<string> = [],
+): Record<string, unknown> => ({
+	retries: 0,
+	maxRetries: RETRY_BUDGET,
+	...(machinery ? {laps: 0, maxLaps: MACHINERY_LAP_BUDGET} : {}),
+	...(classes.length === 0 ? {} : {classes: [...classes]}),
+});
 
 /** The tail phase's name and its one task id. Neither can collide with a `phase<N>`/`issue_<n>`. */
 const EPIC_PHASE = "epic";
@@ -321,6 +368,8 @@ export const emitMachine = (
 	if (children.length === 0) return {_tag: "NoTopology"};
 
 	const initials = new Map(children.map((link) => [link.number, initialFor(link)]));
+	const classes = new Map(children.map((link) => [link.number, link.classes]));
+	const classesOf = (child: number): ReadonlyArray<string> => classes.get(child) ?? [];
 	const declared = readDeclared(body, new Set(initials.keys()), axes.dropForeign === true);
 	if (declared._tag === "Absent") return {_tag: "NoTopology"};
 	if (declared._tag !== "Declared") return declared;
@@ -347,14 +396,16 @@ export const emitMachine = (
 	const states: Record<string, unknown> = {};
 	for (const [index, phase] of order.entries()) {
 		const members = ascending(phases.get(phase) ?? []);
-		for (const child of members) context[childTaskId(child)] = taskContext(machinery);
+		for (const child of members) {
+			context[childTaskId(child)] = taskContext(machinery, classesOf(child));
+		}
 		const next = order[index + 1];
 		states[phaseName(phase)] = {
 			type: "parallel",
 			states: Object.fromEntries(
 				members.map((child) => [
 					childTaskId(child),
-					region(childTaskId(child).toUpperCase(), initialOf(child), machinery),
+					region(childTaskId(child).toUpperCase(), initialOf(child), machinery, classesOf(child)),
 				]),
 			),
 			onDone: [

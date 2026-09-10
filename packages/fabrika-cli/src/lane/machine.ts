@@ -51,6 +51,7 @@ import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
 import {budgetWith} from "../cap-clearance.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
+import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 
 /**
@@ -467,6 +468,21 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const ctx = isRecord(context) ? context : {};
 	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
 
+	// The read-side backstop on the class seed. A declared entry outside the closed set matches no
+	// `class:<name>` arm, so the lane would route as unclassed with nothing said — the same silent
+	// miss `lane report --class` refuses at exit 38 on the event path. A NON-ARRAY declaration stays
+	// a silence: declaring nothing is not a defect, only declaring a spelling nobody can route is.
+	if (Array.isArray(ctx.classes)) {
+		for (const name of ctx.classes) {
+			if (typeof name === "string" && (SHIP_CLASS_NAMES as ReadonlyArray<string>).includes(name)) {
+				continue;
+			}
+			defects.push(
+				`task "${taskId}": context \`classes\` declares ${JSON.stringify(name)} — outside the class vocabulary (${SHIP_CLASS_NAMES.join("/")})`,
+			);
+		}
+	}
+
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
 	const guardedStates = new Set<string>();
@@ -701,8 +717,9 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
 		: [];
-	// A document may seed the classes a lane starts under; every later change rides an event, so a
-	// non-array declaration is a silence rather than a defect the compiler could act on.
+	// A document may seed the classes a lane starts under; every later change rides an event. A
+	// non-array declaration is a silence, and an off-set spelling was already a defect above, so
+	// nothing here can be reached by a document that compiled.
 	const classes = Array.isArray(ctx.classes)
 		? ctx.classes.filter((name): name is string => typeof name === "string")
 		: [];

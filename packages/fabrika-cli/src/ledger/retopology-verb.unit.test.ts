@@ -158,7 +158,7 @@ describe("runRetopology", () => {
 		const {seams} = await run();
 		const repaired = patchedBody(seams) ?? "";
 		const links = [4301, 4303].map(
-			(number) => ({number, state: "open", stateReason: null}) as const,
+			(number) => ({number, state: "open", stateReason: null, classes: []}) as const,
 		);
 		expect(emitMachine(4300, repaired, links)).toMatchObject({_tag: "Emitted", children: 2});
 	});
