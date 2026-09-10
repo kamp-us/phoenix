@@ -4,10 +4,12 @@
  *
  * Two disciplines, both scars:
  *
- * - **A branch is cut off `FETCH_HEAD`, never off a local remote-tracking ref.** A checkout's
- *   `origin/main` can predate the commit the lane needs, and a branch cut off it misses work that is
- *   already on the base. Every create here fetches first and cuts off what was just
- *   fetched.
+ * - **A branch is cut off `FETCH_HEAD`, never off a local ref.** A checkout's `origin/main` can
+ *   predate the commit the lane needs, and a branch cut off it misses work that is already on the
+ *   base. Every create here fetches first and cuts off what was just fetched. {@link fetchBase}
+ *   takes a {@link BaseRef} rather than a ref string so the one spelling that cannot be fetched —
+ *   a branch only this clone holds — is a *constructed* case with a proof behind it, not a string
+ *   that falls through to a bare `git fetch` and a stale local read.
  * - **A push is believed only after the remote ref is read back.** `git push`'s own report is not
  *   evidence: a push that died mid-hook read as sent. {@link remoteSha} asks the remote
  *   directly, and the caller compares.
@@ -34,25 +36,89 @@ export const headSha: Shell<Attempt<string>> = Effect.gen(function* () {
 	return isObjectName(sha) ? ok(sha) : fail(`git resolved HEAD to "${sha}", not an object name`);
 });
 
-/** Fetch `base` (e.g. `origin/main`) and resolve what was fetched, so a cut never uses a stale ref. */
-export const fetchBase = (base: string): Shell<Attempt<string>> =>
+/**
+ * A base a lane branch may be cut off, in the one shape that says how it is resolved.
+ *
+ * `Remote` is fetched and read back off `FETCH_HEAD`; `Commit` is already exact; `LocalOnly` is the
+ * single arm that reads a local ref, and it exists so its one legitimate caller must *prove* the
+ * remote holds nothing before it can construct one. That proof used to be a string test — a base
+ * whose left half named no configured remote fell through to a bare `git fetch`, which writes
+ * remote-tracking refs and leaves `refs/heads/epic/<n>` where it was, so `epic/7497` resolved to
+ * whatever this clone last integrated.
+ */
+export type BaseRef =
+	| {readonly _tag: "Remote"; readonly remote: string; readonly ref: string}
+	| {readonly _tag: "LocalOnly"; readonly ref: string}
+	| {readonly _tag: "Commit"; readonly sha: string};
+
+/** How a base reads in a note or a refusal — the spelling a caller can hand back to git. */
+export const baseLabel = (base: BaseRef): string =>
+	base._tag === "Remote"
+		? `${base.remote}/${base.ref}`
+		: base._tag === "LocalOnly"
+			? base.ref
+			: base.sha;
+
+/**
+ * Classify the base an operator spelled on `--base`.
+ *
+ * A ref with no remote half is qualified against this clone's default remote rather than read
+ * locally, so `--base main` and `--base epic/7497` both resolve to the tip origin holds. Several
+ * remotes and no `origin` is a refusal: which one a bare ref means is the caller's to say.
+ */
+export const classifyBase = (base: string): Shell<Attempt<BaseRef>> =>
 	Effect.gen(function* () {
-		const split = splitRemoteRef(base, yield* remotes);
-		const fetched = yield* split === null
-			? execCapture("git", ["fetch", "--quiet"])
-			: execCapture("git", ["fetch", "--quiet", split.remote, split.ref]);
+		if (isObjectName(base)) return ok({_tag: "Commit", sha: base} as const);
+		const names = yield* remotes;
+		const split = splitRemoteRef(base, names);
+		if (split !== null) return ok({_tag: "Remote", remote: split.remote, ref: split.ref} as const);
+		const remote = names.includes("origin") ? "origin" : names.length === 1 ? names[0] : undefined;
+		return remote === undefined
+			? fail(
+					names.length === 0
+						? `"${base}" names no configured remote and this clone has none to qualify it against`
+						: `"${base}" names none of this clone's remotes (${names.join(", ")}) and there is no origin to qualify it against — spell it <remote>/<ref>`,
+				)
+			: ok({_tag: "Remote", remote, ref: base} as const);
+	});
+
+/** Fetch `base` and resolve what was fetched, so a cut never uses a stale ref. */
+export const fetchBase = (base: BaseRef): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		if (base._tag === "Commit") return yield* resolveCommit(base.sha);
+		if (base._tag === "LocalOnly") return yield* resolveCommit(`refs/heads/${base.ref}`);
+		const fetched = yield* execCapture("git", ["fetch", "--quiet", base.remote, base.ref]);
 		if (!fetched.ok) return fail(fetched.reason);
-		const resolved = yield* execCapture("git", [
-			"rev-parse",
-			"--verify",
-			"--quiet",
-			split === null ? `${base}^{commit}` : "FETCH_HEAD^{commit}",
-		]);
-		if (!resolved.ok) return fail(`cannot resolve ${base} to a commit after fetching`);
-		const sha = resolved.stdout.trim();
-		return isObjectName(sha)
-			? ok(sha)
-			: fail(`git resolved ${base} to "${sha}", not an object name`);
+		return yield* resolveCommit("FETCH_HEAD", ` after fetching ${baseLabel(base)}`);
+	});
+
+/**
+ * The merge base of two revisions.
+ *
+ * A branch's base is proven by comparing this against the base commit, never by
+ * `merge-base --is-ancestor`: that command spends exit `1` on "not an ancestor" and `128` on an
+ * unreadable object, and {@link execCapture} folds both into one failure — fusing a proven answer
+ * with an UNKNOWN, which is the split this group refuses everywhere else.
+ */
+export const mergeBaseOf = (a: string, b: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["merge-base", a, b]);
+		if (!r.ok) return fail(r.reason);
+		const sha = r.stdout.trim();
+		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base between ${a} and ${b}`);
+	});
+
+/**
+ * Whether both revisions resolve to commits here — how a caller splits {@link mergeBaseOf}'s
+ * failure back into the two facts git spent one exit status on.
+ *
+ * `merge-base A B` exits `1` on "these share no history", which is a *proven* answer, and `128` on a
+ * revision it could not read, which is an UNKNOWN. Reading the operands back is the only thing that
+ * tells them apart without asking `merge-base` for a status {@link execCapture} does not carry.
+ */
+export const bothResolve = (a: string, b: string): Shell<boolean> =>
+	Effect.gen(function* () {
+		return (yield* resolveCommit(a))._tag === "Ok" && (yield* resolveCommit(b))._tag === "Ok";
 	});
 
 export const branchExists = (name: string): Shell<boolean> =>
@@ -441,13 +507,7 @@ export const commitMessage = (sha: string): Shell<Attempt<string>> =>
 	});
 
 /** The merge base of HEAD and `base` — where this lane's diff starts. */
-export const mergeBase = (base: string): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["merge-base", "HEAD", base]);
-		if (!r.ok) return fail(r.reason);
-		const sha = r.stdout.trim();
-		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base with ${base}`);
-	});
+export const mergeBase = (base: string): Shell<Attempt<string>> => mergeBaseOf("HEAD", base);
 
 /**
  * Which of `paths` the commit `rev` actually holds — the roster that tells a file this diff *created*
