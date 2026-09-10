@@ -129,6 +129,7 @@ const post = leafCommand(
 			),
 		),
 		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head; without it that post is refused at 18",
 			),

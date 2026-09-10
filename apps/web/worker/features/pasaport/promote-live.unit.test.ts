@@ -22,7 +22,7 @@ import {publishPromotion} from "./promote-live.ts";
 import {NO_SANDBOX_SWEEP, type SandboxSweep} from "./sandbox-sweep.ts";
 
 /** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
-class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+class DrainRejected extends Schema.TaggedError<DrainRejected>()("test/DrainRejected", {
 	cause: Schema.Unknown,
 }) {}
 

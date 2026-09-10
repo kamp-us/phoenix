@@ -1,10 +1,10 @@
 # Drizzle on D1
 
-> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
-> Derived from `drizzle-orm@1.0.0-rc.4` — re-verify on pin bump.
-> Derived from `drizzle-kit@1.0.0-rc.4` — re-verify on pin bump.
+> Derived from `alchemy@2.0.0-beta.77` — re-verify on pin bump.
+> Derived from `drizzle-orm@1.0.0-rc.5-ab785fc` — re-verify on pin bump.
+> Derived from `drizzle-kit@1.0.0-rc.5-ab785fc` — re-verify on pin bump.
 
-How the query builder reaches the database. The short answer: bind the D1 connection in the worker's init phase via `Cloudflare.D1.QueryDatabase`, take its `raw` handle onto the **`Database` seam**, and derive the `Drizzle` service from that seam with `createDrizzle` — **once per isolate**, provided as a worker-level layer, never rebuilt per request. Migrations are written by **`drizzle-kit generate` run incrementally against the committed tree** under `migrations/`, and applied by alchemy through the D1 resource's `migrationsDir` (see [Migrations](#migrations) and [ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)).
+How the query builder reaches the database. The short answer: bind the D1 connection in the worker's init phase via `Cloudflare.D1.QueryDatabase`, take its `raw` handle onto the **`Database` seam**, and derive the `Drizzle` service from that seam with `createDrizzle` — **once per isolate**, provided as a worker-level layer, never rebuilt per request. Migrations are written by **`drizzle-kit generate` run incrementally against the committed tree** under `migrations/`, and applied by alchemy through the D1 resource's `migrations.dir` (see [Migrations](#migrations) and [ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)).
 
 The `Drizzle.run` / `Drizzle.batch` callback surface that feature code uses (see [feature-services.md](./feature-services.md)) is unchanged. Only how the `drizzle` instance is constructed moves.
 
@@ -31,7 +31,7 @@ Both `DrizzleLive` **and** the better-auth adapter derive from this same `Databa
 
 ## The `Drizzle` service, built once
 
-RQB v2 (drizzle-orm 1.0) drives `db.query.<table>` off a **relations definition**, not `schema` alone — passing only `{schema}` leaves `db.query` empty. phoenix uses no cross-table `.with` traversal, so the single-arg `defineRelations(schema)` (empty relations) registers every table (`drizzle-orm@1.0.0-rc.4` — `relations.d.ts`, the one-arg `defineRelations` overload):
+RQB v2 (drizzle-orm 1.0) drives `db.query.<table>` off a **relations definition**, not `schema` alone — passing only `{schema}` leaves `db.query` empty. phoenix uses no cross-table `.with` traversal, so the single-arg `defineRelations(schema)` (empty relations) registers every table (`drizzle-orm@1.0.0-rc.5-ab785fc` — `relations.d.ts`, the one-arg `defineRelations` overload):
 
 ```ts
 // worker/db/Drizzle.ts
@@ -66,16 +66,15 @@ The schema lives at `worker/db/drizzle/schema.ts`. The author→apply pipeline i
 ```ts
 // worker/db/resources.ts
 export const PhoenixDb = Cloudflare.D1.Database("phoenix_db", {
-  migrationsDir: "./worker/db/drizzle/migrations",
-  migrationsTable: "drizzle_migrations",   // match drizzle-kit's bookkeeping table
-});
+  migrations: {dir: "./worker/db/drizzle/migrations", table: "drizzle_migrations"},
+}).pipe(Alchemy.remote());
 ```
 
-The `D1.Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists (and `alchemy.run.ts` re-yields it to surface `databaseId`/`accountId` on the compiled output for the test harness, #692), the worker resolves it through `QueryDatabase`. On deploy, alchemy hashes `migrationsDir`, sorts the `.sql` files, and applies the pending set over the D1 HTTP API into a wrangler-compatible 3-column journal `(id, name, applied_at)` under `migrationsTable` (`alchemy@2.0.0-beta.59` — `src/Cloudflare/D1/Database.ts` update/create paths + `src/Cloudflare/D1/ApplyMigrations.ts`) — replacing the `wrangler d1 migrations apply` step. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
+The `D1.Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists (and `alchemy.run.ts` re-yields it to surface `databaseId`/`accountId` on the compiled output for the test harness, #692), the worker resolves it through `QueryDatabase`. Alchemy resolves the configured migration directory through `lib/SQL/Migrations/Registry.js` and applies pending records through `AlchemyFormat.js`. The explicit `table` retains Phoenix's existing `drizzle_migrations` table. On first reconciliation beta.77 converts its old `(id, name, applied_at)` journal to the shared migration schema in place. The patch checks drift before conversion, preserving rename-only adoption without replaying SQL. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
 
 ### Authoring a migration — `drizzle-kit generate` (ADR 0309)
 
-The tree holds **two layouts side by side**. The 34 flat `NNNN_name.sql` files at the top level are frozen history: production's `drizzle_migrations.name` records each one by its path relative to `migrationsDir`, so renaming, moving or editing one makes alchemy treat it as unseen and re-apply it. Everything from the v7 cutover on is a `<timestamp>_<name>/` directory holding `migration.sql` + `snapshot.json` — the layout `drizzle-kit@1.0` writes, which alchemy picks up because `listSqlFiles` reads `migrationsDir` recursively. `20260820113338_v7_baseline/` is the seam between them: a tool-generated snapshot of `schema.ts` whose `migration.sql` is deliberately a comment-only no-op ([ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)).
+The tree holds **two layouts side by side**. The flat `NNNN_name.sql` files at the top level are frozen history: production's `drizzle_migrations.name` records each one by its path relative to `migrations.dir`, so changing one breaks recorded migration history. Everything from the v7 cutover on is a `<timestamp>_<name>/` directory holding `migration.sql` + `snapshot.json` — the layout `drizzle-kit@1.0` writes, which the beta.77 patch reads alongside the flat files through the recursive reader in `SQL/Migrations/Records.js`. `20260820113338_v7_baseline/` is the seam between them: a tool-generated snapshot of `schema.ts` whose `migration.sql` is deliberately a comment-only no-op ([ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)).
 
 To add a migration:
 
@@ -90,16 +89,16 @@ alchemy applies the committed `.sql` on deploy; the integration tier applies the
 
 ### Never rename or delete an applied migration — the deploy refuses drift
 
-A migration's apply id is its path relative to `migrationsDir`, and alchemy skips an applied migration by exact id match — so renaming or deleting an already-applied file re-runs its SQL against every database that recorded the old id (the #7034 stage outage: a flat→directory repair replayed `CREATE TABLE` on the PR stage). The patched `D1.Database` (`patches/alchemy@2.0.0-beta.59.patch`, ADR 0038 + ADR 0309 amendment) compares the database's recorded ids against the on-disk files before applying anything and **refuses the deploy with an adopt-or-wipe report** instead of replaying:
+A migration's apply id is its path relative to `migrations.dir`, and alchemy skips an applied migration by exact id match — so a rename can replay SQL without the drift check (the #7034 stage outage: a flat→directory repair replayed `CREATE TABLE` on the PR stage). The patched `D1.Database` (`patches/alchemy@2.0.0-beta.77.patch`, ADR 0038 + ADR 0309 amendment) compares the database's recorded ids against the on-disk files before applying anything and **refuses the deploy with an adopt-or-wipe report** instead of replaying:
 
 - **adopt** — for a rename whose SQL is byte-identical (proven against the state's last-deploy hash map): deploy with `D1_MIGRATIONS_DRIFT=adopt` (`worker/env.ts` → `migrationsDriftStrategy` on `PhoenixDb`) to re-key the record in `drizzle_migrations` without re-running the SQL. One-shot operator consent, never a standing setting.
 - **wipe** — for a deletion, or a rename whose content also changed: destroy and recreate the stage's database (`alchemy destroy --stage <stage>`), or restore the recorded file unchanged.
 
 The behavior is pinned by `apps/web/tests/integration/patch-pin-alchemy-d1-migrations-drift.unit.test.ts` ([dependency-patch-behavior-pins.md](./dependency-patch-behavior-pins.md)).
 
-### Dev binds D1 *remote* and applies *no* migrations
+### Dev uses remote D1 and can apply pending migrations
 
-The load-bearing dev-vs-deploy fact: **`alchemy dev` applies no migrations, and there is no local D1.** In dev mode alchemy's local worker provider maps every `d1` binding to `D1.remote(...)` (`alchemy@2.0.0-beta.59` — `src/Cloudflare/Workers/LocalWorkerProvider.ts`, `toRuntimeBinding`, `case "d1"`), and the runtime package exports **only** `remote` for D1 (`@distilled.cloud/cloudflare-runtime@0.11.3` — `src/bindings/D1.ts`) — so even in dev the binding points at the real Cloudflare `phoenix_db`. Migrations apply **only** on `alchemy deploy` (over the D1 HTTP API, tracked in `drizzle_migrations`), or via the `pnpm db:migrate` escape hatch below. A developer reasonably expects a local D1 that `dev` migrates — there isn't one, so a freshly-authored migration is *unapplied* until one of those two paths runs.
+`PhoenixDb` explicitly uses `Alchemy.remote()`, so the worker binds the real personal-stage database even though beta.77 also supplies a local D1 provider. Its live provider runs the shared migration pipeline on reconciliation, including during dev; do not rely on the earlier promise that `alchemy dev` never applies migrations. Source: `alchemy@2.0.0-beta.77`, `lib/Cloudflare/D1/Database.js` (`ProviderLive`) and `lib/Cloudflare/Workers/RuntimeBindings.js` (`case "d1"`). The worker and its Durable Objects remain local.
 
 To apply pending migrations short of a full `pnpm deploy`, run **`pnpm --filter @kampus/web db:migrate`** (`drizzle-kit migrate` against the `d1-http` driver). It reuses alchemy's own Cloudflare credentials plus the D1 UUID:
 
@@ -108,7 +107,7 @@ CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… \
   pnpm --filter @kampus/web db:migrate
 ```
 
-> **`db:migrate` and `alchemy deploy` keep separate books, and the cutover widened the gap.** `drizzle-kit migrate` records what it applied in its own `__drizzle_migrations` table (the literal in the `drizzle-kit@1.0.0-rc.4` bundle), never the `drizzle_migrations` that `resources.ts` configures and `ApplyMigrations.ts` reads — so the two paths have never agreed on what is applied. Since the v7 cutover ([ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)) `drizzle-kit` walks the snapshot chain, which starts at the no-op baseline directory and does not include the 34 flat files; treat `alchemy deploy` as the path that applies the full set, and see [#6535](https://github.com/kamp-us/phoenix/issues/6535) for the open check on what `db:migrate` does now.
+> **`db:migrate` and `alchemy deploy` keep separate books, and the cutover widened the gap.** `drizzle-kit migrate` records what it applied in its own `__drizzle_migrations` table (the literal in the `drizzle-kit@1.0.0-rc.5-ab785fc` bundle), never the `drizzle_migrations` that `resources.ts` configures and `ApplyMigrations.ts` reads — so the two paths have never agreed on what is applied. Since the v7 cutover ([ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)) `drizzle-kit` walks the snapshot chain, which starts at the no-op baseline directory and does not include the 34 flat files; treat `alchemy deploy` as the path that applies the full set, and see [#6535](https://github.com/kamp-us/phoenix/issues/6535) for the open check on what `db:migrate` does now.
 
 `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` are the same pair `alchemy deploy` uses (see `.github/workflows/deploy.yml`); `D1_DATABASE_ID` is the `phoenix_db` UUID from the Cloudflare dashboard or `wrangler d1 list`. The credential block lives in `worker/db/drizzle.config.ts`'s `dbCredentials` — alchemy itself resolves the DB by name and ignores it; only `drizzle-kit migrate` reads it.
 
@@ -116,7 +115,7 @@ CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… \
 
 ## better-auth on the same D1
 
-`Pasaport` keeps using better-auth's Drizzle adapter. It reads the same `Database` seam, wraps the handle in its own RQB-v2 `drizzle` instance, and hands that to `drizzleAdapter` (`worker/features/pasaport/better-auth-live.ts`):
+`Pasaport` owns its local `BetterAuth` service tag and keeps using better-auth's Drizzle adapter. The Alchemy integration factory is not used: it owns a separate database lifecycle. It reads the same `Database` seam, wraps the handle in its own RQB-v2 `drizzle` instance, and hands that to `drizzleAdapter` (`worker/features/pasaport/better-auth-live.ts`):
 
 ```ts
 const raw = yield* Database;                              // the shared seam — one handle

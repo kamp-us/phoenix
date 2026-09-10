@@ -476,6 +476,7 @@ const assembly = leafCommand(
 			Argument.withDescription("the epic issue whose run owns the assembly worktree"),
 		),
 		remove: Flag.boolean("remove").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("remove the run's assembly worktree instead of placing it"),
 		),
 		root: rootFlag,
@@ -736,6 +737,7 @@ const stale = leafCommand(
 			),
 		),
 		claims: Flag.boolean("claims").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"additionally read the board and pair each non-terminal lane with the claim standing on its issue — the one thing here that makes a network call (default: false)",
 			),
@@ -785,6 +787,7 @@ const migrate = leafCommand(
 	{
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge every lane and report, writing nothing"),
 		),
 		repo: Flag.string("repo").pipe(
@@ -958,6 +961,7 @@ const reconcile = leafCommand(
 	{
 		root: rootFlag,
 		check: Flag.boolean("check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("judge every lane and report, appending nothing"),
 		),
 		repo: Flag.string("repo").pipe(

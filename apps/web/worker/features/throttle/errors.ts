@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
  * `kunye/VouchLimitReached`, which rations one domain act, this bounds an actor's
  * aggregate write volume across every feature at the fate seam.
  */
-export class RateLimitExceeded extends Schema.TaggedErrorClass<RateLimitExceeded>()(
+export class RateLimitExceeded extends Schema.TaggedError<RateLimitExceeded>()(
 	"throttle/RateLimitExceeded",
 	{message: Schema.String, retryAfterMs: Schema.Number},
 	{[FateWireCode]: "RATE_LIMIT_EXCEEDED"},

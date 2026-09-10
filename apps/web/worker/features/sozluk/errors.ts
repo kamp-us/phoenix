@@ -6,13 +6,13 @@
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
-export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+export class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"sozluk/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-export class BodyTooLong extends Schema.TaggedErrorClass<BodyTooLong>()(
+export class BodyTooLong extends Schema.TaggedError<BodyTooLong>()(
 	"sozluk/BodyTooLong",
 	{
 		max: Schema.Number,
@@ -21,7 +21,7 @@ export class BodyTooLong extends Schema.TaggedErrorClass<BodyTooLong>()(
 	{[FateWireCode]: "BODY_TOO_LONG"},
 ) {}
 
-export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+export class DefinitionNotFound extends Schema.TaggedError<DefinitionNotFound>()(
 	"sozluk/DefinitionNotFound",
 	{
 		definitionId: Schema.String,
@@ -30,7 +30,7 @@ export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFou
 	{[FateWireCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 
-export class UnauthorizedDefinitionMutation extends Schema.TaggedErrorClass<UnauthorizedDefinitionMutation>()(
+export class UnauthorizedDefinitionMutation extends Schema.TaggedError<UnauthorizedDefinitionMutation>()(
 	"sozluk/UnauthorizedDefinitionMutation",
 	{
 		definitionId: Schema.String,

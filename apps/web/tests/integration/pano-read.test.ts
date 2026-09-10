@@ -296,7 +296,7 @@ describe("pano reads — /fate", () => {
 	});
 
 	it("host filter narrows to the requested host", async () => {
-		const tag = `${NS}-${randomBytes(4).toString("hex").slice(0, 6)}`;
+		const tag = `${NS}-${Buffer.from(randomBytes(4)).toString("hex").slice(0, 6)}`;
 		const hostA = `${tag}-a.example.com`;
 		const hostB = `${tag}-b.example.com`;
 

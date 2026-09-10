@@ -5,7 +5,7 @@
  * There is no runtime on the request path: the one isolate-level `ManagedRuntime`
  * is a layer-build vehicle only.
  */
-import * as BetterAuth from "@alchemy.run/better-auth";
+
 import {CurrentActor} from "@kampus/authz";
 import {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
@@ -30,6 +30,7 @@ import {MuteLive} from "../mute/Mute.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {PanoLive} from "../pano/Pano.ts";
+import * as BetterAuth from "../pasaport/BetterAuth.ts";
 import {karmaBumpStatements} from "../pasaport/karma.ts";
 import {makePasaportLive} from "../pasaport/Pasaport.ts";
 import {ReactionLive} from "../reaction/Reaction.ts";

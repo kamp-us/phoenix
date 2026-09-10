@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 import {TargetKindSchema} from "../../db/target-kind.ts";
 import {TargetId} from "../../lib/ids.ts";
 
-export class ReportTargetNotFound extends Schema.TaggedErrorClass<ReportTargetNotFound>()(
+export class ReportTargetNotFound extends Schema.TaggedError<ReportTargetNotFound>()(
 	"report/ReportTargetNotFound",
 	{
 		targetKind: TargetKindSchema,

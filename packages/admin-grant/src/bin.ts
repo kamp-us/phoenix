@@ -22,18 +22,15 @@ import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {assignAdmin, listAdmins, makeGrantDb, revokeAdmin, type Selector} from "./grant.ts";
 
-class SelectorRequired extends Schema.TaggedErrorClass<SelectorRequired>()(
+class SelectorRequired extends Schema.TaggedError<SelectorRequired>()(
 	"@kampus/admin-grant/SelectorRequired",
 	{message: Schema.String},
 ) {}
 
 /** A D1 REST call (grant/revoke/list over the query API) rejected — network/HTTP fault. */
-class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
-	"@kampus/admin-grant/D1RestError",
-	{
-		cause: Schema.Defect(),
-	},
-) {}
+class D1RestError extends Schema.TaggedError<D1RestError>()("@kampus/admin-grant/D1RestError", {
+	cause: Schema.Defect(),
+}) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID"),

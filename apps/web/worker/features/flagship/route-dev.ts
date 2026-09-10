@@ -25,7 +25,7 @@ import {
 
 const DEV_ROUTE_PATH = "/api/flags/dev";
 
-class RequestBodyReadError extends Schema.TaggedErrorClass<RequestBodyReadError>()(
+class RequestBodyReadError extends Schema.TaggedError<RequestBodyReadError>()(
 	"flagship/RequestBodyReadError",
 	{cause: Schema.Defect()},
 ) {}

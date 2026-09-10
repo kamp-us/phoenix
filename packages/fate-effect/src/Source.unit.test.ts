@@ -192,7 +192,7 @@ describe("Fate.source — type-level contract", () => {
 	});
 
 	it("a handler with a typed failure is a compile error — loaders' E is never", () => {
-		class Boom extends Schema.TaggedErrorClass<Boom>()("test/Boom", {}) {}
+		class Boom extends Schema.TaggedError<Boom>()("test/Boom", {}) {}
 		type FailingHandler = (
 			slugs: ReadonlyArray<string>,
 		) => Effect.Effect<ReadonlyArray<TermRow>, Boom>;

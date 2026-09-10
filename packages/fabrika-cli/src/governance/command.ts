@@ -46,6 +46,7 @@ const shaFlag = Flag.string("sha").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the result object on stdout instead of the line grammar"),
 );
 
@@ -281,6 +282,7 @@ const post = leafCommand(
 			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
 		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head, or ranged, over the same range; without it that post is refused at 17",
 			),

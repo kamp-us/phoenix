@@ -24,7 +24,7 @@ For endpoints with a real request/response schema — phoenix's lone case is `GE
 // worker/http/health.ts
 // success / payload / error are passed in the endpoint's options object —
 // there is no `.setPayload(...)` builder. Responses are `Schema.Class`,
-// payloads are `Schema.Struct`, errors are `Schema.TaggedErrorClass`.
+// payloads are `Schema.Struct`, errors are `Schema.TaggedError`.
 export class HealthStatus extends Schema.Class<HealthStatus>("@kampus/HealthStatus")({
   status: Schema.String,
   environment: Schema.NullOr(Schema.String),
@@ -42,7 +42,7 @@ export class HealthApi extends HttpApi.make("phoenix").add(HealthGroup) {}
 
 `HttpApi.make(id)` and `HttpApiGroup.make(name)` return values with a variadic `.add(...)`; the `class … extends` form is the convention for naming them (it's what `HttpApiBuilder.group(HealthApi, "health", …)` references by name).
 
-A typed **error** is a `Schema.TaggedErrorClass` annotated with `httpApiStatus` — phoenix's `HealthDegraded` carries `{httpApiStatus: 503}` so the degraded-readiness body encodes as a 503 rather than the unannotated-error default of 500 (ADR 0156). A payload-bearing endpoint adds a `payload` Schema to its options; `HttpApiBuilder` decodes the request body against it before the handler runs, so `{payload}` arrives already typed (see [effect-schema-validation.md](./effect-schema-validation.md)).
+A typed **error** is a `Schema.TaggedError` annotated with `httpApiStatus` — phoenix's `HealthDegraded` carries `{httpApiStatus: 503}` so the degraded-readiness body encodes as a 503 rather than the unannotated-error default of 500 (ADR 0156). A payload-bearing endpoint adds a `payload` Schema to its options; `HttpApiBuilder` decodes the request body against it before the handler runs, so `{payload}` arrives already typed (see [effect-schema-validation.md](./effect-schema-validation.md)).
 
 The group is itself a `Layer`. `healthApiLayer` (`health.ts`) wires it:
 

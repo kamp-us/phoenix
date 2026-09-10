@@ -20,7 +20,7 @@
  * codes.
  *
  * The `Attempt`/`Existence` results the IO returns are **values, not the `E` channel**: a 404 and a
- * 502 are outcomes this verb maps onto its own codes, not exceptions (effect-smol `LLMS.md`
+ * 502 are outcomes this verb maps onto its own codes, not exceptions (Effect-TS/effect `LLMS.md`
  * §"Error handling" — the typed error channel is for faults a caller recovers from, and `io/exec.ts`
  * already folds the spawn fault in).
  */

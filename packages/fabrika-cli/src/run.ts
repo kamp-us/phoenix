@@ -4,7 +4,7 @@
  * It is loaded via a dynamic `import()` from `bin.ts` so an unlinked `catalog:` dep is a catchable
  * `ERR_MODULE_NOT_FOUND` the bin can explain, rather than a raw static-load throw.
  *
- * Wired per effect-smol's CLI guidance: `effect/unstable/cli` for the typed subcommands, the Node
+ * Wired per Effect-TS/effect's CLI guidance: `effect/unstable/cli` for the typed subcommands, the Node
  * platform over `NodeServices.layer`, run via `NodeRuntime.runMain`. The command itself lives in
  * `root-command.ts`; the subcommand set comes straight off `registry.ts`, so `--help` lists exactly
  * what is registered.

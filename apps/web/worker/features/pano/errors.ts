@@ -9,37 +9,37 @@
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
-export class TitleRequired extends Schema.TaggedErrorClass<TitleRequired>()(
+export class TitleRequired extends Schema.TaggedError<TitleRequired>()(
 	"pano/TitleRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "TITLE_REQUIRED"},
 ) {}
 
-export class TitleTooLong extends Schema.TaggedErrorClass<TitleTooLong>()(
+export class TitleTooLong extends Schema.TaggedError<TitleTooLong>()(
 	"pano/TitleTooLong",
 	{message: Schema.String},
 	{[FateWireCode]: "TITLE_TOO_LONG"},
 ) {}
 
-export class UrlInvalid extends Schema.TaggedErrorClass<UrlInvalid>()(
+export class UrlInvalid extends Schema.TaggedError<UrlInvalid>()(
 	"pano/UrlInvalid",
 	{message: Schema.String},
 	{[FateWireCode]: "URL_INVALID"},
 ) {}
 
-export class PostBodyTooLong extends Schema.TaggedErrorClass<PostBodyTooLong>()(
+export class PostBodyTooLong extends Schema.TaggedError<PostBodyTooLong>()(
 	"pano/PostBodyTooLong",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_TOO_LONG"},
 ) {}
 
-export class TagsRequired extends Schema.TaggedErrorClass<TagsRequired>()(
+export class TagsRequired extends Schema.TaggedError<TagsRequired>()(
 	"pano/TagsRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "TAGS_REQUIRED"},
 ) {}
 
-export class TagInvalid extends Schema.TaggedErrorClass<TagInvalid>()(
+export class TagInvalid extends Schema.TaggedError<TagInvalid>()(
 	"pano/TagInvalid",
 	{message: Schema.String},
 	{[FateWireCode]: "TAG_INVALID"},
@@ -57,19 +57,19 @@ export const PostValidationErrors = [
 
 export type PostValidation = InstanceType<(typeof PostValidationErrors)[number]>;
 
-export class CommentBodyRequired extends Schema.TaggedErrorClass<CommentBodyRequired>()(
+export class CommentBodyRequired extends Schema.TaggedError<CommentBodyRequired>()(
 	"pano/CommentBodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-export class CommentBodyTooLong extends Schema.TaggedErrorClass<CommentBodyTooLong>()(
+export class CommentBodyTooLong extends Schema.TaggedError<CommentBodyTooLong>()(
 	"pano/CommentBodyTooLong",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_TOO_LONG"},
 ) {}
 
-export class ParentCommentNotFound extends Schema.TaggedErrorClass<ParentCommentNotFound>()(
+export class ParentCommentNotFound extends Schema.TaggedError<ParentCommentNotFound>()(
 	"pano/ParentCommentNotFound",
 	{message: Schema.String},
 	{[FateWireCode]: "PARENT_NOT_FOUND"},
@@ -83,7 +83,7 @@ export const CommentValidationErrors = [
 
 export type CommentValidation = InstanceType<(typeof CommentValidationErrors)[number]>;
 
-export class PostNotFound extends Schema.TaggedErrorClass<PostNotFound>()(
+export class PostNotFound extends Schema.TaggedError<PostNotFound>()(
 	"pano/PostNotFound",
 	{
 		postId: Schema.String,
@@ -92,7 +92,7 @@ export class PostNotFound extends Schema.TaggedErrorClass<PostNotFound>()(
 	{[FateWireCode]: "POST_NOT_FOUND"},
 ) {}
 
-export class CommentNotFound extends Schema.TaggedErrorClass<CommentNotFound>()(
+export class CommentNotFound extends Schema.TaggedError<CommentNotFound>()(
 	"pano/CommentNotFound",
 	{
 		commentId: Schema.String,
@@ -101,7 +101,7 @@ export class CommentNotFound extends Schema.TaggedErrorClass<CommentNotFound>()(
 	{[FateWireCode]: "COMMENT_NOT_FOUND"},
 ) {}
 
-export class UnauthorizedPostMutation extends Schema.TaggedErrorClass<UnauthorizedPostMutation>()(
+export class UnauthorizedPostMutation extends Schema.TaggedError<UnauthorizedPostMutation>()(
 	"pano/UnauthorizedPostMutation",
 	{
 		postId: Schema.String,
@@ -110,7 +110,7 @@ export class UnauthorizedPostMutation extends Schema.TaggedErrorClass<Unauthoriz
 	{[FateWireCode]: "UNAUTHORIZED"},
 ) {}
 
-export class UnauthorizedCommentMutation extends Schema.TaggedErrorClass<UnauthorizedCommentMutation>()(
+export class UnauthorizedCommentMutation extends Schema.TaggedError<UnauthorizedCommentMutation>()(
 	"pano/UnauthorizedCommentMutation",
 	{
 		commentId: Schema.String,
@@ -125,7 +125,7 @@ export class UnauthorizedCommentMutation extends Schema.TaggedErrorClass<Unautho
  * `INTERNAL_SERVER_ERROR` (#1639). The post-commit stats refresh is a recomputable cache swallowed
  * at its call site, so this error never means "the removal committed but something after it".
  */
-export class PostDeleteFailed extends Schema.TaggedErrorClass<PostDeleteFailed>()(
+export class PostDeleteFailed extends Schema.TaggedError<PostDeleteFailed>()(
 	"pano/PostDeleteFailed",
 	{message: Schema.String},
 	{[FateWireCode]: "POST_DELETE_FAILED"},

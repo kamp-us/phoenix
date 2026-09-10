@@ -36,19 +36,19 @@ const rows: ReadonlyArray<TermRow> = [
 	{slug: "fate", title: "fate", score: 3},
 ];
 
-class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+class BodyRequired extends Schema.TaggedError<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-class TermNotFound extends Schema.TaggedErrorClass<TermNotFound>()(
+class TermNotFound extends Schema.TaggedError<TermNotFound>()(
 	"test/TermNotFound",
 	{message: Schema.String},
 	{[FateWireCode]: "TERM_NOT_FOUND"},
 ) {}
 
-class Unrelated extends Schema.TaggedErrorClass<Unrelated>()("test/Unrelated", {
+class Unrelated extends Schema.TaggedError<Unrelated>()("test/Unrelated", {
 	message: Schema.String,
 }) {}
 

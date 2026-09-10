@@ -70,12 +70,9 @@ const WARM_POLL_MS = 2_000;
 // defect), then swallow it via `Effect.catchCause` since warmup is a non-fatal optimization. The
 // deploy gates (`awaitWorkerReady` / `awaitAuthRouteReady`) instead re-`orDie` their already-typed
 // throws unchanged, so they keep the named-defect diagnostic (#3146) — see each below.
-class ProbeError extends Schema.TaggedErrorClass<ProbeError>()(
-	"@kampus/web/integration/ProbeError",
-	{
-		cause: Schema.Defect(),
-	},
-) {}
+class ProbeError extends Schema.TaggedError<ProbeError>()("@kampus/web/integration/ProbeError", {
+	cause: Schema.Defect(),
+}) {}
 
 /**
  * A warm probe's readiness budget lapsed without the probe ever going ready.
@@ -335,10 +332,10 @@ export const warmFateRead = (
  */
 export const deployTransientRetry = Effect.retry({
 	while: isTransientDeployError,
-	schedule: Schedule.exponential("1 second").pipe(
-		Schedule.either(Schedule.spaced("10 seconds")),
-		Schedule.both(Schedule.recurs(10)),
-	),
+	schedule: Schedule.max([
+		Schedule.min([Schedule.exponential("1 second"), Schedule.spaced("10 seconds")]),
+		Schedule.recurs(10),
+	]),
 });
 
 /**

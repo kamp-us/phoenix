@@ -145,7 +145,7 @@ export const ENV_HELP =
  * No Flagship app serves the requested env. `flag set` fails with this BEFORE any read/write, so
  * an unknown `--env` never reaches the mutation.
  */
-export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
+export class FlagEnvNotFound extends Schema.TaggedError<FlagEnvNotFound>()(
 	"@kampus/anka-ops/FlagEnvNotFound",
 	{
 		env: Schema.String,
@@ -163,7 +163,7 @@ export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
  * with, so a mistyped key surfaces loud instead of as a silent empty table. The `--env`-scoped
  * `flag get` instead fails with the SDK's `FlagshipFlagNotFound` off the single-flag read.
  */
-export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
+export class FlagKeyNotFound extends Schema.TaggedError<FlagKeyNotFound>()(
 	"@kampus/anka-ops/FlagKeyNotFound",
 	{
 		key: Schema.String,
@@ -176,7 +176,7 @@ export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
 	}
 }
 
-export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetInvalid>()(
+export class FlagSetTargetInvalid extends Schema.TaggedError<FlagSetTargetInvalid>()(
 	"@kampus/anka-ops/FlagSetTargetInvalid",
 	{
 		reason: Schema.String,
@@ -191,7 +191,7 @@ export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetI
  * Surfaces ONLY on the TTY ergonomics path (`decideLeverGuard`, ADR 0134); a non-TTY agent/CI
  * caller is never refused.
  */
-export class LeverGuardRefused extends Schema.TaggedErrorClass<LeverGuardRefused>()(
+export class LeverGuardRefused extends Schema.TaggedError<LeverGuardRefused>()(
 	"@kampus/anka-ops/LeverGuardRefused",
 	{
 		reason: Schema.String,

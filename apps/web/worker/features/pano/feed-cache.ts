@@ -31,7 +31,7 @@ export const baseFeedCacheControl = `public, s-maxage=${BASE_FEED_CACHE_TTL_SECO
  * A purge failed inside the swallow wrapper. Never reaches the mutation: the purge
  * runs after the DB write and must not fail a committed mutation (ADR 0039).
  */
-export class FeedCachePurgeError extends Schema.TaggedErrorClass<FeedCachePurgeError>()(
+export class FeedCachePurgeError extends Schema.TaggedError<FeedCachePurgeError>()(
 	"pano/FeedCachePurgeError",
 	{cause: Schema.Defect()},
 ) {}

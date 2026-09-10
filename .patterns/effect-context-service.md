@@ -47,7 +47,7 @@ The string id is what effect uses at runtime to look services up. Renaming the c
 
 - All fields `readonly`. Services are not mutable.
 - Methods return `Effect.Effect<A, E, R>` — never `Promise`. If you have a Promise-based dep (drizzle, fetch), wrap it at the service boundary, not at the call site.
-- Errors go in the `E` channel via tagged errors (`Data.TaggedError` or `Schema.TaggedErrorClass`). No thrown exceptions across service boundaries.
+- Errors go in the `E` channel via tagged errors (`Data.TaggedError` or `Schema.TaggedError`). No thrown exceptions across service boundaries.
 
 ```ts
 class UserRepo extends Context.Service<

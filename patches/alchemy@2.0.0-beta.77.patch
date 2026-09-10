@@ -1,0 +1,299 @@
+diff --git a/lib/Cloudflare/D1/Database.d.ts b/lib/Cloudflare/D1/Database.d.ts
+index 5c90906792..9ec4f00604 100644
+--- a/lib/Cloudflare/D1/Database.d.ts
++++ b/lib/Cloudflare/D1/Database.d.ts
+@@ -65,6 +65,8 @@ export type DatabaseProps = {
+      * part of `update`.
+      */
+     migrations?: MigrationsInput;
++    /** Phoenix: explicitly adopt hash-identical renames; deletions always refuse. */
++    migrationsDriftStrategy?: "adopt";
+     /**
+      * Paths to additional `.sql` files to import after migrations are
+      * applied. Each file is uploaded via Cloudflare's D1 import API and
+diff --git a/lib/Cloudflare/D1/Database.js b/lib/Cloudflare/D1/Database.js
+index 70c17acfdb..255bc62404 100644
+--- a/lib/Cloudflare/D1/Database.js
++++ b/lib/Cloudflare/D1/Database.js
+@@ -343,6 +343,7 @@ export const ProviderLive = () => Provider.succeed(Database, {
+             ? yield* runMigrations({
+                 input: migrationsInput,
+                 stamped: stampedOf(output),
++                drift: { strategy: news.migrationsDriftStrategy, previousHashes: output?.migrationsHashes ?? {} },
+                 withExecutor: (apply) => Effect.gen(function* () {
+                     const queryDb = yield* d1.queryDatabase;
+                     yield* apply(makeD1MigrationExecutor((sql) => queryDb({ accountId: acct, databaseId, sql })));
+@@ -444,6 +445,7 @@ export const ProviderLocal = () => RpcProvider.effect(Database, LOCAL_ENTRY_URL,
+                 ? yield* runMigrations({
+                     input: migrationsInput,
+                     stamped: stampedOf(output),
++                    drift: { strategy: news.migrationsDriftStrategy, previousHashes: output?.migrationsHashes ?? {} },
+                     withExecutor: (apply) => withLocalD1Executor(databaseId, (executor) => apply(makeD1MigrationExecutor(executor))).pipe(Effect.provideContext(runtimeContext)),
+                 })
+                 : undefined;
+diff --git a/lib/Cloudflare/Flagship/Flag.js b/lib/Cloudflare/Flagship/Flag.js
+index 2276fd38d7..a109441992 100644
+--- a/lib/Cloudflare/Flagship/Flag.js
++++ b/lib/Cloudflare/Flagship/Flag.js
+@@ -170,35 +170,39 @@ export const FlagProvider = () => Provider.succeed(Flag, {
+                 return toAttributes(created, accountId, appId);
+             }
+         }
+-        // Sync — diff observed cloud state against desired; the update API is
+-        // a PUT that takes the full body, so send everything, but skip the
+-        // call entirely on a no-op.
++        // Sync — IaC reconciles only the schema/metadata it owns ({variations,
++        // description}); the serving config ({defaultVariation, rules, enabled})
++        // is dashboard-owned and carried forward from live, never reconciled
++        // (ADR 0106). Skip the PUT entirely when the schema hasn't drifted.
+         const live = observed ?? (yield* getFlag(accountId, appId, key));
+         if (live) {
+-            const observedShape = {
+-                enabled: live.enabled,
+-                defaultVariation: live.defaultVariation,
++            const observedSchema = {
+                 variations: live.variations,
+-                rules: normalizeRules(live.rules),
+                 description: live.description ?? undefined,
+             };
+-            const desiredShape = {
+-                ...desired,
+-                rules: normalizeRules(desired.rules),
++            const desiredSchema = {
++                variations: news.variations,
++                description: news.description,
+             };
+-            if (deepEqual(observedShape, desiredShape)) {
++            if (deepEqual(observedSchema, desiredSchema)) {
+                 return toAttributes(live, accountId, appId);
+             }
++            const updated = yield* flagship.updateAppFlag({
++                accountId,
++                appId,
++                flagKey: key,
++                key,
++                type: news.type,
++                variations: news.variations, // IaC owns: schema
++                description: news.description, // IaC owns: metadata
++                // ADR 0106: serving is dashboard-owned — preserve live, never reconcile.
++                defaultVariation: live.defaultVariation,
++                rules: live.rules,
++                enabled: live.enabled,
++            });
++            return toAttributes(updated, accountId, appId);
+         }
+-        const updated = yield* flagship.updateAppFlag({
+-            accountId,
+-            appId,
+-            flagKey: key,
+-            key,
+-            ...desired,
+-            type: news.type,
+-        });
+-        return toAttributes(updated, accountId, appId);
++        return undefined;
+     }),
+     delete: Effect.fn(function* ({ output }) {
+         yield* flagship
+diff --git a/lib/SQL/Migrations/AlchemyFormat.d.ts b/lib/SQL/Migrations/AlchemyFormat.d.ts
+index 40ac2e6a5c..2f42063ff0 100644
+--- a/lib/SQL/Migrations/AlchemyFormat.d.ts
++++ b/lib/SQL/Migrations/AlchemyFormat.d.ts
+@@ -1,5 +1,16 @@
+ import * as Effect from "effect/Effect";
+ import { MigrationError, MigrationHistoryConflictError, type MigrationRecord, type SqlExecutor } from "./Format.ts";
++export interface MigrationsDriftOptions {
++    strategy?: "adopt" | undefined;
++    previousHashes: Readonly<Record<string, string>>;
++}
++export interface MigrationsDriftReport {
++    readonly drifted: boolean;
++    readonly renames: ReadonlyArray<{ readonly from: string; readonly to: string }>;
++    readonly deletions: ReadonlyArray<string>;
++}
++export declare const detectMigrationsDrift: (applied: ReadonlySet<string>, files: ReadonlyArray<{ readonly id: string; readonly hash: string }>, previousHashes: Readonly<Record<string, string>>) => MigrationsDriftReport;
++export declare const renderMigrationsDrift: (report: MigrationsDriftReport) => string;
+ export declare const ALCHEMY_DEFAULT_TABLE = "__alchemy_migrations";
+ /**
+  * Apply pending migrations with Alchemy's bookkeeping. Idempotent: each
+@@ -15,5 +26,6 @@ export declare const applyAlchemyFormat: (options: {
+     executor: SqlExecutor;
+     table: string;
+     records: ReadonlyArray<MigrationRecord>;
++    drift?: MigrationsDriftOptions | undefined;
+ }) => Effect.Effect<void, MigrationError | MigrationHistoryConflictError>;
+ //# sourceMappingURL=AlchemyFormat.d.ts.map
+\ No newline at end of file
+diff --git a/lib/SQL/Migrations/AlchemyFormat.js b/lib/SQL/Migrations/AlchemyFormat.js
+index 6dbc104641..48ef7989d1 100644
+--- a/lib/SQL/Migrations/AlchemyFormat.js
++++ b/lib/SQL/Migrations/AlchemyFormat.js
+@@ -162,8 +162,67 @@ const appliedNames = (executor, table) => executor
+  * Alchemy recorded drizzle-layout migrations under `<dir>/migration.sql`
+  * while current records key them by `<dir>`, so both keys are honored.
+  */
++
++// Phoenix migration-history refusal and explicit rename adoption (ADR 0309).
++export const detectMigrationsDrift = (applied, migrationsFiles, previousHashes) => {
++    const onDisk = new Set(migrationsFiles.map((m) => m.id));
++    const orphaned = [...applied].filter((name) => !onDisk.has(name)).sort();
++    const pendingByHash = new Map();
++    for (const file of migrationsFiles) {
++        if (applied.has(file.id)) continue;
++        const queue = pendingByHash.get(file.hash) ?? [];
++        queue.push(file.id);
++        pendingByHash.set(file.hash, queue);
++    }
++    const renames = [];
++    const deletions = [];
++    for (const name of orphaned) {
++        // Directory journals omit /migration.sql; the provider's state hashes include it.
++        const alias = name.endsWith("/migration.sql") ? name.slice(0, -14) : name + "/migration.sql";
++        const hash = previousHashes[name] ?? previousHashes[alias];
++        const to = hash === undefined ? undefined : pendingByHash.get(hash)?.shift();
++        if (to === undefined) deletions.push(name);
++        else renames.push({ from: name, to });
++    }
++    return { drifted: orphaned.length > 0, renames, deletions };
++};
++export const renderMigrationsDrift = (report) => [
++    "D1 migration drift: recorded migration ids no longer match the files. Refusing to replay applied SQL.",
++    ...report.renames.map(({ from, to }) => '  renamed (content-identical): "' + from + '" -> "' + to + '"'),
++    ...report.deletions.map((name) => '  recorded but gone from disk: "' + name + '"'),
++    'Decide adopt or wipe: migrationsDriftStrategy: "adopt" re-keys only hash-identical renames; deletions refuse.',
++    "Restore the missing files, or explicitly destroy and recreate this stage's database.",
++].join("\n");
++const checkMigrationsDrift = (options) => Effect.gen(function* () {
++    const { executor, table, records, drift } = options;
++    const quoted = quoteIdentifier(table, executor.dialect);
++    // D1's missing-table PRAGMA is empty; an unreadable history must still fail.
++    const columns = yield* executor.query('PRAGMA table_info(' + quoted + ');');
++    if (columns.length === 0) return;
++    const shape = classifyTable(columns.map((column) => ({ name: String(column.name), type: String(column.type ?? "").toUpperCase() })));
++    if (shape === "unknown") return yield* new MigrationError({ message: 'Unrecognized migration history table "' + table + '"; refusing drift classification.' });
++    const nameColumn = shape === "legacy-2col" ? "id" : "name";
++    const rows = yield* executor.query('SELECT ' + quoteIdentifier(nameColumn, executor.dialect) + ' AS name FROM ' + quoted + ';');
++    const files = records.map((record) => ({ id: record.name, hash: record.hash }));
++    const onDisk = new Set(files.map((file) => file.id));
++    const canonicalName = (name) => onDisk.has(name) ? name
++        : onDisk.has(name + "/migration.sql") ? name + "/migration.sql"
++        : onDisk.has(name.replace(/\/migration\.sql$/, "")) ? name.replace(/\/migration\.sql$/, "")
++        : name;
++    const applied = new Set(rows.filter((row) => row.name !== null && row.name !== undefined).map((row) => canonicalName(String(row.name))));
++    const report = detectMigrationsDrift(applied, files, drift.previousHashes);
++    if (!report.drifted) return;
++    if (drift.strategy !== "adopt" || report.deletions.length > 0) {
++        return yield* new MigrationError({ message: renderMigrationsDrift(report) });
++    }
++    yield* executor.batch(report.renames.map(({ from, to }) =>
++        'UPDATE ' + quoted + ' SET ' + quoteIdentifier(nameColumn, executor.dialect) + ' = ' + sqlLiteral(to) + ' WHERE ' + quoteIdentifier(nameColumn, executor.dialect) + ' = ' + sqlLiteral(from) + ';'
++    ));
++});
++
+ export const applyAlchemyFormat = (options) => Effect.gen(function* () {
+     const { executor, table, records } = options;
++    if (options.drift) yield* checkMigrationsDrift(options);
+     if (records.length === 0)
+         return;
+     yield* ensureTable({ executor, table, records });
+@@ -180,4 +239,4 @@ export const applyAlchemyFormat = (options) => Effect.gen(function* () {
+         ]);
+     }
+ });
+-//# sourceMappingURL=AlchemyFormat.js.map
+\ No newline at end of file
++//# sourceMappingURL=AlchemyFormat.js.map
+diff --git a/lib/SQL/Migrations/Detect.js b/lib/SQL/Migrations/Detect.js
+index 6d1d311869..29befc198f 100644
+--- a/lib/SQL/Migrations/Detect.js
++++ b/lib/SQL/Migrations/Detect.js
+@@ -23,6 +23,10 @@ export const detectLayout = (dir) => Effect.gen(function* () {
+     const entries = yield* fs
+         .readDirectory(dir)
+         .pipe(Effect.catch(() => Effect.succeed([])));
++    // Phoenix keeps its flat baseline beside newer directory migrations (ADR 0309).
++    // The recursive flat reader preserves every recorded path in this mixed layout.
++    if (entries.some((entry) => entry.endsWith(".sql")))
++        return "flat";
+     for (const entry of entries) {
+         if (!DRIZZLE_DIR_PATTERN.test(entry))
+             continue;
+diff --git a/lib/SQL/Migrations/Registry.d.ts b/lib/SQL/Migrations/Registry.d.ts
+index e9f38f3a42..66b20267f9 100644
+--- a/lib/SQL/Migrations/Registry.d.ts
++++ b/lib/SQL/Migrations/Registry.d.ts
+@@ -72,6 +72,7 @@ export declare const resolveMigrations: (options: {
+ export declare const applyMigrations: (options: {
+     resolved: ResolvedMigrations;
+     executor: SqlExecutor;
++    drift?: import("./AlchemyFormat.ts").MigrationsDriftOptions | undefined;
+ }) => Effect.Effect<void, MigrationError | MigrationHistoryConflictError | DrizzleV0LayoutError, FileSystem.FileSystem | Path.Path>;
+ /** The result of one migration sync, ready to stamp into attributes. */
+ export interface MigrationRun {
+@@ -89,6 +90,7 @@ export interface MigrationRun {
+ export declare const runMigrations: <E, R>(options: {
+     input: NormalizedMigrationsInput;
+     stamped: StampedMigrationsState;
++    drift?: import("./AlchemyFormat.ts").MigrationsDriftOptions | undefined;
+     withExecutor: (apply: (executor: SqlExecutor) => Effect.Effect<void, MigrationError | MigrationHistoryConflictError | DrizzleV0LayoutError, FileSystem.FileSystem | Path.Path>) => Effect.Effect<void, E, R>;
+ }) => Effect.Effect<MigrationRun, MigrationError | E, R | FileSystem.FileSystem | Path.Path>;
+ /**
+diff --git a/lib/SQL/Migrations/Registry.js b/lib/SQL/Migrations/Registry.js
+index 498b1d5a4e..a3e8483c0c 100644
+--- a/lib/SQL/Migrations/Registry.js
++++ b/lib/SQL/Migrations/Registry.js
+@@ -43,6 +43,7 @@ export const applyMigrations = (options) => Effect.gen(function* () {
+         executor,
+         table: resolved.table,
+         records,
++        drift: options.drift,
+     });
+ });
+ const hashMigrationsDir = (dir) => hashMigrations(dir).pipe(Effect.mapError((cause) => new MigrationError({
+@@ -60,8 +61,8 @@ const hashMigrationsDir = (dir) => hashMigrations(dir).pipe(Effect.mapError((cau
+ export const runMigrations = (options) => Effect.gen(function* () {
+     const hashes = yield* hashMigrationsDir(options.input.dir);
+     const resolved = resolveMigrations(options);
+-    if (Object.keys(hashes).length > 0) {
+-        yield* options.withExecutor((executor) => applyMigrations({ resolved, executor }));
++    if (Object.keys(hashes).length > 0 || options.drift) {
++        yield* options.withExecutor((executor) => applyMigrations({ resolved, executor, drift: options.drift }));
+     }
+     return { resolved, hashes };
+ });
+diff --git a/lib/Test/Vitest.js b/lib/Test/Vitest.js
+index 24f2576dd5..fb613552b4 100644
+--- a/lib/Test/Vitest.js
++++ b/lib/Test/Vitest.js
+@@ -76,19 +76,19 @@ export const make = (options) => {
+     test.provider = provider;
+     const beforeAll = (eff, hookOptions) => {
+         let result;
+-        vitestBeforeAll(() => runEff(eff).then((v) => (result = v)), timeoutOf(hookOptions) ?? DEFAULT_TIMEOUT);
++        vitestBeforeAll(() => runEff(eff).then((v) => (result = v)), timeoutOf(hookOptions));
+         return Effect.sync(() => result);
+     };
+     const beforeEach = (eff, hookOptions) => {
+         vitestBeforeEach(() => runEff(eff), timeoutOf(hookOptions));
+     };
+     const afterAll = ((eff, hookOptions) => {
+-        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions) ?? DEFAULT_TIMEOUT);
++        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions));
+     });
+     afterAll.skipIf = (predicate) => (eff, hookOptions) => {
+         if (predicate)
+             return;
+-        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions) ?? DEFAULT_TIMEOUT);
++        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions));
+     };
+     const afterEach = (eff, hookOptions) => {
+         vitestAfterEach(() => runEff(eff), timeoutOf(hookOptions));
+@@ -109,7 +109,7 @@ export const make = (options) => {
+         ? Effect.andThen(closeScope, sidecar.close)
+         : closeScope;
+     queueMicrotask(() => {
+-        vitestAfterAll(() => Effect.runPromise(closeAll), DEFAULT_TIMEOUT);
++        vitestAfterAll(() => Effect.runPromise(closeAll));
+     });
+     return {
+         test,

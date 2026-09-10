@@ -22,7 +22,7 @@ import {FlagsContext, type FlagsContextValue} from "./FlagsContext.ts";
 import {resolveRequestFlagsContext} from "./request-flags-context.ts";
 import {buildBootPayload, injectBootScript} from "./shell-boot.ts";
 
-class ShellAssetFetchError extends Schema.TaggedErrorClass<ShellAssetFetchError>()(
+class ShellAssetFetchError extends Schema.TaggedError<ShellAssetFetchError>()(
 	"flagship/ShellAssetFetchError",
 	{cause: Schema.Defect()},
 ) {}

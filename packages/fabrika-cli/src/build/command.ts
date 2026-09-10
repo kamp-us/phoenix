@@ -76,6 +76,7 @@ const tree = leafCommand(
 	"tree",
 	{
 		requireClean: Flag.boolean("require-clean").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"additionally refuse a tree with any uncommitted change — the lane-open posture (default: false)",
 			),
@@ -194,6 +195,7 @@ const claim = leafCommand(
 			),
 		),
 		resume: Flag.boolean("resume").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"take the repair lane of an epic child that already carries a standing range FAIL, rather than building it fresh; refused on a child holding no such FAIL, exactly as its absence is refused on one that does",
 			),
@@ -307,6 +309,7 @@ const reap = leafCommand(
 	"reap",
 	{
 		execute: Flag.boolean("execute").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"actually remove the trees classified REMOVE (default: false — print the classification and mutate nothing)",
 			),
@@ -357,6 +360,7 @@ const branch = leafCommand(
 			),
 		),
 		resumeLane: Flag.boolean("resume-lane").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"child-repair mode: take over the local branch a prior lane built <number> on, re-keyed to this claim's nonce; for an epic child, which opens no PR — takes no --slug and is exclusive with --resume",
 			),
@@ -505,11 +509,13 @@ const push = leafCommand(
 	"push",
 	{
 		forceWithLease: Flag.boolean("force-with-lease").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"permit a non-fast-forward update of this lane's own branch — repair resubmission only (default: false)",
 			),
 		),
 		dropRemoteCommits: Flag.boolean("drop-remote-commits").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"publish a head that does NOT contain the published remote head, dropping its commits — a deliberate history rewrite (default: false)",
 			),
@@ -538,6 +544,7 @@ const pr = leafCommand(
 	{
 		number: issueArg,
 		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
 			),
@@ -569,6 +576,7 @@ const prBody = leafCommand(
 			Argument.withDescription("the open pull request whose body is replaced"),
 		),
 		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
 			),

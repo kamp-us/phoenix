@@ -24,7 +24,7 @@
  *
  * Authoring shape (fate's curry, plus Effect's dummy-call — TypeScript has no
  * partial type-argument inference, so the row type and the literal name must
- * bind on separate calls; same reason `Schema.TaggedErrorClass<Self>()(...)`
+ * bind on separate calls; same reason `Schema.TaggedError<Self>()(...)`
  * takes one):
  *
  * ```ts

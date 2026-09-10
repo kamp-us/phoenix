@@ -1,4 +1,3 @@
-// @patch-pin: effect@4.0.0-beta.92
 /**
  * The documented `--` separator binds its trailing argv to the leaf verb's declared argument.
  *
@@ -6,7 +5,7 @@
  * every token after `--` was bound two levels up and dropped before the leaf's params saw it — a
  * verb following its own help-text example failed with `"0 values"` for an argument the caller did
  * supply, and a verb with optional variadic positionals silently bound zero. The fix lives in
- * `patches/effect@4.0.0-beta.92.patch` (`parseArgs` threading `trailingOperands` through the
+ * Effect rc.112 (`parseArgs` threading `trailingOperands` through the
  * recursion); this file is its behavior pin, in the same register as `excess-operand.cli.test.ts`:
  * only a subprocess proves what a shell caller reads, and each case asserts the **exit code and
  * stderr**, never stdout content that could pass against the bug.

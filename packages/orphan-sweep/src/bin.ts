@@ -22,6 +22,7 @@ import {computeSweepPlan, type Protection} from "./orphan-sweep.ts";
 import {renderPlan, renderSummary} from "./report.ts";
 
 const executeFlag = Flag.boolean("execute").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("actually delete the planned resources (default: dry-run, print only)"),
 );
 
@@ -31,12 +32,14 @@ const protectFlag = Flag.string("protect").pipe(
 );
 
 const sweepClosedPreviewsFlag = Flag.boolean("sweep-closed-previews").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription(
 		"also delete pr-<n> previews of CLOSED PRs (off by default; #690 mandate is it-* only)",
 	),
 );
 
 const sweepDevTestStagesFlag = Flag.boolean("sweep-dev-test-stages").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription(
 		"also delete stale test/test-* stage resources (off by default; dev/dev-* named-dev stages are NEVER swept — #2340)",
 	),

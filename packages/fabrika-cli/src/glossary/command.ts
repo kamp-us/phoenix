@@ -36,6 +36,7 @@ const dirFlag = Flag.string("dir").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the JSON shape on stdout instead of the line grammar"),
 );
 
@@ -147,11 +148,13 @@ const add = leafCommand(
 			Flag.withDescription("a file holding the Not cell; omitted means an empty third cell"),
 		),
 		replace: Flag.boolean("replace").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"rewrite the existing row for this term instead of refusing on collision",
 			),
 		),
 		createSection: Flag.boolean("create-section").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("create --section at the end of the register when it does not exist"),
 		),
 		dir: dirFlag,

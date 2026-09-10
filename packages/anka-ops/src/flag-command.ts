@@ -52,6 +52,7 @@ const percentFlag = Flag.integer("percent").pipe(
 	Flag.withDescription("release to N% (0–100) via the no-match split; omit for a full 100% open"),
 );
 const executeFlag = Flag.boolean("execute").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription(
 		"actually apply (default: dry-run — print what would happen, change nothing)",
 	),
@@ -108,7 +109,7 @@ const get = Command.make(
  * Non-TTY proceeds (logged for the audit record); a TTY human proceeds only on an affirmative
  * `y`/`yes`. Reached only on the changed `--execute` write branch of open/close.
  */
-export class FlagFlipRefused extends Schema.TaggedErrorClass<FlagFlipRefused>()(
+export class FlagFlipRefused extends Schema.TaggedError<FlagFlipRefused>()(
 	"@kampus/anka-ops/FlagFlipRefused",
 	{reason: Schema.String},
 ) {
@@ -204,7 +205,7 @@ const fileRetirementChore = (title: string, body: string) =>
 		catch: (cause) => new RetirementChoreFileFailed({cause: String(cause)}),
 	});
 
-export class RetirementChoreFileFailed extends Schema.TaggedErrorClass<RetirementChoreFileFailed>()(
+export class RetirementChoreFileFailed extends Schema.TaggedError<RetirementChoreFileFailed>()(
 	"@kampus/anka-ops/RetirementChoreFileFailed",
 	{cause: Schema.String},
 ) {

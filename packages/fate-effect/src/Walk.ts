@@ -8,7 +8,7 @@
  *
  * The internal helpers (`resolveNode`, `toConnectionResult`,
  * `callViewFunction`, …) are span-less arrow functions returning
- * `Effect.gen` ON PURPOSE. effect-smol's `LLMS.md` prefers `Effect.fn` for
+ * `Effect.gen` ON PURPOSE. Effect-TS/effect's `LLMS.md` prefers `Effect.fn` for
  * named Effect-returning functions, but these recurse per row and per
  * relation — wrapping them would emit a span per node visited, polluting
  * traces and changing the span tree the observability tests pin. Spans live

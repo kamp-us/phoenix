@@ -61,7 +61,7 @@ export const requestServicesFor = (parts: {
 
 export const handleFate = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
-	const executionCtx = yield* Cloudflare.WorkerExecutionContext;
+	const executionCtx = (yield* Cloudflare.WorkerExecutionContext).raw;
 	const pasaport = yield* Pasaport;
 	const liveTopics = yield* LiveTopics;
 

@@ -76,6 +76,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the answer as JSON on stdout instead of the line grammar"),
 );
 

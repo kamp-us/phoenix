@@ -56,6 +56,7 @@ export const repoFlag = Flag.string("repo").pipe(
 );
 
 export const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -96,6 +97,7 @@ const kill = leafCommand(
 		// absence is a usage error indistinguishable from a typo, and the salvage confirmation is a
 		// decision whose absence must be a proven refusal (exit 13).
 		confirm: Flag.boolean("confirm").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"assert that salvage was attempted and this filing is genuinely unsalvageable; its absence is a refusal on 13, not a usage error",
 			),
@@ -424,6 +426,7 @@ const enrich = leafCommand(
 	{
 		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue to enrich")),
 		epic: Flag.boolean("epic").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"wrap the original under a fixed header and head a pitch above it; stdin carries the pitch's five field lines, not a rewrite",
 			),
@@ -460,11 +463,13 @@ const repairCriteria = leafCommand(
 			Argument.withDescription("the one issue whose criteria block to repair"),
 		),
 		sweep: Flag.boolean("sweep").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"repair every repairable open issue in one run instead of one issue, with a per-issue outcome line",
 			),
 		),
 		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"plan every issue and write nothing — a repairable issue answers `would-repair` with the repairs it would make, so the blast radius is reviewable before the first body is written",
 			),

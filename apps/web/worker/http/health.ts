@@ -32,7 +32,7 @@ export class HealthStatus extends Schema.Class<HealthStatus>("@kampus/HealthStat
  * can never claim `"ok"`. `httpApiStatus: 503` is what the framework encodes the response as
  * (`HttpApiSchema.getStatusError` reads it; an unannotated error is 500).
  */
-export class HealthDegraded extends Schema.TaggedErrorClass<HealthDegraded>()(
+export class HealthDegraded extends Schema.TaggedError<HealthDegraded>()(
 	"@kampus/HealthDegraded",
 	{
 		status: Schema.Literal("degraded"),
@@ -86,6 +86,11 @@ const healthGroup = HttpApiBuilder.group(HealthApi, "health", (h) =>
 // Workers serve no files (the SPA comes from the `assets` binding), so the file-serving paths
 // die if hit — safe, since the typed-JSON endpoint never produces a file response.
 const HttpPlatformStub = Layer.succeed(HttpPlatform.HttpPlatform, {
+	platform: "web",
+	compression: {
+		algorithms: new Set<HttpPlatform.CompressionAlgorithm>(),
+		compressResponse: (response) => Effect.succeed(response),
+	},
 	fileResponse: () => Effect.die("HttpPlatform.fileResponse not supported in Workers"),
 	fileWebResponse: () => Effect.die("HttpPlatform.fileWebResponse not supported in Workers"),
 });

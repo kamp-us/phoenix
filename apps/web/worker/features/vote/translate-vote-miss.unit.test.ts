@@ -11,7 +11,7 @@ import {TargetId} from "../../lib/ids.ts";
 import {VoteTargetNotFound, VoteTargetSandboxed} from "./errors.ts";
 import {translateVoteMiss} from "./translate-vote-miss.ts";
 
-class FeatureNotFound extends Schema.TaggedErrorClass<FeatureNotFound>()("test/FeatureNotFound", {
+class FeatureNotFound extends Schema.TaggedError<FeatureNotFound>()("test/FeatureNotFound", {
 	id: Schema.String,
 	message: Schema.String,
 }) {}

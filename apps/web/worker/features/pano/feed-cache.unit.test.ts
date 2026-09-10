@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import {expectTypeOf, vi} from "vitest";
 import {PANO_FEED_CACHE_TAG, panoFeedCacheFor} from "./feed-cache.ts";
 
-class FlushRejected extends Schema.TaggedErrorClass<FlushRejected>()("test/FlushRejected", {
+class FlushRejected extends Schema.TaggedError<FlushRejected>()("test/FlushRejected", {
 	cause: Schema.Unknown,
 }) {}
 

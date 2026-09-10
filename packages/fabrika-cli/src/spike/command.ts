@@ -166,6 +166,7 @@ const dispose = leafCommand(
 	{
 		nonce: nonceFlag,
 		forfeit: Flag.boolean("forfeit").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"abandon the spike without a decision: post a forfeit note naming the run count, close, then dispose; never bypasses the tree check",
 			),
