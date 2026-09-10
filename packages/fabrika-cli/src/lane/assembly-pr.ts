@@ -4,18 +4,19 @@
  * The title used to be the literal `feat(epic): #<n> one-PR run`, hardcoded in the operate skill's
  * `gh pr create` fence. The repo squash-merges with `squash_merge_commit_title:
  * COMMIT_OR_PR_TITLE`, so five epics landed on `main` under a subject that is a lane key with no
- * sentence in it (#8201). The derivation belongs here rather than in shell expansion because the
- * fence must stay literal, and because the conventional prefix has exactly one home: `feat` comes
- * from `../build/pr-title.ts`, the same read a builder PR's title makes, and this module only
- * stamps the `(epic)` scope over it.
+ * sentence in it. The derivation belongs here rather than in shell expansion because the fence must
+ * stay literal, and because the conventional prefix has exactly one home: `feat` comes from
+ * `../build/pr-title.ts`, the same read a builder PR's title makes, and this module only stamps the
+ * `(epic)` scope over it.
  *
  * The About section's source is the epic's `## Pitch` **Problem** paragraph, read through
  * `../guard/pitch.ts`'s own section reader so a pitch means the same thing here as it does at
  * intake. It is never passed through raw: `../build/pr-body.ts` refuses a body carrying a stray
  * closing keyword or a classification claim, and an epic's Problem paragraph is ordinary prose that
- * may hold either. So the text is neutralised mechanically and then re-read through that module's
- * own predicates — a section this module answers cannot be one the PR guard refuses, and text it
- * cannot make safe is refused here rather than shipped.
+ * may hold either. So the text is neutralised mechanically, bounded to the opening sentences a
+ * reader will actually read, and then re-read through that module's own predicates — a section this
+ * module answers cannot be one the PR guard refuses, and text it cannot make safe is refused here
+ * rather than shipped.
  */
 
 import {classificationIn, closingTargets, proseOf} from "../build/pr-body.ts";
@@ -36,7 +37,7 @@ const SUBJECT_LEAD = /^([a-z]+)(?:\([^()]*\))?(!?): /;
  * The assembly PR's title: the epic issue's own title under a `feat(epic):` prefix.
  *
  * `feat` is not chosen here — `conventionalTitleOf` maps `type:epic` to it, and that mapping stays
- * the one place release-please's routing rule lives (#6754, #5771). What this adds is the `(epic)`
+ * the one place release-please's routing rule lives. What this adds is the `(epic)`
  * scope, which is how a reader of `git log` tells an epic's squash from a child's.
  */
 export const assemblyTitle = (title: string, labels: ReadonlyArray<string>): string => {
@@ -88,18 +89,44 @@ export const problemParagraph = (body: string): string | null => {
 };
 
 /** GitHub's auto-closing keywords followed by an issue reference — `pr-body.ts`'s `CLOSING_RE`. */
-const CLOSING_REF = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s+)#(\d+)\b/gi;
+const CLOSING_REF = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s+#\d+)\b/gi;
 /** A `type:<label>` quoted in prose — `pr-body.ts` reads one as a classification claim. */
 const TYPE_CLAIM = /\btype:([a-z]+)\b/gi;
 /** A bare priority token, in the exact shape `pr-body.ts` reads as a claim. */
 const PRIORITY_CLAIM = /(^|\s)(p[0-3])(?=\s|$|[.,;:!?])/gi;
 
 /**
- * The paragraph with the two shapes the PR guard refuses rewritten into ones it does not, each
- * rewrite keeping every word:
+ * A closing keyword's replacement, per keyword form so the sentence keeps its tense.
  *
- * - a closing keyword's `#<n>` becomes that issue's URL, which GitHub does not auto-close on and a
- *   reader still follows;
+ * The keyword is what GitHub links on — its "Linking a pull request to an issue using a keyword"
+ * page gives the syntax as `KEYWORD #ISSUE-NUMBER` over a closed list of nine keywords
+ * (https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
+ * None of the six words below is on that list, so the rewritten sentence carries no link — a
+ * positive read of the documented syntax rather than a claim about a form the page is silent on.
+ * The issue reference itself is left exactly as written, so the reader still lands on it.
+ */
+const KEYWORD_SWAP: Readonly<Record<string, string>> = {
+	close: "settle",
+	closes: "settles",
+	closed: "settled",
+	fix: "repair",
+	fixes: "repairs",
+	fixed: "repaired",
+	resolve: "settle",
+	resolves: "settles",
+	resolved: "settled",
+};
+
+const swapKeyword = (word: string): string => {
+	const swap = KEYWORD_SWAP[word.toLowerCase()] ?? word;
+	return word[0] === word[0]?.toUpperCase() ? `${swap[0]?.toUpperCase()}${swap.slice(1)}` : swap;
+};
+
+/**
+ * The paragraph with the shapes the PR guard refuses rewritten into ones it does not:
+ *
+ * - a closing keyword is swapped for a word GitHub's keyword list does not carry, and the `#<n>` it
+ *   aimed at is untouched;
  * - a `type:<x>` loses its colon and a bare `p<n>` gains backticks, both of which break the guard's
  *   patterns at the character the pattern keys on.
  *
@@ -107,15 +134,42 @@ const PRIORITY_CLAIM = /(^|\s)(p[0-3])(?=\s|$|[.,;:!?])/gi;
  * verification below and refuses. That is the intended floor: a claim about a gated question is
  * never edited into something that only looks safe.
  */
-const neutralise = (text: string, repo: string): string =>
+const neutralise = (text: string): string =>
 	text
-		.replace(
-			CLOSING_REF,
-			(_m, verb: string, gap: string, number: string) =>
-				`${verb}${gap}https://github.com/${repo}/issues/${number}`,
-		)
+		.replace(CLOSING_REF, (_m, verb: string, ref: string) => `${swapKeyword(verb)}${ref}`)
 		.replace(TYPE_CLAIM, "type $1")
 		.replace(PRIORITY_CLAIM, "$1`$2`");
+
+/**
+ * How much of a Problem paragraph the About section lifts: whole sentences, up to this many words.
+ *
+ * The hand-written sections this derivation replaces run two to four sentences. Live epics do not:
+ * a Problem paragraph is a triage surface and routinely runs three hundred words of file paths and
+ * SDK line numbers, which as an opening section is a wall nobody reads. The first sentence always
+ * survives whole — a bound that can empty the section is worse than a long one.
+ */
+const ABOUT_WORD_BUDGET = 60;
+const ABOUT_SENTENCE_CAP = 4;
+
+/** A sentence ends on `.`/`!`/`?` followed by space — a period inside `file.ts` has no space after. */
+const SENTENCE_END = /(?<=[.!?])\s+/;
+
+const wordsIn = (text: string): number => text.split(/\s+/).filter((w) => w !== "").length;
+
+/** The paragraph's opening sentences, and `…` when the bound left any of it behind. */
+export const boundedParagraph = (paragraph: string): string => {
+	const sentences = paragraph.split(SENTENCE_END).filter((s) => s.trim() !== "");
+	const kept = [sentences[0] ?? paragraph];
+	let words = wordsIn(kept[0] ?? "");
+	for (const sentence of sentences.slice(1, ABOUT_SENTENCE_CAP)) {
+		const next = words + wordsIn(sentence);
+		if (next > ABOUT_WORD_BUDGET) break;
+		kept.push(sentence);
+		words = next;
+	}
+	const text = kept.join(" ").trim();
+	return kept.length === sentences.length ? text : `${text} […]`;
+};
 
 export type AboutRead =
 	/** The section, ready to interpolate. */
@@ -131,7 +185,7 @@ export type AboutRead =
  * The verification is `pr-body.ts`'s own readers over `proseOf` — the same three calls the guard
  * makes — so the answer is not "this looks safe" but "the guard's predicates were run over it".
  */
-export const aboutSection = (epic: number, body: string, repo: string): AboutRead => {
+export const aboutSection = (epic: number, body: string): AboutRead => {
 	const problem = problemParagraph(body);
 	if (problem === null) {
 		return {
@@ -142,7 +196,7 @@ export const aboutSection = (epic: number, body: string, repo: string): AboutRea
 					: "carries a `## Pitch` with no Problem paragraph",
 		};
 	}
-	const text = `${ABOUT_HEADING}\n\nEpic #${epic}: ${neutralise(problem, repo)}\n`;
+	const text = `${ABOUT_HEADING}\n\nEpic #${epic}: ${boundedParagraph(neutralise(problem))}\n`;
 	const prose = proseOf(text);
 	const stray = closingTargets(prose)[0];
 	if (stray !== undefined) {

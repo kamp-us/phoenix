@@ -19,7 +19,7 @@ const epic = (overrides: Record<string, unknown> = {}): HttpReply =>
 	served(
 		issuePayload({
 			number: 8070,
-			title: "Tuval opens one of the operator's existing sessions",
+			title: "The desk opens one of the operator's existing sessions",
 			body: PITCH,
 			labels: [{name: "type:epic"}],
 			...overrides,
@@ -39,7 +39,7 @@ describe("lane assembly-pr", () => {
 		const out = await run("title", [[ISSUE, epic()]]);
 
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("feat(epic): Tuval opens one of the operator's existing sessions\n");
+		expect(out.stdout).toBe("feat(epic): The desk opens one of the operator's existing sessions\n");
 	});
 
 	it("answers the About section derived from the pitch's Problem paragraph", async () => {

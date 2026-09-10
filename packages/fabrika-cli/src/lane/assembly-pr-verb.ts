@@ -74,7 +74,7 @@ export const runAssemblyPr = ({
 			]);
 		}
 
-		const about = aboutSection(epic, issue.body, target.repo);
+		const about = aboutSection(epic, issue.body);
 		if (about._tag === "Unsafe") {
 			return refuse(
 				ABOUT_UNSAFE,
