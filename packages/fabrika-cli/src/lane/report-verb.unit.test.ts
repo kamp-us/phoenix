@@ -107,6 +107,7 @@ describe("lane report — every shell terminal token maps to one operator event"
 		reviewer: "review",
 		"ui-reviewer": "review:ui",
 		shipper: "ship",
+		machinery: "ship",
 	};
 
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
@@ -530,5 +531,45 @@ describe("lane report — a reviewer's terminal is the one its run reached", () 
 			expect(out.code).toBe(PROOF_CONTRADICTED);
 			expect(fs.written.size).toBe(0);
 		}
+	});
+});
+
+describe("lane report — a machinery terminal lands its own cause", () => {
+	it("seats the token's cause on the line with no --cause typed at all", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "QUEUE-EJECTED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			task: "issue",
+			event: "ISSUE.LAP",
+			cause: "queue-ejected",
+		});
+	});
+
+	it("lets a recorder that knows better name another cause off the routed table", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "BASE-DRIFTED", {cause: "assembly-conflict"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "assembly-conflict"});
+	});
+
+	it("tells an integrate-sourced failure from a review-sourced one on the recorded line", async () => {
+		const machinery = laneAt(LOG_AT.ship);
+		const content = laneAt(LOG_AT.review);
+
+		await run(machinery, "REPLAY-COLLIDED");
+		await run(content, "FAIL");
+
+		expect(JSON.parse(appendedLine(machinery))).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "replay-conflict",
+		});
+		const recorded = JSON.parse(appendedLine(content)) as Record<string, unknown>;
+		expect(recorded).toMatchObject({event: "ISSUE.FAIL"});
+		expect(recorded.cause).toBeUndefined();
 	});
 });

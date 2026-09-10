@@ -6,7 +6,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
-import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
+import {CAP_ROUND, MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
 import {parkCauseRead} from "./fixtures.test-support.ts";
@@ -563,5 +563,137 @@ describe("emitMachine", () => {
 	it("refuses a requires subject placed in no phase", () => {
 		const text = "## Dependencies\n\n- phase 1: #4301\n- #4303 requires: #4301\n";
 		expect(emitMachine(4300, text, CHILDREN)).toEqual({_tag: "Unplaced", child: 4303});
+	});
+});
+
+describe("emitMachine — the machinery lap axis", () => {
+	const withLaps = (): string => emitted(emitMachine(4300, body(), CHILDREN, true));
+
+	const lapStatesOf = (lane: CompiledLane, task: string): number => {
+		const compiled = lane.tasks[task];
+		if (compiled === undefined) throw new Error(`no task ${task}`);
+		return compiled.lapStates.size;
+	};
+
+	it("emits today's machine byte for byte with the axis off", () => {
+		expect(emitted(emitMachine(4300, body(), CHILDREN, false))).toBe(golden());
+		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
+	});
+
+	it("seeds every task's lap counter with the axis on, and none with it off", () => {
+		const contextOf = (text: string): Record<string, Record<string, unknown>> =>
+			(JSON.parse(text) as {machine: {context: Record<string, Record<string, unknown>>}}).machine
+				.context;
+
+		for (const seeded of Object.values(contextOf(withLaps()))) {
+			expect(seeded).toEqual({
+				retries: 0,
+				maxRetries: RETRY_BUDGET,
+				laps: 0,
+				maxLaps: MACHINERY_LAP_BUDGET,
+			});
+		}
+		for (const seeded of Object.values(contextOf(golden()))) {
+			expect(seeded).toEqual({retries: 0, maxRetries: RETRY_BUDGET});
+		}
+	});
+
+	it("spends a lap and no retry on a collision reported as machinery", () => {
+		const compiled = laneOf(withLaps());
+		const collided: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "LAP"],
+		];
+
+		expect(drive(compiled, collided).stateValue).toMatchObject({
+			phase1: {issue_4301: "review"},
+		});
+		const spent = statesOf(compiled, driveLog(compiled, collided)).issue_4301;
+		expect(spent?.retries).toBe(0);
+		expect(spent?.laps).toBe(1);
+	});
+
+	it("spends a retry and no lap on the same collision reported as the child's own FAIL", () => {
+		const compiled = laneOf(withLaps());
+		const failed: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		];
+
+		expect(drive(compiled, failed).stateValue).toMatchObject({phase1: {issue_4301: "build"}});
+		const spent = statesOf(compiled, driveLog(compiled, failed)).issue_4301;
+		expect(spent?.retries).toBe(1);
+		expect(spent?.laps).toBe(0);
+	});
+
+	it("parks a child whose machinery keeps failing past its lap budget, rather than freezing it", () => {
+		const compiled = laneOf(withLaps());
+		/** One machinery round: the lap sends the range back to review, review passes it on again. */
+		const lap: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "LAP"],
+			["issue_4301", "PASS"],
+		];
+		const spun: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			...Array.from({length: MACHINERY_LAP_BUDGET}, () => lap).flat(),
+			["issue_4301", "LAP"],
+		];
+
+		expect(drive(compiled, spun).stateValue).toMatchObject({
+			phase1: {issue_4301: "human:machinery-stall"},
+		});
+		const parked = statesOf(compiled, driveLog(compiled, spun)).issue_4301;
+		expect(parked?.laps).toBe(MACHINERY_LAP_BUDGET);
+		expect(parked?.retries).toBe(0);
+		expect(drive(compiled, spun).status).toBe("active");
+	});
+
+	it("takes the epic tail's machinery lap back to ship, leaving the epic review's retries whole", () => {
+		const compiled = laneOf(withLaps());
+		const toShip: ReadonlyArray<readonly [string, string]> = [
+			...CHILDREN.flatMap(
+				(child) =>
+					[
+						[`issue_${child.number}`, "WIP"],
+						[`issue_${child.number}`, "DONE"],
+						[`issue_${child.number}`, "PASS"],
+						[`issue_${child.number}`, "DONE"],
+					] as ReadonlyArray<readonly [string, string]>,
+			),
+			["epic_4300", "PASS"],
+			["epic_4300", "LAP"],
+		];
+
+		expect(drive(compiled, toShip).stateValue).toMatchObject({epic: {epic_4300: "ship"}});
+		const spent = statesOf(compiled, driveLog(compiled, toShip)).epic_4300;
+		expect(spent?.retries).toBe(0);
+		expect(spent?.laps).toBe(1);
+	});
+
+	it("folds a machine emitted before the axis existed exactly as it always did", () => {
+		const before = laneOf(golden());
+		const after = laneOf(withLaps());
+		const walked: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		];
+
+		expect(drive(before, walked).stateValue).toEqual(drive(after, walked).stateValue);
+		expect(statesOf(before, driveLog(before, walked)).issue_4301).toMatchObject({
+			retries: 1,
+			laps: 0,
+		});
+		// The pre-axis machine holds no lap-guarded cell at all, so nothing can spend the counter and
+		// its status carries none to read — the whole containment, in two assertions.
+		expect(lapStatesOf(before, "issue_4301")).toBe(0);
+		expect(lapStatesOf(after, "issue_4301")).toBe(1);
 	});
 });

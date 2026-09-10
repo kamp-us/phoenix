@@ -2,20 +2,21 @@
  * The terminal-token map — one shell terminal in, one operator event out, in code.
  *
  * Each fabrika shell ends on a fixed token from a closed vocabulary its own skill owns; this table
- * is the one place those vocabularies meet the machine's six events, replacing the prose
+ * is the one place those vocabularies meet the machine's operator events, replacing the prose
  * translation table the operator LLM used to execute per spawn. The map is total over the tokens
  * listed and refuses everything else — an unrecognised token is a refusal, never a permissive
  * `BLOCKED` guess, because "a report you cannot parse" stops being a failure class only when
  * nothing is left to parse.
  */
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
-import type {OperatorEvent} from "./machine.ts";
+import {MACHINERY_EVENT, type OperatorEvent} from "./machine.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`). Documentation and test surface; the
- * lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus one group that belongs to no
+ * shell: `machinery`, which a driver records about the pipeline itself. Documentation and test
+ * surface; the lookup below flattens it.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -51,6 +52,17 @@ export const SHELL_VOCABULARIES = {
 		ESCALATED: "BLOCKED",
 		"BLOCKED-NO-MANIFEST": "BLOCKED",
 		"ROUTED-ELSEWHERE": "BLOCKED",
+	},
+	// The machinery group — a failure of the pipeline carrying the artifact, never a judgment of the
+	// artifact. Each token maps to the machine's own machinery event, so a collision at integrate and
+	// a reviewer's FAIL stop arriving as one indistinguishable `FAIL`, and each names exactly one row
+	// of `PARK_CAUSES` through `MACHINERY_CAUSES` — which is what makes "every machinery event
+	// carries a cause" structural rather than a recorder's discipline.
+	machinery: {
+		"REPLAY-COLLIDED": "LAP",
+		"BASE-DRIFTED": "LAP",
+		"QUEUE-EJECTED": "LAP",
+		"SEAT-DIRTY": "LAP",
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
@@ -355,9 +367,43 @@ export const PARK_CAUSES = {
 		route: "driver",
 		remedy: null,
 	},
+	/**
+	 * The merge queue ejected the PR before it merged — a sibling's red, a base that moved under the
+	 * batch, a queue timeout. The head is where the shipper left it and the verdicts still stand.
+	 *
+	 * Naming-only: re-enqueuing is `ship`'s own next dispatch, and a verb that "removed" this cause
+	 * would be taking that act rather than observing it.
+	 *
+	 * Route `driver`: a queue ejection is machinery, and nothing about the artifact was judged.
+	 */
+	"queue-ejected": {
+		meaning: "the merge queue ejected this PR before it merged, and no verdict against it changed",
+		route: "driver",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
+
+/**
+ * Each machinery terminal's own cause — the binding that makes a lap's cause structural.
+ *
+ * A `--cause` is a caller's discipline and a lap's cause is not: every machinery token names exactly
+ * one machinery failure, so the cause is read off the token here and a recorder that passes none
+ * still lands a caused line. Passing one still works and is checked against {@link PARK_CAUSES} like
+ * any other, which is how a recorder that knows better (a replay that parked on
+ * `assembly-conflict` rather than `replay-conflict`) says so.
+ */
+export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"REPLAY-COLLIDED": "replay-conflict",
+	"BASE-DRIFTED": "head-behind-base",
+	"QUEUE-EJECTED": "queue-ejected",
+	"SEAT-DIRTY": "worktree-holds-branch",
+};
+
+/** The cause a machinery terminal carries on its own, or `null` for every other token. */
+export const machineryCause = (token: string): ParkCause | null =>
+	MACHINERY_CAUSES[token.trim().toUpperCase()] ?? null;
 
 /** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
@@ -436,6 +482,11 @@ const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CA
  * it is `Uncaused` exactly as it always was, and the bare park routes to a human. On, it is
  * `Required`: a park recorded with no cause folds to a `Novel` no verb can clear, so recording it
  * spends a person to say a thing the recorder already knew.
+ *
+ * **A machinery lap requires one under every rule.** The whole difference between a lap and a repair
+ * round is which machinery spent it, and a lap recorded with none says only that the pipeline failed
+ * — which is the reading this axis exists to replace. The recorder never has to type it:
+ * {@link machineryCause} reads it off the token.
  */
 export const causeForEvent = (
 	raw: string | null,
@@ -443,6 +494,12 @@ export const causeForEvent = (
 	requireCause: boolean,
 ): CauseResolution => {
 	if (raw === null) {
+		if (event === MACHINERY_EVENT) {
+			return {
+				_tag: "Required",
+				reason: `a machinery lap must name the machinery that spent it — pass --cause with one of: ${PARK_CAUSE_TOKENS.join(", ")}`,
+			};
+		}
 		return requireCause && event === "BLOCKED"
 			? {
 					_tag: "Required",
@@ -450,10 +507,10 @@ export const causeForEvent = (
 				}
 			: {_tag: "Uncaused"};
 	}
-	if (event !== "BLOCKED") {
+	if (event !== "BLOCKED" && event !== MACHINERY_EVENT) {
 		return {
 			_tag: "Rejected",
-			reason: `a cause names why a lane parked, and this token maps to ${event}, not BLOCKED — drop --cause "${raw}"`,
+			reason: `a cause names why a lane parked or spent a machinery lap, and this token maps to ${event}, which is neither — drop --cause "${raw}"`,
 		};
 	}
 	const token = raw.trim().toLowerCase();

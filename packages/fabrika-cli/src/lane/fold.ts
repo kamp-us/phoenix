@@ -516,6 +516,12 @@ export const deriveStatus = (
 			...(state.cleared.length === 0 ? {} : {clearedRounds: state.cleared}),
 			waits: state.waits,
 			maxWaits: state.maxWaits,
+			// Absent on a machine that declares no lap-guarded cell — every lane emitted before the
+			// machinery axis existed, and every one emitted with the key off — so their status is
+			// byte-for-byte what it always was rather than gaining a counter nothing can spend.
+			...(taskIn(lane, taskId).lapStates.size === 0
+				? {}
+				: {laps: state.laps, maxLaps: state.maxLaps}),
 			// Absent rather than empty when unclassed, so an unclassed lane's status is what it always
 			// was; a driver relaying `--class` reads the standing set here.
 			...(state.classes.length === 0 ? {} : {classes: state.classes}),
@@ -682,7 +688,7 @@ export const applyEvent = (
 		return refuseEvent(
 			event === CORRECTED_EVENT
 				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned`
-				: `"${event}" is outside the operator's six events (${OPERATOR_EVENTS.join("/")})`,
+				: `"${event}" is outside the operator's event set (${OPERATOR_EVENTS.join("/")})`,
 		);
 	}
 	const previous = deriveStatus(lane, states);

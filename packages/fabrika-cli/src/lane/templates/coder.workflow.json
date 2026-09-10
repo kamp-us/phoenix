@@ -5,7 +5,7 @@
 		"id": "coder",
 		"initial": "pipeline",
 		"context": {
-			"issue": { "retries": 0, "maxRetries": 2, "classes": [] }
+			"issue": { "retries": 0, "maxRetries": 2, "classes": [], "laps": 0, "maxLaps": 16 }
 		},
 		"states": {
 			"pipeline": {
@@ -26,7 +26,15 @@
 							"build": {
 								"on": {
 									"ISSUE.DONE": "review",
-									"ISSUE.BLOCKED": "blocked"
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "build",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									]
 								}
 							},
 							"build:ui": {
@@ -68,6 +76,14 @@
 							},
 							"ship": {
 								"on": {
+									"ISSUE.LAP": [
+										{
+											"target": "ship",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.DONE": [
 										{ "target": "queued", "guard": "merge:partial" },
 										{ "target": "shipped" }
@@ -86,6 +102,14 @@
 							},
 							"ship:queued": {
 								"on": {
+									"ISSUE.LAP": [
+										{
+											"target": "ship",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									],
 									"ISSUE.DONE": [
 										{ "target": "queued", "guard": "merge:partial" },
 										{ "target": "shipped" }
@@ -120,6 +144,11 @@
 								}
 							},
 							"human:queue-stall": {
+								"on": {
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							},
+							"human:machinery-stall": {
 								"on": {
 									"ISSUE.UNBLOCKED": "hist"
 								}

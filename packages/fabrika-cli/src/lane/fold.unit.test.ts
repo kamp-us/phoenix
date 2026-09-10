@@ -24,6 +24,7 @@ import {
 	type CompiledLane,
 	compile,
 	LANDED_EVENT,
+	OPERATOR_EVENTS,
 } from "./machine.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
@@ -543,7 +544,7 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 		if (applied._tag === "Refused") expect(applied.reason).toContain("NoCellError");
 	});
 
-	it("refuses an event outside the operator's six before touching the machine", () => {
+	it("refuses an event outside the operator's set before touching the machine", () => {
 		const compiled = lane(twoPhaseWorkflow());
 
 		const applied = applyEvent(
@@ -554,7 +555,10 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 			"2026-08-16T00:00:00.000Z",
 		);
 		expect(applied).toMatchObject({_tag: "Refused"});
-		if (applied._tag === "Refused") expect(applied.reason).toContain("six");
+		// The refusal names the whole set rather than a count, so a seventh event does not make it lie.
+		if (applied._tag === "Refused") {
+			for (const event of OPERATOR_EVENTS) expect(applied.reason).toContain(event);
+		}
 	});
 
 	it("refuses a CLEARED handed to the operator's path, naming the verb that appends one", () => {

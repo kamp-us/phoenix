@@ -46,7 +46,7 @@ import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import {parkCauseRefusal} from "./park-cause-rule.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
+import {causeForEvent, classesForEvent, eventForToken, machineryCause} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
@@ -92,7 +92,11 @@ export const runReport = <R>(
 		}
 		const rule = parkCauseRefusal(VERB, options.parkCause);
 		if (rule._tag === "Refused") return rule.outcome;
-		const caused = causeForEvent(options.cause, resolved.event, rule.requireCause);
+		const caused = causeForEvent(
+			options.cause ?? machineryCause(resolved.token),
+			resolved.event,
+			rule.requireCause,
+		);
 		if (caused._tag === "Rejected") {
 			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}

@@ -3,10 +3,13 @@ import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {classifyPark, KNOWN_PARKS} from "../recipe/parks.ts";
 import {EPIC_RULES} from "../wire/lane-brief.ts";
+import {MACHINERY_EVENT} from "./machine.ts";
 import {
 	causeForEvent,
 	eventForToken,
 	flattenVocabularies,
+	MACHINERY_CAUSES,
+	machineryCause,
 	PARK_CAUSE_TOKENS,
 	PARK_CAUSES,
 	type ParkCause,
@@ -361,5 +364,63 @@ describe("the rationale a clearance rides on", () => {
 		expect(resolved._tag).toBe("Rejected");
 		if (resolved._tag !== "Rejected") return;
 		expect(resolved.reason).toContain("UNBLOCKED");
+	});
+});
+
+describe("the machinery terminals a driver records about the pipeline itself", () => {
+	it.each(
+		Object.entries(MACHINERY_CAUSES),
+	)("%s records the machine's machinery event, not a content FAIL", (token) => {
+		expect(eventForToken(token)).toMatchObject({token, event: MACHINERY_EVENT});
+	});
+
+	it.each(Object.entries(MACHINERY_CAUSES))("%s names %s off the routed table", (token, cause) => {
+		expect(machineryCause(token)).toBe(cause);
+		expect(PARK_CAUSE_TOKENS).toContain(cause);
+	});
+
+	it("reads a token's cause case-insensitively, the way its event is read", () => {
+		expect(machineryCause("replay-collided")).toBe("replay-conflict");
+		expect(machineryCause(" Base-Drifted ")).toBe("head-behind-base");
+	});
+
+	it("names no cause for a token outside the group", () => {
+		for (const token of ["PASS", "FAIL", "EJECTED", "SHIPPED-PR"]) {
+			expect(machineryCause(token)).toBeNull();
+		}
+	});
+
+	it("tells an integrate-sourced failure from a review-sourced one at the event", () => {
+		const integrate = eventForToken("REPLAY-COLLIDED");
+		const review = eventForToken("FAIL");
+
+		expect(integrate).toMatchObject({event: MACHINERY_EVENT});
+		expect(review).toMatchObject({event: "FAIL"});
+		expect(integrate).not.toMatchObject({event: "FAIL"});
+	});
+});
+
+describe("a machinery lap's cause", () => {
+	it("is Required under every park-cause rule — a lap that names no machinery says nothing", () => {
+		for (const requireCause of [false, true]) {
+			const resolved = causeForEvent(null, MACHINERY_EVENT, requireCause);
+
+			expect(resolved._tag).toBe("Required");
+			if (resolved._tag !== "Required") continue;
+			for (const cause of PARK_CAUSE_TOKENS) expect(resolved.reason).toContain(cause);
+		}
+	});
+
+	it("takes any cause the routed table carries, so a recorder that knows better may say so", () => {
+		expect(causeForEvent("assembly-conflict", MACHINERY_EVENT, false)).toEqual({
+			_tag: "Caused",
+			cause: "assembly-conflict",
+		});
+	});
+
+	it("refuses a cause the routed table does not carry", () => {
+		expect(causeForEvent("something-went-wrong", MACHINERY_EVENT, false)).toMatchObject({
+			_tag: "Rejected",
+		});
 	});
 });
