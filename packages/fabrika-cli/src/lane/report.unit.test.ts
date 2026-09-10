@@ -51,6 +51,19 @@ describe("the builder's no-PR terminals", () => {
 		expect(named?.[1]).toBe("BUILT-NO-PR");
 		expect(eventForToken(named?.[1] ?? "")).toMatchObject({event: "DONE"});
 	});
+
+	// The three builder terminals are indistinguishable here on purpose, and this is the line that
+	// says so: nothing in this map can route an investigation past the review a `SHIPPED-PR` owes.
+	// What tells them apart is `lane prove`'s answer, which the machine's `done:diagnosis` arm reads.
+	it("maps all three of SHIPPED-PR, SUCCESS-NO-PR and BUILT-NO-PR to the one DONE", () => {
+		expect(
+			["SHIPPED-PR", "SUCCESS-NO-PR", "BUILT-NO-PR"].map((token) => eventForToken(token)),
+		).toEqual([
+			{_tag: "Mapped", token: "SHIPPED-PR", event: "DONE"},
+			{_tag: "Mapped", token: "SUCCESS-NO-PR", event: "DONE"},
+			{_tag: "Mapped", token: "BUILT-NO-PR", event: "DONE"},
+		]);
+	});
 });
 
 describe("the shipper's routing arms are three answers, not one", () => {

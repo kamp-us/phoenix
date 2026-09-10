@@ -448,4 +448,35 @@ describe("lane transition — the proof gate", () => {
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(appended.partial).toBe(false);
 	});
+
+	// The driver's door has to reach the same terminal a shell's `SUCCESS-NO-PR` reaches, or which
+	// verb recorded an investigation's DONE would decide whether it lands on `diagnosed`.
+	it("routes a proven no-PR build DONE to the diagnosed terminal and records the field", async () => {
+		const fs = freshLane(logLine("WIP"));
+		const prover = fakeProver(undefined, [], null, [], true);
+
+		const out = await run(fs, "DONE", null, null, [], null, undefined, null, prover);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			previous: {pipeline: {issue: "build"}},
+			current: "diagnosed",
+			diagnosis: true,
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended.diagnosis).toBe(true);
+	});
+
+	it("carries no diagnosis field on a build DONE the prover did not answer one for", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "DONE");
+
+		expect(out.code).toBe(0);
+		const line = JSON.parse(out.stdout);
+		expect(line.current).toMatchObject({pipeline: {issue: "review"}});
+		expect(Object.hasOwn(line, "diagnosis")).toBe(false);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(Object.hasOwn(appended, "diagnosis")).toBe(false);
+	});
 });

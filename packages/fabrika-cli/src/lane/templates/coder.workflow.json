@@ -25,7 +25,10 @@
 							},
 							"build": {
 								"on": {
-									"ISSUE.DONE": "review",
+									"ISSUE.DONE": [
+										{ "target": "diagnosed", "guard": "done:diagnosis" },
+										{ "target": "review" }
+									],
 									"ISSUE.BLOCKED": "blocked",
 									"ISSUE.LAP": [
 										{
@@ -184,7 +187,8 @@
 								}
 							},
 							"hist": { "type": "history" },
-							"shipped": { "type": "final" }
+							"shipped": { "type": "final" },
+							"diagnosed": { "type": "final" }
 						}
 					}
 				},
