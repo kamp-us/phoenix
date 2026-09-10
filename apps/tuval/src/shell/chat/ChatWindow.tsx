@@ -1070,10 +1070,19 @@ function ChatWindow({
 	}, [interruption, options.now]);
 
 	const lastPrompt = state?.lastPrompt ?? null;
+	// A resend is a send, so it is held under its own key exactly as the composer's is: the text the
+	// layer never took is the operator's to take back, and a resend that kept no copy of it was a
+	// silent no-op over any transport that had gone (#8709).
 	const resend = useCallback(() => {
 		if (lastPrompt === null) return;
-		dispatch({type: "prompt", text: lastPrompt, key: options.newKey(), timestamp: options.now()});
-	}, [dispatch, lastPrompt, options.newKey, options.now]);
+		const key = options.newKey();
+		dispatch({type: "prompt", text: lastPrompt, key, timestamp: options.now()});
+		commit((current) => ({
+			...current,
+			pinned: true,
+			outgoing: holdSend(current.outgoing, {key, text: lastPrompt}),
+		}));
+	}, [commit, dispatch, lastPrompt, options.newKey, options.now]);
 
 	const onKeyDown = useCallback(
 		(event: ReactKeyboardEvent<HTMLDivElement>) => {
