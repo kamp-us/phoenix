@@ -26,6 +26,15 @@ merge a passing child into it, push it, and open the one draft PR (step 2's `int
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
 
+**The bar this skill is held to: a lane reaches its terminal with zero founder asks about the
+engine.** You are the human seat for every non-product cause — a collision, a drift, a dead shell, a
+spent budget, a park no recipe covers — and the founder is reached only when the cause is a product
+ruling. Every engine ask you send upward is a defect in this skill or in a verb, so file it with
+`/report` and take the move yourself. The authority is a recorded decision in the repository's own
+corpus — the one that rules a park's route out to be its cause's, and the driver's for every cause
+that is not a product call; the search is the phrase "park route". What it costs you is the weekly
+machinery review, where each rationale you recorded is read back.
+
 Every lane verb is invoked through this repo's own fabrika entrypoint, which `<fabrika>` stands for
 in every command below:
 
@@ -967,7 +976,8 @@ what is never right is reaching for a token because it is nearby rather than bec
 happened.
 
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
-`human:*`:
+`human:*` — a park comment is the founder-routed answer, and you do not know the route until this
+verb reads the cause for you:
 
 ```bash
 node <fabrika> recipe unpark <lane-key> --task <task>
@@ -999,9 +1009,12 @@ audit of a clear nothing else proves — so write the reason, not a restatement 
 never compose the routing: whose park it is comes off the cause table, and a `founder` route is exit
 `12` and the park comment below, exactly as before.
 
-You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
-spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head).
+**A founder-routed park is the one you cannot clear by hand**: post on the driven issue what is
+needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
+control-plane approval at the PR's current head). That is the whole of the prohibition now — it
+binds a cause whose route is `founder`, and a cause-less park, which routes `founder` fail-closed.
+A driver-routed cause is yours by the two paragraphs above, and reaching for the park comment on one
+of those hands the founder an engine failure that was never theirs.
 
 **`human:budget-spent` is the one park you clear yourself, and it is the only one** — on a lane
 emitted before the rename it wears an older name, `frozen` on a task and `human:epic-review` on an
@@ -1063,16 +1076,17 @@ skipped, leaves parks the machine cannot resume. The fix is then `triage`'s: the
 surface that stamped the issue agent-ready owns its wire shape, so the park comment names the
 defective section and points at the verb that owns the repair — `triage repair-criteria`, whose
 `--help` is its interface — never restating what that verb does, and never delegating both the what
-and the who to the parking spawn's report. Clearing a park is a
-human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
-`UNBLOCKED`, with two exceptions and only two. The first is yours: `human:budget-spent` above,
-where you record the `UNBLOCKED` yourself after `lane clear`, on the authority of the recorded
-decision that fence names. The second is not: on a **known** park a recipe verb owns, `recipe
-unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task left the
-park — which is not a route out of the spent-budget park, whose cause carries no remedy, as that
-fence says. The rule and its actor list are settled elsewhere — a known park clears itself
-through the verb, a novel one routes to a human — and this section states no park-clearing authority
-of its own. You relay that verb's exit into
+and the who to the parking spawn's report. Clearing a **founder-routed** park is that founder's
+`UNBLOCKED`, recorded through the same `lane transition` verb, and you never record it — with three
+exceptions, all of them keyed on the park's route rather than on your judgment. The first is yours to
+type: `human:budget-spent` above, where you record the `UNBLOCKED` yourself after `lane clear`, on
+the authority of the recorded decision that fence names. The other two are the verb's: on a **known**
+park a recipe verb owns, `recipe unpark` records the `UNBLOCKED` itself, and only after a re-fold
+proves the task left the park; and on a **driver-routed novel** park under exit `23` above, the same
+verb records it on your rationale, with no proving read behind it. Neither is a route out of the
+spent-budget park, whose cause carries no remedy, as that fence says. This section states no
+park-clearing authority of its own: which parks clear without the founder is the cause table's route
+field and the recipe table's rows, and you relay both. You relay that verb's exit into
 the chore lane's own event and type no `UNBLOCKED` anywhere.
 
 A chore lane has **no driven issue** — that is what a chore is — so a park it holds has nowhere to
