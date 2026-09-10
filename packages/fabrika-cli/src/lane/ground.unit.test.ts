@@ -1,8 +1,11 @@
-/** The ground guard: a drifted cwd refuses on its own code, a repo with no such lane still boots. */
+/**
+ * The ground guard: a drifted cwd refuses on its own code, a lanes root inside a linked worktree
+ * refuses on another, and a repo with no such lane still boots.
+ */
 import {Effect, Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO} from "./codes.ts";
+import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO, ROOT_NOT_OWNED} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {deriveRepoRoot, onGround} from "./ground.ts";
 import {runStatus} from "./status-verb.ts";
@@ -48,7 +51,7 @@ describe("the ground under a lane verb's root", () => {
 		expect(out.code).toBe(0);
 	});
 
-	it("owes no probe on an absolute root — nothing resolves against the cwd to drift", async () => {
+	it("grounds an absolute root under no working tree at all — a relocated root duplicates nothing", async () => {
 		const fs = fakeFs({files: {}});
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -95,8 +98,8 @@ describe("deriveRepoRoot — the default root resolves off the owning repository
 		const fromPrimary = await Effect.runPromise(
 			Effect.provide(deriveRepoRoot(`${PRIMARY}/packages/cli`), fs.layer),
 		);
-		expect(fromWorktree).toEqual({_tag: "Derived", repoRoot: PRIMARY});
-		expect(fromPrimary).toEqual(fromWorktree);
+		expect(fromWorktree).toEqual({_tag: "Derived", repoRoot: PRIMARY, workingTree: WORKTREE});
+		expect(fromPrimary).toEqual({_tag: "Derived", repoRoot: PRIMARY, workingTree: PRIMARY});
 	});
 
 	it("loads the primary ledger's same lane through status from either checkout cwd", async () => {
@@ -127,6 +130,15 @@ describe("deriveRepoRoot — the default root resolves off the owning repository
 		});
 	});
 
+	it("carries the working tree the .git entry sits in beside the repository that owns it", async () => {
+		const fs = repoFs();
+		const out = await Effect.runPromise(
+			Effect.provide(deriveRepoRoot(`${WORKTREE}/pkg`), fs.layer),
+		);
+
+		expect(out).toEqual({_tag: "Derived", repoRoot: PRIMARY, workingTree: WORKTREE});
+	});
+
 	it("a cwd with no .git ancestor is NotARepo — never a cwd-relative fallback", async () => {
 		const fs = fakeFs({directories: ["/scratch/sub"]});
 		const out = await Effect.runPromise(
@@ -141,5 +153,80 @@ describe("deriveRepoRoot — the default root resolves off the owning repository
 		});
 		const out = await Effect.runPromise(Effect.provide(deriveRepoRoot("/wt"), fs.layer));
 		expect(out._tag).toBe("Unestablished");
+	});
+});
+
+/**
+ * The incident on lane 8810: a lanes root under a linked worktree is a second copy of the owning
+ * repository's ledger, and folding it answers from a frozen moment rather than failing.
+ */
+describe("a lanes root that stands in a working tree which does not own it", () => {
+	const PRIMARY = "/primary";
+	const WORKTREE = "/wt";
+	const WORKTREE_CWD = `${WORKTREE}/packages/fabrika-cli`;
+	const PRIMARY_LANES = `${PRIMARY}/${DEFAULT_LANES_ROOT}`;
+	const WORKTREE_LANES = `${WORKTREE}/${DEFAULT_LANES_ROOT}`;
+
+	/** The live ledger at the primary checkout, and a copy of the same lane under the worktree. */
+	const bothCopies = () =>
+		fakeFs({
+			directories: [`${PRIMARY}/.git`],
+			dirs: {
+				[PRIMARY]: [".git", ".fabrika"],
+				[`${PRIMARY}/.git/worktrees/wt`]: [],
+			},
+			files: {
+				[`${WORKTREE}/.git`]: "gitdir: /primary/.git/worktrees/wt",
+				[`${PRIMARY}/.git/worktrees/wt/commondir`]: "../..",
+				[`${PRIMARY_LANES}/42/workflow.json`]: coderTemplateText(),
+				[`${WORKTREE_LANES}/42/workflow.json`]: coderTemplateText(),
+			},
+		});
+
+	const statusAt = (fs: ReturnType<typeof fakeFs>, root: string, cwd: string) =>
+		Effect.runPromise(
+			Effect.provide(
+				onGround("status", [root], cwd, () => runStatus({root, lane: "42"})),
+				fs.layer,
+			),
+		);
+
+	it("refuses the worktree's own copy on its own code instead of folding it", async () => {
+		const out = await statusAt(bothCopies(), WORKTREE_LANES, WORKTREE_CWD);
+
+		expect(out.code).toBe(ROOT_NOT_OWNED);
+		expect(out.stdout).toBe("");
+	});
+
+	it("names both the root it was handed and the repository that owns it", async () => {
+		const out = await statusAt(bothCopies(), WORKTREE_LANES, WORKTREE_CWD);
+		const said = out.stderr.join("\n");
+
+		expect(said).toContain(WORKTREE_LANES);
+		expect(said).toContain(WORKTREE);
+		expect(said).toContain(PRIMARY);
+		expect(said).toContain('NOT "no lane here"');
+	});
+
+	it("refuses a relative root the same way — the worktree cwd is a repo, and still not the owner", async () => {
+		const out = await statusAt(bothCopies(), DEFAULT_LANES_ROOT, WORKTREE);
+
+		expect(out.code).toBe(ROOT_NOT_OWNED);
+	});
+
+	it("passes an absolute root inside the owning primary checkout, read from the worktree", async () => {
+		const out = await statusAt(bothCopies(), PRIMARY_LANES, WORKTREE_CWD);
+
+		expect(out.code).toBe(0);
+	});
+
+	it("passes a relocated absolute root that lies outside every working tree", async () => {
+		const fs = fakeFs({
+			directories: [`${PRIMARY}/.git`],
+			files: {"/elsewhere/lanes/42/workflow.json": coderTemplateText()},
+		});
+		const out = await statusAt(fs, "/elsewhere/lanes", WORKTREE_CWD);
+
+		expect(out.code).toBe(0);
 	});
 });

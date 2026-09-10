@@ -693,7 +693,9 @@ worker is still on it · `62` the epic body's
 `## Dependencies` block is not a topology, which is the issue body's defect and `plan restage`'s
 repair — nothing on disk is at fault · `63` the board says the issue an `open` was pointed at already had a lane — every pull request that proves
 it is named, and nothing was written, because a re-boot over a retired ledger restores a spent repair
-budget nothing granted.
+budget nothing granted · `65` the lanes root stands inside a linked worktree rather than the
+repository that owns it, so it is a second copy of that repository's ledger and folding it would
+answer from whatever moment the copy was written — nothing was read and nothing was appended.
 
 To open a lane, copy a template in and speak the operator's events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED` / `LAP`:
@@ -889,7 +891,8 @@ the task could not be resolved · `16`–`18` the `governance` verdict is absent
 `19` no run at the head concluded in failure · `20` the machine refused the `UNBLOCKED` · `21` the
 rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `23`
 the park routes to the driver and the run named no `--rationale` · `39`
-the cwd is not in a repository, so `unpark` has none to derive its default lanes root off.
+the cwd is not in a repository, so `unpark` has none to derive its default lanes root off · `65` the
+lanes root stands inside a linked worktree rather than the repository that owns it.
 
 **Known clears, novel escalates, and both are exit codes.** `12` is nothing-written, route it to a
 human; `13` is wait. `recipe route --exit` folds the first to `BLOCKED` and the second to `WIP`, so
