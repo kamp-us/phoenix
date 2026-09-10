@@ -29,6 +29,7 @@ import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import {KernelBridge} from "../ai-agent/tools/KernelBridge.ts";
 import type {SpellBridge} from "../commands/bridge/index.ts";
 import type {Scope as SpellScope} from "../commands/spell.ts";
+import type {Features} from "../feature-flags.ts";
 import {PiAiAgent, type PiAiAgentOptions} from "./ai-agent/index.ts";
 import {PI_CHAT_WINDOW_REF, PI_SESSION_PROGRAM} from "./renderer-ref.ts";
 
@@ -70,8 +71,15 @@ export type PiSessionProgramOptions = PiSessionBase &
 		| {readonly layer: Layer.Layer<TuvalAiAgent>; readonly scope?: undefined}
 	);
 
-export const piSessionProgram = (options: PiSessionProgramOptions): AiAgentProgram<SpellBridge> =>
-	aiAgentProgram<SpellBridge>({
+/**
+ * `Features` rides out unclosed, the way the Claude row leaves `SpellBridge` open (#7951): the row
+ * is built while a config module is evaluated, which is before the flags are merged, so the layer
+ * is handed the resolved record at spawn from the kernel context (#8595).
+ */
+export const piSessionProgram = (
+	options: PiSessionProgramOptions,
+): AiAgentProgram<SpellBridge | Features> =>
+	aiAgentProgram<SpellBridge | Features>({
 		id: PI_SESSION_PROGRAM,
 		layer:
 			options.layer ??

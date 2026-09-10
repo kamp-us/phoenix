@@ -7,7 +7,9 @@
  * Node import (#8439).
  *
  * A flag added here crosses to the page with no other edit: the generated module is written by
- * walking this record (`page/dev-server.ts`).
+ * walking this record (`page/dev-server.ts`). Reaching the node side takes two: the key has to be
+ * declared in `config.ts`'s `DeclaredFeatures`, or the decode drops it, and the reader takes the
+ * merged record off the `Features` kernel service rather than off `featuresDefault` (#8595).
  */
 
 export interface TuvalFeatures {

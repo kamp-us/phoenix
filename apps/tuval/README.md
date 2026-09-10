@@ -119,14 +119,17 @@ tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: transport on 127.0.0.1:58319
-tuval: desk at http://127.0.0.1:5173/
+tuval: desk at http://localhost:5173/ — 127.0.0.1 and [::1]
 tuval: running — Ctrl-C stops and checkpoints
 count 1
 count 2
 ```
 
 Those are two ports on purpose — the socket and the page bind separately — and the transport admits
-the page's origin as it starts, so the browser's attach goes through (#7560).
+the page's origin as it starts, so the browser's attach goes through (#7560). The desk answers
+`localhost` on both loopback addresses, so it cannot be shadowed by another program holding the same
+port on the family it did not bind; a `--page-port` either family has taken refuses the start and
+names that address (ADR [0370](../../.decisions/0370-desk-serves-localhost-on-both-loopback-families.md)).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
@@ -870,16 +873,20 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 ## The Pi AI agent layer
 
 `src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a
-`Layer<TuvalAiAgent, never, KernelBridge>` and asks for nothing else (founder ruling 4,
-[#7570](https://github.com/kamp-us/phoenix/issues/7570), as ruling R9.1 on
-[#8715](https://github.com/kamp-us/phoenix/issues/8715) leaves it — the bridge is Tuval's own
-service, provided by the row from its scope the way the Claude and Codex rows provide it):
-building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
-one loopback server and one client, and closing that scope closes the client, the server and every
-session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
-plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
-type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
-no event, no method's answer and no log line.
+`Layer<TuvalAiAgent, never, KernelBridge | Features>`, never-failing, asking for two of Tuval's own
+services and no Pi type in either channel. `KernelBridge` is what the row's three kernel tools call
+through, provided by the row from its own scope the way the Claude and Codex rows provide it (ruling
+R9.1 on [#8715](https://github.com/kamp-us/phoenix/issues/8715)); `Features` is the merged flag
+record the row's spawner hands over
+([#8595](https://github.com/kamp-us/phoenix/issues/8595)). Founder ruling 4
+([#7570](https://github.com/kamp-us/phoenix/issues/7570)) is what puts the runtime inside the layer,
+and it required nothing at all until those two landed; what the ruling guards is unchanged, since
+both are Tuval services. Building it inside the process's scope stands up Pi's model runtime, the
+`PiSessionHost` over it, one loopback server and one client, and closing that scope closes the
+client, the server and every session exactly once. A process therefore holds no Pi value of its own
+— `PiAiAgentOptions` carries plain strings, and `agentDir` is the only path it usually sets. Nothing
+on that surface is a Pi type, and the per-launch token is unwrapped once, into the transport
+factory's closure, and reaches no event, no method's answer and no log line.
 
 **The three kernel tools.** `spawn`, `send` and `read` reach a Pi session as plain `customTools` on
 `createAgentSession`, at those bare names — a third adapter over the one `KernelBridge`, where
