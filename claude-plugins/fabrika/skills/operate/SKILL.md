@@ -200,16 +200,53 @@ and `.fabrika/` is gitignored, so the removal destroys the record of the spend a
 follows mints a full budget nothing granted — laundering, silent and indistinguishable from a first
 boot. A spent budget comes back through a granted round recorded on the board and no other way:
 `build clear` on the lane's pull request, `lane clear` on a lane that has none. `lane open` now
-refuses the re-boot itself at `60`.
+refuses the re-boot itself at `63`.
 
-**Exit `60` out of `lane open` says the board shows this issue already had a lane** — it names every
+**The two-step remedy is for a lane running the wrong MACHINE, and it is never the answer to a plan
+that changed.** Retiring the directory discards `events.jsonl`, which is the only record every
+landed child has. A running epic whose topology moved — a child added after emission, a not-started
+child that has to move to a later phase — takes one verb instead:
+
+```bash
+node <fabrika> lane amend $lane_key
+```
+
+`lane amend` re-reads the epic body's `## Dependencies` block, re-derives the machine `lane emit`
+would emit from it today, and writes it **over a log it keeps whole**: it appends one
+`<EPIC_N>.AMENDED` line and rewrites, reorders and drops nothing. That line moves no task and reaches
+no machine — the fold consumes it, exactly as it consumes `lane reconcile`'s `CORRECTED` — and its
+`tasks` payload names the set the re-derived machine holds, which is where a reader finds out why the
+lines above it were folded by a different task set. A task new to the topology boots `queued`; a task
+that has not started may move to any phase, later ones included.
+
+It reconciles nothing, and that is deliberate: the block is read exactly as it stands, so a block
+still naming a child the board closed is `fabrika plan restage`'s to repair before you amend.
+
+**Three refusals, and each is proven before anything is written** — on all three the lane's
+`events.jsonl` is byte for byte what it was:
+
+- **`60`** — the new topology places no phase for a task the ledger records as **landed**, named with
+  the final it landed in. Your ledger is the only record that work landed, so put the child back in a
+  phase, or close the epic over what it built.
+- **`61`** — a task carrying recorded history cannot replay to the leaf it stands on under the
+  re-derived machine: it is dropped while mid-flight, or its log reaches a cell the new region does
+  not hold. Each offending task is named. Let it reach a leaf the amendment can carry, or amend a
+  different part of the topology.
+- **`62`** — the `## Dependencies` block is not a topology (an unparseable line, a child in two
+  phases, a requires subject in none). The defect is the **issue body's**, not the ledger's, so
+  `fabrika plan restage` is the repair and nothing under `.fabrika/lanes/` is at fault.
+
+A topology that already derives the machine on disk answers `{"answer":"current"}` with nothing
+appended and nothing written, so running it when in doubt costs two board reads and changes nothing.
+
+**Exit `63` out of `lane open` says the board shows this issue already had a lane** — it names every
 pull request that proves it. Nothing here is bootable: end `STOPPED` naming the code, and drive the
 pull request the refusal names, or record the clearance that reopens the frozen lane's door. Never
 retire a directory to get past it.
 
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
-the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess; `60` is
+the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess; `63` is
 the issue's prior lane above. End `STOPPED` naming the code.
 
 A lane `lane emit` booted is an epic run, and an epic run is **one branch and one PR**: its children

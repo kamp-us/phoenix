@@ -107,6 +107,17 @@ describe("lane open", () => {
 		expect(out.stderr.join("\n")).toContain("already");
 	});
 
+	it("sends an existing lane's driver at the lane, never at removing the directory", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, directories: [DIR]});
+		const out = await run(fs, runOpen(OPTIONS));
+		const stderr = out.stderr.join("\n");
+
+		expect(out.code).toBe(LANE_EXISTS);
+		expect(stderr).toContain(`fabrika lane status ${OPTIONS.lane}`);
+		expect(stderr).toContain("granted round recorded on the board");
+		expect(stderr).not.toContain("remove the directory to rebuild it");
+	});
+
 	it("refuses when the lane dir's existence cannot be established — UNKNOWN, never a boot", async () => {
 		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, unprobeable: [DIR]});
 		const out = await run(fs, runOpen(OPTIONS));

@@ -40,7 +40,7 @@ import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
-import {LANE_IS_CHILD, LANE_UNREADABLE, PRIOR_LANE, SHAPE_MISMATCH} from "./codes.ts";
+import {LANE_EXISTS, LANE_IS_CHILD, LANE_UNREADABLE, PRIOR_LANE, SHAPE_MISMATCH} from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
@@ -148,6 +148,12 @@ export const runOpen = <R = never>(
 			if (capped !== null) return capped;
 		}
 		const placed = yield* placeMachine(options, template.success);
+		if (placed._tag === "Exists") {
+			return refuse(
+				LANE_EXISTS,
+				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board.`,
+			);
+		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
 		return answer(
 			JSON.stringify({

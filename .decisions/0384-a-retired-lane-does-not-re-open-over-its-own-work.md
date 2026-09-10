@@ -45,11 +45,11 @@ The founder picked it on 2026-09-05
 **shapes 2 and 1 together.**
 
 1. **`lane open` refuses an issue-keyed boot when the board says that issue already had a lane**, on
-   its own code — `60` `PRIOR_LANE` in `packages/fabrika-cli/src/lane/codes.ts`. It fires before
+   its own code — `63` `PRIOR_LANE` in `packages/fabrika-cli/src/lane/codes.ts`. It fires before
    anything is written and its message ends saying so, like every other refusal in that verb.
 2. **The wrong-template retire stays sanctioned, and it is the only one.** `operate` step 1 now says
    that in so many words, so the instruction a driver reads is no longer general permission to retire
-   a directory, and its exit table carries `60` as a `STOPPED`.
+   a directory, and its exit table carries `63` as a `STOPPED`.
 3. **A `frozen` lane's spent budget comes back only through a granted round recorded on the board** —
    `build clear` on the lane's pull request, or `lane clear` on a lane that has none (ADR
    [0378](0378-driver-seat-on-a-spent-repair-budget.md)). Never through retire-then-re-open.
@@ -77,7 +77,7 @@ lane — which drives no issue — is never asked. A read that cannot establish 
 lane", for the same reason `expectation.ts` refuses to read a failed read as "not an epic".
 
 The reader is asked only when the lane directory is **absent**. A directory that is there is the
-resume `14` `LANE_EXISTS` already names and `operate` step 1 already tolerates, and answering `60`
+resume `14` `LANE_EXISTS` already names and `operate` step 1 already tolerates, and answering `63`
 over it would stop a driver mid-drive on a fact that is not the one it needs.
 
 ## Consequences

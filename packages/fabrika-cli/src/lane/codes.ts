@@ -548,6 +548,41 @@ export const TAIL_NOT_CLOSING = 58;
 export const BRIEFED_VERB_ABSENT = 59;
 
 /**
+ * `lane amend` would drop a task the lane already carries as landed: the epic's current
+ * `## Dependencies` block no longer places a child whose region has reached its success final.
+ * Refused with nothing written — not the log, not the machine.
+ *
+ * Its own seat rather than {@link MIGRATION_UNSAFE}'s, which is a machine swap that would relocate a
+ * lane's state: here nothing would move, the task would simply stop existing, and the ledger's
+ * record of work that actually landed would go with it. The remedy is the epic body's — put the
+ * child back in a phase, or close the epic over what it built.
+ */
+export const AMEND_DROPS_LANDED = 60;
+
+/**
+ * `lane amend`'s re-derived machine cannot replay a task's recorded history to the leaf that task
+ * stands on — the task is dropped while carrying history, or its log reaches a cell the new region
+ * does not hold. Refused with nothing written.
+ *
+ * Its own seat rather than {@link AMEND_DROPS_LANDED}'s: that one is about work the ledger proves
+ * finished, and its remedy is the topology. This one is about a task mid-flight, and the remedy is
+ * to let it reach a leaf the amendment can carry — or to amend a different part of the topology.
+ */
+export const AMEND_UNREPLAYABLE = 61;
+
+/**
+ * The epic body's `## Dependencies` block was read in full and is not a topology: a line that does
+ * not parse, a child placed in two phases, or a requires subject placed in none. Refused before the
+ * lane's own record is judged and before any write.
+ *
+ * Its own seat rather than {@link MALFORMED_RECORD}'s, which says a record ON DISK is not the shape
+ * and sends its reader at `.fabrika/lanes/<n>/`: here both on-disk records are fine and the
+ * defective document is the issue body, which no lane verb writes — `fabrika plan restage` is the
+ * repair, and a reader routed at the ledger would go looking for a fault that is not there.
+ */
+export const TOPOLOGY_MALFORMED = 62;
+
+/**
  * An issue-keyed boot was pointed at an issue the board says already had a lane — refused with
  * nothing written.
  *
@@ -562,4 +597,4 @@ export const BRIEFED_VERB_ABSENT = 59;
  * different lane: the remedy here is neither, because a spent repair budget comes back only through
  * a recorded round grant.
  */
-export const PRIOR_LANE = 60;
+export const PRIOR_LANE = 63;

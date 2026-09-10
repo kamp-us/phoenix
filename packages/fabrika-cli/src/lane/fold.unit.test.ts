@@ -1275,3 +1275,54 @@ describe("the board-proven terminals", () => {
 		expect(standingCauses(entries)).toEqual({});
 	});
 });
+
+describe("the topology amendment — a line about the lane, not about a task", () => {
+	const AT = "2026-09-10T12:00:00.000Z";
+
+	it("folds inert: the lane replays to exactly where it stood before the line landed", () => {
+		const compiled = lane(coderWorkflow());
+		const worked = drive(compiled, [["issue", "WIP"]]);
+		const amended: ReadonlyArray<LogEntry> = [
+			...worked,
+			{task: "epic_900", event: "EPIC_900.AMENDED", at: AT, tasks: ["issue"]},
+		];
+
+		expect(statusOf(compiled, amended)).toEqual(statusOf(compiled, worked));
+	});
+
+	it("leaves a park's standing cause alone — it re-derives a machine and clears nothing", () => {
+		const entries: ReadonlyArray<LogEntry> = [
+			{task: "issue", event: "ISSUE.BLOCKED", at: AT, cause: "spawn-dead"},
+			{task: "epic_900", event: "EPIC_900.AMENDED", at: AT, tasks: ["issue"]},
+		];
+
+		expect(standingCauses(entries)).toEqual({issue: "spawn-dead"});
+	});
+
+	it("refuses an amendment naming no task set, the way a roundless clearance is refused", () => {
+		const parsed = parseLog(JSON.stringify({task: "epic_900", event: "EPIC_900.AMENDED", at: AT}));
+
+		expect(parsed).toMatchObject({
+			_tag: "Malformed",
+			defects: [
+				"line 1 is an AMENDED event carrying no `tasks` — the task set the re-derived machine holds",
+			],
+		});
+	});
+
+	it("refuses a `tasks` payload on any other event, which names a set nothing re-derived", () => {
+		const parsed = parseLog(
+			JSON.stringify({task: "issue", event: "ISSUE.WIP", at: AT, tasks: ["issue"]}),
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("refuses it as an operator event, naming the verb that appends one", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = applyEvent(compiled, statesOf(compiled, []), "issue", "AMENDED", AT);
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect((applied as {reason: string}).reason).toContain("lane amend");
+	});
+});
