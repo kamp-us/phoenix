@@ -239,9 +239,12 @@ const uncommittedIn = (
 /**
  * Whether one tree still reads as in use, or the reason that is UNKNOWN.
  *
- * The signal is the directory's own mtime: a seat's tree is written when it is provisioned and
- * whenever anything in it changes, so a young tree is one somebody may still be standing in. It is
- * the only liveness reading available without asking the OS for process cwds.
+ * The signal is the worktree root's own mtime, and that tracks the root's **entry list** — a create,
+ * delete or rename directly in it — not a write to a file inside it. So for a seat that drives
+ * without editing, this reads the tree's provisioning time, and a young tree is one provisioned
+ * recently rather than one somebody was recently active in; {@link QUIET_WINDOW_SECONDS} carries the
+ * ground for that and what it costs. It is still the only liveness reading available without asking
+ * the OS for process cwds.
  *
  * A clock skew that puts the mtime in the future reads Live, not Quiet: the arm's whole polarity is
  * that an answer it cannot trust must not license a removal.

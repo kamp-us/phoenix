@@ -46,12 +46,24 @@ export type Uncommitted =
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
 /**
- * How long a tree has to have gone untouched before its quiet counts as evidence nobody holds it.
+ * How long a tree's own directory has to have gone unchanged before its quiet counts as evidence
+ * nobody holds it.
  *
- * Generous on purpose. The cost of too long a window is a leaked directory the next sweep reclaims;
- * the cost of too short a window is a live seat destroyed mid-drive, which costs a lane. No agent
- * seat outlives a day — the harness's own watchdog kills one after 600s without progress — so a day
- * is well past any seat's life and still reclaims the bulk of a population measured in weeks.
+ * Read what the signal is before tuning this. A directory's mtime tracks its **entry list** — POSIX
+ * marks `st_mtime` for update on the calls that add, remove or rename an entry in it, and on nothing
+ * else ([POSIX.1-2024, `<sys/stat.h>`](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/sys_stat.h.html);
+ * verified on darwin/APFS: appending to a nested file moved neither its own directory's mtime nor
+ * the root's, and only a create directly at the root moved the root's). Writing a file that already
+ * exists moves nothing. For the seat class this arm exists to protect — an operator or reviewer that
+ * drives its lane without editing — nothing ever touches the worktree root's entry list, so the
+ * root's mtime stays its **provisioning time** for the seat's whole life, and the reading is "was
+ * this tree provisioned inside the window", not "has anybody been active in it".
+ *
+ * So the window has to cover a seat's whole plausible life, not its idle gap: the harness watchdog's
+ * 600s bounds inactivity rather than total life and cannot carry this number. A day is well past any
+ * seat's observed life and still reclaims the bulk of a population measured in weeks. The residual
+ * gap is real and bounded — a seat driving one lane past a day reads Quiet and is removable again —
+ * and it closes with the signals {@link LiveSignal} names as still unlanded, not by stretching this.
  */
 export const QUIET_WINDOW_SECONDS = 24 * 60 * 60;
 

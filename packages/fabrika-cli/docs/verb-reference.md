@@ -128,7 +128,10 @@ operator or reviewer **seat** drives its lane without ever committing and usuall
 file, so its HEAD sits on the trunk and its status is clean for its whole life — the exact shape the
 git facts read as "carries nothing", and the shape a sweep removed mid-drive. So a tree also has to
 read **quiet**: its own directory untouched for 24h. Any live signal keeps it, the KEEP line names
-which signal held, and a liveness read that failed keeps it too.
+which signal held, and a liveness read that failed keeps it too. Read "untouched" narrowly: a
+directory's mtime moves only when an entry is added, removed or renamed directly in it, so for a seat
+that never edits, that timestamp is the tree's provisioning time and the window is a bound on a
+seat's life rather than on its idle gap.
 
 The one place `retire` borrows that polarity is ADR
 [0342](../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)'s third license, for the lane
