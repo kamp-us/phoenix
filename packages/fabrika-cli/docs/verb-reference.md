@@ -1028,7 +1028,7 @@ record it. Contract:
 | `ship evidence` | the SHA-bound run-evidence bundle as `present` / `pending` / `failed` / `absent` / `unknown`, with the manifest's checks collapsed to a status tally |
 | `ship threads` | every unresolved review thread, both pagination layers count-proved |
 | `ship resolve` | the sanctioned thread-resolution write, refusing any thread not positively bot-classed |
-| `ship enqueue` | the queue arm at a pinned head, method-flag-free by construction, proven landed, refusing a provably not-mergeable PR before the arm |
+| `ship enqueue` | the queue arm at a pinned head, method-flag-free by construction, proven landed; a base that moved under the branch is rebased and re-enqueued inside the verb, and any other provably not-mergeable read refuses before the arm |
 | `ship merge` | the landing on a base no merge queue governs, proof read back |
 | `ship reconcile` | the bounded post-enqueue watch — `landed` / `ejected` / `unresolved` / `parked` |
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198), read-back-verified |
