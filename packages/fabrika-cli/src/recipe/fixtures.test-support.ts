@@ -36,6 +36,25 @@ export const eventLog = (...events: ReadonlyArray<string>): string =>
 export const PARKED_AT_CP = eventLog("WIP", "DONE", "PASS", "BLOCKED");
 
 /**
+ * The same leaf, reached with a cause on the parking line — the red-CI park.
+ *
+ * `ship`'s BLOCKED folds to `human:cp-approval` whatever the block was, so this fixture and
+ * {@link PARKED_AT_CP} differ only in that `cause` field, which is the whole reason the recipe table
+ * keys on it.
+ */
+export const PARKED_AT_CP_ON = (cause: string): string =>
+	eventLog("WIP", "DONE", "PASS") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:03:00.000Z",
+		cause,
+	})}\n`;
+
+/** The red-CI park: BLOCKED out of `ship` because `ship checks` read the head red. */
+export const PARKED_ON_CI_RED = PARKED_AT_CP_ON("head-ci-red");
+
+/**
  * queued → … → ship, then a dwell that spends the whole wait budget — the queue-stall park.
  *
  * The first `WIP` out of `ship` is unguarded, so it takes `WAIT_BUDGET` more to spend the budget and

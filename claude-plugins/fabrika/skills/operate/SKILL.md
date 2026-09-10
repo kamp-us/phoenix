@@ -1148,8 +1148,10 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds five rows today: `human:cp-approval`, `human:queue-stall`, and `blocked`
-carrying one of `worktree-holds-branch`, `campaign-paused` or `spawn-dead`. Reading which one
+The table it keys on holds six rows today: `human:cp-approval` twice — once keyed on no cause at all,
+once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the same leaf —
+`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused` or
+`spawn-dead`. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
 
