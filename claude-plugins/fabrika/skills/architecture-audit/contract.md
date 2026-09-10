@@ -52,9 +52,10 @@ stochastic answer wearing a deterministic exit code.
 
 Read the command and recovery contract before writing:
 `fabrika wire doc-section --heading "Audit create and recovery" < <grilling-skill-base>/contract.md`.
-The registered `audit-context` wire module owns the input fields and body format. Use
-`fabrika wire formats` to locate its schema and `fabrika wire check --format audit-context` to
-check the composed body. The grill contract owns validation limits, refusal codes, retained
+Follow that section's **Input owner** reference to the `AuditContext` schema. Its registered
+`audit-context` wire module owns the input fields and body format. Use
+`fabrika wire check --format audit-context` to check the composed body.
+The grill contract owns validation limits, refusal codes, retained
 identity, recovery guarantees and the concurrent first-create limit. Do not copy those rules here.
 
 Prepare the input from every consolidated finding and the accounting below. Include lens and smell
