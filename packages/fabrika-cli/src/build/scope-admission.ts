@@ -814,6 +814,13 @@ export const purposeScopeLine = (
 };
 
 /**
+ * The line the claim seam prints instead of reading the `blocked_by` graph, so a skipped gate is
+ * read rather than inferred from a missing `scanned` line. See ADR 0301.
+ */
+export const purposeBlockednessLine = (verb: string, purpose: ClaimPurpose): string =>
+	`${verb}: blockedness: the gate binds a build claim only — a ${purpose} claim writes no code, and authoring or checking a ledger is the work that should happen while the blocker is still open.`;
+
+/**
  * The type line, or `null` on the ordinary case where the issue's type is buildable.
  *
  * A taken arm is the one thing here nobody may have to infer: when a citation admits a decision, the

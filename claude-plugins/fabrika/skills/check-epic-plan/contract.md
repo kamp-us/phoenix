@@ -83,7 +83,13 @@ as the sibling contracts do):
   `build`'s picker question, and still open there. This gate makes children *eligible*; it computes
   no second answer to *pickable*. This is also why `build`'s `16 BLOCKED` seat is unreachable here —
   blocked-ness reaches this gate only as the dependency-shaped defects `DEP_CYCLE` /
-  `DANGLING_DEP` / `UNENFORCED_DEP` / `ORPHAN_CHILD`, never as a per-child readiness verdict.
+  `DANGLING_DEP` / `UNENFORCED_DEP` / `ORPHAN_CHILD`, never as a per-child readiness verdict. The
+  claim at step 1 is unreachable for `16` too, and by implementation rather than by convention:
+  `build claim`'s blockedness gate binds a build-purpose claim only, so a `gate` claim reads no
+  edges at all (founder ruling
+  [#7542](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240), matrix in ADR
+  0301). Before that ruling this paragraph and `claim-verb.ts` disagreed: the gate ran for every
+  purpose, so a `gate` claim over an epic with an open edge did refuse on `16`.
   `UNENFORCED_DEP` reads the `blocked_by` graph and still is not that verdict: it asks whether the
   graph *carries* the edge the plan states, never whether the blocker behind it is closed.
 - **An epic-body writer.** This gate never edits an issue body. The planner owns splicing, with its
@@ -376,7 +382,8 @@ not a refusal. It stays re-exported for the alignment reason above. `13`, `14`, 
 holds no tree of its own, no branch and no validation surface; `17 REF_NOT_MOVED` and `19 UNSAFE_PUSH`
 because it never pushes; and `16 BLOCKED` because pickability is deliberately not derived here
 (see §Considered and deliberately not derived) — blocked-ness surfaces as dependency-shaped
-defects, not as a per-child readiness verdict. All are deliberately not re-seated.
+defects, not as a per-child readiness verdict, and the `gate`-purpose claim at step 1 reads no edges
+to refuse on. All are deliberately not re-seated.
 
 **`7` versus `11` versus `20`:** a 404 or a closed epic is a fact about the repository (`7`); an
 unreachable GitHub or an unreadable probe is a fact about nothing (`11`); a plan that was fully

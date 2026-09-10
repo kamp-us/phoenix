@@ -197,3 +197,41 @@ no vocabulary impact
 > `unreadable` rather than offered. The lazy shape is what makes it affordable over a whole board —
 > the parent resolve and the branch read fire only for a candidate the graph already refused. Filed
 > against [#7223](https://github.com/kamp-us/phoenix/issues/7223).
+
+> Amendment 2026-09-10 — **the claim-seam gate binds `--purpose build` and nothing else.** The
+> purpose matrix is now part of this record: `build` refuses on `16` exactly as written above,
+> `plan` and `gate` skip the graph read outright. Nothing else moves — the graph is still the one
+> carrier, `status:blocked` stays retired, the discharge of the 2026-08-29 amendment still narrows
+> the build arm, and the read still fails closed on that arm (an unreadable edge list is `11`, never
+> "not blocked"). Founder ruling:
+> [#7542, comment 5617229240](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240)
+> (umut, 2026-09-10) — "planning and plan-gating an epic is allowed while the epic it waits on is
+> still open; only the actual build work stays blocked."
+>
+> **Why the build arm is the whole point of the gate.** What this record means by "do not start this
+> yet" is *do not write code against a contract that has not landed*. Planning an epic writes a task
+> ledger; gating one grades that ledger. Neither writes code, and both are the work that most wants
+> doing while the blocker is being built, because every child of the downstream epic can start the
+> moment the blocker lands only if its ledger already exists. Fencing them on the same edge inverted
+> that: the downstream epic could not be planned until the blocker epic *closed*, which is the last
+> event in its run rather than the first.
+>
+> That cost was paid four times before the ruling. `fabrika build claim --purpose plan` refused on
+> `16` for #7497 (blocker #7496), #7499 (#7496 again, filed as #7543 and folded here), #8070
+> (#7625) and #8716 (#8715). Each stop was worked around by hand — dropping the epic-level edges and
+> keeping only the children's exact ones — which spends the one carrier this record establishes,
+> the same failure mode the 2026-08-29 amendment was written to stop.
+>
+> **Nothing is unfenced by this.** The edge still refuses every claim that would write code: each
+> child's own build claim reads its exact `blocked_by` edges, discharge and all, and `build pick`
+> and `build eligible` are build-purpose questions by construction and are untouched. What the
+> matrix removes is a refusal on the *epic's own* edge at a seam that produces a document.
+>
+> **The two consumers stop disagreeing with the producer.** `check-epic-plan`'s contract already
+> declared `16` unreachable in that gate; before this it was true of the gate's own verbs and false
+> of the claim it runs first. It is now true of both. `plan-epic` never had a `16` row in its
+> terminal vocabulary, and now needs none: the code is unreachable from a `plan` claim, and both
+> skills say so at the claim step. A skipped gate is printed rather than inferred —
+> `build claim: blockedness: the gate binds a build claim only — …` lands where the `scanned` line
+> would have — so a reader can tell "not blocked" from "not asked". Filed against
+> [#7542](https://github.com/kamp-us/phoenix/issues/7542).

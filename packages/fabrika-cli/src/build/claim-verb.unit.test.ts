@@ -1780,6 +1780,70 @@ describe("runClaim — the blockedness gate", () => {
 	});
 
 	/**
+	 * The purpose matrix of ADR 0301's 2026-09-10 amendment. A `plan` or `gate` claim produces a
+	 * document rather than code, so it is the work that should happen while the blocker is still
+	 * being built — and the proof is the absent graph call, since scripting no edges at all would
+	 * otherwise refuse on 11.
+	 */
+	describe("the purpose matrix", () => {
+		const OPEN_EDGE: ReadonlyArray<Scripted> = [
+			[EDGES, blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "open"})],
+		];
+
+		const claimFor = (purpose: string, graph: ReadonlyArray<Scripted>) => {
+			const shell = fakeSeams([
+				[ISSUE, CLAIMABLE],
+				...graph,
+				STANDALONE,
+				unclaimed(),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), WRITES],
+			]);
+			return Effect.runPromise(
+				Effect.provide(
+					runClaim({...options, purpose}),
+					Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
+				),
+			).then((out) => ({out, shell}));
+		};
+
+		it("refuses a build claim over an open edge on 16, and posts NOTHING", async () => {
+			const {out, shell} = await claimFor("build", OPEN_EDGE);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stdout).toBe("");
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		});
+
+		it("admits a build claim whose blockers are all closed", async () => {
+			const {out} = await claimFor("build", [
+				[EDGES, blockedBy(210)],
+				[blocker(210), issue({number: 210, state: "closed"})],
+			]);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout).answer).toBe("won");
+		});
+
+		for (const purpose of ["plan", "gate"] as const) {
+			it(`admits a ${purpose} claim over an open edge, reading no edges at all`, async () => {
+				const {out, shell} = await claimFor(purpose, OPEN_EDGE);
+				expect(out.code).toBe(0);
+				expect(JSON.parse(out.stdout).purpose).toBe(purpose);
+				expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
+				expect(out.stderr.join("\n")).toContain("the gate binds a build claim only");
+			});
+
+			it(`admits a ${purpose} claim with no graph scripted — an unread gate is not an 11`, async () => {
+				const {out} = await claimFor(purpose, []);
+				expect(out.code).toBe(0);
+				expect(JSON.parse(out.stdout).answer).toBe("won");
+			});
+		}
+	});
+
+	/**
 	 * The ordering: the two pure axes answer without IO, so a number the fence already
 	 * refuses must never cost the graph read. The proof is the absent call, not the exit code.
 	 */
