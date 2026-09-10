@@ -121,7 +121,7 @@ as the sibling contracts do):
   homed or standing-lane exempt) and computes no second answer, because a planner that told an
   author "homed" while the guard reds is worse than one that stays quiet.
 - **The structural floor.** `fabrika plan check` is the whole pass/fail decision over the
-  fourteen hard defects, and it is [`check-epic-plan`](../check-epic-plan/contract.md)'s. This
+  fifteen hard defects, and it is [`check-epic-plan`](../check-epic-plan/contract.md)'s. This
   group derives no second verdict; `ledger draft`, `ledger child` and `ledger topology` each
   validate *the document they are composing* so a defect is caught at authoring time, which is a
   different question from grading a finished ledger.
@@ -920,6 +920,18 @@ reference to an issue another epic owns a legitimate gating edge, and only a ref
 dangling — so `#6 phase 2 requires #4, #9` stages with `#9` outside the manifest, the rendered block
 carries that reference verbatim, and `ledger edges` writes the `#6 → #9` pair like any other.
 `external` counts those out-of-manifest prerequisites.
+
+**Every open blocker of the epic itself is a prerequisite ref on every child.** Read `#<epic>`'s own
+native `blocked_by` list before you write these lines, and put each target that is still open on
+every child's line in the same `requires` shape an out-of-epic prerequisite already takes —
+`#<child> phase <n> requires #<blocker>`, one `#<int>` per open target, on the child that needs no
+other prerequisite exactly as on the child that has three. Nothing else carries that edge down: an
+epic takes its `gate` claim while its own blockers are open, `plan flip` then makes every child
+pickable, and a child's build claim reads that child's edges alone — so a blocker recorded only at
+epic level fences the epic and nobody else, and each child is buildable against a contract that has
+not landed. The decision corpus's carry-down ruling on the blocked-by graph rules it; the gate's
+`DROPPED_EPIC_BLOCKER` reds a plan that dropped one, naming the child and the target. A blocker that is itself a child of this epic is not carried down — that edge is the
+plan's own sequencing, already stated by the phase spine or a `requires:` row.
 
 **Each external target is proven at the boundary before anything is staged**, through the same
 `repos/{o}/{r}/issues/<n>` read `ledger edges` resolves an id with. Proven absent is `24`; an

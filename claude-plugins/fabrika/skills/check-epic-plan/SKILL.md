@@ -105,7 +105,7 @@ fabrika plan check $epic_number
 ```
 
 This is the **whole pass/fail decision** over the closed hard-defect enum
-(`fabrika wire doc-section --heading "The floor — fourteen defect types" < <skill-base>/contract.md`).
+(`fabrika wire doc-section --heading "The floor — fifteen defect types" < <skill-base>/contract.md`).
 Do not read the ledger and form your own verdict beside it: two
 answers to one question is how a gate contradicts itself. Both arms exit `0` — read `answer`
 (`clean` or `defective`), and carry `digest` forward to every verb that writes.
@@ -118,7 +118,8 @@ your terminal says so.
 defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back to it. Say so when
 every defect is `UNENFORCED_DEP`, because that one is the cheap case: the plan is right and only the
 `blocked_by` graph is behind it, which `plan-epic` clears with `fabrika ledger edges` and no
-re-plan.
+re-plan. `DROPPED_EPIC_BLOCKER` is not that case: the plan itself is missing a ref, so it goes back
+for a re-plan that writes the epic's own open blocker onto every child.
 
 ## 3 — Flip, and report what you observed
 
