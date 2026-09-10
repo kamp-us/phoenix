@@ -1747,7 +1747,7 @@ describe("runClaim — the blockedness gate", () => {
 			]);
 			expect(out.code).toBe(0);
 			expect(JSON.parse(out.stdout).answer).toBe("won");
-			expect(out.stderr.join("\n")).toContain("adds a commit naming #210");
+			expect(out.stderr.join("\n")).toContain("adds a commit that lands #210");
 		});
 
 		it("still refuses on 16 when the branch carries no commit naming the blocker", async () => {
@@ -1759,7 +1759,7 @@ describe("runClaim — the blockedness gate", () => {
 			]);
 			expect(out.code).toBe(BLOCKED);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-			expect(out.stderr.join("\n")).toContain("none naming an undischarged blocker");
+			expect(out.stderr.join("\n")).toContain("none landing an undischarged blocker");
 		});
 
 		it("refuses on 16 when the branch cannot be read — never admits on unread evidence", async () => {

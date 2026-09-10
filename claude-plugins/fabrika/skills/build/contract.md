@@ -643,7 +643,7 @@ assembly branch is in the pool, and the branch read that put it there is on stde
 $ fabrika build pick
 build pick: scanned p0 0, p1 1, p2 0 in owner/repo; 1 candidate(s) survived the filter, 0 excluded — 0 by the admission test, 0 for no acceptance-criteria block, 0 on the blocked_by graph.
 build pick: campaigns: 1 active — Search rewrite (#7).
-build pick: origin/main..epic/3 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
+build pick: origin/main..epic/3 adds a commit that lands #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
 {"pool":[{"number":30,"title":"The second tracer","priority":"p1","type":"chore","home":"7"}],"excluded":{},"scanned":{"p0":0,"p1":1,"p2":0},"campaigns":{"state":"active","milestones":["7"]}}
 ```
 
@@ -710,19 +710,26 @@ the assembly-branch discharge below is named from it and the answer carries it.
 
 **A blocker is discharged from two sources, and the second one is git.** It is
 discharged when its issue is closed **or** when the parent epic's assembly branch, `epic/<parent>`,
-carries a commit whose message names it. An epic run is one branch and one PR, so no
+carries a commit whose message says it *landed* it. An epic run is one branch and one PR, so no
 child issue closes until the tail PR merges — reading only the closed state would make every
 later-phase child of a run in flight permanently blocked, on a gate that cannot be satisfied
 before the epic it blocks has shipped. The branch name is derived from the parent's number, never
-taken from a caller, and the message is read with the same `#<n>` rule `build commit` and
-`lane prove` use.
+taken from a caller.
+
+**A mention is not a landing.** The message is read with `landingRefsIn`, which knows three shapes
+and nothing else: a subject's trailing `(#<n>)`, a line-anchored `Closes`/`Fixes`/`Resolves`/`Part
+of` trailer, and the ref inside the `Merge branch 'build/<n>-…'` subject `lane integrate` writes.
+Reading the looser `#<n>`-anywhere rule `build commit` and `lane prove` use let
+`refactor(tracer): rework the helper; does not touch #<n>` discharge that number's edge.
+Recognition runs one way only: a shape the rule does not know is no evidence, so the edge keeps the
+board's state and the gate refuses.
 
 **"Carries" is the run's own commits, and the range is stated in every line the verb prints**:
 `<merge base with the trunk>..epic/<parent>`, the two-dot shape `lane prove` locates a child's range
 with, where the trunk is `origin/<the repo's default branch>`. Not everything reachable from the
-branch tip — that set is the whole trunk history the branch was cut from, and since the `#<n>` rule
-matches a bare mention anywhere in a message, an old commit writing "blocked on #<n>" would
-discharge an edge whose work was never built.
+branch tip — that set is the whole trunk history the branch was cut from, where an old commit
+closing its own `#<n>` would discharge an edge this run never built. The two bounds are independent:
+the range says which commits may speak, the landing rule says what counts as speaking.
 
 The second source only ever discharges, and only on evidence it read: a branch this tree does not
 carry, a trunk this repo would not name, no merge base, or a git read that failed, leaves every edge
@@ -760,8 +767,8 @@ when every blocker's state is known.
 | `build eligible: <n> blockers could not be read — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
 | `build eligible: cannot read blocker #<m>: <reason> — its state is UNKNOWN, never counted closed.` | 11 or 16 | detail line, one per unread blocker |
 | `build eligible: blocked by <n> open blocked_by edges: #<m>, #<k>.` | 16 | refusal |
-| `build eligible: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.` | 0, 11 or 16 | detail line, once |
-| `build eligible: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
+| `build eligible: origin/<trunk>..epic/<p> adds a commit that lands #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.` | 0, 11 or 16 | detail line, once |
+| `build eligible: origin/<trunk>..epic/<p> adds <n> commit(s), none landing an undischarged blocker.` | 11 or 16 | detail line, once |
 | `build eligible: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints; on a shallow clone the merge-base reason carries git's own words, names the shallow clone as a likely cause and `git fetch --unshallow origin` as the remedy) | 11 or 16 | detail line, once |
 
 **Scope** — one issue, its parent (if any), every blocker its `blocked_by` list names, and —
@@ -798,7 +805,7 @@ $ echo $?
 ```
 $ fabrika build eligible 12
 build eligible: scanned 1 blocked_by edge; parent #3.
-build eligible: origin/main..epic/3 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
+build eligible: origin/main..epic/3 adds a commit that lands #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
 {"answer":"eligible","number":12,"parent":3}
 $ echo $?
 0
@@ -1123,8 +1130,8 @@ the pieces is what handed a builder an ordering decision it then got wrong.
 | `build claim: blocked by <n> open blocked_by edges: #<a>, #<b> — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.` — preceded by `build claim: scanned <n> blocked_by edges.` | 16 | refusal |
 | `build claim: blockedness: the gate binds a build claim only — a <purpose> claim writes no code, and authoring or checking a ledger is the work that should happen while the blocker is still open.` — printed instead of the graph read under `--purpose plan` and `--purpose gate` | 0 | detail line, once |
 | `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` (`<reason>` also covers a parent that could not be read, which leaves the assembly-branch discharge unread) | 11 | refusal |
-| `build claim: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.` | 0, 11 or 16 | detail line, once |
-| `build claim: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
+| `build claim: origin/<trunk>..epic/<p> adds a commit that lands #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.` | 0, 11 or 16 | detail line, once |
+| `build claim: origin/<trunk>..epic/<p> adds <n> commit(s), none landing an undischarged blocker.` | 11 or 16 | detail line, once |
 | `build claim: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints; on a shallow clone the merge-base reason carries git's own words, names the shallow clone as a likely cause and `git fetch --unshallow origin` as the remedy) | 11 or 16 | detail line, once |
 | `build claim: the "## Campaigns" table does not parse: <detail> — a malformed table is never read as "nothing is active"; nothing was written.` | 4 | refusal |
 | `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |
@@ -1211,7 +1218,7 @@ assembly branch, so the claim is admitted rather than parked.
 $ fabrika build claim 12
 build claim: campaigns: 1 active — Search rewrite (#7).
 build claim: purpose: build — the audience axis binds; this issue carries ready-for:agent.
-build claim: origin/main..epic/3 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
+build claim: origin/main..epic/3 adds a commit that lands #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
 build claim: scanned 1 blocked_by edge; none open.
 {"answer":"won","number":12,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
 ```
@@ -1220,7 +1227,7 @@ build claim: scanned 1 blocked_by edge; none open.
 $ fabrika build claim 13
 build claim: campaigns: 1 active — Search rewrite (#7).
 build claim: purpose: build — the audience axis binds; this issue carries ready-for:agent.
-build claim: origin/main..epic/3 adds 3 commit(s), none naming an undischarged blocker.
+build claim: origin/main..epic/3 adds 3 commit(s), none landing an undischarged blocker.
 build claim: scanned 1 blocked_by edge.
 build claim: blocked by 1 open blocked_by edge: #6 — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.
 $ echo $?
