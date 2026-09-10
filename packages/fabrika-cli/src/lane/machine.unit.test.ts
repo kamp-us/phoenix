@@ -705,7 +705,7 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
 
 		expect(resolved.event).toBe("BLOCKED");
-		expect(causeForEvent("head-behind-base", resolved.event)).toEqual({
+		expect(causeForEvent("head-behind-base", resolved.event, false)).toEqual({
 			_tag: "Caused",
 			cause: "head-behind-base",
 		});

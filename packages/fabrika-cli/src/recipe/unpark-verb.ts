@@ -31,6 +31,7 @@ import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
 import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
+import {PARK_RULE_UNREACHED} from "../lane/park-cause-rule.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
@@ -127,6 +128,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 			event: "UNBLOCKED",
 			task,
 			cause: null,
+			parkCause: PARK_RULE_UNREACHED,
 			classes: [],
 			waitGrant: clearance.waitGrant,
 		});

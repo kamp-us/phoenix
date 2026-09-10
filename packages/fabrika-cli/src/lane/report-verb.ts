@@ -27,6 +27,8 @@
  * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
@@ -36,10 +38,12 @@ import {
 	CLASS_UNRECOGNISED,
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
+	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
+import {parkCauseRefusal} from "./park-cause-rule.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
@@ -59,6 +63,13 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
+	/**
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * Passed in rather than read here, the way `lane open` takes its cap: this verb's append path
+	 * stays offline, and the one config read belongs to the adapter that already knows the checkout.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
 	/** The lane classes standing at this event, relayed onto the event line. */
 	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
@@ -79,9 +90,14 @@ export const runReport = <R>(
 		if (resolved._tag === "Unrecognised") {
 			return refuse(TOKEN_UNRECOGNISED, `${VERB}: refused (log unappended): ${resolved.reason}`);
 		}
-		const caused = causeForEvent(options.cause, resolved.event);
+		const rule = parkCauseRefusal(VERB, options.parkCause);
+		if (rule._tag === "Refused") return rule.outcome;
+		const caused = causeForEvent(options.cause, resolved.event, rule.requireCause);
 		if (caused._tag === "Rejected") {
 			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
+		}
+		if (caused._tag === "Required") {
+			return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
 		const classed = classesForEvent(options.classes);
 		if (classed._tag === "Rejected") {

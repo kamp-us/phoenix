@@ -8,6 +8,7 @@ import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
+import {parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {runTransition} from "./transition-verb.ts";
@@ -155,6 +156,7 @@ describe("emitMachine", () => {
 					event: "WIP",
 					task: "issue_4301",
 					cause: null,
+					parkCause: parkCauseRead(),
 					classes: [],
 					waitGrant: null,
 				}),
@@ -198,6 +200,7 @@ describe("emitMachine", () => {
 					event: "WIP",
 					task: "issue_4303",
 					cause: null,
+					parkCause: parkCauseRead(),
 					classes: [],
 					waitGrant: null,
 				}),

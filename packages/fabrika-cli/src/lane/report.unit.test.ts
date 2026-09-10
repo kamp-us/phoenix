@@ -1,13 +1,16 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {classifyPark} from "../recipe/parks.ts";
+import {classifyPark, KNOWN_PARKS} from "../recipe/parks.ts";
 import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {
 	causeForEvent,
 	eventForToken,
 	flattenVocabularies,
 	PARK_CAUSE_TOKENS,
+	PARK_CAUSES,
+	type ParkCause,
+	routeForCause,
 	SHELL_VOCABULARIES,
 } from "./report.ts";
 
@@ -189,12 +192,12 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
 
 		expect(resolved.event).toBe("BLOCKED");
-		expect(causeForEvent(cause, resolved.event)).toEqual({_tag: "Caused", cause});
+		expect(causeForEvent(cause, resolved.event, false)).toEqual({_tag: "Caused", cause});
 	});
 
 	it.each(RENDERED_PARKS)("refuses %2$s on an event that is not a park", (_token, cause) => {
-		expect(causeForEvent(cause, "PASS")).toMatchObject({_tag: "Rejected"});
-		expect(causeForEvent(cause, "DONE")).toMatchObject({_tag: "Rejected"});
+		expect(causeForEvent(cause, "PASS", false)).toMatchObject({_tag: "Rejected"});
+		expect(causeForEvent(cause, "DONE", false)).toMatchObject({_tag: "Rejected"});
 	});
 
 	// A cause is payable on naming alone. No `KNOWN_PARKS` row covers any of the three, so
@@ -206,5 +209,90 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 		if (parked._tag !== "Novel") return;
 		expect(parked.reason).toContain(cause);
 		expect(parked.reason).not.toContain("records the event and not its cause");
+	});
+});
+
+/**
+ * The route axis: every cause carries one, both `KNOWN_PARKS` shapes read it off this one table, and
+ * a cause added without a route reds here rather than routing silently.
+ */
+describe("every park cause carries a route", () => {
+	it.each(PARK_CAUSE_TOKENS)("%s carries a route of driver or founder", (cause) => {
+		const entry = PARK_CAUSES[cause as ParkCause];
+
+		expect(entry).toBeDefined();
+		expect(["driver", "founder"]).toContain(entry.route);
+	});
+
+	// The `retry-budget.unit.test.ts` shape, for the same reason: nothing destructures `route` at a
+	// site TypeScript would red, so the drift guard has to read the table itself.
+	it("leaves no token routeless — a new cause added without a route reds here", () => {
+		const routeless = Object.entries(PARK_CAUSES).filter(
+			([, entry]) => entry.route !== "driver" && entry.route !== "founder",
+		);
+
+		expect(routeless).toEqual([]);
+		expect(PARK_CAUSE_TOKENS).toHaveLength(Object.keys(PARK_CAUSES).length);
+	});
+
+	it("routes campaign-paused to the founder — a campaign's lifecycle is a product call", () => {
+		expect(routeForCause("campaign-paused")).toBe("founder");
+	});
+
+	it.each([
+		"worktree-holds-branch",
+		"head-behind-base",
+		"spawn-dead",
+		"no-preview-render",
+		"no-design-manifest",
+		"no-rendered-delta",
+	])("routes %s to the driver — it is machinery, and no product call is in it", (cause) => {
+		expect(routeForCause(cause)).toBe("driver");
+	});
+
+	// Fail-closed: a park nothing named cannot be attributed to machinery, so the derivation may not
+	// claim a driver can work it.
+	it.each([null, "not-a-cause"])("routes an unnamed park (%p) to the founder", (cause) => {
+		expect(routeForCause(cause)).toBe("founder");
+	});
+
+	it("carries the route onto every KNOWN_PARKS row, read off the same table", () => {
+		expect(KNOWN_PARKS).not.toHaveLength(0);
+		for (const recipe of KNOWN_PARKS) {
+			expect(recipe.route).toBe(routeForCause(recipe.cause));
+		}
+	});
+});
+
+describe("a BLOCKED that names no cause", () => {
+	it("records as the bare park it always was while the key is off", () => {
+		expect(causeForEvent(null, "BLOCKED", false)).toEqual({_tag: "Uncaused"});
+	});
+
+	it("is Required — never Rejected — while the key is on, so its own exit code is reachable", () => {
+		const resolved = causeForEvent(null, "BLOCKED", true);
+
+		expect(resolved._tag).toBe("Required");
+		if (resolved._tag !== "Required") return;
+		// The refusal is actionable on its own line: a caller reading only stderr must not have to go
+		// find the closed set somewhere else.
+		for (const cause of PARK_CAUSE_TOKENS) expect(resolved.reason).toContain(cause);
+	});
+
+	it.each([
+		"DONE",
+		"PASS",
+		"FAIL",
+		"WIP",
+		"UNBLOCKED",
+	] as const)("is untouched on %s, which is no park — the key binds BLOCKED alone", (event) => {
+		expect(causeForEvent(null, event, true)).toEqual({_tag: "Uncaused"});
+	});
+
+	it.each([false, true])("leaves a named cause alone at requireCause %p", (requireCause) => {
+		expect(causeForEvent("campaign-paused", "BLOCKED", requireCause)).toEqual({
+			_tag: "Caused",
+			cause: "campaign-paused",
+		});
 	});
 });

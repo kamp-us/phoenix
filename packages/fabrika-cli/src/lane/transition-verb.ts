@@ -12,6 +12,8 @@
  * {@link CONCURRENT_WRITE} — retry this same event — never an ordinary machine-refusal code.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
@@ -22,11 +24,13 @@ import {
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
 	GRANT_REFUSED,
+	PARK_UNCAUSED,
 	RESUME_UNBUDGETED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import {isOperatorEvent} from "./machine.ts";
+import {parkCauseRefusal} from "./park-cause-rule.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
 	type CauseResolution,
@@ -52,6 +56,14 @@ export interface TransitionOptions extends LaneRef {
 	 * novel by construction, which is the gap the cause field closed on the shell's path.
 	 */
 	readonly cause: string | null;
+	/**
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * This verb records the parks a driver originates, so the rule refusing a cause-less park has to
+	 * reach it too — a rule only the shell's path enforced would leave the driver's own bare
+	 * `BLOCKED` recordable, which is the same defect at a different door.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
 	/**
 	 * The lane classes standing at this event, which the `class:<name>` arms route on.
 	 *
@@ -92,11 +104,16 @@ export const runTransition = (
 				const event = options.event.toUpperCase();
 				// An event outside the six is applyEvent's refusal below, and its message is the better one;
 				// seating the cause as Uncaused here just keeps this read total until that refusal lands.
+				const rule = parkCauseRefusal(VERB, options.parkCause);
+				if (rule._tag === "Refused") return rule.outcome;
 				const caused: CauseResolution = isOperatorEvent(event)
-					? causeForEvent(options.cause, event)
+					? causeForEvent(options.cause, event, rule.requireCause)
 					: {_tag: "Uncaused"};
 				if (caused._tag === "Rejected") {
 					return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
+				}
+				if (caused._tag === "Required") {
+					return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 				}
 				const classed = classesForEvent(options.classes);
 				if (classed._tag === "Rejected") {

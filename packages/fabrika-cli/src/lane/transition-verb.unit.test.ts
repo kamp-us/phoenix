@@ -1,5 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {
 	APPEND_UNKNOWN,
@@ -7,9 +9,12 @@ import {
 	CLASS_UNRECOGNISED,
 	EVENT_REFUSED,
 	LANE_ABSENT,
+	LANE_UNREADABLE,
+	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {PARK_CAUSE_TOKENS} from "./report.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -26,10 +31,11 @@ const run = (
 	cause: string | null = null,
 	classes: ReadonlyArray<string> = [],
 	waitGrant: number | null = null,
+	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runTransition({root: ROOT, lane: "42", event, task, cause, classes, waitGrant}),
+			runTransition({root: ROOT, lane: "42", event, task, cause, parkCause, classes, waitGrant}),
 			fs.layer,
 		),
 	);
@@ -179,6 +185,53 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		expect(out.code).toBe(0);
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(Object.keys(appended).sort()).toEqual(["at", "event", "task"]);
+	});
+});
+
+describe("lane transition — a cause-less park under `parkCause.uncaused: refuse`", () => {
+	const strict = parkCauseRead("refuse");
+
+	it("refuses the bare BLOCKED at its own code, log byte-identical", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, null, [], null, strict);
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(fs.written.has(LOG)).toBe(false);
+		// Its own code, not the unknown-cause one: that remedy is "drop or respell", this one's is
+		// the opposite — name a cause.
+		expect(out.code).not.toBe(CAUSE_UNRECOGNISED);
+		for (const cause of PARK_CAUSE_TOKENS) expect(out.stderr.join(" ")).toContain(cause);
+	});
+
+	it("records the same BLOCKED once it names a cause", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, "campaign-paused", [], null, strict);
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "campaign-paused"});
+	});
+
+	it("leaves every non-park event alone — the key binds BLOCKED and nothing else", async () => {
+		const fs = freshLane();
+
+		const out = await run(fs, "WIP", null, null, [], null, strict);
+
+		expect(out.code).toBe(0);
+	});
+
+	it("refuses UNKNOWN on a config nobody could read, rather than recording the bare park", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, null, [], null, {
+			_tag: "Refused",
+			reason: "EACCES",
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.has(LOG)).toBe(false);
 	});
 });
 
