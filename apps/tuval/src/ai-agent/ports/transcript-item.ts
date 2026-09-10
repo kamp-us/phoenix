@@ -169,6 +169,13 @@ export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemI
 	return null;
 };
 
+/**
+ * Whether this row is a nested worker's rather than the agent's own — the `parentId` tag read as a
+ * predicate, so the bounds and the page cursor ask the question in one place instead of each
+ * spelling the field test.
+ */
+export const isNestedItem = (item: TranscriptItem): boolean => item.parentId !== undefined;
+
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
 

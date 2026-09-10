@@ -9,16 +9,16 @@
  * adapter's question, not this bound's.
  */
 
-import type {TranscriptItem, TranscriptPagePayload, WindowOmission} from "../ports/index.ts";
-import {groupTranscript, type TranscriptGroup} from "./groups.ts";
+import type {TranscriptItem, TranscriptPagePayload} from "../ports/index.ts";
+import {groupTranscript} from "./groups.ts";
 import type {PlanRefusal} from "./refusal.ts";
 import {
 	boundaryOf,
 	bytesOf,
-	itemIndexOf,
+	nestedLimitsFor,
 	positiveLimit,
-	stoppedBy,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
+	takeGroups,
 } from "./window.ts";
 
 export type TranscriptPage = Extract<TranscriptPagePayload, {kind: "page"}> & {
@@ -67,31 +67,18 @@ export const planTranscriptPage = (
 	const boundary = boundaryOf(history, groups, containing?.items[0].id ?? cursor);
 	if (typeof boundary !== "number") return boundary;
 
-	const taken: Array<TranscriptGroup> = [];
-	let items = 0;
-	let bytes = 0;
-	let reason: WindowOmission["reason"] = "none";
-	for (let index = boundary - 1; index >= 0; index -= 1) {
-		const group = groups[index];
-		if (group === undefined) break;
-		const stop = stoppedBy(group, {items, bytes}, {items: options.limit, bytes: byteLimit});
-		if (stop !== null && taken.length > 0) {
-			reason = stop;
-			break;
-		}
-		taken.unshift(group);
-		items += group.items.length;
-		bytes += group.bytes;
-	}
-
-	const start = taken[0]?.start ?? itemIndexOf(history, groups, boundary);
-	const older = history.slice(0, start);
-	const pageItems = taken.flatMap((group) => [...group.items]);
+	const own = {items: options.limit, bytes: byteLimit};
+	const taken = takeGroups(history, groups, boundary, {own, nested: nestedLimitsFor(own)});
+	const older = history.slice(0, taken.start);
 	return {
 		kind: "page",
-		start,
-		items: pageItems,
-		omitted: {items: older.length, bytes: bytesOf(older), reason},
-		next: older.length === 0 ? null : (pageItems[0]?.id ?? null),
+		start: taken.start,
+		items: taken.items,
+		omitted: {
+			items: older.length + taken.shed.length,
+			bytes: bytesOf(older) + bytesOf(taken.shed),
+			reason: taken.reason,
+		},
+		next: older.length === 0 ? null : (taken.items[0]?.id ?? null),
 	};
 };

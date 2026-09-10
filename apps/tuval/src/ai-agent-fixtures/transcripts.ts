@@ -86,6 +86,12 @@ export const compactionItem = (
 	text,
 });
 
+/** The same row as a nested worker emits it: tagged with the call it ran inside (#8814). */
+export const nestedUnder = <A extends TranscriptItem>(item: A, parent: string): A => ({
+	...item,
+	parentId: ItemId.make(parent),
+});
+
 /** One subagent slot, running by default: the shape a mapper hands the core (#8401). */
 export const subagentSlot = (
 	id: string,
