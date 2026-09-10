@@ -4,9 +4,9 @@
  * One sub-key. `uncaused` says whether a cause-less park is recorded as the bare `BLOCKED` it always
  * was, or refused before the log is touched.
  *
- * **The shipped default is `record`, which is today's behaviour.** Ruling R5.1 on #8807 makes a
- * cause-less park a bug — it folds to a `Novel` park no recipe keys on, so it costs a human
- * `UNBLOCKED` to say a thing the recorder already knew. But every shell in flight when this lands
+ * **The shipped default is `record`, which is today's behaviour.** A cause-less park is a bug — it
+ * folds to a `Novel` park no recipe keys on, so it costs a human `UNBLOCKED` to say a thing the
+ * recorder already knew. But every shell in flight when this lands
  * still reports the bare park on some path, and flipping the refusal on by default would brick those
  * lanes mid-drive. So the strictness is a repo's to declare, and a repo whose shells all name their
  * causes declares `refuse` for itself.
