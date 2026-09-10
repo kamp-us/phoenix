@@ -150,20 +150,29 @@ line names both escapes. Prefer the repair: `ledger retopology` rewrites that on
 block from the live child links, is refusal-first the same way `triage repair-criteria` is, and
 leaves the emit that follows needing no flag. It needs no plan run, closes and unlinks nothing, and
 preserves every byte outside the block — but it does hold the epic's claim and it does take the
-body digest, so it is three calls, not one:
+body digest, so it is four calls, not one:
 
 ```bash
 node packages/fabrika-cli/src/bin.ts build claim <epic> --purpose plan
 node packages/fabrika-cli/src/bin.ts ledger digest <epic> --token <claim-token>
 node packages/fabrika-cli/src/bin.ts ledger retopology <epic> --body-digest <12-hex> --token <claim-token>
+node packages/fabrika-cli/src/bin.ts build release <epic> --token <claim-token>
 ```
 
 `ledger digest` is the digest's source on this route and it writes nothing — no run directory, no
 file, no issue. **Take it from there and never from `ledger open`**, which prints the same value
 only by staging a plan run and refuses `20` on a tree behind `origin/main`, so a mid-drive lane on
 a slightly stale tree would be wedged at the middle step with the body still unrepaired. A `21` out
-of the last call means the body moved between the two reads: re-run `ledger digest` and pass the
-new value.
+of `ledger retopology` means the body moved between the two reads: re-run `ledger digest` and pass
+the new value.
+
+**The release is a step, not a tidy-up.** Nothing else in the drive retracts it: the builders you
+spawn claim children under their own nonces and never touch a marker on the epic. So a claim left
+standing outlives you, and the next session that needs it — a re-plan, another `ledger` verb, a
+second driver repairing the same epic — refuses at `15` against a holder who is gone, which is the
+wedge this whole route exists to end, moved one seam over. Release after a refusal too: the repair
+failing is no reason to keep the claim. If the release itself refuses, the marker is standing and
+only a human can retract it — end `STOPPED` naming the code rather than driving on.
 
 `lane emit <epic> --children` is the other escape and it routes *around* the stale block instead of
 fixing it — take it when the body is not yours to repair, and read the dropped refs it reports so
@@ -1120,10 +1129,11 @@ a defect this verb repairs.
 `fabrika ledger retopology <epic>`, which owns an epic's `## Dependencies` block exactly as
 `triage repair-criteria` owns a criteria block: it rewrites that block from the live child links
 and nothing else, so a founder descope stops wedging `lane emit` at `16` — the boot step above is
-where you meet it, and its three-call fence lives there. It refuses rather than guesses on every
-other shape, so running it never makes you the one choosing what the body says. The `ledger digest`
-call that fence opens with does not widen this set: it writes nothing at all, and a verb that
-writes nothing is not a body repair.
+where you meet it, and its four-call fence lives there. It refuses rather than guesses on every
+other shape, so running it never makes you the one choosing what the body says. The other three
+calls in that fence do not widen this set: `build claim` and `build release` write and retract a
+claim marker comment, and `ledger digest` writes nothing at all — no run directory, no file, no
+issue. None of the three touches a body.
 
 The permission is exactly those two calls and stops there. **Never edit the body yourself** — you are
 type-blind, and a driven issue's body is not your artifact — so no hand-edit, no other section, and

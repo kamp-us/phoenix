@@ -1508,8 +1508,8 @@ ledger digest: #3's body digests to 8f2c1a90b4d7 — carry it to `ledger retopol
 
 **Grounding**
 
-- The gap it closes was found by review on PR #8978 (#6237's criterion 20): a sanctioned operator
-  route whose one required input had no source outside the staged run the route disclaims.
+- The gap it closes: the sanctioned operator repair route required a body digest, and the only verb
+  that printed one staged the whole plan run that route disclaims needing.
 - It computes nothing of its own. A second implementation of the hash would be a second answer to
   the question `21` exists to settle.
 
