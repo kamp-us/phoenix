@@ -348,8 +348,10 @@ const branch = leafCommand(
 			Flag.withDescription("create mode: kebab-case, ≤5 words, must not begin with a hyphen"),
 		),
 		base: Flag.string("base").pipe(
-			Flag.withDefault("origin/main"),
-			Flag.withDescription("the base ref, FETCHED before the branch is cut (default: origin/main)"),
+			Flag.optional,
+			Flag.withDescription(
+				"the base ref, FETCHED before the branch is cut; honoured verbatim on every lane. Omit it and create mode DERIVES the base: epic/<parent> for a child of an epic, origin/main for a proven-standalone issue",
+			),
 		),
 		resume: Flag.integer("resume").pipe(
 			Flag.optional,
@@ -370,7 +372,7 @@ const branch = leafCommand(
 			yield* runBranch({
 				number: Option.getOrNull(number),
 				slug: Option.getOrNull(slug),
-				base,
+				base: Option.getOrNull(base),
 				resume: Option.getOrNull(resume),
 				resumeLane,
 				token,
@@ -382,7 +384,7 @@ const branch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
-		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing. The branch name IS the lane record — there is no stamp file. --resume-lane is resume mode for an epic child, which opens no PR: it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on. It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged, or --resume-lane found no local branch cut for <number>), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, or --resume-lane was combined with --resume or --slug), 11 (the fetch failed, the tree root or claim state could not be read, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 15 (proven: the claim is held by another lane). Why the nonce and the re-key are shaped this way is in claude-plugins/fabrika/skills/build/contract.md. Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
+		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing. The branch name IS the lane record — there is no stamp file. CREATE MODE DERIVES THE BASE when --base is absent: it reads <number>'s parent through GitHub's issue-parent endpoint and, on a parent, cuts off that epic's assembly branch epic/<parent>, fetched like any other base; a proven-standalone issue cuts off origin/main. An explicit --base is honoured verbatim on every lane, epic child included, and suppresses the derivation. It NEVER falls back to origin/main on a read it could not make — that fallback is the silent wrong base that had an epic child graded against a fork point its assembly branch never contained. Every run names the base it used and where it came from on stderr. --resume-lane is resume mode for an epic child, which opens no PR: it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on. It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged; --resume-lane found no local branch cut for <number>; or the derived assembly branch epic/<parent> is proven absent from both origin and this clone), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, or --resume-lane was combined with --resume or --slug), 11 (the fetch failed, the tree root or claim state could not be read, the parent read or the assembly-branch read failed so which base this lane belongs on is UNKNOWN, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 15 (proven: the claim is held by another lane). Why the nonce, the derivation and the re-key are shaped this way is in claude-plugins/fabrika/skills/build/contract.md. Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
 	),
 );
 

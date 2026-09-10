@@ -3,7 +3,10 @@
  *
  * The lane-identity rule lives in `lane.ts`; this verb is where a name that obeys it first comes into
  * existence. Create mode cuts `build/<number>-<slug>-<nonce>` off `FETCH_HEAD` — never a local
- * `origin/main`, which can predate the base the lane needs. Resume mode checks the
+ * `origin/main`, which can predate the base the lane needs. **Which base that is, create mode
+ * derives**: an epic child is cut off its run's assembly branch `epic/<parent>` and a standalone
+ * issue off the trunk, with an explicit `--base` honoured verbatim over either — see
+ * {@link resolveBase} for the silent wrong base that derivation removes. Resume mode checks the
  * PR's head branch out under the **local** name `build/pr-<pr>-<nonce>` with its upstream pointed at
  * the remote head, so `build push` updates the PR while the local name carries *this* repair claim's
  * nonce — which is what stops a dead earlier lane from pinning this one.
@@ -21,19 +24,21 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {epicBranch} from "../wire/lane-brief.ts";
 import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	branchExists,
 	currentBranch,
 	fetchBase,
+	remoteSha,
 	renameBranch,
 	setUpstream,
 	switchTo,
 	switchToNew,
 	worktreeCheckouts,
 } from "./git.ts";
-import {getPullHead} from "./github.ts";
+import {getParent, getPullHead} from "./github.ts";
 import {
 	childLaneBranches,
 	createBranchName,
@@ -50,7 +55,12 @@ export interface BranchOptions {
 	/** Create mode: the claimed issue the branch serves. `null` in resume mode. */
 	readonly number: number | null;
 	readonly slug: string | null;
-	readonly base: string;
+	/**
+	 * The base ref an operator named, honoured verbatim on every lane. `null` is "nobody passed one",
+	 * which is what lets the create path derive an epic child's assembly base instead — the two used
+	 * to be one value, and `origin/main` was then indistinguishable from a deliberate trunk cut.
+	 */
+	readonly base: string | null;
 	/** Resume mode: the PR whose head branch to publish back to. Exclusive with `number`. */
 	readonly resume: number | null;
 	/**
@@ -66,6 +76,92 @@ export interface BranchOptions {
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
+
+/** The trunk a lane with no parent epic and no operator-named base is cut from. */
+const TRUNK = "origin/main";
+
+type ResolvedBase =
+	| {readonly _tag: "Resolved"; readonly base: string; readonly note: string}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Which base the create path cuts off, and where that answer came from.
+ *
+ * An epic child's commits belong on the run's assembly branch, and the verb derives that itself
+ * rather than trusting a builder to pass `--base epic/<n>` — the omission is silent, and a child cut
+ * off the trunk is graded against a fork point the assembly branch does not contain, which surfaces
+ * at integrate as a conflict or as a clean merge that drops a sibling's work. Both endpoints are
+ * derived the way `readAssembly` derives them: the parent from GitHub's own parent endpoint, the
+ * branch name from that number through {@link epicBranch}.
+ *
+ * Every arm is proven. A parent read that failed refuses rather than falling back to the trunk,
+ * because that fallback IS the silent wrong base. A derived branch that exists nowhere is a proven
+ * `7`, split from the unreadable `11` rather than fused into one message.
+ */
+const resolveBase = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	issue: number,
+	named: string | null,
+): Effect.Effect<
+	ResolvedBase,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
+	Effect.gen(function* () {
+		if (named !== null) {
+			return {
+				_tag: "Resolved" as const,
+				base: named,
+				note: `${VERB}: base ${named} — named by the operator with --base; no epic derivation ran.`,
+			};
+		}
+		const parent = yield* getParent(env, repo, issue);
+		if (parent._tag === "Unknown") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off ${TRUNK} anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
+				),
+			};
+		}
+		if (parent._tag === "Absent") {
+			return {
+				_tag: "Resolved" as const,
+				base: TRUNK,
+				note: `${VERB}: base ${TRUNK} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
+			};
+		}
+		const assembly = epicBranch(parent.value);
+		const published = yield* remoteSha("origin", assembly);
+		if (published._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: #${issue} is a child of epic #${parent.value}, and whether origin carries its assembly branch ${assembly} could not be read: ${published.reason} — which base this child belongs on is UNKNOWN. Nothing was cut.`,
+				),
+			};
+		}
+		if (published.value === null && !(yield* branchExists(assembly))) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					ZERO_SCOPE,
+					`${VERB}: #${issue} is a child of epic #${parent.value}, whose assembly branch ${assembly} is proven absent — origin holds no refs/heads/${assembly} and neither does this clone. Place the run's branch with "fabrika lane assembly ${parent.value}" before building a child on it. Nothing was cut.`,
+				),
+			};
+		}
+		// The published spelling when origin carries it, the bare local one when only this clone does;
+		// either way `fetchBase` fetches before it resolves, so a stale local `epic/<n>` is never the cut.
+		const base = published.value === null ? assembly : `origin/${assembly}`;
+		return {
+			_tag: "Resolved" as const,
+			base,
+			note: `${VERB}: base ${base} — derived from #${issue}'s parent epic #${parent.value}; --base was not given.`,
+		};
+	});
 
 /** Check the branch out, whether or not it already exists — the idempotent half. */
 const checkout = (name: string, start: string) =>
@@ -270,21 +366,28 @@ export const runBranch = (
 					]);
 		}
 
-		const fetched = yield* fetchBase(options.base);
+		const issue = number as number;
+		const resolvedBase = yield* resolveBase(options.env, repo, issue, options.base);
+		if (resolvedBase._tag === "Refused")
+			return {...resolvedBase.outcome, stderr: [...held.notes, ...resolvedBase.outcome.stderr]};
+		const {base} = resolvedBase;
+		const notes = [...held.notes, resolvedBase.note];
+
+		const fetched = yield* fetchBase(base);
 		if (fetched._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot fetch ${options.base}: ${fetched.reason} — refusing to cut a branch off a stale base.`,
-				held.notes,
+				`${VERB}: cannot fetch ${base}: ${fetched.reason} — refusing to cut a branch off a stale base.`,
+				notes,
 			);
 		}
-		const name = createBranchName(number as number, slug as string, nonce);
+		const name = createBranchName(issue, slug as string, nonce);
 		const switched = yield* checkout(name, fetched.value);
 		return switched._tag === "Failure"
 			? refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot cut ${name} off ${options.base}: ${switched.reason} — nothing was changed.`,
-					held.notes,
+					`${VERB}: cannot cut ${name} off ${base}: ${switched.reason} — nothing was changed.`,
+					notes,
 				)
-			: answer(name, held.notes);
+			: answer(name, notes);
 	});
