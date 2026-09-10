@@ -25,7 +25,6 @@ import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {MACHINERY_LAPS, type MachineryLapsSurface} from "../config/keys/machinery-laps.ts";
 import type {Read} from "../config/read-key.ts";
-import {capAndCount} from "../evidence.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
@@ -44,17 +43,8 @@ import {type LaneRef, placeMachine} from "./store.ts";
 
 const VERB = "fabrika lane emit";
 
-/**
- * `dropped` is an evidence-array with no reason vocabulary, so it collapses cap-and-count per the
- * bounded-evidence-output-shape decision.
- */
-const DROPPED_CAP = 5;
-
-/** The one spelling of a capped `dropped` list, so the two channels never state different counts. */
-const droppedList = (dropped: ReadonlyArray<string>): string => {
-	const {rows, more} = capAndCount(dropped, DROPPED_CAP);
-	return `${rows.join(", ")}${more === 0 ? "" : ` (+${more} more)`}`;
-};
+/** The one spelling of the `dropped` list, so the two channels never state different refs. */
+const droppedList = (dropped: ReadonlyArray<string>): string => dropped.join(", ");
 
 export interface EmitOptions<R = never> {
 	readonly epic: number;
@@ -176,7 +166,6 @@ export const runEmit = <R = never>(
 			);
 		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
-		const dropped = capAndCount(emitted.dropped, DROPPED_CAP);
 		return answer(
 			JSON.stringify({
 				answer: "emitted",
@@ -184,7 +173,7 @@ export const runEmit = <R = never>(
 				workflow: placed.workflow,
 				phases: emitted.phases,
 				children: emitted.children,
-				dropped: {count: emitted.dropped.length, ...dropped},
+				dropped: {count: emitted.dropped.length, rows: emitted.dropped},
 				bytes: new TextEncoder().encode(emitted.text).length,
 			}),
 			[

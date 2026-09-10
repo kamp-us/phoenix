@@ -24,7 +24,6 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {capAndCount} from "../evidence.ts";
 import {getIssue, patchIssueBody} from "../io/issues.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -47,17 +46,8 @@ import {checkTopology, type Declared, readDeclared} from "./topology-doc.ts";
 
 const VERB = "ledger retopology";
 
-/**
- * `dropped` is an evidence-array with no reason vocabulary, so it collapses cap-and-count per the
- * bounded-evidence-output-shape decision.
- */
-const DROPPED_CAP = 5;
-
-/** The one spelling of a capped `dropped` list, so the two channels never state different counts. */
-const droppedList = (dropped: ReadonlyArray<string>): string => {
-	const {rows, more} = capAndCount(dropped, DROPPED_CAP);
-	return `${rows.join(", ")}${more === 0 ? "" : ` (+${more} more)`}`;
-};
+/** The one spelling of the `dropped` list, so the two channels never state different refs. */
+const droppedList = (dropped: ReadonlyArray<string>): string => dropped.join(", ");
 
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
@@ -188,7 +178,7 @@ export const runRetopology = (
 			epic: epic.number,
 			children: declared.lines.length,
 			phases: checked.phases,
-			dropped: {count: declared.dropped.length, ...capAndCount(declared.dropped, DROPPED_CAP)},
+			dropped: {count: declared.dropped.length, rows: declared.dropped},
 			bodyDigest: options.bodyDigest,
 		};
 

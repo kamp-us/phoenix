@@ -105,7 +105,7 @@ describe("runRetopology", () => {
 			epic: 4300,
 			children: 2,
 			phases: 2,
-			dropped: {count: 1, rows: ["#4302"], more: 0},
+			dropped: {count: 1, rows: ["#4302"]},
 			verified: true,
 		});
 		const written = patchedBody(seams) ?? "";
@@ -193,7 +193,7 @@ describe("runRetopology", () => {
 		expect(outcome.stderr.join("\n")).toContain("does not parse");
 	});
 
-	it("collapses a long dropped list on stderr the same way its stdout answer does", async () => {
+	it("reports a long dropped list whole on stderr the same way its stdout answer does", async () => {
 		const many = body(
 			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9901, #9902, #9903, #9904, #9905, #9906, #9907\n",
 		);
@@ -208,22 +208,23 @@ describe("runRetopology", () => {
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
 			answer: "rewritten",
-			dropped: {count: 7, rows: ["#9901", "#9902", "#9903", "#9904", "#9905"], more: 2},
+			dropped: {
+				count: 7,
+				rows: ["#9901", "#9902", "#9903", "#9904", "#9905", "#9906", "#9907"],
+			},
 		});
 		const stderr = outcome.stderr.join("\n");
-		expect(stderr).toContain("dropping 7 ref(s): #9901, #9902, #9903, #9904, #9905 (+2 more)");
-		expect(stderr).not.toContain("#9906");
+		expect(stderr).toContain("dropping 7 ref(s): #9901, #9902, #9903, #9904, #9905, #9906, #9907.");
 	});
 
-	it("collapses the dropped list on the emptied refusal too", async () => {
+	it("reports the dropped list whole on the emptied refusal too", async () => {
 		const foreign = body(
 			"## Dependencies\n\n- phase 1: #9901, #9902, #9903, #9904, #9905, #9906, #9907\n",
 		);
 		const {outcome} = await run(happy({before: foreign}), bodyDigest(foreign));
 		expect(outcome.code).toBe(TOPOLOGY_INVALID);
 		const stderr = outcome.stderr.join("\n");
-		expect(stderr).toContain("#9901, #9902, #9903, #9904, #9905 (+2 more)");
-		expect(stderr).not.toContain("#9906");
+		expect(stderr).toContain("#9901, #9902, #9903, #9904, #9905, #9906, #9907");
 	});
 
 	it("refuses a live child the block places in no phase", async () => {

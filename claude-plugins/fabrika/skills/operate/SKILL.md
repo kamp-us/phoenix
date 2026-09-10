@@ -152,7 +152,8 @@ leaves the emit that follows needing no flag. It holds the epic's claim, so clai
 it needs no plan run, closes and unlinks nothing, and preserves every byte outside the block.
 `lane emit <epic> --children` is the other escape and it routes *around* the stale block instead of
 fixing it — take it when the body is not yours to repair, and read the dropped refs it reports so
-the staleness is still on the record. On a refusal out of either, end `STOPPED` naming the code.
+the staleness is still on the record. It reports every one of them on both channels, however many
+the descope took, so the record you put on the board is the whole list and never a sample of it. On a refusal out of either, end `STOPPED` naming the code.
 
 **Exit `48` is the mirror: the issue is an epic's *child*, so the lane to drive is the parent's.**
 The parent epic's lane already carries this number as one of its tasks, and a second ledger booted

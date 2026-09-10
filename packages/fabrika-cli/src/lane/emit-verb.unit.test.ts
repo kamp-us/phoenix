@@ -200,10 +200,29 @@ describe("lane emit", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			answer: "emitted",
 			children: 2,
-			dropped: {count: 1, rows: ["#9999"], more: 0},
+			dropped: {count: 1, rows: ["#9999"]},
 		});
 		expect(out.stderr.join("\n")).toContain("#9999");
 		expect(fs.written.get(WORKFLOW) ?? "").not.toContain("9999");
+	});
+
+	it("reports a long dropped list whole on both channels", async () => {
+		const rows = ["#9901", "#9902", "#9903", "#9904", "#9905", "#9906", "#9907"];
+		const {out} = await runWithChildren([
+			[
+				ISSUE,
+				epic({
+					body: `## Dependencies\n\n- phase 1: #4301, #4302\n- phase 2: ${rows.join(", ")}\n`,
+				}),
+			],
+			[SUBS, children],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "emitted", dropped: {count: 7, rows}});
+		expect(out.stderr.join("\n")).toContain(
+			`dropped 7 ref(s) #4300's topology names and its child list does not: ${rows.join(", ")}.`,
+		);
 	});
 
 	it("refuses at 15 with nothing placed when --children empties the topology", async () => {
