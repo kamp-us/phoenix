@@ -14,7 +14,7 @@
  */
 
 import {unfencedLines} from "../plan/ledger.ts";
-import {MARKER_RE} from "../triage/enrich.ts";
+import {preservedEnvelope} from "../triage/enrich.ts";
 import {PLAN_HEADING} from "./plan-block.ts";
 import type {PlanMode} from "./run.ts";
 
@@ -38,16 +38,6 @@ const unresolvable = (reason: string): Splice => ({_tag: "Unresolvable", reason}
 
 const headingCount = (epic: number, heading: string, count: number): string =>
 	`#${epic}'s body carries ${count} "${heading}" headings — the plan region has no single meaning.`;
-
-/** The `[start, end)` line span of the preserved brief envelope, or `null` when there is no marker. */
-const envelopeOf = (lines: ReadonlyArray<string>): {start: number; end: number} | null => {
-	const start = lines.findIndex((line) => MARKER_RE.test(line.trim()));
-	if (start === -1) return null;
-	const closing = lines.findIndex(
-		(line, index) => index > start && line.trim().toLowerCase() === "</details>",
-	);
-	return {start, end: closing === -1 ? start : closing};
-};
 
 export interface SpliceInput {
 	readonly epic: number;
@@ -96,7 +86,7 @@ export const splicePlan = (input: SpliceInput): Splice => {
 
 	const start = planAnchors[0] as number;
 	const dependencies = dependencyAnchors[0] as number;
-	const envelope = envelopeOf(lines);
+	const envelope = preservedEnvelope(lines);
 	if (envelope !== null && dependencies > envelope.start && dependencies < envelope.end) {
 		return unresolvable(
 			`#${input.epic}'s "${DEPENDENCIES_HEADING}" heading resolves inside the preserved brief envelope — refusing to cut the region there.`,

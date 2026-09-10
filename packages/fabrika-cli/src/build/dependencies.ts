@@ -98,18 +98,57 @@ const parseRefList = (raw: string): ReadonlyArray<Ref> | null => {
 	return refs;
 };
 
+/**
+ * The `[heading, end)` line span of one `## Dependencies` section, 0-based, `end` exclusive.
+ *
+ * A reader that only wants the edges takes {@link readTopology}; a *writer* needs the bytes it may
+ * replace, and deriving those from a second scan is how two modules come to disagree about where the
+ * section ends. `plan restage` splices over this span.
+ */
+export interface TopologySpan {
+	readonly heading: number;
+	readonly end: number;
+}
+
+/**
+ * Every `## Dependencies` section in the body, in body order.
+ *
+ * All of them rather than the first, because *how many there are* is itself an answer: `readTopology`
+ * reads the first because a reader must pick one, while a writer refuses a body carrying two — a
+ * section with no single meaning is not a section to rewrite. A second heading terminates the first
+ * span, so the spans never overlap.
+ */
+export const topologySpans = (body: string): ReadonlyArray<TopologySpan> => {
+	const lines = body.split("\n");
+	const spans: TopologySpan[] = [];
+	for (let heading = 0; heading < lines.length; heading++) {
+		if (!HEADING_RE.test((lines[heading] ?? "").trim())) continue;
+		let end = lines.length;
+		for (let i = heading + 1; i < lines.length; i++) {
+			const raw = lines[i] ?? "";
+			const text = raw.trim();
+			if (text === "") continue;
+			if (ANY_HEADING_RE.test(text) || isThematicBreak(raw)) {
+				end = i;
+				break;
+			}
+		}
+		spans.push({heading, end});
+	}
+	return spans;
+};
+
 /** Read a body's `## Dependencies` block. */
 export const readTopology = (body: string): Topology => {
 	const lines = body.split("\n");
-	const start = lines.findIndex((line) => HEADING_RE.test(line.trim()));
-	if (start === -1) return {_tag: "Absent"};
+	const span = topologySpans(body)[0];
+	if (span === undefined) return {_tag: "Absent"};
 
 	const edges: Edge[] = [];
-	for (let i = start + 1; i < lines.length; i++) {
+	for (let i = span.heading + 1; i < span.end; i++) {
 		const raw = lines[i] ?? "";
 		const text = raw.trim();
 		if (text === "") continue;
-		if (ANY_HEADING_RE.test(text) || isThematicBreak(raw)) break;
 
 		const phase = PHASE_RE.exec(text);
 		if (phase?.[1] !== undefined && phase[2] !== undefined) {
@@ -137,6 +176,25 @@ export const sameRef = (a: Ref, b: Ref): boolean =>
 		: a._tag === "Local" && b._tag === "Local" && a.id === b.id;
 
 export const renderRef = (ref: Ref): string => (ref._tag === "Issue" ? `#${ref.number}` : ref.id);
+
+/**
+ * A parsed edge list back as a `## Dependencies` section, heading included, one line per edge in the
+ * order given.
+ *
+ * The inverse of {@link readTopology} over the shape {@link readTopology} produces, which is what
+ * `ledger/topology-doc.ts`'s `renderDependencies` is *not*: that one composes a block out of declared
+ * `#<n> phase <k>` lines, so it can express neither a ledger-local `C<int>` ref nor a `requires:`
+ * subject sitting in no phase. A verb that edits an existing block has to round-trip whatever the
+ * planner wrote, including both.
+ */
+export const renderTopologyBlock = (edges: ReadonlyArray<Edge>): string => {
+	const rows = edges.map((edge) =>
+		edge._tag === "Phase"
+			? `- phase ${edge.phase}: ${edge.members.map(renderRef).join(", ")}`
+			: `- ${renderRef(edge.subject)} requires: ${edge.needs.map(renderRef).join(", ")}`,
+	);
+	return `## Dependencies\n\n${rows.join("\n")}\n`;
+};
 
 /**
  * Every predecessor of `subject`, with the kind of edge that names it.

@@ -110,6 +110,7 @@ as the sibling contracts do):
 | `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
 | `plan approve` | post the approval marker on the epic, bound to a scope digest the verb derives itself, and read it back | an ACL-checked guarded write with a read-back — no judgment; **no `--digest` flag exists**, because an approval whose scope its caller supplies attests whatever the caller pleased |
+| `plan restage` | reconcile an already-minted epic's machine-owned `## Dependencies` region against its children's observed close state, dropping every ref the board proves closed without landing | a filter with a read-back — no judgment; *whether the reconciled plan is still worth building* stays in the skill, and the drop rule is `lane emit`'s own boot rule read backwards |
 | `plan approval` | report the epic's approval state — `current` / `stale` / `absent`, with the marker's author and both digests, honouring only a marker whose author the control-plane roster resolves **at read time** | a total read that never refuses on a missing approval; the enforcement lives in the three verbs that re-derive the floor, never in this report |
 
 **The author gate is in the read, not only in `plan approve`'s write.** Posting a `plan-approved:`
@@ -356,28 +357,30 @@ produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOP
 on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy nothing,
 since `epic` already seats `20`–`24` over the same two `build` codes.
 
-| Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` |
-|---|---|---|---|---|---|---|---|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | — | — | — | — | — |
-| `4` | a required section is unparseable, duplicated, or mis-numbered in a document the verb derives from | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `5` | the **authored** text carries a machine-local path | — | — | — | ✓ | — | — |
-| `6` | the authored text is a bare `@` path reference — not redactable | — | — | — | ✓ | — | — |
-| `7` | zero scope: the epic is proven absent (404) or closed, or it has zero children | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | ✓ | ✓ | — |
-| `9` | the write landed but the read-back does not match | — | — | — | ✓ | ✓ | — |
-| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ | — | — |
-| `20` | proven: the floor derived hard defects — refused as a **precondition to writing**, never as `plan check`'s own answer | — | — | ✓ | — | — | — |
-| `21` | proven: the plan moved — the recomputed digest differs from the `--digest` the caller carried | — | — | ✓ | ✓ | — | — |
-| `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — | — | — |
-| `23` | proven: a label the flip must write is absent from the repository's taxonomy | — | — | ✓ | — | — | — |
-| `24` | proven: the invoking account may not approve this epic's plan — it is outside the control-plane roster resolved from CODEOWNERS at write time, or that roster names nobody | — | — | — | — | ✓ | — |
-| `25` | proven: the plan is not approved as it now stands — the epic carries no standing approval marker, or the marker's digest names a plan the epic has since moved off | — | ✓ | ✓ | ✓ | — | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` | `restage` |
+|---|---|---|---|---|---|---|---|---|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | — | — | — |
+| `4` | a required section is unparseable, duplicated, or mis-numbered in a document the verb derives from | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `5` | the **authored** text carries a machine-local path | — | — | — | ✓ | — | — | — |
+| `6` | the authored text is a bare `@` path reference — not redactable | — | — | — | ✓ | — | — | — |
+| `7` | zero scope: the epic is proven absent (404) or closed, or it has zero children | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | ✓ | ✓ | — | ✓ |
+| `9` | the write landed but the read-back does not match | — | — | — | ✓ | ✓ | — | ✓ |
+| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ | — | — | ✓ |
+| `20` | proven: the floor derived hard defects — refused as a **precondition to writing**, never as `plan check`'s own answer | — | — | ✓ | — | — | — | — |
+| `21` | proven: the plan moved — the recomputed digest differs from the `--digest` the caller carried | — | — | ✓ | ✓ | — | — | — |
+| `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — | — | — | — |
+| `23` | proven: a label the flip must write is absent from the repository's taxonomy | — | — | ✓ | — | — | — | — |
+| `24` | proven: the invoking account may not approve this epic's plan — it is outside the control-plane roster resolved from CODEOWNERS at write time, or that roster names nobody | — | — | — | — | ✓ | — | — |
+| `25` | proven: the plan is not approved as it now stands — the epic carries no standing approval marker, or the marker's digest names a plan the epic has since moved off | — | ✓ | ✓ | ✓ | — | — | — |
+| `26` | proven: the epic body's `## Dependencies` region has no single meaning — it carries more than one heading, or its only one resolves inside the preserved brief envelope | — | — | — | — | — | — | ✓ |
+| `27` | proven: every issue the topology names closed without landing, so restaging would leave no phase at all — re-plan the epic instead | — | — | — | — | — | — | ✓ |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 `3` is a seat no `plan` verb reaches: the only stdin-taking verb is `plan verdict`, whose stdin is
 **optional** (a clean verdict with no caveats is an ordinary answer), so an empty stdin is a fact,
@@ -916,6 +919,99 @@ $ echo $?
 
 ---
 
+## `plan restage`
+
+**Invocation**
+
+```
+fabrika plan restage 3 --token <claim-token>
+```
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `<number>` | integer, positional | — | the epic whose `## Dependencies` region is reconciled |
+| `--token` | string | — | the claim token `build claim <epic> --purpose gate` handed this lane |
+| `--repo` | string | `$CLAUDE_PIPELINE_REPO`, else `$GITHUB_REPOSITORY`, else the origin remote | the target `owner/name` |
+
+**What it decides, and the one rule it decides on**
+
+It is not part of the gate's own sequence: it is the repair a *post-mint* child close leaves behind.
+`lane emit` builds one machine region per child the region names and boots that region from the
+child's close reason — `completed` boots `landed`, and **every other close boots `frozen`**, a final
+carrying a door, so the phase trips the instant the machine starts (`src/lane/emit.ts`, `initialFor`).
+An epic that lost a child to a duplicate close could therefore only ever emit a machine that dies,
+and the sole repair was a human editing the epic body by hand.
+
+So the rule is `lane emit`'s boot rule read backwards: **a ref the board proves closed for any reason
+other than `completed` is dropped, and nothing else is.** A `completed` close is kept — its region
+boots `landed`, the phase folds, and dropping it would erase the sequencing the children planned
+behind it depend on. A phase line that loses every member disappears, and so does a `requires:` line
+whose subject was dropped or whose needs all were.
+
+**Scope: the epic's native sub-issue links, and nothing wider.** That is the same set `lane emit`
+checks every ref against, so the two can never disagree about one edge. A ref the link list does not
+name — a cross-epic prerequisite, a ledger-local `C<int>` — is **unobserved, not abandoned**: it is
+round-tripped exactly as written, and `lane emit`'s own `Foreign` arm is what reports it. A reconcile
+that dropped an unobserved ref would be rewriting a plan on no evidence.
+
+**Zero scope.** Zero sub-issue children is `7`, as it is for every verb in the group. A body with no
+`## Dependencies` heading at all is `7` too — there is no region to reconcile and the epic needs
+planning, not restaging. A body carrying *two* headings, or one heading resolving inside the
+preserved brief envelope, is `26` instead: those are bytes that look like a region with no way to
+tell which are the plan, and rewriting on that guess is how a body gets destroyed.
+
+**Idempotence is decided on the refs, never on the bytes.** A region naming only live issues answers
+`unchanged` and issues no PATCH at all, so a re-run neither reformats the block nor moves the body
+digest a standing approval binds. Only a run that actually drops something composes a body, and that
+body is proven by re-reading the whole issue and comparing it normalized — the same discipline
+`ledger write` runs, for the same reason.
+
+**Stdout**
+
+```
+$ fabrika plan restage 3 --token <claim-token>
+{"answer":"restaged","epic":3,"dropped":[42,43],"kept":[41,44],"written":true,"verified":true}
+```
+
+```
+$ fabrika plan restage 3 --token <claim-token>
+{"answer":"unchanged","epic":3,"dropped":[],"kept":[41,44],"written":false}
+```
+
+```
+$ fabrika plan restage 3 --token <claim-token>
+plan restage: every issue #3's topology names closed without landing (#<a>, #<b>) — restaging would leave no phase at all, so re-plan the epic instead. Nothing was written.
+$ echo $?
+27
+```
+
+`#<a>, #<b>` stands for the dropped children's own numbers, ascending — every one of them, never a
+cap-and-count, because the whole list is what says the plan is gone rather than thinned.
+
+**Errors**
+
+| Code | Trigger |
+|---|---|
+| `4` | the `## Dependencies` block is unparseable — the defective line is named; nothing was written |
+| `7` | the epic is proven absent or closed, it has zero sub-issue children, or its body carries no `## Dependencies` region at all |
+| `8` | the PATCH was issued and could not be confirmed — the body is UNKNOWN |
+| `9` | the body was written and does not read back as composed, or the composed region does not parse back to the edges it was composed from |
+| `10` | the issue is not a `type:epic`, or the number is not a positive integer |
+| `11` | the epic or its sub-issue list could not be read — nothing was written |
+| `15` | this lane does not hold the epic's claim — `--token` says which lane is asking |
+| `26` | the body carries more than one `## Dependencies` heading, or its only one resolves inside the preserved brief envelope |
+| `27` | every issue the topology names closed without landing — restaging would leave no phase at all |
+
+**Grounding**
+
+- `src/lane/emit.ts`'s `initialFor` is where the drop rule comes from; this verb states no second
+  opinion about what a close means.
+- `src/build/dependencies.ts` owns where the section ends, and both the reader and this writer take
+  the span from it — two scans is two answers about which bytes are safe to overwrite.
+- The composed region is parsed back through the shipped reader before anything is written, which is
+  `ledger topology`'s round-trip discipline applied to an edit rather than to a fresh render.
+- The preserved-brief bound is `triage enrich`'s marker; `ledger write` refuses on the same bound,
+  because v1 cutting there destroyed an epic body.
 
 ---
 
@@ -944,7 +1040,10 @@ The three hand-checks, which the presence tests above cannot perform:
    `terminal` from their closed sets; the marker line from `emit`'s template plus the fixed clause
    grammar; `containment`, `stories` and the edge orientation from §The ledger grammar. `comment`
    is server-assigned and named as such.
-3. **Sibling verbs guard shared preconditions identically.** All four run `resolveTargetRepo`, the
-   `type:epic` check (`10`) and the same `7` trigger; both mutating verbs run the imported
-   `requireClaim` and take `--digest` with the same `21` refusal; `flip` states its one documented
-   divergence — zero *planned* children is an answer, not a refusal — with its reason.
+3. **Sibling verbs guard shared preconditions identically.** Every verb runs `resolveTargetRepo`,
+   the `type:epic` check (`10`) and the same `7` trigger; every claim-gated verb runs the imported
+   `requireClaim`, and the two digest-gated ones take `--digest` with the same `21` refusal. Two
+   verbs state a documented divergence with its reason: `flip`'s zero *planned* children is an
+   answer rather than a refusal, and `restage` widens `7` to cover a body carrying no
+   `## Dependencies` region at all — a plan that does not exist and a scope that is empty are the
+   same fact about an epic nobody can build from.

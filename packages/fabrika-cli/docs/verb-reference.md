@@ -775,11 +775,17 @@ Gate an epic's plan before its children build — the read-and-verdict half of e
 | `plan check` | the deterministic floor over the fifteen hard defect types |
 | `plan flip` | every planned child flipped to triaged, re-gated first |
 | `plan verdict` | the plan gate's verdict, posted bound to the scope digest |
+| `plan approve` | a control-plane approval of the epic's plan, recorded |
+| `plan approval` | the epic's approval state — current, stale or absent |
+| `plan restage` | a minted epic's `## Dependencies` region, reconciled against its children's close state |
 
 **Exit codes.** The shared table, plus `15` this session does not hold the claim · `20` the floor
 found a hard defect · `21` the recomputed scope digest differs from the `--digest` the caller
 carried · `22` at least one child is `unchanged` — the flip did not fully apply · `23` a label the
-flip must write is absent from the repository's taxonomy.
+flip must write is absent from the repository's taxonomy · `24` the invoking account may not approve
+this epic's plan · `25` the plan is not approved as it now stands · `26` the `## Dependencies` region
+has no single meaning — two headings, or the only one inside the preserved brief · `27` restaging
+would leave the topology with no phase at all.
 
 ## The `recipe` group
 
