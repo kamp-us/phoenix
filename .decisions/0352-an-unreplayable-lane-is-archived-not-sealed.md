@@ -1,7 +1,7 @@
 ---
 id: 0352
 title: An unreplayable lane is archived, not sealed
-status: accepted
+status: amended-in-part by [0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md)
 date: 2026-09-04
 ---
 
