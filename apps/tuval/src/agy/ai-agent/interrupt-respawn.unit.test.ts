@@ -14,7 +14,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, Option, Queue, Stream} from "effect";
+import {Effect, Fiber, Option, Queue, Scheduler, Stream} from "effect";
 import type {AgentEvent, StartError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
@@ -124,6 +124,62 @@ describe("an agy turn the operator stops", () => {
 				assert.isTrue(
 					after.some(isInterruptedItem),
 					"the cut reply lost its interrupted mark across the relaunch",
+				);
+			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
+		}),
+	);
+
+	/**
+	 * Two stops that interleave, rather than one after the other.
+	 *
+	 * The sequential second press is covered above; this is the one a read-then-write guard lets
+	 * through (#8883). Two forked `interrupt` fibers would otherwise each run their synchronous steps
+	 * straight to the first async boundary and never interleave, so the yield budget is cut to 3: at
+	 * that value the run loop really does suspend one fiber inside the guard — with the read-then-write
+	 * guard in place this test sees two SIGINTs and three launches. Three, not 1 or 2, because a
+	 * budget under 3 starves the fibers entirely and no signal is ever sent.
+	 */
+	it.live("claims the stop once when two presses interleave", () =>
+		Effect.gen(function* () {
+			const children = yield* agyChildrenStub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* opened(children);
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* agent.prompt("something long");
+				yield* collectTo(events, "the turn's prompting", isPrompting);
+
+				const stopping = yield* Effect.forkChild(
+					Effect.all([agent.interrupt, agent.interrupt], {
+						concurrency: "unbounded",
+						discard: true,
+					}).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, 3)),
+				);
+				const first = yield* children.child(0);
+				yield* signalled(first);
+				yield* first.say(userInput);
+				yield* first.say(resultInterrupted);
+				yield* first.exit(1);
+				yield* Effect.flatMap(children.child(1), (child) => child.say(init));
+				yield* Fiber.join(stopping);
+
+				assert.deepStrictEqual(
+					yield* first.signals,
+					["SIGINT"],
+					"an interleaved second press sent its own signal",
+				);
+				const launches = yield* children.launches;
+				assert.strictEqual(
+					launches.length,
+					2,
+					"the interleaved presses relaunched more than once: the child the first stop reopened was torn down again",
+				);
+				assert.include(launches[1] ?? [], `--conversation=${CONVERSATION}`);
+				const after = yield* collectTo(events, "the session back at ready", isReady);
+				assert.isEmpty(
+					after.filter((event) => event.kind === "phase" && event.phase === "gone"),
+					"the second press narrated a session the layer went on to keep",
 				);
 			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
 		}),

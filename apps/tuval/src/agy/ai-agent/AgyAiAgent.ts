@@ -529,9 +529,11 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			if (current === null) return;
 			// A stop already in flight has nothing for a second press to send, and a second press must
 			// not be able to take the first one's memory of the signal back: an exit read as one nobody
-			// asked for fails the very queue the relaunch is keeping.
-			if (yield* Ref.get(interrupted)) return;
-			yield* Ref.set(interrupted, true);
+			// asked for fails the very queue the relaunch is keeping. Claimed in one step, because a
+			// read and a write are two: two presses that interleave between them both read `false` and
+			// both go on to relaunch, and the second tears down the child the first just opened
+			// (#8883).
+			if (yield* Ref.getAndSet(interrupted, true)) return;
 			const delivered = yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
 				Effect.as(true),
 				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
