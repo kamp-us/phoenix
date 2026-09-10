@@ -32,6 +32,7 @@ import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {HandlerFailed, ProcessNotFound} from "../process/errors.ts";
 import {Processes} from "../process/Processes.ts";
+import {ProcessSelf} from "../process/self.ts";
 import type {
 	AnyProgram,
 	CapabilityRequest,
@@ -226,10 +227,11 @@ const emitHandler = (cmd: EmitEffect) =>
 const spawnHandler = (cmd: SpawnEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
-		// The spawner's own process id is not something a handler can name — `ProcessPorts` is the
-		// whole of what a running process knows about itself — so a program-spawned child is a root
-		// and `on` has nowhere to route the child's out-ports back to (#8756, #8757).
-		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.none());
+		const self = yield* ProcessSelf;
+		// The parent is stamped here, off the process this interpretation is running for, and is
+		// never something the `spawn` effect carries (#8757). `on` still has nowhere to route the
+		// child's out-ports back to; that half is #8756's.
+		const child = yield* processes.spawn(ProgramId.make(cmd.program), Option.some(self.id));
 		return [spawned(child, cmd.program)];
 	});
 
@@ -272,7 +274,7 @@ export type EffectFailure =
 	| HandlerFailed
 	| ProcessNotFound;
 
-export type EffectServices = ProcessPorts | SpawnedProcesses | Processes;
+export type EffectServices = ProcessPorts | ProcessSelf | SpawnedProcesses | Processes;
 
 const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, EffectServices> = {
 	emit: emitHandler,
