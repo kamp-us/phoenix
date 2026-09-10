@@ -148,6 +148,22 @@ export const eventForToken = (raw: string): TokenResolution => {
 };
 
 /**
+ * Whose failure a park is, and so who takes the next move on it.
+ *
+ * `driver` is machinery — residue a driver session owns, or a read some verb can take again — so a
+ * driver may work the park itself. `founder` is a judgment no verb may make on its own account, so
+ * the park leaves the machine. Two arms and no third: an "either" would be the guess this field
+ * exists to delete.
+ */
+export type ParkRoute = "driver" | "founder";
+
+/** One park cause: what it means, in a clause a refusal can quote, and whose failure it is. */
+export interface ParkCauseEntry {
+	readonly meaning: string;
+	readonly route: ParkRoute;
+}
+
+/**
  * Why a lane parked, as a closed set of tokens — the field that makes a `BLOCKED` clearable.
  *
  * The token map above folds thirteen distinct shell terminals into one flat `BLOCKED`, so the event
@@ -157,7 +173,15 @@ export const eventForToken = (raw: string): TokenResolution => {
  *
  * It is a closed set for the same reason the terminal tokens are: a free-text cause is prose a
  * recipe would have to interpret, and interpreting a report is the failure class this module
- * deletes. Each entry's value is what the cause means, in the clause a refusal can quote.
+ * deletes. Each entry carries `meaning` — what the cause means, in the clause a refusal can quote —
+ * and {@link ParkRoute}, whose failure the park is.
+ *
+ * **The route is the second field because the cause alone never said whose problem it is.** A park
+ * a driver can work through and one only the founder can answer take opposite next moves, and with
+ * both folded into one token a sweep had to guess. `driver` is machinery — residue a driver session
+ * owns, or a read a verb can take again; `founder` is a product call no verb may make on its own.
+ * Every entry records its route with a one-line reason in its own docblock, so the routing is
+ * readable at the token rather than derived somewhere else.
  *
  * A cause is seated on its own account, and a `KNOWN_PARKS` row is never its precondition.
  * Where no row covers it, `classifyPark` answers `Novel` **naming this cause** instead of the bare
@@ -170,8 +194,13 @@ export const PARK_CAUSES = {
 	 * A finished lane's worktree still holds the branch this lane must build on, so
 	 * `build branch --resume-lane` refuses at exit 11 rather than re-key a branch out from under
 	 * another tree. The whole remedy is removing that worktree, which is why it owes no decision.
+	 *
+	 * Route `driver`: the tree is a driver session's own residue, and removing it decides nothing.
 	 */
-	"worktree-holds-branch": "a working tree still holds the lane branch this build must stand on",
+	"worktree-holds-branch": {
+		meaning: "a working tree still holds the lane branch this build must stand on",
+		route: "driver",
+	},
 	/**
 	 * `ship cp-approval` stops on a head behind its base, and the head must move before
 	 * an approval is solicited. The park spends neither budget, and reporting it as
@@ -180,9 +209,13 @@ export const PARK_CAUSES = {
 	 *
 	 * It carries no `KNOWN_PARKS` row on purpose: clearing it needs a verb that merges the base into
 	 * the head, and `build` ships none, so the sweep routes it to a human by naming this cause.
+	 *
+	 * Route `driver`: moving a head onto its base is machinery, and no product call is in it.
 	 */
-	"head-behind-base":
-		"the PR's head is behind its base and must move before an approval is solicited",
+	"head-behind-base": {
+		meaning: "the PR's head is behind its base and must move before an approval is solicited",
+		route: "driver",
+	},
 	/**
 	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
 	 * that cell is the whole dispatch permission — so no stage may open against it.
@@ -190,9 +223,14 @@ export const PARK_CAUSES = {
 	 * A pause is open-ended, which is why this is a park and not a bounded wait (the merge-queue
 	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
 	 * resuming the campaign stays a human's act on `ROADMAP.md`, so the row names no remedy verb.
+	 *
+	 * Route `founder`: a campaign's lifecycle is a product call, and no driver may take it.
 	 */
-	"campaign-paused":
-		"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+	"campaign-paused": {
+		meaning:
+			"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+		route: "founder",
+	},
 	/**
 	 * The shell driving this lane's stage was killed by its provider before it
 	 * recorded a terminal — a session limit, a transport drop, a `network_error` on every completion.
@@ -202,9 +240,14 @@ export const PARK_CAUSES = {
 	 * Its `KNOWN_PARKS` row reads the residue the dead shell left rather than the provider's health,
 	 * because no verb can spawn an agent to test the latter: the operator's next dispatch is that
 	 * test.
+	 *
+	 * Route `driver`: the residue is the driver's own, and the re-dispatch is the driver's move.
 	 */
-	"spawn-dead":
-		"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
+	"spawn-dead": {
+		meaning:
+			"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
+		route: "driver",
+	},
 	/**
 	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
 	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
@@ -213,18 +256,28 @@ export const PARK_CAUSES = {
 	 *
 	 * Naming-only: a `KNOWN_PARKS` row would have to re-test the deployment, and that proving
 	 * read is separate work, so the sweep routes this to a human by naming the cause.
+	 *
+	 * Route `driver`: a deployment is machinery, and re-reading it needs no product call.
 	 */
-	"no-preview-render":
-		"no preview deployment stands at the PR's head, so no rendered surface can be judged",
+	"no-preview-render": {
+		meaning: "no preview deployment stands at the PR's head, so no rendered surface can be judged",
+		route: "driver",
+	},
 	/**
 	 * The rendered gate's `BLOCKED-NO-MANIFEST`: the repo's design law covers no surface in
 	 * this diff, so the gate has nothing to judge against and routed to the front door.
 	 *
 	 * Naming-only: writing the manifest coverage is a human's act on the design law, and no verb
 	 * ships that can, exactly as `campaign-paused`'s resume stays a human's act on `ROADMAP.md`.
+	 *
+	 * Route `driver`: the design law is repo text, so widening its coverage is a diff a driver
+	 * builds — a human writes it, and that is not the same as a product call only the founder makes.
 	 */
-	"no-design-manifest":
-		"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
+	"no-design-manifest": {
+		meaning:
+			"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
+		route: "driver",
+	},
 	/**
 	 * The rendered gate's `ROUTED-ELSEWHERE`: the diff raises no rendered delta, so the
 	 * verdict is `review`'s to give and never this gate's. The park is the route itself, which the
@@ -232,15 +285,33 @@ export const PARK_CAUSES = {
 	 *
 	 * Naming-only: clearing it means dispatching the other gate, which is the operator's act and not
 	 * a condition a recipe can read back.
+	 *
+	 * Route `driver`: dispatching the other gate is the driver's own act.
 	 */
-	"no-rendered-delta":
-		"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
-} as const;
+	"no-rendered-delta": {
+		meaning:
+			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
+		route: "driver",
+	},
+} as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
 
 /** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+
+/**
+ * The route a park takes, read off the one table — the only place a route is written down.
+ *
+ * A park carrying **no** cause routes `founder`, and that is fail-closed rather than a default: a
+ * park nothing named cannot be attributed to machinery, so nothing here may claim a driver can work
+ * it. The two `KNOWN_PARKS` rows keyed by their leaf alone (`human:cp-approval`, `human:queue-stall`)
+ * take that arm, and both are already waits on somebody else's act.
+ */
+export const routeForCause = (cause: string | null): ParkRoute =>
+	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
+		? PARK_CAUSES[cause as ParkCause].route
+		: "founder";
 
 export type ClassResolution =
 	| {readonly _tag: "Classed"; readonly classes: ReadonlyArray<string> | null}
@@ -273,21 +344,37 @@ export const classesForEvent = (raw: ReadonlyArray<string>): ClassResolution => 
 export type CauseResolution =
 	| {readonly _tag: "Uncaused"}
 	| {readonly _tag: "Caused"; readonly cause: ParkCause}
+	/** A `BLOCKED` carrying no cause, under a repo that declared cause-less parks unrecordable. */
+	| {readonly _tag: "Required"; readonly reason: string}
 	| {readonly _tag: "Rejected"; readonly reason: string};
 
 const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CAUSES, token);
 
 /**
- * Resolve one `--cause` against the event it rides on. Absent is legal and stays legal: a shell that
- * parks for a reason no recipe covers reports the bare `BLOCKED` it always did, and `classifyPark`
- * answers Novel for it exactly as before.
+ * Resolve one `--cause` against the event it rides on, under the repo's declared park-cause rule.
  *
  * A cause on a non-`BLOCKED` event is refused rather than dropped. Only a park has a cause to be
  * gone, so a `DONE` carrying one is a caller that misunderstood the field, and recording it would
  * seat a cause on a line no unpark will ever read.
+ *
+ * **An absent cause on a `BLOCKED` is the axis `requireCause` turns.** Off — the shipped default —
+ * it is `Uncaused` exactly as it always was, and the bare park routes to a human. On, it is
+ * `Required`: a park recorded with no cause folds to a `Novel` no verb can clear, so recording it
+ * spends a person to say a thing the recorder already knew.
  */
-export const causeForEvent = (raw: string | null, event: OperatorEvent): CauseResolution => {
-	if (raw === null) return {_tag: "Uncaused"};
+export const causeForEvent = (
+	raw: string | null,
+	event: OperatorEvent,
+	requireCause: boolean,
+): CauseResolution => {
+	if (raw === null) {
+		return requireCause && event === "BLOCKED"
+			? {
+					_tag: "Required",
+					reason: `a park must name why it parked — pass --cause with one of: ${PARK_CAUSE_TOKENS.join(", ")}`,
+				}
+			: {_tag: "Uncaused"};
+	}
 	if (event !== "BLOCKED") {
 		return {
 			_tag: "Rejected",

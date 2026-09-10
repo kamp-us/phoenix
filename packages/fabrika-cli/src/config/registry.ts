@@ -19,6 +19,7 @@ import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {laneConcurrencyCapKey} from "./keys/lane-concurrency-cap.ts";
+import {parkCauseKey} from "./keys/park-cause.ts";
 import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
@@ -40,6 +41,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(docLeakExemptKey),
 	register(governedRootsKey),
 	register(laneConcurrencyCapKey),
+	register(parkCauseKey),
 	register(portabilityKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),

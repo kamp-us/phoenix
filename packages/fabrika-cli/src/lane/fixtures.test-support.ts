@@ -2,7 +2,16 @@
  * Shared lane fixtures: the committed coder and chore templates read verbatim (the golden-fixture
  * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
+import type {ParkCauseSurface, Uncaused} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
+
+/** A `parkCause` read at either arm, for a verb test that does not open a config file. */
+export const parkCauseRead = (uncaused: Uncaused = "record"): Read<ParkCauseSurface> => ({
+	_tag: "Value",
+	value: {uncaused},
+	note: `test fixture: parkCause.uncaused = ${uncaused}`,
+});
 
 export const coderTemplateText = (): string =>
 	readGoldenFixture(import.meta.url, "./templates/coder.workflow.json");

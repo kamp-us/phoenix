@@ -232,6 +232,21 @@
 			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
 		},
+		"parkCause": {
+			"type": "object",
+			"description": "What this repo does with a lane park that names no cause.",
+			"properties": {
+				"uncaused": {
+					"type": "string",
+					"description": "What a BLOCKED carrying no `--cause` gets: `record` (the bare park, which routes to a human) or `refuse` (unappended, so every park names why).",
+					"enum": [
+						"record",
+						"refuse"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
 		"portability": {
 			"type": "object",
 			"description": "What `fabrika guard portability-guard check` treats as this repository's own. `repoNames` are the product, org and directory names fabrika's shipped text may not carry; they are matched whole and case-insensitively. Absent or empty means this repo keeps no names of its own out — the guard's four other rules are unaffected.",
