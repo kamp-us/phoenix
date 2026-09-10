@@ -189,8 +189,11 @@ run it at the top of any pass that is about to integrate rather than carrying a 
 **A branch whose content already landed is the verb's problem, not yours.** An epic that ships an
 intermediate tail and still has phases left comes back to a branch holding nothing `main` lacks and
 conflicting with everything `main` took since — a base guaranteed to break every remaining child.
-Every resume now fetches and asks whether `origin/HEAD` contains that branch's head, and a contained
-one is re-cut off the trunk in the same command that places the tree, with the reason on stderr. So
+Every resume now fetches and asks whether `origin/HEAD` already carries that branch's content, and a
+contained one is re-cut off the trunk in the same command that places the tree, with the reason on
+stderr. The question is content, not ancestry: every PR here lands as a squash, so a landed branch's
+own commits never enter the trunk and an ancestry test alone says "not contained" for every branch
+there is — the verb settles what ancestry cannot by cumulative patch id. So
 do not prove a branch dead by hand: reading a tail PR's head off the board, diffing both ways and
 deleting the branch is a derivation, and a driver relays verdicts rather than judging whether a
 branch is safe to destroy — getting that wrong loses unlanded work with no way back. Nothing weaker
@@ -209,7 +212,8 @@ this too, and so does a contained branch's seat git refused to drop because it h
 work. Nothing can be placed over a registration or a tree that survives, and which one survived
 tells you where to look: a pruned record leaves no tree at all, a refused seat leaves a dirty one
 (an existing `epic/<lane-key>`, with or without its tree, is neither — it is the resume above, and
-the verb answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
+the verb answers its path); `11` is working trees, an origin, or the containment read itself that
+could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
 Done when `lane status` folds and prints a `stateValue`.
