@@ -10,8 +10,13 @@ import {describe, expect, it} from "vitest";
 import {readGoldenFixture} from "./golden-fixture.ts";
 import {emitMachine} from "./lane/emit.ts";
 import {coderTemplateText} from "./lane/fixtures.test-support.ts";
+import {applyEvent, foldLog, type LogEntry} from "./lane/fold.ts";
 import {compileText} from "./lane/machine.ts";
-import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "./retry-budget.ts";
+import {causeForEvent, routeForCause} from "./lane/report.ts";
+import {classifyPark} from "./recipe/parks.ts";
+import {CAP_ROUND, MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "./retry-budget.ts";
+
+const AT = "2026-09-10T00:00:00.000Z";
 
 const EPIC = 4300;
 const CHILDREN = [4301, 4302, 4303].map((number) => ({
@@ -60,6 +65,60 @@ describe("the one retry budget", () => {
 		noBudget.machine.context.issue = {retries: 0};
 
 		expect(compiledInitials(JSON.stringify(noBudget))).toEqual([RETRY_BUDGET]);
+	});
+
+	it("is one more than nothing and one less than the round that spends it", () => {
+		expect(CAP_ROUND).toBe(RETRY_BUDGET + 1);
+	});
+
+	// A lane emitted before the raise seeded its own number into `machine.context`, and the compiler
+	// reads the declaration over the constant — so raising the constant moves no lane already on disk.
+	it("is not what a lane emitted under the old budget folds under", () => {
+		const older = JSON.parse(coderTemplateText()) as {
+			machine: {context: {issue: Record<string, unknown>}};
+		};
+		older.machine.context.issue = {...older.machine.context.issue, maxRetries: RETRY_BUDGET - 1};
+		const text = JSON.stringify(older);
+
+		expect(compiledInitials(text)).toEqual([RETRY_BUDGET - 1]);
+
+		const compiled = compileText(text);
+		if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
+		const spent = ["WIP", ...Array.from({length: RETRY_BUDGET}, () => ["DONE", "FAIL"]).flat()];
+		const log: LogEntry[] = [];
+		for (const event of spent) {
+			const fold = foldLog(compiled.lane, log);
+			if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+			const applied = applyEvent(compiled.lane, fold.states, "issue", event, AT);
+			if (applied._tag !== "Applied") throw new Error(`${event}: ${applied.reason}`);
+			log.push(applied.entry);
+		}
+		const fold = foldLog(compiled.lane, log);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		// One round short of today's budget, and already parked: the older lane kept its own number.
+		expect(fold.states.issue).toMatchObject({
+			type: "human:budget-spent",
+			retries: RETRY_BUDGET - 1,
+			maxRetries: RETRY_BUDGET - 1,
+		});
+	});
+});
+
+describe("the spent-budget park", () => {
+	it("carries its cause off the leaf, since no FAIL may name one, and routes to the driver", () => {
+		expect(causeForEvent("repair-budget-spent", "FAIL", false)._tag).toBe("Rejected");
+		expect(classifyPark("human:budget-spent", null)).toMatchObject({
+			_tag: "Novel",
+			cause: "repair-budget-spent",
+		});
+		expect(routeForCause("repair-budget-spent")).toBe("driver");
+	});
+
+	it("still yields to a cause the recorder named, the way a machinery lap does", () => {
+		expect(classifyPark("human:budget-spent", "replay-conflict")).toMatchObject({
+			_tag: "Novel",
+			cause: "replay-conflict",
+		});
 	});
 });
 

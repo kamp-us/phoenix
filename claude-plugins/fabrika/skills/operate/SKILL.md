@@ -206,8 +206,9 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
-| `frozen` | park — step 4. It is an error final, so it trips the phase where it sits and the fold says so; it is also a final with a door out, and walking it is a human's `UNBLOCKED`, never yours |
-| `human:epic-review` | park — step 4, and the same shape as `frozen`: a failed epic review is a park, an error final that trips the epic's tail phase and carries an `UNBLOCKED` door a human walks |
+| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you**, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
+| `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
+| `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
 | any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
@@ -626,7 +627,8 @@ Two reads stay yours, because no shell can take them:
   a `22` is a `BLOCKED`, never the `DONE` the spawn printed;
 - **a dead or unresponsive spawn, a report you cannot parse, and a permission denial a shell
   reports** — each is a BLOCKED-class outcome, never something to route around, and never a
-  retry-in-place: retries belong to the machine (`FAIL` spends one; `frozen` is its answer), and
+  retry-in-place: retries belong to the machine (`FAIL` spends one; `human:budget-spent` is its
+  answer), and
   you never re-spawn what the fold has not re-asked for. Record `BLOCKED`.
 
 **A dead spawn's residue is yours to clear.** `BLOCKED` records where the lane stands; it
@@ -999,12 +1001,34 @@ never compose the routing: whose park it is comes off the cause table, and a `fo
 
 You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head; for `frozen` and for the epic tail's `human:epic-review`, which is a park like any
-other failed epic review, it is a founder-cleared
-repair round, recorded with `build clear`, which appends a `<TASK>.CLEARED` event to the lane's log
+current head).
+
+**`human:budget-spent` is the one park you clear yourself, and it is the only one** — on a lane
+emitted before the rename it wears an older name, `frozen` on a task and `human:epic-review` on an
+epic tail, and those are the same park, cleared here the same way. Its cause routes
+to you, and the authority is a recorded decision in the repository's own corpus — the one that rules
+a spent budget's route out to be the driver's, acting on its own recommendation and logging it. Read
+it before you take the seat the first time; the search is the leaf's name. `recipe unpark` is not the
+way in: the cause carries no remedy, so the recipe table classes this park `Novel` and refuses it
+with the ledger untouched, which is correct. Two calls, in this order, and the second is refused
+without the first:
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane clear <lane> --task <task> --rationale "<your own read>"
+node packages/fabrika-cli/src/bin.ts lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
+```
+
+`lane clear` derives the round — one call, one round — and refuses a blank rationale, because that
+line is the whole audit the weekly machinery review reads. Decide what the task actually needs first:
+another round is one answer, and a re-scope or a founder ask is often the better one. Every other
+`human:*` park is somebody else's to clear and stays exactly as it reads above.
+
+A founder-cleared repair round is recorded with `build clear` instead, where the lane has a pull
+request carrying the grant. Either verb appends the same
+`<TASK>.CLEARED` event to the lane's log
 and moves the task nowhere — the door out is
-still the human's `UNBLOCKED`, and the two land in either order. Without a `CLEARED` behind it that
-`UNBLOCKED` is **refused** on exit `36`: the resume would restore the state and not the budget, so
+still the `UNBLOCKED`, and the two land in either order. That `UNBLOCKED`
+without a `CLEARED` behind it is **refused** on exit `36`: the resume would restore the state and not the budget, so
 every guarded route out falls straight back to the park — the retry budget is anchored to a recorded
 event, not to the state. Read that code as "the grant
 has not been recorded yet", never as an event to retype — and read *which* grant off the refusal,
@@ -1041,9 +1065,12 @@ defective section and points at the verb that owns the repair — `triage repair
 `--help` is its interface — never restating what that verb does, and never delegating both the what
 and the who to the parking spawn's report. Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
-`UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
-`recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
-left the park. The rule and its actor list are settled elsewhere — a known park clears itself
+`UNBLOCKED`, with two exceptions and only two. The first is yours: `human:budget-spent` above,
+where you record the `UNBLOCKED` yourself after `lane clear`, on the authority of the recorded
+decision that fence names. The second is not: on a **known** park a recipe verb owns, `recipe
+unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task left the
+park — which is not a route out of the spent-budget park, whose cause carries no remedy, as that
+fence says. The rule and its actor list are settled elsewhere — a known park clears itself
 through the verb, a novel one routes to a human — and this section states no park-clearing authority
 of its own. You relay that verb's exit into
 the chore lane's own event and type no `UNBLOCKED` anywhere.
@@ -1076,9 +1103,12 @@ as it reads — nothing here is yours to change — and name the two verbs that 
 line when re-run without the flag.
 
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
-`frozen` and on `human:epic-review` the run ends `LANE-PARKED` with the transcript and the need
-posted (the founder-cleared round above, which both of them need); every other error final has no
-door and ends `LANE-TERMINAL`.
+`human:budget-spent` and on `frozen` the run ends `LANE-PARKED` with the transcript and the need
+posted, and the two needs differ: the first needs a granted round behind its door, the second — an
+emitted epic child whose door leads back to itself — needs a re-emitted machine. On a lane emitted
+before the rename, `frozen` is the spent-budget fallthrough and `human:epic-review` is the tail's,
+so both of those park for a granted round too. Every other error final has no door and ends
+`LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
@@ -1154,10 +1184,11 @@ guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPP
 `LANE-PARKED`: a park promises an `UNBLOCKED` resume, which a state this skill does not recognise
 cannot honour — and appending `BLOCKED` toward cells you do not know is exactly the guess step 2's
 routing table forbids. That resume is mechanical from `blocked` and from the `human:*` parks that
-are not error finals. From `frozen` and from `human:epic-review` — the two error finals with a door
-— it needs a recorded `CLEARED` behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the
-park-clearing paragraph in step 4 above, so their promise is "the founder grants the round, then the
-resume walks", not "the next driver records `UNBLOCKED`". A park reported as a
+are not error finals. From an error final carrying a door — `human:budget-spent`, and both `frozen`
+and `human:epic-review` on every lane emitted before it was renamed — it needs a recorded `CLEARED`
+behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the park-clearing paragraph in step 4 above. So its promise
+is "the round is granted, then the resume walks" — by you, through `lane clear`, on a lane with no
+pull request, and by the founder through `build clear` on one that has. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

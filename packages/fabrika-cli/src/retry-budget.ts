@@ -13,10 +13,24 @@
  * fails closed if the committed template or an emitted epic machine drifts off {@link RETRY_BUDGET}.
  */
 
-/** The retries a failing task gets. The one declared budget; everything else derives from it. */
-export const RETRY_BUDGET = 2;
+/**
+ * The retries a failing task gets. The one declared budget; everything else derives from it.
+ *
+ * It was 2 while the pipeline was unproven and every spent budget cost a founder ask. The founder
+ * raised it on the walk that opened the driver-routing axis, on the ground that fabrika had proved
+ * itself — a tuning dial, like `MACHINERY_LAP_BUDGET` below, not a derivation.
+ */
+export const RETRY_BUDGET = 3;
 
-/** The round the budget is spent at, so the loop freezes — derived, never a second number. */
+/**
+ * The round the budget is spent at — derived, never a second number.
+ *
+ * Spending it is a park and not an end: the guarded FAIL arms fall through to `human:budget-spent`,
+ * a final that carries a door, so the phase still folds and the lane still ends loud. What the
+ * rename off `frozen` bought is that `recipe/parks.ts`'s `isPark` matches a `human:*` leaf and
+ * matched `frozen` never — the park was invisible to every recipe. `lane/report.ts`'s `PARK_CAUSES`
+ * carries its cause as `repair-budget-spent`, and that cause routes to the driver.
+ */
 export const CAP_ROUND = RETRY_BUDGET + 1;
 
 /**

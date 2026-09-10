@@ -247,9 +247,9 @@ export const CAUSE_UNRECOGNISED = 35;
  * `active`/`review` on a lane that re-freezes on its next `FAIL`. The
  * remedy is not another event at all but a grant, so a caller reading only the code must not be told
  * to retype the transition. **Which grant differs by axis and the message says which**: a recorded
- * `CLEARED` round for retries (`build clear`), and waits granted on this same resume for
- * the wait axis (`recipe unpark`, else `--grant-wait`) — `build clear` buys a repair round
- * and never a longer wait.
+ * `CLEARED` round for retries — `build clear` where a pull request carries the founder's grant,
+ * `lane clear` where the lane has none — and waits granted on this same resume for the wait axis
+ * (`recipe unpark`, else `--grant-wait`). Neither clear verb buys a longer wait.
  */
 export const RESUME_UNBUDGETED = 36;
 
@@ -365,8 +365,10 @@ export const ASSEMBLY_DIRTY = 45;
 export const SHAPE_MISMATCH = 46;
 
 /**
- * The `--grant-wait` handed to `lane transition` is not a whole grant of at least one wait, or rides
- * on an event that is not `UNBLOCKED` — refused with the log unappended.
+ * A grant is unrecordable as asked: the `--grant-wait` handed to `lane transition` is not a whole
+ * grant of at least one wait or rides on an event that is not `UNBLOCKED`, or `lane clear` was
+ * pointed at a task that still has budget to spend, so there is no round to grant. Refused with the
+ * log unappended.
  *
  * Its own seat rather than {@link RESUME_UNBUDGETED}'s: that one says a resume needs a grant and
  * carries none, and the remedy is to add one. This one says the grant itself is unrecordable, and
@@ -434,8 +436,11 @@ export const CONCURRENCY_CAPPED = 51;
 export const PARK_UNCAUSED = 52;
 
 /**
- * The `--rationale` handed to `lane transition` says nothing, or rides on an event that is not
- * `UNBLOCKED` — refused with the log unappended.
+ * The `--rationale` handed to `lane transition` says nothing or rides on an event that is not
+ * `UNBLOCKED`, or the one `lane clear` requires is absent or blank — refused with the log
+ * unappended. It is mandatory on that verb and optional on this one because a driver's own grant is
+ * auditable on its line or nowhere, while a founder's is auditable on the pull request it was
+ * posted to.
  *
  * Its own seat rather than {@link CAUSE_UNRECOGNISED}'s, which is the same shape one axis over: a
  * cause is checked against a closed set, while a rationale is prose nothing can validate but its

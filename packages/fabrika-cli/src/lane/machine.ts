@@ -502,6 +502,13 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			.map(([name]) => name),
 	);
 
+	// A region that BOOTS inside an open final booted in an error: something outside the lane already
+	// ended this task and left it needing a door. A closed final is the opposite and stays clean —
+	// `landed` is a settled boot, not a fault. Without this the emitter's abandoned-child boot stopped
+	// tripping its phase the moment nothing fell through to `frozen` any more, and an epic whose child
+	// the board closed unbuilt folded to `complete`.
+	if (openFinals.has(initialState)) errorFinals.add(initialState);
+
 	// The lane guard and `build verdicts`'s `capReached` spend one grant identically, which is why the
 	// budget is derived there rather than tallied here — see `../cap-clearance.ts`.
 	const clearedCell: Cell = (s, msg) => {

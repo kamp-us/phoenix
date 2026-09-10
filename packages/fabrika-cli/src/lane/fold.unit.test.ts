@@ -2,6 +2,7 @@
  * The six-event contract, tested as the state-ledger spike's recorded runs.
  */
 import {describe, expect, it} from "vitest";
+import {classifyPark} from "../recipe/parks.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
@@ -26,6 +27,7 @@ import {
 	LANDED_EVENT,
 	OPERATOR_EVENTS,
 } from "./machine.ts";
+import {routeForCause} from "./report.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
 	const result = compile(workflow);
@@ -239,24 +241,34 @@ describe("run 5 — BLOCKED then UNBLOCKED resumes the state it left", () => {
 	});
 });
 
-describe("the frozen park — an UNBLOCKED door out of an error final", () => {
+describe("the spent-budget park — the driver's own door out", () => {
 	const round: ReadonlyArray<readonly [string, string]> = [
 		["issue", "DONE"],
 		["issue", "FAIL"],
 	];
-	/** WIP, then a FAIL per round until the budget is spent and the last one freezes the task. */
+	/** WIP, then a FAIL per round until the budget is spent and the last one parks the task. */
 	const freeze: ReadonlyArray<readonly [string, string]> = [
 		["issue", "WIP"],
 		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
 	];
 
-	it("trips the lane on the frozen task rather than hanging its phase", () => {
+	it("trips the lane on the parked task rather than hanging its phase", () => {
 		const compiled = lane(coderWorkflow());
 
 		const status = statusOf(compiled, drive(compiled, freeze));
 		expect(status).toMatchObject({stateValue: "tripped", status: "done"});
 		expect(status.context.errors).toEqual(["issue"]);
 		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
+	});
+
+	// The leaf's name is the whole delta from `frozen`: `isPark` matches `human:*` and matched
+	// `frozen` never, so a child at its cap used to park where no recipe could see a park at all.
+	it("names a park a recipe can see, routed to the driver", () => {
+		expect(classifyPark("human:budget-spent", null)).toMatchObject({
+			_tag: "Novel",
+			cause: "repair-budget-spent",
+		});
+		expect(routeForCause("repair-budget-spent")).toBe("driver");
 	});
 
 	it("refuses the door when the state would come back and the budget would not", () => {
@@ -270,10 +282,12 @@ describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 			"2026-08-16T00:00:00.000Z",
 		);
 		// Never a silent `active`/`review` whose only walkable arm is PASS: the resume is refused with
-		// the log unappended, and the refusal names the remedy.
+		// the log unappended, and the refusal names a remedy for each seat — the founder's grant on a
+		// pull request, and the driver's own on a lane that has none.
 		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
 		if (applied._tag !== "Refused") return;
 		expect(applied.reason).toContain("build clear");
+		expect(applied.reason).toContain("lane clear");
 		expect(applied.reason).toContain(`${RETRY_BUDGET}/${RETRY_BUDGET} retries`);
 	});
 
@@ -308,7 +322,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 			grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND),
 		);
 
-		// The granted round is walkable: FAIL routes to `build`, not straight back to `frozen`.
+		// The granted round is walkable: FAIL routes to `build`, not straight back to the park.
 		const spent = drive(compiled, [["issue", "FAIL"]], resumed);
 		expect(statusOf(compiled, spent).stateValue).toMatchObject({pipeline: {issue: "build"}});
 		expect(statusOf(compiled, drive(compiled, round, spent))).toMatchObject({
@@ -343,7 +357,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 		const workflow = coderWorkflow() as {
 			machine: {states: {pipeline: {states: {issue: {initial: string}}}}};
 		};
-		workflow.machine.states.pipeline.states.issue.initial = "frozen";
+		workflow.machine.states.pipeline.states.issue.initial = "human:budget-spent";
 		const compiled = lane(workflow);
 
 		const applied = applyEvent(
@@ -469,8 +483,8 @@ describe("one lane — an UNBLOCKED, then a `build clear` for that round", () =>
 		const compiled = lane(coderWorkflow());
 		const frozen = drive(compiled, freeze);
 
-		// The fold restored `review` at retries 2 against maxRetries 2, so `ISSUE.PASS` was the
-		// only non-error arm and the lane still read `active` — the signal an operator routes on.
+		// The fold restored `review` at a spent budget, so `ISSUE.PASS` was the only non-error arm and
+		// the lane still read `active` — the signal an operator routes on.
 		expect(statusOf(compiled, frozen).context.issue).toMatchObject({
 			retries: RETRY_BUDGET,
 			maxRetries: RETRY_BUDGET,

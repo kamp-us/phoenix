@@ -52,11 +52,12 @@ export type EmitResult =
 /**
  * Where a child's region boots. Only a `completed` close asserts the work landed, so only it earns
  * `landed`; every other close (`not_planned`, `duplicate`, a legacy null reason) is
- * closed-without-landing and boots `frozen` — `lane status` reads `frozen` as an error final and
- * trips the phase, which is the loud answer for a topology that still requires a child the board
- * abandoned. Marking it `landed` would fabricate a landing. A child booted there left no state
- * behind it, so `frozen`'s `UNBLOCKED` door has nowhere to resume to and the fold refuses it —
- * that child is re-emitted, not unfrozen.
+ * closed-without-landing and boots `frozen` — a final carrying a door, which the compiler reads as
+ * this region's error final because the region BOOTS there, and the phase trips. That is the loud
+ * answer for a topology that still requires a child the board abandoned; marking it `landed` would
+ * fabricate a landing instead. A child booted there left no state behind it, so `frozen`'s
+ * `UNBLOCKED` door has nowhere to resume to and the fold refuses it — that child is re-emitted, not
+ * unfrozen.
  */
 const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 	if (link.state === "open") return "queued";
@@ -86,8 +87,8 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
  * failed post-merge check, which is the semantic collision — re-enters `build` under the same
- * guarded-FAIL retry array `review` uses, and exhausts into `frozen` — a park with an `UNBLOCKED`
- * door back to the state it left, spent retries held. No route from it reaches a
+ * guarded-FAIL retry array `review` uses, and exhausts into `human:budget-spent` — a park with an
+ * `UNBLOCKED` door back to the state it left, spent retries held. No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
@@ -103,8 +104,14 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  * round, which is the whole of `budget: "unspent"`. Spending nothing at all is the shape that was
  * wrong — `integrate --WIP--> review --PASS--> integrate` is a closed cycle, and a plain target sits
  * in no wait park, so nothing counted its turns. Its spent-budget fallthrough is
- * `human:replay-stall` rather than `frozen` because a replay that will not settle is a collision
- * between two children a person reads, not a child that failed its review.
+ * `human:replay-stall` rather than `human:budget-spent` because a replay that will not settle is a
+ * collision between two children a person reads, not a child that failed its review.
+ *
+ * `frozen` survives as the boot state {@link initialFor} seats an abandoned child in, and nothing
+ * transitions into it any more: a spent repair budget lands on `human:budget-spent` instead, which
+ * is the SAME shape — a `final` carrying an `UNBLOCKED` door, so the phase folds and the lane trips
+ * loud — under a name `recipe/parks.ts` can see. `isPark` matches `blocked` and `human:*` and
+ * matched `frozen` never, so a child at its cap parked where every recipe answered `NotParked`.
  */
 const region = (
 	ns: string,
@@ -121,7 +128,7 @@ const region = (
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "frozen"},
+					{target: "human:budget-spent"},
 				],
 			},
 		},
@@ -135,13 +142,14 @@ const region = (
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "frozen"},
+					{target: "human:budget-spent"},
 				],
 				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		landed: {type: "final"},
@@ -169,9 +177,9 @@ const region = (
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
  * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
- * next verdict is another review. The fallthrough is `human:epic-review`, and it carries the same
- * `final` + `UNBLOCKED` door `frozen` does: a twice-failed epic review is a park a human resumes,
- * not the end of the run.
+ * next verdict is another review. The fallthrough is the same `human:budget-spent` a child's is: an
+ * epic review that spent its budget is a park its driver resumes, not the end of the run, and one
+ * leaf for one fact means one route to read it by.
  */
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
@@ -182,7 +190,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:epic-review"},
+					{target: "human:budget-spent"},
 				],
 			},
 		},
@@ -193,7 +201,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 				[`${ns}.BLOCKED`]: "human:cp-approval",
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:epic-review"},
+					{target: "human:budget-spent"},
 				],
 				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
 			},
@@ -208,7 +216,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 				],
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:epic-review"},
+					{target: "human:budget-spent"},
 				],
 				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
 			},
@@ -219,7 +227,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		shipped: {type: "final"},
-		"human:epic-review": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 	},
 });
 

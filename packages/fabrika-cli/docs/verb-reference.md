@@ -565,6 +565,7 @@ snapshot. Lane state is local and never committed.
 |---|---|
 | `lane status` | the derived state: compound `stateValue`, active/done, per-task context, tripped tasks |
 | `lane transition` | records one operator event after the machine accepts it |
+| `lane clear` | one repair round granted to a lane whose budget is spent and whose seat has no pull request for `build clear` to read — an epic child, a chore lane. It appends the same `<TASK>.CLEARED` event and moves no task, so the park's door is still the `UNBLOCKED` and the two land in either order. The round is DERIVED off the task's own declared cap against the grants already in its log, never typed, so one call buys exactly one round; a task that still has budget is exit `47`, and a blank or absent `--rationale` is `53` — that line is the driver's only audit of a grant no pull request carries (ADR 0374) |
 | `lane report` | a shell's terminal token, mapped to one operator event — plus the machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`), which belongs to no shell, maps to the machine's `LAP`, and carries its own park cause with no `--cause` typed; it also refuses a `ship:queued` re-fold at `55` until the wait axis's elapsed-time floor has run, so the budget measures a dwell rather than a driver's pace |
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
@@ -595,9 +596,11 @@ and the ref did not move · `31` this session does not hold the driver's claim �
 token is no shell's · `33` an assembly git write was aimed at the main working tree · `34` the
 assembly branch tracks another ref and clearing that upstream did not take · `35` the `--cause` is
 outside the closed park-cause set, or rides on an event that is neither `BLOCKED` nor `LAP` · `36` the `UNBLOCKED` would restore a state with no budget left
-— read the refusal for which budget: retries want a recorded `CLEARED` (`build clear`), waits want
+— read the refusal for which budget: retries want a recorded `CLEARED` (`build clear` where a pull
+request carries the founder's grant, `lane clear` where the lane has none), waits want
 the grant on this same resume (`--grant-wait`, else `recipe unpark`) · `47` the `--grant-wait` is
-not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED`
+not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED` — and on
+`lane clear`, the task still has budget to spend, so there is no round to grant
 · `37` a booted lane's machine cannot be replaced by the template without moving the lane · `49` an archive or a settlement was aimed at a lane whose issue is still open · `50` an archive was aimed at a lane whose log replays, so every sweep can judge it · `38`
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
@@ -605,9 +608,9 @@ branch · `42` the child conflicts and the merge was aborted · `43` the merged 
 install, or the install changed a tracked file · `44` the merged tree failed a code validator · `45`
 the assembly worktree already held modified tracked files before the merge, so nothing was merged ·
 `52` a `BLOCKED` named no cause in a repo declaring `parkCause.uncaused: "refuse"` · `53` the
-`--rationale` says nothing, or rides on an event that is not `UNBLOCKED` · `55` a `ship:queued` re-fold arrived inside the wait axis's
-elapsed-time floor, or the clock on that task's last line reads as no date — the log is unappended
-and the wait unspent.
+`--rationale` says nothing, rides on an event that is not `UNBLOCKED`, or is absent on
+`lane clear` · `55` a `ship:queued` re-fold arrived inside the wait axis's elapsed-time floor, or
+the clock on that task's last line reads as no date — the log is unappended and the wait unspent.
 
 To open a lane, copy a template in and speak the operator's events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED` / `LAP`:
