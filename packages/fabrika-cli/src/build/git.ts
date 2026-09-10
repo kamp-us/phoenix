@@ -269,6 +269,23 @@ export const pruneWorktrees: Shell<Attempt<void>> = Effect.gen(function* () {
 	return r.ok ? ok<void>(undefined) : fail(r.reason);
 });
 
+/**
+ * Drop one registration's lock, so {@link pruneWorktrees} can reach it.
+ *
+ * `git worktree prune` skips a locked entry, which is right while a checkout exists and wrong once
+ * it does not: a lock protects a tree, and a lock whose tree is gone protects nothing while keeping
+ * a dead record permanent. Fourteen of this clone's registrations were in exactly that state, locked
+ * by a harness process that died in August with their directories long gone.
+ *
+ * **Only a caller that has proved the directory absent may run this** — that proof is the whole
+ * license, and `../build/reap.ts`'s `Presence` is where it is made.
+ */
+export const unlockWorktree = (path: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["worktree", "unlock", path]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
 /** How many paths another worktree has uncommitted — `0` is a clean tree, salvage-free. */
 export const worktreeDirtyPaths = (path: string): Shell<Attempt<number>> =>
 	Effect.gen(function* () {

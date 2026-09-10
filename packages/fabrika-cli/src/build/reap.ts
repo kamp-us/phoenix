@@ -15,6 +15,11 @@
  * {@link Liveness} carries whatever the sweep could observe about the tree still being in use, and
  * any live **or unreadable** signal is a KEEP.
  *
+ * A registration whose **directory is gone** is the one entry that answers a different question:
+ * there is no checkout to be unsafe about, so it is seated `Prune` rather than `Remove` or `Keep`
+ * and the sweep clears the record instead of a tree. That is a widening of the fail-safe rule, not a
+ * hole in it — absence is the strongest positive proof the module has.
+ *
  * That is the opposite polarity from `./retire.ts`, and deliberately: a retirement is a *targeted*
  * act against one number the board has spoken about, so dirtiness is ruled out of it. A reap
  * is a *bulk* act over trees nobody named, so it has no board statement to lean on and has to read
@@ -28,16 +33,34 @@
  */
 import type {Containment} from "../io/containment.ts";
 
-/** Where the harness registers a spawned agent's worktree. The one population this verb sweeps. */
+/**
+ * The two namings a harness-provisioned agent worktree arrives under.
+ *
+ * `<repo>/.claude/worktrees/agent-<id>` is `hook worktree-create`'s own layout. The second is the
+ * harness's, and it does not sit under the repository at all — measured over this clone's 417
+ * registrations: 243 under the first naming, 93 under the second, split between
+ * `/private/tmp/worktrees/<slug>/pi-worktree-<uuid>-s0-0` and
+ * `<some-checkout>/worktrees/pi-worktree-<uuid>-s0-0`. So the second is matched on the leaf's own
+ * name and nothing about where it sits: keying it to a temp root would narrow out the copies that do
+ * not live there. Each tree carries its own installed dependencies rather than sharing them, so a
+ * naming the sweep cannot see is gigabytes it can never reclaim.
+ *
+ * Widening the *population* moves no polarity: {@link classify} still needs the same positive proofs
+ * before a tree of either naming may go.
+ */
 const AGENT_DIR = "/.claude/worktrees/";
 const AGENT_PREFIX = "agent-";
+const HARNESS_PREFIX = "pi-worktree-";
 
-/** Whether a registration's path is a harness-provisioned agent worktree. */
+const named = (segment: string, prefix: string): boolean =>
+	segment.startsWith(prefix) && segment.length > prefix.length;
+
+/** Whether a registration's path is a harness-provisioned agent worktree, under either naming. */
 export const isAgentWorktree = (path: string): boolean => {
+	if (named(path.split("/").at(-1) ?? "", HARNESS_PREFIX)) return true;
 	const at = path.lastIndexOf(AGENT_DIR);
 	if (at < 0) return false;
-	const name = path.slice(at + AGENT_DIR.length).split("/")[0] ?? "";
-	return name.startsWith(AGENT_PREFIX) && name.length > AGENT_PREFIX.length;
+	return named(path.slice(at + AGENT_DIR.length).split("/")[0] ?? "", AGENT_PREFIX);
 };
 
 /** What one tree's own directory answered about uncommitted work. */
@@ -91,18 +114,49 @@ export type Liveness =
 	| {readonly _tag: "Quiet"}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
-/** Everything the sweep read about one registered agent worktree. */
-export interface TreeFacts {
+/**
+ * Whether the registered directory is still on disk.
+ *
+ * `Gone` is the one fact that licenses clearing a registration rather than removing a tree, and it
+ * is the strongest proof this whole module deals in: there is no checkout, so there is nothing to
+ * salvage and no session whose fate anybody has to attest to. It has two sources — git's own
+ * `prunable`, and a stat that came back not-found, which is the wider one. Fourteen of this clone's
+ * registrations were locked by a harness process dead since August with their directories long gone,
+ * and `git worktree prune` skips a locked entry, so git alone never called those prunable and they
+ * survived every sweep.
+ *
+ * `Unknown` is a stat that failed for any *other* reason — a permission, an unmounted volume — and
+ * it keeps the tree. Only a not-found is proof of absence.
+ */
+export type Presence =
+	| {readonly _tag: "Present"}
+	| {readonly _tag: "Gone"; readonly because: string}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * The facts a sweep has in hand before it runs a single git read on the tree — the registration's
+ * own fields, plus one stat.
+ *
+ * They are separated from the rest because {@link classifyCheap} settles most of a population on
+ * them alone, and paying for the dear facts anyway is what made a sweep of this clone cost 42.8s:
+ * 230 of its 243 trees were seated by a cheap arm, and every one of them had a `git status` and a
+ * containment scan read for it whose answer no arm ever consulted. That cost is charged per spawn
+ * once `hook worktree-create` reaps before it provisions, which is what made it worth ending.
+ */
+export interface CheapFacts {
 	readonly path: string;
 	/** The branch it holds, or `null` when its HEAD is detached. Reported, never judged. */
 	readonly branch: string | null;
 	/** git's own lock reason, `""` when locked without one, `null` when unlocked. */
 	readonly locked: string | null;
-	/** Set when git already considers the registration stale — its directory is gone. */
-	readonly prunable: boolean;
+	readonly presence: Presence;
+	readonly liveness: Liveness;
+}
+
+/** Everything the sweep read about one registered agent worktree. */
+export interface TreeFacts extends CheapFacts {
 	readonly uncommitted: Uncommitted;
 	readonly landing: Containment;
-	readonly liveness: Liveness;
 }
 
 /** Why a tree may be reaped. One constructor per positive proof the trunk can give. */
@@ -110,29 +164,35 @@ export type License = "ancestor" | "squashed" | "no-change";
 
 export type Verdict =
 	| {readonly _tag: "Remove"; readonly license: License; readonly because: string}
+	/** No tree to remove — only the registration, which `git worktree prune` clears. */
+	| {readonly _tag: "Prune"; readonly because: string}
 	| {readonly _tag: "Keep"; readonly because: string};
 
 /**
- * Seat one tree against the trunk.
+ * The arms answerable off {@link CheapFacts} alone, or `null` when the git reads are owed.
+ *
+ * Exported so the sweep can gate on it *before* paying for them, and used by {@link classify} so
+ * there is one chain rather than two orderings that can drift apart.
  *
  * The self arm comes first for `./retire.ts`'s reason: a process cannot pull the checkout out from
- * under itself, and git would refuse one step later with a worse message. The rest is a conjunction
- * written as a chain of refusals, so the report names the *first* reason a tree survived rather than
- * a list a reader has to weigh.
+ * under itself, and git would refuse one step later with a worse message. Absence comes next,
+ * ahead of the lock: a lock protects a checkout, and there is no checkout — the fourteen
+ * locked-and-gone registrations above are exactly the entries that ordering reaches.
  */
-export const classify = (
-	facts: TreeFacts,
-	trunk: string,
+export const classifyCheap = (
+	facts: CheapFacts,
 	selfPaths: ReadonlySet<string>,
-): Verdict => {
+): Verdict | null => {
 	if (selfPaths.has(facts.path)) {
 		return {_tag: "Keep", because: "it is the tree this run is standing in"};
 	}
-	if (facts.prunable) {
+	if (facts.presence._tag === "Gone") {
+		return {_tag: "Prune", because: facts.presence.because};
+	}
+	if (facts.presence._tag === "Unknown") {
 		return {
 			_tag: "Keep",
-			because:
-				"its directory is already gone, so there is no tree to remove — `git worktree prune` clears the registration",
+			because: `whether its directory is still there is UNKNOWN: ${facts.presence.reason}`,
 		};
 	}
 	if (facts.liveness._tag === "Live") {
@@ -153,6 +213,23 @@ export const classify = (
 			because: `it is locked${facts.locked === "" ? "" : ` (${facts.locked})`}, and git refuses to remove a locked tree without --force`,
 		};
 	}
+	return null;
+};
+
+/**
+ * Seat one tree against the trunk.
+ *
+ * The cheap arms run first and settle most of a population; what survives them is the conjunction
+ * the git reads answer, written as a chain of refusals so the report names the *first* reason a tree
+ * survived rather than a list a reader has to weigh.
+ */
+export const classify = (
+	facts: TreeFacts,
+	trunk: string,
+	selfPaths: ReadonlySet<string>,
+): Verdict => {
+	const cheap = classifyCheap(facts, selfPaths);
+	if (cheap !== null) return cheap;
 	if (facts.landing._tag === "Unknown") {
 		return {_tag: "Keep", because: `whether its work landed is UNKNOWN: ${facts.landing.reason}`};
 	}

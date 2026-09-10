@@ -17,12 +17,16 @@
  * The order is the contract:
  *
  *   1. This run's own tree root is read, so no pass can remove the checkout it is standing in.
- *   2. Every registration is read whole (`./git.ts`) and narrowed to the agent population.
+ *   2. Every registration is read whole (`./git.ts`) and narrowed to the agent population — both
+ *      namings the harness provisions under, per `./reap.ts`'s `isAgentWorktree`.
  *   3. The trunk is derived from `origin/HEAD`, never spelled — a wrong ref resolves to nothing and
  *      would make every tree look unlanded.
- *   4. Each tree's uncommitted count, its HEAD's landing and its liveness are read, and
- *      {@link classify} seats it. **Every read that fails is a KEEP**, per-tree: a sweep of seventy
- *      trees must not lose its whole answer to one unreadable directory.
+ *   4. Each tree gets one stat, and the arms answerable off that plus the registration's own fields
+ *      run first ({@link classifyCheap}). Only what they leave open pays for the `git status` and
+ *      the containment scan — 13 trees of 243 on the clone this was measured against, and reading
+ *      those two for the other 230 anyway is the 42.8s a sweep used to cost before a hook ran one
+ *      per spawn. **Every read that fails is a KEEP**, per-tree: a sweep of seventy trees must not
+ *      lose its whole answer to one unreadable directory.
  *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
  *   6. `--limit` bounds the executed set to that many removals; everything past it stays planned and
  *      is reported unattempted, so a population too large for one watchdog window is walked in
@@ -34,6 +38,11 @@
  *      set readable on disk. The read-back at 7 proves the sweep; the journal is what survives a
  *      process that never reaches it. A journal write that fails is reported and demotes nothing —
  *      the removal is the fact, the record is the convenience.
+ *   9. Then the stale registrations go, in the same pass: the ones whose directory was already gone
+ *      and the ones each removal just left behind. `git worktree prune` clears the record and the
+ *      same read-back proves it. `--limit` does not bound this — a registration is a line in a file,
+ *      not a tree to delete — and a surviving one is reported without redding the sweep, because it
+ *      costs disk nothing and risks no work.
  *
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
  * checkout, it does not delete a ref.
@@ -45,12 +54,21 @@ import {appendText} from "../io/fs.ts";
 import {originHeadRef} from "../io/git.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {removeWorktree, worktreeRegistrations, worktreeStatusPaths} from "./git.ts";
 import {
+	pruneWorktrees,
+	removeWorktree,
+	unlockWorktree,
+	worktreeRegistrations,
+	worktreeStatusPaths,
+} from "./git.ts";
+import {
+	type CheapFacts,
 	classify,
+	classifyCheap,
 	isAgentWorktree,
 	type License,
 	type Liveness,
+	type Presence,
 	QUIET_WINDOW_SECONDS,
 	type TreeFacts,
 	type Uncommitted,
@@ -101,7 +119,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			);
 		}
 		const population = registrations.value.filter((tree) => isAgentWorktree(tree.path));
-		const scope = `${VERB}: scanned ${registrations.value.length} registration(s); ${population.length} under .claude/worktrees/agent-*.`;
+		const scope = `${VERB}: scanned ${registrations.value.length} registration(s); ${population.length} named .claude/worktrees/agent-* or pi-worktree-*.`;
 		if (population.length === 0) {
 			return answer(
 				JSON.stringify({answer: "none", executed: options.execute, removed: [], kept: []}),
@@ -118,16 +136,27 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			);
 		}
 
-		const seated: Array<{facts: TreeFacts; verdict: Verdict}> = [];
+		const seated: Array<{facts: CheapFacts; verdict: Verdict}> = [];
 		for (const tree of population) {
-			const facts: TreeFacts = {
+			const observed = yield* observe(tree.path, tree.prunable);
+			const cheap: CheapFacts = {
 				path: tree.path,
 				branch: tree.branch,
 				locked: tree.locked,
-				prunable: tree.prunable,
-				uncommitted: yield* uncommittedIn(tree.path, tree.prunable),
+				presence: observed.presence,
+				liveness: observed.liveness,
+			};
+			// The git reads are owed only by what the cheap arms leave open. On this clone that is 13
+			// trees of 243, and paying for the other 230 anyway is the whole 42.8s a sweep used to cost.
+			const settled = classifyCheap(cheap, selfPaths);
+			if (settled !== null) {
+				seated.push({facts: cheap, verdict: settled});
+				continue;
+			}
+			const facts: TreeFacts = {
+				...cheap,
+				uncommitted: yield* uncommittedIn(tree.path),
 				landing: yield* containmentOf(tree.head, trunk.value),
-				liveness: yield* livenessOf(tree.path, tree.prunable),
 			};
 			seated.push({facts, verdict: classify(facts, trunk.value, selfPaths)});
 		}
@@ -143,6 +172,14 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 		const keptLines = seated.flatMap(({facts, verdict}) =>
 			verdict._tag === "Keep"
 				? [`${VERB}: KEEP ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
+				: [],
+		);
+		const stale = seated.flatMap(({facts, verdict}) =>
+			verdict._tag === "Prune" ? [{path: facts.path, locked: facts.locked !== null}] : [],
+		);
+		const staleLines = seated.flatMap(({facts, verdict}) =>
+			verdict._tag === "Prune"
+				? [`${VERB}: PRUNE ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
 				: [],
 		);
 
@@ -168,14 +205,16 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 					trunk: trunk.value,
 					scanned: population.length,
 					removable,
+					stale,
 					kept,
 				}),
 				[
 					scope,
 					...planned,
+					...staleLines,
 					...keptLines,
 					...boundLine,
-					`${VERB}: ${removable.length} removable, ${kept.length} kept — nothing was removed; re-run with --execute to remove them.`,
+					`${VERB}: ${removable.length} removable, ${stale.length} stale, ${kept.length} kept — nothing was removed and nothing was pruned; re-run with --execute.`,
 				],
 			);
 		}
@@ -208,19 +247,43 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				`${VERB}: NOT JOURNALLED — ${row.path} was removed and the record did not land in ${journalPath}: ${row.reason}. The removal stands; a run killed after this point leaves it off the disk record.`,
 		);
 
+		// The registration a removed tree leaves behind is stale by the same definition as one whose
+		// directory was already gone, so one prune after the loop clears both. An entry locked by a
+		// dead harness process is unlocked first, because prune skips a locked entry — and its
+		// directory is already proved absent, so the lock is guarding nothing.
+		const unlockFailed: Array<{path: string; reason: string}> = [];
+		let pruneFailure: string | null = null;
+		if (stale.length > 0 || removed.length > 0) {
+			for (const row of stale) {
+				if (!row.locked) continue;
+				const unlocked = yield* unlockWorktree(row.path);
+				if (unlocked._tag === "Failure") {
+					unlockFailed.push({path: row.path, reason: unlocked.reason});
+				}
+			}
+			const pruned = yield* pruneWorktrees;
+			if (pruned._tag === "Failure") pruneFailure = pruned.reason;
+		}
+
 		let unproven: ReadonlyArray<string> = [];
-		if (removed.length > 0) {
+		let unpruned: ReadonlyArray<string> = [];
+		if (removed.length > 0 || stale.length > 0) {
 			const after = yield* worktreeRegistrations;
 			if (after._tag === "Failure") {
 				return refuse(
 					READBACK_MISMATCH,
-					`${VERB}: ${removed.length} tree(s) were removed and the registrations could not be read back: ${after.reason} — the removals are NOT proven.`,
+					`${VERB}: ${removed.length} tree(s) were removed and ${stale.length} stale registration(s) pruned, and the registrations could not be read back: ${after.reason} — neither is proven.`,
 					[scope, ...journalLines, ...keptLines],
 				);
 			}
+			const registered = after.value.map((tree) => tree.path);
 			unproven = unprovenAmong(
 				removed.map((row) => row.path),
-				after.value.map((tree) => tree.path),
+				registered,
+			);
+			unpruned = unprovenAmong(
+				stale.map((row) => row.path),
+				registered,
 			);
 		}
 
@@ -229,6 +292,9 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			...removed
 				.filter((row) => !unproven.includes(row.path))
 				.map((row) => `${VERB}: removed ${row.path} (${row.license}).`),
+			...stale
+				.filter((row) => !unpruned.includes(row.path))
+				.map((row) => `${VERB}: pruned the stale registration ${row.path}.`),
 			...failed.map(
 				(row) =>
 					`${VERB}: FAILED to remove ${row.path}: ${row.reason} — the tree stays registered, and --force is banned on every path.`,
@@ -236,6 +302,19 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			...unproven.map(
 				(path) =>
 					`${VERB}: UNPROVEN — git reported ${path} removed and it is still registered; this clone needs a human.`,
+			),
+			...unlockFailed.map(
+				(row) =>
+					`${VERB}: FAILED to unlock ${row.path}: ${row.reason} — prune skips a locked entry, so the registration stays.`,
+			),
+			...(pruneFailure === null
+				? []
+				: [
+						`${VERB}: FAILED to prune: ${pruneFailure} — every stale registration stays, and no tree removal is affected.`,
+					]),
+			...unpruned.map(
+				(path) =>
+					`${VERB}: UNPRUNED — ${path} has no directory and is still registered after the prune.`,
 			),
 			...journalLines,
 			...unattempted.map(
@@ -259,6 +338,8 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				report,
 			);
 		}
+		// A surviving stale registration costs disk nothing and never risks work — its tree is already
+		// gone — so it is reported and does not red a sweep whose removals all landed.
 		return answer(
 			JSON.stringify({
 				answer: "reaped",
@@ -267,32 +348,27 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				scanned: population.length,
 				journal: journalPath,
 				removed,
+				pruned: stale.filter((row) => !unpruned.includes(row.path)).map((row) => row.path),
+				unpruned,
 				failed,
 				unattempted,
 				kept,
 			}),
 			[
 				...report,
-				`${VERB}: ${removed.length} removed, ${unattempted.length} unattempted, ${kept.length} kept.`,
+				`${VERB}: ${removed.length} removed, ${stale.length - unpruned.length} pruned, ${unattempted.length} unattempted, ${kept.length} kept.`,
 			],
 		);
 	});
 
-const branchOf = (facts: TreeFacts): string =>
+const branchOf = (facts: CheapFacts): string =>
 	facts.branch === null ? " (detached)" : ` (${facts.branch})`;
 
-/**
- * A tree's uncommitted count, or the reason it is UNKNOWN.
- *
- * A registration git already calls prunable has no directory to read, so it is not asked: the
- * failure would be noise on a tree {@link classify} keeps for a different reason anyway.
- */
+/** A tree's uncommitted count, or the reason it is UNKNOWN. Asked only of a tree still on disk. */
 const uncommittedIn = (
 	path: string,
-	prunable: boolean,
 ): Effect.Effect<Uncommitted, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		if (prunable) return {_tag: "Unknown" as const, reason: "its directory is gone"};
 		const dirty = yield* worktreeStatusPaths(path);
 		return dirty._tag === "Failure"
 			? {_tag: "Unknown" as const, reason: dirty.reason}
@@ -300,46 +376,80 @@ const uncommittedIn = (
 	});
 
 /**
- * Whether one tree still reads as in use, or the reason that is UNKNOWN.
+ * The one stat, read into both facts it answers: is the directory still there, and does it read
+ * as in use?
  *
- * The signal is the worktree root's own mtime, and that tracks the root's **entry list** — a create,
- * delete or rename directly in it — not a write to a file inside it. So for a seat that drives
- * without editing, this reads the tree's provisioning time, and a young tree is one provisioned
- * recently rather than one somebody was recently active in; {@link QUIET_WINDOW_SECONDS} carries the
- * ground for that and what it costs. It is still the only liveness reading available without asking
- * the OS for process cwds.
+ * **Absence is proved by the error's own reason, never by a failed read.** `FileSystem.stat` folds
+ * both into a `PlatformError`, and only `reason._tag === "NotFound"` is a not-there; a
+ * `PermissionDenied` or an unmounted volume arrives as some other tag and keeps the tree. Verified
+ * against this repo's `effect@4.0.0-beta.92` under `NodeServices.layer`: a missing path answered
+ * `NotFound` and an unreadable one `PermissionDenied`.
+ *
+ * The liveness signal is the worktree root's own mtime, and that tracks the root's **entry list** —
+ * a create, delete or rename directly in it — not a write to a file inside it. So for a seat that
+ * drives without editing, this reads the tree's provisioning time, and a young tree is one
+ * provisioned recently rather than one somebody was recently active in; {@link QUIET_WINDOW_SECONDS}
+ * carries the ground for that and what it costs. It is still the only liveness reading available
+ * without asking the OS for process cwds.
  *
  * A clock skew that puts the mtime in the future reads Live, not Quiet: the arm's whole polarity is
  * that an answer it cannot trust must not license a removal.
  */
-const livenessOf = (
+const observe = (
 	path: string,
 	prunable: boolean,
-): Effect.Effect<Liveness, never, FileSystem.FileSystem> =>
+): Effect.Effect<
+	{readonly presence: Presence; readonly liveness: Liveness},
+	never,
+	FileSystem.FileSystem
+> =>
 	Effect.gen(function* () {
-		if (prunable) return {_tag: "Unknown" as const, reason: "its directory is gone"};
+		const gone = (because: string) =>
+			({
+				presence: {_tag: "Gone" as const, because},
+				liveness: {_tag: "Unknown" as const, reason: "its directory is gone"},
+			}) as const;
+		if (prunable) {
+			return gone("git already calls the registration prunable — its working directory is gone");
+		}
+
 		const fs = yield* FileSystem.FileSystem;
 		const stat = yield* Effect.result(fs.stat(path));
 		if (Result.isFailure(stat)) {
+			const reason = stat.failure.reason;
+			if (reason._tag === "NotFound") {
+				return gone(
+					"its directory does not exist, so there is nothing to salvage and the registration is all that is left",
+				);
+			}
+			const unreadable = `its directory could not be read: ${stat.failure.message}`;
 			return {
-				_tag: "Unknown" as const,
-				reason: `its directory could not be read: ${stat.failure.message}`,
+				presence: {_tag: "Unknown" as const, reason: unreadable},
+				liveness: {_tag: "Unknown" as const, reason: unreadable},
 			};
 		}
+
 		const mtime = stat.success.mtime;
 		if (Option.isNone(mtime)) {
 			return {
-				_tag: "Unknown" as const,
-				reason: "this platform reported no modification time for it",
+				presence: {_tag: "Present" as const},
+				liveness: {
+					_tag: "Unknown" as const,
+					reason: "this platform reported no modification time for it",
+				},
 			};
 		}
 		const ageSeconds = Math.floor((Date.now() - mtime.value.getTime()) / 1000);
-		return ageSeconds >= QUIET_WINDOW_SECONDS
-			? {_tag: "Quiet" as const}
-			: {
-					_tag: "Live" as const,
-					signals: [
-						{_tag: "RecentActivity" as const, ageSeconds, windowSeconds: QUIET_WINDOW_SECONDS},
-					],
-				};
+		return {
+			presence: {_tag: "Present" as const},
+			liveness:
+				ageSeconds >= QUIET_WINDOW_SECONDS
+					? ({_tag: "Quiet"} as const)
+					: ({
+							_tag: "Live",
+							signals: [
+								{_tag: "RecentActivity" as const, ageSeconds, windowSeconds: QUIET_WINDOW_SECONDS},
+							],
+						} as const),
+		};
 	});

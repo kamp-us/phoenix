@@ -26,6 +26,8 @@ const LOG = /^git log --no-merges -p /;
 const PATCH_ID = /^git patch-id --stable$/;
 const SHALLOW = /^git rev-parse --is-shallow-repository$/;
 const REMOVE = /^git worktree remove /;
+const PRUNE = /^git worktree prune$/;
+const UNLOCK = /^git worktree unlock /;
 
 const HERE = "/repo/.claude/worktrees/agent-self";
 const DEAD = "/repo/.claude/worktrees/agent-dead";
@@ -299,10 +301,10 @@ describe("runReap — a live seat is read off the tree, not off git", () => {
 	});
 
 	it("keeps it when its directory cannot be stat'd at all — UNKNOWN never licenses a removal", async () => {
-		const {out, calls} = await run(seat, true, {directories: [HERE], unprobeable: [DEAD]});
+		const {out, calls} = await run(seat, true, {directories: [HERE], unstatable: [DEAD]});
 
 		expect(JSON.parse(out.stdout).kept).toMatchObject([{path: DEAD}]);
-		expect(out.stderr.join("\n")).toMatch(/whether it is still in use is UNKNOWN/);
+		expect(out.stderr.join("\n")).toMatch(/whether its directory is still there is UNKNOWN/);
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
 	});
 
@@ -341,7 +343,7 @@ describe("runReap — a live seat is read off the tree, not off git", () => {
 			true,
 			{
 				directories: [HERE, OTHER],
-				unprobeable: [DEAD],
+				unstatable: [DEAD],
 				mtimes: {[HERE]: ago(2_592_000), [OTHER]: ago(2_592_000)},
 			},
 		);
@@ -449,7 +451,126 @@ describe("runReap — the removals are proven, never reported", () => {
 		);
 
 		expect(out.code).toBe(READBACK_MISMATCH);
-		expect(out.stderr.join("\n")).toMatch(/NOT proven/);
+		expect(out.stderr.join("\n")).toMatch(/neither is proven/);
+	});
+});
+
+describe("runReap — the stale registrations go in the same pass", () => {
+	const gone: ReadonlyArray<Scripted> = [
+		...GROUND,
+		[once(TREES), trees(PRIMARY, {path: DEAD, prunable: true})],
+		[PRUNE, okOut("")],
+		[TREES, trees(PRIMARY)],
+	];
+
+	it("plans a PRUNE for a registration git already calls prunable, and prunes nothing", async () => {
+		const {out, calls} = await run([
+			...GROUND,
+			[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
+		]);
+
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "planned", stale: [{path: DEAD}]});
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`PRUNE ${DEAD}`));
+		expect(calls.some((line) => PRUNE.test(line))).toBe(false);
+	});
+
+	it("pays no git read for it — a registration with no directory has nothing to ask git about", async () => {
+		const {calls} = await run([...GROUND, [TREES, trees(PRIMARY, {path: DEAD, prunable: true})]]);
+
+		expect(calls.some((line) => STATUS.test(line))).toBe(false);
+		expect(calls.some((line) => ANCESTOR.test(line))).toBe(false);
+	});
+
+	it("prunes it under --execute and proves it off the read-back", async () => {
+		const {out, calls} = await run(gone, true);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "reaped", pruned: [DEAD], unpruned: []});
+		expect(calls).toContain("git worktree prune");
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`pruned the stale registration ${DEAD}`));
+	});
+
+	it("unlocks a locked one first — prune skips a locked entry, and this lock guards no checkout", async () => {
+		const {calls} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD, locked: "claude agent (pid 84894)"})],
+				[UNLOCK, okOut("")],
+				[PRUNE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
+			true,
+			{directories: [HERE], unprobeable: [DEAD]},
+		);
+
+		expect(calls).toContain(`git worktree unlock ${DEAD}`);
+		expect(calls.indexOf(`git worktree unlock ${DEAD}`)).toBeLessThan(
+			calls.indexOf("git worktree prune"),
+		);
+	});
+
+	it("reports a registration that survived the prune without redding the sweep", async () => {
+		const {out} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD, prunable: true})],
+				[PRUNE, okOut("")],
+				[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
+			],
+			true,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({pruned: [], unpruned: [DEAD]});
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`UNPRUNED — ${DEAD}`));
+	});
+
+	it("reports a prune git refused, and no tree removal is affected", async () => {
+		const {out} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD, prunable: true})],
+				[PRUNE, errOut("permission denied")],
+				[TREES, trees(PRIMARY, {path: DEAD, prunable: true})],
+			],
+			true,
+		);
+
+		expect(out.stderr.join("\n")).toMatch(/FAILED to prune: permission denied/);
+	});
+
+	it("clears what a removal just left behind — one prune covers both sources", async () => {
+		const {calls} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD})],
+				[STATUS, okOut("")],
+				[ANCESTOR, okOut("")],
+				[REMOVE, okOut("")],
+				[PRUNE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
+			true,
+		);
+
+		expect(calls).toContain("git worktree prune");
+	});
+});
+
+describe("runReap — the population is both harness namings", () => {
+	const PI = "/private/tmp/worktrees/slug/pi-worktree-0036baa5-s0-0";
+
+	it("sweeps a tree the harness named its own way, outside the repository entirely", async () => {
+		const {out} = await run(
+			[...GROUND, [TREES, trees(PRIMARY, {path: PI})], [STATUS, okOut("")], [ANCESTOR, okOut("")]],
+			false,
+			{
+				directories: [HERE, PI],
+				mtimes: {[HERE]: ago(2_592_000), [PI]: ago(2_592_000)},
+			},
+		);
+
+		expect(JSON.parse(out.stdout)).toMatchObject({scanned: 1, removable: [{path: PI}]});
 	});
 });
 

@@ -163,6 +163,46 @@ export const concurrencyArm = (diagnostic: string): ConcurrencyArm | null =>
 export const pruneWorktreesArgs: ReadonlyArray<string> = ["worktree", "prune"];
 
 /**
+ * How the sweep re-enters this CLI, and how much of the spawn it may spend.
+ *
+ * **Whatever creates a worktree reaps first**, and that is the one mechanism bounding accumulation,
+ * because nothing else in the pipeline ever runs `build reap`. Provisioning
+ * is where the bound belongs: one tree is created per spawn, so reaping up to
+ * {@link REAP_LIMIT} at the same moment makes the population shrink whenever anything is reclaimable
+ * and drain a backlog rather than merely hold. It runs *before* the fetch and the add because the
+ * failure it exists to prevent is a full volume refusing the add — freeing the disk after that
+ * refusal is a spawn too late.
+ *
+ * It is a **child process** rather than a call into `runReap`, for the one thing a child gives that
+ * a call does not: `cwd`. This package's git seam runs every command in the process's own cwd, and a
+ * hook's cwd is the harness's business, while the sweep must read *this repository's*
+ * registrations — the ones the envelope's `cwd` names. `process.execPath` and this process's own
+ * entrypoint keep it the same build of the CLI the hook is running from.
+ *
+ * Neither bound is arbitrary. `--limit` is small because each removal deletes a tree carrying its own
+ * installed dependencies rather than shared ones, and the spawn waits on it; the timeout is a fraction of the
+ * git children's own 540s, because the fetch and the add still have to fit inside the hook's 600s
+ * budget after it. A sweep that overruns either is cut off, which costs a few reclaimed trees and
+ * nothing else — `build reap` journals each removal as it happens, so what it did before the cut is
+ * still on disk, and its verdicts are re-derived from scratch on the next spawn.
+ *
+ * **Nothing it answers can refuse the spawn.** A reclaimer is not a provisioner: a failed sweep
+ * leaves the disk exactly as it found it, and turning that into a blocked spawn would convert a
+ * housekeeping miss into the total stop this whole mechanism exists to prevent.
+ */
+export const REAP_LIMIT = 4;
+export const REAP_TIMEOUT_SECONDS = 120;
+
+export const reapArgs = (entry: string): ReadonlyArray<string> => [
+	entry,
+	"build",
+	"reap",
+	"--execute",
+	"--limit",
+	String(REAP_LIMIT),
+];
+
+/**
  * Attempts and delays for that recovery. Bounded, and **no lock is taken**: `git worktree add` fires
  * the `post-checkout` dependency install, so serialising it would serialise every parallel spawn
  * behind one ~10s install. A loser prunes and waits out the live window instead of taking a turn at

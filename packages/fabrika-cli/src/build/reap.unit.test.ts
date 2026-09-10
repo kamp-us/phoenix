@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	classify,
+	classifyCheap,
 	isAgentWorktree,
 	type Liveness,
 	QUIET_WINDOW_SECONDS,
@@ -16,7 +17,7 @@ const facts = (over: Partial<TreeFacts> = {}): TreeFacts => ({
 	path: PATH,
 	branch: null,
 	locked: null,
-	prunable: false,
+	presence: {_tag: "Present"},
 	uncommitted: {_tag: "Read", paths: 0},
 	landing: {_tag: "Ancestor"},
 	liveness: {_tag: "Quiet"},
@@ -49,6 +50,20 @@ describe("isAgentWorktree", () => {
 
 	it("matches the directory, never a path that merely mentions it", () => {
 		expect(isAgentWorktree("/repo/docs/.claude-worktrees-agent-notes.md")).toBe(false);
+	});
+
+	it("admits the harness's own naming wherever it sits — the 93 the sweep could not see", () => {
+		expect(isAgentWorktree("/private/tmp/worktrees/slug-8520/pi-worktree-0036baa5-59da-s0-0")).toBe(
+			true,
+		);
+		expect(
+			isAgentWorktree("/Users/u/code/o/r/worktrees/batch/worktrees/pi-worktree-24e1-s0-0"),
+		).toBe(true);
+	});
+
+	it("refuses a bare `pi-worktree-` and a parent that merely carries the name", () => {
+		expect(isAgentWorktree("/private/tmp/pi-worktree-")).toBe(false);
+		expect(isAgentWorktree("/private/tmp/pi-worktree-0036/checkout")).toBe(false);
 	});
 });
 
@@ -122,10 +137,70 @@ describe("classify — everything short of a proof is KEEP", () => {
 		expect(verdict.because).toMatch(/UNKNOWN: not a git repository/);
 	});
 
-	it("keeps a registration git already calls prunable — there is no tree to remove", () => {
-		const verdict = classify(facts({prunable: true}), TRUNK, NOBODY);
+	it("keeps a tree whose directory could not be read for any reason but absence", () => {
+		const verdict = classify(
+			facts({presence: {_tag: "Unknown", reason: "PermissionDenied: FileSystem.stat"}}),
+			TRUNK,
+			NOBODY,
+		);
 		expect(verdict._tag).toBe("Keep");
-		expect(verdict.because).toMatch(/worktree prune/);
+		expect(verdict.because).toMatch(/still there is UNKNOWN: PermissionDenied/);
+	});
+});
+
+describe("classify — a registration whose directory is gone is pruned, not kept", () => {
+	it("prunes a registration git already calls prunable", () => {
+		const verdict = classify(
+			facts({presence: {_tag: "Gone", because: "git already calls the registration prunable"}}),
+			TRUNK,
+			NOBODY,
+		);
+		expect(verdict).toEqual({
+			_tag: "Prune",
+			because: "git already calls the registration prunable",
+		});
+	});
+
+	it("prunes a LOCKED registration whose directory is gone — the lock guards no checkout", () => {
+		const verdict = classify(
+			facts({
+				locked: "claude agent agent-a29e (pid 84894 start Sat Aug 29 03:59:36 2026)",
+				presence: {_tag: "Gone", because: "its directory does not exist"},
+			}),
+			TRUNK,
+			NOBODY,
+		);
+		expect(verdict._tag).toBe("Prune");
+	});
+
+	it("keeps the tree this run stands in even when its directory reads gone", () => {
+		const verdict = classify(
+			facts({presence: {_tag: "Gone", because: "its directory does not exist"}}),
+			TRUNK,
+			new Set([PATH]),
+		);
+		expect(verdict._tag).toBe("Keep");
+	});
+});
+
+describe("classifyCheap — what a sweep settles before it pays for a git read", () => {
+	it("leaves a present, quiet, unlocked tree open, so the git reads are owed", () => {
+		expect(classifyCheap(facts(), NOBODY)).toBeNull();
+	});
+
+	it("settles a live tree, so no git read is owed for it", () => {
+		expect(classifyCheap(facts({liveness: LIVE}), NOBODY)?._tag).toBe("Keep");
+	});
+
+	it("agrees with classify on every arm it answers", () => {
+		for (const over of [
+			{liveness: LIVE},
+			{locked: ""},
+			{presence: {_tag: "Gone", because: "gone"} as const},
+			{presence: {_tag: "Unknown", reason: "denied"} as const},
+		]) {
+			expect(classifyCheap(facts(over), NOBODY)).toEqual(classify(facts(over), TRUNK, NOBODY));
+		}
 	});
 });
 

@@ -102,7 +102,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
 | `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
-| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute`, journalled per removal, bounded by `--limit` |
+| `build reap` | which finished harness worktrees — both namings — are provably safe to remove, and which registrations have no tree left at all; a dry run unless `--execute`, journalled per removal, bounded by `--limit` |
 | `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
 
 **`build verdicts`' `current` column is the content question, not the head question.** A row reads
@@ -122,6 +122,27 @@ population, which usually holds no lane branch at all (the harness detaches thos
 git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the trunk — reachable
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
+
+**That population is both namings the harness provisions under**, not just fabrika's own
+`.claude/worktrees/agent-*`: the harness registers a second one as `pi-worktree-<uuid>-sN-0`, which
+does not sit under the repository at all, so it is matched on the leaf's own name. It was the whole
+reclaimable set on the clone this was measured against — 78 removable trees at 1.81 GB each, roughly
+141 GB the sweep could not see (ADR
+[0386](../../../.decisions/0386-worktree-accumulation-is-bounded-at-provisioning.md)).
+
+**A registration whose directory is gone is PRUNE, a third verdict beside KEEP and REMOVE.** There is
+no checkout to be unsafe about, so the sweep clears the record rather than a tree, and one `git
+worktree prune` in the same `--execute` pass covers both sources — the entries that were already
+stale and the ones each removal just left behind. `--limit` does not bound it. An entry locked by a
+dead process with its directory gone is unlocked first, because prune skips a locked entry and a lock
+whose tree is gone guards nothing; absence is the only license for that unlock, and it is proved by
+the stat error's own `NotFound` rather than by a read that merely failed. A stale registration that
+survives the prune is reported and does not red the sweep.
+
+**Only the cheap arms run for every tree.** The registration's own fields plus one stat settle most
+of a population — 230 of 243 on that clone — and the `git status` and containment scan are paid only
+by what they leave open. Same arms, same order, same verdicts; it is what took a full scan from 42.8s
+to 18.3s, which is what makes it affordable to run one per spawn.
 
 A sweep records as it goes rather than at the end. Each removal git reports is appended to
 `.fabrika/reap.jsonl` under the run's own tree root before the next candidate is attempted, so the
@@ -536,7 +557,7 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
-| `hook worktree-create` | the absolute path of the provisioned worktree the envelope named |
+| `hook worktree-create` | the absolute path of the provisioned worktree the envelope named, after a bounded sweep of what this clone can reclaim |
 
 **Exit codes.** `3` stdin held nothing · `12` bytes arrived and are provably not an envelope ·
 `13` fd 0 could not be read · `14` a readable envelope arrived and is not the event this verb
@@ -555,6 +576,16 @@ created and arrived dep-less.
   `node_modules/.pnpm` is still absent. It is declared in phoenix's own `.claude/settings.json` and
   deliberately **not** in the plugin's `hooks.json`, because a plugin-declared provider preempts git
   worktree creation in every adopting repo (ADR 0337).
+- **It reaps before it provisions, and that sweep can refuse nothing.** Provisioning is where
+  worktree accumulation is bounded: whatever creates one runs `build reap --execute --limit 4` first,
+  as a child in the repository the envelope named, before the fetch and the add — the failure it
+  prevents is a full volume refusing that add, and freeing the disk afterwards is a spawn too late
+  (ADR [0386](../../../.decisions/0386-worktree-accumulation-is-bounded-at-provisioning.md)). A child
+  rather than a call, because this package's git seam runs in the process's own cwd and a hook's cwd
+  is the harness's business. Bounded by `--limit` and a 120s timeout so the fetch and the add still
+  fit in the hook's 600s budget. **Every outcome of the sweep is a stderr line and never a refusal** —
+  a reclaimer that could block a spawn would turn a housekeeping miss into the pipeline stop it
+  exists to end.
 - **Its base never travels through `FETCH_HEAD`.** That name is one file in the shared `.git` dir and
   every parallel spawn fetches the same clone, so a sibling's fetch truncated it mid-read and the
   loser's spawn died on `fatal: invalid reference: FETCH_HEAD`. The fetch lands in a per-spawn ref
