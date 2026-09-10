@@ -1752,21 +1752,23 @@ sequence on a stamped issue whose block was absent.
 
 **`--type epic` is exempt, and the exemption is load-bearing.** A triaged epic carries a `## Pitch`
 and gets its criteria later, per child, from the plan ledger, so a blanket refusal would make an epic
-unstampable — and under `--ready-for agent` it never reaches this door anyway, because it never
-reaches the stamp either (below). `--ready-for human` is unaffected on every type: the promise the
-block backs is the one made to an agent.
+unstampable. The exemption is its own test on the type and stands on that alone: under
+`--ready-for agent` the epic is separately left unstamped (below), a sibling rule keyed on the same
+type rather than this door's cause or its consequence. `--ready-for human` is unaffected on every
+type: the promise the block backs is the one made to an agent.
 
 **`--type epic --ready-for agent` stamps no audience label at all.** `check-epic-plan` documents
 itself as the only owner of `ready-for:agent` on an epic — it writes the label when that epic's plan
-floor comes back clean — and triage writing it too made the label mean "triaged" rather than "gated",
-so an ungated or defectively planned epic read pickable to anything filtering on it — one live epic
-reached its gate already carrying the stamp, and only a floor that happened to come back clean kept
-that run from being a real one. The audience facet's keep set is empty here: no label is written, and the read-back
-asserts the epic carries **no** `ready-for:` at all. It still *owns* `ready-for:*`, so a stamp an
-earlier gate run left is reconciled away rather than preserved — re-classifying an epic sends it back
-through the gate, which is the same ownership rule read the other way. The exemption belongs to the
-epic and the agent audience together: `--ready-for human` still stamps on every type, because parking
-an epic for a person is triage's own claim and one the gate never makes.
+floor comes back clean — and triage writing it too made the label mean "triaged" rather than
+"gated", so an ungated or defectively planned epic read pickable to anything filtering on it — one
+live epic reached its gate already carrying the stamp, and only a floor that happened to come back
+clean kept that run from being a real one. The audience facet's keep set is empty here: no label is
+written, and the read-back asserts the epic carries **no** `ready-for:` at all. It still *owns*
+`ready-for:*`, so a stamp an earlier gate run left is reconciled away rather than preserved —
+re-classifying an epic sends it back through the gate, which is the same ownership rule read the
+other way. The exemption belongs to the epic and the agent audience together: `--ready-for human`
+still stamps on every type, because parking an epic for a person is triage's own claim and one the
+gate never makes.
 
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
 `<ready-for>`, `<home>`, `<blocked-by>` — where `<home>` is the milestone number or the lane label,
@@ -1794,9 +1796,9 @@ it never looked at.
 **The transition is one envelope, and the read-back proves the end state positively.** The verb
 re-reads the issue's labels and milestone and asserts the positive shape required — exactly one
 `type:`, exactly one `p*`, `status:triaged` present, exactly one `ready-for:` (**none** on
-`--type epic --ready-for agent`), `status:needs-triage` absent, and the home: with `--home`, the milestone number equals the flag; **with `--lane`, the
-milestone is `null`**. It does **not** assert on the absence of an imagined failure, and it never
-reports the requested classification as the landed one.
+`--type epic --ready-for agent`), `status:needs-triage` absent, and the home: with `--home`, the
+milestone number equals the flag; **with `--lane`, the milestone is `null`**. It does **not** assert on the
+absence of an imagined failure, and it never reports the requested classification as the landed one.
 
 ### The owned facets — what `apply` may remove
 
@@ -1900,7 +1902,8 @@ stamp.
 | `triage apply: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
-| `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, <one ready-for / no ready-for>, and <the milestone / no milestone>.` | 9 | refusal || `triage apply: #<n> carries no acceptance-criteria block — <the reader's reason>. ready-for:agent promises a builder can pick it up cold; an absent block has nothing to repair mechanically, so author one with \`triage enrich\`. Nothing was written.` | 16 | refusal |
+| `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, <one ready-for / no ready-for>, and <the milestone / no milestone>.` | 9 | refusal |
+| `triage apply: #<n> carries no acceptance-criteria block — <the reader's reason>. ready-for:agent promises a builder can pick it up cold; an absent block has nothing to repair mechanically, so author one with \`triage enrich\`. Nothing was written.` | 16 | refusal |
 | `triage apply: #<n>'s acceptance-criteria block is malformed — <the reader's reason> (<its evidence>). Repair a level drift with \`triage repair-criteria <n>\`; anything else needs a hand. Nothing was written.` | 16 | refusal |
 
 **`milestone <n> is not open` moved off `1` and onto `10`.** Deciding it requires a network read of

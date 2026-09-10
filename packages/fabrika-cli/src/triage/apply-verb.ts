@@ -37,13 +37,14 @@ import {
 import {guardConfig} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {
+	audienceKeep,
 	decodeMember,
 	EPIC_TYPE,
+	EPIC_TYPE_LABEL,
 	planReconcile,
 	renderShape,
 	shapeViolations,
 	triagedFacets,
-	typeLabel,
 } from "./facets.ts";
 import {scannedLine} from "./scope.ts";
 import {guardTarget} from "./target-guard.ts";
@@ -79,11 +80,13 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
  * `review criteria` refuse exactly what it refuses, so stamping over a body it will not answer
  * `Found` on only defers the refusal to a lane that cannot repair it.
  *
- * **`--type epic --ready-for agent` never reaches this precondition**, because it never reaches the
- * stamp either: the audience flip on an epic is `check-epic-plan`'s alone, so `audienceKeep` in
- * `./facets.ts` writes no label and there is no promise here to back with a block. The epic's own
- * criteria are written by `plan-epic` beside the ledger, later. `--ready-for human` is exempt on
- * every type — the promise the block backs is the one made to an agent.
+ * **`--type epic` is exempt by its own test here**, and that is the load-bearing carve-out: an
+ * epic's criteria are written by `plan-epic` beside the ledger, so at triage time it carries no
+ * block and a blanket refusal would make a triaged epic untriagable. Under `--ready-for agent` the
+ * epic is separately left unstamped by `audienceKeep` in `./facets.ts` — a sibling rule keyed on
+ * the same type, not this exemption's cause and not its consequence, so changing either leaves the
+ * other where it stands. `--ready-for human` is exempt on every type — the promise the block backs
+ * is the one made to an agent.
  */
 const criteriaRefusal = (
 	issue: number,
@@ -91,7 +94,7 @@ const criteriaRefusal = (
 	readyFor: string,
 	body: string,
 ): VerbOutcome | null => {
-	if (readyFor !== "agent" || type === "epic") return null;
+	if (readyFor !== "agent" || type === EPIC_TYPE) return null;
 	const criteria = readCriteria(body);
 	if (criteria._tag === "Found") return null;
 	return refuse(
@@ -219,11 +222,10 @@ export const runApply = (
 		const facets = triagedFacets({type, priority, readyFor, lane}, resolved);
 		// What LANDED, never what was asked: an epic asked for the agent audience is stamped by
 		// `check-epic-plan` and by nothing here, so both channels report the absence.
-		const stampedAudience =
-			facets.find((facet) => facet.name === "audience")?.keep.length === 0 ? null : readyFor;
+		const stampedAudience = audienceKeep(type, readyFor).length === 0 ? null : readyFor;
 		if (stampedAudience === null) {
 			diagnostics.push(
-				`triage apply: no ready-for label was stamped on #${issue} — the agent audience on a ${typeLabel(EPIC_TYPE)} is \`check-epic-plan\`'s flip alone, written when that epic's plan floor comes back clean.`,
+				`triage apply: no ready-for label was stamped on #${issue} — the agent audience on a ${EPIC_TYPE_LABEL} is \`check-epic-plan\`'s flip alone, written when that epic's plan floor comes back clean.`,
 			);
 		}
 		const willWrite = facets.flatMap((facet) => facet.keep);

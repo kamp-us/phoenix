@@ -59,16 +59,19 @@ export const TYPES: ReadonlyArray<string> = [
 export {audienceLabel, typeLabel};
 
 /**
- * The type whose deliverable is a ledger of children rather than one pull request.
+ * The type whose deliverable is a ledger of children rather than one pull request — as a bare
+ * `--type` value, for the input-side reads that never see the label.
+ */
+export const EPIC_TYPE = "epic";
+
+/**
+ * The same type as the label a board carries.
  *
  * Three modules held their own copy of the string — `plan/load.ts`, `ledger/preconditions.ts` and
  * `build/scope-admission.ts` — the drift shape one derived constant closes. Derived from
- * {@link TYPES}, so the label and the vocabulary cannot disagree.
+ * {@link EPIC_TYPE}, so the bare value and the label cannot disagree.
  */
-export const EPIC_TYPE_LABEL = typeLabel("epic");
-
-/** The same type as a bare `--type` value, for the input-side reads that never see the label. */
-export const EPIC_TYPE = "epic";
+export const EPIC_TYPE_LABEL = typeLabel(EPIC_TYPE);
 
 /** The default `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
 export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
@@ -161,23 +164,11 @@ const ownsIn = (
 };
 
 /**
- * The facet table for the triaged transition.
- *
- * The containment invariant, stated where a future editor adding a facet will read it: **the set of
- * values an input can produce must be a subset of what its facet owns.** `PRIORITIES` ⊂ `/^p\d+$/`,
- * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself. Widening a pattern past
- * its input — which is what v1 did — is what makes a correct value look superseded.
- * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
- * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.
- */
-/**
  * The audience facet's keep set — empty for an epic asked for the agent audience.
  *
  * `ready-for:agent` on an epic is `check-epic-plan`'s statement that the ledger's floor came back
- * clean, and that gate documents itself as the flip's only owner. Triage stamping it too made the
- * label mean "triaged" rather than "gated", so an ungated or defectively-planned epic read pickable
- * to anything filtering on it — one live epic reached its gate already carrying the stamp, and only
- * a floor that happened to come back clean kept that run from being a real one.
+ * clean, and that gate is the flip's only owner; triage writing it too is the ambiguity the
+ * `triage apply` section of `claude-plugins/fabrika/skills/triage/contract.md` records.
  *
  * The facet still **owns** `ready-for:*` here, so re-triaging an epic that a gate run had already
  * flipped strips the stamp rather than preserving it — re-classifying an epic sends it back through
@@ -187,6 +178,16 @@ const ownsIn = (
 export const audienceKeep = (type: string, readyFor: string): ReadonlyArray<string> =>
 	type === EPIC_TYPE && readyFor === "agent" ? [] : [audienceLabel(readyFor)];
 
+/**
+ * The facet table for the triaged transition.
+ *
+ * The containment invariant, stated where a future editor adding a facet will read it: **the set of
+ * values an input can produce must be a subset of what its facet owns.** `PRIORITIES` ⊂ `/^p\d+$/`,
+ * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself. Widening a pattern past
+ * its input — which is what v1 did — is what makes a correct value look superseded.
+ * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
+ * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.
+ */
 export const triagedFacets = (
 	input: {
 		readonly type: string;
