@@ -495,17 +495,20 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 		}
 		return {_tag: "Ground", ground: {_tag: "Tail", pr, epic}};
 	}
+	// A branch AND a PR is the tail's repair round, and it is the only ground that carries both: the
+	// PR's head *is* that branch. Every other state on an epic lane is a child, which has no PR — and
+	// the tail region seats `build` alone, so `build:ui` here is a child state like any other. The
+	// refusal stands ahead of the branch parse so a child brief carrying a stray `pr` reds on the `pr`
+	// it should not have, not on the branch it happens to be missing.
+	if (prRaw !== "" && state !== "build") {
+		return bad(
+			"an epic lane's child state has no PR — one run is one PR, merged at its tail",
+			"pr",
+		);
+	}
 	const branch = gitRef(branchRaw);
 	if (branch === null) return bad(`"${branchRaw}" is not a branch name`, "branch");
 	if (prRaw !== "") {
-		// A branch AND a PR is the tail's repair round, and it is the only ground that carries both: the
-		// PR's head *is* that branch. Every other state on an epic lane is a child, which has no PR.
-		if (!isBuildState(state)) {
-			return bad(
-				"an epic lane's child state has no PR — one run is one PR, merged at its tail",
-				"pr",
-			);
-		}
 		const pr = artifactUrl(prRaw);
 		if (pr === null) return bad(`"${prRaw}" is not a PR URL`, "pr");
 		return rangeRaw === ""

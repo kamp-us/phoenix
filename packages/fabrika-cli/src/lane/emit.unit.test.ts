@@ -432,8 +432,8 @@ describe("emitMachine", () => {
 		});
 	});
 
-	// The tail's repair cell is the whole of #6521: aimed back at `review`, the FAIL edge re-dispatched
-	// the reviewer that had just produced the verdict over content only a builder can change.
+	// Aimed back at `review`, the FAIL edge re-dispatched the reviewer that had just produced the
+	// verdict over content only a builder can change.
 	it("sends a tail review FAIL into the tail's own build cell, and the repair's DONE back to review", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		expect(drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"]]).stateValue).toEqual({

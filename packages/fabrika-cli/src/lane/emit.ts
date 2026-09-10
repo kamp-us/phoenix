@@ -184,7 +184,7 @@ const region = (
  * edges — because the facts a tail review fails on (a trunk conflict against a moved `main`, a head
  * with no CI) are a builder's to fix and no reviewer can change them: aimed back at `review` the arm
  * re-dispatched the shell that had just produced the verdict, spent the round and reached the park
- * anyway (ADR 0285's 2026-08-20 amendment). The fallthrough is the same `human:budget-spent` a
+ * anyway (the 2026-08-20 amendment to the epic-machine decision record). The fallthrough is the same `human:budget-spent` a
  * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
  * run, and one leaf for one fact means one route to read it by.
  */

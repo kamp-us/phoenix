@@ -460,8 +460,7 @@ The tail region seats its own `build` cell, and the review's `FAIL` retries into
 budget a child's does, exhausting into `human:budget-spent`. So the fold puts `epic_<n>` at `build`,
 and you dispatch it exactly like any other build state: `lane brief` hands that shell the run's one
 PR *and* `epic/<lane_key>`, so the repair knows which branch it is repairing. Founder ruling of
-2026-08-20 on [#6521](https://github.com/kamp-us/phoenix/issues/6521), recorded as an amendment to
-ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md).
+2026-08-20, recorded as an amendment to the epic-machine decision record.
 
 **The branch itself stays yours.** The repair builder pushes nothing and merges nothing — the
 assembly worktree is this driver's, and no spawned shell reaches it. So the common tail failure, an
@@ -469,7 +468,7 @@ assembly gone stale against a moved `main`, is discharged by you with `lane refr
 worktree, above: it merges `main` into `epic/<lane_key>`, **merge, never rebase**, because every
 landed child's range verdict is bound to the commits it names and a rebase rewrites all of them. A
 lane emitted before this cell landed does not grow one — its tail `FAIL` still points at `review`,
-and re-emitting is the only way to it ([#6857](https://github.com/kamp-us/phoenix/issues/6857)).
+and re-emitting is the only way to it.
 
 **The draft flips ready at the tail's `PASS`, and nowhere earlier.** When the epic-level review's
 `PASS` is proven and recorded, the single PR has the verdict it was opened for — mark it ready

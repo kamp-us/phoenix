@@ -721,8 +721,8 @@ describe("lane brief on an epic lane", () => {
 		expect(out.stdout).not.toContain(EPIC_RULES);
 	});
 
-	// #6521: the tail's repair round. `lane brief` used to fall through to a `Pull` ground for any
-	// build state, so the builder sent to repair the assembly was told no branch at all.
+	// `lane brief` used to fall through to a `Pull` ground for any build state, so the builder sent
+	// to repair the assembly was told no branch at all.
 	it("briefs the tail's repair on the assembly branch as well as the run's one PR", async () => {
 		const {out} = await runEpic(
 			epicLane([
