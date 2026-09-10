@@ -18,6 +18,7 @@ import {ProcessId} from "../../process/process.ts";
 import {normalize} from "../keys/syntax.ts";
 import type {WindowId} from "../window/host.ts";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
+import {type PickerFilter, visibleEntries} from "./filter.ts";
 import {attachProcess, intentOf, type PickerIntent} from "./intent.ts";
 import {isPickerRefusal, type PickerRefusal} from "./refusal.ts";
 
@@ -36,6 +37,8 @@ export type PickerView = {
 	readonly refusal: PickerRefusal | null;
 	/** The process this window was showing when `window:pick` put it back on the picker (#8265). */
 	readonly previous: string | null;
+	/** `null` until `/` opens it; a string once open, and every mount opens with none (#8450). */
+	readonly filter: PickerFilter;
 };
 
 /**
@@ -46,11 +49,24 @@ export const mountPicker = (previous: string | null = null): PickerView => ({
 	cursor: null,
 	refusal: null,
 	previous,
+	filter: null,
 });
 
 export const withRefusal = (view: PickerView, refusal: PickerRefusal): PickerView => ({
 	...view,
 	refusal,
+});
+
+/**
+ * The view one edit of the filter input leaves. The cursor goes back to unplaced rather than being
+ * carried: the row under index 2 of the old match set is not the row under index 2 of the new one,
+ * and an unplaced cursor is resolved against whatever the new query actually left standing.
+ */
+export const withFilter = (view: PickerView, filter: string): PickerView => ({
+	...view,
+	filter,
+	cursor: null,
+	refusal: null,
 });
 
 /**
@@ -67,10 +83,12 @@ export const asPickerView = (slot: unknown): PickerView => {
 	if (cursor !== null && typeof cursor !== "number") return mountPicker();
 	const refusal = record.refusal;
 	const previous = record.previous;
+	const filter = record.filter;
 	return {
 		cursor,
 		refusal: isPickerRefusal(refusal) ? refusal : null,
 		previous: typeof previous === "string" ? previous : null,
+		filter: typeof filter === "string" ? filter : null,
 	};
 };
 
@@ -81,13 +99,21 @@ const clamp = (cursor: number, length: number): number => {
 };
 
 /**
+ * The rows this view actually offers. Every read below goes through it and so does the frame, which
+ * is what stops the highlight, the announcement and the intent `<enter>` runs from addressing three
+ * different lists once a filter is on.
+ */
+export const visibleFor = (entries: PickerEntries, view: PickerView): PickerEntries =>
+	visibleEntries(entries, view.filter);
+
+/**
  * Where the highlight actually sits. An unplaced cursor lands on the row of the process this window
  * was showing, so `<c-b> w` mounts the picker pointing at where Escape would take the operator
  * back; a `previous` no row offers — the process exited while the picker was up — falls back to the
  * first row rather than to nothing.
  */
 export const cursorOf = (entries: PickerEntries, view: PickerView): number => {
-	const rows = flatten(entries);
+	const rows = flatten(visibleFor(entries, view));
 	if (view.cursor !== null) return clamp(view.cursor, rows.length);
 	if (view.previous === null) return 0;
 	const at = rows.findIndex(
@@ -98,15 +124,18 @@ export const cursorOf = (entries: PickerEntries, view: PickerView): number => {
 
 /** The row the cursor names, or `null` when there is nothing to name. */
 export const highlighted = (entries: PickerEntries, view: PickerView): PickerEntry | null =>
-	flatten(entries)[cursorOf(entries, view)] ?? null;
+	flatten(visibleFor(entries, view))[cursorOf(entries, view)] ?? null;
 
 /**
- * What one key did. `Moved` and `Cleared` carry the view to store; `Chose` carries the intent to
- * run; `Ignored` says this key was never the picker's, so the surface may pass it on.
+ * What one key did. `Moved` and `Cleared` carry the view to store, and so does `Filtering` — a
+ * separate arm because it is the one answer that also moves DOM focus, into and out of the filter
+ * input, which the surface cannot read off a `Moved`. `Chose` carries the intent to run; `Ignored`
+ * says this key was never the picker's, so the surface may pass it on.
  */
 export type PickerKeyAnswer =
 	| {readonly _tag: "Moved"; readonly view: PickerView}
 	| {readonly _tag: "Cleared"; readonly view: PickerView}
+	| {readonly _tag: "Filtering"; readonly view: PickerView}
 	| {readonly _tag: "Chose"; readonly intent: PickerIntent}
 	| {readonly _tag: "Ignored"};
 
@@ -118,6 +147,7 @@ const FIRST = ["<home>", "g"];
 const LAST = ["<end>", "G"];
 const CHOOSE = ["<enter>", "<space>"];
 const DISMISS = ["<escape>"];
+const FILTER = ["/"];
 
 /**
  * The one move. A move onto the row already under the cursor keeps a showing refusal, because
@@ -137,11 +167,15 @@ const movedTo = (view: PickerView, at: number, next: number, length: number): Pi
  * Movement clamps at both ends instead of wrapping, which is the APG listbox default: a wrap makes
  * "am I at the end" unanswerable to someone reading one option at a time.
  *
- * Escape is two keys in one, and the order is what makes both reachable: a refusal showing is
- * cleared first, and only a picker with nothing to dismiss goes back to `previous`. A `previous`
- * whose process has since stopped still chooses — `runPickerIntent`'s attach arm (`./open.ts`)
- * answers a missing row with a `ProcessGone` refusal shown in the window, which is the one place
- * the process table can be read.
+ * Escape is three keys in one, and the order is what makes all three reachable: a refusal showing
+ * is cleared first, then an open filter is closed, and only a picker with neither goes back to
+ * `previous`. A `previous` whose process has since stopped still chooses — `runPickerIntent`'s
+ * attach arm (`./open.ts`) answers a missing row with a `ProcessGone` refusal shown in the window,
+ * which is the one place the process table can be read.
+ *
+ * `/` opens the filter and nothing else takes text (founder ruling, 2026-09-09 on #8450), which is
+ * what keeps `j` / `k` / `g` / `G` movement keys. Every key typed *into* the filter is the input's
+ * own: the desk leaves a focused text entry its presses, so nothing below ever sees them.
  */
 export const pickerKey = (
 	windowId: WindowId,
@@ -152,7 +186,7 @@ export const pickerKey = (
 	const spelled = normalize(key);
 	if (Result.isFailure(spelled)) return ignored;
 	const pressed = spelled.success;
-	const rows = flatten(entries);
+	const rows = flatten(visibleFor(entries, view));
 	const at = cursorOf(entries, view);
 
 	const moveTo = (next: number): PickerKeyAnswer => movedTo(view, at, next, rows.length);
@@ -161,9 +195,24 @@ export const pickerKey = (
 	if (UP.includes(pressed)) return moveTo(clamp(at - 1, rows.length));
 	if (FIRST.includes(pressed)) return moveTo(0);
 	if (LAST.includes(pressed)) return moveTo(clamp(rows.length - 1, rows.length));
+	if (FILTER.includes(pressed)) {
+		return view.filter === null
+			? {_tag: "Filtering", view: {...view, filter: "", refusal: null}}
+			: ignored;
+	}
 	if (DISMISS.includes(pressed)) {
 		if (view.refusal !== null) {
 			return {_tag: "Cleared", view: {...view, cursor: at, refusal: null}};
+		}
+		if (view.filter !== null) {
+			// The cursor is written down as the filtered list left it, then the filter is dropped: the
+			// row the operator was looking at keeps the highlight instead of the widened list's Nth.
+			const row = rows[at];
+			const widened = row === undefined ? -1 : flatten(entries).indexOf(row);
+			return {
+				_tag: "Filtering",
+				view: {...view, cursor: widened === -1 ? 0 : widened, filter: null},
+			};
 		}
 		return view.previous === null
 			? ignored
@@ -201,7 +250,7 @@ export const pickerPointer = (
 	index: number,
 	gesture: PickerPointer,
 ): PickerKeyAnswer => {
-	const rows = flatten(entries);
+	const rows = flatten(visibleFor(entries, view));
 	const entry = rows[index];
 	if (entry === undefined) return ignored;
 	return gesture === "click"

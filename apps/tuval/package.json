@@ -33,6 +33,7 @@
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@tanstack/react-virtual": "catalog:",
 		"effect": "catalog:tuval",
+		"fzf": "catalog:tuval",
 		"pi-subagents": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:",

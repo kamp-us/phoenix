@@ -265,6 +265,22 @@ program-blind: a process's state still crosses as `unknown`.
   to be one structure and not two is ADR
   [0368](../.decisions/0368-picker-one-cursor-both-inputs.md), which binds every Tuval picker
   (#8655).
+- **The `/` filter narrows before anything reads the list.** `visibleEntries`
+  (`src/shell/picker/filter.ts`) runs the `fzf` package over each section's own `label`, and
+  `visibleFor` is the one door every reader goes through — `cursorOf`, `highlighted`, `pickerKey`,
+  `pickerPointer` and `pickerFrame` all address the narrowed list, so the highlight, the frame and
+  the intent `<enter>` runs cannot name three different rows. The filter text lives in the window's
+  view slot (`PickerView.filter`, `null` until `/` opens it) and every mount starts at `null`.
+  While the filter exists it is a `combobox` and the DOM focus holder, so it carries
+  `aria-activedescendant` and the listbox drops it: that attribute is announced only off the focused
+  element (#7499), and a highlight on an unfocused listbox is a highlight nobody hears.
+- **The match count is a debounced, alternating status region.** The count is a WCAG 2.2 SC 4.1.3
+  status message — `role="status"`, `aria-live="polite"`, `aria-atomic="true"`, focus untouched —
+  announced 1000 ms after the typing stops rather than per keystroke, because a per-keystroke live
+  region turns one search into a run of interruptions. `pickerFrame` names **two** region ids and
+  `PickerView.tsx` writes into them by turns: a live region rewritten with the string it already
+  holds is not a change and is read out by nothing, so two queries that leave the same count would
+  otherwise announce once. `role="alert"` stays the refusal's alone.
 - **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
   message (#7617 R1.3), so the catalog goes out as the socket opens and again on
   `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
