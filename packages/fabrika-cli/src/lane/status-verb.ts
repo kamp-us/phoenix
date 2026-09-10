@@ -10,7 +10,7 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import {answer, type VerbOutcome} from "../verb.ts";
-import {deriveStatus, foldLog, standingCauses} from "./fold.ts";
+import {deriveStatus, foldLog, standingCauses, standingRationales} from "./fold.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -24,7 +24,12 @@ export const runStatus = (
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const fold = foldLog(loaded.lane, loaded.entries);
 		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
-		const status = deriveStatus(loaded.lane, fold.states, standingCauses(loaded.entries));
+		const status = deriveStatus(
+			loaded.lane,
+			fold.states,
+			standingCauses(loaded.entries),
+			standingRationales(loaded.entries),
+		);
 		return answer(JSON.stringify(status, null, 2), [
 			`${VERB}: folded ${loaded.entries.length} event(s) from ${loaded.logPath}.`,
 		]);

@@ -6,14 +6,22 @@
  *
  *   1. `lane status` folds the ledger — this verb never re-folds a log.
  *   2. {@link classifyPark} seats the leaf, and the cause the parking event named, against the
- *      recipe table — a `blocked` carrying no cause keys on nothing. **Novel refuses here**, before
- *      any read that could write and long before the append, which is what makes the novel exit a
- *      proven no-op rather than a claim about one.
+ *      recipe table — a `blocked` carrying no cause keys on nothing. **A founder-routed novel park
+ *      refuses here**, before any read that could write and long before the append, which is what
+ *      makes the novel exit a proven no-op rather than a claim about one.
  *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s own
- *      discharge table, never a second reading of §CP in this file.
- *   4. `lane transition … UNBLOCKED` records the clear.
+ *      discharge table, never a second reading of §CP in this file. A driver-routed park with no
+ *      recipe has no such read, and clears on the driver's rationale instead.
+ *   4. `lane transition … UNBLOCKED` records the clear, carrying that rationale where there is one.
  *   5. `lane status` is folded **again**, and the answer is emitted only once that re-fold shows the
  *      task out of the park: no recipe reports a mutation it did not read back.
+ *
+ * **Whose park it is comes off the cause, never off a judgment made here.** Every park cause carries
+ * a route (`lane/report.ts`), and `driver` means the park is machinery a driver session may work
+ * itself. Under `.fabrika.jsonc`'s `parkCause.driverRouted: "clear"` that is what happens, and the
+ * price is a `--rationale` on the recorded line — a clearance nothing records is one nobody can
+ * review, so the verb refuses rather than take it silently. A `founder` route reaches none of this:
+ * it behaves exactly as it did before the flag existed.
  *
  * Respawning whatever the lane parked out of is the operator's, not this verb's.
  */
@@ -26,13 +34,15 @@ import {childLaneBranches} from "../build/lane.ts";
 import {runRetire} from "../build/retire-verb.ts";
 import {placedRows, selects} from "../campaign/table.ts";
 import {CONFIG_PATH} from "../config/document.ts";
+import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {readRoadmapFile} from "../config/paths.ts";
+import type {Read} from "../config/read-key.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
 import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
-import {PARK_RULE_UNREACHED} from "../lane/park-cause-rule.ts";
 import {tracePulls} from "../lane/prove.ts";
+import {routeForCause} from "../lane/report.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {BASE_REF} from "../ledger/ground.ts";
@@ -44,11 +54,12 @@ import {
 	PARK_HOLDS,
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
+	RATIONALE_ABSENT,
 	READBACK_MISMATCH,
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 } from "./codes.ts";
-import {classifyPark, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
+import {classifyPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
 import {buildExit, laneExit, relayRefusal} from "./relay.ts";
 import {clearProof, issueOf, leafOf} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -66,6 +77,23 @@ export interface UnparkOptions {
 	/** The checkout whose `.fabrika.jsonc` declares where the campaigns table lives. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/**
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * Its `driverRouted` half is this verb's own axis, and its `uncaused` half rides along to the
+	 * `lane transition` below — which never reaches that rule, since the event it records is always
+	 * `UNBLOCKED`. Passing the whole surface rather than the one sub-key keeps the config a repo
+	 * declares and the config this verb acts on the same object.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
+	/**
+	 * The driver's own recommendation for clearing a driver-routed park; `null` names none.
+	 *
+	 * Required exactly where the clear is the driver's to take, and recorded on the `UNBLOCKED` that
+	 * takes it. It reaches no other path: a founder-routed park is refused or cleared by its recipe's
+	 * proving read, and neither is a judgment this flag would be recording.
+	 */
+	readonly rationale: string | null;
 }
 
 type Clearance =
@@ -113,14 +141,38 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				`${VERB}: task "${task}" is "${leaf}", which is not a park — there is nothing to clear.`,
 			);
 		}
-		if (parked._tag === "Novel") {
+		if (options.parkCause._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`${PARK_CAUSE}\` from ${CONFIG_PATH} (${options.parkCause.reason}) — whether this repo lets a driver clear its own parks is UNKNOWN, and nothing was written.`,
+			);
+		}
+		// Normalised once, here, so the line that lands and the answer that reports it carry the same
+		// bytes — and so a rationale that is only whitespace refuses as the absent one it is rather
+		// than travelling to `lane transition`'s own refusal a step later.
+		const rationale = options.rationale?.trim() === "" ? null : (options.rationale?.trim() ?? null);
+		const routed = routeOfPark(parked, options.parkCause.value.driverRouted === "clear");
+		if (routed._tag === "Human") {
 			return refuse(
 				PARK_NOVEL,
-				`${VERB}: task "${task}" is parked at "${leaf}" and ${parked.reason} — refusing with the ledger untouched; route this to a human.`,
+				`${VERB}: task "${task}" is parked at "${leaf}" and ${routed.reason} — refusing with the ledger untouched; route this to a human.`,
+			);
+		}
+		if (routed._tag === "Driver" && rationale === null) {
+			return refuse(
+				RATIONALE_ABSENT,
+				`${VERB}: task "${task}" is parked at "${leaf}" and "${routed.cause}" routes to the driver, so this clear is the driver's to take and no recipe proves it — pass --rationale saying what you are taking it on. Nothing was written.`,
 			);
 		}
 
-		const clearance = yield* clear(options, task, parked.recipe);
+		const clearance: Clearance =
+			routed._tag === "Recipe"
+				? yield* clear(options, task, routed.recipe)
+				: {
+						_tag: "Cleared",
+						mechanism: `driver-rationale:${routed.cause}`,
+						waitGrant: null,
+					};
 		if (clearance._tag === "Refused") return clearance.outcome;
 
 		const recorded = yield* runTransition({
@@ -128,9 +180,10 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 			event: "UNBLOCKED",
 			task,
 			cause: null,
-			parkCause: PARK_RULE_UNREACHED,
+			parkCause: options.parkCause,
 			classes: [],
 			waitGrant: clearance.waitGrant,
+			rationale,
 		});
 		if (recorded.code !== 0) {
 			return relayRefusal(VERB, "fabrika lane transition", recorded, laneExit(recorded.code));
@@ -151,17 +204,50 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				lane: options.lane,
 				task,
 				park: leaf,
-				clearance: parked.recipe.clearance,
+				clearance: routed._tag === "Recipe" ? routed.recipe.clearance : "driver-rationale",
 				mechanism: clearance.mechanism,
 				current: proof.leaf,
 				...(clearance.waitGrant === null ? {} : {waitGrant: clearance.waitGrant}),
+				...(rationale === null ? {} : {rationale}),
 			}),
 			[
-				`${VERB}: park "${leaf}" matched a known recipe; cleared via ${clearance.mechanism}.`,
+				routed._tag === "Recipe"
+					? `${VERB}: park "${leaf}" matched a known recipe; cleared via ${clearance.mechanism}.`
+					: `${VERB}: park "${leaf}" routes to the driver; cleared on the driver's own rationale.`,
 				`${VERB}: re-fold reads "${proof.leaf}" — the clear is proven.`,
 			],
 		);
 	});
+
+/**
+ * Who clears this park, and how — the one place the recipe table and the cause's route are read
+ * together.
+ *
+ * Three arms and no fourth. `Recipe` is a park with a fixed fix: its clearing condition is read back
+ * whatever the cause routes to, because a proving read is a better answer than anybody's judgment.
+ * `Driver` is a park with no fixed fix whose cause is machinery the driver session owns, in a repo
+ * that declared drivers may take them — there is no read to relay, so the rationale is what stands
+ * in its place. `Human` is everything else, and is the refusal this verb always had.
+ *
+ * A `Driver` arm always names its cause, and that is the route table's own rule rather than a
+ * coincidence of the rows: {@link routeForCause} answers `founder` for a park that named none, so a
+ * cause-less park never reaches this arm.
+ */
+type Routing =
+	| {readonly _tag: "Recipe"; readonly recipe: ParkRecipe}
+	| {readonly _tag: "Driver"; readonly cause: string}
+	| {readonly _tag: "Human"; readonly reason: string};
+
+const routeOfPark = (
+	parked: Extract<ParkClass, {readonly _tag: "Known" | "Novel"}>,
+	driverClears: boolean,
+): Routing => {
+	if (parked._tag === "Known") return {_tag: "Recipe", recipe: parked.recipe};
+	const cause = parked.cause;
+	return driverClears && cause !== null && routeForCause(cause) === "driver"
+		? {_tag: "Driver", cause}
+		: {_tag: "Human", reason: parked.reason};
+};
 
 /**
  * Read whether the recipe's clearing condition holds — one arm per {@link ParkRecipe.clearance}

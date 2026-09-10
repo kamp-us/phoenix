@@ -432,3 +432,14 @@ export const CONCURRENCY_CAPPED = 51;
  * to say a thing the recorder already knew.
  */
 export const PARK_UNCAUSED = 52;
+
+/**
+ * The `--rationale` handed to `lane transition` says nothing, or rides on an event that is not
+ * `UNBLOCKED` — refused with the log unappended.
+ *
+ * Its own seat rather than {@link CAUSE_UNRECOGNISED}'s, which is the same shape one axis over: a
+ * cause is checked against a closed set, while a rationale is prose nothing can validate but its
+ * emptiness and the event it sits on. Folding them would send a reader to the park-cause list for a
+ * field that has none.
+ */
+export const RATIONALE_REFUSED = 53;

@@ -172,7 +172,17 @@ export const isPark = (leaf: string): boolean => leaf === "blocked" || leaf.star
 export type ParkClass =
 	| {readonly _tag: "NotParked"; readonly leaf: string}
 	| {readonly _tag: "Known"; readonly recipe: ParkRecipe}
-	| {readonly _tag: "Novel"; readonly leaf: string; readonly reason: string};
+	| {
+			readonly _tag: "Novel";
+			readonly leaf: string;
+			/**
+			 * The cause the parking event named, carried through rather than only spelled into
+			 * {@link ParkClass} `reason`'s prose — a caller that routes on the cause (whose failure this
+			 * park is) would otherwise have to parse the sentence back out.
+			 */
+			readonly cause: string | null;
+			readonly reason: string;
+	  };
 
 /**
  * Classify one folded leaf state, and the cause its parking event named, against the table.
@@ -186,7 +196,7 @@ export const classifyPark = (leaf: string, cause: string | null): ParkClass => {
 	if (!isPark(leaf)) return {_tag: "NotParked", leaf};
 	const recipe = KNOWN_PARKS.find((row) => row.park === leaf && row.cause === cause);
 	if (recipe !== undefined) return {_tag: "Known", recipe};
-	return {_tag: "Novel", leaf, reason: novelReason(leaf, cause)};
+	return {_tag: "Novel", leaf, cause, reason: novelReason(leaf, cause)};
 };
 
 const novelReason = (leaf: string, cause: string | null): string => {

@@ -1,5 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {
 	errOut,
 	fakeFs,
@@ -10,6 +12,7 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
 import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
@@ -20,6 +23,7 @@ import {
 	PARK_HOLDS,
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
+	RATIONALE_ABSENT,
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 	WRITE_UNKNOWN,
@@ -155,10 +159,21 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	http: ReadonlyArray<Scripted> = DISCHARGED_HTTP,
 	task: string | null = null,
+	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
+	rationale: string | null = null,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runUnpark({root: LANES_ROOT, lane: LANE, task, repo: null, cwd: CWD, env: ENV}),
+			runUnpark({
+				root: LANES_ROOT,
+				lane: LANE,
+				task,
+				repo: null,
+				cwd: CWD,
+				env: ENV,
+				parkCause,
+				rationale,
+			}),
 			// The nominator's body-search half is tailed, so a test scripting its own wins the lookup.
 			// Empty by default: the union then answers off the closing edge, as these tests always did.
 			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS]).layer),
@@ -825,7 +840,16 @@ describe("recipe unpark — the refusals write nothing", () => {
 
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runUnpark({root, lane: "nightly", task: null, repo: null, cwd: CWD, env: ENV}),
+				runUnpark({
+					root,
+					lane: "nightly",
+					task: null,
+					repo: null,
+					cwd: CWD,
+					env: ENV,
+					parkCause: parkCauseRead(),
+					rationale: null,
+				}),
 				Layer.merge(fs.layer, fakeSeams([...DISCHARGED, ...DISCHARGED_HTTP]).layer),
 			),
 		);
@@ -843,5 +867,109 @@ describe("recipe unpark — the read-back is the proof", () => {
 
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
+	});
+});
+
+describe("recipe unpark — a driver-routed park clears on the driver's own rationale", () => {
+	/** A repo that has declared drivers may take the parks their causes route to them. */
+	const CLEARS = parkCauseRead("record", "clear");
+
+	/** A driver-routed cause with no `KNOWN_PARKS` row: no read proves it gone, because none exists. */
+	const PARKED_ON_HEAD_BEHIND = parkedBlockedOn("head-behind-base");
+
+	const WHY = "merged main into the head, so the approval can be solicited";
+
+	it("clears a park no row covers when its cause routes to the driver", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS, WHY);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "driver-rationale",
+			mechanism: "driver-rationale:head-behind-base",
+			current: "build",
+			rationale: WHY,
+		});
+	});
+
+	// The whole audit of a clear no proving read stands behind: without it the ledger records that a
+	// driver let the lane out and never what it let it out on.
+	it("refuses at RATIONALE_ABSENT when the driver names none, with the log byte-identical", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS);
+
+		expect(out.code).toBe(RATIONALE_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toMatch(/head-behind-base/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records the rationale on the UNBLOCKED the clear appends, trimmed", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS, `  ${WHY}  `);
+
+		expect(out.code).toBe(0);
+		const parsed = parseLog(fs.written.get(LOG) ?? "");
+		expect(parsed._tag).toBe("Parsed");
+		if (parsed._tag !== "Parsed") return;
+		const cleared = parsed.entries.at(-1);
+		expect(cleared?.event).toBe("ISSUE.UNBLOCKED");
+		expect(cleared?.rationale).toBe(WHY);
+	});
+
+	// The containment: a repo that declared nothing keeps the refusal it always had, whatever the
+	// cause routes to and however good the reason handed in.
+	it("is PARK_NOVEL under the shipped key, however good the rationale", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, parkCauseRead(), WHY);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("still refuses a founder-routed park at PARK_NOVEL, in the words it always used", async () => {
+		const fs = lane(PARKED_BLOCKED);
+
+		const out = await run(fs, DISCHARGED, DISCHARGED_HTTP, null, CLEARS, WHY);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.join("\n")).toMatch(
+			/refusing with the ledger untouched; route this to a human/,
+		);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A row is a proving read, and a proving read beats anybody's judgment — so the driver route
+	// changes nothing about a park that has one, in either direction.
+	it("leaves a Known driver-routed park on its recipe's read, and needs no rationale for it", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH, "main")],
+				[TREES, worktreeList({path: "/repo", branch: "main"})],
+			],
+			DISCHARGED_HTTP,
+			null,
+			CLEARS,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({clearance: "branch-free", current: "build"});
+	});
+
+	it("is PRECONDITION_UNKNOWN on a parkCause nobody could read — never the shipped arm", async () => {
+		const fs = lane(PARKED_ON_HEAD_BEHIND);
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, {_tag: "Refused", reason: "EACCES"}, WHY);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
 	});
 });

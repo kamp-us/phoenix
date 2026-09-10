@@ -935,6 +935,20 @@ and either way the ledger is untouched and the park below is what you do. You ne
 codes and never retype what the verb does: which parks clear on their own is that table's decision,
 not yours: you relay that table's answer and never derive it.
 
+**Exit `23` is the one refusal that is yours to answer, and answering it is a sentence.** It says
+the park's cause routes to the *driver* — machinery a driver session owns, not a call only the
+founder can make — and this repo lets a driver clear one, so the clear is yours to take and no
+recipe read stands behind it. Re-run naming what you are taking it on:
+
+```bash
+node <fabrika> recipe unpark <lane-key> --task <task> --rationale "<why you are clearing it>"
+```
+
+That rationale lands on the recorded `UNBLOCKED` and reads back off the fold, which is the whole
+audit of a clear nothing else proves — so write the reason, not a restatement of the park. You still
+never compose the routing: whose park it is comes off the cause table, and a `founder` route is exit
+`12` and the park comment below, exactly as before.
+
 You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
 current head; for `frozen` and for the epic tail's `human:epic-review`, which is a park like any

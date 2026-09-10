@@ -16,6 +16,7 @@ import {
 	parseLog,
 	resolveTask,
 	standingCauses,
+	standingRationales,
 } from "./fold.ts";
 import {
 	CANCELLED_EVENT,
@@ -810,6 +811,83 @@ describe("the park cause a BLOCKED carries", () => {
 		expect(standingCauses([caused("issue", "BLOCKED", "worktree-holds-branch"), granted])).toEqual({
 			issue: "worktree-holds-branch",
 		});
+	});
+});
+
+describe("the rationale a driver's clearance stands on", () => {
+	const parked = (task: string, cause: string): LogEntry => ({
+		...entry(task, "BLOCKED"),
+		cause,
+	});
+	const cleared = (task: string, rationale: string): LogEntry => ({
+		...entry(task, "UNBLOCKED"),
+		rationale,
+	});
+
+	it("stands the rationale of a task's latest entry, per task", () => {
+		expect(
+			standingRationales([
+				parked("issue_1", "head-behind-base"),
+				cleared("issue_1", "rebased the head onto main"),
+				entry("issue_2", "WIP"),
+			]),
+		).toEqual({issue_1: "rebased the head onto main"});
+	});
+
+	it("drops the rationale once a later event supersedes it", () => {
+		expect(
+			standingRationales([cleared("issue", "rebased the head"), entry("issue", "WIP")]),
+		).toEqual({});
+	});
+
+	it("hangs the standing rationale on the task's own context, where a re-fold reads it back", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [
+			entry("issue", "WIP"),
+			parked("issue", "head-behind-base"),
+			cleared("issue", "rebased the head onto main"),
+		];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(
+			compiled,
+			folded.states,
+			standingCauses(entries),
+			standingRationales(entries),
+		);
+
+		expect(status.stateValue).toEqual({pipeline: {issue: "build"}});
+		expect(status.context.issue).toMatchObject({rationale: "rebased the head onto main"});
+		expect(Object.hasOwn(status.context.issue as object, "cause")).toBe(false);
+	});
+
+	// A recorded reason that says nothing is exactly as unauditable as no reason at all, so the
+	// parse refuses it rather than fold a line that reads as explained.
+	it("is a parse defect on a line whose rationale says nothing", () => {
+		const blank = JSON.stringify({
+			task: "issue",
+			event: "ISSUE.UNBLOCKED",
+			at: "2026-09-09T00:00:00.000Z",
+			rationale: "   ",
+		});
+
+		const parsed = parseLog(`${blank}\n`);
+
+		expect(parsed._tag).toBe("Malformed");
+		if (parsed._tag !== "Malformed") return;
+		expect(parsed.defects.join("; ")).toMatch(/`rationale` field that says nothing/);
+	});
+
+	it("folds a log written before the field existed with no rationale key at all", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [entry("issue", "WIP")];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(compiled, folded.states, {}, standingRationales(entries));
+
+		expect(Object.hasOwn(status.context.issue as object, "rationale")).toBe(false);
 	});
 });
 

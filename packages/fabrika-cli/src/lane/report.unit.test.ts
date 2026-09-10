@@ -10,6 +10,7 @@ import {
 	PARK_CAUSE_TOKENS,
 	PARK_CAUSES,
 	type ParkCause,
+	rationaleForEvent,
 	remedyForCause,
 	routeForCause,
 	SHELL_VOCABULARIES,
@@ -318,5 +319,40 @@ describe("a BLOCKED that names no cause", () => {
 			_tag: "Caused",
 			cause: "campaign-paused",
 		});
+	});
+});
+
+describe("the rationale a clearance rides on", () => {
+	it("carries nothing when nothing was named — the ordinary resume, unchanged", () => {
+		expect(rationaleForEvent(null, "UNBLOCKED")).toEqual({_tag: "Reasoned", rationale: null});
+	});
+
+	it("seats a named rationale on the resume, trimmed", () => {
+		expect(rationaleForEvent("  the head was rebased  ", "UNBLOCKED")).toEqual({
+			_tag: "Reasoned",
+			rationale: "the head was rebased",
+		});
+	});
+
+	// A recorded reason nobody can read is the unauditable clearance the field exists to prevent, so
+	// it is refused rather than folded into "no rationale".
+	it("rejects a blank one rather than reading it as none", () => {
+		const resolved = rationaleForEvent("   ", "UNBLOCKED");
+
+		expect(resolved._tag).toBe("Rejected");
+	});
+
+	it.each([
+		"DONE",
+		"PASS",
+		"FAIL",
+		"WIP",
+		"BLOCKED",
+	] as const)("rejects one riding %s, which clears no park", (event) => {
+		const resolved = rationaleForEvent("a reason", event);
+
+		expect(resolved._tag).toBe("Rejected");
+		if (resolved._tag !== "Rejected") return;
+		expect(resolved.reason).toContain("UNBLOCKED");
 	});
 });

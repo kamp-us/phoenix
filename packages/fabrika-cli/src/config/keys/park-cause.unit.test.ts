@@ -22,7 +22,7 @@ describe("the shipped park-cause surface", () => {
 
 		expect(resolved._tag).toBe("Default");
 		if (resolved._tag !== "Default") return;
-		expect(resolved.value).toEqual({uncaused: "record"});
+		expect(resolved.value).toEqual({uncaused: "record", driverRouted: "refuse"});
 		expect(SHIPPED_PARK_CAUSE.uncaused).toBe("record");
 	});
 
@@ -41,6 +41,21 @@ describe("the shipped park-cause surface", () => {
 		if (resolved._tag !== "Declared") return;
 		expect(resolved.value.uncaused).toBe("refuse");
 	});
+
+	// The same containment on the second axis: a repo that has not asked for driver clearances keeps
+	// `recipe unpark`'s refusal exactly as it was.
+	it("is `refuse` for driverRouted until a repo declares otherwise", () => {
+		expect(SHIPPED_PARK_CAUSE.driverRouted).toBe("refuse");
+		expect(declared({uncaused: "refuse"})).toMatchObject({value: {driverRouted: "refuse"}});
+	});
+
+	it("takes the clearing arm a repo declares, leaving the other sub-key shipped", () => {
+		const resolved = declared({driverRouted: "clear"});
+
+		expect(resolved._tag).toBe("Declared");
+		if (resolved._tag !== "Declared") return;
+		expect(resolved.value).toEqual({uncaused: "record", driverRouted: "clear"});
+	});
 });
 
 describe("an off-vocabulary or malformed value is refused at load", () => {
@@ -54,6 +69,14 @@ describe("an off-vocabulary or malformed value is refused at load", () => {
 
 	it.each([null, 3, ["record"]])("refuses a non-string uncaused (%p)", (value) => {
 		expect(declared({uncaused: value})._tag).toBe("Malformed");
+	});
+
+	it("refuses a driverRouted outside refuse | clear", () => {
+		const resolved = declared({driverRouted: "sometimes"});
+
+		expect(resolved._tag).toBe("Malformed");
+		if (resolved._tag !== "Malformed") return;
+		expect(resolved.reason).toContain("is not one of refuse, clear");
 	});
 
 	it("refuses a sub-key this module does not own, rather than dropping it", () => {
@@ -71,14 +94,14 @@ describe("an off-vocabulary or malformed value is refused at load", () => {
 
 describe("parkCauseRefusal", () => {
 	it("resolves the permissive arm to requireCause false", () => {
-		expect(parkCauseRefusal("verb", read({uncaused: "record"}))).toEqual({
+		expect(parkCauseRefusal("verb", read({uncaused: "record", driverRouted: "refuse"}))).toEqual({
 			_tag: "Resolved",
 			requireCause: false,
 		});
 	});
 
 	it("resolves the strict arm to requireCause true", () => {
-		expect(parkCauseRefusal("verb", read({uncaused: "refuse"}))).toEqual({
+		expect(parkCauseRefusal("verb", read({uncaused: "refuse", driverRouted: "refuse"}))).toEqual({
 			_tag: "Resolved",
 			requireCause: true,
 		});

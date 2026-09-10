@@ -249,7 +249,7 @@
 		},
 		"parkCause": {
 			"type": "object",
-			"description": "What this repo does with a lane park that names no cause.",
+			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",
 			"properties": {
 				"uncaused": {
 					"type": "string",
@@ -257,6 +257,14 @@
 					"enum": [
 						"record",
 						"refuse"
+					]
+				},
+				"driverRouted": {
+					"type": "string",
+					"description": "What `recipe unpark` does with a park whose cause routes `driver`: `refuse` (exit 12, the park routes to a human) or `clear` (the driver clears it on its own --rationale, recorded on the UNBLOCKED).",
+					"enum": [
+						"refuse",
+						"clear"
 					]
 				}
 			},

@@ -11,6 +11,7 @@ import {
 	LANE_ABSENT,
 	LANE_UNREADABLE,
 	PARK_UNCAUSED,
+	RATIONALE_REFUSED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
@@ -32,10 +33,21 @@ const run = (
 	classes: ReadonlyArray<string> = [],
 	waitGrant: number | null = null,
 	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
+	rationale: string | null = null,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runTransition({root: ROOT, lane: "42", event, task, cause, parkCause, classes, waitGrant}),
+			runTransition({
+				root: ROOT,
+				lane: "42",
+				event,
+				task,
+				cause,
+				parkCause,
+				classes,
+				waitGrant,
+				rationale,
+			}),
 			fs.layer,
 		),
 	);
@@ -266,5 +278,53 @@ describe("lane transition — the lane class the `class:<name>` arms route on", 
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "build:ui"}}});
+	});
+});
+
+describe("lane transition — the rationale a driver's clearance is recorded on", () => {
+	/** A lane sitting in the park an `UNBLOCKED` walks back out of. */
+	const parked = () => freshLane(logLine("WIP") + logLine("BLOCKED"));
+
+	it("records the rationale on the UNBLOCKED line and echoes it in the answer", async () => {
+		const fs = parked();
+
+		const out = await run(fs, "UNBLOCKED", null, null, [], null, undefined, "  rebased the head  ");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.UNBLOCKED",
+			rationale: "rebased the head",
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({event: "ISSUE.UNBLOCKED", rationale: "rebased the head"});
+	});
+
+	it("refuses a blank rationale at its own code, log byte-identical", async () => {
+		const fs = parked();
+
+		const out = await run(fs, "UNBLOCKED", null, null, [], null, undefined, "   ");
+
+		expect(out.code).toBe(RATIONALE_REFUSED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses one riding an event that clears no park", async () => {
+		const fs = freshLane();
+
+		const out = await run(fs, "WIP", null, null, [], null, undefined, "a reason");
+
+		expect(out.code).toBe(RATIONALE_REFUSED);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records the same UNBLOCKED with no rationale at all — the ordinary resume", async () => {
+		const fs = parked();
+
+		const out = await run(fs, "UNBLOCKED");
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(Object.hasOwn(appended, "rationale")).toBe(false);
 	});
 });
