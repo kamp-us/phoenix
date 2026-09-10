@@ -13,13 +13,24 @@
  * files is refused on exit 45 before anything runs, because dirt the child did not write reads as
  * its conflict or its bad lockfile and spends its retry budget either way.
  *
- * On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED`, the line above it the merged
- * head. Publishing that head is `lane push`'s and recording the `DONE` is the driver's: this verb
- * neither pushes nor writes the lane's log, so its answer is a fact about a tree and nothing else.
+ * A textual collision is not always the end of the run: under `assemblyReplay.onCollision`, the
+ * child's commits are replayed onto the tip and the plain keep-both hunks kept both ways, which is
+ * the repair a hand-resolved cross-child collision always was (`replay.ts`). The key ships `off`, so
+ * a repo declaring nothing gets the refusal byte for byte. The replay also moves the child's branch
+ * onto the range it replayed, and refuses on exit 54 rather than merging when it cannot: the branch
+ * is where every later read takes the child's range from, so one left on superseded commits sends
+ * the child's next integrate into a collision with this one's own landing.
+ *
+ * On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED` or, after a replay,
+ * `INTEGRATE-VERDICT: REPLAYED` — the line above it the merged head either way, and above that, on a
+ * replay, the machinery event carrying the moved range. Publishing that head is `lane push`'s and
+ * recording the `DONE` is the driver's: this verb neither pushes nor writes the lane's log, so its
+ * answer is a fact about a tree and nothing else.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
+import {ASSEMBLY_REPLAY, assemblyReplayKey} from "../config/keys/assembly-replay.ts";
 import {
 	CODE_VALIDATORS,
 	type CodeValidator,
@@ -42,6 +53,7 @@ import {
 	ASSEMBLY_DIRTY,
 	ASSEMBLY_RED,
 	ASSEMBLY_UNSEATED,
+	CHILD_UNSEATED,
 	LANE_UNREADABLE,
 	MERGE_CONFLICT,
 	PRIMARY_CHECKOUT,
@@ -49,6 +61,7 @@ import {
 	RECONCILE_REFUSED,
 } from "./codes.ts";
 import {loadRefusal} from "./refusals.ts";
+import {type MovedRange, REPLAY_PARK_CAUSE, replayChild} from "./replay.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane integrate";
@@ -108,22 +121,28 @@ const trackedChanges = (
 /**
  * Put the assembly branch back where the merge found it, and prove it went.
  *
- * `reset --hard ORIG_HEAD` is the move; the re-read of HEAD against the sha captured before the
- * merge is what makes it an answer rather than a claim. A branch that will not go back is UNKNOWN,
- * never a plain `FAIL` — it may still carry the merge no verdict admits.
+ * `reset --hard <to>` is the move; the re-read of HEAD against the sha captured before the merge is
+ * what makes it an answer rather than a claim. A branch that will not go back is UNKNOWN, never a
+ * plain `FAIL` — it may still carry the merge no verdict admits.
+ *
+ * The merge and validator paths reset through `ORIG_HEAD`, which the merge itself wrote. The replay
+ * path passes the captured sha instead: `git cherry-pick` writes no `ORIG_HEAD`, so on that path the
+ * ref names whatever the last thing that did wrote, and resetting to it would be a guess. The proof
+ * is the same either way.
  */
 const restore = (
 	path: string,
+	to: string,
 	head: string,
 	outcome: VerbOutcome,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const reset = yield* execCapture("git", ["-C", path, "reset", "--hard", "ORIG_HEAD"]);
+		const reset = yield* execCapture("git", ["-C", path, "reset", "--hard", to]);
 		const after = yield* headOf(path);
 		if (after._tag === "Unreadable") {
 			return refuse(
 				APPEND_UNKNOWN,
-				`${VERB}: reset ${path} to ORIG_HEAD and cannot re-read its HEAD: ${after.reason} — whether the assembly branch still carries the merge is UNKNOWN.`,
+				`${VERB}: reset ${path} to ${to} and cannot re-read its HEAD: ${after.reason} — whether the assembly branch still carries the merge is UNKNOWN.`,
 				outcome.stderr,
 			);
 		}
@@ -137,6 +156,172 @@ const restore = (
 		return {
 			...outcome,
 			stderr: [...outcome.stderr, `${VERB}: reset ${path} back to ${head}; nothing was pushed.`],
+		};
+	});
+
+/** What the merge itself wrote, and what the merge and validator paths reset back through. */
+const ORIG_HEAD = "ORIG_HEAD";
+
+/**
+ * The machinery event a replay records, and the whole of what a reader downstream gets from it.
+ *
+ * `reReview` is the verdict this run owes the child: its commits are on a head no reviewer has seen,
+ * so the graded range moved and one round over the new one is what makes the grade true again.
+ * `budget` is the classification the retry-budget wiring reads — a replay is machinery working, not
+ * the child failing, so it never spends a repair round. Recording it here rather than spending it is
+ * deliberate: this verb writes no lane log, so the classification travels as a fact in its answer.
+ */
+interface ReplayEvent {
+	readonly event: "replayed";
+	readonly child: string;
+	readonly replay: string;
+	readonly onto: string;
+	readonly range: MovedRange;
+	readonly resolved: ReadonlyArray<string>;
+	readonly commits: number;
+	readonly reReview: "required";
+	readonly budget: "unspent";
+}
+
+type Landing =
+	| {
+			readonly _tag: "Landed";
+			readonly notes: ReadonlyArray<string>;
+			/** What a later refusal resets through — see {@link restore}. */
+			readonly resetRef: string;
+			readonly replay: ReplayEvent | null;
+	  }
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+interface LandOptions {
+	readonly path: string;
+	readonly branch: string;
+	readonly child: string;
+	readonly head: string;
+}
+
+/**
+ * Get the child onto the assembly branch — by merging it, or, on a collision the repo has turned the
+ * replay on for, by replaying its commits onto the tip.
+ *
+ * The collision arm is the whole of what `assemblyReplay.onCollision` gates, and with the key off
+ * this is the refusal the verb has always given, down to its diagnostics.
+ */
+const land = (
+	options: LandOptions,
+): Effect.Effect<
+	Landing,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const {path, branch, child, head} = options;
+
+		// `--no-ff` so each landing is one commit a reader can name: a fast-forward would leave two
+		// children's ranges indistinguishable in the history the epic reviewer reads.
+		const merged = yield* execCapture("git", ["-C", path, "merge", "--no-ff", child]);
+		if (merged.ok) {
+			return {
+				_tag: "Landed" as const,
+				notes: [`${VERB}: merged ${child} into ${branch} at ${path}.`],
+				resetRef: ORIG_HEAD,
+				replay: null,
+			};
+		}
+
+		const aborted = yield* execCapture("git", ["-C", path, "merge", "--abort"]);
+		const after = yield* headOf(path);
+		if (after._tag === "Unreadable" || after.sha !== head) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					APPEND_UNKNOWN,
+					`${VERB}: ${child} conflicts with ${branch} and the abort did not restore ${path}${aborted.ok ? "" : `: ${aborted.reason}`} — the tree's state is UNKNOWN, so nothing may be recorded against it.`,
+				),
+			};
+		}
+
+		const gate = resolve(loadConfig(yield* readConfigSource(path)), assemblyReplayKey);
+		if (gate._tag === "Unknown" || gate._tag === "Malformed") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					LANE_UNREADABLE,
+					`${VERB}: ${child} conflicts with ${branch} and \`${ASSEMBLY_REPLAY}\` cannot be read from ${CONFIG_PATH} (${gate.reason}) — whether the collision is replayed is UNKNOWN, so nothing was replayed and ${path} is back at ${head}.`,
+				),
+			};
+		}
+		if (gate.value.onCollision === "off") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					MERGE_CONFLICT,
+					`${VERB}: ${child} conflicts with ${branch}; the merge was aborted and ${path} is back at ${head}. No install ran and no validator ran, because there is no merged tree to judge.`,
+					diagnostics(merged.reason),
+				),
+			};
+		}
+
+		const replayed = yield* replayChild({path, branch, child, tip: head});
+		if (replayed._tag === "Unreadable") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					APPEND_UNKNOWN,
+					`${VERB}: ${child} was being replayed onto ${head} and ${replayed.reason} — nothing may be recorded against ${path}.`,
+				),
+			};
+		}
+		if (replayed._tag === "ChildUnseated") {
+			return {
+				_tag: "Refused" as const,
+				outcome: yield* restore(
+					path,
+					head,
+					head,
+					refuse(
+						CHILD_UNSEATED,
+						`${VERB}: ${child} replayed onto ${head} as ${replayed.replayBranch} and ${replayed.reason} — the replayed range is the child's range now, so nothing was merged and ${path} is back at ${head}. A working tree still standing on ${child} is the usual reason: free it with \`fabrika build retire\` and integrate again, or park the lane on \`--cause worktree-holds-branch\`.`,
+					),
+				),
+			};
+		}
+		if (replayed._tag === "NotKeepBoth") {
+			return {
+				_tag: "Refused" as const,
+				outcome: yield* restore(
+					path,
+					head,
+					head,
+					refuse(
+						MERGE_CONFLICT,
+						`${VERB}: ${child} replayed onto ${head} and ${replayed.reason} — keeping both sides is the only resolution this verb makes, so the replay was abandoned. Park the lane on \`--cause ${REPLAY_PARK_CAUSE}\`.`,
+						replayed.paths,
+					),
+				),
+			};
+		}
+
+		return {
+			_tag: "Landed" as const,
+			notes: [
+				`${VERB}: ${child} conflicted with ${branch} and was replayed onto ${head} as ${replayed.replayBranch} — ${replayed.commits} commit(s), ${replayed.resolved.length} path(s) kept both ways — then merged into ${branch} at ${path}.`,
+				`${VERB}: ${child} was moved onto the replayed range, so it names the commits ${branch} carries and the child's next integrate is up to date.`,
+			],
+			// `git cherry-pick` writes no `ORIG_HEAD`, so the replay path resets through the sha this run
+			// captured rather than a ref something else last wrote.
+			resetRef: head,
+			replay: {
+				event: "replayed",
+				child,
+				replay: replayed.replayBranch,
+				onto: head,
+				range: replayed.range,
+				resolved: replayed.resolved,
+				commits: replayed.commits,
+				reReview: "required",
+				budget: "unspent",
+			},
 		};
 	});
 
@@ -311,31 +496,17 @@ export const runIntegrate = (
 			);
 		}
 
-		// `--no-ff` so each landing is one commit a reader can name: a fast-forward would leave two
-		// children's ranges indistinguishable in the history the epic reviewer reads.
-		const merged = yield* execCapture("git", ["-C", path, "merge", "--no-ff", options.child]);
-		if (!merged.ok) {
-			const aborted = yield* execCapture("git", ["-C", path, "merge", "--abort"]);
-			const after = yield* headOf(path);
-			if (after._tag === "Unreadable" || after.sha !== head) {
-				return refuse(
-					APPEND_UNKNOWN,
-					`${VERB}: ${options.child} conflicts with ${branch} and the abort did not restore ${path}${aborted.ok ? "" : `: ${aborted.reason}`} — the tree's state is UNKNOWN, so nothing may be recorded against it.`,
-				);
-			}
-			return refuse(
-				MERGE_CONFLICT,
-				`${VERB}: ${options.child} conflicts with ${branch}; the merge was aborted and ${path} is back at ${head}. No install ran and no validator ran, because there is no merged tree to judge.`,
-				diagnostics(merged.reason),
-			);
-		}
-		const notes = [`${VERB}: merged ${options.child} into ${branch} at ${path}.`];
+		const landing = yield* land({path, branch, child: options.child, head});
+		if (landing._tag === "Refused") return landing.outcome;
+		const {resetRef, replay} = landing;
+		const notes = [...landing.notes];
 
 		const source = loadConfig(yield* readConfigSource(path));
 		const reconciler = resolve(source, dependencyReconcilerKey);
 		if (reconciler._tag === "Unknown" || reconciler._tag === "Malformed") {
 			return yield* restore(
 				path,
+				resetRef,
 				head,
 				refuse(
 					LANE_UNREADABLE,
@@ -346,7 +517,7 @@ export const runIntegrate = (
 		}
 		const reconciled = yield* reconcile(path, reconciler.value);
 		if (reconciled._tag === "Refused") {
-			return yield* restore(path, head, {
+			return yield* restore(path, resetRef, head, {
 				...reconciled.outcome,
 				stderr: [...notes, ...reconciled.outcome.stderr],
 			});
@@ -357,6 +528,7 @@ export const runIntegrate = (
 		if (declared._tag === "Unknown" || declared._tag === "Malformed") {
 			return yield* restore(
 				path,
+				resetRef,
 				head,
 				refuse(
 					LANE_UNREADABLE,
@@ -368,6 +540,7 @@ export const runIntegrate = (
 		if (declared.value.length === 0) {
 			return yield* restore(
 				path,
+				resetRef,
 				head,
 				refuse(
 					LANE_UNREADABLE,
@@ -378,7 +551,7 @@ export const runIntegrate = (
 		}
 		const red = yield* validate(path, declared.value);
 		if (red !== null) {
-			return yield* restore(path, head, {...red, stderr: [...notes, ...red.stderr]});
+			return yield* restore(path, resetRef, head, {...red, stderr: [...notes, ...red.stderr]});
 		}
 
 		const landed = yield* headOf(path);
@@ -389,8 +562,12 @@ export const runIntegrate = (
 				notes,
 			);
 		}
-		return answer(`${landed.sha}\nINTEGRATE-VERDICT: MERGED\n`, [
-			...notes,
-			`${VERB}: ${declared.value.length} code validator(s) passed over the merged tree.`,
-		]);
+		const passed = `${VERB}: ${declared.value.length} code validator(s) passed over the merged tree.`;
+		return replay === null
+			? answer(`${landed.sha}\nINTEGRATE-VERDICT: MERGED\n`, [...notes, passed])
+			: answer(`${JSON.stringify(replay)}\n${landed.sha}\nINTEGRATE-VERDICT: REPLAYED\n`, [
+					...notes,
+					passed,
+					`${VERB}: ${options.child}'s graded range moved to ${replay.range.from}..${replay.range.to} — it owes one review round over the new range, and the replay spends none of its repair budget.`,
+				]);
 	});

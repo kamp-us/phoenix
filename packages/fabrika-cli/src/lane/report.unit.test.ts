@@ -277,6 +277,13 @@ describe("remedyForCause", () => {
 		expect(remedyForCause("assembly-conflict")).toBeNull();
 	});
 
+	// The replay's own refusal is the same judgment from the other side — one child's range against
+	// another's rather than the trunk's — so it routes to the driver and names no verb either.
+	it("names no verb for replay-conflict, and routes it to the driver", () => {
+		expect(remedyForCause("replay-conflict")).toBeNull();
+		expect(routeForCause("replay-conflict")).toBe("driver");
+	});
+
 	it.each([null, "not-a-cause"])("has no remedy for an unnamed park (%p)", (cause) => {
 		expect(remedyForCause(cause)).toBeNull();
 	});

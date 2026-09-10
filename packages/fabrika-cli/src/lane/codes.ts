@@ -443,3 +443,15 @@ export const PARK_UNCAUSED = 52;
  * field that has none.
  */
 export const RATIONALE_REFUSED = 53;
+
+/**
+ * `lane integrate` replayed a colliding child onto the assembly tip and the child's branch would not
+ * follow the replayed commits. Nothing was merged and the seat is back where the replay found it.
+ *
+ * Its own seat rather than {@link MERGE_CONFLICT}'s, which is the collision itself: this one is not
+ * about content at all, and its remedy is freeing a branch rather than reconciling two ranges. A
+ * working tree still holding the child's branch is the usual reason — `git branch --force` refuses
+ * to move a branch another tree stands on — so the park it names is `worktree-holds-branch`, whose
+ * clearance a recipe already owns.
+ */
+export const CHILD_UNSEATED = 54;

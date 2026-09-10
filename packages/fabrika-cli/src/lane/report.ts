@@ -254,6 +254,26 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * `lane integrate` replayed a colliding child onto the assembly tip and hit a hunk that is not a
+	 * plain keep-both — two sides editing one text rather than an append each. The pick was abandoned
+	 * and the seat put back, so the assembly branch carries neither the merge nor the replay.
+	 *
+	 * Distinct from `assembly-conflict`, which is the trunk against the assembly branch: this one is
+	 * one child's range against another child's, and it is the collision the replay exists for. It
+	 * carries no `KNOWN_PARKS` row and no remedy for the same reason `assembly-conflict` does not —
+	 * resolving a semantic conflict is a judgment about content, and a verb that "removed" this cause
+	 * would be making it.
+	 *
+	 * Route `driver`: reconciling two children of this repo's own code is machinery, not a product
+	 * call.
+	 */
+	"replay-conflict": {
+		meaning:
+			"a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision needs a judgment about content",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
 	 * that cell is the whole dispatch permission — so no stage may open against it.
 	 *

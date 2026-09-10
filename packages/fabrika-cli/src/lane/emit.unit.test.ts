@@ -7,6 +7,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
 import {parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
@@ -227,6 +228,7 @@ describe("emitMachine", () => {
 			"review",
 			"integrate",
 			"blocked",
+			"human:replay-stall",
 			"hist",
 			"landed",
 			"frozen",
@@ -241,6 +243,10 @@ describe("emitMachine", () => {
 				integrate: {
 					on: {
 						"ISSUE_4301.DONE": "landed",
+						"ISSUE_4301.WIP": [
+							{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
+							{target: "human:replay-stall"},
+						],
 						"ISSUE_4301.BLOCKED": "blocked",
 						"ISSUE_4301.FAIL": [
 							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
@@ -297,6 +303,47 @@ describe("emitMachine", () => {
 				["issue_4301", "DONE"],
 			]).stateValue,
 		).toMatchObject({phase1: {issue_4301: "landed"}});
+	});
+
+	it("sends a replayed range back through review on a WIP, and spends no retry doing it", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const replayed: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "WIP"],
+		];
+		expect(drive(compiled, replayed).stateValue).toMatchObject({
+			phase1: {issue_4301: "review"},
+		});
+		const spent = statesOf(compiled, driveLog(compiled, replayed)).issue_4301;
+		expect(spent?.retries).toBe(0);
+		expect(spent?.waits).toBe(1);
+		expect(
+			drive(compiled, [...replayed, ["issue_4301", "PASS"], ["issue_4301", "DONE"]]).stateValue,
+		).toMatchObject({phase1: {issue_4301: "landed"}});
+	});
+
+	it("parks a child whose replay keeps re-colliding past its wait budget — the loop is bounded", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		/** One replayed round: the moved range passes review, the next integrate replays it again. */
+		const replay: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "PASS"],
+		];
+		const spun: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			...Array.from({length: WAIT_BUDGET}, () => replay).flat(),
+			["issue_4301", "WIP"],
+		];
+		expect(drive(compiled, spun).stateValue).toMatchObject({
+			phase1: {issue_4301: "human:replay-stall"},
+		});
+		const parked = statesOf(compiled, driveLog(compiled, spun)).issue_4301;
+		expect(parked?.waits).toBe(WAIT_BUDGET);
+		expect(parked?.retries).toBe(0);
 	});
 
 	it("trips the lane when integrate keeps colliding past the retry budget — never a landing", () => {

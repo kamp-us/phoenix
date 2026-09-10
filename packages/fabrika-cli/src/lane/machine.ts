@@ -188,8 +188,9 @@ export interface CompiledTask {
 	 */
 	readonly guardedStates: ReadonlySet<string>;
 	/**
-	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — `ship:queued`'s `WIP`
-	 * to `human:queue-stall`, and nothing else in today's machine.
+	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — the epic tail's
+	 * `ship:queued` `WIP` to `human:queue-stall`, and a child's `integrate` `WIP` to
+	 * `human:replay-stall`.
 	 *
 	 * The wait axis's own resume read, and it needs the pairing where {@link guardedStates} needs
 	 * only the name: a retry-guarded state's fallthrough is a final, so `errorFinals` already says

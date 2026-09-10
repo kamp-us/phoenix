@@ -73,6 +73,20 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
+ *
+ * Its `WIP` is the door that keeps that second half true when the verb resolves the collision
+ * itself. `lane integrate`'s replay puts a colliding child's commits down on the assembly tip, so
+ * the graded range moves and a verdict bound to the old range no longer describes what would land —
+ * the run says as much in `reReview: "required"`. Without an arm out of `integrate` the only move
+ * toward progress was the `DONE` into `landed`, which ends the child on content no reviewer read.
+ *
+ * That arm is a guarded array like `ship:queued`'s, not the plain target it was first written as: a
+ * replay is machinery working rather than the child failing, so it spends `waits` and never a repair
+ * round, which is the whole of `budget: "unspent"`. Spending nothing at all is the shape that was
+ * wrong — `integrate --WIP--> review --PASS--> integrate` is a closed cycle, and a plain target sits
+ * in no wait park, so nothing counted its turns. Its spent-budget fallthrough is
+ * `human:replay-stall` rather than `frozen` because a replay that will not settle is a collision
+ * between two children a person reads, not a child that failed its review.
  */
 const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<string, unknown> => ({
 	initial,
@@ -92,6 +106,10 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 		integrate: {
 			on: {
 				[`${ns}.DONE`]: "landed",
+				[`${ns}.WIP`]: [
+					{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
+					{target: "human:replay-stall"},
+				],
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
@@ -100,6 +118,7 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
 		landed: {type: "final"},
 		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
