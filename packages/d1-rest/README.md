@@ -12,7 +12,10 @@ consumer touches:
 
 - `makeD1Rest(config)` — build a `D1Database` over the REST API for a given
   `{accountId, databaseId, layer}`; `layer` provides `Credentials | HttpClient`. A single
-  statement is one REST `/query` POST; a drizzle `batch([...])` collects every statement's
+  read is one REST [`/raw` POST](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/raw/).
+  Its columns and row arrays preserve SQL names such as
+  `created_at`; the SDK's `/query` decoder renames opaque object keys. Writes use `/query`;
+  a drizzle `batch([...])` collects every statement's
   sql+params into ONE REST batch call, which D1 runs as a single atomic transaction.
   `run()` carries D1's real row-change count into `meta.changes` (defaulting to 0);
   outside the drizzle-driven slice only inert stubs exist (`exec`, `dump`), so widening to
@@ -29,12 +32,12 @@ consumer touches:
   two functions are its only mint — a fence takes that type so a label the caller composed
   is a plain `string` and does not fit.
 - `readYourWrite(read, isConsistent, options?)` — a bounded read-your-writes poll for callers
-  that need read-after-write consistency over this transport. The REST `/query` endpoint
-  carries no D1 session bookmark (that Sessions API primitive is Workers-binding-only), so an
+  that need read-after-write consistency over this transport. The REST `/raw` and `/query` endpoints
+  carry no D1 session bookmark (that Sessions API primitive is Workers-binding-only), so an
   immediate read after a write has no ordering guarantee; a caller that knows the post-write
   truth polls the read until it reflects it. Returns the last read either way — it waits out
   latency, it never masks a wrong read (#3075 / #3078).
-- `toRestParams` / `assertRestParam` — the REST-wire param transform and its strict-`string[]`
+- `toRestParams` / `assertRestParam` — the adapter's param transform and its strict-`string[]`
   null guard (#569).
 - `D1RestConfig` / `D1RestServices` / `ReadYourWriteOptions` types.
 

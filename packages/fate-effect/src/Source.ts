@@ -5,7 +5,7 @@
  * The error channel is pinned `never`, so infrastructure failures are defects.
  *
  * Spans come from the constructor, not the author: each handler body is passed
- * to `Effect.fn("<Entity>.<capability>")` (effect-smol `LLMS.md` § "Using
+ * to `Effect.fn("<Entity>.<capability>")` (Effect-TS/effect `LLMS.md` § "Using
  * Effect.fn"), so the span name is derived from the view's `typeName` and
  * cannot drift from the entity.
  *

@@ -9,7 +9,6 @@ catalog:
   # lives in the tree. Dependabot bumps it; the CLI it spawns is the `claude` on PATH (#7580).
   '@anthropic-ai/claude-agent-sdk': 0.3.259
   '@anthropic-ai/sdk': 0.123.0
-  '@alchemy.run/better-auth': 2.0.0-beta.59
   # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
   # api-key + core pinned to the EXACT version better-auth links transitively, so ONE
   # `@better-auth/core` lives in the tree. A stale `core: 1.6.10` left apps/web's direct
@@ -19,11 +18,11 @@ catalog:
   '@better-auth/api-key': 1.6.23
   '@better-auth/core': 1.6.23
   '@biomejs/biome': ^2.4.15
-  '@cloudflare/workers-types': ^4.20260629.1
+  '@cloudflare/workers-types': 5.20260901.1
   # Exact pin: the lane ledger's machines fold over this engine's dispatch semantics
   # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673).
   '@demlik/tea': 0.12.0
-  '@distilled.cloud/cloudflare': 0.27.0
+  '@distilled.cloud/cloudflare': 1.0.0-rc.9
   '@effect/language-service': ^0.85.1
   # Pi 0.85.1, pinned exact: apps/tuval's loopback Pi host speaks protocol 8 end to end, and the
   # envelope is part of that contract (ADR 0366). The family's ninth entry, `@earendil-works/chord`,
@@ -33,12 +32,12 @@ catalog:
   '@earendil-works/pi-client': 0.85.1
   '@earendil-works/pi-coding-agent': 0.85.1
   '@earendil-works/pi-protocol': 0.85.1
-  '@effect/platform-bun': 4.0.0-beta.92
-  '@effect/platform-node': 4.0.0-beta.92
-  '@effect/sql-d1': 4.0.0-beta.92
-  '@effect/sql-pg': 4.0.0-beta.92
+  '@effect/platform-bun': 4.0.0-rc.112
+  '@effect/platform-node': 4.0.0-rc.112
+  '@effect/sql-d1': 4.0.0-rc.112
+  '@effect/sql-pg': 4.0.0-rc.112
   '@effect/tsgo': ^0.36.4
-  '@effect/vitest': 4.0.0-beta.92
+  '@effect/vitest': 4.0.0-rc.112
   '@fontsource/ibm-plex-sans': 5.2.8
   '@fontsource/jetbrains-mono': 5.2.8
   '@manti-ui/react': 0.9.0
@@ -67,7 +66,7 @@ catalog:
   '@types/react-dom': ^19.2.3
   '@usirin/forge': ^0.2.0
   '@vitejs/plugin-react': ^6.0.2
-  alchemy: 2.0.0-beta.59
+  alchemy: 2.0.0-beta.77
   axe-core: ^4.10.3
   # better-auth's drizzle-adapter speaks RQB v1 (raw-SQL `eq()` where-shape); drizzle-orm 1.x
   # is RQB v2 (`defineRelations`). The two do NOT interoperate through RQB: routing a better-auth
@@ -80,9 +79,9 @@ catalog:
   # two peer-hash instances (one per better-call), re-surfacing the two-`HookEndpointContext`
   # TS2322 — pinned to 1.3.7 so ONE core/better-call pair lives in the tree (#108).
   better-call: 1.3.7
-  drizzle-kit: 1.0.0-rc.4
-  drizzle-orm: 1.0.0-rc.4
-  effect: 4.0.0-beta.92
+  drizzle-kit: 1.0.0-rc.5-ab785fc
+  drizzle-orm: 1.0.0-rc.5-ab785fc
+  effect: 4.0.0-rc.112
   fast-check: ^3.23.2
   # Pinned to the exact 5.8.0 an existing lockfile parent already links (@distilled.cloud/aws +
   # alchemy) so no third version enters the tree — the PR #535 frozen-lockfile rule.
@@ -107,8 +106,8 @@ catalog:
   # sit on. Nothing in the workspace declares `pi-server`, so that copy is alone in the tree and
   # catalog-guard never sees it; re-read the lockfile for it when this pin moves.
   'pi-subagents': 0.66.0
-  react: 19.2.6
-  react-dom: 19.2.6
+  react: 19.2.7
+  react-dom: 19.2.7
   react-fate: 1.3.1
   # Exact pin: the shell surface binds the layout tree to this library one to one, and the
   # binding rests on v4 behaviour a range could move under it — `defaultLayout` read once, an
@@ -128,31 +127,27 @@ catalog:
   yaml: 2.9.0
   zod: 4.4.3
 
-# apps/tuval's own Effect pin. The kernel epic (#7496) runs on 4.0.0-rc.112 while everything else
-# sits on beta.92. A named catalog declares one version per consumer set, and that is a claim about
-# the manifests only: it does not reach what those declared packages pull in underneath. One such
-# transitive edge did cross over, and the `overrides` block below is what holds it.
-#
-# `fzf` (fzf-for-js) rides here rather than in the root catalog because apps/tuval is its only
-# consumer — the picker's type-to-filter matcher, founder-ruled on #8450.
+# Tuval's picker keeps its existing matcher pin; Effect consumers share the root catalog.
 catalogs:
   tuval:
-    '@effect/platform-node': 4.0.0-rc.112
-    '@effect/vitest': 4.0.0-rc.112
-    effect: 4.0.0-rc.112
     fzf: 0.5.2
 
-# `@effect/platform-node@4.0.0-beta.92` asks for `@effect/platform-node-shared` by a caret range, and
-# a caret over a prerelease picks the highest version present in the workspace. So the moment
-# catalogs.tuval brought rc.112 into the tree, the beta parent started resolving its own internals to
-# that rc copy, including on the apps/web deploy path (alchemy reaches it through
-# @distilled.cloud/cloudflare-runtime). This entry names the beta parent, so beta.92 consumers keep
-# the beta child while apps/tuval's rc `@effect/platform-node` still gets rc.112. Nothing checks this
-# by machine: catalog-guard reads manifest values and never lockfile resolution, so the pin is the
-# enforcement. The version is written out rather than as `catalog:` because a root catalog entry no
-# package.json consumes is what `cleanupUnusedCatalogs` deletes on the next install.
+# Keep Effect's transitive companion packages on the same release too. Alchemy's
+# broad ranges otherwise pick rc.113, which removed APIs beta.77 still calls.
+# Worker types are also unified so Drizzle's nominal types share one peer instance.
 overrides:
-  '@effect/platform-node@4.0.0-beta.92>@effect/platform-node-shared': 4.0.0-beta.92
+  # Alchemy requires React ^19.2.7; keep React and its renderer on the same patch.
+  react: 19.2.7
+  react-dom: 19.2.7
+  '@cloudflare/workers-types': 5.20260901.1
+  effect: 4.0.0-rc.112
+  '@effect/platform-bun': 4.0.0-rc.112
+  '@effect/platform-node': 4.0.0-rc.112
+  '@effect/platform-node-shared': 4.0.0-rc.112
+  '@effect/sql-d1': 4.0.0-rc.112
+  '@effect/sql-pg': 4.0.0-rc.112
+  '@effect/sql-sqlite-do': 4.0.0-rc.112
+  '@effect/vitest': 4.0.0-rc.112
   # Pi 0.85.1 is pinned end to end (ADR 0366). The cataloged packages ask for their siblings by
   # `^0.85.1`, and a caret picks the highest published patch — which on 0.84.x put a SECOND
   # `@earendil-works/pi-ai` in the tree beside the cataloged one. The faux provider registered
@@ -178,30 +173,13 @@ onlyBuiltDependencies:
 # Local patches (policy: patch deps locally, don't depend on an upstream/fork
 # release — ADR 0038). Re-key each on that dep's next version bump.
 #
-# alchemy — three patches on beta.59:
-# 1. Cloudflare/Flagship/Flag.js — `FlagshipFlag.reconcile` UPDATE path reconciles
-#    only the schema/metadata IaC owns ({variations, description}) and preserves the
-#    live serving the dashboard owns ({defaultVariation, rules, enabled}); the no-op
-#    skip compares only the schema. Implements ADR 0106; fixes the full-body PUT that
-#    clobbered live serving on every deploy (#840). Still NOT upstreamed in beta.59.
-# 2. Cloudflare/Workers/{Worker.d.ts, WorkerProvider.js} — expose per-Worker Workers
-#    Caching: add the `cache?: {enabled?}` prop to `WorkerProps` (the .d.ts) and
-#    thread it through the provider as the script-upload metadata's `cache_options`
-#    field, sent only when set. Implements ADR 0170; beta.59 predates the native
-#    knob. Retire both hunks when a future alchemy release ships the field natively.
-# 3. Test/Vitest.js — `Test.make`'s `beforeAll`/`afterAll`/`afterAll.skipIf`/scope-close
-#    hooks drop the `?? DEFAULT_TIMEOUT` (120s) fallback, passing `undefined` when no
-#    `{timeout}` override is given so @vitest/runner resolves `config.hookTimeout`
-#    instead of the hard-coded clamp. The clamp silently shadowed `vitest.config.ts`'s
-#    `hookTimeout` and was the #3146 merge-queue eviction root cause (#3168). Regression
-#    test: apps/web/tests/integration/alchemy-hook-timeout.unit.test.ts. Retire when a
-#    future alchemy release honors the configured hook timeout natively.
-#
-# The prior beta.56 second hunk (DurableObjectNamespace.d.ts — adding
-# `DurableObjectNamespaceScope` to the `DurableObjectServices` union) was DROPPED:
-# beta.59 rewrote the DO authoring model (flat → namespaced), removing the
-# `DurableObjectNamespaceScope` type the hunk targeted entirely — the hunk is moot,
-# not upstreamed. Re-keyed beta.56 → beta.59.
+# alchemy — beta.77 retains three local behaviors (ADR 0038):
+# - Flagship updates preserve dashboard-owned serving settings (ADR 0106).
+# - Test.make hooks honor Vitest's configured hookTimeout.
+# - D1 reads the mixed flat/directory migration tree and refuses recorded-file drift;
+#   explicit adopt re-keys only hash-proven renames (ADR 0309).
+# Native Worker cache configuration and Windows stack imports need no patch now.
+# Regression tests self-register with @patch-pin markers.
 #
 # react-fate — ONE hunk on 1.3.1:
 # 1. lib/index.mjs — `useView`'s `readViewSnapshot` caches the derived thenable for a
@@ -222,36 +200,13 @@ onlyBuiltDependencies:
 #    re-validating the session (~22 on an authed /pano load — #2273). Regression test:
 #    apps/web/src/fate/liveSubscribeBatch.test.ts. Not upstreamed in 1.3.1.
 #
-# effect — THREE hunks on 4.0.0-beta.92 (dist only; `effect/unstable/*` resolves to
-# dist/*.js + dist/*.d.ts). Hunks 1–2 gave the MCP channel edge the two things the fixed
-# public `McpServer`/`McpSchema` surface can't express (#3053, epic #3045). That edge was
-# the v1 crew's MCP server, removed with it (ADR 0279), so both hunks have NO in-repo
-# consumer today and nothing pins their behavior — retire them on the next effect bump
-# unless a new MCP server needs them:
-# 1. unstable/ai/McpServer.{js,d.ts} — an `experimental` capability passthrough in
-#    `layerHandlers` (+ the `experimental?` option on run/layer/layerStdio/layerHttp),
-#    so a server can advertise `experimental: { "claude/channel": {} }`. The
-#    `ServerCapabilities` schema already carries the slot; only the server wiring was
-#    missing.
-# 2. unstable/ai/McpSchema.{js,d.ts} — a `ChannelNotification`
-#    (`notifications/claude/channel`, `{ message, _meta }`) added to the fixed
-#    `ServerNotificationRpcs` union, so the run-loop's encode union and the
-#    `McpServer.notifications` client both gain the custom notification.
-# Their `@patch-pin` test (#3040/#3051) went with that package, so the patch's only
-# remaining pin is hunk 3's. Retire when effect ships these natively, or sooner —
-# nothing in the repo depends on them.
-# 3. unstable/cli/internal/command.js — `buildHelpDoc` skips a positional argument marked
-#    hidden, the rule that file already applies to hidden flags and hidden subcommands.
-#    `Param.withHidden` is public and documented as hiding, but upstream honours it for
-#    flags only, so a hidden argument still rendered in USAGE and ARGUMENTS. fabrika's
-#    excess-operand guard declares one hidden trailing catch-all per leaf verb (#4828);
-#    without this hunk every verb's `--help` would advertise an operand it refuses, and
-#    `--help` is fabrika's stated interface. Cosmetic and scoped to hidden arguments, of
-#    which nothing else in the repo declares any. Behavior-pinned by
-#    packages/fabrika-cli/src/excess-operand.cli.test.ts. Retire when effect honours it.
+# effect — rc.112 still needs hidden positional arguments omitted from CLI help.
+# packages/fabrika-cli/src/excess-operand.cli.test.ts pins the behavior.
+# End-of-options forwarding is upstream; its regression test remains. All retired
+# MCP/channel notification patches had no remaining consumer and are removed.
 patchedDependencies:
   '@manti-ui/react@0.9.0': patches/@manti-ui__react@0.9.0.patch
   '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
-  alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
-  effect@4.0.0-beta.92: patches/effect@4.0.0-beta.92.patch
+  alchemy@2.0.0-beta.77: patches/alchemy@2.0.0-beta.77.patch
+  effect@4.0.0-rc.112: patches/effect@4.0.0-rc.112.patch
   react-fate@1.3.1: patches/react-fate@1.3.1.patch

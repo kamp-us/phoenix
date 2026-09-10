@@ -61,6 +61,7 @@ const skillsDirFlag = Flag.string("skills-dir").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -135,6 +136,7 @@ const settings = leafCommand(
 			),
 		),
 		surfaces: Flag.boolean("surfaces").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"expand `surfaceDispositions` into one `surface` row per repo surface, each with the disposition this repo resolves to and what that surface is",
 			),

@@ -33,10 +33,12 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
 const redactFlag = Flag.boolean("redact").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription(
 		"mask each machine-local path down to its class root and post the masked body, instead of refusing",
 	),

@@ -250,10 +250,9 @@ describe("FateInterpreter — concurrent dispatch", () => {
 		// The barrier never rejects, but object-notation `Effect.tryPromise` (the #2736 idiom)
 		// requires a `catch` mapping to a tagged error; `orDie` then keeps the handler's error
 		// channel `never` (the query declares no errors).
-		class BarrierRejected extends Schema.TaggedErrorClass<BarrierRejected>()(
-			"test/BarrierRejected",
-			{cause: Schema.Unknown},
-		) {}
+		class BarrierRejected extends Schema.TaggedError<BarrierRejected>()("test/BarrierRejected", {
+			cause: Schema.Unknown,
+		}) {}
 		const paired = Fate.query(
 			{type: "Paired"},
 			Effect.fn("paired")(function* () {

@@ -29,7 +29,7 @@ import {
  * A publish failed inside the swallow wrapper below. Never reaches the fate boundary:
  * a publish runs after the DB write and must not fail the committed mutation (ADR 0039).
  */
-export class LivePublishError extends Schema.TaggedErrorClass<LivePublishError>()(
+export class LivePublishError extends Schema.TaggedError<LivePublishError>()(
 	"fate-live/LivePublishError",
 	{
 		cause: Schema.Defect(),

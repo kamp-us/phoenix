@@ -15,13 +15,13 @@ import {Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 
 /** A path could not be read — never conflated with a path that was read and held nothing. */
-export class ReadFailed extends Schema.TaggedErrorClass<ReadFailed>()("fabrika-cli/ReadFailed", {
+export class ReadFailed extends Schema.TaggedError<ReadFailed>()("fabrika-cli/ReadFailed", {
 	path: Schema.String,
 	reason: Schema.String,
 }) {}
 
 /** A write did not land. The caller refuses; it never reports the path as written. */
-export class WriteFailed extends Schema.TaggedErrorClass<WriteFailed>()("fabrika-cli/WriteFailed", {
+export class WriteFailed extends Schema.TaggedError<WriteFailed>()("fabrika-cli/WriteFailed", {
 	path: Schema.String,
 	reason: Schema.String,
 }) {}

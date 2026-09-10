@@ -26,7 +26,7 @@ import {mutations} from "./mutations.ts";
 import type {AddDefinitionResult} from "./Sozluk.ts";
 import {Sozluk} from "./Sozluk.ts";
 
-class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+class DrainRejected extends Schema.TaggedError<DrainRejected>()("test/DrainRejected", {
 	cause: Schema.Unknown,
 }) {}
 

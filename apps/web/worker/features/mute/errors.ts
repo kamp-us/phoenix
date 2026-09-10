@@ -8,7 +8,7 @@ import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 import {UserId} from "../../lib/ids.ts";
 
-export class SelfMuteRejected extends Schema.TaggedErrorClass<SelfMuteRejected>()(
+export class SelfMuteRejected extends Schema.TaggedError<SelfMuteRejected>()(
 	"mute/SelfMuteRejected",
 	{
 		memberId: UserId,
@@ -17,7 +17,7 @@ export class SelfMuteRejected extends Schema.TaggedErrorClass<SelfMuteRejected>(
 	{[FateWireCode]: "SELF_MUTE_REJECTED"},
 ) {}
 
-export class MuteDisabled extends Schema.TaggedErrorClass<MuteDisabled>()(
+export class MuteDisabled extends Schema.TaggedError<MuteDisabled>()(
 	"mute/MuteDisabled",
 	{message: Schema.String},
 	{[FateWireCode]: "MUTE_DISABLED"},

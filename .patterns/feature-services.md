@@ -65,7 +65,7 @@ Infra-failure policy is a domain-boundary decision. A feature service destructur
 
 Why here and not at the call sites: the typed `DrizzleError` channel had **zero typeful consumers** — nothing caught, retried, or matched it; every one of ~64 fate-handler call sites uniformly piped `orDieDrizzle`, which meant the transport layer named the persistence tech everywhere while exercising a single policy that belongs to the domain.
 
-The trade-off, recorded: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option nothing used. If a future caller genuinely needs to observe infra failures, defects remain reachable (`Effect.sandbox` / `Effect.catchAllDefect`), or that one method can reintroduce a typed infra error deliberately. The die happens per `run`/`batch` call (the Drizzle call sites), not as a blanket wrap around whole methods — future domain errors keep flowing through method bodies untouched.
+The trade-off, recorded: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option nothing used. If a future caller genuinely needs to observe infra failures, defects remain reachable (`Effect.sandbox` / `Effect.catchDefect`), or that one method can reintroduce a typed infra error deliberately. The die happens per `run`/`batch` call (the Drizzle call sites), not as a blanket wrap around whole methods — future domain errors keep flowing through method bodies untouched.
 
 `worker/features/domain-error-boundary.unit.test.ts` pins the rule per service: a type-level sweep proves no method's `E` contains `DrizzleError`, plus one exact-domain-union pin per service.
 

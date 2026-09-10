@@ -1,142 +1,279 @@
-// @patch-pin: alchemy@2.0.0-beta.59
-/**
- * Behavior-pin for the D1 migration-drift hunk of `patches/alchemy@2.0.0-beta.59.patch`
- * (ADR 0038, #7055, ADR 0309 amendment) — alchemy skips an applied migration by exact id
- * (= path) match, so renaming or deleting an already-applied file re-runs its SQL against a
- * database that already ran it (the #7034 stage outage). The patch makes `applyMigrations`
- * refuse that drift with an adopt-or-wipe report; `migrationsDriftStrategy: "adopt"` re-keys
- * content-identical renames without re-running their SQL and never covers a deletion.
- *
- * GROUND reads the installed artifact's text so a `pnpm install` that drops the hunk reds;
- * CONTRACT imports the patched module's pure exports and exercises the real classifier.
- *
- * Retire this file when an alchemy release ships drift detection natively.
- */
+// @patch-pin: alchemy@2.0.0-beta.77
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
-import {describe, expect, it} from "vitest";
+import {fileURLToPath} from "node:url";
+import {NodeServices} from "@effect/platform-node";
+import {assert, describe, it} from "@effect/vitest";
+import {
+	applyAlchemyFormat,
+	applyMigrations,
+	MigrationError,
+	type MigrationRecord,
+	runMigrations,
+	type SqlExecutor,
+} from "alchemy/SQL/Migrations/index";
+import {hashMigrations} from "alchemy/SQL/SqlFile";
+import {Cause, Effect, Exit} from "effect";
+import {afterAll} from "vitest";
 
-const cloudflareEntry = fileURLToPath(import.meta.resolve("alchemy/Cloudflare"));
-const d1Dir = path.join(path.dirname(cloudflareEntry), "D1");
-const applyMigrationsPath = path.join(d1Dir, "ApplyMigrations.js");
-const applySrc = fs.readFileSync(applyMigrationsPath, "utf8");
-const databaseSrc = fs.readFileSync(path.join(d1Dir, "Database.js"), "utf8");
-const propsDts = fs.readFileSync(path.join(d1Dir, "Database.d.ts"), "utf8");
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "phoenix-migration-pin-"));
+afterAll(() => fs.rmSync(root, {recursive: true, force: true}));
+const mixed = path.join(root, "mixed");
+const nested = "20260901000000_next";
+fs.mkdirSync(path.join(mixed, nested), {recursive: true});
+fs.writeFileSync(path.join(mixed, "0000_baseline.sql"), "CREATE TABLE baseline(id TEXT);");
+fs.writeFileSync(path.join(mixed, nested, "migration.sql"), "CREATE TABLE next(id TEXT);");
+const empty = path.join(root, "empty");
+fs.mkdirSync(empty);
 
-interface DriftReport {
-	readonly drifted: boolean;
-	readonly renames: ReadonlyArray<{readonly from: string; readonly to: string}>;
-	readonly deletions: ReadonlyArray<string>;
+const columns = (legacy = false): Array<Record<string, unknown>> => [
+	{name: "id", type: legacy ? "TEXT" : "INTEGER"},
+	{name: "name", type: "TEXT"},
+	{name: "applied_at", type: "TEXT"},
+	...(legacy ? [] : [{name: "hash", type: "TEXT"}]),
+];
+const rows = (...names: string[]): Array<Record<string, unknown>> =>
+	names.map((name) => ({name, applied_at: "2026-09-01T00:00:00Z"}));
+
+function recorder(replies: Array<Array<Record<string, unknown>> | MigrationError>) {
+	const queries: string[] = [];
+	const batches: ReadonlyArray<string>[] = [];
+	const executor: SqlExecutor = {
+		dialect: "sqlite",
+		query: (sql) =>
+			Effect.suspend(() => {
+				queries.push(sql);
+				const reply = replies.shift();
+				if (reply === undefined) return Effect.die(`unexpected query: ${sql}`);
+				return reply instanceof MigrationError ? Effect.fail(reply) : Effect.succeed(reply);
+			}),
+		batch: (sql) => Effect.sync(() => void batches.push(sql)),
+	};
+	return {executor, queries, batches, remaining: () => replies.length};
 }
-interface DriftFile {
-	readonly id: string;
-	readonly hash: string;
+const record = (name: string, hash = "same"): MigrationRecord => ({
+	name,
+	hash,
+	createdAtMillis: undefined,
+	sql: `CREATE TABLE ${name}(id TEXT);`,
+	statements: [`CREATE TABLE ${name}(id TEXT);`],
+});
+const drift = (strategy?: "adopt") => ({
+	strategy,
+	previousHashes: {old: "same", missing: "other"},
+});
+
+function failureMessage<E>(exit: Exit.Exit<unknown, E>): string {
+	assert.isTrue(Exit.isFailure(exit));
+	if (Exit.isSuccess(exit)) throw new Error("expected migration refusal");
+	return String(Cause.squash(exit.cause));
 }
-const mod = (await import(/* @vite-ignore */ pathToFileURL(applyMigrationsPath).href)) as {
-	detectMigrationsDrift: (
-		applied: ReadonlySet<string>,
-		files: ReadonlyArray<DriftFile>,
-		previousHashes: Readonly<Record<string, string>>,
-	) => DriftReport;
-	renderMigrationsDrift: (report: DriftReport) => string;
-};
 
-describe("patch-pin: alchemy D1 migration-drift refusal (#7055)", () => {
-	describe("grounding — the installed artifact carries the hunk", () => {
-		it("applyMigrations classifies drift before the apply loop and refuses it", () => {
-			expect(applySrc).toContain(
-				"detectMigrationsDrift(applied, migrationsFiles, previousHashes ?? {})",
-			);
-			expect(applySrc).toContain('driftStrategy !== "adopt" || drift.deletions.length > 0');
-		});
+describe("Alchemy migration compatibility (ADR 0309)", () => {
+	it.effect("applies the flat baseline and directory SQL in a mixed tree", () =>
+		Effect.gen(function* () {
+			const h = recorder([columns(), [], columns(), []]);
+			yield* applyMigrations({
+				resolved: {dir: mixed, table: "drizzle_migrations"},
+				executor: h.executor,
+				drift: {previousHashes: {}},
+			}).pipe(Effect.provide(NodeServices.layer));
+			assert.strictEqual(h.batches.length, 2);
+			assert.strictEqual(h.batches[0]?.[0], "CREATE TABLE baseline(id TEXT);");
+			assert.strictEqual(h.batches[1]?.[0], "CREATE TABLE next(id TEXT);");
+			assert.include(h.batches[0]?.[1] ?? "", "0000_baseline.sql");
+			assert.include(h.batches[1]?.[1] ?? "", `${nested}/migration.sql`);
+			assert.strictEqual(h.remaining(), 0);
+		}),
+	);
 
-		it("adopt re-keys the record instead of re-running the SQL", () => {
-			expect(applySrc).toContain(
-				"UPDATE ${migrationsTable} SET name = '${to}' WHERE name = '${from}'",
-			);
-		});
-
-		it("Database threads the strategy prop and the state's last-deploy hashes", () => {
-			expect(databaseSrc).toContain("news.migrationsDriftStrategy, output?.migrationsHashes ?? {}");
-		});
-
-		it("DatabaseProps declares the `migrationsDriftStrategy` prop", () => {
-			expect(propsDts).toMatch(/migrationsDriftStrategy\?:\s*"adopt"/);
-		});
-	});
-
-	describe("contract — detectMigrationsDrift, the patched module's own export", () => {
-		const files = (...rows: ReadonlyArray<[string, string]>): DriftFile[] =>
-			rows.map(([id, hash]) => ({id, hash}));
-
-		it("no drift when every recorded id is still on disk (a new pending file is fine)", () => {
-			const report = mod.detectMigrationsDrift(
-				new Set(["0000_a.sql"]),
-				files(["0000_a.sql", "hA"], ["20260901_next/migration.sql", "hNEW"]),
-				{"0000_a.sql": "hA"},
-			);
-			expect(report.drifted).toBe(false);
-		});
-
-		it("classifies a content-identical rename via the state's tracked hash (the #7034 shape)", () => {
-			const report = mod.detectMigrationsDrift(
-				new Set(["0000_a.sql", "0034_user_activity_day.sql"]),
-				files(["0000_a.sql", "hA"], ["0034_user_activity_day/migration.sql", "h34"]),
-				{"0000_a.sql": "hA", "0034_user_activity_day.sql": "h34"},
-			);
-			expect(report.drifted).toBe(true);
-			expect(report.renames).toEqual([
-				{from: "0034_user_activity_day.sql", to: "0034_user_activity_day/migration.sql"},
+	it.effect("converts legacy bookkeeping without replaying the applied baseline", () =>
+		Effect.gen(function* () {
+			const h = recorder([
+				columns(true),
+				rows("0000_baseline.sql"),
+				columns(true),
+				rows("0000_baseline.sql"),
+				rows("0000_baseline.sql"),
 			]);
-			expect(report.deletions).toEqual([]);
-		});
+			yield* applyMigrations({
+				resolved: {dir: mixed, table: "drizzle_migrations"},
+				executor: h.executor,
+				drift: {previousHashes: {}},
+			}).pipe(Effect.provide(NodeServices.layer));
+			assert.strictEqual(h.batches.length, 2);
+			const conversion = h.batches[0]?.join("\n") ?? "";
+			assert.include(conversion, "0000_baseline.sql");
+			assert.include(conversion, "2026-09-01T00:00:00Z");
+			assert.include(conversion, 'RENAME TO "drizzle_migrations"');
+			assert.notInclude(h.batches.flat().join("\n"), "CREATE TABLE baseline");
+			assert.strictEqual(h.batches[1]?.[0], "CREATE TABLE next(id TEXT);");
+			assert.strictEqual(h.remaining(), 0);
+		}),
+	);
 
-		it("a recorded id with no hash-equal pending file is a deletion — never adoptable", () => {
-			const report = mod.detectMigrationsDrift(
-				new Set(["0000_a.sql", "0001_b.sql"]),
-				files(["0000_a.sql", "hA"], ["0001_b_edited/migration.sql", "hDIFFERENT"]),
-				{"0000_a.sql": "hA", "0001_b.sql": "hB"},
-			);
-			expect(report.renames).toEqual([]);
-			expect(report.deletions).toEqual(["0001_b.sql"]);
-		});
+	it.effect("refuses a rename after conversion before any SQL is applied", () =>
+		Effect.gen(function* () {
+			const h = recorder([columns(), rows("old")]);
+			const exit = yield* applyAlchemyFormat({
+				executor: h.executor,
+				table: "drizzle_migrations",
+				records: [record("renamed")],
+				drift: drift(),
+			}).pipe(Effect.exit);
+			assert.include(failureMessage(exit), "renamed (content-identical)");
+			assert.deepStrictEqual(h.batches, []);
+		}),
+	);
 
-		it("a recorded id absent from the previous-hash map cannot be hash-proven — deletion", () => {
-			const report = mod.detectMigrationsDrift(
-				new Set(["0000_a.sql"]),
-				files(["0000_moved/migration.sql", "hA"]),
-				{},
-			);
-			expect(report.deletions).toEqual(["0000_a.sql"]);
-		});
+	it.effect("adopts an identical rename before converting legacy history, without replay", () =>
+		Effect.gen(function* () {
+			const h = recorder([
+				columns(true),
+				rows("old"),
+				columns(true),
+				rows("renamed"),
+				rows("renamed"),
+			]);
+			yield* applyAlchemyFormat({
+				executor: h.executor,
+				table: "drizzle_migrations",
+				records: [record("renamed")],
+				drift: drift("adopt"),
+			});
+			assert.deepStrictEqual(h.batches[0], [
+				'UPDATE "drizzle_migrations" SET "name" = \'renamed\' WHERE "name" = \'old\';',
+			]);
+			assert.strictEqual(h.batches.length, 2);
+			assert.notInclude(h.batches.flat().join("\n"), "CREATE TABLE renamed");
+			assert.strictEqual(h.remaining(), 0);
+		}),
+	);
 
-		it("two identical-content orphans cannot both claim one pending candidate", () => {
-			const report = mod.detectMigrationsDrift(
-				new Set(["0000_a.sql", "0001_b.sql"]),
-				files(["0000_moved/migration.sql", "hSAME"]),
-				{"0000_a.sql": "hSAME", "0001_b.sql": "hSAME"},
-			);
-			expect(report.renames).toHaveLength(1);
-			expect(report.deletions).toHaveLength(1);
-		});
+	it.effect("refuses deletions even when adopt could repair another row", () =>
+		Effect.gen(function* () {
+			const h = recorder([columns(), rows("old", "missing")]);
+			const exit = yield* applyAlchemyFormat({
+				executor: h.executor,
+				table: "drizzle_migrations",
+				records: [record("renamed")],
+				drift: drift("adopt"),
+			}).pipe(Effect.exit);
+			assert.include(failureMessage(exit), 'recorded but gone from disk: "missing"');
+			assert.deepStrictEqual(h.batches, []);
+		}),
+	);
 
-		it("the refusal report asks the adopt-or-wipe question, naming both routes", () => {
-			const text = mod.renderMigrationsDrift(
-				mod.detectMigrationsDrift(
-					new Set(["0000_a.sql"]),
-					files(["0000_moved/migration.sql", "hA"]),
-					{
-						"0000_a.sql": "hA",
-					},
-				),
-			);
-			expect(text).toContain("Decide adopt or wipe:");
-			expect(text).toContain('migrationsDriftStrategy: "adopt"');
-			expect(text).toContain("destroy and recreate this stage's database");
-			expect(text).toContain(
-				'renamed (content-identical): "0000_a.sql" -> "0000_moved/migration.sql"',
-			);
-		});
+	it.effect("adopts a directory rename using the provider's file-keyed state hashes", () =>
+		Effect.gen(function* () {
+			const dir = fs.mkdtempSync(path.join(root, "directory-rename-"));
+			const oldName = "20260901000000_old";
+			const newName = "20260901000000_renamed";
+			fs.mkdirSync(path.join(dir, oldName));
+			fs.writeFileSync(path.join(dir, oldName, "migration.sql"), "CREATE TABLE kept(id TEXT);");
+			const previousHashes = yield* hashMigrations(dir);
+			assert.deepStrictEqual(Object.keys(previousHashes), [`${oldName}/migration.sql`]);
+			fs.renameSync(path.join(dir, oldName), path.join(dir, newName));
+			const h = recorder([columns(), rows(oldName), columns(), rows(newName)]);
+			const result = yield* runMigrations({
+				input: {dir, table: "drizzle_migrations"},
+				stamped: {table: "drizzle_migrations"},
+				drift: {strategy: "adopt", previousHashes},
+				withExecutor: (apply) => apply(h.executor),
+			});
+			assert.deepStrictEqual(h.batches, [
+				[`UPDATE "drizzle_migrations" SET "name" = '${newName}' WHERE "name" = '${oldName}';`],
+			]);
+			assert.deepStrictEqual(Object.keys(result.hashes), [`${newName}/migration.sql`]);
+			assert.strictEqual(h.remaining(), 0);
+		}).pipe(Effect.provide(NodeServices.layer)),
+	);
+
+	it.effect("cannot adopt an edited rename or a rename without its previous hash", () =>
+		Effect.gen(function* () {
+			for (const previousHashes of [{old: "different"}, {}]) {
+				const h = recorder([columns(), rows("old")]);
+				const exit = yield* applyAlchemyFormat({
+					executor: h.executor,
+					table: "drizzle_migrations",
+					records: [record("renamed")],
+					drift: {strategy: "adopt", previousHashes},
+				}).pipe(Effect.exit);
+				assert.include(failureMessage(exit), 'recorded but gone from disk: "old"');
+				assert.deepStrictEqual(h.batches, []);
+			}
+		}),
+	);
+
+	it.effect("two applied rows cannot adopt the same pending file", () =>
+		Effect.gen(function* () {
+			const h = recorder([columns(), rows("old", "also-old")]);
+			const exit = yield* applyAlchemyFormat({
+				executor: h.executor,
+				table: "drizzle_migrations",
+				records: [record("renamed")],
+				drift: {strategy: "adopt", previousHashes: {old: "same", "also-old": "same"}},
+			}).pipe(Effect.exit);
+			assert.include(failureMessage(exit), "recorded but gone from disk");
+			assert.deepStrictEqual(h.batches, []);
+		}),
+	);
+
+	it.effect("checks recorded history even if every migration file was removed", () =>
+		Effect.gen(function* () {
+			const h = recorder([columns(), rows("old")]);
+			const exit = yield* runMigrations({
+				input: {dir: empty, table: "drizzle_migrations"},
+				stamped: {table: "drizzle_migrations"},
+				drift: drift("adopt"),
+				withExecutor: (apply) => apply(h.executor),
+			}).pipe(Effect.provide(NodeServices.layer), Effect.exit);
+			assert.include(failureMessage(exit), "recorded but gone from disk");
+			assert.deepStrictEqual(h.batches, []);
+		}),
+	);
+
+	it.effect("keeps upstream directory-name aliases without replay", () =>
+		Effect.gen(function* () {
+			const h = recorder([
+				columns(),
+				rows(`${nested}/migration.sql`),
+				columns(),
+				rows(`${nested}/migration.sql`),
+			]);
+			yield* applyAlchemyFormat({
+				executor: h.executor,
+				table: "drizzle_migrations",
+				records: [record(nested)],
+				drift: {previousHashes: {}},
+			});
+			assert.deepStrictEqual(h.batches, []);
+		}),
+	);
+
+	it.effect("fails closed when the existing history cannot be read", () =>
+		Effect.gen(function* () {
+			const h = recorder([new MigrationError({message: "history unavailable"})]);
+			const exit = yield* applyAlchemyFormat({
+				executor: h.executor,
+				table: "drizzle_migrations",
+				records: [record("next")],
+				drift: drift(),
+			}).pipe(Effect.exit);
+			assert.include(failureMessage(exit), "history unavailable");
+			assert.deepStrictEqual(h.batches, []);
+		}),
+	);
+
+	it("threads the D1 resource's adoption choice and prior hashes into both providers", () => {
+		const cloudflare = fileURLToPath(import.meta.resolve("alchemy/Cloudflare"));
+		const source = fs.readFileSync(path.join(path.dirname(cloudflare), "D1/Database.js"), "utf8");
+		assert.strictEqual(
+			source.match(
+				/drift: \{ strategy: news\.migrationsDriftStrategy, previousHashes: output\?\.migrationsHashes \?\? \{\} \}/g,
+			)?.length,
+			2,
+		);
 	});
 });

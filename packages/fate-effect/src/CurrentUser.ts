@@ -38,7 +38,7 @@ export interface CurrentUserInfo {
  * `UNAUTHORIZED` — the wire code the SPA already decodes for gated writes —
  * so `encodeWireError` derives the wire shape with no registry edit.
  */
-export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()(
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
 	"fate-effect/Unauthorized",
 	{message: Schema.String},
 	{[FateWireCode]: "UNAUTHORIZED"},

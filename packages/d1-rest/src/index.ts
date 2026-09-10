@@ -11,11 +11,11 @@
  * `meta.changes` defect had to be fixed three times (#937/#940); now it's fixed once,
  * here.
  *
- * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the tree
- * via alchemy). A single statement is one REST call; a drizzle `batch([...])` collects
+ * Reads use `@distilled.cloud/cloudflare`'s `rawDatabase` to preserve SQL column names;
+ * writes use `queryDatabase`. A single statement is one REST call; a drizzle `batch([...])` collects
  * every statement's sql+params into ONE REST `batch` call, which D1 runs as a single
  * atomic transaction — load-bearing for an all-or-none write. The adapter methods
- * return Promises and run the `queryDatabase` Effect with the provided credentials/HTTP
+ * return Promises and run the transport Effect with the provided credentials/HTTP
  * layer per call.
  */
 import type {Credentials} from "@distilled.cloud/cloudflare/Credentials";
@@ -31,17 +31,9 @@ export type D1RestServices = Credentials | HttpClient;
 type Params = ReadonlyArray<unknown>;
 
 /**
- * Assert one bound param satisfies D1's REST `params` contract.
- * `@distilled.cloud/cloudflare`'s `queryDatabase` validates `params` as a strict
- * `string[]` and **rejects a `null`/`undefined` element** (`SchemaError: Expected
- * string, got null`), so a SQL NULL must be rendered *inline* in the statement text
- * — never bound as a `null` param. A consumer keeps nullable columns out of the wire
- * by leaving them unset in its statements (drizzle emits a literal `NULL`), so no
- * `null` ever reaches the transport (#569). A `null`/`undefined` here is a caller bug
- * (a nullable column bound instead of omitted); throw with the offending index. The
- * leaf's unit tier pins this contract directly and each consumer's integration tier
- * proves real D1 rejects null end to end — so the param shape can't drift from what
- * the live REST wire accepts (#571).
+ * Preserve this adapter's string-parameter contract from #569. Callers render SQL
+ * NULL inline or omit the column rather than binding null. Distilled rc.9 accepts
+ * unknown parameters; this compatibility guard belongs to the adapter, not its decoder.
  */
 export const assertRestParam = (param: unknown, index: number): void => {
 	if (param == null) {
@@ -91,9 +83,27 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 	const runQuery = (request: Parameters<typeof d1.queryDatabase>[0]) =>
 		Effect.runPromise(d1.queryDatabase(request).pipe(Effect.provide(layer)));
 
+	const readRows = async (sql: string, params: Params) => {
+		// The /query decoder renames opaque row keys. /raw carries SQL names as string values.
+		const res = await Effect.runPromise(
+			d1
+				.rawDatabase({accountId, databaseId, sql, params: toRestParams(params)})
+				.pipe(Effect.provide(layer)),
+		);
+		const columns = res.result?.[0]?.results?.columns ?? [];
+		const rows = (res.result?.[0]?.results?.rows ?? []).map((row): unknown[] => {
+			if (!Array.isArray(row) || row.length !== columns.length) {
+				throw new Error("D1 REST returned a row that does not match its columns");
+			}
+			return row;
+		});
+		return {columns, rows};
+	};
 	const firstRows = async (sql: string, params: Params): Promise<Record<string, unknown>[]> => {
-		const res = await runQuery({accountId, databaseId, sql, params: toRestParams(params)});
-		return (res.result?.[0]?.results as Record<string, unknown>[]) ?? [];
+		const {columns, rows} = await readRows(sql, params);
+		return rows.map((row) =>
+			Object.fromEntries(columns.map((column, index) => [column, row[index]])),
+		);
 	};
 
 	const bound = (sql: string, params: Params): BoundStub => ({
@@ -109,8 +119,8 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 			return {success: true, meta: {changes: res.result?.[0]?.meta?.changes ?? 0}, results: []};
 		},
 		raw: async () => {
-			const rows = await firstRows(sql, params);
-			return rows.map((r) => Object.values(r)) as never[];
+			const {rows} = await readRows(sql, params);
+			return rows as never[];
 		},
 		first: async () => ((await firstRows(sql, params))[0] as never) ?? null,
 	});
@@ -175,8 +185,8 @@ export interface ReadYourWriteOptions {
  * Bounded read-your-writes poll for a read issued through {@link makeD1Rest}.
  *
  * The REST transport has NO read-your-writes guarantee: each statement is an independent
- * `queryDatabase` POST to `/d1/database/<id>/query`, and that endpoint neither accepts nor
- * returns a D1 session bookmark — `@distilled.cloud/cloudflare`'s `QueryDatabaseRequest` carries
+ * call to `/d1/database/<id>/raw` or `/query`, and neither endpoint accepts or
+ * returns a D1 session bookmark — the SDK's `RawDatabaseRequest` and `QueryDatabaseRequest` carry
  * only `sql`/`params`/`batch` (verified against the pinned SDK schema, itself generated from
  * Cloudflare's OpenAPI). D1's Sessions API commit token — the read-your-writes primitive — is
  * reachable only through the Workers binding (`env.DB.withSession()`), not this REST path. So a

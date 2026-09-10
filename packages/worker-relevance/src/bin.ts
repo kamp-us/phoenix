@@ -85,12 +85,26 @@ const emit = (workerRelevant: boolean): void => {
 };
 
 let testImportedPackages: ReadonlySet<string>;
+let input: ReturnType<typeof inputFromEnv>;
 try {
+	const changedFilesPath = process.env.CHANGED_FILES_FILE;
+	const lockfileDiffPath = process.env.LOCKFILE_DIFF_FILE;
+	if (changedFilesPath !== undefined || lockfileDiffPath !== undefined) {
+		if (!changedFilesPath || !lockfileDiffPath)
+			throw new Error("both input file paths are required");
+		input = inputFromEnv({
+			...process.env,
+			CHANGED_FILES: readFileSync(changedFilesPath, "utf8"),
+			LOCKFILE_DIFF: readFileSync(lockfileDiffPath, "utf8"),
+		});
+	} else {
+		input = inputFromEnv(process.env);
+	}
 	testImportedPackages = computeTestImportedPackages();
 } catch (err) {
 	// Scan failure ⇒ the test-import closure is unprovable ⇒ fail SAFE to running (ADR 0114).
 	console.log(
-		`relevant — test-import closure scan failed (${(err as Error).message}); fail-safe to running (ADR 0114)`,
+		`relevant — classifier input or test-import closure read failed (${(err as Error).message}); fail-safe to running (ADR 0114)`,
 	);
 	emit(true);
 	process.exit(0);
@@ -98,6 +112,6 @@ try {
 
 console.log(`test-import closure (ADR 0114): {${[...testImportedPackages].sort().join(", ")}}`);
 
-const verdict = classify({...inputFromEnv(process.env), testImportedPackages});
+const verdict = classify({...input, testImportedPackages});
 console.log(verdict.reason);
 emit(verdict.verdict === "relevant");

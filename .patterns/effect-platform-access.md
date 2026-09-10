@@ -157,7 +157,7 @@ sometimes the only option, in these grounded cases:
   but **not** for the first bullet's reason, which is the tempting and wrong
   justification here. Effect v4 *does* ship a stdin seam: `Stdio.stdin` is a
   `Stream.Stream<Uint8Array, PlatformError>` (`effect/dist/Stdio.d.ts` at the pinned
-  `effect@4.0.0-beta.92`), `Stdio` is a member of the same `NodeServices` union as
+  `effect@4.0.0-rc.112`), `Stdio` is a member of the same `NodeServices` union as
   `FileSystem`/`Path` (`@effect/platform-node/dist/NodeServices.d.ts`), and
   `packages/fabrika-cli/src/run.ts` already provides `NodeServices.layer` — so the
   service exists and is in scope. What is genuinely absent is a **`FileSystem`** route:
@@ -232,12 +232,12 @@ wrapper), never woven through a service method.
 > exit code + report. A code review of the diff will not surface the widening (the swapped line reads
 > as equivalent), and no CI job can — the fixture cannot exist in a checkout.
 
-The three facts, at the pinned `effect@4.0.0-beta.92` / `@effect/platform-node-shared@4.0.0-beta.92`:
+The three facts, at the pinned `effect@4.0.0-rc.112` / `@effect/platform-node-shared@4.0.0-rc.112`:
 
 | Before (`node:fs`) | After (v4 `FileSystem`) | What changed |
 |---|---|---|
-| `readdirSync(dir, {withFileTypes: true})` → `Dirent[]` | `fs.readDirectory(dir)` → `Array<string>`, options `{recursive?: boolean}` only (`effect/dist/FileSystem.d.ts:170`) | **No `withFileTypes`** — you get names, no per-entry type |
-| `entry.isDirectory()` / `entry.isFile()` — **`lstat`**-based, does **not** follow symlinks | `(yield* fs.stat(abs)).type === "Directory"` — `stat` is `effectify(NFS.stat, …)` (`@effect/platform-node-shared/dist/NodeFileSystem.js:311`), i.e. node `fs.stat`, which **follows** symlinks | A symlink-to-dir is `false` under `Dirent`, `"Directory"` under `stat` |
+| `readdirSync(dir, {withFileTypes: true})` → `Dirent[]` | `fs.readDirectory(dir)` → `Array<string>`, options `{recursive?: boolean}` only (`effect/dist/FileSystem.d.ts`, `readDirectory`) | **No `withFileTypes`** — you get names, no per-entry type |
+| `entry.isDirectory()` / `entry.isFile()` — **`lstat`**-based, does **not** follow symlinks | `(yield* fs.stat(abs)).type === "Directory"` — `stat` is `effectify(NFS.stat, …)` (`@effect/platform-node-shared/dist/NodeFileSystem.js`, `stat`), i.e. node `fs.stat`, which **follows** symlinks | A symlink-to-dir is `false` under `Dirent`, `"Directory"` under `stat` |
 | `lstatSync(abs)` | — | The v4 `FileSystem` interface has **no `lstat`** at all (absent from `effect/dist/FileSystem.d.ts`) |
 
 `File.Info.type` is not an escape hatch either: `makeFileInfo` reports `"SymbolicLink"` only for a

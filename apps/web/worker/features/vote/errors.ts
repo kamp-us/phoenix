@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import {TargetKindSchema} from "../../db/target-kind.ts";
 import {TargetId, UserId} from "../../lib/ids.ts";
 
-export class VoteTargetNotFound extends Schema.TaggedErrorClass<VoteTargetNotFound>()(
+export class VoteTargetNotFound extends Schema.TaggedError<VoteTargetNotFound>()(
 	"vote/VoteTargetNotFound",
 	{
 		targetKind: TargetKindSchema,
@@ -24,7 +24,7 @@ export class VoteTargetNotFound extends Schema.TaggedErrorClass<VoteTargetNotFou
  * (#1287/#1288). Carries no `FateWireCode` for the same reason as {@link VoteTargetNotFound},
  * so a sandboxed item simply reads as not-found to a non-divan voter.
  */
-export class VoteTargetSandboxed extends Schema.TaggedErrorClass<VoteTargetSandboxed>()(
+export class VoteTargetSandboxed extends Schema.TaggedError<VoteTargetSandboxed>()(
 	"vote/VoteTargetSandboxed",
 	{
 		targetKind: TargetKindSchema,
@@ -56,7 +56,7 @@ export const VOTE_ELIGIBILITY_WIRE_CODE =
  * single choke point in `Vote.castImpl`, and NOT on the divan-authorized `castOnSandboxed`
  * path (the divan gate is the authorization there, #1288).
  */
-export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>()(
+export class VoterNotEligible extends Schema.TaggedError<VoterNotEligible>()(
 	"vote/VoterNotEligible",
 	{
 		voterId: UserId,
@@ -72,7 +72,7 @@ export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>(
  * cast sites, which already hold the target's `authorId`, and only on the CAST direction:
  * a blocked cast leaves no self-vote to retract.
  */
-export class SelfVoteNotAllowed extends Schema.TaggedErrorClass<SelfVoteNotAllowed>()(
+export class SelfVoteNotAllowed extends Schema.TaggedError<SelfVoteNotAllowed>()(
 	"vote/SelfVoteNotAllowed",
 	{
 		// Unbranded on purpose (unlike VoterNotEligible's `UserId`): until pano brands its

@@ -11,8 +11,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {privateResponse} from "../../http/cache-policy.ts";
 
-export class BetterAuthHandlerError extends Schema.TaggedErrorClass<BetterAuthHandlerError>()(
+export class BetterAuthHandlerError extends Schema.TaggedError<BetterAuthHandlerError>()(
 	"pasaport/BetterAuthHandlerError",
 	{cause: Schema.Defect()},
 ) {}
@@ -53,5 +54,6 @@ export const authBridgeFetch = (
 					Effect.as(unavailableResponse),
 				),
 			),
+			Effect.map(privateResponse),
 		);
 	});

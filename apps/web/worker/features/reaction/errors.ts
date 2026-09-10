@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import {TargetKindSchema} from "../../db/target-kind.ts";
 import {TargetId} from "../../lib/ids.ts";
 
-export class ReactionTargetNotFound extends Schema.TaggedErrorClass<ReactionTargetNotFound>()(
+export class ReactionTargetNotFound extends Schema.TaggedError<ReactionTargetNotFound>()(
 	"reaction/ReactionTargetNotFound",
 	{
 		targetKind: TargetKindSchema,

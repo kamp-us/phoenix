@@ -12,7 +12,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 /** The route maps this to a 503 `liveError` envelope, never a defect-500 (ADR 0095). */
-export class LiveTransportError extends Schema.TaggedErrorClass<LiveTransportError>()(
+export class LiveTransportError extends Schema.TaggedError<LiveTransportError>()(
 	"fate-live/LiveTransportError",
 	{
 		method: Schema.String,
@@ -64,10 +64,10 @@ export const isNonTransportDefect = (cause: unknown): boolean =>
 	cause instanceof URIError;
 
 /** ~1.5s worst case: sized to absorb the sub-second DO warm window, well under the request budget. */
-const coldStartRetrySchedule = Schedule.both(
+const coldStartRetrySchedule = Schedule.max([
 	Schedule.exponential("100 millis"),
 	Schedule.recurs(4),
-);
+]);
 
 /**
  * The runtime `RpcCallError` is absent from the static channel `E`, so the cast below

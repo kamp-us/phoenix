@@ -12,7 +12,7 @@ const OpenPullsResponse = Schema.Array(Schema.Struct({number: Schema.Number}));
 const decodePulls = Schema.decodeUnknownEffect(OpenPullsResponse);
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
-export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
+export class GhCommandError extends Schema.TaggedError<GhCommandError>()(
 	"@kampus/orphan-sweep/GhCommandError",
 	{
 		args: Schema.Array(Schema.String),
@@ -22,7 +22,7 @@ export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
 ) {}
 
 /** `gh` output was not the JSON the loader expected. */
-export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
+export class GhParseError extends Schema.TaggedError<GhParseError>()(
 	"@kampus/orphan-sweep/GhParseError",
 	{
 		args: Schema.Array(Schema.String),
@@ -31,7 +31,7 @@ export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
 ) {}
 
 /** No `owner/name` target repo could be resolved (no env override, no current repo). */
-export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionError>()(
+export class RepoResolutionError extends Schema.TaggedError<RepoResolutionError>()(
 	"@kampus/orphan-sweep/RepoResolutionError",
 	{
 		message: Schema.String,

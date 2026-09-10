@@ -38,6 +38,7 @@ const citesFlag = Flag.string("cites").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("print one JSON object instead of the row line grammar"),
 );
 

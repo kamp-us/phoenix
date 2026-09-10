@@ -24,7 +24,7 @@ import {ancestry, type Resource} from "./Resource.ts";
  * statics as their own members leaves the Effect-typed member pure.
  *
  * Parameterized by the `Id` string literal as well as `Self`, mirroring
- * effect-smol's `Context.ServiceClass<Self, Identifier, Shape>` (Context.ts):
+ * Effect-TS/effect's `Context.ServiceClass<Self, Identifier, Shape>` (Context.ts):
  * carrying `Id` keeps each capability **nominally distinct**. Widening the three
  * id sites to `string` (the pre-#1483 seal) collapsed two capabilities to the
  * same structural type, so `Grant<X>`/`Grant<Y>` unified and a wrong-right proof
@@ -91,7 +91,7 @@ export interface RelationConfig<DenyError> {
  * name ITSELF as its Service `Self` (`class Tag extends Context.Service<Tag,
  * …>` — the effect-class `classSelfMismatch` convention, run as an error by
  * `@effect/tsgo`) while consumers see the external `Self`-parameterized type.
- * Full derivation — the effect-smol `Unify` limit `HttpApiMiddleware.Service`
+ * Full derivation — the Effect-TS/effect `Unify` limit `HttpApiMiddleware.Service`
  * hits the same way — is in .patterns/authz-capability-as-effect.md.
  */
 const sealCapability = <T>(tag: unknown): T => tag as T;

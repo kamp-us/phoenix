@@ -17,7 +17,7 @@ import {FlagsContext, makeRequestFlagsContext} from "./FlagsContext.ts";
 import {contextFromSession, resolveRequestFlagsContext} from "./request-flags-context.ts";
 
 /** A malformed request body — mapped then recovered to the empty-keys default below. */
-class FlagEvaluateBodyError extends Schema.TaggedErrorClass<FlagEvaluateBodyError>()(
+class FlagEvaluateBodyError extends Schema.TaggedError<FlagEvaluateBodyError>()(
 	"flagship/FlagEvaluateBodyError",
 	{cause: Schema.Defect()},
 ) {}

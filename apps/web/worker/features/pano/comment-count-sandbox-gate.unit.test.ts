@@ -105,7 +105,7 @@ const deps = (run: DrizzleAccessOrDie["run"]): CommentOperationsDeps => ({
 });
 
 /** A rejection from the stubbed `run` thunk — dies, matching `run`'s `never` channel. */
-class RunRejected extends Schema.TaggedErrorClass<RunRejected>()("test/RunRejected", {
+class RunRejected extends Schema.TaggedError<RunRejected>()("test/RunRejected", {
 	cause: Schema.Unknown,
 }) {}
 

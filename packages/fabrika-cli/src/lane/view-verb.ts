@@ -22,7 +22,7 @@ import {runTransition} from "./transition-verb.ts";
 const VERB = "fabrika lane view";
 
 /** The one way serving fails: something else already holds the port. */
-class ServeFailed extends Schema.TaggedErrorClass<ServeFailed>("ServeFailed")("ServeFailed", {
+class ServeFailed extends Schema.TaggedError<ServeFailed>("ServeFailed")("ServeFailed", {
 	port: Schema.Number,
 	reason: Schema.String,
 }) {}

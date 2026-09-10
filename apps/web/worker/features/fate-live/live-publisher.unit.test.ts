@@ -10,7 +10,7 @@ import {LiveTransportError} from "./cold-start-retry.ts";
 import {livePublisherFor} from "./live-publisher.ts";
 import type {PublishMessage} from "./protocol.ts";
 
-class PromiseRejected extends Schema.TaggedErrorClass<PromiseRejected>()("test/PromiseRejected", {
+class PromiseRejected extends Schema.TaggedError<PromiseRejected>()("test/PromiseRejected", {
 	cause: Schema.Unknown,
 }) {}
 

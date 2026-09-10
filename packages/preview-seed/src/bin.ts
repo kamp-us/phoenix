@@ -28,10 +28,9 @@ import {
 	TEST_ACCOUNTS,
 } from "./test-account.ts";
 
-class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
-	"@kampus/preview-seed/D1RestError",
-	{cause: Schema.Defect()},
-) {}
+class D1RestError extends Schema.TaggedError<D1RestError>()("@kampus/preview-seed/D1RestError", {
+	cause: Schema.Defect(),
+}) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID to seed"),
@@ -76,7 +75,7 @@ const TIER_TOKEN_ENV: Readonly<Record<PreviewTier, string>> = {
 };
 
 /** The target is not a per-PR preview — anything else is somebody's real world, and is refused. */
-class NotThrowawayError extends Schema.TaggedErrorClass<NotThrowawayError>()(
+class NotThrowawayError extends Schema.TaggedError<NotThrowawayError>()(
 	"@kampus/preview-seed/NotThrowawayError",
 	{databaseName: Schema.String, databaseId: Schema.String},
 ) {
@@ -86,7 +85,7 @@ class NotThrowawayError extends Schema.TaggedErrorClass<NotThrowawayError>()(
 }
 
 /** The supplied token is too short or carries a cookie-illegal character — refused before any write. */
-class WeakSessionTokenError extends Schema.TaggedErrorClass<WeakSessionTokenError>()(
+class WeakSessionTokenError extends Schema.TaggedError<WeakSessionTokenError>()(
 	"@kampus/preview-seed/WeakSessionTokenError",
 	{variable: Schema.String},
 ) {
@@ -96,7 +95,7 @@ class WeakSessionTokenError extends Schema.TaggedErrorClass<WeakSessionTokenErro
 }
 
 /** No tier was named — a run that seeds nothing must say so, never fall back to a default tier. */
-class NoCredentialsError extends Schema.TaggedErrorClass<NoCredentialsError>()(
+class NoCredentialsError extends Schema.TaggedError<NoCredentialsError>()(
 	"@kampus/preview-seed/NoCredentialsError",
 	{},
 ) {
@@ -106,7 +105,7 @@ class NoCredentialsError extends Schema.TaggedErrorClass<NoCredentialsError>()(
 }
 
 /** The requested standing names a tier this run does not seed — refused before any write. */
-class StandingNeedsTierError extends Schema.TaggedErrorClass<StandingNeedsTierError>()(
+class StandingNeedsTierError extends Schema.TaggedError<StandingNeedsTierError>()(
 	"@kampus/preview-seed/StandingNeedsTierError",
 	{missing: Schema.String, variable: Schema.String, role: Schema.String},
 ) {
@@ -120,7 +119,7 @@ class StandingNeedsTierError extends Schema.TaggedErrorClass<StandingNeedsTierEr
 }
 
 /** The standing operand does not parse — one flag carries both fields, so a partial one is refused. */
-class StandingSpecError extends Schema.TaggedErrorClass<StandingSpecError>()(
+class StandingSpecError extends Schema.TaggedError<StandingSpecError>()(
 	"@kampus/preview-seed/StandingSpecError",
 	{spec: Schema.String},
 ) {

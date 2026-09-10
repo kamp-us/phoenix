@@ -39,6 +39,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -102,6 +103,7 @@ const gate = leafCommand(
 			),
 		),
 		cp: Flag.boolean("cp").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"resolve §CP advisory carriers for the code namespace; pass iff `ship cp-approval` discharged",
 			),
@@ -136,6 +138,7 @@ const floor = leafCommand(
 		pr: prArg,
 		sha: shaFlag,
 		publishCheck: Flag.boolean("publish-check").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription(
 				"publish the answer as a check-run on the head instead of seating it on this verb's exit code; the process then exits 0 whenever the check-run landed",
 			),
@@ -184,6 +187,7 @@ const checks = leafCommand(
 		pr: prArg,
 		sha: shaFlag,
 		wait: Flag.boolean("wait").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("poll until a terminal state or the budget expires"),
 		),
 		budgetSeconds: Flag.integer("budget-seconds").pipe(

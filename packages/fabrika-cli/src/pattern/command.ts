@@ -34,6 +34,7 @@ const baseFlag = Flag.string("base").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit one JSON object on stdout instead of the line grammar"),
 );
 

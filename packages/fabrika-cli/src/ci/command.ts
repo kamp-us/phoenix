@@ -84,6 +84,7 @@ const annotate = leafCommand(
 	"annotate",
 	{
 		force: Flag.boolean("force").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("emit annotations outside GitHub Actions too (local verification)"),
 		),
 		root: rootFlag,

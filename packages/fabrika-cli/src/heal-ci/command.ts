@@ -39,6 +39,7 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -118,6 +119,7 @@ const sweep = leafCommand(
 			),
 		),
 		includeAttended: Flag.boolean("include-attended").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("emit attended rows too, rather than only the stalled ones"),
 		),
 		dwellMinutes: dwellFlag,

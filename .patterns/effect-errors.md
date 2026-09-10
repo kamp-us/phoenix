@@ -2,9 +2,9 @@
 
 Failure in phoenix's backend is modeled as tagged errors in the `E` channel. No thrown exceptions across service boundaries. No `instanceof` chains in resolvers.
 
-## The error constructor — `Schema.TaggedErrorClass`, annotated
+## The error constructor — `Schema.TaggedError`, annotated
 
-Every phoenix error class is a `Schema.TaggedErrorClass`. The schema form is load-bearing: a
+Every phoenix error class is a `Schema.TaggedError`. The schema form is load-bearing: a
 domain error that can reach the wire carries its wire code as a **schema annotation**
 (`FateWireCode`, [fate-effect-wire-errors.md](./fate-effect-wire-errors.md)), and annotations
 ride the class's AST — `Data.TaggedError` has nowhere to put one.
@@ -13,7 +13,7 @@ ride the class's AST — `Data.TaggedError` has nowhere to put one.
 import * as Schema from "effect/Schema";
 import {FateWireCode} from "@kampus/fate-effect";
 
-export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+export class DefinitionNotFound extends Schema.TaggedError<DefinitionNotFound>()(
   "sozluk/DefinitionNotFound",
   {definitionId: Schema.String, message: Schema.String},
   {[FateWireCode]: "DEFINITION_NOT_FOUND"},
@@ -24,7 +24,7 @@ Notes:
 
 - Tag strings are **namespaced**: `feature/ErrorName`. Collisions between features are obvious that way.
 - The fields object is the error's runtime payload. Keep it small — just what's needed to format a user-facing `message` (the annotated encoder puts `message` on the wire).
-- A `Schema.TaggedErrorClass` instance is a yieldable Effect — `return yield* new DefinitionNotFound({...})` fails the surrounding `Effect.gen`.
+- A `Schema.TaggedError` instance is a yieldable Effect — `return yield* new DefinitionNotFound({...})` fails the surrounding `Effect.gen`.
 - An infra error (or any error that must never reach the wire) simply carries **no annotation** — un-annotated failures encode as `INTERNAL_SERVER_ERROR` with a fixed message (no detail leak).
 - **One class, one code.** The annotation is class-level; an error family with several codes splits into one class per code, with a union type alias for service signatures (pano's `PostValidation`, pasaport's `UsernameInvalid`).
 
@@ -52,12 +52,12 @@ Every feature ends up with two flavors of tagged error. Keep them distinct.
 **Domain errors** — things the user did wrong or business-rule violations:
 
 ```ts
-export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+export class BodyRequired extends Schema.TaggedError<BodyRequired>()(
   "sozluk/BodyRequired",
   {message: Schema.String},
   {[FateWireCode]: "BODY_REQUIRED"},
 ) {}
-export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+export class DefinitionNotFound extends Schema.TaggedError<DefinitionNotFound>()(
   "sozluk/DefinitionNotFound",
   {definitionId: Schema.String, message: Schema.String},
   {[FateWireCode]: "DEFINITION_NOT_FOUND"},
@@ -70,7 +70,7 @@ These carry their wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, …) as a
 
 ```ts
 // From db/Drizzle.ts — NO FateWireCode annotation, by design
-export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
+export class DrizzleError extends Schema.TaggedError<DrizzleError>()(
   "@kampus/Drizzle/Error",
   {cause: Schema.Defect()},
 ) {}
@@ -78,7 +78,7 @@ export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
 
 These never appear in a declared error union — and never in a domain service's **public signature** either. The infra-failure policy is a domain-boundary decision: each feature service collapses `DrizzleError` into the defect channel at its own internal `run`/`batch` call sites (`orDieAccess(yield* Drizzle)` at layer build — `worker/db/Drizzle.ts`), so service methods expose domain errors only and the fate layer (sources/queries/lists/mutations) never names Drizzle at all. A defect encodes as `INTERNAL_SERVER_ERROR` with a fixed message; the `cause` is preserved for logging but not surfaced to the user.
 
-The trade-off is deliberate: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option that had zero consumers when the policy moved into the services. Defects remain reachable via `Effect.sandbox` / `Effect.catchAllDefect` if a caller ever genuinely needs to observe them. The rule is pinned per service in `worker/features/domain-error-boundary.unit.test.ts` (a type-level sweep: no method's `E` contains `DrizzleError`).
+The trade-off is deliberate: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option that had zero consumers when the policy moved into the services. Defects remain reachable via `Effect.sandbox` / `Effect.catchDefect` if a caller ever genuinely needs to observe them. The rule is pinned per service in `worker/features/domain-error-boundary.unit.test.ts` (a type-level sweep: no method's `E` contains `DrizzleError`).
 
 The split matters because: domain errors are *expected* (they happen on the happy path of an invalid input), infrastructure errors are *unexpected* (they indicate a bug or outage). The wire encoding handles them differently — don't conflate them.
 
@@ -177,6 +177,6 @@ fate config's declared error unions and asserts the SPA's `FATE_WIRE_CODES` cove
 - [effect-context-service.md](./effect-context-service.md) — service mechanics, `return yield*` pattern
 - [feature-services.md](./feature-services.md) — where errors plug into the service shape
 - [effect-error-operators.md](./effect-error-operators.md) — catching, `Exit`, `Cause`, recovering from specific tags
-- [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedErrorClass` for errors that cross serialization boundaries
+- [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedError` for errors that cross serialization boundaries
 - `packages/fate-effect/src/CurrentUser.ts` — `Unauthorized` is the canonical annotated tagged error
 - [fate-effect-wire-errors.md](./fate-effect-wire-errors.md) — the `FateWireCode` annotation + `encodeWireError` codec

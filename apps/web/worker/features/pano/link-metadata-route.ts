@@ -23,7 +23,7 @@ import type {LinkMetadata} from "./link-metadata-contract.ts";
 
 const EMPTY: LinkMetadata = {};
 
-class LinkMetadataFetchError extends Schema.TaggedErrorClass<LinkMetadataFetchError>()(
+class LinkMetadataFetchError extends Schema.TaggedError<LinkMetadataFetchError>()(
 	"pano/LinkMetadataFetchError",
 	{cause: Schema.Defect()},
 ) {}

@@ -93,7 +93,7 @@ export const renderRetirementChore = (
  * A typed `E`-channel fault so an ineligible flag exits loud with the reason, never silently files
  * a chore or flips anything. (The unknown-key case reuses the core's `FlagKeyNotFound` upstream.)
  */
-export class FlagNotGraduable extends Schema.TaggedErrorClass<FlagNotGraduable>()(
+export class FlagNotGraduable extends Schema.TaggedError<FlagNotGraduable>()(
 	"@kampus/anka-ops/FlagNotGraduable",
 	{
 		key: Schema.String,

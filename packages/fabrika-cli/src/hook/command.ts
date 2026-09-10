@@ -18,6 +18,7 @@ import {runCodes} from "./codes-verb.ts";
 import {runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
+	Flag.withDefault(false),
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
@@ -51,6 +52,7 @@ const worktreeCreate = leafCommand(
 	"worktree-create",
 	{
 		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("print the path this would create, and create nothing"),
 		),
 	},

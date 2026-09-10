@@ -65,6 +65,7 @@ const open = leafCommand(
 			Flag.withDescription("JSON file matching wire/audit-context.ts; exclusive with topic/ticket"),
 		),
 		auditRecover: Flag.boolean("audit-recover").pipe(
+			Flag.withDefault(false),
 			Flag.withDescription("recover the retained audit identity; never create an issue"),
 		),
 		auditSession: Flag.integer("audit-session").pipe(

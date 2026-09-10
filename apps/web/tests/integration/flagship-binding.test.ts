@@ -28,7 +28,7 @@ describe("Flagship binding — /api/health", () => {
 	});
 });
 
-// @patch-pin: alchemy@2.0.0-beta.59
+// @patch-pin: alchemy@2.0.0-beta.77
 //
 // Pins the Flag schema-drift PUT-skip hunk of `patches/alchemy@2.0.0-beta.59.patch`
 // (`lib/Cloudflare/Flagship/Flag.js` FlagProvider reconcile) — ADR 0106.

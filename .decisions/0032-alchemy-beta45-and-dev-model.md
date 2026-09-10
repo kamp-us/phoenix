@@ -121,3 +121,20 @@ from a test run.
   model is what alchemy is designed around.
 
 > Amendment 2026-08-19: `connection-do.ts` and `topic-do.ts` no longer exist — the two DOs were merged into one `LiveDO` at `apps/web/worker/features/fate-live/live-do.ts` (see ADR [0037](0037-unified-void-aligned-live-do.md)). Read that file for the modular `.make()` form this ADR adopted.
+
+## Amendment 2026-09-10: beta.77 development runtime
+
+The beta.45 statements above about remote development DO namespaces describe the
+old runtime. With Alchemy 2.0.0-beta.77, `alchemy dev` runs the worker and Durable
+Objects locally. Phoenix keeps D1 remote through the explicit `Alchemy.remote()`
+choice for `PhoenixDb`; development still needs Cloudflare credentials and can
+apply pending D1 migrations. Local state storage does not make D1 local.
+
+This records the development model already specified by
+[the upgrade's acceptance criteria](https://github.com/kamp-us/phoenix/issues/4797),
+grounded in the pinned
+[Worker provider](https://unpkg.com/alchemy@2.0.0-beta.77/lib/Cloudflare/Workers/WorkerProvider.js)
+and the app's explicit database configuration. The
+[current deployment recipe](../.patterns/alchemy-stack-deploy.md) owns the commands
+and stage behavior. Real Cloudflare integration tests remain required for claims
+about deployed workers, D1 and Durable Objects; local development is not that proof.
