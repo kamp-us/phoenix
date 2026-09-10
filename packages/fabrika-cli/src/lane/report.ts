@@ -7,9 +7,14 @@
  * listed and refuses everything else — an unrecognised token is a refusal, never a permissive
  * `BLOCKED` guess, because "a report you cannot parse" stops being a failure class only when
  * nothing is left to parse.
+ *
+ * Beside it live the rest of the pure resolutions `lane report` runs before its append — the park
+ * cause, the lane classes, the wait grant, and {@link floorQueueWait}, the elapsed-time floor a
+ * queue re-fold clears before it may spend a wait.
  */
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
-import type {OperatorEvent} from "./machine.ts";
+import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
+import type {CompiledLane, OperatorEvent, TaskState} from "./machine.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
@@ -328,4 +333,60 @@ export const grantForEvent = (raw: number | null, event: OperatorEvent): GrantRe
 	return Number.isInteger(raw) && raw > 0
 		? {_tag: "Granted", grant: raw}
 		: {_tag: "Rejected", reason: `--grant-wait ${raw} is no whole grant of at least one wait`};
+};
+
+export type FloorResolution =
+	| {readonly _tag: "Cleared"}
+	| {readonly _tag: "TooSoon"; readonly reason: string};
+
+/**
+ * Decide whether a queue re-fold has run out the wait axis's elapsed-time floor, or arrives too soon
+ * to spend a wait — ADR
+ * [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)'s 2026-08-29 amendment.
+ *
+ * The floor reaches exactly the records that meet a wait-guarded cell: a `WIP` standing in a state
+ * the task's own `waitParks` names, which today is `ship:queued` and nothing else. Every other
+ * event out of that state — the merge's `DONE`, an ejection's `FAIL`, an approval's `BLOCKED` — is
+ * an answer rather than a re-read of the same queue, so none of them is floored. It binds the
+ * budget's own escalating pass too, which spends no wait to reach `human:queue-stall`: the record
+ * that parks a person is the one the floor most exists for.
+ *
+ * The clock is `lastAt`, the `at` of the task's most recent log line — a mark `parseLog` already
+ * requires on every entry, and a strictly later one than the previous `WIP`'s wherever the two
+ * differ. A resume out of `human:queue-stall` lands back in `ship:queued` on an `UNBLOCKED` whose
+ * whole purpose is to buy one conclusive read; measuring from the older `WIP` would let that granted
+ * wait be spent and the park re-entered in the second the human cleared it.
+ */
+export const floorQueueWait = (input: {
+	readonly lane: CompiledLane;
+	readonly states: Readonly<Record<string, TaskState>>;
+	readonly taskId: string;
+	readonly event: OperatorEvent;
+	readonly lastAt: string | undefined;
+	readonly now: string;
+}): FloorResolution => {
+	// Both are proven present by the `resolveTask` every caller runs first; the guard is the type's.
+	const task = input.lane.tasks[input.taskId];
+	const state = input.states[input.taskId];
+	if (task === undefined || state === undefined) return {_tag: "Cleared"};
+	if (input.event !== "WIP" || !task.waitParks.has(state.type)) return {_tag: "Cleared"};
+	// A wait-guarded state is only ever reached by a recorded event, so an absent line means a lane
+	// booted straight into one: no elapsed time to measure, and no earlier pass to have been quick.
+	if (input.lastAt === undefined) return {_tag: "Cleared"};
+	const since = Date.parse(input.lastAt);
+	const now = Date.parse(input.now);
+	const where = `task "${input.taskId}" is in "${state.type}"`;
+	if (Number.isNaN(since) || Number.isNaN(now)) {
+		return {
+			_tag: "TooSoon",
+			reason: `${where} and its last line's \`at\` ("${input.lastAt}") reads as no date, so the elapsed time behind this re-fold is UNKNOWN — a floor nobody can read never cleared. Repair the line, then record the wait`,
+		};
+	}
+	const elapsed = (now - since) / 1000;
+	if (elapsed >= WAIT_FLOOR_SECONDS) return {_tag: "Cleared"};
+	const remaining = Math.ceil(WAIT_FLOOR_SECONDS - elapsed);
+	return {
+		_tag: "TooSoon",
+		reason: `${where} and its last line landed ${Math.floor(elapsed)}s ago — a queue re-fold runs out ${WAIT_FLOOR_SECONDS}s of elapsed time before it may spend a wait, so ${remaining}s are still to run. The wait is intact: nothing was spent and the log is unchanged`,
+	};
 };

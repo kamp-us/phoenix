@@ -17,6 +17,11 @@
  * is that read's evidence and rides beside it: the merged PRs the closure judged, so a recorded
  * `false` says which reader wrote it and not only which way it fell.
  *
+ * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
+ * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
+ * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
+ * driver passes — ADR 0313's 2026-08-29 amendment.
+ *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
  * this verb runs the same read `lane prove` runs, so a `DONE` and a `PASS` enter the ledger with
@@ -38,11 +43,12 @@ import {
 	EVENT_REFUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
+import {causeForEvent, classesForEvent, eventForToken, floorQueueWait} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
@@ -152,6 +158,20 @@ export const runReport = <R>(
 				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
 
 				const now = yield* Effect.sync(() => new Date().toISOString());
+				// The floor is read here and not in the pre-lock pass because the line it measures from is
+				// exactly what a concurrent writer moves: a re-fold that cleared the floor before the lock
+				// has not cleared it after another lane's wait landed under it.
+				const floored = floorQueueWait({
+					lane: fresh.lane,
+					states: freshFold.states,
+					taskId: freshTask.taskId,
+					event: resolved.event,
+					lastAt: fresh.entries.findLast((entry) => entry.task === freshTask.taskId)?.at,
+					now,
+				});
+				if (floored._tag === "TooSoon") {
+					return refuse(WAIT_TOO_SOON, `${VERB}: refused (log unappended): ${floored.reason}.`);
+				}
 				// `partial` reaches only this pass: the pre-lock one runs before the proof that reads it,
 				// and it decides nothing — both arms of `merge:partial` hold a cell, so the arm taken
 				// cannot turn an acceptance into a refusal. This pass is the one that appends.

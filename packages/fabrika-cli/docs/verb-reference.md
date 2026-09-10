@@ -565,7 +565,7 @@ snapshot. Lane state is local and never committed.
 |---|---|
 | `lane status` | the derived state: compound `stateValue`, active/done, per-task context, tripped tasks |
 | `lane transition` | records one operator event after the machine accepts it |
-| `lane report` | a shell's terminal token, mapped to one operator event |
+| `lane report` | a shell's terminal token, mapped to one operator event — refusing a `ship:queued` re-fold at `52` until the wait axis's elapsed-time floor has run, so the budget measures a dwell rather than a driver's pace |
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
