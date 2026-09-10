@@ -112,8 +112,8 @@ bytes it read **at the commit you scoped** — pass step 1's head as `--sha`, an
 verdict is a label; bytes read out of that commit are the immunity. Apply the matching rubric file
 to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 [rubrics/doc.md](rubrics/doc.md) · skill → [rubrics/skill.md](rubrics/skill.md). Editorial craft on
-any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
-doc rubric's prose-craft line is the fallback until it lands.
+any prose surface: apply [`writing-for-agents`](../writing-for-agents/SKILL.md) verbatim, reading it
+inline as a reference, and state its outcome in that class's namespace.
 
 **A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
 class alike.** When any changed file sits under `claude-plugins/fabrika/` or
