@@ -21,6 +21,7 @@ import {
 	getIssue,
 	issueTimeline,
 	listComments,
+	listCommentsReconciled,
 	listLabels,
 	listMilestones,
 	listOpenIssues,
@@ -823,6 +824,126 @@ describe("repoDefaultBranch", () => {
 		const result = await against(
 			repoDefaultBranch("o/r"),
 			scripted([[/repos/, {status: 200, body: {}}]]),
+		);
+		expect(result._tag).toBe("Failure");
+	});
+});
+
+/**
+ * The claim protocol resolves over this read, so a list short of what exists is not a small answer —
+ * it is the wrong one: a `triage claim` once saw one comment, missed a marker that had been live
+ * for three minutes, and answered `won` for a lane that had already lost.
+ */
+describe("listCommentsReconciled", () => {
+	const LIST = /GET .*\/issues\/7\/comments\?/;
+	const ISSUE = /GET .*\/issues\/7$/;
+
+	/** Fires on the first matching call only, so two reads of one URL can answer differently. */
+	const once = (pattern: RegExp): RegExp => {
+		const re = new RegExp(pattern.source);
+		let fired = false;
+		re.test = (input: string) => {
+			if (fired || !RegExp.prototype.test.call(re, input)) return false;
+			fired = true;
+			return true;
+		};
+		return re;
+	};
+
+	const comment = (id: number) => ({id, user: {login: "agent"}, created_at: "", updated_at: ""});
+	const page = (...ids: ReadonlyArray<number>): Reply => ({status: 200, body: ids.map(comment)});
+	const declaring = (count?: number): Reply => ({
+		status: 200,
+		body: issue(count === undefined ? {} : {comments: count}),
+	});
+
+	const before = {
+		attempts: process.env.FABRIKA_COMMENT_SCAN_ATTEMPTS,
+		delay: process.env.FABRIKA_COMMENT_SCAN_DELAY_MS,
+	};
+
+	beforeEach(() => {
+		process.env.FABRIKA_COMMENT_SCAN_DELAY_MS = "0";
+		process.env.FABRIKA_COMMENT_SCAN_ATTEMPTS = "2";
+	});
+
+	afterEach(() => {
+		for (const [name, value] of [
+			["FABRIKA_COMMENT_SCAN_ATTEMPTS", before.attempts],
+			["FABRIKA_COMMENT_SCAN_DELAY_MS", before.delay],
+		] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	});
+
+	it("answers on the first read when the list is as long as the issue's own count", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1, 2)],
+				[ISSUE, declaring(2)],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 2, reads: 1}});
+	});
+
+	it("re-reads a list the declared count proves short, and answers once the two agree", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[once(LIST), page(1)],
+				[LIST, page(1, 2)],
+				[ISSUE, declaring(2)],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 2, reads: 2}});
+		expect((result as {value: {comments: ReadonlyArray<unknown>}}).value.comments).toHaveLength(2);
+	});
+
+	it("refuses a shortfall that survives every attempt, never handing the short list on", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1)],
+				[ISSUE, declaring(2)],
+			]),
+		);
+		expect(result._tag).toBe("Failure");
+		expect((result as {reason: string}).reason).toContain("received 1 of 2 declared comment(s)");
+		expect((result as {reason: string}).reason).toContain("after 2 read(s)");
+	});
+
+	/** A comment deleted between the two reads produces this, and extra markers only add caution. */
+	it("does not fence a list longer than the count the later issue read declares", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1, 2)],
+				[ISSUE, declaring(1)],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 1, reads: 1}});
+	});
+
+	it("proves nothing on a payload carrying no count — an absent denominator fences neither way", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1)],
+				[ISSUE, declaring()],
+			]),
+		);
+		expect(result).toMatchObject({_tag: "Ok", value: {declared: 0, reads: 1}});
+	});
+
+	it("carries the issue read's own refusal rather than resolving over an unread count", async () => {
+		const result = await against(
+			listCommentsReconciled("o/r", 7),
+			scripted([
+				[LIST, page(1)],
+				[ISSUE, {status: 502, body: {message: "Bad gateway"}}],
+			]),
 		);
 		expect(result._tag).toBe("Failure");
 	});

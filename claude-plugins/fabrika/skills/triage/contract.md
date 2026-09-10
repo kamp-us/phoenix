@@ -434,6 +434,22 @@ rather than posting an unattributable marker.
 the TTL, and the **earliest surviving marker wins**. `won` requires a positive proof that the
 winner is this session; every unresolvable state answers `lost`, never `won`.
 
+**The comment list the resolution runs over is reconciled before it is resolved.** The rule above is
+only as good as the set it is handed, and on 2026-09-05 the set was wrong: a claim read one comment,
+did not see a marker that had been live for three minutes, and printed `won` for a lane that had
+already lost. GitHub documents no read-after-write guarantee for the REST API and no
+cache-bypass directive — its best-practices page offers only `etag`/`last-modified` conditional
+requests, whose answer is "unchanged since the value *you* saved", which says nothing about a write
+another lane made ([GitHub, "Best practices for using the REST
+API"](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api?apiVersion=2022-11-28)).
+So consistency is proven rather than requested: the list is read first, the issue's own `comments`
+count second, and a list shorter than that later count provably missed something. A shortfall is
+re-read on a short backoff, and one that survives every attempt is exit `11` carrying
+`received <k> of <m> declared comment(s)` — never a shorter list resolved anyway. A list *longer*
+than the count is not fenced: a comment deleted between the two reads produces it, and extra markers
+can only make the resolution more cautious. Bounds are `FABRIKA_COMMENT_SCAN_ATTEMPTS` (default 3)
+and `FABRIKA_COMMENT_SCAN_DELAY_MS` (default 500).
+
 **The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
 `park` and `kill` each re-read the markers on their target immediately before their first write, and
 refuse on `17` when a live one names another claimant — the check reuses this verb's own reader and
@@ -443,7 +459,11 @@ the lane, and a same-session marker under a different nonce is somebody else's. 
 no `--token` cannot say which lane it is, so it is priced fail-closed on exactly that: it passes
 while its session's live markers all name one lane, and refuses on `17` once two lanes of its
 session hold live markers. Holding **no** marker still passes: an unclaimed issue is the ordinary
-first-triage case, and demanding one would refuse every existing caller. The same re-read refuses a
+first-triage case, and demanding one would refuse every existing caller. **That re-read is the same
+reconciled read `claim` resolves over**, so a comment list the issue's own count proves short refuses
+this gate on `11` rather than passing it as "nobody else holds it" — a stale list hides a live
+competitor on both sides of the claim, and fixing only the claim would have left the exit-`17` gate
+reading the same wrong set. The same re-read refuses a
 closed target on `7`, and a comment read that fails is `11`. A `--token` that will not parse as
 `triage:<session-id>:<uuid>`, or that carries a session other than the one running, is a usage error
 on `1` on all five — the same two lines `claim` itself prints, verbatim, since it is the same
@@ -596,12 +616,14 @@ structural shapes.
 | Code | Trigger |
 |---|---|
 | `10` | `--slug` carries a path separator, or is not a kebab-case leaf |
-| `11` | the issue's comment list could not be read, or its markers could not be ordered — the claim is UNKNOWN |
+| `11` | the issue's comment list could not be read or reconciled, or its markers could not be ordered — the claim is UNKNOWN |
 | `19` | proven: this lane holds no live claim on the issue |
 
 `1` additionally covers the two identity refusals and the allocation failure, as the errors table
-below states. `7`, `8` and `9` are unreachable: this verb writes nothing to GitHub and reads no issue
-record, so it has no write to fail and no read-back to mismatch.
+below states. `7`, `8` and `9` are unreachable: this verb writes nothing to GitHub, so it has no
+write to fail and no read-back to mismatch. It does read the issue record — that is where the
+reconciled comment read takes the count it divides by — but an absent or unreadable one is folded
+into the comment read's own refusal on `11`, never seated on `7` here.
 
 **Errors**
 
