@@ -368,7 +368,37 @@ export const awaitWorkerReady = (
 			// per-file `deadlineMs` sized below the hook ceiling — it fires BEFORE the `beforeAll`
 			// guillotine rather than surfacing as the opaque "Hook timed out in 120000ms" (#3146).
 			if (!(await healthReady(res))) {
-				throw new WorkerNotReadyError(url, `last status ${res.status}`);
+				// Non-200 bodies were never consumed by healthReady; do not start that read after expiry.
+				const body =
+					res.status === 200
+						? await res
+								.clone()
+								.text()
+								.catch(() => null)
+						: null;
+				const text = body?.trim() ?? "";
+				const bodyKind =
+					res.status !== 200
+						? "not-read"
+						: body === null
+							? "unreadable"
+							: text === ""
+								? "empty"
+								: text === "Alchemy worker is being deployed..."
+									? "alchemy-deployment-placeholder"
+									: /^(?:<!doctype html|<html)/i.test(text)
+										? "html"
+										: /^[{[]/.test(text)
+											? "json-like"
+											: "text";
+				const detail = JSON.stringify({
+					contentType: res.headers.get("content-type")?.slice(0, 80) ?? null,
+					cacheStatus: res.headers.get("cf-cache-status")?.slice(0, 80) ?? null,
+					age: res.headers.get("age")?.slice(0, 80) ?? null,
+					bodyKind,
+					bodyLength: body?.length ?? null,
+				});
+				throw new WorkerNotReadyError(url, `last status ${res.status}; ${detail}`);
 			}
 		},
 		// Object notation (#2736 no-effect-promise); `orDie` reproduces the retired `Effect.promise`

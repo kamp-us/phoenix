@@ -207,6 +207,72 @@ describe("awaitAuthRouteReady — the bootstrap auth-route propagation gate (#24
 describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
+	it("identifies a cached deployment placeholder without accepting HTTP 200 as healthy", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response("Alchemy worker is being deployed...", {
+						status: 200,
+						headers: {"content-type": "text/plain", "cf-cache-status": "HIT", age: "240"},
+					}),
+			),
+		);
+		await expect(
+			Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 0)),
+		).rejects.toThrow(/bodyKind.*alchemy-deployment-placeholder/);
+		await expect(
+			Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 0)),
+		).rejects.toThrow(/cacheStatus.*HIT.*age.*240/);
+	});
+
+	it("classifies a wrong HTML health response without logging its contents or cookies", async () => {
+		const body = `<!DOCTYPE html><html>private fixture value${"x".repeat(2_000)}`;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(body, {
+						status: 200,
+						headers: {"content-type": "text/html", "set-cookie": "private-cookie=value"},
+					}),
+			),
+		);
+		const failure = await Effect.runPromise(
+			awaitWorkerReady("https://stage.example.workers.dev", 0),
+		).then(
+			() => "unexpected success",
+			(error: Error) => error.message,
+		);
+		expect(failure).toContain('"bodyKind":"html"');
+		expect(failure).toContain('"contentType":"text/html"');
+		expect(failure).not.toContain("private fixture value");
+		expect(failure).not.toContain("private-cookie");
+		expect(failure.length).toBeLessThan(500);
+	});
+
+	it("does not read a non-closing 503 body after the readiness deadline", async () => {
+		let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+		const stream = new ReadableStream<Uint8Array>({
+			start(value) {
+				controller = value;
+			},
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(stream, {status: 503})),
+		);
+		const failure = await Promise.race([
+			Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 0)).then(
+				() => "unexpected success",
+				(error: Error) => error.message,
+			),
+			new Promise<string>((resolve) => setTimeout(() => resolve("diagnostic timed out"), 50)),
+		]).finally(() => controller?.close());
+		expect(failure).toContain("last status 503");
+		expect(failure).toContain('"bodyKind":"not-read"');
+	});
+
 	it("WorkerNotReadyError carries the url + detail in a named, greppable message", () => {
 		const e = new WorkerNotReadyError("https://stage.example.workers.dev", "last status 503");
 		expect(e).toBeInstanceOf(Error);
