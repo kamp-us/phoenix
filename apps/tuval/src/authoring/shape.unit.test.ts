@@ -1,5 +1,7 @@
 import {Result, Schema} from "effect";
 import {describe, expect, it} from "vitest";
+import {prompt as agentPrompt, result as agentResult} from "../ai-agent/ports/ports.ts";
+import {defineProgram} from "./define-program.ts";
 import {port} from "./port.ts";
 import {
 	fitsShape,
@@ -165,5 +167,97 @@ describe("authoring.fitsShape", () => {
 		const failure = Result.isFailure(fit) ? fit.failure : undefined;
 		expect(failure?.port).toBe("prompt");
 		expect(failure?.message).toContain('declares "prompt" on its out side');
+	});
+});
+
+/**
+ * What a config actually holds: a compiled registry row, not a record of declarations. Its ports
+ * carry the kernel's predicate, and the schema `compilePort` publishes beside it is what a shape
+ * can be compared with at all (#8887).
+ */
+const shippedReviewer = defineProgram({
+	id: "shipped-reviewer",
+	ports: {
+		prompt: port.in(Prompt),
+		result: port.out(Verdict),
+		// More than the shape asked for, on a shipped row this time.
+		cancel: port.in(Schema.String),
+	},
+	init: (): {readonly seen: number} => ({seen: 0}),
+	update: {
+		prompt: (state: {readonly seen: number}) => [{seen: state.seen + 1}, []],
+		cancel: (state: {readonly seen: number}) => [state, []],
+	},
+});
+
+const shipped = {arg: "reviewer", program: shippedReviewer.id};
+
+describe("authoring.shapeOf on a compiled row", () => {
+	it("reads a shipped row's ports, each on the side the row declares it", () => {
+		const offered = shapeOf(shippedReviewer);
+		expect(Object.keys(offered.in).sort()).toEqual(["cancel", "prompt"]);
+		expect(Object.keys(offered.out)).toEqual(["result"]);
+	});
+
+	it("reads a compiled request port on the in side, by its input schema", () => {
+		const asker = defineProgram({
+			id: "shipped-asker",
+			ports: {ask: port.request(Prompt, Verdict)},
+			init: (): number => 0,
+			update: {ask: (state: number) => [state, []]},
+		});
+		const offered = shapeOf(asker);
+		expect(Object.keys(offered.in)).toEqual(["ask"]);
+		expect(Object.keys(offered.out)).toEqual([]);
+		const ask = offered.in.ask;
+		if (ask === undefined) throw new Error('no in-side signature for "ask"');
+		expect(payloadFits(Prompt, ask)).toBe(true);
+	});
+
+	it("accepts a shipped row whose ports fit the declared shape", () => {
+		expect(Result.isSuccess(fitsShape(reviewer, shippedReviewer, shipped))).toBe(true);
+	});
+
+	it("refuses a shipped row missing a declared port, naming the port and the side", () => {
+		const mute = defineProgram({
+			id: "shipped-mute",
+			ports: {prompt: port.in(Prompt)},
+			init: (): number => 0,
+			update: {prompt: (state: number) => [state, []]},
+		});
+		const fit = fitsShape(reviewer, mute, shipped);
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.port).toBe("result");
+		expect(failure?.side).toBe("out");
+		expect(failure?.message).toContain('declares no out-port named "result"');
+	});
+
+	it("refuses a shipped row whose port carries a different payload", () => {
+		const typo = defineProgram({
+			id: "shipped-typo",
+			ports: {prompt: port.in(Schema.Struct({pr: Schema.String})), result: port.out(Verdict)},
+			init: (): number => 0,
+			update: {prompt: (state: number) => [state, []]},
+		});
+		const fit = fitsShape(reviewer, typo, shipped);
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure?.port).toBe("prompt");
+		expect(failure?.side).toBe("in");
+		expect(failure?.message).toContain("carries a different payload");
+	});
+
+	it("refuses a hand-written row's port for having no schema, rather than for not existing", () => {
+		// The two ports `claudeSession`'s row publishes under these names: a predicate each, and
+		// nothing a shape can be compared with until they are authored (#8887).
+		const handWritten: ShapeSource = {
+			id: "claude-session",
+			ports: {prompt: agentPrompt.inbound(), result: agentResult.outbound()},
+		};
+		const fit = fitsShape(reviewer, handWritten, {arg: "reviewer", program: "claude-session"});
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.port).toBe("prompt");
+		expect(failure?.message).toContain("publishes no payload schema");
 	});
 });
