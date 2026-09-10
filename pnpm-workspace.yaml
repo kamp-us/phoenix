@@ -127,6 +127,11 @@ catalog:
   yaml: 2.9.0
   zod: 4.4.3
 
+# Tuval's picker keeps its existing matcher pin; Effect consumers share the root catalog.
+catalogs:
+  tuval:
+    fzf: 0.5.2
+
 # Keep Effect's transitive companion packages on the same release too. Alchemy's
 # broad ranges otherwise pick rc.113, which removed APIs beta.77 still calls.
 # Worker types are also unified so Drizzle's nominal types share one peer instance.

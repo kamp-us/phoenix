@@ -236,8 +236,8 @@ The three facts, at the pinned `effect@4.0.0-rc.112` / `@effect/platform-node-sh
 
 | Before (`node:fs`) | After (v4 `FileSystem`) | What changed |
 |---|---|---|
-| `readdirSync(dir, {withFileTypes: true})` → `Dirent[]` | `fs.readDirectory(dir)` → `Array<string>`, options `{recursive?: boolean}` only (`effect/dist/FileSystem.d.ts, `readDirectory``) | **No `withFileTypes`** — you get names, no per-entry type |
-| `entry.isDirectory()` / `entry.isFile()` — **`lstat`**-based, does **not** follow symlinks | `(yield* fs.stat(abs)).type === "Directory"` — `stat` is `effectify(NFS.stat, …)` (`@effect/platform-node-shared/dist/NodeFileSystem.js, `stat``), i.e. node `fs.stat`, which **follows** symlinks | A symlink-to-dir is `false` under `Dirent`, `"Directory"` under `stat` |
+| `readdirSync(dir, {withFileTypes: true})` → `Dirent[]` | `fs.readDirectory(dir)` → `Array<string>`, options `{recursive?: boolean}` only (`effect/dist/FileSystem.d.ts`, `readDirectory`) | **No `withFileTypes`** — you get names, no per-entry type |
+| `entry.isDirectory()` / `entry.isFile()` — **`lstat`**-based, does **not** follow symlinks | `(yield* fs.stat(abs)).type === "Directory"` — `stat` is `effectify(NFS.stat, …)` (`@effect/platform-node-shared/dist/NodeFileSystem.js`, `stat`), i.e. node `fs.stat`, which **follows** symlinks | A symlink-to-dir is `false` under `Dirent`, `"Directory"` under `stat` |
 | `lstatSync(abs)` | — | The v4 `FileSystem` interface has **no `lstat`** at all (absent from `effect/dist/FileSystem.d.ts`) |
 
 `File.Info.type` is not an escape hatch either: `makeFileInfo` reports `"SymbolicLink"` only for a

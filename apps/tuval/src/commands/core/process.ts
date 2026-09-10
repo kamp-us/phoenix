@@ -12,7 +12,14 @@
  * this service did not spawn has no retained handle, so `send` and `read` answer `UnknownProcess`
  * for it — the graph's own processes are `src/launch/`'s to feed.
  *
- * The four errors are declared here rather than in a `commands/core/errors.ts`: `core/` is one
+ * `ask` / `answer` and the `on` record on `spawn` are the answer path (#8756), and they are here
+ * because this is where the inboxes and the out-port latches are: an `ask` has to reach the port's
+ * own queue past its `accepts`, and a routed child port has to be seen at the emit. What they hand
+ * an answer *to* is `deliver` (`../../process/inbox.ts`), which needs only a live handle — so the
+ * asking process is any process, not only one this service spawned. The three spells below are
+ * untouched by either: nothing addressed by a correlation is reachable from a spell's params.
+ *
+ * The six errors are declared here rather than in a `commands/core/errors.ts`: `core/` is one
  * directory per core spell list, not one feature, and a shared errors file is a file two parallel
  * children would both write.
  */
@@ -25,6 +32,7 @@ import {NodeId} from "../../ports/graph.ts";
 import {ProcessPorts} from "../../ports/ProcessPorts.ts";
 import type {Delivery} from "../../ports/wiring.ts";
 import type {HandlerFailed} from "../../process/errors.ts";
+import {asked, deliver, type ReplyTo} from "../../process/inbox.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type Message, type ProcessHandle, ProcessId} from "../../process/process.ts";
 import {type AnyProgram, type InPort, ProgramId, type Receiver} from "../../registry/program.ts";
@@ -59,6 +67,26 @@ export class UnknownPort extends Schema.TaggedError<UnknownPort>()("tuval/comman
 }) {
 	override get message(): string {
 		return `process "${this.process}" has no ${this.direction}-port "${this.port}"`;
+	}
+}
+
+/** An `ask` named a port that takes payloads and answers none: it is a `port.in`, not a `port.request`. */
+export class PortAnswersNothing extends Schema.TaggedError<PortAnswersNothing>()(
+	"tuval/commands/PortAnswersNothing",
+	{process: ProcessId, port: Schema.String},
+) {
+	override get message(): string {
+		return `port "${this.port}" of process "${this.process}" answers nothing, so it cannot be asked`;
+	}
+}
+
+/** The correlation an answer was addressed to is not outstanding: it was already spent, or expired. */
+export class UnclaimedReply extends Schema.TaggedError<UnclaimedReply>()(
+	"tuval/commands/UnclaimedReply",
+	{correlation: Schema.String},
+) {
+	override get message(): string {
+		return `no ask is waiting on correlation "${this.correlation}"`;
 	}
 }
 
@@ -159,9 +187,16 @@ const pump = (handle: ProcessHandle, inbox: Queue.Dequeue<unknown>, receive: Rec
 
 /**
  * The out-port half of an ad-hoc process's wiring: what `src/ports/`'s `Wiring.emit` is to a graph
- * node. There is no route to follow, so the delivery it reports is the port's own latch.
+ * node. The delivery it reports is the port's own latch; `routed` is the spawner's `on` record
+ * applied beside it, so a port the spawner named also lands in the spawner's inbox and a port it
+ * did not name lands nowhere else (#8756).
  */
-const emitter = (id: ProcessId, row: AnyProgram, outboxes: ReadonlyMap<string, OutboundLatch>) =>
+const emitter = (
+	id: ProcessId,
+	row: AnyProgram,
+	outboxes: ReadonlyMap<string, OutboundLatch>,
+	routed: (port: string, payload: unknown) => Effect.Effect<void>,
+) =>
 	Effect.fn("Tuval.SpawnedProcesses.emit")(function* (port: string, payload: unknown) {
 		const node = NodeId.make(id);
 		const latch = outboxes.get(port);
@@ -173,8 +208,28 @@ const emitter = (id: ProcessId, row: AnyProgram, outboxes: ReadonlyMap<string, O
 			return yield* new PayloadRejected({node, program: row.id, port, kind: declared.kind});
 		}
 		yield* latch.publish(payload);
+		yield* routed(port, payload);
 		return [{to: {node, port}, accepted: true}] as ReadonlyArray<Delivery>;
 	});
+
+/**
+ * Which of the spawner's own events each of the child's out-ports arrives as — the authoring
+ * layer's `spawn(x, {on})` as the kernel takes it. A port with no entry routes nowhere.
+ */
+export type ChildRoutes = Readonly<Record<string, string | undefined>>;
+
+const NO_ROUTES: ChildRoutes = {};
+
+/** One outstanding `ask`, held against the correlation the kernel minted for it. */
+interface Pending {
+	/** The process that asked, and the event its answer arrives as. */
+	readonly to: ProcessId;
+	readonly event: string;
+	/** Who was asked — kept so a refused answer can name the port that refused it. */
+	readonly of: ProcessId;
+	readonly port: string;
+	readonly answers: (payload: unknown) => boolean;
+}
 
 export interface SpawnedProcessesOptions {
 	/** How long a `read` waits for a port that has said nothing yet, before answering none. */
@@ -185,6 +240,8 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 	const registry = yield* Registry;
 	const processes = yield* Processes;
 	const live = new Map<ProcessId, Entry>();
+	/** The correlation table an answer is addressed by. One entry per outstanding `ask`. */
+	const pending = new Map<string, Pending>();
 
 	const entryOf = (process: ProcessId) =>
 		Effect.suspend(() => {
@@ -197,6 +254,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 	const spawn = Effect.fn("Tuval.SpawnedProcesses.spawn")(function* (
 		program: ProgramId,
 		parent: Option.Option<ProcessId>,
+		on: ChildRoutes = NO_ROUTES,
 	) {
 		const row = yield* Effect.mapError(
 			registry.resolve(program),
@@ -209,7 +267,15 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		for (const [name, port] of Object.entries(row.ports)) {
 			if (port.direction === "out") outboxes.set(name, yield* openLatch);
 		}
-		const ports = ProcessPorts.of({emit: emitter(id, row, outboxes)});
+		// Routing is resolved per emit rather than wired once, because a route's target is the
+		// spawner's inbox and a spawner can stop while its child runs on: `deliver` answers `false`
+		// then, where a captured handle would have gone stale.
+		const routeOne = (port: string, payload: unknown): Effect.Effect<void> => {
+			const event = on[port];
+			if (event === undefined || Option.isNone(parent)) return Effect.void;
+			return Effect.asVoid(deliver(processes, parent.value, {type: event, payload}));
+		};
+		const ports = ProcessPorts.of({emit: emitter(id, row, outboxes, routeOne)});
 
 		// The spawn set is stated here in full, because it is all the child's handlers will resolve
 		// (#7972). `Effect.context()` is this caller's own — the spell fiber's, which is the kernel
@@ -259,7 +325,14 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 			live.set(id, {handle, inboxes, outboxes});
 			yield* Scope.addFinalizer(
 				handle.scope,
-				Effect.sync(() => void live.delete(id)),
+				Effect.sync(() => {
+					live.delete(id);
+					// A process that stopped answers nothing more, and a correlation nobody will ever
+					// spend is a leak: one sweep per process rather than one finalizer per `ask`.
+					for (const [correlation, held] of pending) {
+						if (held.of === id || held.to === id) pending.delete(correlation);
+					}
+				}),
 			);
 		}).pipe(Effect.onError(() => handle.stop));
 		return id;
@@ -279,6 +352,48 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		return yield* offerCounting(inbox, payload);
 	});
 
+	const ask = Effect.fn("Tuval.SpawnedProcesses.ask")(function* (
+		from: ProcessId,
+		process: ProcessId,
+		port: string,
+		payload: unknown,
+		event: string,
+	) {
+		const entry = yield* entryOf(process);
+		const inbox = entry.inboxes.get(port);
+		if (inbox === undefined) return yield* new UnknownPort({process, port, direction: "in"});
+		const answers = inbox.port.answers;
+		if (answers === undefined) return yield* new PortAnswersNothing({process, port});
+		if (!inbox.port.accepts(payload)) {
+			return yield* new PortRefused({process, port, kind: inbox.port.kind});
+		}
+		const correlation = randomUUID();
+		pending.set(correlation, {to: from, event, of: process, port, answers});
+		const sent = yield* offerCounting(inbox, asked(payload, {correlation}));
+		// A payload the queue refused is a question nobody was asked, so it owes no answer.
+		if (!sent.delivered) pending.delete(correlation);
+		return sent;
+	});
+
+	const answer = Effect.fn("Tuval.SpawnedProcesses.answer")(function* (
+		to: ReplyTo,
+		payload: unknown,
+	) {
+		const held = pending.get(to.correlation);
+		if (held === undefined) return yield* new UnclaimedReply({correlation: to.correlation});
+		if (!held.answers(payload)) {
+			return yield* new PortRefused({
+				process: held.of,
+				port: held.port,
+				kind: `an answer to ${held.port}`,
+			});
+		}
+		// Spent before delivery: the caller's fold runs inside `deliver`, and a program that asks
+		// again from that fold must not find this correlation still outstanding.
+		pending.delete(to.correlation);
+		return yield* deliver(processes, held.to, {type: held.event, payload});
+	});
+
 	const read = Effect.fn("Tuval.SpawnedProcesses.read")(function* (
 		process: ProcessId,
 		port: string,
@@ -289,7 +404,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		return yield* Effect.timeoutOption(latch.current, options.readTimeout);
 	});
 
-	return SpawnedProcesses.of({spawn, send, read});
+	return SpawnedProcesses.of({spawn, send, ask, answer, read});
 });
 
 export class SpawnedProcesses extends Context.Service<
@@ -298,6 +413,8 @@ export class SpawnedProcesses extends Context.Service<
 		readonly spawn: (
 			program: ProgramId,
 			parent: Option.Option<ProcessId>,
+			/** Which of the parent's events each named child out-port arrives as. Needs a parent to route to. */
+			on?: ChildRoutes,
 		) => Effect.Effect<ProcessId, UnknownProgram | UnknownProcess | OpenError | HandlerFailed>;
 		/**
 		 * `delivered` is `Queue.offer`'s own answer, and it covers less than a reader expects. `false`
@@ -312,6 +429,27 @@ export class SpawnedProcesses extends Context.Service<
 			port: string,
 			payload: unknown,
 		) => Effect.Effect<Sent, UnknownProcess | UnknownPort | PortRefused>;
+		/**
+		 * `send`'s two-way twin: deliver on a request port and hold, against a correlation the kernel
+		 * mints, where the answer goes. The callee's arrival carries that correlation and nothing
+		 * else, so a `from` it was not given is a process it cannot address (#8756).
+		 */
+		readonly ask: (
+			from: ProcessId,
+			process: ProcessId,
+			port: string,
+			payload: unknown,
+			event: string,
+		) => Effect.Effect<Sent, UnknownProcess | UnknownPort | PortAnswersNothing | PortRefused>;
+		/**
+		 * Spend one correlation: check the answer against the asked port's own output schema and hand
+		 * it to the asking process as the event that `ask` named. `false` means the asker is gone.
+		 * A correlation is spent once — a second answer to it is `UnclaimedReply`, not a second event.
+		 */
+		readonly answer: (
+			to: ReplyTo,
+			payload: unknown,
+		) => Effect.Effect<boolean, UnclaimedReply | PortRefused>;
 		readonly read: (
 			process: ProcessId,
 			port: string,

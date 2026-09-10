@@ -205,6 +205,7 @@ const pickerPress = (
 	switch (answer._tag) {
 		case "Moved":
 		case "Cleared":
+		case "Filtering":
 			return {type: "window.setView", windowId: windowId as never, view: answer.view};
 		case "Chose":
 			return answer.intent._tag === "OpenProgram"
