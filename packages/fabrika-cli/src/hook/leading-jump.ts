@@ -17,6 +17,11 @@
  * rather than one spelling of it. It is not a shell parser and must not become one: anything it
  * cannot resolve to a literal path is refused rather than guessed at, which is the same polarity the
  * harness takes when it answers *too complex to verify that it stays inside the worktree*.
+ *
+ * The wrappers it looks through are only the ones whose stripping is decidable from the text alone
+ * — a subshell, a command substitution, a brace group, `VAR=value` prefixes. The spellings it still
+ * does not see are listed in the decision record under *What stays out of key*, and that list is
+ * the guard's bound rather than an oversight.
  */
 import {isAbsolute, resolve, sep} from "node:path";
 
@@ -57,31 +62,88 @@ const firstCommand = (text: string): string => {
 	return text;
 };
 
-/** Split on whitespace no quote is holding open, keeping each token's quoting with it. */
-const operands = (text: string): ReadonlyArray<string> => {
-	const tokens: string[] = [];
-	let current = "";
+/** One whitespace-delimited token off the front, keeping its quoting, and what follows it. */
+const nextToken = (text: string): {readonly token: string; readonly rest: string} | undefined => {
+	const start = text.trimStart();
+	if (start === "") return undefined;
 	let quote: string | undefined;
-	for (const char of text) {
+	let index = 0;
+	for (; index < start.length; index += 1) {
+		const char = start[index] as string;
 		if (quote !== undefined) {
-			current += char;
 			if (char === quote) quote = undefined;
 			continue;
 		}
 		if (char === "'" || char === '"') {
 			quote = char;
-			current += char;
 			continue;
 		}
-		if (/\s/.test(char)) {
-			if (current !== "") tokens.push(current);
-			current = "";
-			continue;
-		}
-		current += char;
+		if (/\s/.test(char)) break;
 	}
-	if (current !== "") tokens.push(current);
-	return tokens;
+	return {token: start.slice(0, index), rest: start.slice(index)};
+};
+
+/** Split on whitespace no quote is holding open, keeping each token's quoting with it. */
+const operands = (text: string): ReadonlyArray<string> => {
+	const tokens: string[] = [];
+	let rest = text;
+	for (;;) {
+		const next = nextToken(rest);
+		if (next === undefined) return tokens;
+		tokens.push(next.token);
+		rest = next.rest;
+	}
+};
+
+/** The wrappers a jump can be written inside without ceasing to be the command's first act. */
+const GROUPINGS = [
+	["$(", ")"],
+	["(", ")"],
+	["`", "`"],
+	["{", "}"],
+] as const;
+
+/** A `NAME=` prefix, which sets a variable for one command without being a command itself. */
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+const openerAt = (text: string): (typeof GROUPINGS)[number] | undefined =>
+	GROUPINGS.find(([open]) =>
+		// `{ cd …; }` is a brace group; `{cd` with no space after the brace is a command so named.
+		open === "{" ? text.startsWith("{") && /\s/.test(text[1] ?? "") : text.startsWith(open),
+	);
+
+/**
+ * Strip the grouping openers and `VAR=value` prefixes a jump can hide behind, keeping the closers
+ * that were opened so {@link dropClosers} can shed their tails.
+ *
+ * `(cd /elsewhere && node …)`, `{ cd /elsewhere; node …; }` and `VAR=x cd /elsewhere` are the same
+ * act as the bare jump, one keystroke away, and reading only the raw head let all three through.
+ */
+const unwrap = (text: string): {readonly text: string; readonly closers: ReadonlyArray<string>} => {
+	let rest = text.trimStart();
+	const closers: string[] = [];
+	for (;;) {
+		const opener = openerAt(rest);
+		if (opener !== undefined) {
+			closers.push(opener[1]);
+			rest = rest.slice(opener[0].length).trimStart();
+			continue;
+		}
+		const next = nextToken(rest);
+		if (next === undefined || !ASSIGNMENT.test(next.token)) return {text: rest, closers};
+		rest = next.rest.trimStart();
+	}
+};
+
+/** Shed the tails a stripped opener left dangling, so `(cd /x)` reads as `cd /x` and not `cd /x)`. */
+const dropClosers = (text: string, closers: ReadonlyArray<string>): string => {
+	let rest = text.trimEnd();
+	for (let index = closers.length - 1; index >= 0; index -= 1) {
+		const closer = closers[index] as string;
+		if (!rest.endsWith(closer)) return rest;
+		rest = rest.slice(0, -closer.length).trimEnd();
+	}
+	return rest;
 };
 
 const wrappedIn = (token: string, quote: string): boolean =>
@@ -95,7 +157,8 @@ const wrappedIn = (token: string, quote: string): boolean =>
  * A bare `cd` is a jump to `$HOME` and is read as exactly that — not as an absent one.
  */
 export const parseLeadingJump = (command: string): Jump => {
-	const head = firstCommand(command.trimStart());
+	const wrapped = unwrap(firstCommand(command.trimStart()));
+	const head = dropClosers(wrapped.text, wrapped.closers);
 	const keyword = JUMP_KEYWORDS.find(
 		(word) => head === word || head.startsWith(`${word} `) || head.startsWith(`${word}\t`),
 	);

@@ -627,7 +627,11 @@ nothing.
   ([#6072](https://github.com/kamp-us/phoenix/issues/6072), ADR
   [0388](../../../.decisions/0388-a-leading-directory-jump-out-of-an-isolated-worktree-is-refused.md)).
   A target that only exists once the shell has expanded it is denied too, on the same ground the
-  harness gives for a command it cannot statically verify. It arms **only** inside a linked worktree:
+  harness gives for a command it cannot statically verify. The jump is read **through the wrappers it
+  can be written inside** — a subshell, a command substitution, a brace group, `VAR=value` prefixes —
+  so `(cd <outside> && …)`, `{ cd <outside>; …; }` and `VAR=x cd <outside>` are one refusal rather
+  than three ways around it; ADR 0388's *What stays out of key* lists what is knowingly allowed. It
+  arms **only** inside a linked worktree:
   the primary checkout and a cwd under no repository are allowed untouched, because which tree an
   operator works in is their call, made at spawn time
   ([#5386](https://github.com/kamp-us/phoenix/issues/5386)) — the escape is what is judged, not the

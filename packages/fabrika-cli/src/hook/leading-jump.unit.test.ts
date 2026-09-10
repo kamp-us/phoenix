@@ -36,6 +36,41 @@ describe("the jump this guard exists for", () => {
 	});
 });
 
+describe("the wrappers the jump can be written inside", () => {
+	it("refuses a jump in a subshell, a brace group, or behind a `VAR=x` prefix", () => {
+		for (const command of [
+			`(cd ${SHARED} && node bin.ts build branch 1)`,
+			`{ cd ${SHARED}; node bin.ts build branch 1; }`,
+			`VAR=x cd ${SHARED} && node bin.ts build branch 1`,
+			`( VAR=x pushd ${SHARED} )`,
+			`$(cd ${SHARED} && node bin.ts)`,
+			`\`cd ${SHARED}\``,
+			`((cd ${SHARED}))`,
+		]) {
+			expect(decide(command)._tag, command).toBe("Deny");
+		}
+	});
+
+	it("sheds the closer a stripped opener left, so the target is the path and not `path)`", () => {
+		expect(parseLeadingJump(`(cd ${SHARED})`)).toEqual({
+			_tag: "Literal",
+			keyword: "cd",
+			target: SHARED,
+		});
+	});
+
+	it("allows the same wrappers when the jump inside them stays in the worktree", () => {
+		expect(decide(`(cd ${TREE}/site && pnpm build)`)._tag).toBe("Allow");
+		expect(decide("{ cd packages/fabrika-cli; pnpm vitest run; }")._tag).toBe("Allow");
+		expect(decide(`VAR=x cd ${TREE}`)._tag).toBe("Allow");
+	});
+
+	it("does not read a braced word or a `=`-carrying command as a wrapper", () => {
+		expect(decide("{cd,ls} --help")._tag).toBe("Allow");
+		expect(decide("--flag=value cd /elsewhere")._tag).toBe("Allow");
+	});
+});
+
 describe("the work that must keep running", () => {
 	it("allows a command with no leading jump at all", () => {
 		expect(decide("node packages/fabrika-cli/src/bin.ts build push")).toEqual({

@@ -10,7 +10,8 @@ tags: [fabrika, pipeline-hardening, worktree, isolation, hooks]
 
 **What this decides:** fabrika builds its own `PreToolUse` Bash guard, and it refuses one thing — a
 command whose **leading** `cd`/`pushd` resolves outside the linked worktree the command runs in,
-whatever follows that jump. The guard arms only inside a linked worktree, denies through the
+whatever follows that jump, and read through the groupings and `VAR=value` prefixes the jump can be
+written inside. The guard arms only inside a linked worktree, denies through the
 harness's JSON decision rather than through an exit code, and lives in `packages/fabrika-cli/src/hook/`
 rather than inside any `build` verb.
 
@@ -60,8 +61,38 @@ rather than resolved. That is the same polarity the harness itself takes when it
 to verify that it stays inside the worktree*, and the alternative — reading an unresolvable target as
 harmless — is a one-token bypass of the whole guard.
 
-**The guard does not claim to close every escape.** A command that reaches another checkout without a
-leading jump is outside its key and is not covered. What it closes is the shape that fired twice.
+### The jump is read through the wrappers it can be written inside
+
+`(cd <shared> && node …)`, `{ cd <shared>; node …; }` and `VAR=x cd <shared>` are the same act as the
+bare jump, one keystroke away, and a parse that reads only the raw first token lets all three
+through. So the parse strips what it can strip **from the text alone** before it looks for the
+keyword: a subshell opener, a command substitution (`$(`, a backtick), a brace group's `{` when a
+space follows it, and any run of `NAME=value` prefixes — repeatedly, in any order, shedding the
+matching closer off the tail so `(cd /x)` reads as a jump to `/x` rather than to `/x)`.
+
+Stripping is confined to wrappers whose removal is decidable without running anything, which is the
+same line the target resolution draws. A brace group needs its space (`{cd,ls}` is a brace
+*expansion*, and a command so named is not a jump), and nothing that requires knowing what a word
+means at run time is unwrapped.
+
+### What stays out of key
+
+**The guard does not claim to close every escape**, and the bound is the part a reader must be able
+to trust, so the shapes it knowingly allows are listed rather than left to be discovered:
+
+- **A jump that is not the command's first act.** `pnpm test && cd <shared> && node …` is allowed.
+  Judging every `cd` on the line means judging a sequence whose earlier commands can move the cwd,
+  which is no longer decidable from the text.
+- **A jump behind a word whose meaning is run-time.** `eval "cd <shared> && …"`, `env cd <shared>`,
+  `command cd <shared>`, `xargs`, and a wrapper script that jumps for itself all carry no
+  strippable leading jump. Unwrapping them means resolving what a name refers to, which this module
+  refuses to start doing.
+- **Reaching another checkout with no jump at all.** An absolute path handed to a program that acts
+  on it is untouched by this guard, and always was: what is keyed is the jump, because the jump is
+  what is decidable.
+
+Each of these is an escape a determined agent can still write. The guard is a floor under an
+accident, not a sandbox against intent — and the two field incidents were accidents.
 
 ### It arms only inside a linked worktree
 
