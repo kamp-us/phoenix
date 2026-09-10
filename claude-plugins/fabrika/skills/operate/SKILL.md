@@ -188,12 +188,13 @@ the issue itself, and a child carries neither. Never boot the child, on any arm 
 differently.** The parent machine holds the child's task: end `STOPPED` and drive the parent lane.
 The parent machine loaded and provably holds no task for this child — a follow-up linked under the
 epic after its lane was emitted — and the line names the route: place the child in the parent
-epic's `## Dependencies` block, run `lane amend` on the parent (the paragraph below this one), then
-drive that lane. The task set did not read at all — the parent lane is absent, unreadable or
-malformed, or the parent number itself did not read — and the line says so rather than asserting
-membership either way: that is UNKNOWN, so end `STOPPED` naming the code and read the parent lane
-before choosing between the other two. An issue that is both an epic and a child still routes to
-`lane emit` on `46`, because the machine it needs has not changed.
+epic's `## Dependencies` block, run `lane amend` on the parent — the non-destructive re-derive two
+paragraphs below, the one that keeps `events.jsonl` whole — then drive that lane. The task set did
+not read at all — the parent lane is absent, unreadable or malformed, or the parent number itself
+did not read — and the line says so rather than asserting membership either way: that is UNKNOWN,
+so end `STOPPED` naming the code and read the parent lane before choosing between the other two. An
+issue that is both an epic and a child still routes to `lane emit` on `46`, because the machine it
+needs has not changed.
 
 A lane already booted on the coder template before this refusal existed is not repaired in place: a
 lane on disk is never re-emitted over, so `lane emit` answers `14` and names the two steps — retire
