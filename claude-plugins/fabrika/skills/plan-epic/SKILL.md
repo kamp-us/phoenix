@@ -278,6 +278,14 @@ exit `20`, so `ledger child` refuses it at mint instead of publishing an issue n
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
+**A `type:decision` child is always held.** `--type type:decision --ready-for agent` is refused on
+exit `10` before anything is read: a build claim admits a decision only against a ruling comment
+recorded on **that** issue, and a child you just minted carries none — so the pair publishes a child
+every builder refuses, which parks the whole epic lane.
+Naming the epic's own ruling comment does not open it either; the citation binds to the claimed
+issue. Mint the child `--ready-for human` with `--assignee`, and once the ruling is recorded on the
+child a control-plane human flips it with `fabrika decision rule <n> --cites <child-comment-url>`.
+
 **Choosing that assignee is yours when the work belongs to the team, and not yours when it does
 not.** Pick from the repository's contributors and say in the child body why — a wrong pick is one
 re-assignment. But where the epic says the owner sits *outside* the roster you can see (a legal

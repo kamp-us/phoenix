@@ -551,6 +551,10 @@ describe("admissionOf", () => {
 			});
 		});
 
+		/**
+		 * The near miss is a parent epic's ruling comment offered for its decision child: the
+		 * binding refuses it, which is why `ledger child` never mints such a child for an agent.
+		 */
 		it("refuses a ruling recorded on another issue or in another repository", () => {
 			expect(parseCitation(url, "o/r", 5490)._tag).toBe("Malformed");
 			expect(parseCitation(url, "o/other", 5879)._tag).toBe("Malformed");
