@@ -20,7 +20,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {upsertItem} from "../../ai-agent/core/index.ts";
+import {promptItem, upsertItem} from "../../ai-agent/core/index.ts";
 import {isRefusal, type TranscriptPage} from "../../ai-agent/history/index.ts";
 import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
 // `rows.ts` rather than the chat barrel: the barrel re-exports `.tsx`, which the node tsconfig's
@@ -289,8 +289,7 @@ describe("paging an agy window back from its own live tail", () => {
 	 * Criterion: a prepended page doubles no turn the live tail already holds. The four rows agy's
 	 * stream minted carry the tail's ids in `alias`, so the stitch drops the page's copies of them;
 	 * the prompts and the system notice are rows the stream never minted, and they are what the page
-	 * is *for*. (The operator's prompt is held as the core's own `local:` echo, which agy never
-	 * confirms because its `user_input` step carries no text — that double is #8961, not this seam.)
+	 * is *for* — bar one the window holds the core's own `local:` echo of, which the case below is.
 	 */
 	it("stamps the live id on every stored row, so a prepended page doubles no turn the tail holds", () => {
 		// What a window holds after the restart: the stopped child's rows, restored, then the resumed
@@ -320,6 +319,48 @@ describe("paging an agy window back from its own live tail", () => {
 			`${JOIN_CID}:line:8`,
 			...ids(tail),
 		]);
+	});
+
+	/**
+	 * The other half of the same stitch, and the one agy alone needs (#8961): the operator's own turn.
+	 *
+	 * agy's `user_input` step carries no `text_delta`, so its live tail mints no `user` row for a
+	 * prompt at all — the core's `local:` echo is the only copy the window holds, and it stays `local`
+	 * for the window's whole life. There is therefore no id on either side to join on, and
+	 * `claimsLocal`'s text join is the whole of the reconciliation. It can only fire on the text the
+	 * operator actually typed, which is what `promptText` in `transcript.ts` is for: against the
+	 * stored `<USER_REQUEST>` frame the budget never spent and the page prepended a second copy of the
+	 * turn, in agy's wire markup, above the echo.
+	 */
+	it("joins a paged prompt against the local echo agy never confirmed, rather than doubling it", () => {
+		// The window's tail as a desk that sent the third turn itself holds it: the restored rows of
+		// the stopped child, then the echo the core recorded on send, then the resumed child's own row.
+		const echo = promptItem({
+			text: "Reply with only the word AGAIN and run no tools. No paths, no links.",
+			key: "send-again",
+			timestamp: 1_760_000_000_000,
+		});
+		const tail = [
+			...liveTail(fixtures.liveJoinStreamLines),
+			echo,
+			...liveTail(fixtures.liveJoinResumedStreamLines),
+		];
+
+		const page = served(joinPage(null));
+		// The stored row for that turn carries the prompt as typed, which is the only thing the join
+		// has: unwrapped it equals the echo's text exactly, frame and metadata blocks gone.
+		const storedPrompt = page.items.find((item) => item.id === `${JOIN_CID}:line:7`);
+		expect(storedPrompt?.kind === "user" ? storedPrompt.text : null).toBe(echo.text);
+
+		const merged = mergeOlder(tail, page.items);
+		expect(ids(merged)).toEqual([
+			`${JOIN_CID}:line:0`,
+			`${JOIN_CID}:line:5`,
+			`${JOIN_CID}:line:8`,
+			...ids(tail),
+		]);
+		// One copy of the turn, and it is the echo's row: the page's copy is gone, not both.
+		expect(texts(merged).filter((text) => text === echo.text)).toEqual([echo.text]);
 	});
 
 	/**
