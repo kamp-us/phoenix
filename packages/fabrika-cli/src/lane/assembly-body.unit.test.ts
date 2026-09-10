@@ -53,9 +53,9 @@ describe("tailBodyRead", () => {
 		expect(read._tag === "Unclosing" && read.read).toContain("#4301, #4302");
 	});
 
-	// The shape `provenClosure` calls out by name: a body carrying both kinds drops every `Part of`
-	// number, so the epic is in neither set and the merge answers `unknown` — no `partial` recorded,
-	// and the tail folds to `shipped` over an open epic.
+	// The shape `provenClosure` calls out by name: a body carrying both kinds reaches the judgement
+	// over the epic it named with `Part of`, and that merge proves only `partial` — so relaying it
+	// would fold the tail to `shipped` over an epic the board still calls open.
 	it("refuses a body mixing the children's closings with a `Part of` on the epic", () => {
 		expect(tailBodyRead(`${CHILDREN}Part of #${EPIC}\n`, EPIC)._tag).toBe("Unclosing");
 	});
