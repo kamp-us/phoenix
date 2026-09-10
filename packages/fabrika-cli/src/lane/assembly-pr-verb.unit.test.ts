@@ -5,7 +5,7 @@ import {issuePayload, NOT_FOUND, served} from "../build/fixtures.test-support.ts
 import {fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {runAssemblyPr} from "./assembly-pr-verb.ts";
-import {ABOUT_UNSAFE, LANE_UNREADABLE, NOT_AN_EPIC} from "./codes.ts";
+import {LANE_UNREADABLE, NOT_AN_EPIC} from "./codes.ts";
 
 const ISSUE = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/8070$/;
 const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
@@ -47,7 +47,7 @@ describe("lane assembly-pr", () => {
 
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
-			"## About this epic\n\nEpic #8070: The desk had no door to a running session.\n",
+			"## About this epic\n\n> Epic #8070: The desk had no door to a running session.\n",
 		);
 	});
 
@@ -59,13 +59,12 @@ describe("lane assembly-pr", () => {
 		expect(out.stderr.join(" ")).toContain("carries no `## Pitch` section");
 	});
 
-	it("refuses a section that still asserts a classification after neutralisation", async () => {
-		const body = "## Pitch\n\n**Problem.** This is control-plane work.\n";
+	it("quotes a Problem paragraph naming a classification instead of rewording it", async () => {
+		const body = "## Pitch\n\n**Problem.** This is control-plane work on a type:epic at p1.\n";
 		const out = await run("about", [[ISSUE, epic({body})]]);
 
-		expect(out.code).toBe(ABOUT_UNSAFE);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join(" ")).toContain("control-plane classification claim");
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("> Epic #8070: This is control-plane work on a type:epic at p1.");
 	});
 
 	it("refuses an issue carrying no type:epic, naming the label", async () => {

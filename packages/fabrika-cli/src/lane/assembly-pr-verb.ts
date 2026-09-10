@@ -8,8 +8,8 @@
  * The About section's absence is an answer, not a failure: an epic with no `## Pitch` still has a
  * run to publish, and blocking that publication over prose would strand the only PR the run opens.
  * So an unpitched epic answers empty stdout with the reason on stderr, and the fence's body simply
- * carries no section. The one refusal on this field is the section that could not be made safe for
- * `build pr`'s body guard, which is a claim about a gated question and a person's to reword.
+ * carries no section. The one refusal on this field is a section the guard would refuse read back
+ * through the guard's own predicates, which is a person's to reword rather than this verb's to edit.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -78,7 +78,7 @@ export const runAssemblyPr = ({
 		if (about._tag === "Unsafe") {
 			return refuse(
 				ABOUT_UNSAFE,
-				`${VERB}: #${epic}'s Problem paragraph still carries ${about.what} after neutralisation — build pr's body guard would refuse it. Reword the paragraph, or write the section by hand.`,
+				`${VERB}: #${epic}'s derived section still carries ${about.what} — build pr's body guard would refuse it. Reword the paragraph, or write the section by hand.`,
 			);
 		}
 		return about._tag === "Unpitched"

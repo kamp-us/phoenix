@@ -1,6 +1,6 @@
 /** The two derivations an epic run's assembly PR opens with, and the guard floor under the section. */
 import {describe, expect, it} from "vitest";
-import {bodyDefect} from "../build/pr-body.ts";
+import {bodyDefect, classificationIn, closingTargets, proseOf} from "../build/pr-body.ts";
 import {aboutSection, assemblyTitle, boundedParagraph, problemParagraph} from "./assembly-pr.ts";
 
 const EPIC = ["type:epic"];
@@ -110,9 +110,9 @@ describe("boundedParagraph", () => {
 });
 
 describe("aboutSection", () => {
-	it("opens under the heading with the epic's own number", () => {
+	it("opens under the heading with the epic's own number, block-quoted", () => {
 		expect(sectionText("The window shows nothing.")).toBe(
-			"## About this epic\n\nEpic #8201: The window shows nothing.\n",
+			"## About this epic\n\n> Epic #8201: The window shows nothing.\n",
 		);
 	});
 
@@ -132,16 +132,18 @@ describe("aboutSection", () => {
 		expect(sectionText("Filed beside #8122.")).toContain("Filed beside #8122.");
 	});
 
-	it("declassifies a quoted `type:` label and a bare priority token", () => {
+	it("leaves a label the epic mentions in the epic's own words, inside the quote", () => {
 		const text = sectionText("A type:epic issue at p1 is still a bet.");
-		expect(text).toContain("A type epic issue at `p1` is still a bet.");
+		expect(text).toContain("> Epic #8201: A type:epic issue at p1 is still a bet.");
+		// The claim is reproduced, never asserted: `proseOf` drops the quote, so the guard's own
+		// classification read over the assembled section finds nothing.
+		expect(classificationIn(proseOf(text))).toBeNull();
 	});
 
-	it("refuses a paragraph asserting control-plane membership rather than editing it", () => {
-		expect(aboutSection(8201, pitched("This is control-plane work."))).toEqual({
-			_tag: "Unsafe",
-			what: "a control-plane classification claim",
-		});
+	it("reproduces a control-plane phrase the same way, rather than refusing the epic's prose", () => {
+		const text = sectionText("This is control-plane work.");
+		expect(text).toContain("> Epic #8201: This is control-plane work.");
+		expect(classificationIn(proseOf(text))).toBeNull();
 	});
 
 	it("says which half of the pitch is missing rather than emitting an empty section", () => {
@@ -153,6 +155,16 @@ describe("aboutSection", () => {
 			_tag: "Unpitched",
 			why: "carries a `## Pitch` with no Problem paragraph",
 		});
+	});
+
+	it("swaps every keyword `pr-body.ts` links on, so the guard's own read finds none", () => {
+		// The swap map is a copy of `CLOSING_RE`'s alternatives; this is what catches it drifting.
+		const every =
+			"Close #1 and closes #2 and closed #3, fix #4 and fixes #5 and fixed #6, resolve #7 and resolves #8 and resolved #9.";
+		const read = aboutSection(8201, pitched(every));
+
+		expect(read._tag).toBe("Section");
+		expect(closingTargets(read._tag === "Section" ? read.text : "")).toEqual([]);
 	});
 
 	it("adds nothing to an assembly PR body that `build pr`'s guard refuses", () => {

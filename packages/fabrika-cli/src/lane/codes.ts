@@ -490,12 +490,14 @@ export const WAIT_TOO_SOON = 55;
 export const NOT_AN_EPIC = 56;
 
 /**
- * The derived `## About this epic` section still asserts something `build pr`'s body guard refuses,
- * after the mechanical neutralisation — a closing keyword aimed elsewhere, or a classification
- * claim, each named.
+ * The assembled `## About this epic` section is one `build pr`'s body guard would refuse — a closing
+ * keyword the swap did not reach, or a classification claim the block quote did not cover, each
+ * named.
  *
- * Fail-closed on purpose. The alternative is editing a claim about a gated question until it only
- * *looks* safe, and the remedy is a person's: reword the epic's Problem paragraph, or write the
- * section by hand. The title is unaffected and a second call with `--field title` still answers.
+ * Both should be impossible while the swap list matches that module's `CLOSING_RE` and the lifted
+ * text stays quoted, and this seat is what keeps it so: the section is read back through the guard's
+ * own predicates, and the refusal is fail-closed rather than an assumption that the two still agree.
+ * The remedy is a person's — reword the epic's Problem paragraph, or write the section by hand. The
+ * title is unaffected and a second call with `--field title` still answers.
  */
 export const ABOUT_UNSAFE = 57;

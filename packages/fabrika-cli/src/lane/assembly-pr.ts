@@ -11,12 +11,19 @@
  *
  * The About section's source is the epic's `## Pitch` **Problem** paragraph, read through
  * `../guard/pitch.ts`'s own section reader so a pitch means the same thing here as it does at
- * intake. It is never passed through raw: `../build/pr-body.ts` refuses a body carrying a stray
- * closing keyword or a classification claim, and an epic's Problem paragraph is ordinary prose that
- * may hold either. So the text is neutralised mechanically, bounded to the opening sentences a
- * reader will actually read, and then re-read through that module's own predicates — a section this
- * module answers cannot be one the PR guard refuses, and text it cannot make safe is refused here
- * rather than shipped.
+ * intake. `../build/pr-body.ts` refuses a body carrying a stray closing keyword or a classification
+ * claim, and an epic's Problem paragraph is ordinary prose that may hold either — but the two are
+ * not the same problem. A closing keyword acts on GitHub whoever wrote it, so the keyword is
+ * swapped. A classification claim is a claim, and that module strips block quotes before it looks
+ * for one, for the stated reason that a quotation reproduces text rather than asserting it: so the
+ * lifted paragraph lands as a block quote, whole, in the epic's own words. Rewriting `type:epic` to
+ * `type epic` instead would leave the assertion standing in the sentence a person reads while the
+ * pattern that keys on the colon stops matching — a claim edited into something that only looks
+ * safe.
+ *
+ * The text is bounded to the opening sentences a reader will actually read, and the assembled
+ * section is then re-read through `pr-body.ts`'s own predicates, so a section this module answers
+ * cannot be one the PR guard refuses.
  */
 
 import {classificationIn, closingTargets, proseOf} from "../build/pr-body.ts";
@@ -90,10 +97,6 @@ export const problemParagraph = (body: string): string | null => {
 
 /** GitHub's auto-closing keywords followed by an issue reference — `pr-body.ts`'s `CLOSING_RE`. */
 const CLOSING_REF = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s+#\d+)\b/gi;
-/** A `type:<label>` quoted in prose — `pr-body.ts` reads one as a classification claim. */
-const TYPE_CLAIM = /\btype:([a-z]+)\b/gi;
-/** A bare priority token, in the exact shape `pr-body.ts` reads as a claim. */
-const PRIORITY_CLAIM = /(^|\s)(p[0-3])(?=\s|$|[.,;:!?])/gi;
 
 /**
  * A closing keyword's replacement, per keyword form so the sentence keeps its tense.
@@ -123,22 +126,15 @@ const swapKeyword = (word: string): string => {
 };
 
 /**
- * The paragraph with the shapes the PR guard refuses rewritten into ones it does not:
+ * The paragraph with every closing keyword swapped for a word GitHub's list does not carry. The
+ * `#<n>` each aimed at is untouched, so the reader still lands on the issue.
  *
- * - a closing keyword is swapped for a word GitHub's keyword list does not carry, and the `#<n>` it
- *   aimed at is untouched;
- * - a `type:<x>` loses its colon and a bare `p<n>` gains backticks, both of which break the guard's
- *   patterns at the character the pattern keys on.
- *
- * `control-plane` has no such rewrite — the phrase itself is the claim — so it falls through to the
- * verification below and refuses. That is the intended floor: a claim about a gated question is
- * never edited into something that only looks safe.
+ * This is the one rewrite the module makes, and it is not an edit to a claim: a closing keyword acts
+ * on GitHub whatever the sentence around it means, and disarming it changes what the body *does*
+ * rather than what it says. A classification claim is the opposite case and is quoted, not reworded.
  */
-const neutralise = (text: string): string =>
-	text
-		.replace(CLOSING_REF, (_m, verb: string, ref: string) => `${swapKeyword(verb)}${ref}`)
-		.replace(TYPE_CLAIM, "type $1")
-		.replace(PRIORITY_CLAIM, "$1`$2`");
+const swapClosingKeywords = (text: string): string =>
+	text.replace(CLOSING_REF, (_m, verb: string, ref: string) => `${swapKeyword(verb)}${ref}`);
 
 /**
  * How much of a Problem paragraph the About section lifts: whole sentences, up to this many words.
@@ -171,19 +167,28 @@ export const boundedParagraph = (paragraph: string): string => {
 	return kept.length === sentences.length ? text : `${text} […]`;
 };
 
+/** Every line under `> ` — the shape `proseOf` drops as reproduced text rather than an assertion. */
+const quoted = (text: string): string =>
+	text
+		.split("\n")
+		.map((line) => `> ${line}`)
+		.join("\n");
+
 export type AboutRead =
 	/** The section, ready to interpolate. */
 	| {readonly _tag: "Section"; readonly text: string}
 	/** No `## Pitch`, or a pitch whose Problem paragraph is missing or empty. */
 	| {readonly _tag: "Unpitched"; readonly why: string}
-	/** The neutralised text still asserts something the PR guard refuses, and it is named. */
+	/** The assembled section is one the PR guard would refuse, and the reason is named. */
 	| {readonly _tag: "Unsafe"; readonly what: string};
 
 /**
  * The epic's About section, or the one reason there is none.
  *
- * The verification is `pr-body.ts`'s own readers over `proseOf` — the same three calls the guard
- * makes — so the answer is not "this looks safe" but "the guard's predicates were run over it".
+ * The verification is `pr-body.ts`'s own readers, so the answer is not "this looks safe" but "the
+ * guard's predicates were run over it". Both reads should be empty by construction, and that is the
+ * point: they are what keeps the swap list matched to `CLOSING_RE` and the quoting intact as this
+ * module changes, rather than leaving either to be noticed at a refused `build pr`.
  */
 export const aboutSection = (epic: number, body: string): AboutRead => {
 	const problem = problemParagraph(body);
@@ -196,13 +201,18 @@ export const aboutSection = (epic: number, body: string): AboutRead => {
 					: "carries a `## Pitch` with no Problem paragraph",
 		};
 	}
-	const text = `${ABOUT_HEADING}\n\nEpic #${epic}: ${boundedParagraph(neutralise(problem))}\n`;
-	const prose = proseOf(text);
-	const stray = closingTargets(prose)[0];
+	const lifted = boundedParagraph(swapClosingKeywords(problem));
+	const text = `${ABOUT_HEADING}\n\n${quoted(`Epic #${epic}: ${lifted}`)}\n`;
+
+	// The two reads differ here and nowhere else: the closing check is over the unquoted text,
+	// because `proseOf` would drop the block quote and with it the keyword being checked for.
+	const stray = closingTargets(lifted)[0];
 	if (stray !== undefined) {
 		return {_tag: "Unsafe", what: `a closing keyword aimed at #${stray}`};
 	}
-	const claim = classificationIn(prose);
+	// Over the assembled section, where everything lifted is quoted — so this reads whether the
+	// quoting held, not whether the epic's own sentence mentions a label.
+	const claim = classificationIn(proseOf(text));
 	return claim === null
 		? {_tag: "Section", text}
 		: {_tag: "Unsafe", what: `a ${claim} classification claim`};
