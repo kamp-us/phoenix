@@ -80,11 +80,11 @@ const cronNode = NodeId.make("cron");
  * planned node ticks from boot, and a job that spends tokens on a short timer is a desk nobody
  * leaves running. `:cron run` is the on-demand path.
  *
- * **The job does not start yet, and the log says so every wake.** `spawn` on a shaped arg resolves
- * the arg's own service key through the registry rather than reading the filled program back out of
- * `R` (#8762, and `../src/authoring/args.ts` says as much), so every tick logs one
- * `UnknownProgram: tuval/arg/cron/job` and cron's status stays `idle` — which is the truth. The
- * fill below is the one this row wants the day that seam closes.
+ * The `job` below is the fill this row's arg is registered with (#8762): a `spawn` on the shaped
+ * arg reads it back out of the row's own context and starts the Claude session, so a tick is a
+ * real run and the tile reports it. `sessionAsJob` is still the wrapper it goes through — an
+ * AI-agent row's ports are hand-written predicates, so `shapeOf` reads nothing off one even now
+ * that it reads compiled rows (#8887); `../src/cron/cron.ts`'s header states why.
  */
 const cronJob = cron({
 	everyMs: 10 * 60 * 1000,

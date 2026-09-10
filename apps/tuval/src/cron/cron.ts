@@ -10,13 +10,15 @@
  * kind of thing that fits it. The two schemas below restate those payloads rather than importing
  * them, because `payloads.ts` publishes hand-written predicates and a shape is decided over schemas.
  *
- * `sessionAsJob` is the seam that costs something, and it is a workaround, not a design: `shapeOf`
- * (`../authoring/shape.ts`) reads an authoring `PortDecls` record, and a real session row's `ports`
- * are compiled kernel `PortSchema`s carrying a predicate and no schema — so `shapeOf` of a live
- * session is `{in: {}, out: {}}` and no non-empty shape can ever fit one. Until the authoring layer
- * can read a compiled row's ports, a config hands the arg the row's id beside a re-declaration of
- * the two ports it is being asked for. `cron.unit.test.ts` pins both halves: that the wrapper fits,
- * and that the real row's own `accepts` predicates admit exactly these payloads.
+ * `sessionAsJob` is the seam that costs something, and it is a workaround, not a design. `shapeOf`
+ * (`../authoring/shape.ts`) now reads a *compiled* row's ports too (#8887) — but only a row built
+ * by `defineProgram`, because `compilePort` is what publishes each port's schema beside the
+ * kernel's predicate. `claudeSession` is not authored that way: `../ai-agent/ports/ports.ts` writes
+ * its `InPort`/`OutPort` records by hand, predicate only, so `shapeOf` of a live session is still
+ * `{in: {}, out: {}}` and no non-empty shape can fit one. Until an AI-agent row is authored through
+ * `defineProgram`, a config hands the arg the row's id beside a re-declaration of the two ports it
+ * is being asked for. `cron.unit.test.ts` pins both halves: that the wrapper fits, and that the
+ * real row's own `accepts` predicates admit exactly these payloads.
  */
 
 import type {DepKeyedSub} from "@demlik/tea";
@@ -200,6 +202,16 @@ export interface CronFill extends CronOptions {
 	readonly job: ShapeSource;
 }
 
-/** The row, as a config writes it: `cron({everyMs, prompt, job})`. */
+/**
+ * The row, as a config writes it: `cron({everyMs, prompt, job})`. The `job` goes onto the row's
+ * `fill` — the config call's half of `args` (#8762) — so the `spawn` in `tick` resolves the arg's
+ * service key back to the program this row was built with, rather than asking the registry for
+ * `tuval/arg/cron/job` and being told no such program exists. A `job` that does not fit `jobShape`
+ * is refused here, at definition, by `defineProgram` itself.
+ */
 export const cron = (fill: CronFill): AnyProgram =>
-	defineProgram({...cronProgram(fill), label: `cron (${fill.job.id})`});
+	defineProgram({
+		...cronProgram(fill),
+		fill: {job: fill.job},
+		label: `cron (${fill.job.id})`,
+	});

@@ -1,12 +1,13 @@
 /**
  * `cron`, driven with `testProgram` — no kernel, no desk, no timer.
  *
- * The last two cases are the ones that are about something other than cron: they pin the seam
- * between an authored shape and a live session row (`cron.ts`'s header), so the day `shapeOf` can
- * read a compiled row's ports the wrapper's whole reason to exist shows up as a failing test.
+ * The cases under "cron's job shape against a real session row" are the ones about something other
+ * than cron: they pin the seam between an authored shape and a live session row (`cron.ts`'s
+ * header), so the day an AI-agent row is authored through `defineProgram` the wrapper's whole
+ * reason to exist shows up as a failing test.
  */
 
-import {Result} from "effect";
+import {Effect, Option, Result} from "effect";
 import {describe, expect, it} from "vitest";
 import config from "../../.tuval/tuval.config.ts";
 import {fillArgs, programArgs} from "../authoring/args.ts";
@@ -14,8 +15,10 @@ import {emit, spawn} from "../authoring/effect.ts";
 import {Program, type ShapeSource, shapeOf} from "../authoring/shape.ts";
 import {testProgram} from "../authoring/test-program.ts";
 import {claudeSession} from "../claude/program.ts";
+import {SpawnedProcesses} from "../commands/core/process.ts";
 import {ClientId, WorkspaceId} from "../commands/spell.ts";
 import {ProcessId} from "../process/process.ts";
+import {ProcessSelf} from "../process/self.ts";
 import {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 import type {AnyProgram, PortSchema} from "../registry/program.ts";
 import {
@@ -157,9 +160,11 @@ describe("cron's job shape against a real session row", () => {
 	});
 
 	/**
-	 * The blocker this file exists to keep honest: a compiled row publishes predicates, not schemas,
-	 * so `shapeOf` reads nothing off one and `fitsShape` can never pass a live session. When that
-	 * changes, this case fails and `sessionAsJob` goes away.
+	 * The blocker this file exists to keep honest. `shapeOf` reads a compiled row now (#8887), but
+	 * only one `defineProgram` built: `compilePort` is what publishes a port's schema beside its
+	 * predicate, and an AI-agent row's ports are hand-written predicates (`../ai-agent/ports/
+	 * ports.ts`). So a live session still reads as `{in: {}, out: {}}`. When an agent row is
+	 * authored through `defineProgram`, this case fails and `sessionAsJob` goes away.
 	 */
 	it("cannot be fitted by the live row itself, which is why `sessionAsJob` exists", () => {
 		// The cast is the blocker in one line: a compiled row is not a `ShapeSource`, because its
@@ -174,6 +179,51 @@ describe("cron's job shape against a real session row", () => {
 		const args = programArgs("cron", {job: jobShape});
 		expect(Result.isFailure(fillArgs(args, {job: live}))).toBe(true);
 		expect(Result.isSuccess(fillArgs(args, {job: sessionAsJob(session())}))).toBe(true);
+	});
+
+	/**
+	 * The other half of the same seam: the wrapper is what a spawn on the arg actually resolves
+	 * through, so the row has to carry it as a `fill` (#8762). Without this the tick spawns the
+	 * arg's own service key and the registry answers `UnknownProgram: tuval/arg/cron/job`.
+	 */
+	it("puts the job on the row's fill, so a spawn on the arg resolves to the session", async () => {
+		const row = cron({...options, job: sessionAsJob(session())});
+		expect(row.args).toEqual({job: "tuval/arg/cron/job"});
+		const handlers = row.handlers as Readonly<
+			Record<string, (cmd: unknown) => Effect.Effect<ReadonlyArray<unknown>, unknown, any>>
+		>;
+		const asked: Array<string> = [];
+		const child = ProcessId.make("proc-session");
+		const events = await Effect.runPromise(
+			Effect.scoped(
+				handlers.spawn?.(spawn(jobRef, {on: {result: "result"}})).pipe(
+					Effect.provideService(
+						SpawnedProcesses,
+						SpawnedProcesses.of({
+							spawn: (program) =>
+								Effect.sync(() => {
+									asked.push(program);
+									return child;
+								}),
+							send: () => Effect.die("this test sends nothing"),
+							ask: () => Effect.die("this test asks nothing"),
+							answer: () => Effect.die("this test answers nothing"),
+							read: () => Effect.succeed(Option.none()),
+						}),
+					),
+					Effect.provideServiceEffect(
+						ProcessSelf,
+						Effect.map(Effect.scope, (scope) => ({
+							id: ProcessId.make("proc-cron"),
+							scope,
+							state: () => undefined,
+						})),
+					),
+				) ?? Effect.die("no spawn handler"),
+			),
+		);
+		expect(asked).toEqual(["claude-session"]);
+		expect(events).toEqual([{type: "spawned", process: child, program: "claude-session"}]);
 	});
 
 	it("keeps the real row's id on the wrapper, so the label names the session", () => {
