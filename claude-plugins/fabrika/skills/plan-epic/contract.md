@@ -202,13 +202,21 @@ remedy — the anchor set is no longer what locates the region.
 headings, each present exactly once, in this order:
 
 `Summary` · `Problem & who has it` · `What changes` · `User stories` · `Goal / non-goals` ·
-`Resolved questions` · `Approach` · `Testing strategy` · `Task-split rationale` ·
-`Vocabulary impact`
+`Resolved questions` · `Approach` · `Acceptance criteria` · `Testing strategy` ·
+`Task-split rationale` · `Vocabulary impact`
 
 **`### User stories` is an ordered list and the leading integer is the story id** — the gate's
 `readEpicStories` collects ids only from ordered-list rows, so an unordered bullet or an `S3`
 label yields *zero stories* and the whole plan reads as declaring none. Ids must run contiguously
 from 1 with no repeats.
+
+**`### Acceptance criteria` is the epic tail's contract, and it carries the same bytes a child's
+does** — `- [ ] ` checkbox rows, the first one directly under the heading with **no blank line
+between them**, outside every fence and every `<details>` block. It is read back through the same
+`packages/fabrika-cli/src/wire/acceptance-criteria.ts` every grader reads, so a section of prose
+under that heading is refused at authoring time rather than discovered by a tail reviewer who then
+has nothing to grade. An epic body carrying no such block leaves `review criteria <epic>` refusing
+on every tail, which is the state this section exists to close.
 
 **Child body — composed, then validated through the imported readers:**
 
@@ -581,6 +589,10 @@ fabrika ledger draft 3 --body-digest 8f2c1a90b4d7 --token <claim-token> <<'EOF'
 
 ### Summary
 ...
+
+### Acceptance criteria
+- [ ] every child's slice is wired end to end behind the flag
+...
 EOF
 ```
 
@@ -595,11 +607,12 @@ EOF
 | stdin | markdown | yes | — | the plan block, opening with `## Plan (plan-epic)` |
 
 **Output** — machine.
-`{"answer": "staged", "epic": 3, "document": "plan", "sections": 10, "stories": [1,2,3], "bytes": 4187}`
+`{"answer": "staged", "epic": 3, "document": "plan", "sections": 11, "stories": [1,2,3], "bytes": 4187}`
 
-The verb checks the closed section set (each of the ten `###` headings present exactly once, in
-order), that the block opens with `## Plan (plan-epic)`, and that `### User stories` parses through
-the imported `readEpicStories` to a contiguous id run from 1. It leak-scans the text, because the
+The verb checks the closed section set (each of the eleven `###` headings present exactly once, in
+order), that the block opens with `## Plan (plan-epic)`, that `### User stories` parses through
+the imported `readEpicStories` to a contiguous id run from 1, and that `### Acceptance criteria`
+reads back `Found` through the shared `wire/acceptance-criteria.ts`. It leak-scans the text, because the
 block reaches a public issue body. It **does not judge content** — a `### Approach` reading "TBD"
 stages cleanly, and catching that is the skill's job, not a verb's.
 
@@ -620,7 +633,7 @@ splices.
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing |
-| `4` | a required `###` section is missing, duplicated or out of order; the block does not open with `## Plan (plan-epic)`; the plan declares zero user stories; or the story ids are not contiguous from 1 |
+| `4` | a required `###` section is missing, duplicated or out of order; the block does not open with `## Plan (plan-epic)`; `### Acceptance criteria` is followed by a blank line or reads back absent/malformed; the plan declares zero user stories; or the story ids are not contiguous from 1 |
 | `5` | the plan text carries a machine-local path |
 | `6` | the plan text is a bare `@` path reference |
 | `7` | the epic is proven absent or closed |
@@ -638,6 +651,8 @@ splices.
 | `ledger draft: the plan block carries <k> "<heading>" sections — a plan with two of one section has no single meaning.` | 4 | refusal |
 | `ledger draft: the plan block's sections are out of order: "<current>" appears after "<previous>".` | 4 | refusal |
 | `ledger draft: the plan block does not open with "## Plan (plan-epic)".` | 4 | refusal |
+| `ledger draft: "### Acceptance criteria" is followed by a blank line — its first "- [ ] " row sits directly under the heading, the same byte rule a child body carries.` | 4 | refusal |
+| `ledger draft: the plan's acceptance criteria read as <absent\|malformed> — <reason>. "### Acceptance criteria" carries "- [ ] " checkbox rows, and a section of prose leaves the epic tail with nothing to grade.` | 4 | refusal |
 | `ledger draft: user stories are numbered <list> — a story list must run from 1 with no gaps or repeats.` | 4 | refusal |
 | `ledger draft: the plan declares zero user stories — an ordered list is what carries them, and a bullet or an "S<n>" label parses as none.` | 4 | refusal |
 | `ledger draft: the plan text carries a machine-local path (<masked>).` | 5 | refusal |
@@ -656,7 +671,7 @@ required, and an empty one is `3`.
 
 ```
 $ fabrika ledger draft 3 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
-{"answer":"staged","epic":3,"document":"plan","sections":10,"stories":[1,2,3],"bytes":4187}
+{"answer":"staged","epic":3,"document":"plan","sections":11,"stories":[1,2,3],"bytes":4187}
 ```
 
 ```

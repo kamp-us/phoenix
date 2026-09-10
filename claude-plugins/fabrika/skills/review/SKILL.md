@@ -77,6 +77,15 @@ terminal either, so carry them into the verdict you reach at the end rather than
 The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
 `superseded` one is a round already answered, printed so the record shows it.
 
+**An epic tail has one fallback, and it is bounded by when the epic was planned.** `plan-epic` writes
+an `### Acceptance criteria` block onto the epic body beside the ledger, so `criteria <epic>` and
+`append-criterion <epic>` serve a tail exactly as they serve any other issue. An epic planned before
+that section joined the plan carries no block and never will unless it is re-planned — `criteria`
+answers `absent` on it. Grade that tail against the plan's `### Goal / non-goals`, and **say so in
+the verdict body**: name the epic as planned before the criteria section existed, name the section
+you graded against, and name re-planning as what closes the gap. Do not reconstruct a contract silently, and do not read the `absent` as licence to invent
+criteria.
+
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
 #N` by contract so the merge closes nothing — so pass `<n>` to `criteria` exactly as you would a

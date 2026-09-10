@@ -72,9 +72,9 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
  * `review criteria` refuse exactly what it refuses, so stamping over a body it will not answer
  * `Found` on only defers the refusal to a lane that cannot repair it.
  *
- * **`--type epic` is exempt**, and that is the load-bearing carve-out: an epic's criteria arrive per
- * child from the plan ledger rather than in its own body, so a blanket refusal would make a triaged
- * epic unstampable. `--ready-for human` is exempt on every type — the promise the block backs is the
+ * **`--type epic` is exempt**, and that is the load-bearing carve-out: an epic is stamped here
+ * *before* it is planned, and its own criteria are written by `plan-epic` beside the ledger, so at
+ * stamp time it still carries no block and a blanket refusal would make a triaged epic unstampable. `--ready-for human` is exempt on every type — the promise the block backs is the
  * one made to an agent.
  */
 const criteriaRefusal = (
