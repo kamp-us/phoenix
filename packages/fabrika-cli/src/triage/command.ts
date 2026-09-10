@@ -306,7 +306,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
+		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read, or the comment list stayed shorter than the count the issue declares for itself — never \"won\"). Example: fabrika triage claim 4312",
 	),
 );
 

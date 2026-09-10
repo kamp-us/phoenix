@@ -6,6 +6,7 @@ import {
 	COMMENTS,
 	CWD,
 	claimPage,
+	declaring,
 	EXPIRED,
 	guardedShell,
 	LIVE,
@@ -428,6 +429,8 @@ describe("runApply", () => {
 	it("refuses when the read-back itself fails — a write that is not verified is not finished", async () => {
 		const out = await run([
 			[once(ISSUE), issue(["status:needs-triage"], null)],
+			// the guard's reconciled comment read takes its denominator off a second issue read
+			[once(ISSUE), declaring()],
 			[ISSUE, UNREADABLE],
 			[LABELS, VOCABULARY],
 			[MILESTONES, OPEN_MILESTONES],
