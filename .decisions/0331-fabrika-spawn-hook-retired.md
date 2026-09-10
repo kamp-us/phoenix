@@ -1,7 +1,7 @@
 ---
 id: 0331
 title: fabrika's rebuilt spawn hook is retired — 0282's ruling reaches fabrika
-status: amended-in-part by [0360](0360-retire-opencode-harness.md)
+status: amended-in-part by [0360](0360-retire-opencode-harness.md), [0374](0374-retire-unused-model-vocabulary.md)
 date: 2026-08-20
 tags: [fabrika, hooks, spawn-guard, control-plane, harness]
 ---
