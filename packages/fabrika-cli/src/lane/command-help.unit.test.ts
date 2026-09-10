@@ -31,6 +31,7 @@ const ROOTED_VERBS = [
 	"print",
 	"open",
 	"emit",
+	"amend",
 	"assembly",
 	"push",
 	"brief",

@@ -22,6 +22,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
+import {runAmend} from "./amend-verb.ts";
 import {closedReader, runArchive} from "./archive-verb.ts";
 import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
@@ -526,7 +527,52 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named; a defective line's refusal also teaches the placement, since editorial or history prose belongs below a `---` thematic break, which ends the section), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `.fabrika.jsonc`'s `machineryLaps.onEmit` picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. Example: fabrika lane emit 5680",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. That remedy is for a lane running the wrong MACHINE, which `fabrika lane migrate --check` is what says; a running lane whose PLAN changed goes to `fabrika lane amend <n>` instead, which re-derives the machine over the log it keeps rather than discarding every landed child's record with the directory. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named; a defective line's refusal also teaches the placement, since editorial or history prose belongs below a `---` thematic break, which ends the section), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `.fabrika.jsonc`'s `machineryLaps.onEmit` picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. Example: fabrika lane emit 5680",
+	),
+);
+
+const amend = leafCommand(
+	"amend",
+	{
+		epic: Argument.integer("lane").pipe(
+			Argument.withDescription("the epic issue whose running lane takes the amended topology"),
+		),
+		root: rootFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({epic, root, repo}) {
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane amend",
+			root,
+			DEFAULT_LANES_ROOT,
+			process.cwd(),
+		);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
+		yield* emit(
+			yield* onGround("amend", [resolvedRoot], process.cwd(), () =>
+				runAmend({
+					epic,
+					lane: String(epic),
+					root: resolvedRoot,
+					repo: Option.getOrNull(repo),
+					env: process.env,
+					now: new Date().toISOString(),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Re-derive a running epic's machine from its current topology."),
+	Command.withDescription(
+		"Amend one RUNNING epic lane's task set: re-read the epic body's `## Dependencies` block, re-derive the machine `lane emit` would emit from it today, and — only where the lane's own recorded history survives the change — append one `<EPIC_N>.AMENDED` line and write the re-derived `workflow.json`. This is the verb for a plan that changed after emission: a child added to the topology, or a not-started child re-sequenced into a later phase. Before it existed the only routes were retiring the lane directory and re-emitting, which discards `events.jsonl` and every landed child's record with it, or hand-driving the rest of the epic outside its own ledger. **The log is appended to and never rewritten**: no recorded line is edited, reordered or dropped, the amendment line moves no task and reaches no machine (the fold consumes it, exactly as it consumes `lane reconcile`'s CORRECTED), and its `tasks` payload names the set the re-derived machine holds, which is the whole audit of the change. A task new to the topology boots `queued` carrying no history; a task that has not started may move to any phase, later ones included. **It reconciles nothing** — the block is read exactly as it stands, and a block still naming a child the board closed is `fabrika plan restage`'s to repair, never this verb's to guess at. The lap axis is read off the lane's OWN machine and not off `.fabrika.jsonc`, so a repo that flipped `machineryLaps.onEmit` since the emission does not have that flip land as a side effect of adding a child. A topology that already derives the machine on disk answers {answer:\"current\"} with nothing appended and nothing written. stdout on a change is {answer:\"amended\", lane, epic, workflow, tasks, added, dropped, phases, children, bytes}. Every refusal below is proven BEFORE the append and before the machine write, so the lane is byte-identical after it. Exits 4 (the lane record on disk was read in full and is not the shape, or its log already does not replay through the machine it is running — this lane is not one to amend), 7 (no lane there, or the epic is proven absent or closed), 8 (the append or the machine write did not land — the stderr says which, and a recorded amendment whose machine write failed is completed by re-running this verb), 11 (the lane, the epic, its child list or the machine document could not be read — UNKNOWN, nothing written), 15 (no readable `## Dependencies` topology — there is nothing to amend to), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 40 (another writer holds the lane's ledger lock — retry once the holder clears), 60 (the new topology places no phase for a task this ledger records as LANDED, named with the final it landed in — the ledger is the only record that work landed, so put the child back in a phase or close the epic over what it built), 61 (a task carrying recorded history cannot replay to the leaf it stands on under the re-derived machine — it is dropped while mid-flight, or its log reaches a cell the new region does not hold; each offending task is named), 62 (the epic body's `## Dependencies` block was read in full and is not a topology — an unparseable line, a child placed in two phases, or a requires subject placed in none; the defect is the ISSUE BODY's, so `fabrika plan restage` is the repair and nothing on disk is at fault). Example: fabrika lane amend 7499",
 	),
 );
 
@@ -1224,6 +1270,7 @@ export const laneCommand = Command.make("lane").pipe(
 		print,
 		open,
 		emitLane,
+		amend,
 		brief,
 		dispatch,
 		assembly,

@@ -111,6 +111,20 @@ export const CANCELLED_EVENT = "CANCELLED";
 export const LANDED_EVENT = "LANDED";
 
 /**
+ * The twelfth event, and the second that reaches no machine: a topology amendment, appended by
+ * `lane amend` to say that the lane's machine was re-derived from the epic's current
+ * `## Dependencies` block at this point in the log.
+ *
+ * Like {@link CORRECTED_EVENT} it is a fact about the lane rather than about a task, so no state
+ * holds a cell for it and the fold drops it before any message is dispatched. That is what keeps
+ * the log append-only across a topology change: the machine on disk is replaced, no recorded line
+ * is rewritten, and this line is where a reader finds out why the lines above it were folded by a
+ * machine whose task set differs. Its `tasks` payload is the set the amendment left behind, which
+ * is the whole audit of the change.
+ */
+export const AMENDED_EVENT = "AMENDED";
+
+/**
  * The finals a board-proven terminal lands in — the compiler's own states, never a document's.
  *
  * Each is in `finals` so its phase folds, and in neither `errorFinals` nor `openFinals`: a settled
