@@ -55,7 +55,7 @@ describe("the digest is flip-neutral (the invariant the whole gate rests on)", (
 	});
 });
 
-describe("the epic's own acceptance criteria bind the digest (ADR 0380)", () => {
+describe("the epic's own acceptance criteria bind the digest", () => {
 	it("does not move for an epic carrying none — an old plan's approval stays current", () => {
 		const epicLine = serializeScope(scope()).split("\n").at(-1) ?? "";
 		expect(epicLine.startsWith("epic=4300|")).toBe(true);

@@ -142,12 +142,12 @@ re-plan.
 
 **`### Acceptance criteria` is the contract the epic's own tail PR is graded against, and you write
 it here.** Every issue kind carries the same gradeable surface, so `review criteria <epic>` and
-`review append-criterion <epic>` work on a tail unchanged — before ADR
-[0380](../../../../.decisions/0380-plan-epic-emits-the-epic-s-acceptance-criteria.md) they refused on
-every one of them. Write it about the *epic*, not the children: coherence across the slices, the
-end-to-end behaviour no single child owns, the shape the tail must leave behind. Bytes are the
-child's — `- [ ] ` checkbox rows, the first directly under the heading with no blank line between
-them — and `ledger draft` refuses prose there on `4`.
+`review append-criterion <epic>` work on a tail unchanged; an epic body carrying no such block
+leaves both of them with nothing to serve. Write it about the *epic*, not the children: coherence
+across the slices, the end-to-end behaviour no single child owns, the shape the tail must leave
+behind. The bytes are the child's, and
+[`contract.md`](contract.md)'s `## The ledger grammar this skill WRITES` states them — `ledger draft`
+refuses prose under that heading on `4`.
 
 **It is authored here, on this stdin, and never appended after `ledger write`.** These criteria go
 through step 4's grilling and the founder plan approval with the rest of the plan, and the scope

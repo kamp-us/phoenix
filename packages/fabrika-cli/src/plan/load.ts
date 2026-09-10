@@ -143,7 +143,7 @@ const criteriaOf = (body: string): {token: CriteriaToken; count: number} => {
 	return {token: read._tag === "Absent" ? "absent" : "malformed", count: 0};
 };
 
-/** The epic's own criteria texts, in body order — empty on anything but a `Found`. See ADR 0380. */
+/** The epic's own criteria texts, in body order — empty on anything but a `Found`. */
 const epicCriteriaOf = (body: string): ReadonlyArray<string> => {
 	const read = readAcceptanceCriteria(body);
 	return read._tag === "Found" ? read.value.map((criterion) => criterion.text) : [];

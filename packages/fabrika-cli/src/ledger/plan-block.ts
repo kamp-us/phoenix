@@ -16,7 +16,7 @@
  * `### Acceptance criteria` is checked the same way and for the same reason: it is the contract the
  * epic *tail* PR is graded against, so a section of prose under that heading reads back `Absent`
  * through the shared wire format and leaves `review criteria` with nothing — the story-list failure
- * pointing at a different section. See ADR 0380.
+ * pointing at a different section.
  */
 
 import {readEpicStories, sectionCount, unfencedLines} from "../plan/ledger.ts";
@@ -46,6 +46,21 @@ const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
 const ACCEPTANCE_CRITERIA = "### Acceptance criteria";
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * The source line directly under the criteria heading, or `undefined` when there is none.
+ *
+ * Read off the unfenced view every other structural check here reads, so a fenced illustration of
+ * the section inside `### Approach` is not mistaken for the section itself.
+ */
+const lineAfterCriteriaHeading = (text: string): string | undefined => {
+	const unfenced = unfencedLines(text);
+	const at = unfenced.findIndex(({text: line}) => line.trim() === ACCEPTANCE_CRITERIA);
+	const heading = unfenced[at];
+	const next = unfenced[at + 1];
+	if (at === -1 || heading === undefined || next === undefined) return undefined;
+	return next.line === heading.line + 1 ? next.text : undefined;
+};
 
 /** The `###` headings the block carries, in the order they appear, outside every fence. */
 const headingOrder = (text: string): ReadonlyArray<string> => {
@@ -106,9 +121,7 @@ export const checkPlanBlock = (text: string): PlanBlockCheck => {
 		}
 	}
 
-	const lines = text.split("\n");
-	const heading = lines.findIndex((line) => line.trim() === ACCEPTANCE_CRITERIA);
-	if (heading !== -1 && (lines[heading + 1] ?? "").trim() === "") {
+	if (lineAfterCriteriaHeading(text)?.trim() === "") {
 		return bad(
 			`"${ACCEPTANCE_CRITERIA}" is followed by a blank line — its first "- [ ] " row sits directly under the heading, the same byte rule a child body carries.`,
 		);

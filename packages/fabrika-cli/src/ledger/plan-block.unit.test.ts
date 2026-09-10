@@ -94,6 +94,24 @@ describe("checkPlanBlock", () => {
 		});
 	});
 
+	it("reads the blank-line rule outside fences — a fenced example of the section is not the section", () => {
+		const fencedExample = [
+			"### Approach",
+			"",
+			"The section a planner writes looks like this:",
+			"",
+			"```markdown",
+			"### Acceptance criteria",
+			"",
+			"- [ ] a fenced illustration, blank line and all",
+			"```",
+		].join("\n");
+		const checked = checkPlanBlock(
+			planBlock().replace("### Approach\n\nSomething true about this section.", fencedExample),
+		);
+		expect(checked).toMatchObject({_tag: "Ok"});
+	});
+
 	it("passes criteria written as checkbox rows under their heading", () => {
 		expect(checkPlanBlock(planBlock({criteria: "- [ ] one\n- [ ] two"}))).toMatchObject({
 			_tag: "Ok",

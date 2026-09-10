@@ -61,10 +61,11 @@ const epicLine = (ledger: LedgerScope): string => {
 
 /**
  * The epic's own acceptance criteria, appended **only when the body carries some** — the clause that
- * keeps ADR 0380 from invalidating every standing approval on the board.
+ * keeps this component from invalidating every standing plan approval on the board.
  *
- * An epic planned before that ADR carries no block, so its line serializes byte-for-byte as it did
- * and its founder approval stays `current`, which is what the #6683 drain-as-emitted ruling promised.
+ * An epic planned before the criteria section existed carries no block, so its line serializes
+ * byte-for-byte as it did and its founder approval stays `current`: an already-planned epic drains
+ * as it was emitted rather than being re-approved.
  * An epic planned after it carries one, so editing a criterion after approval moves the digest and
  * the approval resolves `stale` — the criteria are part of the scope the founder approved, exactly
  * as the stories and the topology are. Their texts are serialized, not their count: a reworded

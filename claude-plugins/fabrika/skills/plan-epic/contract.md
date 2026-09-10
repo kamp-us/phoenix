@@ -215,9 +215,8 @@ does** — `- [ ] ` checkbox rows, the first one directly under the heading with
 between them**, outside every fence and every `<details>` block. It is read back through the same
 `packages/fabrika-cli/src/wire/acceptance-criteria.ts` every grader reads, so a section of prose
 under that heading is refused at authoring time rather than discovered by a tail reviewer who then
-has nothing to grade. Before ADR
-[0380](../../../../.decisions/0380-plan-epic-emits-the-epic-s-acceptance-criteria.md) an epic body
-carried no such block at all and `review criteria <epic>` refused on every tail.
+has nothing to grade. An epic body carrying no such block leaves `review criteria <epic>` refusing
+on every tail, which is the state this section exists to close.
 
 **Child body — composed, then validated through the imported readers:**
 
