@@ -412,6 +412,51 @@ describe("lane report — the deferral a proven PASS discloses", () => {
 });
 
 /**
+ * An investigation's `SUCCESS-NO-PR` used to drive its lane into `review`, whose brief needs an open
+ * PR the lane never opened — so `lane brief` refused at 20 and the only move left was a park that
+ * read as a fault. All three builder terminals report one `DONE`, so the prover's answer is the
+ * whole difference, and these are the three lines that say which way each one routes.
+ */
+describe("lane report — the diagnosis a finished investigation discloses", () => {
+	it("records the prover's diagnosis and lands the lane in `diagnosed`, never in `review`", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver(
+			answer(JSON.stringify({proof: "proven", evidence: {kind: "diagnosis", commentId: 900}})),
+			[],
+			null,
+			[],
+			true,
+		);
+
+		const out = await run(fs, "SUCCESS-NO-PR", {comment: "https://x/#issuecomment-900", prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", diagnosis: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({current: "diagnosed", diagnosis: true});
+	});
+
+	it("leaves a `SHIPPED-PR` on the route it always took, carrying no `diagnosis` at all", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "SHIPPED-PR", {pr: "https://x/pull/1"});
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "diagnosis")).toBe(false);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+	});
+
+	it("leaves an epic child's `BUILT-NO-PR` folding to `review` too", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "BUILT-NO-PR");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "diagnosis")).toBe(false);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+	});
+});
+
+/**
  * A merged `Part of #N` PR used to drive its lane to `complete` exactly as a closing merge
  * did, because nothing between the nominator and the ledger carried the difference.
  */

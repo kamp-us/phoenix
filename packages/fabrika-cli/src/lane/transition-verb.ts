@@ -13,6 +13,11 @@
  * chained `lane prove …; lane transition …` skipped without failing anywhere. The prover is a
  * parameter so this verb's unit tier stays offline; the CLI hands it `runProve`.
  *
+ * The prover's own payloads ride the appended line here as they do on the shell's path, `diagnosis`
+ * among them: an investigation's build `DONE` proven off a diagnosis comment rather than a pull
+ * request takes the machine's `done:diagnosis` arm from this door too, so which verb recorded the
+ * terminal cannot change which terminal the lane reaches.
+ *
  * The proof is read-only over the artifacts and runs BEFORE the lock; the authoritative
  * load → fold → validate → append pass runs inside it ([`append-lock.ts`](append-lock.ts)), so a
  * writer cannot validate against bytes another is about to move under it. Lock-budget exhaustion
@@ -220,6 +225,7 @@ export const runTransition = <R>(
 					classed.classes,
 					granted.grant,
 					proved.partial,
+					proved.diagnosis ? true : null,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(
@@ -255,6 +261,7 @@ export const runTransition = <R>(
 							...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 							...(proved.partial === null ? {} : {partial: proved.partial}),
+							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 						},
 						null,

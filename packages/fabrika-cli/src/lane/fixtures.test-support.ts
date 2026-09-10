@@ -22,6 +22,7 @@ export const fakeProver = (
 	deferred: ReadonlyArray<string> = [],
 	partial: boolean | null = null,
 	landed: ReadonlyArray<number> = [],
+	diagnosis = false,
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -29,7 +30,7 @@ export const fakeProver = (
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return {...outcome, deferred, partial, landed};
+				return {...outcome, deferred, partial, landed, diagnosis};
 			}),
 	};
 };
