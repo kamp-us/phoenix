@@ -271,25 +271,45 @@ export const issueRefOf = (body: string): IssueRef => {
 
 export interface IssueRefs {
 	readonly kind: "fixes" | "part-of" | "none";
+	/**
+	 * The issues of the winning kind alone — the closing ones where the body has any, else the
+	 * `Part of` ones. Read beside {@link IssueRefs.kind}, which says which set this is, so a caller
+	 * asking "does this body discharge #N on merge" tests membership here and nowhere else.
+	 */
 	readonly numbers: ReadonlyArray<number>;
+	/**
+	 * **Every** issue the body names either way, closing and `Part of` together, deduplicated.
+	 *
+	 * The set a nominator asks for: "is this PR about #N" is a wider question than "does merging it
+	 * close #N", and only this field can answer it of an epic tail, whose body carries one closing
+	 * reference per landed child plus `Part of #<epic>` so the merge leaves the epic open.
+	 * {@link IssueRefs.numbers} drops that `Part of` by precedence, which stranded a complete epic
+	 * run at exit `20` with no candidate linking the epic.
+	 */
+	readonly referenced: ReadonlyArray<number>;
 }
 
 /**
- * The plural sibling of {@link issueRefOf}: every issue of the winning kind, not the first.
+ * The plural sibling of {@link issueRefOf}: every issue of the winning kind, not the first — plus
+ * {@link IssueRefs.referenced}, every issue of either kind.
  *
- * Same precedence — closing beats `Part of`, and a body carrying both is a `fixes` body — so a
- * caller trading the scalar for this one changes only how many references it can see.
+ * `kind` and `numbers` keep the scalar's precedence: closing beats `Part of`, and a body carrying
+ * both is a `fixes` body whose `numbers` are the closing ones. That is load-bearing for closure —
+ * folding the `Part of` numbers in would make an epic tail's merge read as closing the epic it was
+ * written not to close. So the wider set arrives beside them rather than inside them, and the two
+ * reads take the field that answers their own question.
  */
 export const issueRefsOf = (body: string): IssueRefs => {
-	const closing = linkedIssuesOf(body);
-	if (closing.length > 0) return {kind: "fixes", numbers: closing};
 	const all = new RegExp(PART_OF.source, "gi");
 	const parts = [...body.matchAll(all)].flatMap((match) =>
 		match[1] === undefined ? [] : [Number.parseInt(match[1], 10)],
 	);
+	const closing = linkedIssuesOf(body);
+	const referenced = [...new Set([...closing, ...parts])];
+	if (closing.length > 0) return {kind: "fixes", numbers: closing, referenced};
 	return parts.length === 0
-		? {kind: "none", numbers: []}
-		: {kind: "part-of", numbers: [...new Set(parts)]};
+		? {kind: "none", numbers: [], referenced}
+		: {kind: "part-of", numbers: [...new Set(parts)], referenced};
 };
 
 /** `fixes:<n>` / `part-of:<n>`, or the calling group's null token. */
