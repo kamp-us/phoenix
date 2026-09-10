@@ -182,14 +182,6 @@ Apply the supported driver repairs and map their results to workflow events. Use
 for command details and the [operator skill](../../../claude-plugins/fabrika/skills/operate/SKILL.md)
 for when to apply a recipe.
 
-**A novel park is not automatically a human's.** Every park cause carries a route
-([`lane/report.ts`](../src/lane/report.ts)), and `driver` says the park is machinery a driver session
-owns rather than a call only the founder can make. Under `.fabrika.jsonc`'s
-`parkCause.driverRouted: "clear"` such a park clears here on the driver's own `--rationale`, which
-rides the recorded `UNBLOCKED` and reads back as the task's standing `rationale` — the whole audit of
-a clear no proving read stands behind, which is why omitting it is `23` rather than a silent clear.
-A `founder` route, and every park under the shipped `refuse`, still lands on `12`.
-
 ## The `report` group
 
 File an observation for later triage, check for an existing report, or append to one. Use
