@@ -26,6 +26,16 @@ Start Fabrika work normally. The hook binds the issue when Fabrika reads or clai
 usage at later callbacks. See [collection details](../../../packages/fabrika-cli/docs/codex-usage.md)
 for supported versions, missing coverage and recovery. Lane dispatch also collects without hooks.
 
+## Recover interrupted collection
+
+If the hook reports an unresolved issue association, run an issue read with a literal number,
+such as `node packages/fabrika-cli/src/bin.ts review criteria 123`. The next callback replays
+that turn's retained native usage under the resolved issue.
+
+To replay an interrupted dispatch, invoke the configured hook command with its original `cwd`,
+`session_id` and `transcript_path` in the JSON on stdin. Its saved dispatch binding supplies the
+work identity. Retain those native files until collection finishes.
+
 ## Dispatch a lane task
 
 Ask Codex to use the shared `operate` skill. Its Codex route runs `fabrika lane dispatch` for

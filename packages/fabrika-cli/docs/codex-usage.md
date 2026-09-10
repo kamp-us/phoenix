@@ -40,15 +40,23 @@ Later turns retain that association. Another explicit issue in a new turn starts
 two different issues in one turn are reported as ambiguous rather than reassigned.
 Dispatch callbacks use the saved dispatch association instead.
 
+Literal shell commands are read across newline, semicolon, pipe and conditional separators;
+quoted words stay together. Options may precede the issue, including `--repo value` and
+`--repo=value`. An unresolved issue command, shell expansion or conflicting issues produces an
+advisory warning and saves an unresolved association. Later callbacks keep that warning visible
+and do not inherit the previous issue for that turn. A literal issue read can resolve the binding
+and replay its usage. Commands that do not name an issue continue an existing association;
+without one, a Fabrika callback warns that collection has no issue association.
+
 Bindings live under the shared Git directory's `fabrika-codex-usage` directory. The ledger lives
 at `.fabrika/spend-ledger.jsonl` in the primary checkout. Each callback replays prior bound turns,
 so delayed writes can recover. `SubagentStart` and `SubagentStop` retain expected child IDs even
 when their transcript is missing. The session scan includes `sessions` and `archived_sessions`.
 Interrupted or unsupported participant notices remain in the ledger after recovery.
 
-To replay an interrupted dispatch, invoke the hook with its original `cwd`, `session_id` and
-`transcript_path`; its saved dispatch binding supplies the work identity. Native files are retained
-by Codex, not copied into the ledger. If Codex removes them before collection, usage is unavailable.
+The [setup guide](../../../claude-plugins/fabrika/guide/codex.md#recover-interrupted-collection)
+carries the replay procedure. Native files are retained by Codex, not copied into the ledger.
+If Codex removes them before collection, usage is unavailable.
 
 Discovery is always `unknown` and coverage remains `partial`: readable files and observed callbacks
 cannot prove that no unobserved descendants existed. Recording errors print a warning and do not

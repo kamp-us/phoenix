@@ -12,7 +12,13 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 });
 describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("runs the documented hook command with native JSON and advisory storage failures", () => {
+	it.each([
+		"node packages/fabrika-cli/src/bin.ts build claim 8950",
+		"node packages/fabrika-cli/src/bin.ts review criteria --repo kamp-us/phoenix 8950",
+		"git status --short\nnode packages/fabrika-cli/src/bin.ts review criteria 8950",
+		"git status --short && node 'packages/fabrika-cli/src/bin.ts' review criteria --json --repo='kamp-us/phoenix' 8950",
+		"node packages/fabrika-cli/src/bin.ts build claim --repo kamp-us/phoenix --issue=8950 9000",
+	])("records native usage through the installed hook for %s", (command) => {
 		const cwd = mkdtempSync(join(tmpdir(), "codex-hook-cli-"));
 		dirs.push(cwd);
 		execFileSync("git", ["init", "--quiet"], {cwd});
@@ -72,7 +78,7 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 			turn_id: "turn",
 			transcript_path: transcript,
 			cwd,
-			tool_input: {cmd: "node packages/fabrika-cli/src/bin.ts build claim 8950"},
+			tool_input: {command},
 		};
 		const run = (input: unknown) =>
 			JSON.parse(
@@ -84,6 +90,11 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 				}),
 			);
 		const ledger = join(cwd, ".fabrika", "spend-ledger.jsonl");
+		const unknown = {...event, tool_input: {command: "fabrika review criteria $ISSUE"}};
+		expect(run(unknown).systemMessage).toContain("association");
+		expect(
+			run({...unknown, hook_event_name: "Stop", tool_input: undefined}).systemMessage,
+		).toContain("association");
 		mkdirSync(ledger, {recursive: true});
 		expect(run(event)).toHaveProperty("systemMessage");
 		rmSync(ledger, {recursive: true});
@@ -91,7 +102,54 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 		expect(run({...event, hook_event_name: "Stop"})).toEqual({});
 		const read = readUsageLedger(readFileSync(ledger, "utf8"));
 		expect(read.records.filter((row) => row.kind === "measurement")).toHaveLength(3);
+		expect(read.records.filter((row) => row.kind === "measurement")[0]).toMatchObject({
+			work: {issue: 8950, run: "codex:native:turn"},
+		});
 		expect(read.diagnostics.conflicts).toBe(0);
+		const next = {
+			...event,
+			turn_id: "next",
+			tool_input: {command: "fabrika review criteria $ISSUE"},
+		};
+		const original = readFileSync(transcript, "utf8");
+		writeFileSync(
+			transcript,
+			original +
+				"\n" +
+				original
+					.split("\n")
+					.slice(1)
+					.join("\n")
+					.replaceAll('"turn"', '"next"')
+					.replaceAll('"r"', '"r2"'),
+		);
+		expect(run(next).systemMessage).toContain("association");
+		expect(run({...next, hook_event_name: "Stop", tool_input: undefined}).systemMessage).toContain(
+			"association",
+		);
+		expect(
+			readUsageLedger(readFileSync(ledger, "utf8")).records.filter(
+				(row) => row.kind === "measurement",
+			),
+		).toHaveLength(3);
+		expect(
+			run({...next, tool_input: {command: "fabrika review criteria --repo=o/r 8951"}}),
+		).toEqual({});
+		expect(
+			readUsageLedger(readFileSync(ledger, "utf8")).records.filter(
+				(row) => row.kind === "measurement",
+			),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					work: expect.objectContaining({issue: 8951, run: "codex:native:next"}),
+				}),
+			]),
+		);
 		expect(run({})).toHaveProperty("systemMessage");
+		expect(run(next).systemMessage).toContain("association");
+		expect(
+			run({...next, tool_input: {command: "fabrika review criteria 8952"}}).systemMessage,
+		).toContain("Multiple issues");
 	});
 });

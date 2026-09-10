@@ -1,6 +1,6 @@
 import {Crypto, Effect, FileSystem, Path, Result} from "effect";
 import {answer} from "../verb.ts";
-import {codexIssue} from "./codex-attribution.ts";
+import {codexAttribution} from "./codex-attribution.ts";
 import {collectCodex} from "./codex-collector.ts";
 import {type CodexWork, id, json, object, readCodexSession} from "./codex-records.ts";
 
@@ -41,7 +41,8 @@ export const runCodexHook = Effect.fn("spend.codexHook")(
 		const read = transcript ? yield* Effect.result(fs.readFileString(transcript)) : null;
 		const native = read && Result.isSuccess(read) ? readCodexSession(read.success) : null;
 		const rootThread = native?.root ?? thread;
-		const issue = codexIssue(event);
+		const association = codexAttribution(event);
+		const issue = association.kind === "issue" ? association.issue : null;
 		const binding = path.join(
 			options.state,
 			`${encodeURIComponent(rootThread)}-${encodeURIComponent(turn ?? "unknown")}.json`,
@@ -55,16 +56,37 @@ export const runCodexHook = Effect.fn("spend.codexHook")(
 		if (!work && dispatch && (yield* fs.exists(dispatch)))
 			work = readWork(object(json(yield* fs.readFileString(dispatch))).work);
 		const dispatched = work !== undefined;
+		const unknown =
+			"Fabrika issue association is unresolved. Run an issue read with a literal issue number to resume collection.";
+		const ambiguous =
+			"Multiple issues in one native turn; existing association retained. Start a new turn for the next issue.";
+		if (!dispatched && association.kind === "unresolved") {
+			yield* fs.makeDirectory(options.state, {recursive: true});
+			const unresolved = JSON.stringify({unresolved: true});
+			if (turn) {
+				const saved = (yield* fs.exists(binding))
+					? object(json(yield* fs.readFileString(binding)))
+					: {};
+				const previous = readWork(saved) ?? readWork(saved.previous);
+				yield* fs.writeFileString(binding, JSON.stringify({unresolved: true, previous}));
+			}
+			yield* fs.writeFileString(active, unresolved);
+			return advisory([unknown]);
+		}
 		if (issue !== null && turn && !dispatched) {
 			const candidate = {repo: options.repo, issue, run: `codex:${rootThread}:${turn}`};
 			yield* fs.makeDirectory(options.state, {recursive: true});
-			if (!(yield* fs.exists(binding)))
+			const saved = (yield* fs.exists(binding))
+				? object(json(yield* fs.readFileString(binding)))
+				: null;
+			if (saved?.unresolved === true) {
+				const previous = readWork(saved.previous);
+				if (previous && previous.issue !== issue) return advisory([ambiguous]);
+				yield* fs.writeFileString(binding, JSON.stringify(candidate));
+			} else if (saved === null)
 				yield* fs.writeFileString(binding, JSON.stringify(candidate), {flag: "wx"});
 			const stored = object(json(yield* fs.readFileString(binding)));
-			if (stored.issue !== issue)
-				return advisory([
-					"Multiple issues in one native turn; existing association retained. Start a new turn for the next issue.",
-				]);
+			if (stored.issue !== issue) return advisory([ambiguous]);
 			const crypto = yield* Crypto.Crypto;
 			const temp = `${active}.${yield* crypto.randomUUIDv4}`;
 			yield* fs.writeFileString(temp, JSON.stringify(stored));
@@ -84,16 +106,22 @@ export const runCodexHook = Effect.fn("spend.codexHook")(
 			? (yield* fs.readDirectory(roster)).map((name) => decodeURIComponent(name))
 			: [];
 		const bindings: Array<{work: CodexWork; rootTurn?: string}> = work ? [{work}] : [];
+		const notices: string[] = [];
 		if (!work && (yield* fs.exists(options.state))) {
 			for (const name of yield* fs.readDirectory(options.state)) {
 				const prefix = `${encodeURIComponent(rootThread)}-`;
 				if (!name.startsWith(prefix) || !name.endsWith(".json")) continue;
-				const bound = readWork(json(yield* fs.readFileString(path.join(options.state, name))));
+				const saved = json(yield* fs.readFileString(path.join(options.state, name)));
+				if (object(saved).unresolved === true) {
+					notices.push(unknown);
+					continue;
+				}
+				const bound = readWork(saved);
 				if (!bound) return advisory(["Saved Fabrika association is unreadable."]);
 				bindings.push({work: bound, rootTurn: decodeURIComponent(name.slice(prefix.length, -5))});
 			}
 		}
-		const notices: string[] = [];
+		if (!bindings.length && association.kind === "continuation") notices.push(unknown);
 		for (const bound of bindings) {
 			const result = yield* collectCodex({
 				sessions: options.sessions,
