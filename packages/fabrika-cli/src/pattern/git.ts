@@ -7,6 +7,11 @@
  * is, so "not in the tree" is a *fact* and a non-zero exit is a *failed read*. That split is what
  * lets `pattern corpus` answer `absent` at exit `0` while still refusing `11` on a read it could not
  * perform — the two would be one answer if absence were inferred from a failure.
+ *
+ * Every probe below is `--full-tree`, which is what keeps that split honest: git resolves a bare
+ * pathspec against the process's directory and limits the listing to it, so from a subdirectory a
+ * present path answers empty and reads as the *fact* of absence. It implies `--full-name`,
+ * so the printed names stay root-relative and comparable to the paths asked about.
  */
 import {Effect} from "effect";
 import {execCapture} from "../io/exec.ts";
@@ -36,7 +41,14 @@ export const presentPathsAt = (
 ): Shell<Attempt<ReadonlySet<string>>> =>
 	Effect.gen(function* () {
 		if (paths.length === 0) return ok<ReadonlySet<string>>(new Set());
-		const r = yield* execCapture("git", ["ls-tree", "--name-only", sha, "--", ...paths]);
+		const r = yield* execCapture("git", [
+			"ls-tree",
+			"--full-tree",
+			"--name-only",
+			sha,
+			"--",
+			...paths,
+		]);
 		if (!r.ok) return fail(r.reason);
 		return ok<ReadonlySet<string>>(
 			new Set(
@@ -58,7 +70,7 @@ export const pathPresentAt = (sha: string, path: string): Shell<Attempt<boolean>
 /** The top-level entries of the tree at `sha` — the segment set a cited path must open with. */
 export const topLevelEntriesAt = (sha: string): Shell<Attempt<ReadonlySet<string>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["ls-tree", "--name-only", `${sha}:`]);
+		const r = yield* execCapture("git", ["ls-tree", "--full-tree", "--name-only", `${sha}:`]);
 		if (!r.ok) return fail(r.reason);
 		return ok<ReadonlySet<string>>(
 			new Set(

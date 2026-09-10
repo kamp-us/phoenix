@@ -26,8 +26,11 @@ const base = (overrides: Script = [], dir = ".patterns") =>
 		[/^git remote$/, okOut("origin\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
-		[/^git ls-tree --name-only \w+ --/, okOut(`${dir}\n`)],
-		[/^git ls-tree --name-only \w+:/, okOut(tree("index.md", "registered.md", "orphan.md"))],
+		[/^git ls-tree --full-tree --name-only \w+ --/, okOut(`${dir}\n`)],
+		[
+			/^git ls-tree --full-tree --name-only \w+:/,
+			okOut(tree("index.md", "registered.md", "orphan.md")),
+		],
 		[/^git show \w+:.*index\.md$/, okOut(INDEX)],
 		[/^git log -1/, okOut(`${DOC_SHA}\t2026-08-09\n`)],
 	]);
@@ -59,9 +62,12 @@ describe("runCorpus", () => {
 
 	// The contract's first worked example, byte for byte.
 	it("answers `none` at exit 0 for a library that exists and is empty", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+:/, okOut(tree("index.md"))]], {
-			dir: `${FIXTURES}/empty-library`,
-		});
+		const out = await run(
+			[[/^git ls-tree --full-tree --name-only \w+:/, okOut(tree("index.md"))]],
+			{
+				dir: `${FIXTURES}/empty-library`,
+			},
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("corpus\tnone\t0\t0\t0\t0\n");
 	});
@@ -69,7 +75,7 @@ describe("runCorpus", () => {
 	// The contract's second worked example. `no-library` is deliberately not a committed directory —
 	// it is the absent path, and a fixture that existed could not demonstrate this outcome.
 	it("answers `absent` at exit 0 when --dir is not in the tree", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+ --/, okOut("")]], {
+		const out = await run([[/^git ls-tree --full-tree --name-only \w+ --/, okOut("")]], {
 			dir: `${FIXTURES}/no-library`,
 		});
 		expect(out.code).toBe(0);
@@ -78,10 +84,13 @@ describe("runCorpus", () => {
 
 	// The contract's third worked example.
 	it("carries the same empty answer through --json", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+:/, okOut(tree("index.md"))]], {
-			dir: `${FIXTURES}/empty-library`,
-			json: true,
-		});
+		const out = await run(
+			[[/^git ls-tree --full-tree --name-only \w+:/, okOut(tree("index.md"))]],
+			{
+				dir: `${FIXTURES}/empty-library`,
+				json: true,
+			},
+		);
 		expect(out.stdout).toBe(
 			`{"outcome":"none","docs":0,"unregistered":0,"unknown":0,"dangling":0,"entries":[],"danglingRows":[],"baseRef":"origin/main","baseSha":"${SHA}"}\n`,
 		);
@@ -99,7 +108,7 @@ describe("runCorpus", () => {
 
 	it("refuses a tree read that FAILED, and never reads that as `absent`", async () => {
 		const out = await run([
-			[/^git ls-tree --name-only \w+ --/, errOut("fatal: not a tree object")],
+			[/^git ls-tree --full-tree --name-only \w+ --/, errOut("fatal: not a tree object")],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -125,7 +134,7 @@ describe("runCorpus", () => {
 
 	it("reports the same when the index is absent altogether", async () => {
 		const out = await run([
-			[/^git ls-tree --name-only \w+:/, okOut(tree("registered.md", "orphan.md"))],
+			[/^git ls-tree --full-tree --name-only \w+:/, okOut(tree("registered.md", "orphan.md"))],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("corpus\tlibrary\t2\t0\t2\t0");
