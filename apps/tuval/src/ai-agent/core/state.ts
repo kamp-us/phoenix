@@ -519,6 +519,13 @@ export const noteCutReply = (cut: ReadonlyArray<ItemId>, id: ItemId): ReadonlyAr
  * `restore` over the loaded tail, `refillTranscript` over a resumed session's history (`./fold.ts`),
  * and the window's own page-back (`../../shell/chat/ChatWindow.tsx`). A row already wearing the mark
  * is returned untouched, so the held copy a rebase keeps is not rewritten.
+ *
+ * The record holds **live** ids — the fact is observed on the row the layer streams — and a store's
+ * page may key that same row in its own id space, stating the join in `alias`
+ * (`../ports/transcript-item.ts`). So the match reads both of a row's ids, which is the identity
+ * join the page/tail stitch already performs (`../../shell/chat/rows.ts`'s `unheld`). Matching `id`
+ * alone marked nothing at all on agy, whose stored rows are `cid:line:<n>` against a live `cid:<n>`
+ * (#9046): every paged row's `id` missed, and the cut turn paged back in reading as finished.
  */
 export const remarkCutReplies = (
 	items: ReadonlyArray<TranscriptItem>,
@@ -526,8 +533,10 @@ export const remarkCutReplies = (
 ): ReadonlyArray<TranscriptItem> => {
 	if (cut.length === 0) return items;
 	const named = new Set<string>(cut);
+	const isNamed = (item: TranscriptItem): boolean =>
+		named.has(item.id) || (item.alias !== undefined && named.has(item.alias));
 	return items.map((item) =>
-		item.kind === "assistant" && item.interrupted !== true && named.has(item.id)
+		item.kind === "assistant" && item.interrupted !== true && isNamed(item)
 			? {...item, interrupted: true}
 			: item,
 	);

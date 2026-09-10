@@ -1104,22 +1104,39 @@ describe("chatRows folds a settled turn", () => {
 	 * finished — agy records no operator stop in its own log — so without the re-mark the window draws
 	 * this turn as "Worked for 2.0s" and a half-written answer reads as the model's last word (#8985).
 	 * The record it is re-marked from is the session's own `cutReplies` (`ai-agent/core/state.ts`).
+	 *
+	 * The page is keyed the way a real agy page is: `<cid>:line:<n>` with the live id in `alias`
+	 * (`agy/ai-agent/transcript.ts`, and derived from the captured v1.2.0 log in
+	 * `agy/ai-agent/paging-from-live.unit.test.ts`), and the record names the *live* id — because a
+	 * fixture giving the store's copy the live row's own id passed while every real desk still read
+	 * `Worked for …` (#9046).
 	 */
 	it("still says the operator stopped it when the turn came back from the store", () => {
+		const cid = "8377fd63-b158-49b9-b2c1-2d89ed9135ce";
+		const line = <Item extends TranscriptItem>(
+			item: Item,
+			ordinal: number,
+			live: number,
+		): Item => ({
+			...item,
+			id: ItemId.make(`${cid}:line:${ordinal}`),
+			alias: ItemId.make(`${cid}:${live}`),
+		});
 		const stored = [
-			userItem("u", "go", AT),
-			thinkingItem("k", "weighing it", AT + 100),
-			assistantItem("a", "half an ans", AT + 2_000),
-			userItem("u2", "never mind", AT + 9_000),
-			assistantItem("a2", "summarized", AT + 10_000),
+			line(userItem("u", "go", AT), 7, 7),
+			line(thinkingItem("k", "weighing it", AT + 100), 8, 8),
+			line(assistantItem("a", "half an ans", AT + 2_000), 9, 9),
+			line(userItem("u2", "never mind", AT + 9_000), 10, 10),
+			line(assistantItem("a2", "summarized", AT + 10_000), 11, 11),
 		];
+		const turnId = `${cid}:line:7`;
 		const paged = (items: ReadonlyArray<TranscriptItem>) =>
 			chatRows({...base, atOldest: true, older: mergeOlder([], items)});
-		expect(paged(stored).find((row) => row.kind === "turn" && row.id === "u")).toMatchObject({
+		expect(paged(stored).find((row) => row.kind === "turn" && row.id === turnId)).toMatchObject({
 			label: "Worked for 2.0s",
 		});
-		const remarked = remarkCutReplies(stored, [ItemId.make("a")]);
-		expect(paged(remarked).find((row) => row.kind === "turn" && row.id === "u")).toMatchObject({
+		const remarked = remarkCutReplies(stored, [ItemId.make(`${cid}:9`)]);
+		expect(paged(remarked).find((row) => row.kind === "turn" && row.id === turnId)).toMatchObject({
 			label: "You stopped after 2.0s",
 		});
 	});

@@ -11,7 +11,7 @@
 import {applyCellChecked} from "@demlik/tea";
 import {describe, expect, it} from "vitest";
 import {assistantItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
-import type {ItemId, TranscriptItem, TranscriptPayload} from "../ports/index.ts";
+import {ItemId, type TranscriptItem, type TranscriptPayload} from "../ports/index.ts";
 import {foldEvent} from "./fold.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
@@ -55,13 +55,34 @@ const markOf = (items: ReadonlyArray<TranscriptItem>, id: string): boolean | und
 	return row === undefined ? undefined : row.kind === "assistant" && row.interrupted === true;
 };
 
+/**
+ * The conversation as a real agy log keys it: `<cid>:line:<n>` for the stored row, with the live id
+ * the tail knew it by stated in `alias` (`../../agy/ai-agent/transcript.ts`). The numbers are the
+ * captured v1.2.0 conversation's own — the cut reply is line 9, alias `:9` — and the derivation from
+ * that capture through the shipped reader is pinned in
+ * `../../agy/ai-agent/paging-from-live.unit.test.ts`. Restated as literals here because the core may
+ * not reach a backend (`./boundary.unit.test.ts`).
+ */
+const CID = "8377fd63-b158-49b9-b2c1-2d89ed9135ce";
+
+/** One stored row: the store's own id, and the live id this process observed it under. */
+const asStored = <Item extends TranscriptItem>(item: Item, line: number): Item => ({
+	...item,
+	id: ItemId.make(`${CID}:line:${line}`),
+	alias: ItemId.make(item.id),
+});
+
 /** The cut reply and the prompt it answered, as the store holds them: bare, `status: "DONE"`. */
 const storedTurn: ReadonlyArray<TranscriptItem> = [
-	userItem("u0", "write the essay", AT),
-	assistantItem("a0", "I was half way through", AT + 2_000),
+	asStored(userItem(`${CID}:7`, "write the essay", AT), 7),
+	asStored(assistantItem(`${CID}:9`, "I was half way through", AT + 2_000), 9),
 	userItem("u1", "never mind, summarize it", AT + 10_000),
 	assistantItem("a1", "here is the summary", AT + 12_000),
 ];
+
+/** What the store calls the cut reply, and what this session recorded it as. */
+const STORED_CUT = `${CID}:line:9`;
+const LIVE_CUT = `${CID}:9`;
 
 describe("the cut-reply record", () => {
 	it("names a reply the layer marked cut, so the fact outlives the row", () => {
@@ -119,10 +140,13 @@ describe("a cut reply paged out of the window and back in from the store", () =>
 	 * record and shed from a one-item tail, which is exactly the state the defect was silent in.
 	 */
 	const evicted = (): AiAgentSessionState => {
-		let state = open({transcript: payload([userItem("u0", "write the essay", AT)])});
+		let state = open({transcript: payload([userItem(`${CID}:7`, "write the essay", AT)])});
 		state = foldEvent(
 			state,
-			{kind: "item", item: assistantItem("a0", "I was half way through", AT + 2_000, true)},
+			{
+				kind: "item",
+				item: assistantItem(`${CID}:9`, "I was half way through", AT + 2_000, true),
+			},
 			tight,
 		);
 		state = foldEvent(
@@ -143,7 +167,7 @@ describe("a cut reply paged out of the window and back in from the store", () =>
 	it("is shed from the tail while the record keeps it", () => {
 		const state = evicted();
 		expect(state.transcript.items.map((item) => item.id)).toEqual(["u1", "a1"]);
-		expect(state.cutReplies).toEqual(["a0"]);
+		expect(state.cutReplies).toEqual([LIVE_CUT]);
 	});
 
 	// The defect: before the record, the refill spliced the store's bare copy in and the row rendered
@@ -154,7 +178,10 @@ describe("a cut reply paged out of the window and back in from the store", () =>
 			sessionId: "session-1",
 			history: storedTurn,
 		});
-		expect(markOf(state.transcript.items, "a0")).toBe(true);
+		// The store's id, because that is the copy the refill spliced in — and the record names the
+		// live one, so this row is marked over the `alias` join and nothing else (#9046).
+		expect(state.cutReplies).toEqual([LIVE_CUT]);
+		expect(markOf(state.transcript.items, STORED_CUT)).toBe(true);
 	});
 
 	it("leaves the store's other replies exactly as the store wrote them", () => {
@@ -181,11 +208,12 @@ describe("a cut reply paged out of the window and back in from the store", () =>
 	 * back. Never a control pointing at a prompt the session cannot send.
 	 */
 	it("keeps a resend the restored anchor can still send", () => {
-		const cut = {...evicted(), interrupted: "u0" as ItemId, lastPrompt: "write the essay"};
+		const anchor = ItemId.make(`${CID}:7`);
+		const cut = {...evicted(), interrupted: anchor, lastPrompt: "write the essay"};
 		const [state] = apply(cut, {type: "started", sessionId: "session-1", history: storedTurn});
-		expect(state.interrupted).toBe("u0");
+		expect(state.interrupted).toBe(anchor);
 		expect(state.lastPrompt).toBe("write the essay");
-		expect(state.transcript.items.some((item) => item.id === "u0")).toBe(true);
+		expect(state.transcript.items.some((item) => item.alias === anchor)).toBe(true);
 	});
 });
 
@@ -200,5 +228,25 @@ describe("remarkCutReplies", () => {
 	it("marks the assistant kind and nothing else", () => {
 		const marked = remarkCutReplies([userItem("a0", "go", AT)], ["a0" as ItemId]);
 		expect(marked[0] && "interrupted" in marked[0]).toBe(false);
+	});
+
+	/**
+	 * The join #9046 measured missing. The record holds the id the fact was observed under — the live
+	 * one — and a store keying its history in a second space states that id in `alias`. Reading `id`
+	 * alone marked no agy row at all, so a cut turn paged back in read as one the model finished.
+	 */
+	it("names a stored row by the live id it carries in alias", () => {
+		const stored = asStored(assistantItem(LIVE_CUT, "I was half way through", AT), 9);
+		const marked = remarkCutReplies([stored], [ItemId.make(LIVE_CUT)]);
+		expect(marked[0]?.id).toBe(STORED_CUT);
+		expect(marked[0]?.kind === "assistant" && marked[0].interrupted).toBe(true);
+	});
+
+	// The alias is a second identity, not a licence: a row whose alias names nothing in the record
+	// stays bare, so a page cannot acquire a mark from a turn it is not.
+	it("leaves a stored row whose alias the record does not name", () => {
+		const stored = asStored(assistantItem(`${CID}:6`, "the finished answer", AT), 6);
+		const marked = remarkCutReplies([stored], [ItemId.make(LIVE_CUT)]);
+		expect(marked[0]?.kind === "assistant" && marked[0].interrupted).toBeUndefined();
 	});
 });
