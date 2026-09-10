@@ -108,9 +108,6 @@ describe("runAnchor", () => {
 		expect(out.stderr.at(-1)).toContain("Tabs");
 	});
 
-	// The three unreadable catalog shapes, at the exit code a caller actually reads. Each parses as
-	// YAML and each carries a catalog the reader does not comprehend, so the verb refuses instead of
-	// answering — and in particular never claims the manifest "carries no catalog: or catalogs: map".
 	const manifest = (yaml: string): Script => [[/^git show \w+:\S+\.yaml$/, okOut(yaml)]];
 
 	it("reads flow and named-only maps through the command", async () => {

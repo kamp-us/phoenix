@@ -636,9 +636,8 @@ $ fabrika pattern anchor worker-queue-retry --json --dir packages/fabrika-cli/te
   because that choice belongs to the open anchor-model decision and is unruled.
 - The anchor model is an open control-plane decision. Matching the existing prose line is the
   conservative floor: it is falsifiable today and it commits nothing.
-- The byte-for-byte comparison is deliberate. Every dependency in this repo is pinned to one exact
-  version through the workspace catalog, so a range comparison would have nothing to buy and a real
-  failure mode to hide.
+- The anchor records the exact dependency version its author read. Byte-for-byte comparison
+  prevents accepting a different version whose source was never checked.
 
 ---
 
