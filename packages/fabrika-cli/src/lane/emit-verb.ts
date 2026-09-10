@@ -4,7 +4,10 @@
  * The board reads ride the shipped readers (`getIssue` via `openIssue`, the native sub-issue list
  * via `plan/github.ts`), the emission is the pure `emit.ts`, and the placement is the same guarded
  * boot `lane open` uses. Every topology defect seats on its own code, because each takes a
- * different remedy: plan the epic, fix the reference, break the cycle.
+ * different remedy: plan the epic, fix the reference, break the cycle. The unparseable arm's remedy
+ * is a placement: the parser refuses a prose line inside the section on purpose (a mistyped edge must
+ * never read as no edge), and `readTopology` ends the section at the first thematic break, so the
+ * refusal names where such a line belongs instead of loosening the grammar to take it.
  *
  * An existing lane is refused, and nothing carves an exception into that refusal: an overwrite path
  * for a lane already on disk by name was rejected, and that left
@@ -66,7 +69,7 @@ const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}
 		case "Unparseable":
 			return refuse(
 				MALFORMED_RECORD,
-				`${VERB}: #${epic}'s topology line ${result.line} does not parse: "${result.text}".`,
+				`${VERB}: #${epic}'s topology line ${result.line} does not parse: "${result.text}". The \`## Dependencies\` section holds only \`- phase <n>: <refs>\` and \`- <ref> requires: <refs>\` lines; editorial or history prose belongs below a \`---\` thematic break, which ends the section.`,
 			);
 		case "Duplicate":
 			return refuse(
