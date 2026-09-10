@@ -32,6 +32,7 @@ const PULL: PullRecord = {
 	authorLogin: "kampus-bot",
 	assignees: [],
 	updatedAt: "2026-08-18T00:00:00Z",
+	mergeability: "mergeable",
 };
 
 /** `origin/main` resolves AHEAD of the branch point, which is the normal state of a busy main. */

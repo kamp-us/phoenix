@@ -520,8 +520,19 @@ the same decision issue claimed by its own number reads its own audience label a
 `ready-for:human`, and the scope fence binds this claim exactly as it binds a build.
 
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
-included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
-UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
+included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer **about the
+gates**, but an UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**.
+
+**Read the fold's `mergeability` beside its rows, because no gate emits a FAIL for a conflict.**
+`conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
+would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
+a conflicting PR. `unknown` is GitHub not having computed the field yet, never a clean read: treat
+it as unproven and re-run. Who clears the conflict is **not ruled** — neither fixing it in this lane
+nor handing it on is this skill's instruction — so what you owe is that the conflict leaves the
+lane named: state it in your `build note` and in your terminal report, and never end a round
+claiming there was nothing to fix.
+
+The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
 
