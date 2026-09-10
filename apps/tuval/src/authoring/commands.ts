@@ -16,6 +16,13 @@ import type {CapabilityRequest, HostHandlers} from "../registry/program.ts";
 import type {AuthoredEvent} from "./define-program.ts";
 import type {EmitEffect, ProgramEffect} from "./effect.ts";
 
+/**
+ * Re-exported because a `run` that reads its scope has to name the type, and an author reaching
+ * `../commands/spell.ts` for it would be reaching past the authoring layer for a kernel module —
+ * which is the one thing R12.1 says they never do.
+ */
+export type {Scope};
+
 /** What a command's `args` may be declared over: decodable from `unknown` with no services. */
 export type CommandArgs<A> = Schema.Codec<A, any, never, unknown>;
 

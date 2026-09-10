@@ -3,6 +3,8 @@
 // is a `Program` (src/registry/program.ts); the eight in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
+// The ninth is the worked `pr-review` example (#8734), and it is the only row behind a flag —
+// `prReviewExample` in src/features.ts, default-off, so a desk booted today carries the eight.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -24,10 +26,11 @@
 import {Console} from "effect";
 import {agySessionProgram} from "../src/agy/program.ts";
 import {sessionListProgram} from "../src/ai-agent/session-list.ts";
+import {prReview} from "../src/authoring/example/pr-review.ts";
 import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
-import type {TuvalConfigInput} from "../src/config.ts";
+import {featuresDefault, type TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
 import {ProcessId} from "../src/process/process.ts";
@@ -45,6 +48,13 @@ export const claudeSessionScope = {
 	workspace: WorkspaceId.make("default"),
 	client: ClientId.make("tuval-desk"),
 } satisfies SpellScope;
+
+/**
+ * Built once because two rows read it: its own, and the `pr-review` example, which is handed this
+ * row as its `reviewer` arg. That fill is the whole of what connects them — `pr-review` names its
+ * reviewer by ports alone, so it imports no session package (#8716 R15.1).
+ */
+const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope});
 
 export default {
 	version: 1,
@@ -67,7 +77,10 @@ export default {
 		// `{"toolPermission": "proceed-in-sandbox"}` is in `~/.gemini/antigravity-cli/settings.json`.
 		agySessionProgram({cwd: projectRoot, agy: {model: "gemini-3.1-pro-high"}}),
 		// Unplanned, like Pi and Claude: opening a window starts the CLI, never booting the desk.
-		codexSession({cwd: projectRoot, scope: claudeSessionScope}),
+		codexReviewer,
+		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
+		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
+		...(featuresDefault.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),

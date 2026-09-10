@@ -47,6 +47,12 @@ export interface TuvalFeatures {
 	 * is today.
 	 */
 	readonly processBoard: boolean;
+	/**
+	 * Register the worked `pr-review` example as a program row, so the authoring layer's own
+	 * thirty-line program is in the box a booted desk reads (#8734). Off: the desk is the eight rows
+	 * it carried before this flag — no row, no graph node, no `:pr-review` spells.
+	 */
+	readonly prReviewExample: boolean;
 }
 
 /**
@@ -62,4 +68,5 @@ export const featuresDefault: TuvalFeatures = {
 	kernelChildren: false,
 	windowTitles: false,
 	processBoard: false,
+	prReviewExample: false,
 };
