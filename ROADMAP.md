@@ -47,7 +47,7 @@ flowchart TD
 		camp_fabrika_everywhere["fabrika everywhere"]:::done
 		camp_ge_it_product_push["Geçit product push"]:::active
 		camp_lane_integrity["Lane integrity"]:::active
-		camp_epic_lanes["Epic lanes"]:::active
+		camp_epic_lanes["Epic lanes"]:::done
 		camp_di_taxis_readme_passes["Diátaxis README passes"]:::done
 		camp_tuval["Tuval"]:::done
 		camp_tuval_first_slice["Tuval first slice"]:::done
