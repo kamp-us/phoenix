@@ -18,8 +18,10 @@ export {
 	readEntries,
 	showsInAWindow,
 } from "./entries.ts";
+export {type PickerFilter, visibleEntries} from "./filter.ts";
 export {
 	type PickerAnnouncement,
+	type PickerFilterFrame,
 	type PickerFrame,
 	type PickerFrameOptions,
 	type PickerGroup,
@@ -58,5 +60,7 @@ export {
 	type PickerView,
 	pickerKey,
 	pickerPointer,
+	visibleFor,
+	withFilter,
 	withRefusal,
 } from "./view.ts";
