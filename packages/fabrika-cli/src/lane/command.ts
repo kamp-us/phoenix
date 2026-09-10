@@ -19,9 +19,11 @@ import {readKey} from "../config/read-key.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {closedReader, runArchive} from "./archive-verb.ts";
+import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
@@ -589,6 +591,25 @@ const assemblyPr = leafCommand(
 	Command.withShortDescription("The assembly PR's title and About section, derived from the epic."),
 	Command.withDescription(
 		"Derive one piece of the prose an epic run's single assembly PR opens with, and print it bare on stdout so the `gh pr create` fence interpolates a value instead of deriving one. `--field title` prints `feat(epic): <the epic issue's own title>`; the conventional type is `build/pr-title.ts`'s map, reused rather than re-derived, because release-please classifies the squash subject and that rule lives in exactly one place — this verb only stamps the `(epic)` scope over it. `--field about` prints the `## About this epic` section derived from the epic's `## Pitch` **Problem** paragraph, read through the same section reader `guard pitch-guard check` uses. That text is never passed through raw: a closing keyword is swapped for a word GitHub's documented keyword list does not carry (the `#<n>` it aimed at is left as written), the paragraph is cut to its opening sentences under a word budget so a triage-length Problem does not land as the section, with `[…]` marking what was left behind, and what is lifted lands as a block quote in the epic's own words — the shape `build pr`'s body guard already reads as reproduced rather than asserted, so a Problem naming `type:epic`, a priority or control-plane keeps its sentence intact instead of being reworded into something that only looks safe. The result is then re-read through `build pr`'s own body predicates, so a section this verb answers cannot be one that guard refuses. An epic with no `## Pitch`, or a pitch with no Problem paragraph, is an ANSWER and not a refusal — empty stdout with the reason on stderr, so the run still publishes its PR with no section rather than being stranded over prose. It opens, edits and reads back no pull request. Exits 1 (`--field` is not `title` or `about`, or the target repo could not be resolved), 7 (the epic is proven absent or closed), 11 (the epic could not be read — UNKNOWN, never a derived title), 56 (the issue carries no `type:epic`, so an assembly PR's prose is not its to give), 57 (the derived section still carries a stray closing keyword or a classification claim after neutralisation — reword the epic's Problem paragraph, or write the section by hand; `--field title` is unaffected). Examples: fabrika lane assembly-pr 8070 --field title · fabrika lane assembly-pr 8070 --field about",
+	),
+);
+
+const assemblyBody = leafCommand(
+	"assembly-body",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue the assembly PR must close"),
+		),
+	},
+	Effect.fn(function* ({epic}) {
+		yield* emit(yield* runAssemblyBody({epic, stdin: Effect.sync(readStdin)}));
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Relay an assembly PR body, refusing one that does not close the epic.",
+	),
+	Command.withDescription(
+		"Guard the epic run's single assembly PR body on its way to `gh pr create`, reading it from STDIN and relaying it byte-for-byte on stdout when it closes the epic. An epic run is one branch and one PR, so that PR is the run's whole landing: a tail body reaching the epic through `Part of #<epic>`, or closing only its landed children, merges without closing it, and the lane folds to `shipped` and then `complete` over an epic the board still calls open — an operator re-dispatched on it parks on `LANE-TERMINAL` with no door out (ADR 0382). The link reader is `issueRefsOf`, the very one `lane/closure.ts` judges the merged PR with, so this guard refuses exactly the bodies that reader would later call partial or leave unreadable, and the two seams cannot disagree about one body. The tail's other closing keywords — one per landed child, by contract — are not judged: what is required is a closing keyword whose target is the epic itself, tested by membership rather than by first match, because a scalar reader would answer off whichever child leads. It reads no board and takes no --repo: the number's epic-ness was established one command earlier in the same fence by `lane assembly-pr`'s 56, and a second network read would only add an UNKNOWN to a judgement the bytes on stdin fully decide. It opens, edits and reads back no pull request. Exits 1 (stdin could not be read — the body is UNKNOWN, never empty), 3 (stdin was read and held nothing), 5 (the body carries a machine-local path — redact before opening), 6 (the body is a bare @ path reference — write the body, not a pointer to it), 58 (no closing keyword aims at the epic; stderr names what the body reaches it by instead — write `Fixes #<epic>`, or leave the run's PR unopened). Example: fabrika lane assembly-body 8070 < body.md | gh pr create --draft --head epic/8070 --title \"<title>\" --body-file -",
 	),
 );
 
@@ -1206,6 +1227,7 @@ export const laneCommand = Command.make("lane").pipe(
 		dispatch,
 		assembly,
 		assemblyPr,
+		assemblyBody,
 		integrate,
 		refresh,
 		pushLane,
