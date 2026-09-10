@@ -446,10 +446,10 @@ absent or non-conforming. `topology` is the imported `readTopology` parse. `cycl
 
 | Code | Trigger |
 |---|---|
-| `4` | the epic body's `## Dependencies` is `Unparseable`; a ledger section appears more than once; a child's `**Stories:**` or `**Containment:**` field line appears more than once; or a **non-empty** `### User stories` list is not contiguous from 1 | ✓ |
-| `7` | the epic is proven absent (404) or closed, or it has zero sub-issue children | ✓ |
-| `10` | the issue is not a `type:epic` | ✓ |
-| `11` | the epic, the sub-issue list, or a child could not be read (when this was written this row also named the `product-development-cycle.md` probe, so the premise is stale and the conclusion is not — the probe is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped`; `11` stays reachable by the three reads named here) | ✓ |
+| `4` | the epic body's `## Dependencies` is `Unparseable`; a ledger section appears more than once; a child's `**Stories:**` or `**Containment:**` field line appears more than once; or a **non-empty** `### User stories` list is not contiguous from 1 |
+| `7` | the epic is proven absent (404) or closed, or it has zero sub-issue children |
+| `10` | the issue is not a `type:epic` |
+| `11` | the epic, the sub-issue list, or a child could not be read (when this was written this row also named the `product-development-cycle.md` probe, so the premise is stale and the conclusion is not — the probe is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped`; `11` stays reachable by the three reads named here) |
 
 An **absent** `## Dependencies` block is *not* `4` — it is defect `MISSING_DEPS_SECTION`, which
 `plan check` derives. `4` is the unparseable, duplicated and mis-numbered cases only.
@@ -545,13 +545,11 @@ trusted a caller-supplied ledger would grade a document the caller could edit.
 
 | Code | Trigger |
 |---|---|
-| `4` | the ledger grammar refused, exactly as `plan read` | ✓ |
-| `7` | zero scope — the epic is proven absent or closed, or it has zero children | ✓ |
-| `10` | the issue is not a `type:epic` | ✓ |
-| `11` | any read the floor depends on failed — nothing is graded, and no verdict is implied; the control-plane roster is one such read, so an unreadable roster is `11` and never `25` | ✓ |
-| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — refused **before** the floor is derived | — |
-| `26` | proven: the epic body's `## Dependencies` region has no single meaning — it carries more than one heading, or its only one resolves inside the preserved brief envelope | — | — | — | — | — | — | ✓ |
-| `27` | proven: every issue the topology names closed without landing, so restaging would leave no phase at all — re-plan the epic instead | — | — | — | — | — | — | ✓ |
+| `4` | the ledger grammar refused, exactly as `plan read` |
+| `7` | zero scope — the epic is proven absent or closed, or it has zero children |
+| `10` | the issue is not a `type:epic` |
+| `11` | any read the floor depends on failed — nothing is graded, and no verdict is implied; the control-plane roster is one such read, so an unreadable roster is `11` and never `25` |
+| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — refused **before** the floor is derived |
 
 There is no `20` here: a defective floor is this verb's **answer**, not its refusal. `25` is the one
 refusal that outranks the answer, and its position is the point: a plan that is both unapproved and
@@ -720,19 +718,17 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 
 | Code | Trigger |
 |---|---|
-| `4` | the ledger grammar refused during the re-gate | ✓ |
-| `7` | zero scope — the epic is proven absent or closed, or it has zero children | ✓ |
-| `8` | a write was attempted and no re-read could prove its outcome — UNKNOWN | ✓ |
-| `10` | the issue is not a `type:epic`, or `--digest` is not 12 lowercase hex | ✓ |
-| `11` | a read the flip depends on failed — **nothing is written** | ✓ |
-| `15` | proven: this lane does not hold the epic's claim | ✓ |
-| `20` | proven: the re-gate derived hard defects — the floor is not clean, nothing is written | — |
-| `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check | — |
-| `22` | proven: at least one child is `unchanged`, or the epic did not reach `ready-for:agent` — the refs are on stderr | — |
-| `23` | proven: a label this run would post — `status:triaged`, `status:planned` or `ready-for:agent` — is absent from the repository's labels | — |
-| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — the re-gate covers the human decision too, so a `plan check` that passed before a re-plan cannot be carried past this write | — |
-| `26` | proven: the epic body's `## Dependencies` region has no single meaning — it carries more than one heading, or its only one resolves inside the preserved brief envelope | — | — | — | — | — | — | ✓ |
-| `27` | proven: every issue the topology names closed without landing, so restaging would leave no phase at all — re-plan the epic instead | — | — | — | — | — | — | ✓ |
+| `4` | the ledger grammar refused during the re-gate |
+| `7` | zero scope — the epic is proven absent or closed, or it has zero children |
+| `8` | a write was attempted and no re-read could prove its outcome — UNKNOWN |
+| `10` | the issue is not a `type:epic`, or `--digest` is not 12 lowercase hex |
+| `11` | a read the flip depends on failed — **nothing is written** |
+| `15` | proven: this lane does not hold the epic's claim |
+| `20` | proven: the re-gate derived hard defects — the floor is not clean, nothing is written |
+| `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
+| `22` | proven: at least one child is `unchanged`, or the epic did not reach `ready-for:agent` — the refs are on stderr |
+| `23` | proven: a label this run would post — `status:triaged`, `status:planned` or `ready-for:agent` — is absent from the repository's labels |
+| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — the re-gate covers the human decision too, so a `plan check` that passed before a re-plan cannot be carried past this write |
 
 **Errors**
 
@@ -847,19 +843,17 @@ the only emit path; a hand-posted marker is how v1's corpus carried a fake-looki
 
 | Code | Trigger |
 |---|---|
-| `4` | the ledger grammar refused while deriving the floor | ✓ |
-| `5` | the authored caveat text carries a machine-local path | — |
-| `6` | the authored caveat text is a bare `@` path reference | — |
-| `7` | zero scope — the epic is proven absent or closed, or it has zero children | ✓ |
-| `8` | the comment was posted and no re-read could prove it — UNKNOWN | ✓ |
-| `9` | the comment posted but the read-back does not match | ✓ |
-| `10` | `--digest` malformed; the issue is not a `type:epic`; `--polarity` disagrees with the derived floor; a caveat kind off the closed set; a caveat naming a ref outside the scanned set | ✓ |
-| `11` | a read the verdict depends on failed — nothing is posted | ✓ |
-| `15` | proven: this lane does not hold the epic's claim | ✓ |
-| `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check | — |
-| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — nothing is posted | — |
-| `26` | proven: the epic body's `## Dependencies` region has no single meaning — it carries more than one heading, or its only one resolves inside the preserved brief envelope | — | — | — | — | — | — | ✓ |
-| `27` | proven: every issue the topology names closed without landing, so restaging would leave no phase at all — re-plan the epic instead | — | — | — | — | — | — | ✓ |
+| `4` | the ledger grammar refused while deriving the floor |
+| `5` | the authored caveat text carries a machine-local path |
+| `6` | the authored caveat text is a bare `@` path reference |
+| `7` | zero scope — the epic is proven absent or closed, or it has zero children |
+| `8` | the comment was posted and no re-read could prove it — UNKNOWN |
+| `9` | the comment posted but the read-back does not match |
+| `10` | `--digest` malformed; the issue is not a `type:epic`; `--polarity` disagrees with the derived floor; a caveat kind off the closed set; a caveat naming a ref outside the scanned set |
+| `11` | a read the verdict depends on failed — nothing is posted |
+| `15` | proven: this lane does not hold the epic's claim |
+| `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
+| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — nothing is posted |
 
 There is no `20` here. A defective floor is not a refusal for this verb — it posts the `FAIL`
 verdict, which is the deliverable. `25` is not that shape: an unapproved plan gets no verdict at all,
