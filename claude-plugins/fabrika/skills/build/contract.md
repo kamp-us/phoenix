@@ -12,6 +12,8 @@
 
 **Amended 2026-08-21** — `build deviations`: the epic child's disclosure had no verb, so the skill hand-rolled `wire emit` into a raw issue-comment call, which appends. A repair round left the child carrying two markers, and `wire read --format build-deviations` refuses two conforming headings as undecidable — so a repaired child stranded its epic's whole tail review. The verb owns the write seam and holds one marker per issue: the standing marker is edited in place, every superseded one is retracted, and the landed comment is read back. No new code — it allocates from the shared matrix.
 
+**Amended 2026-09-10** — `build deviations`: one marker replaced in place made a round's natural rewrite the whole standing disclosure, so a repair's entries silently retired the round before it — one child's standing text named four repair entries and dropped three still true of the range a reviewer was grading. The replacement is now compared against the standing disclosure and refused when it drops an entry, on a new code (`35`); an entry leaves only by restating it with a `Disposition` that says what became of it. `--standing` prints the standing section so a round can carry it forward without reading GitHub's edit history. The wire format, the one-marker rule, the claim gate, the leak scan and the read-back are untouched.
+
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
 groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb;
@@ -85,7 +87,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
 | `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
-| `build deviations` | post an epic child's `## Deviations` disclosure as the ONE `build-deviations` marker on its issue, edited in place on every later round | a claim-gated upsert with a read-back, over a section validated by the wire format; *authoring* the disclosure stays in the skill |
+| `build deviations` | post an epic child's `## Deviations` disclosure as the ONE `build-deviations` marker on its issue, edited in place on every later round and carrying every standing entry; `--standing` reads what stands | a claim-gated upsert with a read-back, over a section validated by the wire format and compared against the standing disclosure; *authoring* the disclosure stays in the skill |
 | `build verdicts` | the paginated, per-gate verdict fold: current-head on a PR, range-bound on an epic child | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
 
@@ -350,6 +352,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `32` | proven: not admitted on the criteria axis — the issue body carries no readable `### Acceptance criteria` block, absent or malformed, so there is no contract to build against |
 | `33` | proven: a working tree of this clone holds the lane branch, and the board licenses no release of it |
 | `34` | proven: no authorized claim marker attests a single survivor among a child's lane branches, so none is superseded |
+| `35` | proven: a replacement disclosure drops an entry the standing marker discloses — a well-formed section that discloses less of the range than the round before it, which is why it is not `4` |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -2653,6 +2656,8 @@ fabrika build deviations 6566 --token <token> [--repo <owner/name>] <<'EOF'
 
 None.
 EOF
+
+fabrika build deviations 6566 --token <token> --standing   # read what a round carries forward
 ```
 
 **Inputs**
@@ -2662,12 +2667,28 @@ EOF
 | `<issue>` | positional integer | yes | — | the epic child the disclosure is for, and the issue the marker sits on. A pull request is `10`: a PR discloses in its body, which is `build pr` / `build pr-body` |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository written to |
 | `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking. Not a claim token, or one carrying another session id, is `1` |
-| stdin | text | yes | — | the `## Deviations` section, read through the `deviations` wire format before anything is written |
+| `--standing` | boolean | no | `false` | read instead of write: print the standing disclosure, take nothing on stdin, and change nothing |
+| stdin | text | yes, without `--standing` | — | the `## Deviations` section, read through the `deviations` wire format before anything is written |
 
 **Output** — machine.
 `{"answer": "posted", "issue": 6566, "commentId": 900, "upsert": "created", "retracted": 0, "url": "https://<host>/<owner>/<repo>/issues/6566#issuecomment-900"}`.
 `upsert` is `"created"` when the child carried no standing marker and `"edited"` when one was
 PATCHed in place; `retracted` counts the superseded markers deleted behind it.
+
+**Output under `--standing`** — the standing marker's `## Deviations` section on stdout, as the
+`deviations` format composes it, with the comment id on stderr. A child carrying no marker yet
+prints nothing at exit `0`, and stderr says so — a proven "nothing to carry forward", not a failure.
+
+**The marker discloses the whole reviewed range, not the round that wrote it.**
+Replacement in place means a repair round's natural rewrite — the entries that round produced —
+retires everything the round before it disclosed. On one child that left the standing text naming four
+repair entries with three still true of the range, reachable only through GitHub's comment edit
+history, which no gate reads. So the section on stdin is compared against the standing disclosure
+before anything is written, and one that drops an entry is refused on `35` naming each: an entry
+leaves the section only by being restated with a `Disposition` that says what became of it —
+reverted, corrected, or still standing. Entries match on `Said`, so a later round revises `Did`,
+`Why` and `Disposition` freely. `--standing` is the read that feeds this: a round takes the standing
+section, edits it, and sends the result.
 
 **One marker per issue is this verb's invariant.**
 An epic child opens no PR, so its disclosure is a `build-deviations` marker comment; the tail review
@@ -2682,7 +2703,9 @@ a child a pre-fix lane already stacked.
 Guards, in order: stdin non-empty (`3`), bare-`@` body (`6`), the section readable through the
 `deviations` format (`4`), target is an open issue and not a PR (`7`/`10`), caller token parses
 (`1`), claim held (`15`/`11`), leak predicates over the composed comment (`5`), the authenticated
-user and the comment list both readable (`11`), write (`8`), read-back (`9`), retraction (`8`).
+user and the comment list both readable (`11`), every standing entry carried (`35`), write (`8`),
+read-back (`9`), retraction (`8`). Under `--standing` the first three do not run — there is no
+section — and the run ends where the comment list is read.
 
 The marker line is composed from the positional and never taken from stdin, so a disclosure cannot
 name an issue other than the one it sits on. Read-back is a re-fetch of the landed comment asserted
@@ -2704,6 +2727,7 @@ comment reads back, so a write that then fails can never destroy the standing di
 | `10` | the number is a pull request, which discloses in its body |
 | `11` | a precondition read failed — the issue, the authenticated user, or the comment list |
 | `15` | proven: this lane does not hold the claim on the issue |
+| `35` | proven: the replacement drops an entry the standing marker discloses |
 
 **Errors**
 
@@ -2723,6 +2747,7 @@ comment reads back, so a write that then fails can never destroy the standing di
 | `build deviations: cannot read #<n>'s comments: <reason> — nothing was written; a partial list would stack a second marker.` | 11 | refusal |
 | `build deviations: cannot read the authenticated user: <reason> — nothing was written.` | 11 | refusal |
 | `build deviations: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
+| `build deviations: the replacement drops <k> entry/entries the standing marker discloses (<each entry's Said>) — the marker discloses the whole reviewed range, not this round's commits, so an entry leaves only by restating it with a **Disposition:** that says what became of it. Read the standing text with \`fabrika build deviations <n> --standing --token <token>\`, carry each entry into the section, and re-run.` | 35 | refusal |
 
 **Scope** — one issue's marker, written by one claim-holding lane. It runs the posting guards only,
 never the tree assertions: a child's disclosure is composed from the branch's work but the comment
@@ -2742,10 +2767,38 @@ EOF
 {"answer":"posted","issue":6566,"commentId":900,"upsert":"edited","retracted":1,"url":"https://<host>/<owner>/<repo>/issues/6566#issuecomment-900"}
 ```
 
+A repair round reads what stands, then sends it back with its own entries and the retirement of one
+the repair corrected:
+
+```
+$ fabrika build deviations 6566 --token <token> --standing
+## Deviations
+
+- **Scope narrowing** — **Said:** the child names the ledger row and its header. **Did:** wrote the row only. **Why:** the header is another child's file. **Disposition:** stated here.
+
+$ fabrika build deviations 6566 --token <token> <<'EOF'
+## Deviations
+
+- **Scope narrowing** — **Said:** the child names the ledger row and its header. **Did:** wrote the
+  row only. **Why:** the header is another child's file. **Disposition:** corrected — round 2 wrote
+  the header, so nothing is narrowed.
+- **Pre-existing test or fixture changed** — **Said:** leave the round-1 fixtures alone. **Did:**
+  re-recorded the ledger fixture. **Why:** the repair changes the rows it asserts.
+  **Disposition:** stated here.
+EOF
+{"answer":"posted","issue":6566,"commentId":900,"upsert":"edited","retracted":0,"url":"https://<host>/<owner>/<repo>/issues/6566#issuecomment-900"}
+```
+
+Sending only the second entry is exit `35`, naming the first — a round cannot reset the disclosure
+to its own commits.
+
 **Grounding**
 
 - A repair round's second marker made the disclosure unreadable through `wire read`, and stranded a
   whole epic's tail review on two of its children.
+- The fix for that stacking made the standing marker the round's own text, and one child's round 2
+  then dropped three entries still true of the range — a reviewer who had not read round 1 would
+  have graded the range against a narrower disclosure than the one it owed.
 - An epic child opens no PR, which is why the disclosure surface is a comment at all.
 - The skill's hand-rolled issue-comment call is the glue a verb is supposed to own: a script may
   relay a verb's answer, never derive the decision itself.
