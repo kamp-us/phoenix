@@ -1126,9 +1126,11 @@ which the key does not gate and which carries the cell in `build`, `build:ui`, `
 `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
 `LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
 pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
-replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept that the round it
-costs is the repair budget's again. The machine is fixed at emission, so flipping the key moves no
-lane already on disk.
+replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a
+`BLOCKED` arm carries no `incrementRetries` in either region of `emit.ts` or in the coder template,
+so it spends no repair round — it spends a person, who has to open the `UNBLOCKED` door before the
+task moves at all. The machine is fixed at emission, so flipping the key moves no lane already on
+disk.
 
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
 is the one home for that mapping — the verb exits fourteen ways and every one is here, so there is
