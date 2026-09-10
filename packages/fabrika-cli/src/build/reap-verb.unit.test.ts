@@ -10,8 +10,9 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {runReap} from "./reap-verb.ts";
+import {REAP_JOURNAL, runReap} from "./reap-verb.ts";
 
 const SELF = /^git rev-parse --path-format=absolute/;
 const TREES = /^git worktree list --porcelain$/;
@@ -77,12 +78,22 @@ const QUIET_FS: FakeFsOptions = {
 	mtimes: {[HERE]: ago(2_592_000), [DEAD]: ago(2_592_000), [OTHER]: ago(2_592_000)},
 };
 
-const run = (script: ReadonlyArray<Scripted>, execute = false, fs: FakeFsOptions = QUIET_FS) => {
+/** Where a sweep standing in {@link HERE} appends its removals. */
+const JOURNAL = `${HERE}/${REAP_JOURNAL}`;
+
+const run = (
+	script: ReadonlyArray<Scripted>,
+	execute = false,
+	fs: FakeFsOptions = QUIET_FS,
+	limit: number | null = null,
+) => {
 	const shell = fakeShell(script as ReadonlyArray<readonly [RegExp, never]>);
-	const layer = Layer.merge(shell.layer, fakeFs(fs).layer);
-	return Effect.runPromise(Effect.provide(runReap({execute}), layer)).then((out) => ({
+	const disk = fakeFs(fs);
+	const layer = Layer.merge(shell.layer, disk.layer);
+	return Effect.runPromise(Effect.provide(runReap({execute, limit}), layer)).then((out) => ({
 		out,
 		calls: shell.calls,
+		journal: disk.written.get(JOURNAL) ?? "",
 	}));
 };
 
@@ -483,6 +494,16 @@ describe("runReap — what it refuses to touch", () => {
 		expect(out.stderr.join("\n")).toMatch(/UNKNOWN/);
 	});
 
+	it("refuses a --limit that is not a positive integer before it reads anything", async () => {
+		for (const limit of [0, -1, 2.5]) {
+			const {out, calls} = await run([[SELF, here]], true, QUIET_FS, limit);
+
+			expect(out.code).toBe(FAILED);
+			expect(calls).toEqual([]);
+			expect(out.stderr.join("\n")).toMatch(new RegExp(`--limit "${limit}"`));
+		}
+	});
+
 	it("is UNKNOWN — and reaps nothing — when the trunk cannot be named", async () => {
 		const {out, calls} = await run(
 			[
@@ -496,5 +517,96 @@ describe("runReap — what it refuses to touch", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.join("\n")).toMatch(/remote set-head/);
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+});
+
+const journalRows = (journal: string): ReadonlyArray<{readonly [key: string]: unknown}> =>
+	journal
+		.trimEnd()
+		.split("\n")
+		.map((line) => JSON.parse(line) as {readonly [key: string]: unknown});
+
+/** A two-tree sweep, both removable, whose second half the caller scripts. */
+const twoRemovable = (...tail: ReadonlyArray<Scripted>): ReadonlyArray<Scripted> => [
+	...GROUND,
+	[once(TREES), trees(PRIMARY, {path: DEAD}, {path: OTHER})],
+	[STATUS, okOut("")],
+	[ANCESTOR, okOut("")],
+	...tail,
+];
+
+describe("runReap — the journal is what survives a killed sweep", () => {
+	it("appends one line per removal, naming the run, the trunk, the path and its license", async () => {
+		const {out, journal} = await run(
+			twoRemovable([REMOVE, okOut("")], [TREES, trees(PRIMARY)]),
+			true,
+		);
+
+		expect(out.code).toBe(0);
+		const lines = journalRows(journal);
+		expect(lines).toMatchObject([
+			{trunk: "origin/main", path: DEAD, license: "ancestor"},
+			{trunk: "origin/main", path: OTHER, license: "ancestor"},
+		]);
+		expect(new Set(lines.map((row) => row.run)).size).toBe(1);
+		expect(JSON.parse(out.stdout).journal).toBe(JOURNAL);
+	});
+
+	// The incident shape: the terminal answer is composed after the loop, so a run that never
+	// reaches it prints nothing at all. The disk is the only place the executed set can be read from,
+	// and a refusal is the closest a runnable verb comes to a process that was killed.
+	it("holds the executed set even when the run's own answer names none of it", async () => {
+		const {out, journal} = await run(
+			twoRemovable([REMOVE, okOut("")], [TREES, errOut("index.lock exists")]),
+			true,
+		);
+
+		expect(out.code).toBe(READBACK_MISMATCH);
+		expect(out.stdout).toBe("");
+		expect(journalRows(journal)).toMatchObject([{path: DEAD}, {path: OTHER}]);
+	});
+
+	it("keeps a proven removal proven when its journal write fails, and says so", async () => {
+		const {out} = await run(twoRemovable([REMOVE, okOut("")], [TREES, trees(PRIMARY)]), true, {
+			...QUIET_FS,
+			unwritable: [JOURNAL],
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).removed).toMatchObject([{path: DEAD}, {path: OTHER}]);
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`NOT JOURNALLED — ${DEAD} was removed`));
+	});
+});
+
+describe("runReap — --limit bounds the sweep", () => {
+	it("attempts exactly that many removals and reports the rest unattempted", async () => {
+		const {out, calls, journal} = await run(
+			twoRemovable([REMOVE, okOut("")], [TREES, trees(PRIMARY, {path: OTHER})]),
+			true,
+			QUIET_FS,
+			1,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "reaped",
+			removed: [{path: DEAD, license: "ancestor"}],
+			unattempted: [{path: OTHER, license: "ancestor"}],
+		});
+		expect(calls.filter((line) => REMOVE.test(line))).toEqual([`git worktree remove ${DEAD}`]);
+		expect(journalRows(journal)).toMatchObject([{path: DEAD}]);
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`UNATTEMPTED ${OTHER}`));
+	});
+
+	it("names the bound on a dry run without narrowing what it calls removable", async () => {
+		const {out} = await run(
+			twoRemovable([TREES, trees(PRIMARY, {path: DEAD}, {path: OTHER})]),
+			false,
+			QUIET_FS,
+			1,
+		);
+
+		expect(JSON.parse(out.stdout).removable).toMatchObject([{path: DEAD}, {path: OTHER}]);
+		expect(out.stderr.join("\n")).toMatch(/--limit 1 bounds this sweep to 1 of 2 removable/);
 	});
 });

@@ -24,17 +24,26 @@
  *      {@link classify} seats it. **Every read that fails is a KEEP**, per-tree: a sweep of seventy
  *      trees must not lose its whole answer to one unreadable directory.
  *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
- *   6. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
+ *   6. `--limit` bounds the executed set to that many removals; everything past it stays planned and
+ *      is reported unattempted, so a population too large for one watchdog window is walked in
+ *      pieces instead of being all-or-nothing.
+ *   7. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
  *      path — and every one is read back off a second `worktree list`.
+ *   8. Each removal git reports is appended to {@link REAP_JOURNAL} under this run's tree root
+ *      before the next candidate is attempted, so a sweep killed mid-loop still leaves its executed
+ *      set readable on disk. The read-back at 7 proves the sweep; the journal is what survives a
+ *      process that never reaches it. A journal write that fails is reported and demotes nothing —
+ *      the removal is the fact, the record is the convenience.
  *
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
  * checkout, it does not delete a ref.
  */
-import {Effect, FileSystem, Option, Result} from "effect";
+import {Effect, FileSystem, Option, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {containmentOf} from "../io/containment.ts";
+import {appendText} from "../io/fs.ts";
 import {originHeadRef} from "../io/git.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {removeWorktree, worktreeRegistrations, worktreeStatusPaths} from "./git.ts";
 import {
@@ -52,15 +61,29 @@ import {readTree} from "./tree.ts";
 
 const VERB = "fabrika build reap";
 
+/**
+ * Where the removals land as they happen, relative to this run's own tree root.
+ *
+ * A leaf of `.fabrika/`, which the repository gitignores whole, so the record of a machine-local
+ * sweep never reaches a diff.
+ */
+export const REAP_JOURNAL = ".fabrika/reap.jsonl";
+
 export interface ReapOptions {
 	/** Removals happen only under this flag. Default is a dry run that mutates nothing. */
 	readonly execute: boolean;
+	/** At most this many removals are attempted; `null` attempts every removable tree. */
+	readonly limit: number | null;
 }
 
-type Deps = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem;
+type Deps = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path;
 
 export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never, Deps> =>
 	Effect.gen(function* () {
+		if (options.limit !== null && (!Number.isInteger(options.limit) || options.limit <= 0)) {
+			return refuse(FAILED, `${VERB}: --limit "${options.limit}" is not a positive integer.`);
+		}
+
 		const self = yield* readTree;
 		if (self._tag === "Failure") {
 			return refuse(
@@ -123,6 +146,15 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				: [],
 		);
 
+		const attempted = options.limit === null ? removable : removable.slice(0, options.limit);
+		const unattempted = removable.slice(attempted.length);
+		const boundLine =
+			options.limit === null
+				? []
+				: [
+						`${VERB}: --limit ${options.limit} bounds this sweep to ${attempted.length} of ${removable.length} removable tree(s); the other ${unattempted.length} stay registered for a later run.`,
+					];
+
 		if (!options.execute) {
 			const planned = seated.flatMap(({facts, verdict}) =>
 				verdict._tag === "Remove"
@@ -142,18 +174,39 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 					scope,
 					...planned,
 					...keptLines,
+					...boundLine,
 					`${VERB}: ${removable.length} removable, ${kept.length} kept — nothing was removed; re-run with --execute to remove them.`,
 				],
 			);
 		}
 
+		const journalPath = (yield* Path.Path).join(self.value.root, REAP_JOURNAL);
+		const run = new Date().toISOString();
 		const removed: Array<{path: string; license: License}> = [];
 		const failed: Array<{path: string; reason: string}> = [];
-		for (const candidate of removable) {
+		const unjournalled: Array<{path: string; reason: string}> = [];
+		for (const candidate of attempted) {
 			const gone = yield* removeWorktree(candidate.path);
-			if (gone._tag === "Failure") failed.push({path: candidate.path, reason: gone.reason});
-			else removed.push(candidate);
+			if (gone._tag === "Failure") {
+				failed.push({path: candidate.path, reason: gone.reason});
+				continue;
+			}
+			removed.push(candidate);
+			const written = yield* Effect.result(
+				appendText(
+					journalPath,
+					`${JSON.stringify({run, trunk: trunk.value, path: candidate.path, license: candidate.license})}\n`,
+				),
+			);
+			if (Result.isFailure(written)) {
+				unjournalled.push({path: candidate.path, reason: written.failure.reason});
+			}
 		}
+
+		const journalLines = unjournalled.map(
+			(row) =>
+				`${VERB}: NOT JOURNALLED — ${row.path} was removed and the record did not land in ${journalPath}: ${row.reason}. The removal stands; a run killed after this point leaves it off the disk record.`,
+		);
 
 		let unproven: ReadonlyArray<string> = [];
 		if (removed.length > 0) {
@@ -162,7 +215,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				return refuse(
 					READBACK_MISMATCH,
 					`${VERB}: ${removed.length} tree(s) were removed and the registrations could not be read back: ${after.reason} — the removals are NOT proven.`,
-					[scope, ...keptLines],
+					[scope, ...journalLines, ...keptLines],
 				);
 			}
 			unproven = unprovenAmong(
@@ -183,6 +236,11 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			...unproven.map(
 				(path) =>
 					`${VERB}: UNPROVEN — git reported ${path} removed and it is still registered; this clone needs a human.`,
+			),
+			...journalLines,
+			...unattempted.map(
+				(row) =>
+					`${VERB}: UNATTEMPTED ${row.path} (${row.license}) — past --limit ${options.limit}; it stays registered and is removable on the next run.`,
 			),
 			...keptLines,
 		];
@@ -207,11 +265,16 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				executed: true,
 				trunk: trunk.value,
 				scanned: population.length,
+				journal: journalPath,
 				removed,
 				failed,
+				unattempted,
 				kept,
 			}),
-			[...report, `${VERB}: ${removed.length} removed, ${kept.length} kept.`],
+			[
+				...report,
+				`${VERB}: ${removed.length} removed, ${unattempted.length} unattempted, ${kept.length} kept.`,
+			],
 		);
 	});
 
