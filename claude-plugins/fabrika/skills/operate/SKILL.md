@@ -192,6 +192,43 @@ lane on disk is never re-emitted over, so `lane emit` answers `14` and names the
 the lane directory, then re-run it.
 `lane migrate --check` is what finds those lanes; see its `46` below.
 
+**That two-step remedy is for a lane running the wrong MACHINE, and it is never the answer to a plan
+that changed.** Retiring the directory discards `events.jsonl`, which is the only record every
+landed child has. A running epic whose topology moved — a child added after emission, a not-started
+child that has to move to a later phase — takes one verb instead:
+
+```bash
+node <fabrika> lane amend $lane_key
+```
+
+`lane amend` re-reads the epic body's `## Dependencies` block, re-derives the machine `lane emit`
+would emit from it today, and writes it **over a log it keeps whole**: it appends one
+`<EPIC_N>.AMENDED` line and rewrites, reorders and drops nothing. That line moves no task and reaches
+no machine — the fold consumes it, exactly as it consumes `lane reconcile`'s `CORRECTED` — and its
+`tasks` payload names the set the re-derived machine holds, which is where a reader finds out why the
+lines above it were folded by a different task set. A task new to the topology boots `queued`; a task
+that has not started may move to any phase, later ones included.
+
+It reconciles nothing, and that is deliberate: the block is read exactly as it stands, so a block
+still naming a child the board closed is `fabrika plan restage`'s to repair before you amend.
+
+**Three refusals, and each is proven before anything is written** — on all three the lane's
+`events.jsonl` is byte for byte what it was:
+
+- **`60`** — the new topology places no phase for a task the ledger records as **landed**, named with
+  the final it landed in. Your ledger is the only record that work landed, so put the child back in a
+  phase, or close the epic over what it built.
+- **`61`** — a task carrying recorded history cannot replay to the leaf it stands on under the
+  re-derived machine: it is dropped while mid-flight, or its log reaches a cell the new region does
+  not hold. Each offending task is named. Let it reach a leaf the amendment can carry, or amend a
+  different part of the topology.
+- **`62`** — the `## Dependencies` block is not a topology (an unparseable line, a child in two
+  phases, a requires subject in none). The defect is the **issue body's**, not the ledger's, so
+  `fabrika plan restage` is the repair and nothing under `.fabrika/lanes/` is at fault.
+
+A topology that already derives the machine on disk answers `{"answer":"current"}` with nothing
+appended and nothing written, so running it when in doubt costs two board reads and changes nothing.
+
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
 the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess. End

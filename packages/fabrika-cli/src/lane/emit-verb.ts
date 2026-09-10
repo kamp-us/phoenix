@@ -20,6 +20,10 @@
  * `placeMachine`'s refusal standing as the answer. What this verb owes instead is a refusal that
  * names the remedy exactly — retire the directory, then re-run it — so a wrong-template lane
  * is a two-step repair an operator can read off the line rather than a dead end.
+ *
+ * That remedy is for the wrong MACHINE, and it is not the one a changed PLAN takes: re-emitting
+ * discards `events.jsonl` and every landed child's record with it. A running lane whose topology
+ * moved is [`amend-verb.ts`](amend-verb.ts)'s, which re-derives the machine over the log it keeps.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -165,7 +169,7 @@ export const runEmit = <R = never>(
 		if (placed._tag === "Exists") {
 			return refuse(
 				LANE_EXISTS,
-				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, and a lane on disk is never re-emitted over. If it runs the wrong machine — \`fabrika lane migrate --check\` answers 46 and names it — the remedy is exactly two steps: retire ${placed.dir}, then re-run \`${VERB} ${options.epic}\`.`,
+				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, and a lane on disk is never re-emitted over. If its PLAN changed — a child added, or one re-sequenced — the verb is \`fabrika lane amend ${options.epic}\`, which re-derives the machine and keeps the log. If it runs the wrong MACHINE — \`fabrika lane migrate --check\` answers 46 and names it — the remedy is exactly two steps: retire ${placed.dir}, then re-run \`${VERB} ${options.epic}\`.`,
 			);
 		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
