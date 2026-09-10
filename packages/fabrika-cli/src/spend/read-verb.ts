@@ -1,10 +1,11 @@
-/** `spend read`: versioned ledger records as JSON, or the historical transcript calculation. */
+/** `spend read`: records plus their shared usage summary, or the historical transcript calculation. */
 import {Effect, type FileSystem, Result} from "effect";
 import {exists, readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED} from "./codes.ts";
 import {classifyRunSpend, type StageSpend} from "./token-spend.ts";
 import {readUsageLedger} from "./usage-ledger.ts";
+import {rollUpUsage} from "./usage-rollup.ts";
 
 const VERB = "fabrika spend read";
 
@@ -12,13 +13,14 @@ export const runLedgerRead = Effect.fn("spend.readLedger")(function* (path: stri
 	const text = yield* Effect.result(readFile(path));
 	if (Result.isFailure(text)) {
 		const probe = yield* Effect.result(exists(path));
+		const absent = Result.isSuccess(probe) && !probe.success;
 		return refuse(
-			Result.isSuccess(probe) && !probe.success ? INPUT_ABSENT : INPUT_UNREADABLE,
-			"spend read: ledger absent or unreadable; usage is unknown",
+			absent ? INPUT_ABSENT : INPUT_UNREADABLE,
+			`spend read: ledger ${absent ? "absent" : "unreadable"}; usage is unknown`,
 		);
 	}
 	const read = readUsageLedger(text.success);
-	return answer(JSON.stringify(read), [
+	return answer(JSON.stringify({...read, usage: rollUpUsage(read)}), [
 		`spend read: ${read.records.length} attributed record(s), ${read.legacy.length} legacy row(s); ${read.diagnostics.malformed} malformed, ${read.diagnostics.newerVersion} future-version, ${read.diagnostics.duplicates} duplicate, ${read.diagnostics.conflicts} conflicting line(s). Records and notices are not a completeness verdict.`,
 	]);
 });

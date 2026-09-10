@@ -968,46 +968,47 @@ ADR 0112 §2, pinned by [token-spend.ts](../src/spend/token-spend.ts)'s fixture.
 | Verb | Answers |
 |---|---|
 | `spend record` | ingest one version-2 envelope from stdin; `--ledger` overrides the default; JSON `status` is `recorded` or `duplicate`; exit 11 reports a recording failure separately from the task result |
-| `spend read` | `--ledger <path>` emits JSON `records`, `legacy`, and `diagnostics` with malformed/future-version/duplicate/conflict counts; the positional transcript form retains its legacy billed-token calculation |
-| `spend rollup` | version-1 evaluation rows grouped by day, skill and stage/arm; version-2 rows remain skipped by this legacy summary reader |
+| `spend read` | `--ledger <path>` emits JSON `records`, `legacy`, `diagnostics` and the shared `usage` summary; the positional transcript form retains its historical calculation and last-observed model |
+| `spend rollup` | issue/run/provider/model response counters with coverage; `--issue`, `--run` and `--repo` intersect exact bindings; historical totals remain separate and are excluded by binding filters |
 
 **Exit codes.** `7` the input is proven absent · `11` the input could not be read, or its absence
 could not be established · `12` the input was read in full and carries nothing to measure · `13`
-the ledger holds rows and this window selects none.
+the legacy ledger holds rows and this date window selects none. Exit `1` also covers invalid date
+bounds and date filtering when version-2 rows exist, since those rows carry no timestamps.
 
-Three behaviours are worth knowing:
-
-- **The cache-read share stays its own number.** It dominates `billed` and grows with turn count,
-  which makes it the context-bloat signal; folding it into one total hides what the measurement
-  exists to show.
-- **"I could not measure it" is never a zero.** `12` is a real transcript a failed run writes, and
-  reporting it as a measured zero would price a broken run as a free one.
-- **It cannot gate.** No threshold, no budget flag, and no exit code that varies with a spend
-  magnitude — asserted by a test that a very large total still exits `0`.
+Native totals retain each field's additive, subset, aggregate or unknown meaning. Each counter
+has nullable `tokens` and `states` counts, so missing values remain distinct from measured zero.
+Conflicting identities and cumulative snapshots are excluded. Run/overall totals include unbound
+issue usage under `unattributed`; issue filters count it under `excluded.unattributed`.
+Coverage names missing participants, retained notices and unknown inventory. Pi remains unavailable.
+No result changes a task outcome or records prices.
 
 ### The spend ledger
 
 `spend record` appends version-2 envelopes to `.fabrika/spend-ledger.jsonl`, gitignored and
 repo-relative. `--ledger` overrides the path. [usage-ledger.ts](../src/spend/usage-ledger.ts) reads
 new records and delegates historical rows to [ledger.ts](../src/spend/ledger.ts). An interrupted
-tail remains a malformed-line diagnostic; later records remain readable. Automatic host collection
-is a separate integration. The following journey runs independent processes without a model call:
+tail remains a malformed-line diagnostic; later records remain readable. Claude and Codex collectors
+feed this recorder; [host coverage and recovery](./usage-recording.md#current-host-evidence) describes
+their supported sources and limits. The following commands need no model call:
 
 ```bash
 node packages/fabrika-cli/src/bin.ts spend record --ledger .fabrika/example-usage.jsonl < packages/fabrika-cli/src/spend/fixtures/attributed/codex.json
 node packages/fabrika-cli/src/bin.ts spend read --ledger .fabrika/example-usage.jsonl --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usage.jsonl --issue 42 --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usage.jsonl --run run-1
 ```
 
 The existing evaluation summary remains available for historical rows:
 
 ```bash
-fabrika spend rollup                                    # legacy evaluation rows
-fabrika spend rollup --since 2026-08-01 --until 2026-08-09
-fabrika spend rollup --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/legacy.jsonl
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/legacy.jsonl --since 2026-08-01 --until 2026-08-09
 ```
 
 `--since`/`--until` are **inclusive at both edges**, and a bare `YYYY-MM-DD` widens to that whole
-UTC day. stdout is one record per line, the first field naming the kind:
+UTC day on a legacy-only ledger. Text keeps the historical lines below and appends `legacy` and
+`usage.<field>` lines. Each appended line contains a tab followed by its JSON value:
 
 ```
 billed        <n>          exCacheRead <n>   assistantTurns <n>
@@ -1020,6 +1021,15 @@ skill      <name>              …
 skillMore     <n>
 stage-arm  <stage> <arm>       …
 stageArmMore  <n>
+legacy        {"attribution":"unavailable","categories":"historical-four-component","excludedByScope":0}
+usage.scope   {"repo":null,"issue":null,"run":null}
+usage.responses <n>
+usage.counters <JSON array>
+usage.byModel <JSON array>
+usage.excluded <JSON object>
+usage.unattributed <JSON object>
+usage.coverage <JSON object>
+usage.diagnostics <JSON object>
 ```
 
 Three things about that output are load-bearing:
@@ -1034,6 +1044,11 @@ Three things about that output are load-bearing:
   ten biggest-billing rows and then a `…More` count of the rows the cap dropped — `0` included, so a
   missing remainder never looks like a breakdown that fit. The scalar totals above them are whole.
   `--json` carries the same shape: `byDay`, `bySkill` and `byStageArm` are each `{rows, more}`.
+
+The new `usage.counters`, `usage.byModel` and coverage lists stay whole: their rows answer the
+operator's model/category/participant question. The [summary reference](./usage-recording.md#issue-and-run-summaries)
+defines every field. Legacy totals cannot be treated as attributed usage; modern coverage remains
+partial until collector evidence can establish all participants, including Pi.
 
 ## The `spike` group
 

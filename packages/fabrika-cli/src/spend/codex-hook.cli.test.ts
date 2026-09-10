@@ -14,10 +14,10 @@ afterEach(() => {
 describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it.each([
 		"node packages/fabrika-cli/src/bin.ts build claim 8950",
-		"node packages/fabrika-cli/src/bin.ts review criteria --repo kamp-us/phoenix 8950",
+		"node packages/fabrika-cli/src/bin.ts review criteria --repo fixture/repo 8950",
 		"git status --short\nnode packages/fabrika-cli/src/bin.ts review criteria 8950",
-		"git status --short && node 'packages/fabrika-cli/src/bin.ts' review criteria --json --repo='kamp-us/phoenix' 8950",
-		"node packages/fabrika-cli/src/bin.ts build claim --repo kamp-us/phoenix --issue=8950 9000",
+		"git status --short && node 'packages/fabrika-cli/src/bin.ts' review criteria --json --repo='fixture/repo' 8950",
+		"node packages/fabrika-cli/src/bin.ts build claim --repo fixture/repo --issue=8950 9000",
 	])("records native usage through the installed hook for %s", (command) => {
 		const cwd = mkdtempSync(join(tmpdir(), "codex-hook-cli-"));
 		dirs.push(cwd);

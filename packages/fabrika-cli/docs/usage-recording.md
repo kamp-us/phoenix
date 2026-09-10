@@ -12,7 +12,7 @@ Exit 11 reports invalid input, unreadable input, contention, conflicting identit
 write/read-back on stderr. Retry the same envelope after fixing the reported problem. A host
 must report recorder failures separately from its original task exit status.
 
-`spend read --ledger <path> [--json]` emits JSON with `records`, `legacy` and `diagnostics`.
+`spend read --ledger <path> [--json]` emits JSON with `records`, `legacy`, `diagnostics` and `usage`.
 The ledger mode always emits JSON. `records` holds the version-2 envelopes, including notices;
 `legacy` holds decoded version-1 evaluation rows without invented issue attribution. Diagnostics
 count `malformed`, `newerVersion`, `duplicates` and `conflicts`. Conflicting records remain visible;
@@ -21,9 +21,70 @@ An empty ledger yields empty arrays, with no measured zero or complete run manuf
 Exit 7 means the path is absent; exit 11 means it could not be read.
 
 The positional `spend read <transcript>` interface retains the legacy Claude-shaped reconstruction.
-It cannot be combined with `--ledger`. `spend rollup` still uses the version-1 evaluation reader;
-it reports version-2 rows as skipped newer rows. Use ledger-mode `spend read` for attributed records.
-Issue/run/model aggregation belongs to the later summary slice.
+It cannot be combined with `--ledger`. This historical calculation keeps the last observed model;
+it cannot establish per-response model attribution. `spend rollup` reads both ledger versions.
+Its `usage` object summarizes version-2 responses; the existing top-level totals and capped
+day/skill/stage-arm lists describe historical rows only.
+
+## Issue and run summaries
+
+`spend rollup [--ledger <path>] [--issue <number>] [--run <id>] [--repo <owner/repo>] [--json]`
+intersects exact recorded bindings. With no binding flags it includes every response in that
+ledger. It does not discover other ledger files. Claude writes per checkout; Codex writes in the
+primary checkout. Select each ledger explicitly when those locations differ.
+
+JSON retains `window`, `totals`, `skipped`, `undatedRows`, `byDay`, `bySkill` and `byStageArm` for
+legacy consumers, and adds `legacy` metadata and `usage`. Text retains the historical lines and
+appends `legacy<TAB><JSON>` and `usage.<field><TAB><JSON>` for every field below. Both formats carry
+the same values. Iterate every counter/model/coverage row; those lists are the requested answer.
+
+| `usage` field | Meaning |
+|---|---|
+| `scope` | Selected repo, issue and run; null means no filter |
+| `responses` | Distinct, nonconflicting response records counted; not a token measurement |
+| `counters` | Native category totals across models, grouped by host, format, provider, field, category and arithmetic meaning |
+| `byModel` | Every host/format/provider/model group, with its response count and counter totals; unknown identities remain null |
+| `excluded` | Cumulative snapshots, conflicting measurement variants and unbound response records excluded by an issue filter |
+| `unattributed` | Count and counters for included responses whose issue is null |
+| `coverage` | Overall state, host availability, and per-root groups with discovery, participants, measured sessions, missing participants and retained notices |
+| `diagnostics` | Ledger-wide malformed, future-version, duplicate and conflict counts; bad rows cannot be assigned to a narrower scope |
+
+A counter total retains the native `field`, normalized `category` and `meaning`. `tokens` sums only
+measured values of that field. It is null when none were measured, and zero when measured values
+sum to zero. `states` counts measured, absent, unsupported, unavailable and not-applicable records.
+A field omitted from another response in the same host/format/provider group contributes an absent
+state. A partial sum therefore remains visibly partial. There is no provider-blind grand total:
+subsets and aggregates remain labelled and are never added to their parents.
+
+The shared ledger reader removes exact duplicates. The summary excludes every conflicting variant
+of an identity before applying issue/run filters. It counts response records across descendants,
+attempts and model changes, and never adds cumulative snapshots. An issue filter excludes unknown
+issue bindings and reports their count. Run and overall summaries retain them under `unattributed`.
+Unbound coverage notices for a selected root remain visible without assigning its unbound usage
+to that issue.
+
+Coverage is conservative. A session with a response can still have missing work. Participant
+notices retain their attempt and whether a matching response was found; an earlier attempt cannot
+prove a later one measured. Old missing notices remain visible after recovery. Unmatched tool-call
+identities remain unresolved when the ledger supplies no alias linking them to a recovered child.
+The current host collectors cannot prove an exhaustive inventory, so their totals remain partial.
+Pi's observer is unavailable, including when no Pi record exists; no all-host completion is claimed.
+No observed responses yields unavailable coverage, not measured zero usage.
+
+`legacy.attribution` is unavailable and `legacy.categories` names the historical four-component
+view. `legacy.excludedByScope` counts historical rows omitted by binding filters. Those rows have
+no issue/run binding. `--since`/`--until` retain inclusive UTC date filtering for legacy-only ledgers.
+They refuse with exit 1 if version-2 records exist, because those records have no timestamp.
+Other rollup exits are 7 for an absent ledger, 11 for unreadable input, 12 for no readable rows,
+and 13 for an empty legacy date window. Malformed and future-version line counts remain distinct.
+
+### Current host evidence
+
+| Host | Tested evidence and limit |
+|---|---|
+| Claude | Claude Code 2.1.217 metadata fixtures and lifecycle hook tests; [collector reference](../../../claude-plugins/fabrika/docs/claude-usage.md) and [setup/recovery](../../../claude-plugins/fabrika/docs/claude-usage-setup.md). Provider remains unknown when native records do not supply it. |
+| Codex | Native 0.153.4 and 0.154.0 record fixtures, dispatch collection and native callback tests; [source contract and recovery](./codex-usage.md). Unknown versions remain unsupported. |
+| Pi | The required observer integration is pending. Availability and descendant inventory remain unknown; no zero-token or complete result is inferred. |
 
 For Effect callers, the package root exports `UsageRecords` and `UsageLedger` namespaces:
 
@@ -139,8 +200,18 @@ From the repository root, with no model invocation:
 ```bash
 node packages/fabrika-cli/src/bin.ts spend record --ledger .fabrika/example-usage.jsonl < packages/fabrika-cli/src/spend/fixtures/attributed/codex.json
 node packages/fabrika-cli/src/bin.ts spend read --ledger .fabrika/example-usage.jsonl --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usage.jsonl --issue 42 --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usage.jsonl --run run-1
 ```
 
 These are independent processes. [record.cli.test.ts](../src/spend/record.cli.test.ts) exercises
 that journey, copied history and competing processes. [usage-ledger.unit.test.ts](../src/spend/usage-ledger.unit.test.ts)
 uses actual files for interrupted appends, replay, legacy reads and recording failure recovery.
+[usage-journey.cli.test.ts](../src/spend/usage-journey.cli.test.ts) drives Claude and Codex callback
+boundaries in fresh processes through interruption, delayed descendants, retries, model switches
+and repeated reads. Its eight-response example expects Codex input/output 40/20 and Claude
+noncached input/output/cache-read/cache-write 8/28/80/40. The source relationships are grounded in
+[Codex `TokenUsageRecord` and `non_cached_input`](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs)
+and [Claude's token breakdown](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#understanding-the-token-breakdown).
+The tests then add an unbound response and prove only run/overall totals include it. They invoke
+no model. All-host epic acceptance still waits for Pi.
