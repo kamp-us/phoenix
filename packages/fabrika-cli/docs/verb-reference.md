@@ -10,7 +10,8 @@ node packages/fabrika-cli/src/bin.ts ship checks --help
 ```
 
 Use group help to choose a verb, then that verb's help for invocation, inputs, answer bytes and exit
-meanings. The group sections below link to implementation contracts where one exists. Read a
+meanings. Prefix the short commands below with `node packages/fabrika-cli/src/bin.ts`, as above.
+The group sections below link to implementation contracts where one exists. Read a
 contract by heading:
 
 ```bash
