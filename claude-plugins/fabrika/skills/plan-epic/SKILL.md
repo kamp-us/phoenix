@@ -127,6 +127,10 @@ fabrika ledger draft $epic_number --body-digest 8f2c1a90b4d7 --token <claim-toke
 
 1. As a yazar, I want to draft a başlık, so that I can publish it when it's ready.
 2. As a moderator, I want reported entries in a review queue, so that I can act on them.
+
+### Acceptance criteria
+- [ ] a draft başlık keeps its slug through publish
+- [ ] a reported entry lands in the moderator queue within one refresh
 EOF
 ```
 
@@ -135,6 +139,20 @@ are an ordered list and the leading integer is the id** — an unordered bullet 
 parses as *zero stories*, and `ledger draft` refuses that on `4` rather than letting it reach the
 gate. `4` names what is missing, duplicated or mis-numbered, so the repair is a re-draft, never a
 re-plan.
+
+**`### Acceptance criteria` is the contract the epic's own tail PR is graded against, and you write
+it here.** Every issue kind carries the same gradeable surface, so `review criteria <epic>` and
+`review append-criterion <epic>` work on a tail unchanged — before ADR
+[0380](../../../../.decisions/0380-plan-epic-emits-the-epic-s-acceptance-criteria.md) they refused on
+every one of them. Write it about the *epic*, not the children: coherence across the slices, the
+end-to-end behaviour no single child owns, the shape the tail must leave behind. Bytes are the
+child's — `- [ ] ` checkbox rows, the first directly under the heading with no blank line between
+them — and `ledger draft` refuses prose there on `4`.
+
+**It is authored here, on this stdin, and never appended after `ledger write`.** These criteria go
+through step 4's grilling and the founder plan approval with the rest of the plan, and the scope
+digest binds them: edit one after approval and the standing approval resolves `stale`, which is the
+point.
 
 Write the product layer first and let the slices fall out of it. A `### Task-split rationale` that
 cannot say which story each slice serves is telling you the split is wrong.

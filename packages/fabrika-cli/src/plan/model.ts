@@ -51,6 +51,14 @@ export interface Ledger {
 	readonly epic: number;
 	readonly children: ReadonlyArray<ChildLedger>;
 	readonly epicStories: ReadonlyArray<number>;
+	/**
+	 * The epic's own acceptance criteria, in body order — the contract its tail PR is graded against.
+	 *
+	 * Empty when the body carries no readable block, which is every epic planned before ADR 0380 and
+	 * nothing planned after it: `ledger draft` refuses a plan whose criteria do not read back `Found`,
+	 * so `absent` and `malformed` cannot be told apart here and nothing needs to.
+	 */
+	readonly epicCriteria: ReadonlyArray<string>;
 	readonly cycleDoc: CycleDoc;
 	readonly topology: PlanTopology;
 	/** The epic body carries no `## Dependencies` heading — `MISSING_DEPS_SECTION`'s only input. */

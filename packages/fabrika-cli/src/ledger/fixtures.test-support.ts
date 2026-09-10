@@ -91,19 +91,31 @@ export const childIssue = (options: {
 	});
 
 /** A plan block that clears the section set and the story grammar. */
-export const planBlock = (overrides: {stories?: string; drop?: string} = {}): string =>
+export const planBlock = (
+	overrides: {stories?: string; drop?: string; criteria?: string} = {},
+): string =>
 	[
 		"## Plan (plan-epic)",
 		"",
-		...PLAN_SECTIONS.filter((heading) => heading !== overrides.drop).flatMap((heading) => [
-			`### ${heading}`,
-			"",
-			heading === "User stories"
-				? (overrides.stories ??
-					"1. As a moderator, I want a queue.\n2. As a yazar, I want a receipt.")
-				: "Something true about this section.",
-			"",
-		]),
+		...PLAN_SECTIONS.filter((heading) => heading !== overrides.drop).flatMap((heading) => {
+			// The criteria rows sit directly under their heading; every other section takes a blank line.
+			if (heading === "Acceptance criteria") {
+				return [
+					`### ${heading}`,
+					overrides.criteria ?? "- [ ] the epic tail leaves no child's slice unwired.",
+					"",
+				];
+			}
+			return [
+				`### ${heading}`,
+				"",
+				heading === "User stories"
+					? (overrides.stories ??
+						"1. As a moderator, I want a queue.\n2. As a yazar, I want a receipt.")
+					: "Something true about this section.",
+				"",
+			];
+		}),
 	].join("\n");
 
 /** A child body that clears the field and criteria readers. */

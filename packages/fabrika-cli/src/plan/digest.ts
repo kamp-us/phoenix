@@ -56,8 +56,23 @@ const epicLine = (ledger: LedgerScope): string => {
 		.map(([dependent, prerequisite]) => `${dependent}>${prerequisite}`)
 		.sort()
 		.join(";");
-	return `epic=${ledger.epic}|stories=${stories}|cycleDoc=${ledger.cycleDoc}|deps=${deps}|edges=${edges}`;
+	return `epic=${ledger.epic}|stories=${stories}|cycleDoc=${ledger.cycleDoc}|deps=${deps}|edges=${edges}${criteriaComponent(ledger)}`;
 };
+
+/**
+ * The epic's own acceptance criteria, appended **only when the body carries some** — the clause that
+ * keeps ADR 0380 from invalidating every standing approval on the board.
+ *
+ * An epic planned before that ADR carries no block, so its line serializes byte-for-byte as it did
+ * and its founder approval stays `current`, which is what the #6683 drain-as-emitted ruling promised.
+ * An epic planned after it carries one, so editing a criterion after approval moves the digest and
+ * the approval resolves `stale` — the criteria are part of the scope the founder approved, exactly
+ * as the stories and the topology are. Their texts are serialized, not their count: a reworded
+ * criterion is a different contract, and a count would not see it. Their **checked state** is not,
+ * for the same reason the flip labels are excluded above — ticking a box off is not a re-scope.
+ */
+const criteriaComponent = (ledger: LedgerScope): string =>
+	ledger.epicCriteria.length === 0 ? "" : `|ac=${JSON.stringify(ledger.epicCriteria)}`;
 
 /** The canonical serialization: one line per child ascending, then the epic line, joined by `\n`. */
 export const serializeScope = (ledger: LedgerScope): string =>

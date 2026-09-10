@@ -143,6 +143,12 @@ const criteriaOf = (body: string): {token: CriteriaToken; count: number} => {
 	return {token: read._tag === "Absent" ? "absent" : "malformed", count: 0};
 };
 
+/** The epic's own criteria texts, in body order — empty on anything but a `Found`. See ADR 0380. */
+const epicCriteriaOf = (body: string): ReadonlyArray<string> => {
+	const read = readAcceptanceCriteria(body);
+	return read._tag === "Found" ? read.value.map((criterion) => criterion.text) : [];
+};
+
 /**
  * The whole ledger, fetched fresh.
  *
@@ -276,6 +282,7 @@ export const loadLedger = (
 			epic: number,
 			children,
 			epicStories: stories.ids,
+			epicCriteria: epicCriteriaOf(epic.body),
 			cycleDoc: yield* probeCycleDoc(repo, cycleDocPath, env),
 			topology: {phases, edges},
 			dependenciesAbsent: topology._tag === "Absent",

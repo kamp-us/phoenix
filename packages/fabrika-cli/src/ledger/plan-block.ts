@@ -12,9 +12,15 @@
  * The section presence and duplication counts come from the gate's own `sectionCount`, so the composer
  * is held to the reader it is composing for. Only the *ordering* is derived here, because no shipped
  * reader answers it.
+ *
+ * `### Acceptance criteria` is checked the same way and for the same reason: it is the contract the
+ * epic *tail* PR is graded against, so a section of prose under that heading reads back `Absent`
+ * through the shared wire format and leaves `review criteria` with nothing — the story-list failure
+ * pointing at a different section. See ADR 0380.
  */
 
 import {readEpicStories, sectionCount, unfencedLines} from "../plan/ledger.ts";
+import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
 
 /** The line the block must open with. */
 export const PLAN_HEADING = "## Plan (plan-epic)";
@@ -28,12 +34,16 @@ export const PLAN_SECTIONS: ReadonlyArray<string> = [
 	"Goal / non-goals",
 	"Resolved questions",
 	"Approach",
+	"Acceptance criteria",
 	"Testing strategy",
 	"Task-split rationale",
 	"Vocabulary impact",
 ];
 
 const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
+
+/** The one spelling the criteria section is written under, matched whole-line. */
+const ACCEPTANCE_CRITERIA = "### Acceptance criteria";
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -94,6 +104,21 @@ export const checkPlanBlock = (text: string): PlanBlockCheck => {
 				`the plan block's sections are out of order: "${label(current)}" appears after "${label(previous)}".`,
 			);
 		}
+	}
+
+	const lines = text.split("\n");
+	const heading = lines.findIndex((line) => line.trim() === ACCEPTANCE_CRITERIA);
+	if (heading !== -1 && (lines[heading + 1] ?? "").trim() === "") {
+		return bad(
+			`"${ACCEPTANCE_CRITERIA}" is followed by a blank line — its first "- [ ] " row sits directly under the heading, the same byte rule a child body carries.`,
+		);
+	}
+
+	const criteria = readAcceptanceCriteria(text);
+	if (criteria._tag !== "Found") {
+		return bad(
+			`the plan's acceptance criteria read as ${criteria._tag === "Absent" ? "absent" : "malformed"} — ${criteria.reason}. "${ACCEPTANCE_CRITERIA}" carries "- [ ] " checkbox rows, and a section of prose leaves the epic tail with nothing to grade.`,
+		);
 	}
 
 	const stories = readEpicStories(text);

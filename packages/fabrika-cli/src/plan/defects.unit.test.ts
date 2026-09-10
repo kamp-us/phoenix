@@ -22,6 +22,7 @@ const scope = (overrides: Partial<LedgerScope> = {}): LedgerScope => ({
 	epic: 4300,
 	children: [child()],
 	epicStories: [1],
+	epicCriteria: [],
 	cycleDoc: "present",
 	topology: {phases: [{phase: 1, members: ["#4301"]}], edges: []},
 	dependenciesAbsent: false,
