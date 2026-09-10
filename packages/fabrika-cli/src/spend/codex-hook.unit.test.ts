@@ -54,9 +54,8 @@ it("binds interactive work at the native tool callback and collects again at Sto
 		total_tokens: 3,
 	};
 	const response = {
-		type: "event_msg",
+		type: "token_usage_record",
 		payload: {
-			type: "token_usage_record",
 			thread_id: "native",
 			session_id: "native",
 			turn_id: "turn",

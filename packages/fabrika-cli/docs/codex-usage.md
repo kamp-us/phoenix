@@ -9,15 +9,19 @@ Its [capture record](../src/spend/__fixtures__/PROVENANCE.md) distinguishes runt
 
 ## Supported records
 
-The filesystem tests construct minimal native records matching the captured Codex 0.153.4 and
-0.154.0 contracts. The six counters and response identity were checked against
+The reader accepts Codex 0.153.4 and 0.154.0. A committed
+[captured 0.154.0 usage record](../src/spend/__fixtures__/codex-token-usage.golden.jsonl)
+exercises the real hook and shared recorder. Its outer `type` is `token_usage_record`;
+its `payload` has no `type` discriminator. Constructed filesystem scenarios cover
+descendants, retries and recovery; they are not additional runtime captures.
+The six counters and response identity were checked against
 [protocol.rs at 03f0145](https://github.com/openai/codex/blob/03f014564deef528c25e80fe67ec51871cb6ee51/codex-rs/protocol/src/protocol.rs#L2233).
 `SessionMeta` supplies thread, parent, provider and version; `TurnContextItem` supplies the model
 for that turn. The first session header owns the file. Later copied headers do not create attempts.
 Responses naming another thread are inherited history and are skipped.
 
-Each `token_usage_record` produces a response measurement plus separate turn and thread cumulative
-snapshots. The response ID identifies each snapshot; cumulative totals are never response deltas.
+Each valid `token_usage_record` produces a response measurement plus separate turn and thread cumulative
+snapshots when their counters are present. The response ID identifies each snapshot; cumulative totals are never response deltas.
 Native thread ID supplies the attempt and agent identity, independent of `FABRIKA_SESSION_ID`.
 Resumes reuse those identities; new responses and new threads remain separate.
 

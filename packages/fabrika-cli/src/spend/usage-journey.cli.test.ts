@@ -82,9 +82,8 @@ it("records both hosts across interruption, restart, nested work and retries wit
 		},
 		{type: "turn_context", payload: {turn_id: thread, model}},
 		{
-			type: "event_msg",
+			type: "token_usage_record",
 			payload: {
-				type: "token_usage_record",
 				thread_id: thread,
 				session_id: "root",
 				turn_id: thread,

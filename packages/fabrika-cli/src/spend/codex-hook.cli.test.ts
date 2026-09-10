@@ -61,9 +61,8 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 				},
 				{type: "turn_context", payload: {turn_id: "turn", model: "model"}},
 				{
-					type: "event_msg",
+					type: "token_usage_record",
 					payload: {
-						type: "token_usage_record",
 						thread_id: "native",
 						session_id: "native",
 						turn_id: "turn",
