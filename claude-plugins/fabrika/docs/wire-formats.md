@@ -1,5 +1,11 @@
 # fabrika wire formats — the index
 
+### `audit-context`
+
+Audit research survives a conversation in the initial session body. The audit producer and the
+grilling reader share this format so retries can compare retained research without treating a
+recommendation as a ruling. Session creation and recovery belong to the grilling contract.
+
 A **wire format** is the byte-level agreement two fabrika skills meet through on a GitHub artifact.
 This page is the map of them: for each registered format, its owner module, who writes those bytes
 and who reads them, and why the two sides need an agreement at all.
@@ -37,6 +43,7 @@ arrives owing a migration nobody planned.
 
 | Format | Owner module | Producers | Consumers |
 | --- | --- | --- | --- |
+| `audit-context` | [`packages/fabrika-cli/src/wire/audit-context.ts`](../../../packages/fabrika-cli/src/wire/audit-context.ts) | `architecture-audit`, `grill open` | `grilling`, `grill read`, `grill open` |
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage` | `build`, `review` |
 | `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui` | `review`, `review-ui` |
 | `build-deviations` | [`packages/fabrika-cli/src/wire/build-deviations.ts`](../../../packages/fabrika-cli/src/wire/build-deviations.ts) | `build` | `review` |

@@ -21,6 +21,7 @@ import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import {FAILED, refuse} from "../verb.ts";
 import {type DocumentRead, runAnswer} from "./answer-verb.ts";
+import {runAuditOpen} from "./audit-open.ts";
 import {openSubject, runOpen} from "./open-verb.ts";
 import {runRead} from "./read-verb.ts";
 import {runRound} from "./round-verb.ts";
@@ -59,6 +60,19 @@ const questionArg = Argument.string("question").pipe(
 const open = leafCommand(
 	"open",
 	{
+		auditContext: Flag.string("audit-context").pipe(
+			Flag.optional,
+			Flag.withDescription("JSON file matching wire/audit-context.ts; exclusive with topic/ticket"),
+		),
+		auditRecover: Flag.boolean("audit-recover").pipe(
+			Flag.withDescription("recover the retained audit identity; never create an issue"),
+		),
+		auditSession: Flag.integer("audit-session").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"known partial create number; requires --audit-recover and reads this issue directly",
+			),
+		),
 		topic: Flag.string("topic").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -73,7 +87,36 @@ const open = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({topic, ticket, repo}) {
+	Effect.fn(function* ({topic, ticket, repo, auditContext, auditRecover, auditSession}) {
+		if (Option.isSome(auditContext)) {
+			if (
+				Option.isSome(topic) ||
+				Option.isSome(ticket) ||
+				(Option.isSome(auditSession) && !auditRecover)
+			) {
+				return yield* emit(
+					refuse(
+						FAILED,
+						"grill open: audit context excludes topic/ticket; audit-session requires audit-recover.",
+					),
+				);
+			}
+			const input = yield* document(auditContext.value);
+			return yield* emit(
+				input._tag === "Failed"
+					? refuse(11, `grill open: audit input unreadable: ${input.reason}`)
+					: yield* runAuditOpen({
+							text: input.text,
+							attempt: auditRecover
+								? {_tag: "Recover", session: Option.getOrNull(auditSession)}
+								: {_tag: "Create"},
+							repo: Option.getOrNull(repo),
+							env: process.env,
+						}),
+			);
+		}
+		if (auditRecover || Option.isSome(auditSession))
+			return yield* emit(refuse(FAILED, "grill open: audit recovery requires --audit-context."));
 		const subject = openSubject(Option.getOrNull(topic), Option.getOrNull(ticket));
 		yield* emit(
 			subject === null
@@ -87,7 +130,7 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open, or resume, the session issue for a topic or a ticket."),
 	Command.withDescription(
-		'Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","ticket":n|null,"created":true|false,"url":"…"}. With --ticket the session records that ticket and later runs resume on it; without one, topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 1 (neither --topic nor --ticket), 5 (machine-local path in the title), 6 (bare @ reference), 7 (the grilling:session label does not exist, or --ticket names no issue), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search or the ticket read could not complete, so "none" is unproven), 16 (more than one open session matches), 19 (a scanned session\'s ## Came from section does not parse, so which session is bound to --ticket is undecidable). Example: fabrika grill open --ticket 5652',
+		'With --audit-context, preserve initial research and return {session,url,created,runId,digest}; --audit-recover never creates and --audit-session reads a known partial create directly. Audit exits also include 20 (malformed), 21 (oversized), 22 (changed context), 23 (closed). Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","ticket":n|null,"created":true|false,"url":"…"}. With --ticket the session records that ticket and later runs resume on it; without one, topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 1 (neither --topic nor --ticket), 5 (machine-local path in the title), 6 (bare @ reference), 7 (the grilling:session label does not exist, or --ticket names no issue), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search or the ticket read could not complete, so "none" is unproven), 16 (more than one open session matches), 19 (a scanned session\'s ## Came from section does not parse, so which session is bound to --ticket is undecidable). Example: fabrika grill open --ticket 5652',
 	),
 );
 
@@ -191,9 +234,9 @@ const read = leafCommand(
 		yield* emit(yield* runRead({session, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
-	Command.withShortDescription("The whole session state and its frontier."),
+	Command.withShortDescription("The question frontier and total audit-context read."),
 	Command.withDescription(
-		'Read the whole session state: {"session":n,"frontier":"awaiting-founder|facts-pending|clear|empty","questions":[…],"disregarded":[…],"counts":{…},"scanned":{…}}. All four frontier tokens exit 0 — an open frontier is this skill working. Never refuses on marker content: a malformed, unauthorized or unbindable marker is a disregarded row at exit 0. Exits 7 (no such session), 11 (a comment or permission read could not complete, so every state is UNKNOWN). Example: fabrika grill read 9412',
+		'Read the whole session state, including auditContext as Found/Absent/Malformed alongside the question frontier: {"session":n,"frontier":"awaiting-founder|facts-pending|clear|empty","questions":[…],"disregarded":[…],"counts":{…},"scanned":{…}}. All four frontier tokens exit 0 — an open frontier is this skill working. Never refuses on marker content: a malformed, unauthorized or unbindable marker is a disregarded row at exit 0. Exits 7 (no such session), 11 (a comment or permission read could not complete, so every state is UNKNOWN). Example: fabrika grill read 9412',
 	),
 );
 
