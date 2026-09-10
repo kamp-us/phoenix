@@ -18,6 +18,7 @@ import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {localTreeGuards} from "../guard/command.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
@@ -488,12 +489,21 @@ const check = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({surface, repo}) {
-		yield* emit(yield* runCheck({surface, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runCheck({
+				surface,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				guards: localTreeGuards,
+			}),
+		);
 	}),
 ).pipe(
-	Command.withShortDescription("Run this surface's validators in this tree."),
+	Command.withShortDescription(
+		"Run this surface's validators and the local-tree guards, in this tree.",
+	),
 	Command.withDescription(
-		'Run this surface\'s validators IN THIS TREE — a green borrowed from another checkout has been another tree\'s answer. Whether a validator reads a build cache is the repo\'s own declaration, not this verb\'s. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
+		'Run this surface\'s validators IN THIS TREE — a green borrowed from another checkout has been another tree\'s answer. Whether a validator reads a build cache is the repo\'s own declaration, not this verb\'s. EVERY surface additionally sweeps the shipped local-tree guards — the ones that are argument-free and read only the checked-out tree — so a guard that reds in CI reds here first; membership is declared beside each guard\'s registration and the sweep is not anchored by --surface. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…,"guard <name> <leaf>",…],"skipped":[…],"unvalidated":[…]}; red and unknown print nothing. A guard that exited 7 (zero scope) or 11 (UNKNOWN) is reported in `skipped` as "<name> (<reason>)" and is never folded into the green — CI\'s own gate answers that one. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; the repo\'s CI gate decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red — a validator or a local-tree guard failed, and the failing line names it), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
 	),
 );
 

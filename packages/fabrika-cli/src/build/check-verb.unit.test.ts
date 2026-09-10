@@ -1,7 +1,9 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import type {LocalTreeGuard} from "../guard/local-tree.ts";
 import type {ExecResult} from "../io/exec.ts";
+import type {VerbOutcome} from "../verb.ts";
 import {
 	classifyDiff,
 	linkTargets,
@@ -111,6 +113,8 @@ const options = {
 		string,
 		string | undefined
 	>,
+	/** No local-tree guard unless a test names one — the sweep has its own describe block. */
+	guards: [] as ReadonlyArray<LocalTreeGuard>,
 };
 
 const run = (
@@ -239,6 +243,7 @@ describe("runCheck", () => {
 			surface: "code",
 			tree: "/repo/trees/lane-a",
 			ran: ["pnpm typecheck --force", "pnpm lint:worktree"],
+			skipped: [],
 			unvalidated: [],
 		});
 		expect(shell.calls).toContain("pnpm typecheck --force");
@@ -1029,6 +1034,7 @@ describe("--surface workflows", () => {
 			surface: "workflows",
 			tree: "/repo/trees/lane-a",
 			ran: ["actionlint", GUARD.join(" ")],
+			skipped: [],
 			unvalidated: [],
 		});
 		expect(calls).toContain("actionlint .github/workflows/ci.yml .github/workflows/publish.yml");
@@ -1308,5 +1314,124 @@ describe("--surface code reads its validators from the config", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("is UNKNOWN, never green");
 		expect(shell.calls).not.toContain("pnpm typecheck --force");
+	});
+});
+
+/**
+ * The local-tree guard sweep.
+ *
+ * The guards arrive as an operand, so these tests hand the verb the ones they mean. Which guards the
+ * shipped CLI hands it is a fact about the registry, pinned in `guard/local-tree.data.unit.test.ts`.
+ */
+describe("runCheck — the local-tree guard sweep", () => {
+	const guard = (
+		name: string,
+		outcome: VerbOutcome,
+		leaf = "check",
+		seen: string[] = [],
+	): LocalTreeGuard => ({
+		name,
+		leaf,
+		run: () =>
+			Effect.sync(() => {
+				seen.push(`${name} ${leaf}`);
+				return outcome;
+			}),
+	});
+
+	const clean: VerbOutcome = {code: 0, stdout: "patch-guard: clean.\n", stderr: []};
+
+	const sweepRun = (guards: ReadonlyArray<LocalTreeGuard>) =>
+		run(
+			[...LANE_OK, [DIFF, okOut("src/app/App.tsx\n")], [TYPECHECK, okOut("")], [LINT, okOut("")]],
+			{guards},
+		);
+
+	it("folds a passing member into `ran` under its own leaf", async () => {
+		const out = await sweepRun([
+			guard("patch-guard", clean),
+			guard("decisions-index", clean, "validate"),
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).ran).toEqual([
+			"pnpm typecheck --force",
+			"pnpm lint:worktree",
+			"guard patch-guard check",
+			"guard decisions-index validate",
+		]);
+		expect(JSON.parse(out.stdout).skipped).toEqual([]);
+	});
+
+	// The reproduction that forced this: patch-guard red at the tip while `--surface code` greened.
+	it("reds on 18 naming the member that failed, with nothing on stdout", async () => {
+		const out = await sweepRun([
+			guard("patch-guard", {
+				code: 12,
+				stdout: "",
+				stderr: ["patches/effect.patch has no @patch-pin marker"],
+			}),
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — guard patch-guard check failed; diagnostics above.",
+		);
+		expect(out.stderr).toContain("patches/effect.patch has no @patch-pin marker");
+	});
+
+	it("reports a member's exit 7 as `skipped:`, never as a pass", async () => {
+		const out = await sweepRun([
+			guard("readme-guard", {
+				code: ZERO_SCOPE,
+				stdout: "",
+				stderr: ["readme-guard: no workspace member was scanned."],
+			}),
+		]);
+		expect(out.code).toBe(0);
+		const green = JSON.parse(out.stdout);
+		expect(green.skipped).toEqual([
+			"readme-guard (zero scope: readme-guard: no workspace member was scanned.)",
+		]);
+		expect(green.ran).not.toContain("guard readme-guard check");
+		expect(out.stderr).toContain(
+			"build check: skipped: readme-guard (zero scope: readme-guard: no workspace member was scanned.) — not a pass; CI's own gate answers this one.",
+		);
+	});
+
+	it("reports a member's exit 11 as `skipped:`, never as a pass", async () => {
+		const out = await sweepRun([
+			guard("i18n-guard", {
+				code: PRECONDITION_UNKNOWN,
+				stdout: "",
+				stderr: ["i18n-guard: the allow-list could not be read."],
+			}),
+		]);
+		expect(out.code).toBe(0);
+		const green = JSON.parse(out.stdout);
+		expect(green.skipped).toEqual([
+			"i18n-guard (UNKNOWN read: i18n-guard: the allow-list could not be read.)",
+		]);
+		expect(green.ran).not.toContain("guard i18n-guard check");
+	});
+
+	// Two portability-guard repair rounds were spent on prose-only diffs, which the `code` surface
+	// never reaches. The sweep is not anchored by --surface for exactly that reason.
+	it("sweeps under a markdown surface too, not `code` alone", async () => {
+		const seen: string[] = [];
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/a.md\n")]],
+			{guards: [guard("portability-guard", clean, "check", seen)], surface: "prose"},
+			{[`${ROOT}/docs/a.md`]: "# a\n"},
+		);
+		expect(out.code).toBe(0);
+		expect(seen).toEqual(["portability-guard check"]);
+		expect(JSON.parse(out.stdout).ran).toContain("guard portability-guard check");
+	});
+
+	it("invokes nothing when it is handed no member", async () => {
+		const out = await sweepRun([]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).skipped).toEqual([]);
+		expect(JSON.parse(out.stdout).ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
 	});
 });

@@ -1861,8 +1861,26 @@ fabrika build check --surface code
 | `--surface` | enum: `code` \| `prose` \| `plan` \| `workflows` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
 
 **Output** — machine. On green, one JSON object:
-`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": [<the commands that ran>], "unvalidated": []}`.
+`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": [<the commands that ran>, "guard <name> <leaf>", …], "skipped": [], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
+
+**Every run also sweeps the shipped local-tree guards, on every surface.** A local-tree guard is
+argument-free, reads only the checked-out tree, and needs no PR number, no board read and no auth;
+membership is declared beside each guard's registration in
+`packages/fabrika-cli/src/guard/command.ts` and nowhere else. Each member that passed is named in
+`ran` as `guard <name> <leaf>` — the leaf is not always `check`, `decisions-index`'s is `validate` —
+and a member that failed reds the whole run on `18`, with `build check: red — guard <name> <leaf>
+failed; diagnostics above.` naming it. A member that **refused** — zero scope (`7`) or an UNKNOWN
+read (`11`) — is reported as `skipped: <name> (<reason>)` in the JSON's `skipped` array and on
+stderr, and is never folded into the green: a skip is a disclosure, read as *CI will answer this
+one*. The repo's own fail-closed-on-zero-scope rule for its CI gates is untouched by it — this is a
+local predictor with no authority to answer for a gate.
+
+The sweep is deliberately **not** anchored by `--surface`. `portability-guard` reads shipped
+markdown and `patch-guard` reads `patches/`, so a prose-only diff is exactly the diff that kept
+reaching review red under a `code`-only check. `--surface` stays an anchor over the repo's own
+declared validators, and nothing else. The accepted cost is a dozen-odd tree walks on every
+`build check`, on every lane — cheaper than the review round it saves.
 
 `unvalidated` is always present and lists the changed files **this verdict does not cover** —
 computed against *this* surface's validators, so it holds both the class no surface validates
@@ -2073,6 +2091,8 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate.` | 7 | refusal |
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
+| `build check: red — guard <name> <leaf> failed; diagnostics above.` | 18 | refusal |
+| `build check: skipped: <name> (<reason>) — not a pass; CI's own gate answers this one.` | 0 | disclosure beside a green |
 | `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
 | `build check: <n> changed file(s) --surface <surface> does not validate — NOT covered by this verdict: <files>.` | 0 | scope note beside a green |
 

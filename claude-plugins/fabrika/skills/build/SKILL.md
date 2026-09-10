@@ -257,6 +257,15 @@ fabrika build check --surface code
 
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, in this tree.
 
+**Every run also sweeps the shipped local-tree guards, whatever the surface**, so a guard that would
+red in CI reds here first. A passing member is named in the green's `ran` as `guard <name> <leaf>`; a
+failing one reds the whole run on `18` and the failing line names it — fix that guard's finding like
+any other red. A member that **refused** — zero scope, or a read it could not make — lands in the
+green's `skipped` array as `<name> (<reason>)` and on stderr. **A skip is not a pass**: it says CI's
+own gate will answer that one, so read the line rather than treating the green as covering it.
+Membership is a property each guard declares beside its own registration, so there is no list here to
+keep in step with it and none to pass on the command line.
+
 A green names the files it did not read in `unvalidated`. When that list holds a file class another
 surface validates, run `build check` again there: markdown beside your code — the common case — goes
 to `--surface prose`, or `--surface plan` if that markdown is an epic ledger, which runs the prose
