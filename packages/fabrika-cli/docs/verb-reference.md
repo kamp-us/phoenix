@@ -960,14 +960,16 @@ permits no merge method at all · `23` a label this run would POST is absent fro
 
 ## The `spend` group
 
-What one fabrika run cost, in tokens, read from its transcript. `billed` is *specified* by ADR 0112
-§2, not chosen, so the implementation is held to that ruler by a committed transcript fixture the
-unit tier asserts against ([`src/spend/token-spend.ts`](../src/spend/token-spend.ts)).
+Record and read model/token usage. The attributed recorder preserves native response counters and
+coverage notices; [the host contract](./usage-recording.md) defines its callable API and fields.
+The positional transcript reader retains the historical four-component calculation specified by
+ADR 0112 §2, pinned by [token-spend.ts](../src/spend/token-spend.ts)'s fixture.
 
 | Verb | Answers |
 |---|---|
-| `spend read` | one run's billed token spend, its four `usage` components, the ex-cache-read comparator, its billed turn count and its model |
-| `spend rollup` | what **all** of fabrika's recorded runs cost, summed out of the durable ledger and broken down by day, by skill and by stage-and-arm |
+| `spend record` | ingest one version-2 envelope from stdin; `--ledger` overrides the default; JSON `status` is `recorded` or `duplicate`; exit 11 reports a recording failure separately from the task result |
+| `spend read` | `--ledger <path>` emits JSON `records`, `legacy`, and `diagnostics` with malformed/future-version/duplicate/conflict counts; the positional transcript form retains its legacy billed-token calculation |
+| `spend rollup` | version-1 evaluation rows grouped by day, skill and stage/arm; version-2 rows remain skipped by this legacy summary reader |
 
 **Exit codes.** `7` the input is proven absent · `11` the input could not be read, or its absence
 could not be established · `12` the input was read in full and carries nothing to measure · `13`
@@ -985,16 +987,21 @@ Three behaviours are worth knowing:
 
 ### The spend ledger
 
-`spend read` prices one transcript on demand; the ledger is where measured runs survive. A producer
-appends one **JSON Lines** row per completed run to `.fabrika/spend-ledger.jsonl` (repo-relative,
-gitignored, `--spend-ledger` overrides it). **There is no in-repo producer today**, so `spend
-rollup` reads whatever an operator or a future producer wrote and reports an empty ledger
-otherwise. The core is [`src/spend/ledger.ts`](../src/spend/ledger.ts): `readSpendLedger` reads back
-the well-formed rows **and the count of lines it skipped**, so a truncated tail costs one line
-rather than the file. Every line stamps its own `v`.
+`spend record` appends version-2 envelopes to `.fabrika/spend-ledger.jsonl`, gitignored and
+repo-relative. `--ledger` overrides the path. [usage-ledger.ts](../src/spend/usage-ledger.ts) reads
+new records and delegates historical rows to [ledger.ts](../src/spend/ledger.ts). An interrupted
+tail remains a malformed-line diagnostic; later records remain readable. Automatic host collection
+is a separate integration. The following journey runs independent processes without a model call:
 
 ```bash
-fabrika spend rollup                                    # everything recorded so far
+node packages/fabrika-cli/src/bin.ts spend record --ledger .fabrika/example-usage.jsonl < packages/fabrika-cli/src/spend/fixtures/attributed/codex.json
+node packages/fabrika-cli/src/bin.ts spend read --ledger .fabrika/example-usage.jsonl --json
+```
+
+The existing evaluation summary remains available for historical rows:
+
+```bash
+fabrika spend rollup                                    # legacy evaluation rows
 fabrika spend rollup --since 2026-08-01 --until 2026-08-09
 fabrika spend rollup --json
 ```

@@ -1,0 +1,58 @@
+{
+	"v": 2,
+	"kind": "measurement",
+	"recordId": "claude-response-1",
+	"source": { "host": "claude", "format": "messages-usage", "version": "2023-06-01" },
+	"work": { "repo": "example/project", "issue": null, "run": "run-1", "attempt": "attempt-2" },
+	"agent": {
+		"session": "child-session",
+		"nativeSession": null,
+		"parent": { "kind": "known", "session": "parent-session" },
+		"rootSession": "parent-session"
+	},
+	"response": "msg-1",
+	"turn": null,
+	"rootTurn": null,
+	"parentTurn": null,
+	"provider": "anthropic",
+	"model": "claude-opus-4-6",
+	"basis": { "kind": "response" },
+	"counters": [
+		{
+			"field": "input_tokens",
+			"category": "input",
+			"value": { "state": "measured", "tokens": 8 },
+			"meaning": { "kind": "additive" }
+		},
+		{
+			"field": "cache_read_input_tokens",
+			"category": "cacheRead",
+			"value": { "state": "measured", "tokens": 0 },
+			"meaning": { "kind": "additive" }
+		},
+		{
+			"field": "cache_creation_input_tokens",
+			"category": "cacheWrite",
+			"value": { "state": "measured", "tokens": 5120 },
+			"meaning": { "kind": "additive" }
+		},
+		{
+			"field": "cache_creation.ephemeral_5m_input_tokens",
+			"category": "cacheWrite5m",
+			"value": { "state": "measured", "tokens": 5120 },
+			"meaning": { "kind": "subset", "of": "cache_creation_input_tokens" }
+		},
+		{
+			"field": "cache_creation.ephemeral_1h_input_tokens",
+			"category": "cacheWrite1h",
+			"value": { "state": "measured", "tokens": 0 },
+			"meaning": { "kind": "subset", "of": "cache_creation_input_tokens" }
+		},
+		{
+			"field": "output_tokens",
+			"category": "output",
+			"value": { "state": "measured", "tokens": 0 },
+			"meaning": { "kind": "additive" }
+		}
+	]
+}
