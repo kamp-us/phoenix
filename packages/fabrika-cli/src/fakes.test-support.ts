@@ -77,6 +77,14 @@ export interface FakeFsOptions {
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
 	readonly unprobeable?: ReadonlyArray<string>;
+	/**
+	 * Paths whose `stat` fails `PermissionDenied` — there, and unreadable.
+	 *
+	 * Apart from {@link FakeFsOptions.unprobeable}, which answers `NotFound`, because a caller that
+	 * reads absence off the error tag needs the two to be different answers: one proves the path is
+	 * gone and the other proves nothing at all.
+	 */
+	readonly unstatable?: ReadonlyArray<string>;
 	/** Path → the modification time `stat` reports. An unlisted path reports none at all. */
 	readonly mtimes?: Readonly<Record<string, Date>>;
 	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
@@ -143,6 +151,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
 						),
 			stat: (path: string) => {
+				if (options.unstatable?.includes(path) === true) return denied("stat", path);
 				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
 				const mtime = options.mtimes?.[path];
 				if (directories.has(path) || dirs[path] != null) {
