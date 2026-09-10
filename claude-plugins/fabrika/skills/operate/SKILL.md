@@ -210,7 +210,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` / `build:ui` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below |
+| `build` / `build:ui` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR |
 | `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
@@ -454,6 +454,21 @@ so record the park the refusal names — `lane transition … BLOCKED --cause as
 than dispatching a review over a head the queue will reject. Every other refusal is UNKNOWN and
 nothing may be recorded against the tree. A driver may also call `lane refresh $lane_key` by hand
 with no flag at any point; only the automatic call is gated.
+
+**A tail `FAIL` routes to a repair builder on the assembly branch — the tail is not repair-less.**
+The tail region seats its own `build` cell, and the review's `FAIL` retries into it under the same
+budget a child's does, exhausting into `human:budget-spent`. So the fold puts `epic_<n>` at `build`,
+and you dispatch it exactly like any other build state: `lane brief` hands that shell the run's one
+PR *and* `epic/<lane_key>`, so the repair knows which branch it is repairing. Founder ruling of
+2026-08-20, recorded as an amendment to the epic-machine decision record.
+
+**The branch itself stays yours.** The repair builder pushes nothing and merges nothing — the
+assembly worktree is this driver's, and no spawned shell reaches it. So the common tail failure, an
+assembly gone stale against a moved `main`, is discharged by you with `lane refresh` from that
+worktree, above: it merges `main` into `epic/<lane_key>`, **merge, never rebase**, because every
+landed child's range verdict is bound to the commits it names and a rebase rewrites all of them. A
+lane emitted before this cell landed does not grow one — its tail `FAIL` still points at `review`,
+and re-emitting is the only way to it.
 
 **The draft flips ready at the tail's `PASS`, and nowhere earlier.** When the epic-level review's
 `PASS` is proven and recorded, the single PR has the verdict it was opened for — mark it ready

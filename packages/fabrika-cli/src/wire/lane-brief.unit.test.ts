@@ -10,6 +10,7 @@ import {describe, expect, it} from "vitest";
 import {
 	artifactUrl,
 	EPIC_RULES,
+	EPIC_TAIL_REPAIR_RULES,
 	EPIC_TAIL_RULES,
 	emit,
 	fabrikaEntry,
@@ -72,6 +73,7 @@ const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> 
 	["Pull, with the lane's PR", {_tag: "Pull", pr: PR}, "review"],
 	["Pull, at the rendered review", {_tag: "Pull", pr: PR}, "review:ui"],
 	["Tail", {_tag: "Tail", pr: PR, epic: EPIC}, "review"],
+	["Tail repair", {_tag: "TailRepair", pr: PR, epic: EPIC, branch: ref("epic/40")}, "build"],
 	["Epic child build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build"],
 	["Epic child UI build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build:ui"],
 ];
@@ -99,7 +101,7 @@ describe("the five shell states route through one table", () => {
 
 describe("the lane-brief carries no repo's own path in its rules", () => {
 	it("names no in-tree fabrika path anywhere in the byte-fixed text", () => {
-		for (const text of [RULES, EPIC_RULES, EPIC_TAIL_RULES]) {
+		for (const text of [RULES, EPIC_RULES, EPIC_TAIL_RULES, EPIC_TAIL_REPAIR_RULES]) {
 			expect(text).not.toContain("packages/fabrika-cli/");
 			expect(text).not.toMatch(/node\s+\S*bin\.[jt]s/);
 		}
@@ -110,6 +112,15 @@ describe("the lane-brief carries no repo's own path in its rules", () => {
 		expect(EPIC_RULES).toContain("node <fabrika> build deviations <child>");
 		expect(EPIC_RULES).toContain("node <fabrika> wire emit --format range-verdict-marker");
 		expect(EPIC_TAIL_RULES).toContain("node <fabrika> wire read --format build-deviations");
+	});
+
+	// The repair round is told which shell moves the assembly branch, because the assembly worktree
+	// is the driver's and no spawned shell can reach it.
+	it("tells the tail's repair whose shell moves the assembly branch, and merge over rebase", () => {
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("moved by the lane driver alone");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("`lane assembly`");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("merges `main` into `epic/<lane>`");
+		expect(EPIC_TAIL_REPAIR_RULES).toContain("Merge, never rebase");
 	});
 });
 
@@ -166,6 +177,27 @@ describe("a brief with no usable entrypoint is malformed", () => {
 			_tag: "Malformed",
 			evidence: "fabrika",
 		});
+	});
+});
+
+describe("only the tail's own `build` reads a PR beside a branch", () => {
+	const groundOf = (state: string, shell: string, fields: string) =>
+		`## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: ${state}\nshell: ${shell}\n## Ground\nissue: ${ISSUE}\n${fields}## Rules\n${RULES}\n`;
+
+	// The tail region seats `build` alone, so a `build:ui` carrying a PR beside a branch is a child
+	// state reaching for the tail's ground — a value the union exists to keep unconstructable.
+	it("refuses a `build:ui` brief carrying the tail repair's PR", () => {
+		expect(
+			read(groundOf("build:ui", "ui-builder", `pr: ${PR}\nepic: ${EPIC}\nbranch: epic/40\n`)),
+		).toMatchObject({_tag: "Malformed", evidence: "pr"});
+	});
+
+	// The refusal sits ahead of the branch parse, so the reader names the field that should not be
+	// there rather than the empty `branch` it reached first.
+	it("reds a child's stray PR on the `pr`, not on the branch it never carried", () => {
+		expect(
+			read(groundOf("review", "reviewer", `pr: ${PR}\nepic: ${EPIC}\nrange: a..b\n`)),
+		).toMatchObject({_tag: "Malformed", evidence: "pr"});
 	});
 });
 

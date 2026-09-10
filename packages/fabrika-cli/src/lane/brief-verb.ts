@@ -336,12 +336,22 @@ export const runBrief = (
 			);
 		}
 
-		// The epic run's tail (task `epic_<n>`, and a PR is resolved — the tail states require one
-		// above): the ground carries the epic too, so the tail review's brief names where each
-		// child's `build-deviations` disclosure lives.
+		// The epic run's tail (task `epic_<n>`): review and ship carry the epic too, so the brief names
+		// where each child's `build-deviations` disclosure lives; `build` — the repair round the review's
+		// FAIL retries into — carries the assembly branch as well, because that branch is where the
+		// repair happens and nothing else in the brief names it.
+		if (epic !== null && prUrl === null) {
+			return refuse(
+				PR_AMBIGUOUS,
+				`${VERB}: ${traced._tag === "None" ? traced.why : "no PR URL was resolved"} across ${nominationScope(issue)}, and epic #${epic}'s tail repairs the run's one PR — without it the builder has no assembly to repair.`,
+				notes,
+			);
+		}
 		const ground: LaneGround =
-			epic !== null && prUrl !== null && !isBuildState(state)
-				? {_tag: "Tail", pr: prUrl, epic: read.url}
+			epic !== null && prUrl !== null
+				? isBuildState(state)
+					? {_tag: "TailRepair", pr: prUrl, epic: read.url, branch: epicBranch(epic)}
+					: {_tag: "Tail", pr: prUrl, epic: read.url}
 				: {_tag: "Pull", pr: prUrl};
 		const brief: LaneBrief = {
 			lane: options.lane,

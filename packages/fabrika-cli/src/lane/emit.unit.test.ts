@@ -398,11 +398,12 @@ describe("emitMachine", () => {
 		expect(tail).toMatchObject({
 			initial: "review",
 			states: {
+				build: {on: {"EPIC_4300.DONE": "review", "EPIC_4300.BLOCKED": "blocked"}},
 				review: {
 					on: {
 						"EPIC_4300.PASS": "ship",
 						"EPIC_4300.FAIL": [
-							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 							{target: "human:budget-spent"},
 						],
 					},
@@ -417,10 +418,33 @@ describe("emitMachine", () => {
 						],
 					},
 				},
+				"ship:queued": {
+					on: {
+						"EPIC_4300.FAIL": [
+							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:budget-spent"},
+						],
+					},
+				},
 				shipped: {type: "final"},
 				"human:budget-spent": {type: "final", on: {"EPIC_4300.UNBLOCKED": "hist"}},
 			},
 		});
+	});
+
+	// Aimed back at `review`, the FAIL edge re-dispatched the reviewer that had just produced the
+	// verdict over content only a builder can change.
+	it("sends a tail review FAIL into the tail's own build cell, and the repair's DONE back to review", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		expect(drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"]]).stateValue).toEqual({
+			epic: {epic_4300: "build"},
+		});
+		expect(
+			drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"], ["epic_4300", "DONE"]]).stateValue,
+		).toEqual({epic: {epic_4300: "review"}});
+		expect(
+			drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"], ["epic_4300", "BLOCKED"]]).stateValue,
+		).toEqual({epic: {epic_4300: "blocked"}});
 	});
 
 	it("reaches the epic review only after every child has landed, and completes on its ship", () => {
@@ -452,11 +476,14 @@ describe("emitMachine", () => {
 
 	it("trips the tail when the epic review fails past its retry budget — never `complete`", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
-		const fails = Array.from({length: RETRY_BUDGET}, () => ["epic_4300", "FAIL"] as const);
-		expect(drive(compiled, [...LAND_ALL, ...fails]).stateValue).toEqual({
+		const rounds = Array.from({length: RETRY_BUDGET}, () => [
+			["epic_4300", "FAIL"] as const,
+			["epic_4300", "DONE"] as const,
+		]).flat();
+		expect(drive(compiled, [...LAND_ALL, ...rounds]).stateValue).toEqual({
 			epic: {epic_4300: "review"},
 		});
-		const spent = drive(compiled, [...LAND_ALL, ...fails, ["epic_4300", "FAIL"]]);
+		const spent = drive(compiled, [...LAND_ALL, ...rounds, ["epic_4300", "FAIL"]]);
 		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
 		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
@@ -469,7 +496,11 @@ describe("emitMachine", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const parked = driveLog(compiled, [
 			...LAND_ALL,
-			...Array.from({length: CAP_ROUND}, () => ["epic_4300", "FAIL"] as const),
+			...Array.from({length: CAP_ROUND - 1}, () => [
+				["epic_4300", "FAIL"] as const,
+				["epic_4300", "DONE"] as const,
+			]).flat(),
+			["epic_4300", "FAIL"],
 		]);
 		expect(deriveStatus(compiled, statesOf(compiled, parked))).toMatchObject({
 			stateValue: "tripped",

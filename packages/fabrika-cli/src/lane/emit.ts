@@ -13,9 +13,9 @@
  * **One epic run is one branch and one PR**. A child's region is the local loop only —
  * `queued → build → review → integrate`, the integrate step merging the child's range into the epic
  * branch — and the merge to `main` lives once, in the tail phase's single epic-level region
- * (`review → ship → shipped`). The tail is a *phase* rather than a bare state because `machine.ts`
- * reads the workflow's two terminals off the last phase's `onDone` pair; shaped this way the
- * compiler needs no change at all.
+ * (`review → ship → shipped`, plus the `build` repair cell a failed tail review retries into). The
+ * tail is a *phase* rather than a bare state because `machine.ts` reads the workflow's two terminals
+ * off the last phase's `onDone` pair; shaped this way the compiler needs no change at all.
  *
  * Determinism is by construction: phases ascend, children within a phase ascend, every object's
  * keys are inserted in one fixed order, and the serialization is a single `JSON.stringify` — the
@@ -162,12 +162,12 @@ const region = (
 });
 
 /**
- * The epic's own region — the tail phase's single task: review the one PR, then merge it once.
+ * The epic's own region — the tail phase's single task: review the one PR, then merge it once, with
+ * one `build` cell behind the review for the repair a failed tail owes.
  *
  * `ship` carries the same guarded FAIL, because a PR can be re-reviewed at a rewritten head while
- * the lane sits there and a park clear is exactly that path. Its retry arm is `review` for
- * the same reason the review edge's is: the repair round happens outside the machine, so the next
- * thing the lane can record is another verdict.
+ * the lane sits there and a park clear is exactly that path. Its retry arm stays `review`: a shipper
+ * fails on the PR's own mergeability, which the next verdict over the same head answers.
  *
  * `ship:queued` is the tail's wait cell: the tail is the one place an epic run meets a
  * merge queue, so it is the one region that needs it — a child region has no `ship` and reaches no
@@ -180,20 +180,24 @@ const region = (
  *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
- * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
- * next verdict is another review. The fallthrough is the same `human:budget-spent` a child's is: an
- * epic review that spent its budget is a park its driver resumes, not the end of the run, and one
- * leaf for one fact means one route to read it by.
+ * `complete`. Its retry arm is `build` — the tail's own repair cell, carrying the child region's two
+ * edges — because the facts a tail review fails on (a trunk conflict against a moved `main`, a head
+ * with no CI) are a builder's to fix and no reviewer can change them: aimed back at `review` the arm
+ * re-dispatched the shell that had just produced the verdict, spent the round and reached the park
+ * anyway (the 2026-08-20 amendment to the epic-machine decision record). The fallthrough is the same `human:budget-spent` a
+ * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
+ * run, and one leaf for one fact means one route to read it by.
  */
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
 	states: {
+		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
 		review: {
 			on: {
 				[`${ns}.PASS`]: "ship",
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
-					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
 			},
