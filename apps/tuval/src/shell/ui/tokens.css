@@ -12,22 +12,31 @@
  */
 
 /*
- * `body` sits outside `.tuval-surface`, so the one role the page itself paints is aliased here —
- * off the same value `--surface-sunken` resolves to. Overscroll is the only place it shows (#7560).
+ * The three roles the desk paints outside any one root, so all three are declared on the document
+ * element — which is also where `@kampus/design`'s own layer declares the names they alias, since
+ * the theme is pinned on `<html>`.
+ *
+ * `--page-backdrop` because `body` sits outside `.tuval-surface`; overscroll is the only place it
+ * shows (#7560).
+ *
+ * The ring pair because the board's overlay leaves that root: `@kampus/design`'s `Dialog` mounts
+ * through a zag `Portal` into `document.body`, a sibling of `#root` that inherits nothing from
+ * `.tuval-surface`. Declared there, both `var()`s below would be undefined inside the overlay, and
+ * an undefined `var()` is invalid at computed-value time — which unsets `outline` in the author
+ * origin and beats the UA's own `:focus-visible` ring, so a keyboard operator tabbing the tiles got
+ * no ring at all (#8867). The package declares `--manti-focus-ring*` for Manti's own consumption and
+ * no role token for the desk's ring, so the manifest's law lives here: 2px ring plus a 2px
+ * transparent gap, which clears 3:1 against a same-family dark surface. Painted once by the rule
+ * below, never per component.
  */
 :root {
 	--page-backdrop: var(--surface-sunken);
+	--focus-ring: 2px solid var(--accent);
+	--focus-ring-offset: 2px;
 }
 
 .tuval-surface {
 	color-scheme: dark;
-
-	/* The package declares `--manti-focus-ring*` for Manti's own consumption and no role token for
-	   the desk's ring, so the manifest's law lives here: 2px ring plus a 2px transparent gap, which
-	   clears 3:1 against a same-family dark surface. Painted once by the rule below, never per
-	   component. */
-	--focus-ring: 2px solid var(--accent);
-	--focus-ring-offset: 2px;
 
 	background: var(--surface-sunken);
 	color: var(--text-primary);
