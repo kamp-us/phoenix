@@ -966,6 +966,19 @@ describe("interrupt", () => {
 		expect(landed.interrupted).toBeNull();
 	});
 
+	// #8753's path, closed by construction: a compaction re-emits the whole transcript as item events
+	// under a phase that still reads as `prompting`, so an *older* aborted row folds first. With the
+	// marker on the prompt there is no first-wins race left for it to win.
+	it("lets a replayed older aborted row take nothing, however many fold under the open request", () => {
+		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
+		const replayed = [abortedItem("older-1"), abortedItem("older-2"), abortedItem("a3")].reduce(
+			(carried, msg) => apply(carried, msg)[0],
+			asked,
+		);
+		expect(replayed.interrupted).toBe("u2");
+		expect(replayed.interruption).toEqual({requestedAt: SENT_AT});
+	});
+
 	// The resend is a fresh send, and the turn it belonged to is behind the operator by then.
 	it("drops the marker when the operator sends again", () => {
 		const [asked] = apply(cutBeforeAnyText(), {type: "interrupt", at: SENT_AT});
