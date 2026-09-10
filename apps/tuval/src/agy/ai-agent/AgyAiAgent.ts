@@ -576,7 +576,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				// with it: one that was never delivered must not speak for whatever ends this child.
 				Effect.catch((refusal) =>
 					Effect.gen(function* () {
-						yield* stop.release;
+						yield* stop.release(current.child.handle);
 						const live = yield* Ref.get(turnLive);
 						yield* publish([{kind: "failure", failure: interruptFailureOf(refusal, live)}]);
 						return false;
