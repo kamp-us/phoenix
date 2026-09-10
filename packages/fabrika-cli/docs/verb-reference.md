@@ -100,10 +100,21 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
 | `build check` | this surface's validators plus every shipped local-tree guard, run in this tree — each guard named in `ran`, or in `skipped` when it refused |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
-| `build verdicts` | the latest gate verdict per namespace at a PR's live head |
+| `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
 | `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute` |
 | `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
+
+**`build verdicts`' `current` column is the content question, not the head question.** A row reads
+`current` when the marker names this head, and also when it names another head while binding a
+content digest that is still this head's — a rebase carrying no content change keeps its verdicts.
+The comparison is [`verdict-marker.ts`](../src/wire/verdict-marker.ts)'s `bindToContent`, resolved
+off the same head digest `ship gate` reads
+([`review/head-content.ts`](../src/review/head-content.ts)), so the repair loop and the merge gate
+cannot disagree about one marker (ADR
+[0276](../../../.decisions/0276-verdict-binds-content-not-only-head.md)). A marker carrying no
+`content:` field falls back to head equality, and a digest this checkout could not derive is
+`Unbindable`, which reads as not-current — a failed derivation never launders a stale verdict.
 
 `build reap` is the bulk counterpart to `build retire`. `retire` targets the trees holding ONE
 number's lane branch and needs a board statement to release them; `reap` sweeps the whole agent
@@ -1290,9 +1301,11 @@ Five behaviours are worth knowing:
   over an artifact read in full; `4` is a proven defect; `6` means nothing is proven at all.
 - **The artifact arrives on stdin only.** No `--body`, no `--body-file` — a flag that accepts a
   path turns the artifact into a string the verb could echo onto a public surface.
-- **A `found` verdict marker is well-formed, not current.** Whether a marker binds the head you
-  hold is [`verdict-marker.ts`](../src/wire/verdict-marker.ts)'s `bindToHead` — `Current` / `Stale`
-  / `Unbindable`, because a head the caller could not resolve is not a comparison anyone made.
+- **A `found` verdict marker is well-formed, not current.** Whether it still binds is
+  [`verdict-marker.ts`](../src/wire/verdict-marker.ts)'s — `Current` / `Stale` / `Unbindable`,
+  because a head the caller could not resolve is not a comparison anyone made. `bindToHead` is the
+  head-only rule; `bindToContent` is the one every PR-scoped reader ships, taking head equality
+  first and the marker's `content:` digest when the head has moved.
 - **A registered format is a conforming format.** A registry row carries the fixtures its laws are
   driven from and the brands its value is built from, both required by the row type, so
   [`conformance.ts`](../src/wire/conformance.ts) holds every row to the same laws without naming it.
