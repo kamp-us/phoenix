@@ -235,3 +235,43 @@ no vocabulary impact
 > `build claim: blockedness: the gate binds a build claim only — …` lands where the `scanned` line
 > would have — so a reader can tell "not blocked" from "not asked". Filed against
 > [#7542](https://github.com/kamp-us/phoenix/issues/7542).
+
+> Amendment 2026-09-10 — **"Nothing is unfenced by this" was wrong about the children, and the
+> prerequisites carry down to fix it.** The paragraph of that name in the amendment above says each
+> child's own build claim reads its exact `blocked_by` edges. That is true and it is not the whole
+> answer, because nothing puts the *epic's* edge onto a child. So an external prerequisite recorded
+> only at epic level refuses **the epic's own build claim and nothing else**. Read the sentence that
+> way from here.
+>
+> Before the purpose split, that same edge fenced the children too, by accident: the epic could not
+> take a `gate` claim, so `plan flip` never ran and no child was flipped `status:triaged`. Admitting
+> the gate claim removed the refusal and the accidental fence with it. The plan gate's defect floor
+> ([`defects.ts`](../packages/fabrika-cli/src/plan/defects.ts)) does not close the hole either — it
+> checks that the graph agrees with the plan's prose, and reads nothing off the epic's own edge list.
+>
+> **Ruled: carry them down at plan time.** `plan-epic` writes every open target on the epic's own
+> `blocked_by` list into each child's `## Dependencies` refs — the grammar already admits a `#<int>`
+> outside the epic ([`dependencies.ts`](../packages/fabrika-cli/src/build/dependencies.ts)) — so
+> `requiredEdges` derives a real per-child pair, `ledger edges` writes it, and each child's build
+> claim refuses on `16` with discharge intact. The plan gate reads the epic's own `blocked_by` list
+> and reds a plan that dropped one of its open targets. Ruling:
+> [#8992, comment 5617977097](https://github.com/kamp-us/phoenix/issues/8992#issuecomment-5617977097)
+> (2026-09-10), recorded by the EA under the driver's call of
+> [#8807](https://github.com/kamp-us/phoenix/issues/8807) R4.1 and open to a founder override in one
+> line.
+>
+> **Why not the other answer.** Declaring the per-child fence the intended shape was the live
+> alternative, and it would have made a policy out of a side effect: the narrowing was ruled so a
+> blocked epic can be *planned*, not so its children can be *built*.
+>
+> **Where it is enforced, and that it is not yet.** Two sites — a `plan-epic` contract clause for the
+> write and a defect in the plan gate's floor for the check — filed as
+> [#8995](https://github.com/kamp-us/phoenix/issues/8995) and ordered after
+> [#7562](https://github.com/kamp-us/phoenix/issues/7562), which reports that `ledger topology`
+> still refuses the very ref shape the clause asks a planner to write. Until both land, an
+> externally-blocked epic's children stay unfenced. This file is the ruling, and the ruling is not
+> the wiring.
+>
+> **What does not move.** The graph is still the one carrier, `status:blocked` stays retired, the
+> purpose matrix stands as written, and discharge still only ever admits. What changes is that the
+> per-child edge stops being something a planner may or may not think to write.
