@@ -21,6 +21,7 @@ export {
 	isTranscriptPageReply,
 	isTranscriptPageRequest,
 	isTranscriptPayload,
+	isTurnResult,
 	isWindowOmission,
 	Mode,
 	type ModePayload,
@@ -38,6 +39,7 @@ export {
 	type TranscriptPageReply,
 	type TranscriptPageRequest,
 	type TranscriptPayload,
+	type TurnResult,
 	type WindowOmission,
 } from "./payloads.ts";
 export {
@@ -49,7 +51,10 @@ export {
 	type PortEnd,
 	permission,
 	prompt,
+	result,
+	status,
 	type TwoWayPort,
+	title,
 	transcript,
 	transcriptPage,
 } from "./ports.ts";

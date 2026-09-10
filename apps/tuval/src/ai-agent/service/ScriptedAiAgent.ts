@@ -35,6 +35,7 @@ import {
 	type ThinkingLevel,
 	type TranscriptItem,
 } from "../ports/index.ts";
+import {withTurnResult} from "../turn-result.ts";
 import {
 	ListError,
 	ModelUnsupported,
@@ -389,7 +390,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			page,
 			sessionTranscript,
 			listSessions,
-			events: Stream.fromQueue(queue),
+			events: withTurnResult(Stream.fromQueue(queue)),
 		};
 	});
 

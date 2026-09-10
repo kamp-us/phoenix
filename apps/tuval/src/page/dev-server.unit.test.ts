@@ -70,13 +70,13 @@ describe("the feature-flag module", () => {
 
 	it("carries a flag a layer turned on", async () => {
 		expect(await generated("features-on", "two-rows")).toBe(
-			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n};\n',
+			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n};\n',
 		);
 	});
 
 	it("carries a flag a layer turned off", async () => {
 		expect(await generated("features-off", "two-rows")).toBe(
-			'export default {\n\t"subagentList": false,\n\t"piSubagents": true,\n};\n',
+			'export default {\n\t"subagentList": false,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n};\n',
 		);
 	});
 
@@ -85,7 +85,7 @@ describe("the feature-flag module", () => {
 	// operator who stated nothing would get the flag off.
 	it("carries every flag at its default when no layer declares a features block", async () => {
 		expect(await generated("two-rows", "one-counter")).toBe(
-			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n};\n',
+			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n};\n',
 		);
 	});
 

@@ -11,3 +11,14 @@ export {
 	type StateSummary,
 } from "./process.ts";
 export {ProcessSelf} from "./self.ts";
+export {
+	noSelfReport,
+	type SelfReport,
+	type SelfReportPort,
+	STATUS_KIND,
+	STATUS_PORT,
+	statusPort,
+	TITLE_KIND,
+	TITLE_PORT,
+	titlePort,
+} from "./self-report.ts";

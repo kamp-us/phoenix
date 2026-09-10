@@ -20,13 +20,17 @@ import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {Effect, Option} from "effect";
 import {z} from "zod";
+import {KERNEL_TOOL_SERVER} from "../../ai-agent/history/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import type {BridgeError} from "./errors.ts";
 import type {KernelBridge} from "./KernelBridge.ts";
 
-/** The MCP server name. It is half of every wire name, so it is written once. */
-export const TUVAL_SERVER_NAME = "tuval";
+/**
+ * The MCP server name. Half of every wire name, and half of the name a mapper reads a settled spawn
+ * row by (`../../ai-agent/history/kernel-spawn.ts`) — so it is one constant, not two.
+ */
+export const TUVAL_SERVER_NAME = KERNEL_TOOL_SERVER;
 
 export const wireNameOf = (name: string): string => `mcp__${TUVAL_SERVER_NAME}__${name}`;
 

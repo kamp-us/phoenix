@@ -629,7 +629,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 	);
 
 	it.live(
-		"runs Pi in one split and Claude in the other under one shell, with table rows that differ only by program id and state summary",
+		"runs Pi in one split and Claude in the other under one shell, with table rows that differ only by program id, state summary and self-report",
 		() =>
 			run(
 				Effect.gen(function* () {
@@ -691,20 +691,37 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 						pi.ports,
 						"the two rows declare different ports, so a projection could tell them apart by shape",
 					);
-					// The row's whole surface, minus the two axes a reader is allowed to tell them apart by
+					// The row's whole surface, minus the axes a reader is allowed to tell them apart by
 					// and the id every process has. Nothing may be left over: a row that grew a
 					// program-specific field would land here and redden.
+					//
+					// `title`/`status` are latched values, not shape (#8718): the kernel holds whatever
+					// each process last said on its own `title@1`/`status@1`, and each says it when its
+					// own session opens. The `ports` assertion above already proves both programs
+					// declare the pair, and this snapshot is taken the moment both rows exist — Claude's
+					// session has been up for several steps by then and Pi's has just spawned, so one
+					// side reads `some` and the other `none` for no reason but the clock. Comparing them
+					// would assert two sessions open in lockstep, which nothing promises.
 					const {
 						id: _claudeId,
 						programId: _claudeProgram,
 						stateSummary: _claudeState,
+						title: _claudeTitle,
+						status: _claudeStatus,
 						...restOfClaude
 					} = claude;
-					const {id: _piId, programId: _piProgram, stateSummary: _piState, ...restOfPi} = pi;
+					const {
+						id: _piId,
+						programId: _piProgram,
+						stateSummary: _piState,
+						title: _piTitle,
+						status: _piStatus,
+						...restOfPi
+					} = pi;
 					assert.deepStrictEqual(
 						restOfClaude,
 						restOfPi,
-						"a Pi row and a Claude row differ by something other than program id and state summary",
+						"a Pi row and a Claude row differ by something other than program id, state summary and self-report",
 					);
 				}),
 			),

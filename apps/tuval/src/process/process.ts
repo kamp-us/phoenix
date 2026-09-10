@@ -8,6 +8,7 @@ import {type Effect, type Exit, type Option, Schema, type Scope} from "effect";
 import type {DispatchError} from "../host/actor.ts";
 import type {PortSchema, ProgramId} from "../registry/program.ts";
 import type {HandlerFailed} from "./errors.ts";
+import type {SelfReport} from "./self-report.ts";
 
 export const ProcessId = Schema.String.pipe(Schema.brand("tuval/ProcessId"));
 export type ProcessId = typeof ProcessId.Type;
@@ -46,13 +47,18 @@ export interface ProcessChange {
 	readonly row: ProcessRow;
 }
 
-/** One live row of the `ProcessTable`. `stateSummary` reads live; everything else is fixed at spawn. */
+/**
+ * One live row of the `ProcessTable`. `stateSummary` and `selfReport` read live; everything else is
+ * fixed at spawn.
+ */
 export interface ProcessRow {
 	readonly id: ProcessId;
 	readonly programId: ProgramId;
 	readonly parentId: Option.Option<ProcessId>;
 	readonly ports: Readonly<Record<string, PortSchema>>;
 	readonly stateSummary: () => StateSummary;
+	/** The newest line this process emitted on `title@1` and on `status@1` (`./self-report.ts`). */
+	readonly selfReport: () => SelfReport;
 }
 
 export interface ProcessHandle {

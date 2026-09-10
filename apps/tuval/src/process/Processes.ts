@@ -14,6 +14,7 @@ import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
 import type {ActorDefinition, CoreMachine, Dispatch} from "../host/definition.ts";
 import {subscribeDisposerBridge} from "../host/demlik-bridges.ts";
+import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {ProgramNotFound} from "../registry/errors.ts";
 import type {AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
@@ -29,6 +30,13 @@ import {
 	type StateSummary,
 } from "./process.ts";
 import {ProcessSelf} from "./self.ts";
+import {
+	latching,
+	noSelfReport,
+	type SelfReport,
+	type SelfReportPort,
+	TITLE_PORT,
+} from "./self-report.ts";
 
 export interface SpawnOptions {
 	readonly parent?: ProcessId;
@@ -241,6 +249,7 @@ function makeServices() {
 			const scope = yield* Scope.fork(parent?.scope ?? root);
 			let lifecycle: Lifecycle = "running";
 			let revision = 0;
+			let report = noSelfReport;
 			// Assigned once the actor is up; a commit before then (boot's own) is not the row's.
 			let row: ProcessRow | undefined;
 			// Read late on purpose: the definition that closes over this is built before the actor
@@ -252,11 +261,24 @@ function makeServices() {
 			// exists (#7603). The spawner's `Scope` is dropped on the way in: a spawner that passes
 			// its whole context on carries one, and the seal would let it beat the Scope the host
 			// forks for a sub handler. A handler that wants this process's own reads `ProcessSelf`.
-			const handlerServices = Context.add(
-				Context.omit(Scope.Scope)(options.services),
-				ProcessSelf,
-				{scope, state: () => readState()},
-			);
+			const granted = Context.add(Context.omit(Scope.Scope)(options.services), ProcessSelf, {
+				scope,
+				state: () => readState(),
+			});
+			// The latch is the kernel's, so it wraps whichever `ProcessPorts` the spawner bound — the
+			// graph's wiring, an ad-hoc spawn's latches, or `unwired` — and `title@1`/`status@1` read
+			// back the same on all three (`./self-report.ts`). A spawner that bound none has nothing to
+			// wrap: that process cannot emit at all.
+			const spawnerPorts = Context.getOption(granted, ProcessPorts);
+			const record = (port: SelfReportPort, line: string) => {
+				report =
+					port === TITLE_PORT
+						? {...report, title: Option.some(line)}
+						: {...report, status: Option.some(line)};
+			};
+			const handlerServices = Option.isNone(spawnerPorts)
+				? granted
+				: Context.add(granted, ProcessPorts, latching(program, spawnerPorts.value, record));
 
 			yield* Scope.addFinalizer(
 				scope,
@@ -294,7 +316,8 @@ function makeServices() {
 			);
 
 			const stateSummary = (): StateSummary => ({lifecycle, revision, state: actor.getState()});
-			row = {id, programId, parentId, ports: program.ports, stateSummary};
+			const selfReport = (): SelfReport => report;
+			row = {id, programId, parentId, ports: program.ports, stateSummary, selfReport};
 			// Every fold this process is asked for from outside runs alone, so a summary read beside
 			// one is that fold's and not a later one's. The actor's own tail serialises the transition
 			// but releases before `dispatch` waits out the follow-ups, which is the window a caller

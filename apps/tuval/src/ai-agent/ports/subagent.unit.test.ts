@@ -64,6 +64,17 @@ describe("a subagent slot", () => {
 		expect(isSubagentSlot(null)).toBe(false);
 	});
 
+	// The two facts one field carries: a kernel child names its process, a harness-native worker
+	// names none. An empty string is neither, and a checkpoint written before the field existed is
+	// the second one rather than corruption.
+	it("admits a slot naming the process it is for, and refuses one naming an empty string", () => {
+		expect(isSubagentSlot({...slot, process: "p-9"})).toBe(true);
+		expect(Object.keys({...slot, process: "p-9"}).sort()).toContain("process");
+		expect(isSubagentSlot({...slot, process: ""})).toBe(false);
+		expect(isSubagentSlot({...slot, process: 7})).toBe(false);
+		expect(isSubagentSlot({...slot, process: null})).toBe(false);
+	});
+
 	it("admits every item kind in its rows, not the agent-facing three", () => {
 		const items = [
 			userItem("u1"),

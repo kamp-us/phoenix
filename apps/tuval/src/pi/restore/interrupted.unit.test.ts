@@ -59,6 +59,8 @@ const cutMidReply: AiAgentSessionState = {
 	lastPage: null,
 	pageOutcome: null,
 	subagents: {},
+	// The turn this checkpoint was cut in the middle of never finished, so it published no result.
+	result: null,
 	failure: null,
 };
 

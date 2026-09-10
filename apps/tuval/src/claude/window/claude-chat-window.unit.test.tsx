@@ -24,7 +24,10 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/i
 import {pageRenderers} from "../../page/renderers.tsx";
 
 /** The table over a socket that answers nothing: this file judges the Claude entry, never a call. */
-const renderers = pageRenderers(() => Effect.never);
+const renderers = pageRenderers(
+	() => Effect.never,
+	() => undefined,
+);
 
 import {ProcessId} from "../../process/process.ts";
 import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";

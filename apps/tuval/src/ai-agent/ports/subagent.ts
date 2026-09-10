@@ -16,6 +16,11 @@
  * `tokens` is a plain count, and it is the one word `boundary.unit.test.ts` lets this file say. A
  * count is not a model: every backend that spawns workers can report one, and the row Q1 rules
  * shows it while the worker runs.
+ *
+ * `process` is the seventh and the only optional one: a slot the kernel spawned names the process
+ * it is for, and a slot the backend spawned names none (founder rulings R1.1 and R2.1 on #8715).
+ * It still names no backend — the kernel is Tuval's own — and it is what lets one row be opened as
+ * a window where the other swaps the window's view.
  */
 
 import {Predicate} from "effect";
@@ -69,6 +74,16 @@ export interface SubagentSlot {
 	 */
 	readonly items: ReadonlyArray<TranscriptItem>;
 	readonly status: SubagentStatus;
+	/**
+	 * The kernel process this slot is for, when the spawning call went through the kernel's `spawn`
+	 * tool. Absent is the other fact and the only other one: the worker is the backend's own and
+	 * names no process a window could open.
+	 *
+	 * One field rather than a mark beside an id, so "this is a kernel process" and "which one"
+	 * cannot disagree — a marked row with no process, or a process on an unmarked row, are states
+	 * this shape cannot spell. Nothing about it is a backend's: the kernel is Tuval's own.
+	 */
+	readonly process?: string;
 }
 
 const statuses: ReadonlySet<string> = new Set<SubagentStatus>(["running", "finished"]);
@@ -84,7 +99,9 @@ export const isSubagentSlot = (value: unknown): value is SubagentSlot =>
 	isPositiveInteger(value.workers) &&
 	isTranscriptItems(value.items) &&
 	typeof value.status === "string" &&
-	statuses.has(value.status);
+	statuses.has(value.status) &&
+	// Absent is a harness-native worker; an empty string is neither fact and stays refused.
+	(value.process === undefined || (typeof value.process === "string" && value.process.length > 0));
 
 /**
  * The slots one agent holds, by the id each is keyed on. An array is refused rather than admitted

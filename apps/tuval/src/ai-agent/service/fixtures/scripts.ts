@@ -69,10 +69,24 @@ const empty = {
 	interrupt: [],
 } as const;
 
+export const plainReplyPrompt = item({
+	kind: "user",
+	id: id("u1"),
+	timestamp: at(10),
+	text: "hello",
+});
+
+export const plainReplyText = item({
+	kind: "assistant",
+	id: id("a1"),
+	timestamp: at(11),
+	text: "hi back",
+});
+
 export const plainReplyTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: item({kind: "user", id: id("u1"), timestamp: at(10), text: "hello"})},
-	{kind: "item", item: item({kind: "assistant", id: id("a1"), timestamp: at(11), text: "hi back"})},
+	{kind: "item", item: plainReplyPrompt},
+	{kind: "item", item: plainReplyText},
 	{kind: "phase", phase: "ready"},
 ];
 
@@ -197,9 +211,16 @@ export const cutShort: TranscriptItem = {
 };
 
 /** The turn never reaches `ready` on its own; `interrupt` lands the cut-short item and does. */
+export const interruptedPrompt = item({
+	kind: "user",
+	id: id("u3"),
+	timestamp: at(39),
+	text: "explain",
+});
+
 export const interruptedPromptTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: item({kind: "user", id: id("u3"), timestamp: at(39), text: "explain"})},
+	{kind: "item", item: interruptedPrompt},
 ];
 
 export const interruptEvents: ReadonlyArray<AgentEvent> = [

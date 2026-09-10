@@ -13,77 +13,14 @@
  * subprocess is the part that is faked here and the layer is not.
  */
 
-import {NodeFileSystem, NodePath} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option, Queue, Ref, Sink, Stream} from "effect";
-import * as PlatformError from "effect/PlatformError";
-import {ChildProcessSpawner} from "effect/unstable/process";
+import {Effect, Option, Queue, Stream} from "effect";
 import type {AgentEvent} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
-import {aiAgentOverSpawner} from "./AgyAiAgent.ts";
+import {agyChildStub, agyLayerOver} from "./child-stub.ts";
 import {init, responseDone, resultSuccess, userInput} from "./fixtures.ts";
 
 const CWD = "/tuval/agy-interrupt-refusal";
-
-const KILL_REFUSED = PlatformError.systemError({
-	_tag: "PermissionDenied",
-	module: "ChildProcess",
-	method: "kill",
-	description: "operation not permitted",
-});
-
-const encoder = new TextEncoder();
-
-/**
- * One stubbed child: a stdout the test writes agy's own captured lines into, an exit that never
- * comes, and a `kill` that always says no.
- *
- * `exitCode` is `Effect.never` on purpose — an exit is what ends `events` with a transport failure,
- * and a refusal must not be confused with the child having gone away.
- */
-const stub = Effect.gen(function* () {
-	const stdout = yield* Queue.unbounded<Uint8Array>();
-	// Open and silent, never `Stream.empty`: `follow` races the stdout drain against the stderr one,
-	// and a stderr that completes at once wins that race and ends the fan before a line is read.
-	const stderr = yield* Queue.unbounded<Uint8Array>();
-	const kills = yield* Ref.make(0);
-	const handle: ChildProcessSpawner.ChildProcessHandle = ChildProcessSpawner.makeHandle({
-		pid: ChildProcessSpawner.ProcessId(424_242),
-		exitCode: Effect.never,
-		isRunning: Effect.succeed(true),
-		kill: () =>
-			Effect.flatMap(
-				Ref.update(kills, (seen) => seen + 1),
-				() => Effect.fail(KILL_REFUSED),
-			),
-		stdin: Sink.drain,
-		stdout: Stream.fromQueue(stdout),
-		stderr: Stream.fromQueue(stderr),
-		all: Stream.fromQueue(stderr),
-		getInputFd: () => Sink.drain,
-		getOutputFd: () => Stream.empty,
-		unref: Effect.succeed(Effect.void),
-	});
-	return {
-		layer: Layer.succeed(
-			ChildProcessSpawner.ChildProcessSpawner,
-			ChildProcessSpawner.make(() => Effect.succeed(handle)),
-		),
-		/** One agy stdout line, as the fan reads it. */
-		say: (line: string) => Queue.offer(stdout, encoder.encode(`${line}\n`)),
-		kills: Ref.get(kills),
-	};
-});
-
-/** The layer under test over one stubbed child, with the platform services `make` asks for. */
-const layerOver = (child: {
-	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
-}): Layer.Layer<TuvalAiAgent> =>
-	Layer.effect(TuvalAiAgent, aiAgentOverSpawner({binary: "agy", home: "/tuval/agy-home"})).pipe(
-		Layer.provide(child.layer),
-		Layer.provide(NodeFileSystem.layer),
-		Layer.provide(NodePath.layer),
-	);
 
 /** Every event up to and including the first one `found` accepts, bounded so a miss names itself. */
 const collectTo = (
@@ -117,7 +54,7 @@ const failureOf = (events: ReadonlyArray<AgentEvent>) => {
 describe("an agy SIGINT the child would not take", () => {
 	it.live("reaches the core as its own failure tag rather than a log line", () =>
 		Effect.gen(function* () {
-			const child = yield* stub;
+			const child = yield* agyChildStub;
 			yield* child.say(init);
 
 			yield* Effect.gen(function* () {
@@ -139,7 +76,7 @@ describe("an agy SIGINT the child would not take", () => {
 				assert.strictEqual(failure.tag, "tuval/ai-agent/InterruptError");
 				assert.strictEqual(failure.reason, "turn-running");
 				assert.include(failure.detail, "agy refused to interrupt the turn");
-			}).pipe(Effect.provide(layerOver(child)), Effect.scoped);
+			}).pipe(Effect.provide(agyLayerOver(child)), Effect.scoped);
 		}),
 	);
 
@@ -147,7 +84,7 @@ describe("an agy SIGINT the child would not take", () => {
 	// phase is what the window's stop control and its Escape branch key on.
 	it.live("narrates no phase change of its own", () =>
 		Effect.gen(function* () {
-			const child = yield* stub;
+			const child = yield* agyChildStub;
 			yield* child.say(init);
 
 			yield* Effect.gen(function* () {
@@ -164,7 +101,7 @@ describe("an agy SIGINT the child would not take", () => {
 					after.filter((event) => event.kind === "phase"),
 					"the refusal narrated a phase the backend never entered",
 				);
-			}).pipe(Effect.provide(layerOver(child)), Effect.scoped);
+			}).pipe(Effect.provide(agyLayerOver(child)), Effect.scoped);
 		}),
 	);
 
@@ -172,7 +109,7 @@ describe("an agy SIGINT the child would not take", () => {
 	// to stop and the session is owed its way back to `ready`.
 	it.live("says there was no live turn once the result has landed", () =>
 		Effect.gen(function* () {
-			const child = yield* stub;
+			const child = yield* agyChildStub;
 			yield* child.say(init);
 
 			yield* Effect.gen(function* () {
@@ -190,7 +127,7 @@ describe("an agy SIGINT the child would not take", () => {
 
 				const failure = failureOf(yield* collectTo(events, "the refused signal", isFailure));
 				assert.strictEqual(failure.reason, "no-live-turn");
-			}).pipe(Effect.provide(layerOver(child)), Effect.scoped);
+			}).pipe(Effect.provide(agyLayerOver(child)), Effect.scoped);
 		}),
 	);
 });

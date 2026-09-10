@@ -116,6 +116,13 @@ export interface DeskProps {
 	readonly call?: PageAttachment["call"];
 	readonly registry?: RegistryDescription | undefined;
 	readonly commandsConnected?: boolean | undefined;
+	/**
+	 * The operator's `windowTitles` flag (`../../features.ts`, #8721), as the desk's two halves of it
+	 * read it: a window titled by its process's `title@1` line, and the process id under the
+	 * inspector's heading. Off — the default — leaves both exactly as they were, and the resolver
+	 * that builds the mounts is handed the same flag on the page (`../../page/AttachedDesk.tsx`).
+	 */
+	readonly windowTitles?: boolean;
 }
 
 export function Desk({
@@ -132,6 +139,7 @@ export function Desk({
 	call,
 	registry,
 	commandsConnected = true,
+	windowTitles = false,
 }: DeskProps): ReactElement {
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
@@ -367,7 +375,13 @@ export function Desk({
 						)}
 					</ErrorBoundary>
 				</ForwardedKeyProvider>
-				{inspector === null ? null : <DeskInspector region={inspector} resetKeys={[inspecting]} />}
+				{inspector === null ? null : (
+					<DeskInspector
+						region={inspector}
+						resetKeys={[inspecting]}
+						processId={windowTitles ? (snapshot.focused?.processId ?? null) : null}
+					/>
+				)}
 			</div>
 			{commandLineOpen ? (
 				<CommandLine

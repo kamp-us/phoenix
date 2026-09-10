@@ -15,6 +15,7 @@ import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
 import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
+import {openProcessMsg} from "../shell/core/machine.ts";
 import {defaultPrefixTable, type PrefixTable} from "../shell/keys/index.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
@@ -25,7 +26,10 @@ import {AttachedDesk} from "./AttachedDesk.tsx";
 import {pageRenderers} from "./renderers.tsx";
 
 /** The table over a socket that answers no call: this file judges mounting, never a spell. */
-const renderers = pageRenderers(() => Effect.never);
+const renderers = pageRenderers(
+	() => Effect.never,
+	() => undefined,
+);
 
 installDomShims();
 
@@ -95,6 +99,8 @@ const counterRow: TableRow = {
 	parentId: Option.none(),
 	ports: {},
 	stateSummary: {lifecycle: "running", revision: 1},
+	title: Option.none(),
+	status: Option.none(),
 };
 
 const live = <S,>(state: S, revision = 1): ProcessView<S> => ({
@@ -554,6 +560,56 @@ describe("the desk across a dropped socket", () => {
 			assert.deepStrictEqual(first.attaches, [counterProcess]);
 			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
 			assert.isNull(screen.queryByRole("status", {name: "Connection"}));
+		}),
+	);
+});
+
+/**
+ * The board's containment (#8723). Flag off, this component renders the tree it rendered before the
+ * board existed — no board and no wrapper — which is the acceptance criterion the flag exists for.
+ */
+describe("the process board flag", () => {
+	it.effect("draws no board and no wrapper when the flag is off", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted();
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			assert.isNull(document.querySelector(".tuval-board"));
+			assert.isNull(document.querySelector(".tuval-board-page"));
+			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
+		}),
+	);
+
+	it.effect("draws a tile per row on, and opens that process in its own window", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted();
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					board={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			const tile = document.querySelector(`[data-process="${counterProcess}"] .tuval-board-open`);
+			assert.isNotNull(tile);
+			yield* Effect.sync(() => act(() => (tile as HTMLElement).click()));
+			yield* settle;
+
+			assert.deepStrictEqual(app.sent, [openProcessMsg(counterProcess)]);
 		}),
 	);
 });

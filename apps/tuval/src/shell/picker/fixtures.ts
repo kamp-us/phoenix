@@ -17,6 +17,7 @@ import {
 	ProcessId,
 	type ProcessRow,
 } from "../../process/process.ts";
+import {noSelfReport} from "../../process/self-report.ts";
 import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
@@ -104,6 +105,7 @@ export const pickerHarness = (
 				parentId: Option.fromNullishOr(parent),
 				ports: {},
 				stateSummary: () => ({lifecycle, revision: 0, state: {count: 0}}),
+				selfReport: () => noSelfReport,
 			};
 			table.set(id, row);
 			return row;

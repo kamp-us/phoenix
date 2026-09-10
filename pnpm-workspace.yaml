@@ -117,6 +117,10 @@ catalog:
   react-resizable-panels: 4.12.3
   react-router: ^7.18.0
   turbo: ^2.9.14
+  # Pi's own pin (`@earendil-works/pi-coding-agent@0.85.1`'s `package.json`), because a
+  # `ToolDefinition.parameters` this repo writes and one Pi's own tools write have to be the same
+  # `TSchema`. `pi-subagents` links 1.1.38 transitively and is left on it.
+  typebox: 1.3.7
   typescript: ^7.0.2
   vite: ^8.0.16
   vitest: ^4.1.5

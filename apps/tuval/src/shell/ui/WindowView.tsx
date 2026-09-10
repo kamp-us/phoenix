@@ -22,6 +22,7 @@ import type {ViewState, WindowId} from "../window/index.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import type {WindowMount} from "./mount.ts";
 import {PickerView} from "./PickerView.tsx";
+import {windowTitle} from "./window-title.ts";
 
 export interface WindowViewProps {
 	readonly windowId: WindowId;
@@ -32,19 +33,6 @@ export interface WindowViewProps {
 	readonly dispatch: (msg: ShellMsg) => void;
 	readonly reducedMotion: boolean;
 }
-
-const titleOf = (mount: WindowMount): string => {
-	switch (mount._tag) {
-		case "Bound":
-			return `process ${mount.host.processId}`;
-		case "NoRenderer":
-			return `process ${mount.processId}`;
-		case "ProcessGone":
-			return `process ${mount.processId} — gone`;
-		case "Empty":
-			return "empty window";
-	}
-};
 
 /**
  * The renderer's call, made inside the boundary below rather than in `WindowView`'s own render.
@@ -82,7 +70,7 @@ export function WindowView({
 		>
 			<header className="tuval-window-title">
 				<span aria-hidden="true">{focused ? "▸" : " "}</span>
-				<span>{titleOf(mount)}</span>
+				<span>{windowTitle(mount)}</span>
 				{focused ? <span>(focused)</span> : null}
 			</header>
 			<div className="tuval-window-body">

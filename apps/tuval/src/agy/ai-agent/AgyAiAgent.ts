@@ -71,6 +71,7 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
+import {withTurnResult} from "../../ai-agent/turn-result.ts";
 import {
 	AGY_BINARY,
 	AGY_EFFORTS,
@@ -664,7 +665,9 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 					detail: "the agy CLI offers no way to enumerate its conversations",
 				}),
 			).pipe(Effect.withSpan("TuvalAiAgent.listSessions")),
-			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
+			events: withTurnResult(
+				Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
+			),
 		};
 	});
 

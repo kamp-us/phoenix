@@ -380,6 +380,12 @@ export const foldEvent = (
 				sends: settleAccepted(state.sends),
 				failure: null,
 			};
+		// Replaced, never accumulated: one slot holds the last finished turn, which is what the
+		// `result` port publishes and what a `read` through the kernel answers with (#8724). It
+		// lands ahead of the phase that closes the turn, so a `session-reset` — the one event that
+		// is a turn's end and a conversation swap at once — commits this turn's answer first.
+		case "result":
+			return {...state, result: event.result};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// Replaced, never accumulated: one layer drives one backend, and the newest announcement is

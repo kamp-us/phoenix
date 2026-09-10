@@ -70,6 +70,9 @@ const DeclaredFeatures = Schema.Struct({
 	 * decode drops, so a layer that stated it reached the browser and nothing else (#8595).
 	 */
 	piSubagents: Schema.optionalKey(Schema.Boolean),
+	kernelChildren: Schema.optionalKey(Schema.Boolean),
+	windowTitles: Schema.optionalKey(Schema.Boolean),
+	processBoard: Schema.optionalKey(Schema.Boolean),
 });
 
 export {featuresDefault, type TuvalFeatures} from "./features.ts";

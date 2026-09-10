@@ -43,6 +43,7 @@ export {
 	boundMount,
 	type MountResolver,
 	noRenderer,
+	type ProcessName,
 	type ReactWindowRenderer,
 	type WindowMount,
 } from "./mount.ts";
@@ -50,3 +51,4 @@ export {PickerView, type PickerViewProps} from "./PickerView.tsx";
 export {type KeyPress, type KeyReply, refused, replyIn, replyOf} from "./press.ts";
 export {StatusLine, type StatusLineProps} from "./StatusLine.tsx";
 export {WindowView, type WindowViewProps} from "./WindowView.tsx";
+export {windowTitle} from "./window-title.ts";

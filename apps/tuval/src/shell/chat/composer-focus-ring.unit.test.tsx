@@ -81,6 +81,7 @@ const openDesk = async () => {
 			? empty
 			: {
 					_tag: "Bound",
+					name: null,
 					host,
 					render: () => renderer.render(host) as ReactElement,
 				};

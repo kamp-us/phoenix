@@ -58,11 +58,11 @@ const openingOf = (opening: ReadonlyArray<SDKMessage>) =>
 	);
 
 /**
- * `assistant-turn.json` is init, one assistant frame and one `success` result — six events out: the
- * `prompting` the send itself narrates, the model and the CLI version init names, the reply, the
- * turn's spend, and the `ready` that ends it.
+ * `assistant-turn.json` is init, one assistant frame and one `success` result — seven events out:
+ * the `prompting` the send itself narrates, the model and the CLI version init names, the reply,
+ * the turn's spend, the turn's own `result` (#8724), and the `ready` that ends it.
  */
-const ASSISTANT_TURN_EVENTS = 6;
+const ASSISTANT_TURN_EVENTS = 7;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 
@@ -93,7 +93,7 @@ describe("a turn ends on its result", () => {
 			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
-				["phase", "usage", "version", "item", "usage", "phase"],
+				["phase", "usage", "version", "item", "usage", "result", "phase"],
 			);
 			assert.deepStrictEqual(
 				events.filter((event) => event.kind === "phase"),
@@ -108,14 +108,15 @@ describe("a turn ends on its result", () => {
 	it.effect("ends a failing turn the same way, so no error subtype wedges the session", () =>
 		Effect.gen(function* () {
 			// `error_max_turns`, one of `SDKResultError`'s four subtypes: the send's own
-			// `prompting`, a system line for the failure, then the same `ready` a success carries.
-			const events = yield* promptedTurn([message("error-result")], 3);
+			// `prompting`, a system line for the failure, the turn's result, then the same `ready`
+			// a success carries.
+			const events = yield* promptedTurn([message("error-result")], 4);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
-				["phase", "item", "phase"],
+				["phase", "item", "result", "phase"],
 			);
 			assert.deepStrictEqual(events[0], {kind: "phase", phase: "prompting"});
-			assert.deepStrictEqual(events[2], {kind: "phase", phase: "ready"});
+			assert.deepStrictEqual(events[3], {kind: "phase", phase: "ready"});
 		}),
 	);
 });
@@ -164,7 +165,7 @@ describe("an interruption over the Claude event path", () => {
 	// The shape an aborted turn actually ends on: an error subtype rather than a success.
 	it.effect("settles on an error-subtype result exactly as it settles on a success", () =>
 		Effect.gen(function* () {
-			const events = yield* promptedTurn([message("error-result")], 3);
+			const events = yield* promptedTurn([message("error-result")], 4);
 			const {state, turn} = asked(events);
 			assert.strictEqual(state.phase, "prompting");
 			const settled = fold(state, turn.slice(-1));

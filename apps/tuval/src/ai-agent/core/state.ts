@@ -21,6 +21,7 @@ import type {
 	ThinkingLevel,
 	TranscriptItem,
 	TranscriptPayload,
+	TurnResult,
 	WindowOmission,
 } from "../ports/index.ts";
 import {promptUnqueued} from "./failures.ts";
@@ -212,6 +213,14 @@ export interface AiAgentSessionState {
 	 * (Q9 on #8384).
 	 */
 	readonly subagents: Readonly<Record<string, SubagentSlot>>;
+	/**
+	 * What the last finished turn came to, or `null` before any turn has finished (#8724).
+	 *
+	 * Held rather than only published, so a window re-attaching to a running process is answered
+	 * from the same slot the port is filled from — `republish` reads this, and a second copy
+	 * computed at that moment would be a different answer to the same question.
+	 */
+	readonly result: TurnResult | null;
 	readonly failure: AgentFailure | null;
 }
 
@@ -269,6 +278,10 @@ export const checkpointFields = [
 	// backend's own store answers for the agent's transcript, not for a worker's subtree). What a
 	// restart does change is liveness: `restore` brings every slot back finished.
 	"subagents",
+	// Decided to survive a restart: it is a fact about a turn that finished, like the tail it
+	// summarizes, and a consumer that reads the port after a restore is asking what this session
+	// last answered — not what it answered since the process came back.
+	"result",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
 
@@ -301,6 +314,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	lastPage: null,
 	pageOutcome: null,
 	subagents: {},
+	result: null,
 	failure: null,
 });
 
@@ -344,12 +358,20 @@ export const settlePartialItems = (state: AiAgentSessionState): AiAgentSessionSt
 			}
 		: state;
 
+/**
+ * A worker this session is the one writing the lines of. A kernel child is not one: it is its own
+ * process on the kernel's table, so nothing in this session moves its slot and this session's turn
+ * ending says nothing about whether it is done (#8715).
+ */
+const ownWorker = (slot: SubagentSlot): boolean => slot.process === undefined;
+
 /** Is any subagent still writing? Its slot moves on every line the worker produces. */
 export const holdsRunningSubagent = (state: AiAgentSessionState): boolean =>
-	Object.values(state.subagents).some((slot) => slot.status === "running");
+	Object.values(state.subagents).some((slot) => ownWorker(slot) && slot.status === "running");
 
 /**
- * Mark every running subagent finished, keeping its rows.
+ * Mark every running worker of this session's own finished, keeping its rows. A kernel child is
+ * left alone (`ownWorker`): its process outlives the turn that spawned it.
  *
  * A worker runs inside its parent's turn, so the turn ending is the worker ending — whatever the
  * turn came to. Without this a slot the layer never closed stays `running` for the rest of the
@@ -363,7 +385,9 @@ export const settleRunningSubagents = (state: AiAgentSessionState): AiAgentSessi
 				subagents: Object.fromEntries(
 					Object.entries(state.subagents).map(([id, slot]) => [
 						id,
-						slot.status === "running" ? {...slot, status: "finished" as const} : slot,
+						ownWorker(slot) && slot.status === "running"
+							? {...slot, status: "finished" as const}
+							: slot,
 					]),
 				),
 			}

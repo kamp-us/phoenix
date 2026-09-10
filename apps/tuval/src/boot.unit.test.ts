@@ -408,7 +408,7 @@ describe("the merged feature flags on the node side", () => {
 					projectWithConfig("pi-subagents-off"),
 				);
 				const features = yield* flagsAtSpawn(booted);
-				assert.deepStrictEqual(features, {subagentList: true, piSubagents: false});
+				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: false});
 				assert.deepStrictEqual(subagentExtensionPaths(features), []);
 			}),
 		DIRECT_BOOT_MS,
@@ -423,7 +423,7 @@ describe("the merged feature flags on the node side", () => {
 					projectWithConfig("pi-subagents-on"),
 				);
 				const features = yield* flagsAtSpawn(booted);
-				assert.deepStrictEqual(features, {subagentList: true, piSubagents: true});
+				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: true});
 				assert.strictEqual(subagentExtensionPaths(features).length, 1);
 			}),
 		DIRECT_BOOT_MS,

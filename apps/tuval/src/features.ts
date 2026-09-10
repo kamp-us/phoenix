@@ -23,6 +23,30 @@ export interface TuvalFeatures {
 	 * On by default since the founder desk check on 2026-09-08. Off: the row opens the session it opened before the flag existed.
 	 */
 	readonly piSubagents: boolean;
+	/**
+	 * Register the three kernel tools — `spawn`, `send`, `read` — on a Pi session, so a Pi row can
+	 * start, write to and read another Tuval process the way Claude and Codex already can (#8720).
+	 * Off: the session carries no custom tools, which is the session Pi opened before this flag.
+	 */
+	readonly piKernelTools: boolean;
+	/**
+	 * Show a process the agent spawned through the kernel as a marked row in its parent's sub-agent
+	 * list, openable as its own window (#8719). Off: the list is exactly the list of the backend's
+	 * own workers, as it is today.
+	 */
+	readonly kernelChildren: boolean;
+	/**
+	 * Title a window by the line its process published on `title@1`, and show the process id under
+	 * the desk inspector's heading instead (#8721). Off: every window is `process <uuid>`, as it was,
+	 * and the inspector carries no id line.
+	 */
+	readonly windowTitles: boolean;
+	/**
+	 * The process board over the desk: one tile per process from the kernel row and the two generic
+	 * ports, children nested in their parent's tile (#8723). Off: the page is the desk alone, as it
+	 * is today.
+	 */
+	readonly processBoard: boolean;
 }
 
 /**
@@ -31,4 +55,11 @@ export interface TuvalFeatures {
  * runbook pass, so a flag's entry moves from `false` to `true` in this record and nowhere else. A
  * layer that states a flag still wins over it, in either direction (`./config.ts`'s merge).
  */
-export const featuresDefault: TuvalFeatures = {subagentList: true, piSubagents: true};
+export const featuresDefault: TuvalFeatures = {
+	subagentList: true,
+	piSubagents: true,
+	piKernelTools: false,
+	kernelChildren: false,
+	windowTitles: false,
+	processBoard: false,
+};

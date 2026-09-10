@@ -133,6 +133,14 @@
 			"readyPath": "/"
 		},
 		{
+			"name": "tuval-board",
+			"prefix": "apps/tuval/src/",
+			"mount": "/tuval/board",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:board --port {{port}} --strictPort 1>&2",
+			"readyPath": "/"
+		},
+		{
 			"name": "tuval-pi-vertical",
 			"prefix": "apps/tuval/src/",
 			"mount": "/tuval/pi-vertical",
