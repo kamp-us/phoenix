@@ -339,11 +339,11 @@ comments. Contract:
 
 | Verb | Answers |
 |---|---|
-| `grill open` | opens, or resumes, the session issue for a topic — `created` says which |
+| `grill open` | opens/resumes a topic or ticket, or preserves initial research from `--audit-context`; audit success adds run identity and digest; `--audit-recover` never creates, and `--audit-session` targets a known partial create |
 | `grill round` | validates one round from stdin, posts it, and returns its number, digest and ids |
 | `grill answer` | records an agent-established answer to a `fact` question, behind a kind guard |
 | `grill rule` | records a founder ruling, refusing without a verbatim dated authorization |
-| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token |
+| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token and total `auditContext` result; malformed research does not hide readable questions |
 
 **Exit codes.** The shared table, plus `12` the invoking token is below `write` · `13` the question
 id names no question · `14` the round could not be digested · `15` `--authorization` is missing,

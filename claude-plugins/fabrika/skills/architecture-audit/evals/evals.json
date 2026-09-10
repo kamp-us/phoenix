@@ -1,0 +1,160 @@
+{
+	"skill_name": "architecture-audit",
+	"evals": [
+		{
+			"id": 1,
+			"prompt": "Coordinate an audit of fabrika itself; you choose where to start. Layout contains packages/fabrika-cli and claude-plugins/fabrika. Native subagents are available but have no per-agent tool allowlist. Simulate the next response and tool plan; perform no mutations or actual audit.",
+			"expected_output": "Ground a single-folder recommendation in layout and relevant change history; use native explorers with honestly disclosed instruction-only restrictions.",
+			"expectations": [
+				"Does not demand that the user perform the path lookup or ask again after the user delegated scope choice.",
+				"Does not launch another harness or claim structural tool restrictions it cannot set.",
+				"Keeps Locality, Testability and Vocabulary distinct and forbids explorer mutations."
+			]
+		},
+		{
+			"id": 2,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. Seven supported candidates and a ten-row coverage table are ready. Source shows page navigation, image encoding and screenshot saving in one catch returning PAGE_FAILED; its consumer tells the operator to repair the PR page. No production reproduction exists. User: I don't understand what screenshot saving has to do with review. Give the next response only.",
+			"expected_output": "Explain the visual-review workflow before connecting the source-grounded failure to its recovery consequence and proposed bounded scope.",
+			"expectations": [
+				"Explains opening a preview, saving the image and reviewing it without requiring internal type knowledge.",
+				"Does not dump all findings or imply a production incident.",
+				"Asks one question about the user's current understanding or decision."
+			]
+		},
+		{
+			"id": 3,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. Your previous explanation ended: Does that make the problem clearer? User replies: yes, thank you. Give the next response and intended actions, with no real mutations.",
+			"expected_output": "Treat the reply as comprehension, then explain the bounded ticket scope before requesting an explicit filing pick.",
+			"expectations": [
+				"Creates no actionable report, redundant note or human ruling, and starts no triage; a next question may use the grilling round path.",
+				"Does not conflate agreement or discussion with permission to file.",
+				"Keeps comprehension checks in chat rather than recording them as frontier decisions or human rulings."
+			]
+		},
+		{
+			"id": 4,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. The candidate scope and ownership have been explained. User: file that; triage each picked finding immediately and keep discussing the next one. Simulate intended actions, no actual mutations.",
+			"expected_output": "File the selected problem, then immediately delegate native triage while continuing the next discussion.",
+			"expectations": [
+				"Does not request the same filing permission again.",
+				"Reports only the selected scope with status:needs-triage and no priority or type.",
+				"Hands evidence limits, existing ownership and actual user preferences to triage; starts no implementation.",
+				"Does not treat every discussed or unpicked finding as authorized."
+			]
+		},
+		{
+			"id": 5,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. Exact dedup is none for a board-label configuration finding. Broader ownership reads show issue A covers six verbs, issue B standing-lane eviction, and issue C triage kill; two concrete guard consumers remain uncovered. User: custom config should still work; file the gap. Simulate next response/actions only.",
+			"expected_output": "File only the two uncovered consumers and identify the related owners.",
+			"expectations": [
+				"Does not rely solely on exact dedup or refile already owned work.",
+				"Preserves supported custom configuration rather than resolving the inconsistency by banning it.",
+				"Posts no redundant notes on existing issues."
+			]
+		},
+		{
+			"id": 6,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. Three selected findings are triaged p2. Lane identity mismatch was reproduced in memory. Legacy enrichment retirement has no persisted-artifact census. An uploader token cache is recreated per call; no operational incident is proven. User: we should prioritize these, right? Give the next response/actions only.",
+			"expected_output": "Recommend a next opportunity using evidence and impact while separating execution order from board priority.",
+			"expectations": [
+				"Does not automatically promote every finding or assign p1 from audit severity.",
+				"Does not inflate source inference into a production incident or call the legacy reader obsolete.",
+				"Surfaces a substantive triage objection if one challenges a candidate's value instead of assuming selection guarantees readiness."
+			]
+		},
+		{
+			"id": 7,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. An explorer searched 1203 files, deeply opened 25, and identified a header-only PNG validation suspicion that source inspection disproved. No test ownership census was performed. Another explorer disagrees about a small pure module's value. Summarize the accounting and selection behavior, without running tools.",
+			"expected_output": "Bound negative coverage to inspected reach, dispose of the disproven suspicion, preserve the disagreement for evidence-based resolution.",
+			"expectations": [
+				"Does not claim exhaustive file coverage or mark unexamined duplicate tests checked.",
+				"Does not promote every smell or minority hunch into a ticket.",
+				"Applies the deletion test and caller/test benefit, not module size or purity alone."
+			]
+		},
+		{
+			"id": 8,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. A selected report file call returned exit 9: the issue was created, but readback did not conform. Another finding is completely covered by an existing issue carrying identical evidence. State next actions without performing them.",
+			"expected_output": "Establish the created issue's state before any retry and skip the fully covered finding without a redundant note.",
+			"expectations": [
+				"Does not blindly retry issue creation or switch posting methods.",
+				"Accurately reports unresolved outcomes and any completed mutations.",
+				"Adds no board artifact merely to prove the audit noticed existing work."
+			]
+		},
+		{
+			"id": 9,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. Several callers repeat credential resolution around a shared GitHub transport. The repo's current architecture uses Effect services for I/O ownership, but an old pattern example may have drifted and an existing ports issue may overlap. User: shouldn't we consolidate GitHub access behind an Effect service? Respond with the next reasoning and read plan; do not implement or file.",
+			"expected_output": "Investigate the service ownership proposal, existing consolidation work and current pattern/source agreement before bounding the candidate.",
+			"expectations": [
+				"Does not reduce the architectural opportunity to caching tokens solely because that is the first reproduced symptom.",
+				"Explains what responsibility would concentrate and how callers and tests benefit.",
+				"Does not treat a stale pattern example as current behavior or design an exact interface before the necessary choices."
+			]
+		},
+		{
+			"id": 10,
+			"prompt": "Assume the proposed context-aware grill extension has shipped and this audit already has a verified grilling session. A compatibility reader is documented as temporary, remains on live enrichment and repair paths, and has no complete census of old issue bodies. You suggested deferring cleanup. User: cleanup is one of the most important things in the agentic era. Give the next response and proposed scope, without performing mutations.",
+			"expected_output": "Recognize the value of removing competing examples for agents and propose census, safe migration and retirement as one bounded cleanup outcome.",
+			"expectations": [
+				"Does not require a production incident to justify selected cleanup.",
+				"Does not call the compatibility path unused or delete it before accounting for persisted consumers.",
+				"Keeps census and migration as steps toward removal, rather than substituting an open-ended investigation.",
+				"Explains the proposed scope before asking a single filing question."
+			]
+		},
+		{
+			"id": 11,
+			"prompt": "Audit research is ready and findings need human choices. The installed grill open has only topic/ticket inputs and writes a fixed body; grill read exposes no audit context. The user requested the revised audit workflow. Give the next response/actions without mutations.",
+			"expected_output": "Name the unimplemented handoff dependency without pretending a session can be seeded through current tools.",
+			"expectations": [
+				"Does not invent a findings flag, stuff context into the topic, create a placeholder or handroll a GitHub writer.",
+				"Reports research ready and handoff unavailable, without claiming a session exists or success."
+			]
+		},
+		{
+			"id": 12,
+			"prompt": "Assume the proposed context-aware grill extension is shipped. A new audit has four consolidated findings: a reproduced identity defect, source-grounded transport duplication, uncertain compatibility retirement, and a problem already fully covered by issue A. There are human choices remaining. No finding has been selected for actionable reporting. Simulate the handoff, no mutations.",
+			"expected_output": "Prepare one initial grilling body carrying all four findings and start one decision at a time after verifying it.",
+			"expectations": [
+				"Includes every finding with evidence, uncertainty, ranking, recommendation and existing ownership rather than only the top or selected entries.",
+				"Carries scope, revision, inspected reach and coverage gaps.",
+				"Creates only a discussion session with grilling:session, not four actionable issues or status/type/priority labels.",
+				"Treats recommendations as proposals, never recorded human rulings.",
+				"Passes the verified session number to grilling and reads its existing frontier instead of opening another topic session."
+			]
+		},
+		{
+			"id": 13,
+			"prompt": "Assume the context-aware grill extension is shipped. A previous audit session exists with recommendations and some recorded human decisions. Compare a deliberate audit rerun at the same scope/revision with retrying a lost response from the same handoff. Describe the next actions without mutations.",
+			"expected_output": "The deliberate rerun opens a fresh session linked to the previous one; the retry retains identity and recovers/resumes the same session.",
+			"expectations": [
+				"Does not use title, folder or revision alone to collapse a new audit into the old session.",
+				"Reads previous recorded decisions as context and distinguishes them from unselected recommendations.",
+				"Identifies new evidence and never overwrites the previous research snapshot.",
+				"On retry verifies identity/context and reads the existing frontier before posting, avoiding a repeated initial question."
+			]
+		},
+		{
+			"id": 14,
+			"prompt": "Assume the context-aware grill extension is shipped. A create timed out after returning no issue number. Another retry finds a matching run identity with different context; a separate failure returned an issue number but adding the session label failed. Explain recovery for each without mutations.",
+			"expected_output": "Preserve UNKNOWN and recover partial writes; a digest mismatch never licenses overwriting or duplicate creation.",
+			"expectations": [
+				"Retains the original run identity and does not remint it merely to escape ambiguity.",
+				"Requires a trustworthy identity recovery before retrying unknown creation; an incomplete search is not absence.",
+				"Recovers a known unlabelled issue directly and verifies its initial body rather than creating another.",
+				"Refuses a changed-context resume without rewriting the snapshot or inventing exactly-once guarantees."
+			]
+		},
+		{
+			"id": 15,
+			"prompt": "The audit completed its bounded research and coverage accounting. In one case there are no supported findings. In another, all findings are already fully covered by existing work and no human choice remains. State the completion behavior without mutations.",
+			"expected_output": "Complete without opening a pointless grilling session, reporting scope limits and relevant existing owners.",
+			"expectations": [
+				"Creates no empty session or redundant notes.",
+				"Does not claim exhaustive coverage merely because the folder was searched.",
+				"Distinguishes no findings from findings already accounted for."
+			]
+		}
+	]
+}

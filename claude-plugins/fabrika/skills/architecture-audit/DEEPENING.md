@@ -9,44 +9,49 @@ redefined here.
 ## Dependency categories
 
 Classify a finding's dependencies. The category decides how the deepened module is tested across its
-seam, and **every finding whose direction proposes deepening carries exactly one of the four.**
+seam.
 
 ### 1. In-process
 
-Pure computation, in-memory state, no I/O. Always deepenable: merge the modules and test through the
-new interface directly. No adapter.
+Pure computation or in-memory state without I/O. Test behavior through the proposed interface
+directly. Consolidation is useful when it concentrates a responsibility callers currently share;
+purity alone is no reason to merge modules or delete a useful interface.
 
 ### 2. Local-substitutable
 
-Dependencies with a local test stand-in — an in-memory database, an in-memory filesystem, a local
-runtime harness. Deepenable if the stand-in exists. The deepened module is tested with the stand-in
-running in the suite; the seam stays internal, and no port appears at the module's external
-interface.
+Dependencies whose relevant behavior a local substitute can faithfully exercise, such as filesystem
+operations or a runtime harness. Use the repo's established substitution seam. A stand-in proves
+only the behavior it preserves; it cannot establish a real platform's storage or runtime semantics.
+Read the repo's test-tier decisions before proposing a substitute.
 
 ### 3. Remote but owned
 
-Your own services across a network or isolate boundary. Define a **port** at the seam: the deep
-module owns the logic and the transport is injected as an **adapter** — an in-memory one for tests,
-the real one in production — so the logic sits in one deep module even though it is deployed across
-a boundary.
+Your own modules across a network or isolate boundary. Consider a port at the seam so the deep
+module owns the logic and the transport is supplied as an adapter. Reuse an existing service or
+transport interface when it already owns this responsibility; the category alone does not justify
+a new abstraction. A local adapter can test control flow, while cross-runtime behavior may require
+an integration test.
 
 ### 4. True external
 
-Third-party services you do not control. The deepened module takes the dependency as an injected
-port; tests supply a mock adapter.
+Third-party services you do not control. Identify what the existing dependency interface owns and
+what still leaks to callers. A substitute can exercise local behavior through that seam; it does
+not establish the third party's contract. Propose an owned port only where the responsibility and
+actual variation justify one.
 
 ## Seam discipline
 
-- **One adapter is a hypothetical seam; two is a real one.** Do not introduce a port until two
-  adapters are justified — typically production plus test. A single-adapter seam is indirection
-  wearing a design pattern.
+- Justify a proposed port with the policy it hides or concrete substitution callers need. Production
+  and test adapters can demonstrate that need; creating a second adapter merely to satisfy a count
+  adds no evidence. Check the repo's existing service pattern before proposing another boundary.
 - **Internal seams are not external seams.** A deep module may have internal seams its own tests use.
   Do not expose one through the interface just because a test wants it.
 
-## Testing strategy: replace, don't layer
+## Testing through the interface
 
-- Old unit tests on the shallow modules become waste once tests exist at the deepened module's
-  interface. Delete them.
+- Replace old tests only when the new interface tests preserve their behavioral claims. Keep tests
+  for contracts that still vary or require a different fidelity; duplication is demonstrated by
+  covered behavior, not by two files mentioning the same module.
 - Write the new tests at that interface. The interface is the test surface.
 - Assert observable outcomes through it, never internal state. A test that has to change when the
   implementation changes is testing past the interface.

@@ -95,3 +95,12 @@ export const QUESTION_RETIRED = 18;
  * names, so it is a proven fact about an artifact rather than a read that did not complete.
  */
 export const BINDING_MALFORMED = 19;
+
+/** Audit input or retained body does not conform to its owned context schema. */
+export const AUDIT_MALFORMED = 20;
+/** The complete initial body exceeds the application limit. */
+export const AUDIT_TOO_LARGE = 21;
+/** A retained identity names different research; no overwrite is permitted. */
+export const AUDIT_CONTEXT_CHANGED = 22;
+/** A matching audit session is closed; recovery never reopens it. */
+export const AUDIT_CLOSED = 23;
