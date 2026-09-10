@@ -1,10 +1,15 @@
 /**
- * Recording a founder-cleared round into a lane's own event log.
+ * Recording a cleared repair round into a lane's own event log.
  *
- * The clearance itself lives on the PR, where it is audited (`../build/clearances.ts`). This is the
- * local half: the lane's guard reads `retries < maxRetries` off the fold, so a lane that never heard
- * about the grant freezes the same repair `build verdicts` says still has budget. Appending a
- * `<TASK>.CLEARED` event is what keeps the two readers on one derivation (`../cap-clearance.ts`).
+ * Where a pull request carries the grant, the clearance lives on it and is audited there
+ * (`../build/clearances.ts`), and this is the local half: the lane's guard reads
+ * `retries < maxRetries` off the fold, so a lane that never heard about the grant freezes the same
+ * repair `build verdicts` says still has budget. Appending a `<TASK>.CLEARED` event is what keeps
+ * the two readers on one derivation (`../cap-clearance.ts`).
+ *
+ * Where the lane has no pull request — an epic child, a chore lane — there is no board half at all,
+ * and this log line is the whole grant. `lane clear` is the verb for that seat, and the `rationale`
+ * it requires is that grant's only audit.
  *
  * **The grant is an event, never a field.** It used to be written into the task's `clearedRounds`
  * context and read back at replay time, which let a clearance recorded today change how yesterday's
@@ -35,6 +40,7 @@ export const recordClearedRound = (
 	ref: LaneRef,
 	task: string | null,
 	round: number,
+	rationale: string | null = null,
 ): Effect.Effect<Recorded, never, FileSystem.FileSystem | Path.Path> => {
 	const VERB = "lane clearance";
 	return Effect.gen(function* () {
@@ -58,7 +64,14 @@ export const recordClearedRound = (
 				}
 
 				const at = yield* Effect.sync(() => new Date().toISOString());
-				const applied = applyClearance(loaded.lane, loaded.entries, resolved.taskId, round, at);
+				const applied = applyClearance(
+					loaded.lane,
+					loaded.entries,
+					resolved.taskId,
+					round,
+					at,
+					rationale,
+				);
 				if (applied._tag === "Refused") {
 					return {_tag: "Unusable" as const, path: loaded.logPath, reason: applied.reason};
 				}

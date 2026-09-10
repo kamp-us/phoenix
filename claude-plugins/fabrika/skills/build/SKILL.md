@@ -505,12 +505,16 @@ it exists only in the merge ref. One epic's PR spent a whole repair round filing
 as a gate misreading its own SHA, because the builder checked the head, found the symbol clean, and
 never fetched the merge.
 
-**A founder can clear one more round, and you read that through the same field.** The clearance is
+**Someone else can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
 so `capReached: false` beside a `clearances` row *is* the granted round and you simply build it. What
 you never do is grant one: `build clear` is the operator's verb, it refuses an account outside the
 repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
-is reached. One grant is one
+is reached. **Escalate to the driver, not to the founder** — a spent budget is machinery routed to
+the lane's own driver, and the grant is theirs to record on their own diagnosis: `build clear` where
+the lane carries a pull request, `lane clear` where it does not. Your move is the same either way,
+and reading a founder into it is what used to park a lane on a person nobody had asked. One grant is
+one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
 second grant. Before the branch mutation, re-run `build confirm <repair-pr> --token <claim-token>`
 and `build tree --require-clean`; then resume and arm the complete repair proof:
@@ -603,8 +607,10 @@ and report that terminal with `--cause worktree-holds-branch`, the park this exa
 `recipe unpark` can clear it without a person. From
 there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
-There is no cap clearance on this path — a grant is recorded against a PR's base branch — so a child
-at its cap escalates to the operator.
+`build clear` is not the door on this path — it is pull-request-keyed from its first line, and a
+child opens none — so a child at its cap escalates to the driver, whose `lane clear` records the
+grant against the lane's own log instead. That is still not yours to run: you escalate, the driver
+diagnoses, and a granted round arrives as a fresh spawn.
 
 **A standing `PASS` refuses the same way and has no repair route.** That child is built,
 graded and waiting on the epic driver's fold, so `--resume` is not the answer — it refuses on `31`

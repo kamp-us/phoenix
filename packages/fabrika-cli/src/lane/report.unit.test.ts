@@ -1,13 +1,21 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {classifyPark} from "../recipe/parks.ts";
+import {classifyPark, KNOWN_PARKS} from "../recipe/parks.ts";
 import {EPIC_RULES} from "../wire/lane-brief.ts";
+import {MACHINERY_EVENT} from "./machine.ts";
 import {
 	causeForEvent,
 	eventForToken,
 	flattenVocabularies,
+	MACHINERY_CAUSES,
+	machineryCause,
 	PARK_CAUSE_TOKENS,
+	PARK_CAUSES,
+	type ParkCause,
+	rationaleForEvent,
+	remedyForCause,
+	routeForCause,
 	SHELL_VOCABULARIES,
 } from "./report.ts";
 
@@ -189,12 +197,12 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
 
 		expect(resolved.event).toBe("BLOCKED");
-		expect(causeForEvent(cause, resolved.event)).toEqual({_tag: "Caused", cause});
+		expect(causeForEvent(cause, resolved.event, false)).toEqual({_tag: "Caused", cause});
 	});
 
 	it.each(RENDERED_PARKS)("refuses %2$s on an event that is not a park", (_token, cause) => {
-		expect(causeForEvent(cause, "PASS")).toMatchObject({_tag: "Rejected"});
-		expect(causeForEvent(cause, "DONE")).toMatchObject({_tag: "Rejected"});
+		expect(causeForEvent(cause, "PASS", false)).toMatchObject({_tag: "Rejected"});
+		expect(causeForEvent(cause, "DONE", false)).toMatchObject({_tag: "Rejected"});
 	});
 
 	// A cause is payable on naming alone. No `KNOWN_PARKS` row covers any of the three, so
@@ -206,5 +214,213 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 		if (parked._tag !== "Novel") return;
 		expect(parked.reason).toContain(cause);
 		expect(parked.reason).not.toContain("records the event and not its cause");
+	});
+});
+
+/**
+ * The route axis: every cause carries one, both `KNOWN_PARKS` shapes read it off this one table, and
+ * a cause added without a route reds here rather than routing silently.
+ */
+describe("every park cause carries a route", () => {
+	it.each(PARK_CAUSE_TOKENS)("%s carries a route of driver or founder", (cause) => {
+		const entry = PARK_CAUSES[cause as ParkCause];
+
+		expect(entry).toBeDefined();
+		expect(["driver", "founder"]).toContain(entry.route);
+	});
+
+	// The `retry-budget.unit.test.ts` shape, for the same reason: nothing destructures `route` at a
+	// site TypeScript would red, so the drift guard has to read the table itself.
+	it("leaves no token routeless — a new cause added without a route reds here", () => {
+		const routeless = Object.entries(PARK_CAUSES).filter(
+			([, entry]) => entry.route !== "driver" && entry.route !== "founder",
+		);
+
+		expect(routeless).toEqual([]);
+		expect(PARK_CAUSE_TOKENS).toHaveLength(Object.keys(PARK_CAUSES).length);
+	});
+
+	it("routes campaign-paused to the founder — a campaign's lifecycle is a product call", () => {
+		expect(routeForCause("campaign-paused")).toBe("founder");
+	});
+
+	it.each([
+		"worktree-holds-branch",
+		"head-behind-base",
+		"spawn-dead",
+		"no-preview-render",
+		"no-design-manifest",
+		"no-rendered-delta",
+	])("routes %s to the driver — it is machinery, and no product call is in it", (cause) => {
+		expect(routeForCause(cause)).toBe("driver");
+	});
+
+	// Fail-closed: a park nothing named cannot be attributed to machinery, so the derivation may not
+	// claim a driver can work it.
+	it.each([null, "not-a-cause"])("routes an unnamed park (%p) to the founder", (cause) => {
+		expect(routeForCause(cause)).toBe("founder");
+	});
+
+	it("carries the route onto every KNOWN_PARKS row, read off the same table", () => {
+		expect(KNOWN_PARKS).not.toHaveLength(0);
+		for (const recipe of KNOWN_PARKS) {
+			expect(recipe.route).toBe(routeForCause(recipe.cause));
+		}
+	});
+});
+
+describe("remedyForCause", () => {
+	// The four-year-old "clearing it needs a verb that merges the base into the head, and `build`
+	// ships none" is what `lane refresh` retires. The cause is where that verb is written down.
+	it("names lane refresh for head-behind-base, which is the verb that moves a head onto its base", () => {
+		expect(remedyForCause("head-behind-base")).toBe("fabrika lane refresh");
+	});
+
+	it("names no verb for assembly-conflict — resolving content is a judgment none may make", () => {
+		expect(remedyForCause("assembly-conflict")).toBeNull();
+	});
+
+	// The replay's own refusal is the same judgment from the other side — one child's range against
+	// another's rather than the trunk's — so it routes to the driver and names no verb either.
+	it("names no verb for replay-conflict, and routes it to the driver", () => {
+		expect(remedyForCause("replay-conflict")).toBeNull();
+		expect(routeForCause("replay-conflict")).toBe("driver");
+	});
+
+	it.each([null, "not-a-cause"])("has no remedy for an unnamed park (%p)", (cause) => {
+		expect(remedyForCause(cause)).toBeNull();
+	});
+
+	it("carries the remedy onto every KNOWN_PARKS row, read off the same table", () => {
+		expect(KNOWN_PARKS).not.toHaveLength(0);
+		for (const recipe of KNOWN_PARKS) {
+			expect(recipe.remedy).toBe(remedyForCause(recipe.cause));
+		}
+	});
+});
+
+describe("a BLOCKED that names no cause", () => {
+	it("records as the bare park it always was while the key is off", () => {
+		expect(causeForEvent(null, "BLOCKED", false)).toEqual({_tag: "Uncaused"});
+	});
+
+	it("is Required — never Rejected — while the key is on, so its own exit code is reachable", () => {
+		const resolved = causeForEvent(null, "BLOCKED", true);
+
+		expect(resolved._tag).toBe("Required");
+		if (resolved._tag !== "Required") return;
+		// The refusal is actionable on its own line: a caller reading only stderr must not have to go
+		// find the closed set somewhere else.
+		for (const cause of PARK_CAUSE_TOKENS) expect(resolved.reason).toContain(cause);
+	});
+
+	it.each([
+		"DONE",
+		"PASS",
+		"FAIL",
+		"WIP",
+		"UNBLOCKED",
+	] as const)("is untouched on %s, which is no park — the key binds BLOCKED alone", (event) => {
+		expect(causeForEvent(null, event, true)).toEqual({_tag: "Uncaused"});
+	});
+
+	it.each([false, true])("leaves a named cause alone at requireCause %p", (requireCause) => {
+		expect(causeForEvent("campaign-paused", "BLOCKED", requireCause)).toEqual({
+			_tag: "Caused",
+			cause: "campaign-paused",
+		});
+	});
+});
+
+describe("the rationale a clearance rides on", () => {
+	it("carries nothing when nothing was named — the ordinary resume, unchanged", () => {
+		expect(rationaleForEvent(null, "UNBLOCKED")).toEqual({_tag: "Reasoned", rationale: null});
+	});
+
+	it("seats a named rationale on the resume, trimmed", () => {
+		expect(rationaleForEvent("  the head was rebased  ", "UNBLOCKED")).toEqual({
+			_tag: "Reasoned",
+			rationale: "the head was rebased",
+		});
+	});
+
+	// A recorded reason nobody can read is the unauditable clearance the field exists to prevent, so
+	// it is refused rather than folded into "no rationale".
+	it("rejects a blank one rather than reading it as none", () => {
+		const resolved = rationaleForEvent("   ", "UNBLOCKED");
+
+		expect(resolved._tag).toBe("Rejected");
+	});
+
+	it.each([
+		"DONE",
+		"PASS",
+		"FAIL",
+		"WIP",
+		"BLOCKED",
+	] as const)("rejects one riding %s, which clears no park", (event) => {
+		const resolved = rationaleForEvent("a reason", event);
+
+		expect(resolved._tag).toBe("Rejected");
+		if (resolved._tag !== "Rejected") return;
+		expect(resolved.reason).toContain("UNBLOCKED");
+	});
+});
+
+describe("the machinery terminals a driver records about the pipeline itself", () => {
+	it.each(
+		Object.entries(MACHINERY_CAUSES),
+	)("%s records the machine's machinery event, not a content FAIL", (token) => {
+		expect(eventForToken(token)).toMatchObject({token, event: MACHINERY_EVENT});
+	});
+
+	it.each(Object.entries(MACHINERY_CAUSES))("%s names %s off the routed table", (token, cause) => {
+		expect(machineryCause(token)).toBe(cause);
+		expect(PARK_CAUSE_TOKENS).toContain(cause);
+	});
+
+	it("reads a token's cause case-insensitively, the way its event is read", () => {
+		expect(machineryCause("replay-collided")).toBe("replay-conflict");
+		expect(machineryCause(" Base-Drifted ")).toBe("head-behind-base");
+	});
+
+	it("names no cause for a token outside the group", () => {
+		for (const token of ["PASS", "FAIL", "EJECTED", "SHIPPED-PR"]) {
+			expect(machineryCause(token)).toBeNull();
+		}
+	});
+
+	it("tells an integrate-sourced failure from a review-sourced one at the event", () => {
+		const integrate = eventForToken("REPLAY-COLLIDED");
+		const review = eventForToken("FAIL");
+
+		expect(integrate).toMatchObject({event: MACHINERY_EVENT});
+		expect(review).toMatchObject({event: "FAIL"});
+		expect(integrate).not.toMatchObject({event: "FAIL"});
+	});
+});
+
+describe("a machinery lap's cause", () => {
+	it("is Required under every park-cause rule — a lap that names no machinery says nothing", () => {
+		for (const requireCause of [false, true]) {
+			const resolved = causeForEvent(null, MACHINERY_EVENT, requireCause);
+
+			expect(resolved._tag).toBe("Required");
+			if (resolved._tag !== "Required") continue;
+			for (const cause of PARK_CAUSE_TOKENS) expect(resolved.reason).toContain(cause);
+		}
+	});
+
+	it("takes any cause the routed table carries, so a recorder that knows better may say so", () => {
+		expect(causeForEvent("assembly-conflict", MACHINERY_EVENT, false)).toEqual({
+			_tag: "Caused",
+			cause: "assembly-conflict",
+		});
+	});
+
+	it("refuses a cause the routed table does not carry", () => {
+		expect(causeForEvent("something-went-wrong", MACHINERY_EVENT, false)).toMatchObject({
+			_tag: "Rejected",
+		});
 	});
 });

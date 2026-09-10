@@ -31,6 +31,12 @@ describe("the park table", () => {
 
 		expect(rowless).toContain("head-behind-base");
 	});
+
+	// A rowless cause still carries the verb that removes it: naming and clearing are decoupled, and
+	// `head-behind-base` names `lane refresh` without buying the autonomous clear a row would.
+	it("lets a rowless cause name its remedy, since naming is not what a row buys", () => {
+		expect(PARK_CAUSES["head-behind-base"].remedy).toBe("fabrika lane refresh");
+	});
 });
 
 describe("classifyPark", () => {

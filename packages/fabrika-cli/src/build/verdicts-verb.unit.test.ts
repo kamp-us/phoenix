@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {CAP_ROUND} from "../retry-budget.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	comments,
@@ -103,13 +104,14 @@ describe("runVerdicts", () => {
 					{id: 2, body: failAt(PRIOR_HEADS[0]), createdAt: at(5)},
 					{id: 3, body: failAt(PRIOR_HEADS[1]), createdAt: at(400)},
 					{id: 4, body: failAt(PRIOR_HEADS[2]), createdAt: at(900)},
+					{id: 5, body: failAt(PRIOR_HEADS[3]), createdAt: at(1400)},
 				),
 			],
 			[REVIEWS, NO_REVIEWS],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
-		expect(parsed.rounds).toBe(3);
+		expect(parsed.rounds).toBe(CAP_ROUND);
 		expect(parsed.capReached).toBe(true);
 	});
 
@@ -153,7 +155,7 @@ describe("runVerdicts", () => {
 		expect(parsed.capReached).toBe(false);
 	});
 
-	it("lists only the criteria appended AFTER round 2, by their provenance tag", async () => {
+	it("lists only the criteria appended at or past the cap round, by their provenance tag", async () => {
 		const out = await run([
 			[PULL, PR],
 			[COMMENTS, served([])],
@@ -165,7 +167,7 @@ describe("runVerdicts", () => {
 						"### Acceptance criteria",
 						"",
 						"- [ ] focus stays put",
-						"- [ ] an e2e covers the empty-list case <!-- ac:review pr:#4310 round:3 -->",
+						"- [ ] an e2e covers the empty-list case <!-- ac:review pr:#4310 round:4 -->",
 						"- [ ] an earlier one <!-- ac:review pr:#4310 round:1 -->",
 						"",
 					].join("\n"),
@@ -173,7 +175,7 @@ describe("runVerdicts", () => {
 			],
 		]);
 		expect(JSON.parse(out.stdout).frozenCriteria).toEqual([
-			{text: "an e2e covers the empty-list case", appendedRound: 3},
+			{text: "an e2e covers the empty-list case", appendedRound: CAP_ROUND},
 		]);
 	});
 
@@ -189,7 +191,9 @@ describe("runVerdicts", () => {
 		expect(parsed.rows).toEqual([]);
 		expect(parsed.rounds).toBe(0);
 		expect(out.stderr.join("\n")).toContain("scanned 1 comment(s) and 0 review(s)");
-		expect(out.stderr.at(-1)).toContain("cap 3 = 3 declared, nothing cleared");
+		expect(out.stderr.at(-1)).toContain(
+			`cap ${CAP_ROUND} = ${CAP_ROUND} declared, nothing cleared`,
+		);
 	});
 
 	it("refuses a proven-absent PR on 7", async () => {
@@ -236,7 +240,8 @@ describe("runVerdicts", () => {
 		const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
 		const WRITES = served({permission: "admin"});
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
-		// Three graded heads, so three rounds — a round is a head, not a span of clock.
+		// One graded head per round, so the set spends the whole declared budget — a round is a head,
+		// not a span of clock.
 		const CAPPED = [
 			{
 				id: 1,
@@ -253,12 +258,17 @@ describe("runVerdicts", () => {
 				body: `review-code: FAIL @ ${PRIOR_HEADS[2]} — three`,
 				createdAt: "2026-08-18T03:00:00Z",
 			},
+			{
+				id: 4,
+				body: `review-code: FAIL @ ${PRIOR_HEADS[3]} — four`,
+				createdAt: "2026-08-18T03:05:00Z",
+			},
 		];
 		const GRANT = [
-			{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
+			{id: 5, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
 			{
-				id: 5,
-				body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+				id: 6,
+				body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T03:11:00Z`,
 				author: "usirin",
 				createdAt: "2026-08-18T03:11:00Z",
 			},
@@ -272,7 +282,7 @@ describe("runVerdicts", () => {
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
-			expect(parsed.rounds).toBe(3);
+			expect(parsed.rounds).toBe(CAP_ROUND);
 			expect(parsed.capReached).toBe(true);
 		});
 
@@ -288,7 +298,7 @@ describe("runVerdicts", () => {
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(false);
 			expect(parsed.clearances).toHaveLength(1);
-			expect(parsed.clearances[0]).toMatchObject({round: 3, by: "usirin", honoured: true});
+			expect(parsed.clearances[0]).toMatchObject({round: CAP_ROUND, by: "usirin", honoured: true});
 		});
 
 		it("spends the grant on the next round — it never re-arms", async () => {
@@ -297,8 +307,8 @@ describe("runVerdicts", () => {
 				[
 					COMMENTS,
 					comments(...CAPPED, ...GRANT, {
-						id: 6,
-						body: `review-code: FAIL @ ${HEAD} — four`,
+						id: 7,
+						body: `review-code: FAIL @ ${HEAD} — the granted round`,
 						createdAt: "2026-08-18T04:00:00Z",
 					}),
 				],
@@ -308,7 +318,7 @@ describe("runVerdicts", () => {
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
-			expect(parsed.rounds).toBe(4);
+			expect(parsed.rounds).toBe(CAP_ROUND + 1);
 			expect(parsed.capReached).toBe(true);
 		});
 
@@ -325,10 +335,14 @@ describe("runVerdicts", () => {
 					comments(
 						...CAPPED,
 						...GRANT,
-						{id: 6, body: `review-code: FAIL @ ${HEAD} — four`, createdAt: "2026-08-18T04:00:00Z"},
 						{
 							id: 7,
-							body: "cap-cleared: round 4 · 2026-08-18T05:00:00Z",
+							body: `review-code: FAIL @ ${HEAD} — the granted round`,
+							createdAt: "2026-08-18T04:00:00Z",
+						},
+						{
+							id: 8,
+							body: `cap-cleared: round ${CAP_ROUND + 1} · 2026-08-18T05:00:00Z`,
 							author: "usirin",
 							createdAt: "2026-08-18T05:00:00Z",
 						},
@@ -340,7 +354,7 @@ describe("runVerdicts", () => {
 				[ISSUE, issue()],
 			]);
 			const parsed = JSON.parse(out.stdout);
-			const bare = parsed.clearances.find((row: {round: number}) => row.round === 4);
+			const bare = parsed.clearances.find((row: {round: number}) => row.round === CAP_ROUND + 1);
 			expect(bare).toMatchObject({honoured: false, authorization: null});
 			expect(bare.reason).toContain("immediately before");
 			expect(parsed.capReached).toBe(true);
@@ -381,8 +395,8 @@ describe("runVerdicts", () => {
 				[
 					COMMENTS,
 					comments(...CAPPED, {
-						id: 5,
-						body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+						id: 6,
+						body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T03:11:00Z`,
 						author: "an-agent",
 						createdAt: "2026-08-18T03:11:00Z",
 					}),

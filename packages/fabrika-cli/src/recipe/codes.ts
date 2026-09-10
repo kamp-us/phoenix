@@ -112,3 +112,16 @@ export const RERUN_UNKNOWN = 21;
  * §2's table), and a chore drive that ran *some* verb there would be guessing.
  */
 export const NO_RECIPE = 22;
+
+/**
+ * The park routes to the driver and this repo lets a driver clear one, and the run named no
+ * `--rationale`. **Nothing was written** — the refusal lands before any proving read, on the same
+ * principle as {@link PARK_NOVEL}.
+ *
+ * Its own seat rather than {@link PARK_NOVEL}'s: novel says no fixed fix covers this park and the
+ * remedy is a human, while this says the driver may clear it and has not said why. An unlogged
+ * driver clearance is what would make the whole driver route unauditable, so the rationale is a
+ * precondition of the clear rather than a decoration on it — and the remedy is to re-run naming one,
+ * never to route a person at the park.
+ */
+export const RATIONALE_ABSENT = 23;
