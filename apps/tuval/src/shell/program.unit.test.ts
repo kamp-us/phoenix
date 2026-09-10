@@ -25,6 +25,7 @@ import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
 import type {AnyProgram} from "../registry/program.ts";
+import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
 import type {ServeDeskOptions} from "./host/index.ts";
@@ -39,6 +40,7 @@ import {
 	shellStateOf,
 	unwiredShellEffects,
 	windowBindings,
+	withShellFeatures,
 } from "./program.ts";
 import {WindowId} from "./window/index.ts";
 
@@ -295,6 +297,52 @@ describe("the shell as a program row", () => {
 					assert.strictEqual(`${path}: ${code.includes(forbidden)}`, `${path}: false`);
 				}
 			}
+		},
+		BUDGET_MS,
+	);
+});
+
+/**
+ * The one seam that knows both the rows and the merged flags (#8867). A config module is evaluated
+ * before the merge exists (#8595), so the shell's row is built flag-blind and `boot` re-keys it here
+ * — the grammar, the core's own lookups and the registered spells, all off the one flag.
+ */
+describe("the shell row under a boot's merged feature flags", () => {
+	const named = (program: AnyProgram): ReadonlyArray<string> =>
+		(program.spells ?? []).map((spell) => spell.path.join(":"));
+
+	it(
+		"adds the board's binding and its spell together when the flag is on",
+		() => {
+			const [gated] = withShellFeatures([row()], {processBoard: true});
+			assert.isDefined(gated);
+			const table = shellPrefixTable([gated as AnyProgram]);
+			assert.include(
+				table.bindings.map((binding) => String(binding.command)),
+				"desk:board-toggle",
+			);
+			assert.include(named(gated as AnyProgram), "desk:board-toggle");
+		},
+		BUDGET_MS,
+	);
+
+	it(
+		"leaves the row exactly as the config built it when the flag is off",
+		() => {
+			const [plain] = withShellFeatures([row()], {processBoard: false});
+			assert.isDefined(plain);
+			assert.deepStrictEqual(shellPrefixTable([plain as AnyProgram]), defaultPrefixTable);
+			assert.notInclude(named(plain as AnyProgram), "desk:board-toggle");
+		},
+		BUDGET_MS,
+	);
+
+	it(
+		"touches no row but the shell's",
+		() => {
+			const other: AnyProgram = {...row(), id: ProgramId.make("not-the-shell")} as AnyProgram;
+			const [kept] = withShellFeatures([other], {processBoard: true});
+			assert.strictEqual(kept, other);
 		},
 		BUDGET_MS,
 	);

@@ -47,7 +47,16 @@
    Written as "not pointer" rather than "is keyboard" so the gate can only ever *remove* a ring, and
    only from a surface that has seen a click. Several `.tuval-surface` roots are not the desk and
    publish nothing — the attaching placeholder (`../../page/AttachedDesk.tsx`), the boot screens,
-   every proof page — and a positive gate would have silently stripped the ring off all of them. */
+   every proof page — and a positive gate would have silently stripped the ring off all of them.
+
+   The board's overlay is named beside the surface because a `Dialog` renders through a portal, out
+   of every `.tuval-surface` root (`../board/ProcessBoardOverlay.tsx`, #8867). It is the one rule
+   either way: a second one in the board's own sheet would be the per-component outline Pillar 4
+   forbids. It carries no modality gate because it has no root publishing one, and needs none — the
+   gate exists for a text field, and everything focusable in the overlay is a button, which a
+   browser already withholds `:focus-visible` from on pointer focus. It is written first because the
+   selector list ascends in specificity, which is what biome's descending-specificity rule asks. */
+.tuval-board-overlay :focus-visible,
 .tuval-surface:not([data-input-modality="pointer"]) :focus-visible {
 	outline: var(--focus-ring);
 	outline-offset: var(--focus-ring-offset);

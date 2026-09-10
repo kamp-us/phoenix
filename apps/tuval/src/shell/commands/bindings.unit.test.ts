@@ -5,8 +5,8 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {applyKeysConfig, CommandName, defaultPrefixTable} from "../keys/index.ts";
-import {commandFor} from "./table.ts";
+import {applyKeysConfig, CommandName, defaultPrefixTable, prefixTableFor} from "../keys/index.ts";
+import {commandFor, commandIndexFor} from "./table.ts";
 
 /** Every command name a table binds, in table order. */
 const boundNames = (table: typeof defaultPrefixTable): ReadonlyArray<string> =>
@@ -31,6 +31,39 @@ describe("the default prefix table against the command table", () => {
 			return row !== undefined && Object.keys(row.params.fields).length > 0;
 		});
 		expect(needsArgument).toEqual([]);
+	});
+});
+
+/**
+ * The feature-gated half (#8867). A gated binding and its row are two lists keyed on one flag, so
+ * the pair either both exist or neither does — a gate applied to one and not the other is a key
+ * that names nothing, which is exactly what this file exists to catch.
+ */
+describe("a feature-gated binding against its own gated table", () => {
+	const on = {processBoard: true};
+	const off = {processBoard: false};
+
+	it("adds the board chord and its row together when the flag is on", () => {
+		const table = prefixTableFor(defaultPrefixTable, on);
+		const index = commandIndexFor(on);
+		expect(boundNames(table)).toContain("desk:board-toggle");
+		expect(index.commandFor("desk:board-toggle")).toBeDefined();
+		expect(boundNames(table).filter((name) => index.commandFor(name) === undefined)).toEqual([]);
+	});
+
+	it("has neither the chord nor the row when the flag is off", () => {
+		const table = prefixTableFor(defaultPrefixTable, off);
+		expect(table).toEqual(defaultPrefixTable);
+		expect(boundNames(table)).not.toContain("desk:board-toggle");
+		expect(commandIndexFor(off).commandFor("desk:board-toggle")).toBeUndefined();
+	});
+
+	it("binds a sequence the ungated table leaves free", () => {
+		const added = prefixTableFor(defaultPrefixTable, on).bindings.filter(
+			(binding) => !defaultPrefixTable.bindings.includes(binding),
+		);
+		expect(added.map((binding) => binding.sequence)).toEqual(["p"]);
+		expect(defaultPrefixTable.bindings.map((binding) => binding.sequence)).not.toContain("p");
 	});
 });
 

@@ -31,8 +31,10 @@ export {
 	type Binding,
 	CommandName,
 	defaultPrefixTable,
+	type KeyFeatures,
 	type KeysConfig,
 	normalizeSequence,
 	type PrefixTable,
+	prefixTableFor,
 	type UnreadableSequenceError,
 } from "./table.ts";

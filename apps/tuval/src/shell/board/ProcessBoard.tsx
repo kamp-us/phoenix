@@ -9,6 +9,9 @@
  *
  * Every tile is a button, so the keyboard reaches what the mouse does through the one handler the
  * mouse calls. The board is not the engine view (#7500), which stays out of this slice.
+ *
+ * It draws no heading: the surface that mounts it names it, which today is the overlay's dialog
+ * title (`./ProcessBoardOverlay.tsx`, #8867).
  */
 
 import {Card, EmptyState, MetaRow} from "@kampus/design";
@@ -119,7 +122,6 @@ export function ProcessBoard({rows, onOpen, reducedMotion}: ProcessBoardProps): 
 
 	return (
 		<section className="tuval-board" aria-label="Processes">
-			<h2 className="tuval-board-heading">Processes</h2>
 			{tiles.length === 0 ? (
 				<EmptyState
 					className="tuval-board-empty"
