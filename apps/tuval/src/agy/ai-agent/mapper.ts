@@ -44,6 +44,23 @@
  * **An unrecognised `step_type` renders a `SystemItem` and is never dropped and never thrown on.**
  * That is the whole reason this file has a default arm: the enum is provably open and the stream
  * carries no version to branch on (see `wire.ts`).
+ *
+ * **An `error_message` step is carried on the turn and rendered, or not, by the terminal event** —
+ * the one arm here that cannot decide anything on its own. The step says a reply was cut; only
+ * `result` says whether the operator is the one who cut it, and it arrives afterwards. On a stop the
+ * cut reply's `interrupted` mark is already the whole signal, so the step adds a second row saying
+ * the same thing; on any other ending — agy's own safety-filter abort is the measured case — the
+ * message is the only account of why the reply stopped. So `AgyTurn.errorMessages` holds it until
+ * `resultEvents` can choose ([#8896](https://github.com/kamp-us/phoenix/issues/8896)). Before this it
+ * reached the default arm, which minted `agy step 2 of an unrecognised type "error_message" (DONE)`
+ * into the transcript on a path Tuval drives on purpose.
+ *
+ * Measured at **v1.2.0**, which is past `wire.ts`'s pin and named as such: the live step carries no
+ * `text_delta` at all, so at that release the carry is always empty and this arm renders nothing
+ * either way. The message itself rides the terminal `result.error`, which the failure event below
+ * already surfaces, and agy's on-disk transcript records it as a `SYSTEM`/`ERROR_MESSAGE` line that
+ * `transcript.ts` renders with its text — so neither path loses it. The with-text arm is here for the
+ * release that starts sending one, on a wire that ships no version to announce that it has.
  */
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
@@ -173,6 +190,17 @@ export interface AgyTurn {
 	 * turn whose cumulative is its own — unless it is `null`, and then nothing does.
 	 */
 	readonly cumulative: Tokens | null;
+	/**
+	 * `error_message` steps this turn carried, held rather than rendered: the step cannot tell on its
+	 * own whether the turn was interrupted, and the terminal `result` that can arrives after it.
+	 */
+	readonly errorMessages: ReadonlyArray<ErrorMessage>;
+}
+
+/** One carried `error_message`, keyed the way every other step row is. */
+interface ErrorMessage {
+	readonly key: string;
+	readonly text: string;
 }
 
 export const idleTurn: AgyTurn = {
@@ -183,6 +211,7 @@ export const idleTurn: AgyTurn = {
 	reported: noTokens,
 	lastStepIndex: null,
 	cumulative: null,
+	errorMessages: [],
 };
 
 interface Folded {
@@ -315,6 +344,14 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 			if (delta.length > 0) events.push(systemEvent(key, timestamp, delta));
 			break;
 
+		case "error_message":
+			// Carried, never rendered here: whether this is worth showing depends on the terminal
+			// `result`, which has not arrived. `resultEvents` drops it on a stop and renders it
+			// otherwise. An empty one is carried nowhere, matching the `system_message` arm above.
+			if (delta.length > 0)
+				next = {...next, errorMessages: [...next.errorMessages, {key, text: delta}]};
+			break;
+
 		default:
 			events.push(systemEvent(key, timestamp, unrecognisedText(step)));
 	}
@@ -352,6 +389,12 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 				: assistantItem(id, timestamp, result.response),
 		});
 	}
+
+	// The stop's own mark is the whole of the operator's signal on an interrupted turn, so a step that
+	// only ever reports why a reply was cut adds nothing beside it and is dropped.
+	if (!stopped)
+		for (const message of previous.errorMessages)
+			events.push(systemEvent(message.key, timestamp, message.text));
 
 	const denied = result.denied_actions;
 	if (denied !== undefined && denied.length > 0) {
@@ -401,6 +444,7 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 			reported: noTokens,
 			lastStepIndex: null,
 			cumulative: result.usage === undefined ? previous.cumulative : tokensOf(result.usage),
+			errorMessages: [],
 		},
 	};
 };

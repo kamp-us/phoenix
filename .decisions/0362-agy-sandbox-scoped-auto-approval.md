@@ -74,11 +74,21 @@ This is about the *terminal event*, and it is a different proposition from the o
 
 **`result.denied_actions` is one release old.** It arrived in the release immediately before the version this record pins, so it is the newest field the adapter depends on and the first one to suspect if a different version behaves oddly.
 
+## A later-version reading: `error_message` at v1.2.0
+
+**This section is scoped to v1.2.0 and changes nothing above.** Per the grounding rule below, a measurement against a later version is named as such rather than written back onto the pin, so the five-value `step_type` census and every other v1.1.27 claim stand exactly as they read.
+
+**v1.2.0 emits a sixth `step_type`, `error_message`, and it carries no text.** The step is `{"step_index":2,"state":"DONE","step_type":"error_message","duration_seconds":0}` — `text_delta` is absent, not empty — and the turn *continues* past it: the next `agent_response` is agy retrying the reply, and `result.num_turns` is still `1`. The message the step stands for rides the terminal `result.error` instead, and agy's on-disk transcript records it as the `SYSTEM`/`ERROR_MESSAGE` line the history reader already renders with its `content`.
+
+**The trigger is agy's own abort, not the operator's stop.** It was first met on the interrupt path, which made "suppress it when the turn was interrupted" look like the whole fix ([#8896](https://github.com/kamp-us/phoenix/issues/8896)). Driving the real binary says otherwise: a prompt asking for a verbatim passage of a copyrighted novel trips the recitation filter and produces the step with no `SIGINT` anywhere, while eleven drives that included four `SIGINT` stops produced none at all. So the adapter recognises the step and lets the terminal event decide whether it is worth a row — dropped on a stop, where the cut reply's `interrupted` mark already says the same thing; rendered otherwise, where it is the only account of why the reply stopped (`src/agy/ai-agent/mapper.ts`).
+
+**`AGY_VERSION` stays at `1.1.27`.** The constant names the release the whole `wire.ts` module was captured from, and one step type read on one later machine is not a re-census — moving it would restate the v1.1.27 capture as a v1.2.0 one, which is the laundering this record's own rule forbids. It moves when the module is captured again, and `src/agy/ai-agent/launch.unit.test.ts` moves with it.
+
 ## Grounding
 
 Per [CLAUDE.md](../CLAUDE.md)'s rule that a decision-driving claim about a dependency's behaviour is verified against the authoritative source rather than asserted, every behavioural claim above traces to one of two things: a live run of `agy` v1.1.27 on macOS during the spike recorded on [#8162](https://github.com/kamp-us/phoenix/issues/8162), or a `strings` extraction from that binary (the `INTERRUPTED` status is the one claim from the latter). Where a claim contradicts the vendor's documentation, the measurement wins and the contradiction is named as such.
 
-Two claims were re-measured after a hand-verification run of the adapter contradicted them, and both corrections above carry their own evidence: the `SIGINT` terminal event (a scratch desk against v1.1.27, plus a direct probe against v1.1.28) and the `result.usage` census (a three-turn stream-json session against v1.1.28, the third turn on a resumed child). A measurement against a *later* version is named as such rather than written back onto the pinned one; where the two agree, as they do on the interrupt string, the agreement is the point.
+Two claims were re-measured after a hand-verification run of the adapter contradicted them, and both corrections above carry their own evidence: the `SIGINT` terminal event (a scratch desk against v1.1.27, plus a direct probe against v1.1.28) and the `result.usage` census (a three-turn stream-json session against v1.1.28, the third turn on a resumed child). A measurement against a *later* version is named as such rather than written back onto the pinned one; where the two agree, as they do on the interrupt string, the agreement is the point. The `error_message` section is that rule applied again, one minor further on: twelve drives of a v1.2.0 binary, the captured lines committed verbatim as `src/agy/ai-agent/fixtures.ts`'s `errorMessageStep` / `resultContentFiltered`, and the v1.1.27 census left standing.
 
 Every vendor path in this record is written relative to `$HOME` and resolved at runtime. No absolute machine-local path appears, so the document stays true on a machine other than the one the spike ran on.
 
