@@ -14,8 +14,12 @@ tags: [tuval, config, feature-flags, programs]
 service (ADR 0363). The consequence a flag's author has to know: a row's flag is stated by the layer
 that owns the row, so a global `~/.tuval/tuval.config.ts` naming it moves everything except the row.
 
-ADR 0363 stands unchanged. This narrows one case it did not have to answer, because until #8734 no
-flag gated a row.
+**Relationship to ADR [0363](0363-tuval-feature-flags-in-config-file.md) — this ADR amends it in
+part; it does not overturn it.** 0363's merge rule holds for every flag but the one class this
+record names: a flag gating whether a program row is registered is read before the merge exists, so
+a lower layer stating it does not move the row. That is a case 0363 did not have to answer, because
+until #8734 no flag gated a row. 0363 carries the reciprocal `amended-in-part by [0373]` status-line
+pointer; its body is untouched.
 
 ## Context
 

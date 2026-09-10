@@ -1,7 +1,7 @@
 ---
 id: 0363
 title: Tuval feature flags live in the config file, never a flag service
-status: accepted
+status: amended-in-part by [0373](0373-a-program-row-flag-is-read-off-its-own-config-layer.md)
 date: 2026-09-07
 tags: [tuval, config, feature-flags]
 ---
