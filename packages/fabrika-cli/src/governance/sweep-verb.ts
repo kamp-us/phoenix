@@ -8,9 +8,8 @@
  * agreeing by construction. What this verb owns is the **subject acquisition**: `adr sweep` can only
  * read a local draft, and a review-time or digest-time subject lives in a commit.
  *
- * All three outcomes exit 0 and all three are answers — and none of them is a clearance. A record that
- * disagrees with the subject about what a *label means* shares no distinctive vocabulary and never
- * appears here at all, which is why `no-overlap` carries that sentence in `reason` verbatim.
+ * Lexical overlap cannot find a disagreement that shares no distinctive vocabulary, so this scan
+ * cannot grant clearance. See ./command.ts help for its result states.
  */
 import {Effect, type FileSystem, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

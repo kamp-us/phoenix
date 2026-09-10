@@ -94,7 +94,6 @@ export const read = (artifact: string): CapClearanceRead => {
 export const emit = ({round, at}: CapClearance): string =>
 	`${KEY}: ${ROUND_PREFIX} ${round} ${FIELD_SEPARATOR} ${at}\n`;
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderClearance = (clearance: CapClearance): NonEmptyReadonlyArray<string> => [
 	`round\t${clearance.round}`,
 	`at\t${clearance.at}`,

@@ -8,9 +8,6 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard.
- *
- * No `--json` anywhere: each verb's answer is one JSON object, so there is no second output shape
- * to opt into.
  */
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";

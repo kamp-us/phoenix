@@ -7,13 +7,8 @@
  * could arm a queue and nothing else, so a repo with no queue had `allow_auto_merge: false` and
  * `mergeQueue: null` sitting on two endpoints, with no verb reading either.
  *
- * The three paths are exclusive and each is a proven answer:
- *
- * - `queue` — a merge queue governs the branch, so the queue owns both the method and the landing
- *   (`ship enqueue`). The permitted-method read is skipped here, because it decides nothing.
- * - `direct` — no queue, and the repository permits at least one method (`ship merge`).
- * - `none` — no queue and no permitted method: nothing in this repository can land this branch, and
- *   that is a settings fact a human fixes, never a method to guess at.
+ * See the scope help in ./command.ts for landing routes. A queue owns the method, so its path
+ * skips the permitted-method read. A repo permitting no method cannot be repaired by guessing one.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";

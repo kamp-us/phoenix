@@ -613,7 +613,6 @@ export const read = (artifact: string): LaneBriefRead => {
 	};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => [
 	`lane\t${brief.lane}`,
 	`root\t${brief.root}`,

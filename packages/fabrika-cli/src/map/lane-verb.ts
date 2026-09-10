@@ -5,10 +5,6 @@
  * A compare-and-set on a marker under a closed-set kind guard. Re-running with the nonce that already
  * holds the lane is `resumed`, not an error: a stateless re-dispatch of the same run must be able to
  * prove it still owns the lane without a second claim.
- *
- * The five refusals stay five seats with five remedies, which is `epic-lock`'s scar designed out: it
- * collapsed distinct refusals onto one code, so a caller could not tell an abandoned lock from a
- * missing target. Here `15`, `13`, `18` and `11` say different true things.
  */
 
 import {Effect} from "effect";

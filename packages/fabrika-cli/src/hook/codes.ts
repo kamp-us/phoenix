@@ -1,11 +1,7 @@
 /**
  * The one exit table every `hook` verb allocates from.
  *
- * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`). The three seats
- * below keep apart the three ways a harness envelope fails to arrive, which is the whole reason a
- * hook verb needs its own table: "stdin held nothing", "stdin held bytes that are not an envelope"
- * and "fd 0 could not be read" are three different claims, and collapsing any two of them lets a
- * hook report a proven negative over evidence it never saw — a verdict nothing was scanned for.
+ * `hook codes` exposes {@link HOOK_EXIT_TABLE}; each verb's `--help` states what triggers its codes.
  *
  * **`2` is allocated by nothing, here or in any other group, and this is the group that makes it a
  * hard rule.** On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), so

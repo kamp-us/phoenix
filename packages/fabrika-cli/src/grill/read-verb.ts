@@ -9,10 +9,6 @@
  * access disable the verb by posting one malformed marker. Its only refusals are a session that
  * does not exist and a read that could not complete.
  *
- * **All four frontier tokens exit `0`.** A frontier holding open questions is this skill working,
- * not a failure; seating it on a non-zero code would make a caller's `[ $? -ne 0 ]` read "the
- * founder has not answered yet" as "the verb never ran".
- *
  * **Zero comments is a fact** — `empty`, the ordinary state of a session opened and not yet
  * grilled. A comment read that could not complete leaves every question's state UNKNOWN, never
  * `open`: an unpaginated read would silently drop the newest rounds and report a ruled question as
@@ -44,7 +40,6 @@ import {
 /** The closed set of question states. `superseded` occurs on either kind and always wins. */
 export type QuestionState = "open" | "answered" | "ruled" | "unattested" | "stale" | "superseded";
 
-/** The closed set of frontier tokens. All four are answers at exit `0`. */
 export type Frontier = "awaiting-founder" | "facts-pending" | "clear" | "empty";
 
 /** One question row. The five always-present keys, then the conditional ones per state. */

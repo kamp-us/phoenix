@@ -9,9 +9,8 @@
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
  *
- * `--blocked-by` rides the same verb and prints as the machine line's last column
- * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>`); its reads, writes and
- * read-back are `./blocked-by.ts`. **That column reports this run, not the graph**: the dependency
+ * `--blocked-by` reads, writes and read-back live in `./blocked-by.ts`.
+ * **Its output column reports this run, not the graph**: the dependency
  * endpoint is read only when the flag is present, so a flagless run prints it empty whatever the
  * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close.
  */

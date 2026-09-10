@@ -10,8 +10,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * **The answer channel is machine, unconditionally, so there is no `--json` flag**, and there is no
- * `--body` or `--body-file`: `take` reads its asserted half from stdin so a machine-local path has no
+ * `take` reads its asserted half from stdin so a machine-local path has no
  * route into a posted artifact.
  */
 

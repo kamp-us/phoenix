@@ -9,9 +9,7 @@
  * size of a total. The non-zero codes below are all about whether an answer could be *produced*,
  * never about how big it was.
  *
- * The four refusals are the same discipline `spend read` draws, one level up: an absent ledger, an
- * unreadable one, one that holds no rows at all, and a window that selects none of the rows it does
- * hold are four different facts, and none of them is a zero total.
+ * See `spend rollup --help` for results and exit codes.
  */
 import {Effect, type FileSystem, Result} from "effect";
 import {type CapAndCount, capAndCount} from "../evidence.ts";
@@ -94,12 +92,7 @@ const totalsFields = (totals: SpendTotals): ReadonlyArray<string> => [
 ];
 
 /**
- * One record per line, first field naming the record's kind — so `grep '^day'` is the breakdown and
- * the unread counts sit in the same answer as the total they qualify.
- *
- * Each breakdown's `…More` count prints even at `0`, so "capped at exactly its length" and "the
- * remainder line is missing" never look alike, and it prints beside its own rows rather than in a
- * block of its own so one grep still reads a whole breakdown.
+ * The line format is documented in `spend rollup --help`.
  */
 const render = (rollup: BoundedRollup): string => {
 	const t = rollup.totals;

@@ -1,17 +1,7 @@
 /**
- * The one exit table every `ship` verb allocates from, so a code means one thing across this group
- * whichever verb produced it.
- *
- * **Every seat this group shares is imported, never re-typed as a numeral.** `3`, `5`, `6`, `7`,
- * `8`, `9`, `10` and `11` come from `../exit-codes.ts` and `../triage/codes.ts`; `12` and `13`
- * come from `../review/codes.ts` and `23` from `../plan/codes.ts`, whose meanings this group holds
- * unchanged. A restated numeral is a second source that can drift silently; an import cannot.
- *
- * `16` and `17` are this group's own proven refusals, and they sit above `review`'s private band on
- * purpose — `14`/`15` are `review`'s ACL and append-only seats, meanings no verb here performs, so a
- * row for either would be a meaning this group does not have.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for ship. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
+ * Review's ACL and append-only allocations stay unused here; ship performs neither.
  */
 
 import {
@@ -30,11 +20,8 @@ import {
 } from "../review/codes.ts";
 import {OFF_VOCABULARY as TRIAGE_OFF_VOCABULARY} from "../triage/codes.ts";
 
-/** Stdin was read and held nothing — `ship resolve`, `ship note`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
-/** The **authored** text carries a machine-local path. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** The **authored** text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)**, the PR is closed/draft where the verb requires
@@ -44,18 +31,12 @@ export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
  * not a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
  */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
-/** The write, or the read that confirms it, failed — the outcome is **UNKNOWN**. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A supplied classification value is off the closed vocabulary — a `--require`, a `--site`. */
 export const OFF_VOCABULARY = TRIAGE_OFF_VOCABULARY;
-/** A precondition read failed — nothing was proven and (for a write) nothing was written. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
-/** Refused: the live head moved past the inspected `--sha` — `review`'s seat, same meaning. */
 export const STALE_HEAD = REVIEW_STALE_HEAD;
-/** Refused: a read completed but its scope is **provably incomplete** — `review`'s seat. */
 export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
 
 /**

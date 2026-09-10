@@ -1,38 +1,9 @@
 /**
- * `review-ui render` — capture named surfaces from the PR's preview deployment at the inspected
- * head, one validated PNG per surface, each surface's outcome proven.
+ * Captures named views at the inspected preview head. The injected RenderLeg keeps refusals
+ * testable without a browser. See ./command.ts help for inputs, results and refusal codes.
  *
- * The order is the contract's and every step gates the next: resolve the PR and its live head,
- * resolve the announced preview, **bind the preview to the head**, then render each surface and
- * classify what came back. Full success is the only `0` — v1's capture leg carried no status
- * assertion and no capture-count check, so a crashed helper meant zero surfaces judged, zero
- * violations, PASS.
- *
- * The renderer is an injected seam ({@link RenderLeg}) so every refusal below is testable without a
- * browser; `render-leg.ts` is the one that drives the capture machinery.
- *
- * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
- * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
- * than shot, because a state nothing renders captures the default pixels under a variant's name,
- * which is coverage claimed and not held. Every realized state names the **tier** it renders
- * at, and a tier-naming surface is refused three times over, all on `11`: before a browser launches
- * when that tier's credentials are incomplete — an unset tier token is a tier `preview-seed
- * test-account` did not seed, and falling back to the seeded one would shoot the wrong audience
- * clean; when the shot's own session proof does not come back signed in; and when that proof
- * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
- * page nobody asked for, which no byte check can tell from the real thing.
- *
- * `--viewport <name>` picks the widths the surfaces are shot at, over `plan.ts`'s closed set, and
- * defaults to `desktop` alone so every caller written before it is unchanged. Viewports
- * cross the surfaces: two of each is four captures in one set, distinguished on disk and in the
- * manifest by the viewport label. Each shot then proves its own width off the PNG header — the
- * narrow half of the design law is only answerable from narrow pixels, and a desktop-width shot
- * filed under `mobile` would answer it from the wrong ones, on `19`.
- *
- * `--flag <key>=<on|off>` forces a dark-shipped flag for the run, and it is
- * refused twice over on the same shape: on `10` when an operand is unreadable or names an anonymous
- * surface — the preview honors the override cookie only for an authorized platform-admin actor — and
- * on `11` when the shot's own flag probe says the forced key evaluated at its default anyway.
+ * Valid PNG bytes alone cannot prove the requested page: a wrong account tier, ignored flag
+ * override or wrong viewport can all produce a valid image. Each needs its own proof.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -144,10 +115,8 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
 const shortSha = (sha: string): string => sha.slice(0, 7);
 
 /**
- * The reported code when per-surface outcomes mix: the **smallest** applicable of `13`/`14`/`15`.
- *
- * The code routes and the stderr enumerates. Dropping a surface is the skill's explicit
- * re-invocation without it, on the record — never this verb's tolerance.
+ * A failed capture cannot be dropped to make the set pass. Only the caller can choose a smaller
+ * set on a later invocation. See ./command.ts help for the refusal codes.
  */
 const routeCode = (renders: readonly SurfaceRender[]): number | null => {
 	if (renders.some((r) => r._tag === "Crashed")) return RENDER_CRASHED;

@@ -5,11 +5,7 @@
  * The verb is the IO boundary and nothing else: read the settings file, hand its `env` block to the
  * pure rule in `./settings-env.ts`, seat the answer on the group's exit taxonomy.
  *
- * **The one fail-closed IoError splits into two seats here.** v1 folded "no settings.json" and
- * "settings.json does not parse" into a single non-zero exit, which is all CI needs and all a
- * human cannot use: an absent file means the guard scanned nothing (`7`) and a
- * malformed one means the guard could not judge what it read (`11`, UNKNOWN). Both stay red, so
- * the gate's strictness is unchanged.
+ * See `guard settings-env-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

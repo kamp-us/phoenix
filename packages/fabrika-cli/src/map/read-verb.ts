@@ -5,12 +5,7 @@
  * <!-- anchor: READ-NEVER-REFUSES-ON-CONTENT --> **This verb never refuses on a ticket's content.** A
  * ticket whose marker is malformed, or whose kind is off-vocabulary, is reported in `disregarded` at
  * exit `0` — refusing would suppress the whole frontier over one bad comment and would let anyone
- * with write access disable the verb by filing one. Its only refusals are a map that does not exist
- * (`7`), a body that does not parse (`4`), and a read that could not complete (`11`).
- *
- * All four frontier tokens exit `0`. A frontier holding open questions is this skill working, and
- * seating it on a non-zero code would make a caller's `[ $? -ne 0 ]` read "the fog is not cleared
- * yet" as "the verb never ran".
+ * with write access disable the verb by filing one. See `map read --help` for refusal details.
  */
 
 import {Effect} from "effect";

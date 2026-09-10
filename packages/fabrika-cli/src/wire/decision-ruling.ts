@@ -159,7 +159,6 @@ export const emit = ({issue, digest, ruling, at}: DecisionRuling): string =>
 export const rules = (ruling: DecisionRuling, issue: number, derived: string): boolean =>
 	ruling.issue === issue && ruling.digest === derived.trim().toLowerCase();
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderRuling = (ruling: DecisionRuling): NonEmptyReadonlyArray<string> => [
 	`issue\t${ruling.issue}`,
 	`digest\t${ruling.digest}`,

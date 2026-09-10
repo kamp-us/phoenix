@@ -13,9 +13,8 @@
  * files is refused on exit 45 before anything runs, because dirt the child did not write reads as
  * its conflict or its bad lockfile and spends its retry budget either way.
  *
- * On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED`, the line above it the merged
- * head. Publishing that head is `lane push`'s and recording the `DONE` is the driver's: this verb
- * neither pushes nor writes the lane's log, so its answer is a fact about a tree and nothing else.
+ * Publishing the merged head is `lane push`'s job; the driver records `DONE`. This verb neither
+ * pushes nor writes the lane log. See ./command.ts help for its report format.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

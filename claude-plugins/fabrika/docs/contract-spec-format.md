@@ -43,27 +43,27 @@ that test belongs in the skill, not the CLI.
 | Section | Content |
 |---|---|
 | Invocation | the literal command string, with subcommands. [Rule 5](interface-convention.md#5-every-documented-invocation-is-a-plain-literal-command-string) applies. |
-| Inputs | one row per flag: name, type, required or optional, default, and the description text that becomes the flag's help string verbatim. |
-| Output | the channel (machine or prose), the exact shape, and what an empty answer means. |
-| Exit status | every code the verb can return and its trigger, obeying the reserved table in [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is). |
+| Inputs | validation and interactions between inputs; for a new verb, also specify each flag's type, requiredness, default and help meaning. For shipped caller facts, a per-verb help pointer suffices. |
+| Output | derivation of values, ordering, completeness and empty-answer requirements. Point to shipped help for the caller's channel and grammar; specify them here for a new verb. |
+| Exit status | the conditions that produce each outcome, obeying [rule 3](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is); use shipped help for code meanings already stated there. |
 | Errors | one row per named failure: message text, stream, exit code, and whether it is a refusal (fail-closed) or a usage error. |
 | Scope | for a judging verb: what it scans, and what zero scope does. |
-| Examples | at least one literal invocation with its expected stdout, byte for byte. |
+| Examples | literal invocations with expected stdout that demonstrate implementation requirements or distinct cases beyond the help example. For a new verb, include its caller example here too. |
 | Grounding | the incidents, rulings, or ADRs the behavior encodes — one line each. |
 
 ## Completeness test
 
-A spec is complete when all eight hold. Each is checkable by reading the spec alone, which is the
-point: an implementer can tell an unfinished spec from a finished one before starting.
+A spec is complete when all eight hold across the spec and its explicitly named per-verb help.
+For a new verb, the spec supplies the caller facts until that help exists. Once shipped, replace
+repeated caller facts with the help pointer; keep the requirements an implementer cannot read there.
 
 1. Every flag has a type and, if optional, a default.
 2. Every stdout shape is shown by an example, not only described.
 3. Every non-zero exit code is enumerated with the condition that produces it.
 4. Every error names its message, its stream, and its code.
 5. Every judging verb states its scope and its zero-scope behavior.
-6. No clause defers to a legacy script, another skill's prose, or the authoring session. Deferral is
-   the failure the whole document exists to prevent: the spec *is* the contract, so a spec that
-   points elsewhere has not derived one.
+6. Implementation requirements live in the spec. Caller facts may resolve through shipped help;
+   a legacy script, another skill's prose or the authoring session supplies neither.
 7. **Every value an example prints is derivable from the spec.** A verb that emits a computed value
    specifies the computation — every input to it, down to the tie-break and the rounding — or prints
    no example value. Where the value also depends on data outside the spec, the example names data a

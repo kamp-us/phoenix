@@ -1,14 +1,7 @@
 /**
- * The one exit table the `report` verbs allocate from.
- *
- * The shared band below is **re-exported from `../exit-codes.ts`, not defined here** — report
- * wrote these numbers first, which is exactly why it no longer owns them: a table one group authored
- * was a constitution every other group had to import secondhand, and this group's own verbs read
- * their shared seats through the same registry everyone else does. What remains here is the group's
- * private band and its reasoning.
- *
- * `0`, `1` and `127` are the interface convention's reserved codes (see `../verb.ts`); everything
- * re-exported here is `3` and up, the band a verb owns for outcomes it PROVED.
+ * Exit allocations for `report`; caller semantics are in `./command.ts` help.
+ * Shared meanings are re-exported from `../exit-codes.ts`. They no longer belong to report,
+ * so every group imports the registry directly instead of taking a secondhand copy.
  */
 
 export {
@@ -33,5 +26,4 @@ export {
  * is not reserved; the alignment check is what keeps a later group off these two.
  */
 export const QUEUE_UNREADABLE = 27;
-/** The search index could not be read, so the outcome is UNKNOWN. `report dedup` only. */
 export const SEARCH_UNREADABLE = 28;

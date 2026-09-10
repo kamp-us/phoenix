@@ -1,14 +1,7 @@
 /**
  * `ship reconcile` — the bounded post-enqueue watch.
  *
- * All four answers are **proven answers at exit 0**, and `ejected` is one of them. That is the
- * fix stated in the type: v1's healthy path exited 1 off a trailing conditional and its loop
- * predicate could not see the ejection marker, so no loop shape around this verb can launder an
- * ejection into a success or a crash.
- *
- * The vocabulary is honest by contract: `unresolved` means still-queued at the horizon — neither a
- * landing nor a failure — and "auto-merges on green" is not in it. `parked` means the arm
- * never entered a queue on a queue-governed base: the enqueue did not take effect.
+ * See the reconcile help in ./command.ts for the watch outcomes.
  *
  * A poll that cannot read classifies `pending`. A miss can only keep polling; it can never mint
  * `landed` or `ejected`, which is the fail-safe direction.

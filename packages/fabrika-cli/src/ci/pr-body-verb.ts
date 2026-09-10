@@ -1,13 +1,6 @@
 /**
- * `ci pr-body` — repair the standing Release PR body a commit subject's literal HTML tag poisons.
- *
- * Runs in the release workflow before release-please reads its own PR back. The output
- * contract is empty-means-no-work: the repaired body lands on stdout **only when a stray tag had
- * to be neutralized**, so the caller writes back exactly when there is something to write.
- *
- * A completed read exits 0 whether it repaired anything or not — this is a repair, not a gate, and
- * the release run it protects must not go red because the body was already clean. An unreadable
- * pipe is a different answer from an empty one and never collapses into it.
+ * `ci pr-body` repairs the standing Release PR body before release-please reads it.
+ * See `ci pr-body --help` for the output and exit behavior.
  */
 
 import {Effect} from "effect";

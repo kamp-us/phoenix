@@ -4,8 +4,7 @@
  * <!-- anchor: READ-NEVER-REFUSES-ON-CONTENT --> **This verb never refuses on marker content.** A
  * malformed marker is data: a `disregarded` row at exit `0`, never a refusal. Refusing would suppress
  * the whole emission history over one bad comment, and would let anyone with write access disable the
- * verb by posting one. Its only refusals are a source proven absent (`7`), one carrying neither label
- * (`12`), and a read that could not complete (`11`).
+ * verb by posting one. See `graduate read --help` for the refusal contract.
  *
  * <!-- anchor: MALFORMED-IS-NOT-UNGRADUATED --> A source whose only marker is malformed reads
  * `ungraduated` with a non-empty `disregarded`, and a caller must read both. That is knowingly

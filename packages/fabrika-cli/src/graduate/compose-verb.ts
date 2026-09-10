@@ -1,13 +1,7 @@
 /**
- * `graduate compose` — render the four-section spec body, owning `## Decisions` entirely.
- *
- * Its answer channel is machine but not JSON: stdout is the composed markdown, byte-exact, ready to
- * hand to `graduate emit --spec`. The bytes are *fed to another command* rather than grepped for a
- * state word, and the four-section document is the declared shape.
- *
- * Two refusals are here rather than in skill prose, so they hold even when the skill's own step is
- * skipped: a `blocked` trail is `13` and an `empty` one is `16`. A spec can never be composed over a
- * decision nobody made.
+ * `graduate compose` renders the spec body and owns `## Decisions` entirely.
+ * It checks trail readiness here so a skipped skill step cannot synthesize undecided work.
+ * See `graduate compose --help` for the output and refusal contract.
  */
 
 import {Effect} from "effect";

@@ -5,8 +5,7 @@
  * directory is the list, read on demand at the moment the question is asked. A committed roster is a
  * copy, and a copy rots.
  *
- * **The header has two states, not three.** `unknown` is a *composite* rendering — this verb refuses
- * instead, because a caller invoking `menu` directly reads the exit status.
+ * See `status menu --help` for results and exit codes.
  */
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";

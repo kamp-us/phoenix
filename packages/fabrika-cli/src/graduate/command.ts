@@ -8,9 +8,6 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
- *
- * There is no `--json` flag: `trail`, `emit` and `read` already answer with one JSON object, and
- * `compose`'s answer is the markdown body a caller hands straight to `emit --spec`.
  */
 
 import {Effect, type FileSystem, Option, Result} from "effect";

@@ -1,20 +1,7 @@
 /**
- * The one exit table both `decision` verbs allocate from, so a code means one thing across this
- * group whichever verb produced it.
- *
- * The overlap with `report` is **re-exported, never re-typed** — the discipline `grill/codes.ts` and
- * `build/codes.ts` state in full: an aligning group imports the base's constant, so a drift is
- * unrepresentable rather than merely detectable. This group shares five seats and adds one of its
- * own for the fact neither `report` nor any other group proves.
- *
- * Four of the base's seats are deliberately left empty rather than given a second meaning. No verb
- * here reads stdin (`3`) or classifies a label or a title (`10`) — the group writes exactly one
- * audience label pair and one marker whose every field is a digest, a URL or a stamp. And nothing it
- * composes carries free human text, so the two redaction seats (`5`, `6`) are unreachable too: the
- * marker's only caller-supplied field is a URL matched against the `#issuecomment-` grammar, which
- * admits no machine-local path and no bare `@` reference.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for `decision`; caller semantics are in `./command.ts` help.
+ * Shared meanings import `../exit-codes.ts`. Unused shared codes stay unallocated: this group
+ * accepts no stdin or arbitrary body text, and its marker URL grammar admits no local path.
  */
 
 import {
@@ -35,13 +22,9 @@ import {
  */
 export const CRITERIA_REQUIRED = SHARED_BAD_SECTIONS;
 
-/** Proven absent: the issue does not exist, is a pull request, or is not a `type:decision`. */
 export const NO_TARGET = SHARED_NO_TARGET;
-/** The write failed and may or may not have landed — re-read the issue before retrying. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed and does not read back as what was sent. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A precondition could not be read — the roster, the comments, the invoking account. Never a state. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**

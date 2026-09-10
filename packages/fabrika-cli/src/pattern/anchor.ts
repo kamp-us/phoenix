@@ -149,14 +149,8 @@ export const resolveDeclarations = (
 	});
 
 /**
- * The outcome, by the contract's precedence: `moved`, then `malformed`, then `unpinned`, then
- * `matched`, then `unanchored`.
- *
- * **`malformed` does not fold into `unpinned`.** They ask opposite things of a caller: `unpinned`
- * says this repo no longer carries the dependency, which is a question about whether the doc still
- * applies at all; `malformed` says the anchor line is mistyped, which is a one-line repair. And
- * `unanchored` fires only when the doc carries no claiming line at all — not merely when none
- * parsed, which is what keeps a near miss from reading as clean.
+ * Resolve the anchor result. For precedence and the distinction between malformed and unpinned,
+ * see `claude-plugins/fabrika/skills/write-pattern/contract.md`, "pattern anchor".
  */
 export const anchorOutcome = (declarations: ReadonlyArray<Declaration>): AnchorOutcome => {
 	if (declarations.length === 0) return "unanchored";
