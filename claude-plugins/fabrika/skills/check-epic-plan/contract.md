@@ -83,7 +83,8 @@ as the sibling contracts do):
   `build`'s picker question, and still open there. This gate makes children *eligible*; it computes
   no second answer to *pickable*. This is also why `build`'s `16 BLOCKED` seat is unreachable here —
   blocked-ness reaches this gate only as the dependency-shaped defects `DEP_CYCLE` /
-  `DANGLING_DEP` / `UNENFORCED_DEP` / `ORPHAN_CHILD`, never as a per-child readiness verdict. The
+  `DANGLING_DEP` / `UNENFORCED_DEP` / `DROPPED_EPIC_BLOCKER` / `ORPHAN_CHILD`, never as a per-child
+  readiness verdict. The
   claim at step 1 is unreachable for `16` too, and by implementation rather than by convention:
   `build claim`'s blockedness gate binds a build-purpose claim only, so a `gate` claim reads no
   edges at all. Before the founder ruling that scoped it, this paragraph and `claim-verb.ts`
@@ -91,6 +92,10 @@ as the sibling contracts do):
   refuse on `16`.
   `UNENFORCED_DEP` reads the `blocked_by` graph and still is not that verdict: it asks whether the
   graph *carries* the edge the plan states, never whether the blocker behind it is closed.
+  `DROPPED_EPIC_BLOCKER` does read a blocker's state, and is still not that verdict either: it reads
+  the **epic's** blockers to ask whether the plan wrote them onto its children, and answers the same
+  way whether or not any child could start today. Fencing a child is the child's own build claim's,
+  off the edge this defect makes sure the plan authored.
 - **An epic-body writer.** This gate never edits an issue body. The planner owns splicing, with its
   round-trip scars.
 - **A gate-was-never-run detector.** That question is lane-scoped; a verb here would answer for one
@@ -101,7 +106,7 @@ as the sibling contracts do):
 | Verb | Purpose | Split test |
 |---|---|---|
 | `plan read` | fetch the epic and its children, parse the ledger, print it as one object | fetch + registered parses — no judgment; *what the plan is worth* stays in the skill |
-| `plan check` | the deterministic floor: the fourteen hard defect types over the scanned child set | a total function from the ledger to a sorted defect list; the whole pass/fail decision, checkable by construction |
+| `plan check` | the deterministic floor: the fifteen hard defect types over the scanned child set | a total function from the ledger to a sorted defect list; the whole pass/fail decision, checkable by construction |
 | `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
 | `plan approve` | post the approval marker on the epic, bound to a scope digest the verb derives itself, and read it back | an ACL-checked guarded write with a read-back — no judgment; **no `--digest` flag exists**, because an approval whose scope its caller supplies attests whatever the caller pleased |
@@ -169,7 +174,7 @@ and the same `4`. Leading keyword only, from the set the repo's `containmentVoca
 plus the reserved `none`. Anything unrecognised reads as unset, which `MISSING_CONTAINMENT` treats
 identically to `none`; only a declared value satisfies it.
 
-## The floor — fourteen defect types
+## The floor — fifteen defect types
 
 `plan check` derives a sorted `Defect[]` over this closed enum. The order below is the emission
 order and the primary sort key; the secondary key is the lowest ref the defect names. Each defect
@@ -182,21 +187,22 @@ prose — the templates are the third column.
 | 2 | `DEP_CYCLE` | the topology's edges contain a cycle, walked transitively; reported as the sorted member set, deduped | `cycle: #<a> → #<b> → #<a>` |
 | 3 | `DANGLING_DEP` | a referenced ref is neither the epic, nor a child, nor an issue **proven present** by a 404-discriminating probe | `#<n> is referenced but is not a child and is proven absent` |
 | 4 | `UNENFORCED_DEP` | the topology requires an edge (a `requires:` row, else the phase boundary) that the dependent's native `blocked_by` list does not carry; a prerequisite proven absent is `DANGLING_DEP`'s instead | `#<n> waits on #<m> in prose with no blocked_by edge` |
-| 5 | `ORPHAN_CHILD` | the deps section parsed, and a linked child appears in no phase line and no `requires:` line | `#<n> appears in no phase or requires line` |
-| 6 | `MISSING_STORIES_SECTION` | the epic body declares zero user stories | `the epic declares no user stories` |
-| 7 | `UNCOVERED_STORY` | a story the epic declares that no child claims | `story <k> is claimed by no child` |
-| 8 | `ZERO_AC` | a child's acceptance-criteria read is not `Found`, or is `Found` with zero criteria | `acceptance criteria read as <absent\|malformed\|empty>` |
-| 9 | `MISSING_STORY` | the epic declares stories and the child's `**Stories:**` line is absent or non-conforming | `no **Stories:** line` / `**Stories:** value does not conform: "<value>"` |
-| 10 | `MISSING_LABEL` | a child lacks a `type:` label, a `status:` label, or one of `p0` / `p1` / `p2` | `missing a <type:\|status:\|priority> label` |
-| 11 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child carries a type the repo's `containmentVocabulary` asks, and its containment is off that vocabulary's values | `<asked type> with containment <keyword\|unset>` |
-| 12 | `NEEDS_TRIAGE_LABEL` | a child still carries `status:needs-triage` | `still carries status:needs-triage` |
-| 13 | `UNVERIFIABLE_ASSIGNEE` | the child payload's `assignees` key was **not observed** — an unread field is UNKNOWN, never "unassigned is fine" | `the assignees field was not observed` |
-| 14 | `HELD_CHILD_UNASSIGNED` | a child carries `ready-for:human` and its observed assignee list is empty | `ready-for:human with an empty assignee slot` |
+| 5 | `DROPPED_EPIC_BLOCKER` | the deps section parsed, and a child's refs do not name a target the **epic's own** `blocked_by` list carries still open; a target that is the epic or one of its children is the plan's own sequencing and is not carried down | `#<n> does not require #<m>, an open blocker of #<e>` |
+| 6 | `ORPHAN_CHILD` | the deps section parsed, and a linked child appears in no phase line and no `requires:` line | `#<n> appears in no phase or requires line` |
+| 7 | `MISSING_STORIES_SECTION` | the epic body declares zero user stories | `the epic declares no user stories` |
+| 8 | `UNCOVERED_STORY` | a story the epic declares that no child claims | `story <k> is claimed by no child` |
+| 9 | `ZERO_AC` | a child's acceptance-criteria read is not `Found`, or is `Found` with zero criteria | `acceptance criteria read as <absent\|malformed\|empty>` |
+| 10 | `MISSING_STORY` | the epic declares stories and the child's `**Stories:**` line is absent or non-conforming | `no **Stories:** line` / `**Stories:** value does not conform: "<value>"` |
+| 11 | `MISSING_LABEL` | a child lacks a `type:` label, a `status:` label, or one of `p0` / `p1` / `p2` | `missing a <type:\|status:\|priority> label` |
+| 12 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child carries a type the repo's `containmentVocabulary` asks, and its containment is off that vocabulary's values | `<asked type> with containment <keyword\|unset>` |
+| 13 | `NEEDS_TRIAGE_LABEL` | a child still carries `status:needs-triage` | `still carries status:needs-triage` |
+| 14 | `UNVERIFIABLE_ASSIGNEE` | the child payload's `assignees` key was **not observed** — an unread field is UNKNOWN, never "unassigned is fine" | `the assignees field was not observed` |
+| 15 | `HELD_CHILD_UNASSIGNED` | a child carries `ready-for:human` and its observed assignee list is empty | `ready-for:human with an empty assignee slot` |
 
 **Derive the enum from this table, never from a prose summary of it.** A summary drifts and this one
 has: v1's `review-plan/SKILL.md` still called this "the closed 7-type enum" after its own validator
-had outgrown the count. The live enum carries **fifteen names** and the table above lists
-**fourteen** — `ZERO_SCOPE` is the fifteenth, seated as exit `7` rather than as a defect, for the
+had outgrown the count. The live enum carries **sixteen names** and the table above lists
+**fifteen** — `ZERO_SCOPE` is the sixteenth, seated as exit `7` rather than as a defect, for the
 reason below.
 
 **Why `ZERO_SCOPE` is exit `7` and not defect zero.** v1 made a childless epic defect #1 and
@@ -934,7 +940,7 @@ The three hand-checks, which the presence tests above cannot perform:
    deliberate non-seat is `3`: `plan verdict`'s stdin is optional, so an empty stdin is a fact.
 2. **Every example value is derivable.** The digest from §The scope digest's serialization (and the
    four examples use four different literals, because they are taken over four different scopes);
-   the defect `type` and `detail` values from the fourteen-row table's third column; `result` and
+   the defect `type` and `detail` values from the fifteen-row table's third column; `result` and
    `terminal` from their closed sets; the marker line from `emit`'s template plus the fixed clause
    grammar; `containment`, `stories` and the edge orientation from §The ledger grammar. `comment`
    is server-assigned and named as such.

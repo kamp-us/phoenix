@@ -772,7 +772,7 @@ Gate an epic's plan before its children build — the read-and-verdict half of e
 | Verb | Answers |
 |---|---|
 | `plan read` | the epic, its children and its parsed ledger |
-| `plan check` | the deterministic floor over the fourteen hard defect types |
+| `plan check` | the deterministic floor over the fifteen hard defect types |
 | `plan flip` | every planned child flipped to triaged, re-gated first |
 | `plan verdict` | the plan gate's verdict, posted bound to the scope digest |
 

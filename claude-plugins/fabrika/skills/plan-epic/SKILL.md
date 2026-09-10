@@ -334,6 +334,21 @@ the line exactly like a sibling's number — the block keeps it, and step 8's `l
 the graph. There is no raw `gh api` write for a cross-epic edge, and an edge the block does not name
 is an edge the epic body does not show.
 
+**Read the epic's own blockers first, and put every open one on every child's line.** Nothing else
+carries that edge down: the epic takes its `gate` claim while its blockers are open, `plan flip`
+makes every child pickable, and each child's build claim reads that child's edges alone — so a
+blocker recorded only at epic level fences the epic and nobody else, and every child is buildable
+against a contract that has not landed. The ref goes in the same shape as any other prerequisite:
+
+```bash
+fabrika build eligible $epic_number
+```
+
+`eligible` means there is nothing to carry; `16` names every open blocker, and those are the refs.
+
+A blocker that is itself a child of this epic is not carried down — that edge is your own sequencing.
+The gate reds `DROPPED_EPIC_BLOCKER` on each child you dropped one from.
+
 The verb proves each out-of-epic target before it stages anything, so those refusals are about the
 target, not the shape: `24` says it is proven absent or is a pull-request number — the corpus names
 a blocking pull request by the issue its merge closes — and `11` says it could not be read at all.
