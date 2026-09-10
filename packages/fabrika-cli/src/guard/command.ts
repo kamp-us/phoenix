@@ -4,8 +4,11 @@
  * Unlike every other group here, this one nests: a guard is its own subcommand and `check` is its
  * leaf, so CI reads `node packages/fabrika-cli/src/bin.ts guard readme-guard check` — the shape
  * `governance-floor.yml` already uses, with the guard's name where a reader expects it. Each ported
- * guard appends one row to {@link guards} and one `<name>-verb.ts` beside this file; nothing else
+ * guard appends one row to {@link registry} and one `<name>-verb.ts` beside this file; nothing else
  * about the group changes, which is what keeps five batches of ports off each other's lines.
+ *
+ * A row carries the guard's command **and its local-tree membership** — whether `build check` runs
+ * it over the checked-out tree, and under which leaf. See `local-tree.ts`.
  *
  * The adapter and nothing else: it declares the flags, reads the two machine facts the verbs do not
  * derive — the working directory and the environment — runs the pure verb, and emits its outcome.
@@ -25,6 +28,7 @@ import {runFanoutGuard} from "./fanout-verb.ts";
 import {runHomingGuard} from "./homing-verb.ts";
 import {runI18nGuard} from "./i18n-literal-verb.ts";
 import {runLeakGuard} from "./leak-verb.ts";
+import {type LocalTreeGuard, localTree, membersOf, notLocalTree} from "./local-tree.ts";
 import {runNoGh} from "./no-gh-verb.ts";
 import {runPatchGuard} from "./patch-verb.ts";
 import {runPathFilterGuard} from "./path-filter-verb.ts";
@@ -696,31 +700,66 @@ const designInventoryGuard = Command.make("design-inventory").pipe(
 	),
 );
 
-/** The registered guards. One appended row per port; the order is the `--help` order. */
-const guards = [
-	readmeGuard,
-	skillLint,
-	homingGuard,
-	pitchGuard,
-	roadmapGuard,
-	unresolvedThreadsGuard,
-	settingsEnvGuard,
-	catalogGuard,
-	fanoutGuard,
-	patchGuard,
-	pointerGuard,
-	publishIsolationGuard,
-	leakGuard,
-	pathFilterGuard,
-	changeDetectGuard,
-	codeownersCpGuard,
-	decisionsIndexGuard,
-	designTokenGuard,
-	designInventoryGuard,
-	i18nGuard,
-	noGhGuard,
-	portabilityGuard,
+/**
+ * The registered guards, each row carrying its **local-tree membership** beside the registration.
+ *
+ * One appended row per port; the order is the `--help` order. The second field is the contract:
+ * `localTree` says `build check` runs this guard over the checked-out tree under the named leaf,
+ * `notLocalTree` says which clause of the predicate it fails. Membership is answered here and
+ * nowhere else, so adding a guard is where the question gets asked.
+ */
+const registry = [
+	localTree(readmeGuard, "check", (o) => runReadmeGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(skillLint, "check", (o) => runSkillLint({root: o.root, cwd: o.root, env: o.env})),
+	notLocalTree(homingGuard, "reads the live board"),
+	notLocalTree(pitchGuard, "reads the live board and resolves approval at the repository ACL"),
+	notLocalTree(roadmapGuard, "projects the repository's milestones off the API"),
+	notLocalTree(unresolvedThreadsGuard, "takes a pull-request number"),
+	localTree(settingsEnvGuard, "check", (o) =>
+		runSettingsEnvGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
+	localTree(catalogGuard, "check", (o) => runCatalogGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(fanoutGuard, "check", (o) => runFanoutGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(patchGuard, "check", (o) => runPatchGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(pointerGuard, "check", (o) => runPointerGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(publishIsolationGuard, "check", (o) =>
+		runPublishIsolationGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
+	notLocalTree(leakGuard, "takes the changed files as arguments"),
+	localTree(pathFilterGuard, "check", (o) =>
+		runPathFilterGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
+	localTree(changeDetectGuard, "check", (o) =>
+		runChangeDetectGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
+	localTree(codeownersCpGuard, "check", (o) =>
+		runCodeownersCpGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
+	localTree(decisionsIndexGuard, "validate", (o) =>
+		runDecisionsIndexGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
+	localTree(designTokenGuard, "check", (o) =>
+		runDesignTokenGuard({root: o.root, cwd: o.root, env: o.env, writeBaseline: false}),
+	),
+	localTree(designInventoryGuard, "check", (o) =>
+		runDesignInventoryCheck({root: o.root, cwd: o.root, env: o.env}),
+	),
+	localTree(i18nGuard, "check", (o) => runI18nGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(noGhGuard, "check", (o) => runNoGh({root: o.root, cwd: o.root, env: o.env})),
+	localTree(portabilityGuard, "check", (o) =>
+		runPortabilityGuard({root: o.root, cwd: o.root, env: o.env}),
+	),
 ];
+
+const guards = registry.map((row) => row.command);
+
+/**
+ * The set `build check` sweeps, derived from {@link registry} — never a list of its own.
+ *
+ * Exported for `build/command.ts`, which hands it to the check verb. The verb takes it as an
+ * operand rather than importing it, so a test names the guards it means.
+ */
+export const localTreeGuards: ReadonlyArray<LocalTreeGuard> = membersOf(registry);
 
 export const guardCommand = Command.make("guard").pipe(
 	Command.withSubcommands(guards),

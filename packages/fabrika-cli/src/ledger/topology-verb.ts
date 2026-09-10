@@ -8,13 +8,23 @@
  * Zero scope reds on `7` rather than `24`, because nothing was validated: an empty manifest means the
  * epic has no children at all, and rendering a topology over none would produce a block the gate reads
  * as an epic every one of whose children is orphaned. A refused scope is not an invalid topology.
+ *
+ * **The external half of the check is this verb's, because it is the boundary.** `checkTopology` is
+ * pure and hands back every prerequisite outside the run manifest — bar the epic's own number, which
+ * it refuses itself, since that target *does* exist and so would probe Present here; proving the rest
+ * name real issues is a read, and it happens here — before anything is staged, so a topology naming a target that is proven
+ * absent, unreadable, or a pull request leaves the run directory untouched. A pull request refuses
+ * because the decision corpus names a blocking pull request by the issue its merge closes, and the
+ * issues endpoint serves PRs too — so the 404 arm never fires for one and only this check catches it.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
 import {scannedLine} from "../build/target.ts";
 import {capAndCount} from "../evidence.ts";
+import {edgeTarget} from "../io/edges.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -34,6 +44,9 @@ const VERB = "ledger topology";
 /** Enough pairs to recognise the parse, not enough to reprint the caller's own stdin. */
 const EDGE_CAP = 5;
 
+/** Bounded like every other fan in this package. */
+const FAN_OUT = 8;
+
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
 	notAnEpic: (epic) =>
@@ -50,7 +63,10 @@ export const runTopology = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const authored = readAuthored(
@@ -65,7 +81,7 @@ export const runTopology = (
 
 		const ground = yield* openGround(MESSAGES, options);
 		if (ground._tag === "Refused") return ground.outcome;
-		const {epic, dir, notes} = ground;
+		const {repo, epic, dir, notes} = ground;
 
 		const run = yield* loadRun(MESSAGES, dir, notes);
 		if (run._tag === "Refused") return run.outcome;
@@ -110,6 +126,31 @@ export const runTopology = (
 			return refuse(TOPOLOGY_INVALID, `${VERB}: ${checked.reason}`, notes);
 		}
 
+		const probed = yield* Effect.forEach(
+			checked.external,
+			(number) => edgeTarget(repo, number).pipe(Effect.map((found) => [number, found] as const)),
+			{concurrency: FAN_OUT},
+		);
+		for (const [number, found] of probed) {
+			if (found._tag === "Absent") {
+				return refuse(
+					TOPOLOGY_INVALID,
+					`${VERB}: #${number} is named as an external prerequisite and is proven absent — no edge can point at it.`,
+					notes,
+				);
+			}
+			if (found._tag === "Unknown") {
+				return refuse(PRECONDITION_UNKNOWN, MESSAGES.unreadable(`#${number}`, found.reason), notes);
+			}
+			if (found.value.pullRequest) {
+				return refuse(
+					TOPOLOGY_INVALID,
+					`${VERB}: #${number} is named as an external prerequisite and is a pull request — a blocking pull request is named by the issue its merge closes.`,
+					notes,
+				);
+			}
+		}
+
 		const failed = yield* stage(topologyPath(dir), checked.block);
 		if (failed !== null) {
 			return refuse(PRECONDITION_UNKNOWN, MESSAGES.unreadable(topologyPath(dir), failed), notes);
@@ -123,6 +164,7 @@ export const runTopology = (
 				phases: checked.phases,
 				children: lines.length,
 				edges: capAndCount(checked.edges, EDGE_CAP),
+				external: checked.external.length,
 				bytes: new TextEncoder().encode(checked.block).length,
 			}),
 			[...notes, scannedLine(VERB, manifest.value.length, "recorded child")],

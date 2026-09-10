@@ -37,8 +37,7 @@ import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
-import {contentDigestAt} from "../review/content-binding.ts";
-import {bindHead} from "../review/head.ts";
+import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -379,26 +378,19 @@ export const runGate = (
 			return {name, winner: inForce(pool, bound)};
 		});
 
-		// The head digest is read ONLY when a content-bound claim has already failed the head test,
-		// which is the whole cost story: the common path — every claim at this head — never touches
-		// git. It also makes the read non-regressive. A checkout that cannot answer leaves
-		// `headDigest` null, `bindToContent` says `Unbindable`, and the namespace resolves `stale` —
-		// the same block a verdict with no content binding gets, so a git failure can only refuse.
-		const contested = winners.some(
-			({winner}) => winner !== null && !prefixMatch(winner.sha, bound) && winner.content !== null,
+		// One derivation with `build verdicts` (`../review/head-content.ts`), so the merge gate and the
+		// repair loop cannot answer the same staleness question differently.
+		const headContent = yield* headContentFor(
+			VERB,
+			repo,
+			pr,
+			pull,
+			options.sha,
+			winners.flatMap(({winner}) => (winner === null ? [] : [winner])),
+			bound,
 		);
-		let headDigest: string | null = null;
-		if (contested) {
-			const head = yield* bindHead(VERB, repo, pr, pull, options.sha);
-			const digest =
-				head._tag === "Bound" ? yield* contentDigestAt(head.head.mergeBase, head.head.sha) : null;
-			if (digest !== null && digest._tag === "Ok") headDigest = digest.value;
-			else {
-				diagnostics.push(
-					`${VERB}: a verdict at another head binds content, but this head's digest could not be read — every such namespace resolves stale.`,
-				);
-			}
-		}
+		const headDigest = headContent.digest;
+		diagnostics.push(...headContent.diagnostics);
 
 		const verdicts: NamespaceVerdict[] = winners.map(({name, winner}) => {
 			if (winner === null) return {name, state: "absent", carrier: "-", commentId: null};

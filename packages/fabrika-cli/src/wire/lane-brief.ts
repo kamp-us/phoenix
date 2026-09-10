@@ -27,11 +27,13 @@
  * **`## Ground` carries URLs, git refs and no content.** A brief that summarised an issue would hand
  * the shell a stale contract to work from, and the shell has verbs that read the live one.
  *
- * Ground comes in four shapes because an epic run has one branch and one PR: a child's
+ * Ground comes in five shapes because an epic run has one branch and one PR: a child's
  * states have no PR at all — they build in a worktree, and their review judges a commit range the
  * driver's tree resolved — the epic's tail has that one PR plus the epic issue whose children's
- * disclosures its review reads, and every other state has one PR to read. {@link LaneGround} is
- * that union, so a brief carrying both a PR and an epic branch is not a value anyone can construct.
+ * disclosures its review reads, its repair round has both of those plus the assembly branch the PR's
+ * head is, and every other state has one PR to read. {@link LaneGround} is that union, so a brief
+ * carrying an epic branch under a state that may not stand on one is not a value anyone can
+ * construct.
  */
 
 import type {CommitRange} from "../io/git.ts";
@@ -168,15 +170,24 @@ export const shellState = (raw: string): ShellState | null => {
  *
  * `Pull` is a single-issue lane's state — one PR to read, `null` only on `build`, where
  * construction has none yet. `Tail` is an epic lane's tail: the run's one PR, plus the epic issue
- * whose children's `build-deviations` comments the tail review reads. `Epic` is a child's `build`:
- * the epic issue, the assembly branch its worktree is cut from, and no PR, because a child never
- * opens one. `EpicRange` is a child's `review`, which is that same ground plus the resolved range
- * to judge — two tags rather than one optional field, so a review brief with no range is a value
- * nobody can construct, and a `build` brief can never carry a half-filled one.
+ * whose children's `build-deviations` comments the tail review reads. `TailRepair` is that same tail
+ * at `build`, which the review's FAIL retries into: the PR again, plus the assembly branch its head
+ * is, because a repair aimed at a branch the brief did not name is a repair in the wrong tree.
+ * `Epic` is a child's `build`: the epic issue, the assembly branch its worktree is cut from, and no
+ * PR, because a child never opens one. `EpicRange` is a child's `review`, which is that same ground
+ * plus the resolved range to judge — separate tags rather than optional fields, so a review brief
+ * with no range is a value nobody can construct, and a `build` brief can never carry a half-filled
+ * one.
  */
 export type LaneGround =
 	| {readonly _tag: "Pull"; readonly pr: ArtifactUrl | null}
 	| {readonly _tag: "Tail"; readonly pr: ArtifactUrl; readonly epic: ArtifactUrl}
+	| {
+			readonly _tag: "TailRepair";
+			readonly pr: ArtifactUrl;
+			readonly epic: ArtifactUrl;
+			readonly branch: GitRef;
+	  }
 	| {readonly _tag: "Epic"; readonly epic: ArtifactUrl; readonly branch: GitRef}
 	| {
 			readonly _tag: "EpicRange";
@@ -257,6 +268,24 @@ closing references name. The tail review reads every one of them through
 \`node <fabrika> wire read --format build-deviations\` before forming its
 verdict.`;
 
+/**
+ * The rules an epic run's tail adds at `build` — the repair round the tail review's FAIL retries
+ * into, where the ground is `TailRepair`.
+ *
+ * It answers the one question a tail repair cannot answer from the ground alone: **which shell moves
+ * the assembly branch**. The builder's worktree is its own, and the assembly worktree is the
+ * driver's, so the merge that puts trunk back under a stale assembly is not reachable from here at
+ * all — a repair that tried it would either fail or move a branch nobody briefed it on.
+ */
+export const EPIC_TAIL_REPAIR_RULES = `This lane is one epic run at its tail, and this is its repair round: \`pr\` is the run's one
+pull request and \`branch\` is the assembly branch that PR's head sits on. Repair the assembly's
+content in your own worktree on that branch, and push nothing.
+The assembly branch is moved by the lane driver alone, from the assembly worktree \`lane assembly\`
+places — that is the one tree that owns the branch, and no spawned shell can reach it. So a stale
+trunk is not yours to resolve: name it in your \`build note\` and the driver runs \`lane refresh\`,
+which merges \`main\` into \`epic/<lane>\`. Merge, never rebase — each landed child's range verdict is
+bound to the commits it names, and a rebase rewrites every one of them.`;
+
 /** The section headings this format admits, in the order it emits them. */
 export const SECTIONS = ["Task", "Ground", "Rules"] as const;
 
@@ -296,6 +325,13 @@ const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]
 			["epic", brief.ground.epic],
 		];
 	}
+	if (brief.ground._tag === "TailRepair") {
+		return [
+			["pr", brief.ground.pr],
+			["epic", brief.ground.epic],
+			["branch", brief.ground.branch],
+		];
+	}
 	const {epic, branch} = brief.ground;
 	return [
 		["epic", epic],
@@ -308,7 +344,9 @@ const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]
 
 const rulesFor = (ground: LaneGround): string => {
 	if (ground._tag === "Pull") return RULES;
-	return ground._tag === "Tail" ? `${RULES}\n${EPIC_TAIL_RULES}` : `${RULES}\n${EPIC_RULES}`;
+	if (ground._tag === "Tail") return `${RULES}\n${EPIC_TAIL_RULES}`;
+	if (ground._tag === "TailRepair") return `${RULES}\n${EPIC_TAIL_REPAIR_RULES}`;
+	return `${RULES}\n${EPIC_RULES}`;
 };
 
 export const emit = (brief: LaneBrief): string =>
@@ -457,7 +495,12 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 		}
 		return {_tag: "Ground", ground: {_tag: "Tail", pr, epic}};
 	}
-	if (prRaw !== "") {
+	// A branch AND a PR is the tail's repair round, and it is the only ground that carries both: the
+	// PR's head *is* that branch. Every other state on an epic lane is a child, which has no PR — and
+	// the tail region seats `build` alone, so `build:ui` here is a child state like any other. The
+	// refusal stands ahead of the branch parse so a child brief carrying a stray `pr` reds on the `pr`
+	// it should not have, not on the branch it happens to be missing.
+	if (prRaw !== "" && state !== "build") {
 		return bad(
 			"an epic lane's child state has no PR — one run is one PR, merged at its tail",
 			"pr",
@@ -465,6 +508,13 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 	}
 	const branch = gitRef(branchRaw);
 	if (branch === null) return bad(`"${branchRaw}" is not a branch name`, "branch");
+	if (prRaw !== "") {
+		const pr = artifactUrl(prRaw);
+		if (pr === null) return bad(`"${prRaw}" is not a PR URL`, "pr");
+		return rangeRaw === ""
+			? {_tag: "Ground", ground: {_tag: "TailRepair", pr, epic, branch}}
+			: bad(`a "${state}" brief names a range, and nothing has landed for one to judge`, "range");
+	}
 	if (state === "ship") {
 		return bad("a child state never ships — an epic run merges once, at its tail", "state");
 	}

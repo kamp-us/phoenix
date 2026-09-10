@@ -239,12 +239,38 @@ describe("issueRefsOf", () => {
 		expect(issueRefsOf("Closes #6642. Closes #6629.\n\nPart of #6000")).toEqual({
 			kind: "fixes",
 			numbers: [6642, 6629],
+			referenced: [6642, 6629, 6000],
 		});
 		expect(issueRefsOf("does things\n\nPart of #5434\nPart of #5437\n")).toEqual({
 			kind: "part-of",
 			numbers: [5434, 5437],
+			referenced: [5434, 5437],
 		});
-		expect(issueRefsOf("see #4000")).toEqual({kind: "none", numbers: []});
+		expect(issueRefsOf("see #4000")).toEqual({kind: "none", numbers: [], referenced: []});
+	});
+
+	/**
+	 * The epic tail's body, which the precedence alone cannot represent: `numbers` is the six closing
+	 * children, and the epic reaches a nominator only through `referenced`.
+	 */
+	it("names every issue of either kind in `referenced`, deduplicated", () => {
+		const tail = [
+			"## About this epic",
+			"Closes #6642",
+			"Closes #6643",
+			"Closes #6648",
+			"Part of #7497",
+		].join("\n\n");
+		expect(issueRefsOf(tail)).toEqual({
+			kind: "fixes",
+			numbers: [6642, 6643, 6648],
+			referenced: [6642, 6643, 6648, 7497],
+		});
+		expect(issueRefsOf("Closes #12\nPart of #12")).toEqual({
+			kind: "fixes",
+			numbers: [12],
+			referenced: [12],
+		});
 	});
 
 	it("answers the scalar reader's kind and first number on every single-reference body", () => {

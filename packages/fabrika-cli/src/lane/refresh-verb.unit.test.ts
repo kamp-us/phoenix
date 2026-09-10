@@ -19,7 +19,7 @@ import {
 	PROOF_ABSENT,
 } from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
-import {REFRESH_PARK_CAUSE, runRefresh} from "./refresh-verb.ts";
+import {REFRESH_PARK_CAUSE, type RefreshGate, runRefresh} from "./refresh-verb.ts";
 
 const ROOT = ".fabrika/lanes";
 const EPIC = 8810;
@@ -56,13 +56,19 @@ const CONSCRIPTED = listing([MAIN, BRANCH]);
 
 const ON: Read<AssemblyRefreshSurface> = {
 	_tag: "Value",
-	value: {onReview: "on"},
+	value: {onReview: "on", onDispatch: "on"},
 	note: "`assemblyRefresh` as declared in .fabrika.jsonc",
 };
 const OFF: Read<AssemblyRefreshSurface> = {
 	_tag: "Value",
-	value: {onReview: "off"},
+	value: {onReview: "off", onDispatch: "off"},
 	note: "the shipped `assemblyRefresh`",
+};
+/** One arm declared on and the other left shipped — the gate must read the arm it was handed. */
+const REVIEW_ONLY: Read<AssemblyRefreshSurface> = {
+	_tag: "Value",
+	value: {onReview: "on", onDispatch: "off"},
+	note: "`assemblyRefresh` as declared in .fabrika.jsonc",
 };
 
 /**
@@ -83,7 +89,7 @@ const upToMerge = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	options: {readonly onReview?: boolean; readonly key?: Read<AssemblyRefreshSurface>} = {},
+	options: {readonly gate?: RefreshGate | null; readonly key?: Read<AssemblyRefreshSurface>} = {},
 ) => {
 	const shell = fakeShell(script);
 	return Effect.runPromise(
@@ -91,7 +97,7 @@ const run = (
 			runRefresh({
 				epic: EPIC,
 				base: BASE,
-				onReview: options.onReview ?? false,
+				gate: options.gate ?? null,
 				assemblyRefresh: options.key ?? ON,
 				root: ROOT,
 				lane: String(EPIC),
@@ -225,17 +231,24 @@ describe("runRefresh", () => {
 		expect(outcome.code).toBe(PROOF_ABSENT);
 	});
 
-	it("declines the automatic call under the shipped key, reading nothing at all", async () => {
-		const {outcome, calls} = await run([], {onReview: true, key: OFF});
+	it.each<RefreshGate>([
+		"onReview",
+		"onDispatch",
+	])("declines the %s call under the shipped key, reading nothing at all", async (gate) => {
+		const {outcome, calls} = await run([], {gate, key: OFF});
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe("REFRESH-VERDICT: DECLINED");
+		expect(outcome.stderr.join("\n")).toContain(`\`${gate}\` reads off`);
 		expect(calls).toEqual([]);
 	});
 
-	it("performs the automatic call under a repo that declared it on", async () => {
+	it.each<RefreshGate>([
+		"onReview",
+		"onDispatch",
+	])("performs the %s call under a repo that declared it on", async (gate) => {
 		const {outcome} = await run([...upToMerge(), [MERGE, okOut("")], [HEAD, okOut(AFTER)]], {
-			onReview: true,
+			gate,
 			key: ON,
 		});
 
@@ -243,9 +256,16 @@ describe("runRefresh", () => {
 		expect(outcome.stdout.trim().split("\n").at(-1)).toBe("REFRESH-VERDICT: MERGED");
 	});
 
+	it("reads the arm it was handed, not whichever one is on", async () => {
+		const {outcome, calls} = await run([], {gate: "onDispatch", key: REVIEW_ONLY});
+
+		expect(outcome.stdout.trim()).toBe("REFRESH-VERDICT: DECLINED");
+		expect(calls).toEqual([]);
+	});
+
 	it("is never gated when a driver calls it by hand, whatever the key reads", async () => {
 		const {outcome} = await run([...upToMerge(), [MERGE, okOut("")], [HEAD, okOut(AFTER)]], {
-			onReview: false,
+			gate: null,
 			key: OFF,
 		});
 
@@ -255,7 +275,7 @@ describe("runRefresh", () => {
 
 	it("refuses a malformed key as UNKNOWN rather than falling back to the shipped default", async () => {
 		const {outcome, calls} = await run([], {
-			onReview: true,
+			gate: "onReview",
 			key: {_tag: "Refused", reason: "`assemblyRefresh`'s `onReview` is not one of off, on"},
 		});
 

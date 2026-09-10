@@ -309,9 +309,20 @@ const appendCriterion = leafCommand(
 			Argument.withDescription("the linked issue receiving the criterion"),
 		),
 		pr: Flag.integer("pr").pipe(
+			Flag.optional,
 			Flag.withDescription(
-				"the PR whose review round produced the finding — half the provenance tag",
+				"the PR whose review round produced the finding — half the provenance tag; required unless --base/--tip name an epic child's range instead",
 			),
+		),
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"with --tip: the range <base>..<tip> the round was judged over, standing in for --pr on an epic child that has no PR; never combined with --pr",
+			),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
 		round: Flag.integer("round").pipe(
 			Flag.withDescription(
@@ -321,11 +332,13 @@ const appendCriterion = leafCommand(
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, pr, round, repo, json}) {
+	Effect.fn(function* ({issue, pr, base, tip, round, repo, json}) {
 		yield* emit(
 			yield* runAppendCriterion({
 				issue,
-				pr,
+				pr: Option.getOrNull(pr),
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
 				round,
 				repo: Option.getOrNull(repo),
 				json,
@@ -337,7 +350,7 @@ const appendCriterion = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append one reviewer-authored acceptance criterion."),
 	Command.withDescription(
-		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Example: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1",
+		"Append one reviewer-authored acceptance criterion from STDIN under four fences — ACL-gated fail-closed, append-only, provenance-tagged, frozen at the declared cap round. The round's subject is a PR (`--pr`) or, on an epic child that has none, the commit range it was judged over (`--base`/`--tip`); the two never combine, and the provenance tag names whichever was given — `pr:#<n>` or `range:<base>..<tip>`, the same spelling `lane prove` reads. Every fence runs identically on both. Prints `appended\\t<issue>\\t<rows-after>`, or `escalated-frozen\\t<issue>\\t<round>` at the freeze; both are proven answers at exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (issue absent or closed, or no conforming acceptance-criteria block), 8 (the PATCH or the escalation comment failed — UNKNOWN), 9 (read-back does not show the prior rows plus this one), 10 (no subject named, both named, a lone --base/--tip, or an end that is not a revision), 11 (a precondition read failed), 14 (token below write or the ACL lookup failed), 15 (the write is not provably the prior rows plus one — the append-only fence). Examples: printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1; printf 'a regression test covers qty > 1' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1",
 	),
 );
 

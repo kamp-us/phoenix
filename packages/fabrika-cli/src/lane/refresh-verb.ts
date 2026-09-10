@@ -3,7 +3,8 @@
  * a head the merge queue can take.
  *
  * Nothing else in this package touches trunk after the first cut. `lane assembly` fetches `origin`
- * and cuts `epic/<n>` off `origin/HEAD` once; a resume fetches nothing. So the branch drifts behind
+ * and cuts `epic/<n>` off `origin/HEAD` once; a resume fetches only to judge whether that branch is
+ * already contained in the trunk, and merges nothing. So the branch drifts behind
  * trunk with nothing to notice, the queue ejects the tail, and `lane integrate` then reds on what is
  * really staleness. `lane push` names "fetch and re-merge" as the remedy for its exit 29 and no verb
  * performed it — this is that verb.
@@ -13,13 +14,17 @@
  * `restore()` does — a branch that will not go back is UNKNOWN at {@link APPEND_UNKNOWN}, never the
  * clean {@link MERGE_CONFLICT} refusal, because it may still carry the merge no verdict admits.
  *
+ * Two callers reach it automatically — the tail's way into review, and `lane dispatch` before it
+ * cuts a child's worktree off the branch — and each is gated by its own `assemblyRefresh` arm
+ * ({@link RefreshGate}). A driver typing the verb passes no gate and is never declined.
+ *
  * Nothing is pushed here and no lane log is written: publishing the refreshed head is `lane push`'s
  * and recording the park is the driver's. On exit 0 the last stdout line is
  * `REFRESH-VERDICT: MERGED` or `REFRESH-VERDICT: CURRENT`, and the line above it the head.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import type {AssemblyRefreshSurface} from "../config/keys/assembly-refresh.ts";
+import {ASSEMBLY_REFRESH, type AssemblyRefreshSurface} from "../config/keys/assembly-refresh.ts";
 import type {Read} from "../config/read-key.ts";
 import {execCapture} from "../io/exec.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -43,18 +48,39 @@ const VERB = "fabrika lane refresh";
 /** The cause a conflict parks under — `lane report --cause`'s closed set, never composed here. */
 export const REFRESH_PARK_CAUSE = "assembly-conflict";
 
+/** The trunk every automatic call merges in, unless an adapter's caller named another `--base`. */
+export const DEFAULT_TRUNK_REF = "origin/main";
+
+/**
+ * Which automatic call this is — the `assemblyRefresh` sub-key that gates it, spelled as the key's
+ * own field name so the gate cannot be read off one arm and reported as the other.
+ *
+ * `null` is a driver typing the verb, which is never gated. A single field rather than one boolean
+ * per call site, because "this is both calls at once" is not a thing a caller can mean.
+ */
+export type RefreshGate = keyof AssemblyRefreshSurface;
+
+const DECLINED: Readonly<Record<RefreshGate, string>> = {
+	onReview: "--on-review",
+	onDispatch: "the pre-dispatch refresh inside `lane dispatch`",
+};
+
+const KEPT: Readonly<Record<RefreshGate, string>> = {
+	onReview: "the tail's path into review is the one it has today",
+	onDispatch: "a child shell is cut from exactly the branch it would have been cut from before",
+};
+
 export interface RefreshOptions extends LaneRef {
 	readonly epic: number;
-	/** The ref to merge in. Defaults to `origin/main` at the adapter, never guessed here. */
+	/** The ref to merge in. Defaults to {@link DEFAULT_TRUNK_REF} at the adapter, never guessed here. */
 	readonly base: string;
 	/**
-	 * Whether this is the automatic call the driver makes on the tail's way into review, rather than
-	 * a driver typing the verb.
+	 * Which automatic call this is, or `null` for a driver typing the verb.
 	 *
-	 * The automatic call is what `assemblyRefresh.onReview` gates; a hand call is never gated,
+	 * An automatic call is what the matching `assemblyRefresh` arm gates; a hand call is never gated,
 	 * because a driver that types the verb means it.
 	 */
-	readonly onReview: boolean;
+	readonly gate: RefreshGate | null;
 	/** The repo's declared `assemblyRefresh`, read off `.fabrika.jsonc` by the adapter. */
 	readonly assemblyRefresh: Read<AssemblyRefreshSurface>;
 }
@@ -136,12 +162,13 @@ export const runRefresh = (
 		if (options.assemblyRefresh._tag === "Refused") {
 			return refuse(
 				KEY_MALFORMED,
-				`${VERB}: ${options.assemblyRefresh.reason} — whether this repo refreshes its assembly branch on the way into review is UNKNOWN, so nothing was merged.`,
+				`${VERB}: ${options.assemblyRefresh.reason} — whether this repo refreshes its assembly branch is UNKNOWN, so nothing was merged.`,
 			);
 		}
-		if (options.onReview && options.assemblyRefresh.value.onReview === "off") {
+		const gate = options.gate;
+		if (gate !== null && options.assemblyRefresh.value[gate] === "off") {
 			return answer(`REFRESH-VERDICT: DECLINED\n`, [
-				`${VERB}: --on-review under ${options.assemblyRefresh.note}, which reads off — nothing was fetched, merged or read, so the tail's path into review is the one it has today. Call the verb without --on-review to refresh by hand.`,
+				`${VERB}: ${DECLINED[gate]} under ${options.assemblyRefresh.note}, whose \`${gate}\` reads off — nothing was fetched, merged or read, so ${KEPT[gate]}. Declare \`${ASSEMBLY_REFRESH}.${gate}: "on"\` to perform it, or call \`${VERB} ${options.epic}\` by hand, which is never gated.`,
 			]);
 		}
 

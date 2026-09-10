@@ -59,13 +59,19 @@ export const TYPES: ReadonlyArray<string> = [
 export {audienceLabel, typeLabel};
 
 /**
- * The type whose deliverable is a ledger of children rather than one pull request.
+ * The type whose deliverable is a ledger of children rather than one pull request — as a bare
+ * `--type` value, for the input-side reads that never see the label.
+ */
+export const EPIC_TYPE = "epic";
+
+/**
+ * The same type as the label a board carries.
  *
  * Three modules held their own copy of the string — `plan/load.ts`, `ledger/preconditions.ts` and
  * `build/scope-admission.ts` — the drift shape one derived constant closes. Derived from
- * {@link TYPES}, so the label and the vocabulary cannot disagree.
+ * {@link EPIC_TYPE}, so the bare value and the label cannot disagree.
  */
-export const EPIC_TYPE_LABEL = typeLabel("epic");
+export const EPIC_TYPE_LABEL = typeLabel(EPIC_TYPE);
 
 /** The default `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
 export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
@@ -158,6 +164,21 @@ const ownsIn = (
 };
 
 /**
+ * The audience facet's keep set — empty for an epic asked for the agent audience.
+ *
+ * `ready-for:agent` on an epic is `check-epic-plan`'s statement that the ledger's floor came back
+ * clean, and that gate is the flip's only owner; triage writing it too is the ambiguity the
+ * `triage apply` section of `claude-plugins/fabrika/skills/triage/contract.md` records.
+ *
+ * The facet still **owns** `ready-for:*` here, so re-triaging an epic that a gate run had already
+ * flipped strips the stamp rather than preserving it — re-classifying an epic sends it back through
+ * the gate, which is the same ownership rule read the other way. `--ready-for human` is untouched on
+ * every type: that is triage parking the epic for a person, a claim the gate never makes.
+ */
+export const audienceKeep = (type: string, readyFor: string): ReadonlyArray<string> =>
+	type === EPIC_TYPE && readyFor === "agent" ? [] : [audienceLabel(readyFor)];
+
+/**
  * The facet table for the triaged transition.
  *
  * The containment invariant, stated where a future editor adding a facet will read it: **the set of
@@ -186,7 +207,7 @@ export const triagedFacets = (
 	{
 		name: "audience",
 		owns: ownsIn(resolved.facets, "audience"),
-		keep: [audienceLabel(input.readyFor)],
+		keep: audienceKeep(input.type, input.readyFor),
 	},
 	{
 		name: "lane",

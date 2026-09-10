@@ -2,10 +2,12 @@
  * The pure epic-machine emitter — one epic body plus its child links in, one `workflow.json` text
  * out, byte-deterministic.
  *
- * **No second grammar and no second cycle walk.** The topology is read through the shipped
- * `build/dependencies.ts` parser — the same reader `build check --surface plan` validates with,
- * while `build eligible` gates on the native `blocked_by` graph instead — and the cycle check
- * is `ledger/topology-doc.ts`'s `findCycle` over the same union graph (declared `requires` edges
+ * **No second grammar and no second cycle walk.** The topology is read through
+ * `ledger/topology-doc.ts`'s `readDeclared`, which parses with the shipped `build/dependencies.ts`
+ * parser — the same reader `build check --surface plan` validates with, while `build eligible` gates
+ * on the native `blocked_by` graph instead — restricts what it read to the epic's live children, and
+ * carries the `dropForeign` axis `ledger retopology` reads too; the cycle check is that same
+ * module's `findCycle` over the union graph (declared `requires` edges
  * plus the edges the phase order implies). What this module adds is only the machine rendering:
  * one region per child, phases sequenced by `onDone`, parallel within a phase, and one epic tail
  * phase after the last of them.
@@ -13,9 +15,9 @@
  * **One epic run is one branch and one PR**. A child's region is the local loop only —
  * `queued → build → review → integrate`, the integrate step merging the child's range into the epic
  * branch — and the merge to `main` lives once, in the tail phase's single epic-level region
- * (`review → ship → shipped`). The tail is a *phase* rather than a bare state because `machine.ts`
- * reads the workflow's two terminals off the last phase's `onDone` pair; shaped this way the
- * compiler needs no change at all.
+ * (`review → ship → shipped`, plus the `build` repair cell a failed tail review retries into). The
+ * tail is a *phase* rather than a bare state because `machine.ts` reads the workflow's two terminals
+ * off the last phase's `onDone` pair; shaped this way the compiler needs no change at all.
  *
  * Determinism is by construction: phases ascend, children within a phase ascend, every object's
  * keys are inserted in one fixed order, and the serialization is a single `JSON.stringify` — the
@@ -29,8 +31,7 @@
  * it was before the axis existed. The machine is fixed at emission, so the flag reaches no lane
  * already on disk.
  */
-import {type Ref, readTopology} from "../build/dependencies.ts";
-import {type DeclaredLine, findCycle} from "../ledger/topology-doc.ts";
+import {findCycle, readDeclared} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 
@@ -41,12 +42,16 @@ export type EmitResult =
 			/** The child phases the topology declares. The machine also carries the epic tail phase. */
 			readonly phases: number;
 			readonly children: number;
+			/** The refs `dropForeign` took out of the topology, in the order the block names them. */
+			readonly dropped: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "NoTopology"}
 	| {readonly _tag: "Unparseable"; readonly line: number; readonly text: string}
 	| {readonly _tag: "Foreign"; readonly ref: string}
 	| {readonly _tag: "Duplicate"; readonly child: number}
 	| {readonly _tag: "Unplaced"; readonly child: number}
+	/** `dropForeign` emptied the topology — every ref it placed is a non-child. */
+	| {readonly _tag: "Emptied"; readonly dropped: ReadonlyArray<string>}
 	| {readonly _tag: "Cycle"; readonly path: ReadonlyArray<number>};
 
 /**
@@ -162,12 +167,12 @@ const region = (
 });
 
 /**
- * The epic's own region — the tail phase's single task: review the one PR, then merge it once.
+ * The epic's own region — the tail phase's single task: review the one PR, then merge it once, with
+ * one `build` cell behind the review for the repair a failed tail owes.
  *
  * `ship` carries the same guarded FAIL, because a PR can be re-reviewed at a rewritten head while
- * the lane sits there and a park clear is exactly that path. Its retry arm is `review` for
- * the same reason the review edge's is: the repair round happens outside the machine, so the next
- * thing the lane can record is another verdict.
+ * the lane sits there and a park clear is exactly that path. Its retry arm stays `review`: a shipper
+ * fails on the PR's own mergeability, which the next verdict over the same head answers.
  *
  * `ship:queued` is the tail's wait cell: the tail is the one place an epic run meets a
  * merge queue, so it is the one region that needs it — a child region has no `ship` and reaches no
@@ -180,20 +185,24 @@ const region = (
  *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
- * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
- * next verdict is another review. The fallthrough is the same `human:budget-spent` a child's is: an
- * epic review that spent its budget is a park its driver resumes, not the end of the run, and one
- * leaf for one fact means one route to read it by.
+ * `complete`. Its retry arm is `build` — the tail's own repair cell, carrying the child region's two
+ * edges — because the facts a tail review fails on (a trunk conflict against a moved `main`, a head
+ * with no CI) are a builder's to fix and no reviewer can change them: aimed back at `review` the arm
+ * re-dispatched the shell that had just produced the verdict, spent the round and reached the park
+ * anyway (the 2026-08-20 amendment to the epic-machine decision record). The fallthrough is the same `human:budget-spent` a
+ * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
+ * run, and one leaf for one fact means one route to read it by.
  */
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
 	states: {
+		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
 		review: {
 			on: {
 				[`${ns}.PASS`]: "ship",
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
-					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
 			},
@@ -254,73 +263,53 @@ const epicTaskId = (epic: number): string => `epic_${epic}`;
 const ascending = (values: Iterable<number>): ReadonlyArray<number> =>
 	[...values].sort((a, b) => a - b);
 
+export interface EmitAxes {
+	/** `machineryLaps.onEmit` — whether the emitted machine carries the machinery `LAP` arms. */
+	readonly machinery?: boolean;
+	/**
+	 * Drop every topology ref the live child list does not name instead of refusing `Foreign`.
+	 *
+	 * Opt-in rather than the default, because the two readings of a foreign ref take opposite
+	 * repairs: a descope means the board is right and the body is stale, a typo means the body meant
+	 * a child and named the wrong number, and only the operator knows which they are looking at.
+	 */
+	readonly dropForeign?: boolean;
+}
+
 /** Emit the epic's lane machine from its body's `## Dependencies` block and its child links. */
 export const emitMachine = (
 	epic: number,
 	body: string,
 	children: ReadonlyArray<SubIssueLink>,
-	machinery = false,
+	axes: EmitAxes = {},
 ): EmitResult => {
+	const machinery = axes.machinery === true;
 	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
 	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
 	// a malformed epic record and dead-end the boot.
 	if (children.length === 0) return {_tag: "NoTopology"};
 
-	const topo = readTopology(body);
-	if (topo._tag === "Absent") return {_tag: "NoTopology"};
-	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};
-
 	const initials = new Map(children.map((link) => [link.number, initialFor(link)]));
-	const known = new Set(initials.keys());
-	// Every phase member is checked against `known` below, so the lookup holds by construction; the
-	// throw is the invariant's enforcement site — a defaulted initial would mis-seat a child.
+	const declared = readDeclared(body, new Set(initials.keys()), axes.dropForeign === true);
+	if (declared._tag === "Absent") return {_tag: "NoTopology"};
+	if (declared._tag !== "Declared") return declared;
+
+	// Every line's child came out of the child set `readDeclared` restricted to, so the lookup holds
+	// by construction; the throw is the invariant's enforcement site — a defaulted initial would
+	// mis-seat a child.
 	const initialOf = (child: number): "queued" | "landed" | "frozen" => {
 		const initial = initials.get(child);
 		if (initial === undefined) throw new Error(`no child link for #${child}`);
 		return initial;
 	};
-	const issueNumbers = (refs: ReadonlyArray<Ref>): number[] =>
-		refs.flatMap((ref) => (ref._tag === "Issue" ? [ref.number] : []));
-	const phases = new Map<number, number[]>();
-	const requires = new Map<number, number[]>();
-	for (const edge of topo.edges) {
-		const refs = edge._tag === "Phase" ? edge.members : [edge.subject, ...edge.needs];
-		for (const ref of refs) {
-			if (ref._tag === "Local") return {_tag: "Foreign", ref: ref.id};
-			if (!known.has(ref.number)) return {_tag: "Foreign", ref: `#${ref.number}`};
-		}
-		if (edge._tag === "Phase") {
-			const members = issueNumbers(edge.members);
-			phases.set(edge.phase, [...(phases.get(edge.phase) ?? []), ...members]);
-			continue;
-		}
-		const [subject] = issueNumbers([edge.subject]);
-		if (subject === undefined) continue;
-		requires.set(subject, [...(requires.get(subject) ?? []), ...issueNumbers(edge.needs)]);
-	}
-	if (phases.size === 0) return {_tag: "NoTopology"};
 
-	const placed = new Map<number, number>();
-	for (const [phase, members] of phases) {
-		for (const child of members) {
-			if (placed.has(child)) return {_tag: "Duplicate", child};
-			placed.set(child, phase);
-		}
-	}
-	for (const [subject, needs] of requires) {
-		for (const child of [subject, ...needs]) {
-			if (!placed.has(child)) return {_tag: "Unplaced", child};
-		}
-	}
-
-	const lines: DeclaredLine[] = [...placed.entries()].map(([child, phase]) => ({
-		child,
-		phase,
-		requires: requires.get(child) ?? [],
-	}));
-	const cycle = findCycle(lines);
+	const cycle = findCycle(declared.lines);
 	if (cycle !== null) return {_tag: "Cycle", path: cycle};
 
+	const phases = new Map<number, number[]>();
+	for (const line of declared.lines) {
+		phases.set(line.phase, [...(phases.get(line.phase) ?? []), line.child]);
+	}
 	const order = ascending(phases.keys());
 	const phaseName = (phase: number): string => `phase${phase}`;
 	const context: Record<string, unknown> = {};
@@ -367,6 +356,7 @@ export const emitMachine = (
 		_tag: "Emitted",
 		text: `${JSON.stringify(doc, null, "\t")}\n`,
 		phases: order.length,
-		children: placed.size,
+		children: declared.lines.length,
+		dropped: declared.dropped,
 	};
 };

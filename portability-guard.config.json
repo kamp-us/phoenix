@@ -52,6 +52,10 @@
 		"packages/fabrika-cli/src/build/claim-verb.unit.test.ts": {
 			"ceiling": 3,
 			"why": "The three `--cites` values a claim is admitted on, bound to the same hosted citation grammar `parseCitation` pins; every other fixture URL in the file is either a placeholder host or an API endpoint the matcher does not reach. The pin itself is the portability defect, parked behind #8359."
+		},
+		"packages/fabrika-cli/src/build/resume-child-verb.unit.test.ts": {
+			"ceiling": 3,
+			"why": "The three `--cites` values `build resume-child` forwards to its claim step, bound to the same hosted citation grammar `parseCitation` pins in its own regex: one URL the run is admitted on, one naming another repository and one naming another issue. Those two bindings are what the fail-closed cases assert, and neither can be exercised by a URL the regex never reaches. Same class and same clearing edge as its two siblings above; the pin itself is the portability defect, parked behind #8359."
 		}
 	},
 	"unmigrated": {

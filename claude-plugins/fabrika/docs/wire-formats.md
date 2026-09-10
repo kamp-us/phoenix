@@ -113,7 +113,9 @@ Deviations` headings and refuses two as undecidable, so a stacked marker leaves 
 reading `malformed`; and because `wire read` judges bytes on stdin and cannot see which comment is
 newer, the one-marker rule lives where the bytes are written — `fabrika build deviations <issue>`
 edits the standing marker in place and retracts any superseded one, and it is the only sanctioned
-way this marker is posted.
+way this marker is posted. Editing in place puts the whole-range completeness of the disclosure at
+that same seam: the verb compares each replacement against the standing one and refuses a section
+that drops an entry, because a reader of these bytes sees only the round that wrote them.
 
 ### `verdict-marker`
 
@@ -156,7 +158,7 @@ or `ship` brief with no PR is malformed rather than dispatchable, because that s
 nothing to read. The machine this brief serves is the lane state machine, and the machine is the
 authority on which state routes to which shell — not this page.
 
-Ground comes in two shapes, because an epic run is one branch and one pull request. A
+Ground comes in three shapes, because an epic run is one branch and one pull request. A
 child state on an epic lane has no PR to name at all: it carries the epic issue, the branch its
 worktree is cut from, and — at `review` — the commit range whose verdict lands on the child issue as
 a `range-verdict-marker`. Both of that range's endpoints are commits the driver's tree already
@@ -164,7 +166,11 @@ resolved, never a `HEAD` the spawned shell resolves for itself: a reviewer's wor
 from the driver's checkout and stands on the assembly branch, where a `HEAD`-tipped range reads as
 empty. Those briefs carry a second byte-fixed rules paragraph saying so, so a child brief holding
 only the single-issue rules — the one that would let a child push and open its own PR — reads back
-malformed. The run's tail task is the PR shape again, unchanged.
+malformed. The run's tail task is the PR shape again at `review` and `ship`. Its `build` — the repair
+round the tail review's `FAIL` retries into — is the third shape: the PR *and* the assembly branch
+that PR's head sits on, under a rules paragraph of its own saying the branch is the lane driver's to
+move and that a stale trunk is merged in, never rebased. A branch beside a PR is what tells the two
+tail shapes apart, and it is the only ground that carries both.
 
 ### `map-ticket`
 

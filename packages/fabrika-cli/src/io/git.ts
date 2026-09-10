@@ -447,6 +447,13 @@ export const mergeBase = (a: string, b: string): Shell<Attempt<string>> =>
 		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base (got "${sha}")`);
 	});
 
+/** Whether `ancestor` is reachable from `descendant` — the fast-forward test. */
+export const isAncestor = (ancestor: string, descendant: string): Shell<boolean> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["merge-base", "--is-ancestor", ancestor, descendant]);
+		return r.ok;
+	});
+
 /** One commit on the walked ref: its object name and its committer date. */
 export interface CommitRow {
 	readonly sha: string;

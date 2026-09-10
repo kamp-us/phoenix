@@ -52,6 +52,13 @@ the class the row printed; never derive one from your own reading of the diff. W
 a reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a
 `review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR.
 
+**On an epic child that arm does not exist, and the flag still goes on.** A child's region carries
+no `review:ui` cell ([`emit.ts`](../../../../packages/fabrika-cli/src/lane/emit.ts)), so on a child
+the class relays a fact rather than a route: `lane prove` hands `review-ui` to the epic's tail
+itself, whatever classes the event carries, and §6 says what you post in its place. Keep passing
+`--class ui` there anyway — it lands the `classes` field on the event line, and dropping it drops
+that record for nothing.
+
 `scope` also prints the head SHA, the issue reference (`fixes:<n>` / `part-of:<n>` / `-`), `self`,
 `harness`, and `governance\t<required|not-required>` — §6's trigger, and a different question from
 `harness`. Governance is never a `routed` row: it is derived-required at every round and fired
@@ -76,6 +83,15 @@ terminal either, so carry them into the verdict you reach at the end rather than
 (§ Terminal vocabulary). Read the binding column as printed — the three-outcome type, not a boolean.
 The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
 `superseded` one is a round already answered, printed so the record shows it.
+
+**An epic tail has one fallback, and it is bounded by when the epic was planned.** `plan-epic` writes
+an `### Acceptance criteria` block onto the epic body beside the ledger, so `criteria <epic>` and
+`append-criterion <epic>` serve a tail exactly as they serve any other issue. An epic planned before
+that section joined the plan carries no block and never will unless it is re-planned — `criteria`
+answers `absent` on it. Grade that tail against the plan's `### Goal / non-goals`, and **say so in
+the verdict body**: name the epic as planned before the criteria section existed, name the section
+you graded against, and name re-planning as what closes the gap. Do not reconstruct a contract silently, and do not read the `absent` as licence to invent
+criteria.
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
@@ -255,6 +271,18 @@ a regression test covers qty > 1
 EOF
 ```
 
+**On an epic child, name the range instead of a PR.** There is no PR mid-run (§6), so the subject
+is the same `--base`/`--tip` pair your verdict was posted over, the positional is the child issue,
+and the tag reads `range:<base>..<tip>` rather than `pr:#<n>`. Every fence runs unchanged, so the
+route this step names is open on a child exactly as it is on a PR — a finding that ends up as prose
+in the verdict body instead enters no cycle.
+
+```bash
+fabrika review append-criterion $child_issue --base 9f2c1ab --tip 03135b9 --round 1 <<'EOF'
+a regression test covers the widened union
+EOF
+```
+
 **Trivial mode.** A bounded-trivial diff (one concern, `harness: false` in scope — blast radius,
 never the governance obligation, which is §6's `governance` token — no new surface,
 truthful `None.`) skips the fan-out only — fewer dimensions, **not** a lowered bar; any ambiguity
@@ -305,18 +333,33 @@ undisclosed that this gate could see"* — never "no deviations exist".
   **range's own changed paths** through the same `touchesGovernanceRoot` floor it uses on a PR
   ([`prove-verb.ts`](../../../../packages/fabrika-cli/src/lane/prove-verb.ts)) — a range touching a
   governance root derives `governance` exactly as a PR diff does. So post every namespace the range
-  derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
-  through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
+  derives **and that you may emit** over that range, on the child issue, with `--base`/`--tip` in
+  place of `--sha`: yours through
+  `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
   through the `governance` skill's own range form (its §5). What binds is content, not a head alone.
   **A re-post over the
   same range appends exactly as the PR path does** — the prior verdict is retired below the fence,
   the answer's sixth field reads `superseded`, and a polarity flip over that range is exit `17`
   until `--supersede` says so. It matters more here than on a PR: a child's comment is the
-  whole record of that child's review, with no PR surface holding a second copy. Deferring the
-  namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
-  exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
-  range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
-  round owes its governance verdict too.
+  whole record of that child's review, with no PR surface holding a second copy. **§4's
+  append takes the same pair** — `fabrika review append-criterion <child-issue> --base <b> --tip <t>
+  --round <n>` — so an in-scope finding on a child binds the next round through the fences rather
+  than surviving as prose. Deferring a namespace you **do** owe strands the lane whichever polarity
+  you reached: a claimed `PASS` reds at `lane prove` exit `23`, and a `FAIL` is recorded only once
+  every namespace the child owes is terminal against the range (`operate`'s `FAIL` row). The
+  every-round rule above is unchanged here — a child's FAIL round owes its governance verdict too.
+- **`review-ui` is the namespace a child's range derives and does not owe, and on a child it is not
+  yours to chase.** A child opens no PR, and every verb that may post that namespace resolves live
+  PR state, so nothing can post `review-ui` at range scope at all: `review post`'s range arm fences
+  on the three text classes and refuses it `OFF_VOCABULARY`, and `review-ui post` takes no
+  `--base`/`--tip`. `lane prove` subtracts it from a child's bar itself
+  ([`prove.ts`](../../../../packages/fabrika-cli/src/lane/prove.ts), `claimOf`'s child arm), so a
+  claimed `PASS` proves with no `review-ui` record on the child, and a record posted there —
+  verdict or `routed-elsewhere` — is read by nothing. The creditor is the epic's tail: one epic run
+  is one branch and one PR, so every rendered file the child's range added sits in the tail PR's own
+  diff, where the tail's `PASS` derives `review-ui` and stands on it at a head a preview exists for.
+  So §1's `routed` reading holds here for the reason it holds anywhere — do not judge it, do not
+  emit it, and do not read its absence from a child's verdicts as a gap in yours.
 - **The tail's own review is a separate subject, so this is not a double post.** The tail PR's
   namespaces are derived from the tail PR's own diff and its verdicts are head-bound on that PR; a
   child's are derived from the child's range and are content-bound on the child issue. Posting on
@@ -439,7 +482,9 @@ owes, and your class flag is what decides that: a routed namespace is left to th
 only when the flag routes this very `PASS` into it, and out of `review:ui` the whole derived set must
 stand. Omit the flag on a rendered PR and the routed namespace is owed **here** — exit `23` naming
 it, with the flag as the remedy. The review bar splits across those two cells and the machine
-decides which one owes what; you relay the row, never the split.
+decides which one owes what; you relay the row, never the split. On an epic child the split is not
+the flag's: that `PASS` is proved against the range, and it defers the routed namespace whatever the
+flag says (§6).
 The merge gate re-derives all of it either way. A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
 change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
 and records nothing.

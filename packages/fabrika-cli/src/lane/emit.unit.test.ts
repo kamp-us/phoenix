@@ -13,6 +13,7 @@ import {type EmitResult, emitMachine} from "./emit.ts";
 import {parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
+import {declaresClosureGuard} from "./reconcile.ts";
 import {routeForCause} from "./report.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -398,11 +399,12 @@ describe("emitMachine", () => {
 		expect(tail).toMatchObject({
 			initial: "review",
 			states: {
+				build: {on: {"EPIC_4300.DONE": "review", "EPIC_4300.BLOCKED": "blocked"}},
 				review: {
 					on: {
 						"EPIC_4300.PASS": "ship",
 						"EPIC_4300.FAIL": [
-							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 							{target: "human:budget-spent"},
 						],
 					},
@@ -417,10 +419,33 @@ describe("emitMachine", () => {
 						],
 					},
 				},
+				"ship:queued": {
+					on: {
+						"EPIC_4300.FAIL": [
+							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:budget-spent"},
+						],
+					},
+				},
 				shipped: {type: "final"},
 				"human:budget-spent": {type: "final", on: {"EPIC_4300.UNBLOCKED": "hist"}},
 			},
 		});
+	});
+
+	// Aimed back at `review`, the FAIL edge re-dispatched the reviewer that had just produced the
+	// verdict over content only a builder can change.
+	it("sends a tail review FAIL into the tail's own build cell, and the repair's DONE back to review", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		expect(drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"]]).stateValue).toEqual({
+			epic: {epic_4300: "build"},
+		});
+		expect(
+			drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"], ["epic_4300", "DONE"]]).stateValue,
+		).toEqual({epic: {epic_4300: "review"}});
+		expect(
+			drive(compiled, [...LAND_ALL, ["epic_4300", "FAIL"], ["epic_4300", "BLOCKED"]]).stateValue,
+		).toEqual({epic: {epic_4300: "blocked"}});
 	});
 
 	it("reaches the epic review only after every child has landed, and completes on its ship", () => {
@@ -429,6 +454,38 @@ describe("emitMachine", () => {
 		expect(
 			drive(compiled, [...LAND_ALL, ["epic_4300", "PASS"], ["epic_4300", "DONE"]]),
 		).toMatchObject({stateValue: "complete", status: "done"});
+	});
+
+	// The tail declares no `merge:partial` arm, and that is a decision rather than the
+	// omission it looks like: a tail body that does not close its epic is refused where it is
+	// written (`lane assembly-body`), so the merge such an arm would route is one the run cannot
+	// produce. Both polarities are driven here so the absence stays deliberate under a later reader.
+	it("folds the tail's DONE to `shipped` whether or not the merge carried `Part of #N`", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const toShip: ReadonlyArray<readonly [string, string]> = [...LAND_ALL, ["epic_4300", "PASS"]];
+
+		expect(drive(compiled, [...toShip, ["epic_4300", "DONE"]])).toMatchObject({
+			stateValue: "complete",
+			status: "done",
+		});
+
+		const log = driveLog(compiled, toShip);
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, log),
+			"epic_4300",
+			"DONE",
+			AT,
+			null,
+			null,
+			true,
+		);
+		if (applied._tag !== "Applied") throw new Error(applied.reason);
+		expect(deriveStatus(compiled, statesOf(compiled, [...log, applied.entry]))).toMatchObject({
+			stateValue: "complete",
+			status: "done",
+		});
+		expect(declaresClosureGuard(compiled)).toBe(false);
 	});
 
 	it("takes a FAIL at the epic ship back to review, and parks it once the retries are spent", () => {
@@ -452,11 +509,14 @@ describe("emitMachine", () => {
 
 	it("trips the tail when the epic review fails past its retry budget — never `complete`", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
-		const fails = Array.from({length: RETRY_BUDGET}, () => ["epic_4300", "FAIL"] as const);
-		expect(drive(compiled, [...LAND_ALL, ...fails]).stateValue).toEqual({
+		const rounds = Array.from({length: RETRY_BUDGET}, () => [
+			["epic_4300", "FAIL"] as const,
+			["epic_4300", "DONE"] as const,
+		]).flat();
+		expect(drive(compiled, [...LAND_ALL, ...rounds]).stateValue).toEqual({
 			epic: {epic_4300: "review"},
 		});
-		const spent = drive(compiled, [...LAND_ALL, ...fails, ["epic_4300", "FAIL"]]);
+		const spent = drive(compiled, [...LAND_ALL, ...rounds, ["epic_4300", "FAIL"]]);
 		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
 		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
@@ -469,7 +529,11 @@ describe("emitMachine", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const parked = driveLog(compiled, [
 			...LAND_ALL,
-			...Array.from({length: CAP_ROUND}, () => ["epic_4300", "FAIL"] as const),
+			...Array.from({length: CAP_ROUND - 1}, () => [
+				["epic_4300", "FAIL"] as const,
+				["epic_4300", "DONE"] as const,
+			]).flat(),
+			["epic_4300", "FAIL"],
 		]);
 		expect(deriveStatus(compiled, statesOf(compiled, parked))).toMatchObject({
 			stateValue: "tripped",
@@ -592,8 +656,98 @@ describe("emitMachine", () => {
 	});
 });
 
+describe("emitMachine — the --children drop axis", () => {
+	const drop = (text: string, links = CHILDREN): EmitResult =>
+		emitMachine(4300, text, links, {dropForeign: true});
+
+	const phasesOf = (text: string): Record<string, {states: Record<string, unknown>}> =>
+		(JSON.parse(text) as {machine: {states: Record<string, {states: Record<string, unknown>}>}})
+			.machine.states;
+
+	it("takes the dropped ref out of its phase and out of every requires list naming it", () => {
+		const text =
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9999, #4302\n- #4302 requires: #4301, #9999\n- #9999 requires: #4301\n";
+		const out = drop(text, [open(4301), open(4302)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["#9999"]);
+		expect(out.children).toBe(2);
+		expect(out.text).not.toContain("9999");
+		expect(Object.keys(phasesOf(out.text))).toEqual([
+			"phase1",
+			"phase2",
+			"epic",
+			"complete",
+			"tripped",
+		]);
+	});
+
+	it("elides a phase the drop left with no members, and keeps the surviving order", () => {
+		const text = "## Dependencies\n\n- phase 1: #9999\n- phase 2: #4301\n- phase 3: #4302\n";
+		const out = drop(text, [open(4301), open(4302)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.phases).toBe(2);
+		expect(Object.keys(phasesOf(out.text))).toEqual([
+			"phase2",
+			"phase3",
+			"epic",
+			"complete",
+			"tripped",
+		]);
+		expect(JSON.parse(out.text)).toMatchObject({machine: {initial: "phase2"}});
+	});
+
+	it("records a ref that appears only in the needs of a requires line whose subject went", () => {
+		const text =
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9998\n- #9998 requires: #4301, #9999\n";
+		const out = drop(text, [open(4301)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["#9998", "#9999"]);
+		expect(out.children).toBe(1);
+	});
+
+	it("drops a ledger-local ref too — it is in no child list either", () => {
+		const out = drop("## Dependencies\n\n- phase 1: C1, #4301\n", [open(4301)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["C1"]);
+	});
+
+	it("reports nothing dropped when every ref is a live child", () => {
+		const out = drop(body());
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual([]);
+		expect(out.text).toBe(golden());
+	});
+
+	it("refuses an emission the drop emptied, naming what went", () => {
+		const out = drop("## Dependencies\n\n- phase 1: #9998, #9999\n");
+		expect(out).toEqual({_tag: "Emptied", dropped: ["#9998", "#9999"]});
+	});
+
+	it("still refuses every other topology defect over what survives the drop", () => {
+		expect(drop("## Dependencies\n\n- phase one: #4301\n")).toMatchObject({
+			_tag: "Unparseable",
+		});
+		expect(drop("## Dependencies\n\n- phase 1: #4301\n- phase 2: #4301, #9999\n")).toEqual({
+			_tag: "Duplicate",
+			child: 4301,
+		});
+		expect(drop("## Dependencies\n\n- phase 1: #4301\n- #4303 requires: #4301, #9999\n")).toEqual({
+			_tag: "Unplaced",
+			child: 4303,
+		});
+		const cyclic =
+			"## Dependencies\n\n- phase 1: #4301, #4302, #9999\n- #4301 requires: #4302, #9999\n- #4302 requires: #4301\n";
+		expect(drop(cyclic)).toMatchObject({_tag: "Cycle"});
+	});
+
+	it("leaves the 16 refusal exactly where it was without the flag", () => {
+		const text = "## Dependencies\n\n- phase 1: #4301\n- phase 2: #9999\n";
+		expect(emitMachine(4300, text, CHILDREN)).toEqual({_tag: "Foreign", ref: "#9999"});
+	});
+});
+
 describe("emitMachine — the machinery lap axis", () => {
-	const withLaps = (): string => emitted(emitMachine(4300, body(), CHILDREN, true));
+	const withLaps = (): string => emitted(emitMachine(4300, body(), CHILDREN, {machinery: true}));
 
 	const lapStatesOf = (lane: CompiledLane, task: string): number => {
 		const compiled = lane.tasks[task];
@@ -602,7 +756,7 @@ describe("emitMachine — the machinery lap axis", () => {
 	};
 
 	it("emits today's machine byte for byte with the axis off", () => {
-		expect(emitted(emitMachine(4300, body(), CHILDREN, false))).toBe(golden());
+		expect(emitted(emitMachine(4300, body(), CHILDREN, {machinery: false}))).toBe(golden());
 		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
 	});
 
