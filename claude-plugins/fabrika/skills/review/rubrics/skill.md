@@ -55,3 +55,17 @@ resolves one heading at a time, never a document loaded whole. Skill text and an
 spawn prompt in the diff point at
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`; text telling an agent to read,
 open, or load a `contract.md` whole is a finding, whatever the read's shape.
+
+## 5 — Writing craft
+
+Apply [`writing-for-agents`](../../writing-for-agents/SKILL.md) verbatim to the skill-class slice
+and state its verdict here. `claude-plugins/fabrika/docs/skill-conventions.md` §8 gate 1 admits a
+skill only when it is written under that discipline, and the gate reads the text rather than the
+session that produced it, so this section is where the gate acquires teeth. Read the skill inline as
+a reference; it has no run to spawn.
+
+Name what it catches: a step whose completion criterion nothing can check, reference that buries the
+steps around it, one meaning kept in two homes, a sentence that changes no behaviour against the
+model's default, a rule steered by prohibition where the positive target would land harder. An unmet
+line is a finding, and a finding here refuses PASS on the `review-skill` namespace on the same
+footing as one from sections 1–4.
