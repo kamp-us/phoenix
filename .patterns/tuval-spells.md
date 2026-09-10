@@ -92,6 +92,12 @@ the core list by accident.
 direction and the runtime dependency stays one way: `commands/` reaches into `registry/`, never the
 reverse.
 
+An authored program writes that list as a `commands` record instead of hand-rolling spells
+([`authoring/commands.ts`](../apps/tuval/src/authoring/commands.ts)): the key is the command's own
+path, the declared `args` schema becomes the spell's `params`, and `run` becomes its `execute`,
+returning the effect vocabulary the compiler interprets through the row's own handlers. The author
+writes no group — the prefix above is composed here, from the row's id, and nowhere else.
+
 ## The registry
 
 `buildRegistry({core, programs})` in
@@ -434,6 +440,14 @@ spells as one list.
   `SpawnedProcesses` service retains the handle of every process it spawns, because the process
   table exposes rows and no dispatch; `send` and `read` answer `UnknownProcess` for a process this
   service did not spawn.
+
+  `SpawnedProcesses` also carries the answer path, which is not a spell and is reachable from no
+  spell's params: `ask` puts a payload on a request port and holds, against a correlation it mints,
+  where the answer goes; `answer` spends one correlation, checks the payload against that port's own
+  output schema, and hands it to the asking process; and `spawn`'s `on` record turns a named child
+  out-port into one of the spawner's own events. All three land through `deliver`
+  ([`process/inbox.ts`](../apps/tuval/src/process/inbox.ts)), which needs only a live handle — so an
+  answer reaches any process, not only one these spells spawned.
 
 ### The bridge
 

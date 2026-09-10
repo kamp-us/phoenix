@@ -345,6 +345,9 @@ exactly the drift the import exists to stop.
 
 ## `grill open`
 
+The topic and ticket path is described below. For audit research, use
+[Audit create and recovery](#audit-create-and-recovery). These inputs are exclusive.
+
 **Invocation**
 
 ```
@@ -454,6 +457,74 @@ $ echo $?
   A verb claiming to close it would be lying.
 
 ---
+
+## Audit create and recovery
+
+**Input owner.** The JSON file passed to `--audit-context` conforms to
+[`AuditContext`](../../../../packages/fabrika-cli/src/wire/audit-context.ts).
+That module owns the fields, validation, composition and total reader. Its registry entry exposes
+`wire emit/read/check --format audit-context`; the contract carries no second field grammar.
+
+```
+fabrika grill open --audit-context audit.json --repo <owner/name>
+fabrika grill open --audit-context audit.json --audit-recover --repo <owner/name>
+fabrika grill open --audit-context audit.json --audit-recover --audit-session 9412 --repo <owner/name>
+```
+
+`--audit-context` excludes `--topic` and `--ticket`. `--audit-session` requires `--audit-recover`.
+The first command is a first attempt only. Retain the input file before invoking it. Every retry
+uses `--audit-recover` with the unchanged file, and includes `--audit-session` whenever a prior
+answer or refusal named an issue. A deliberate research rerun has a fresh identity and names its
+predecessor in the input. A title edit never changes identity.
+
+**Pre-write validation.** The final body must pass the consumer reader and preserve the context
+digest. Malformed fields, local-path leaks, and a final body over 60,000 UTF-8 bytes refuse before
+any mutation. The limit is a conservative application limit; the verb never truncates. The initial
+create request includes the complete research. Subsequent questions and rulings remain comments.
+
+**Identity lookup.** The reader enumerates all repository issues, including closed and unlabelled
+ones, through paginated REST listing with page-completion checks and a 1,000-page cap. It uses no search index. An
+incomplete record, repeated issue, failed page or uncompleted walk remains UNKNOWN. A malformed
+audit block prevents proving absence. Exactly one matching identity is read directly and compared
+with the requested digest. Changed context refuses without overwrite. Closed matches are named,
+never reopened. Multiple matches are named, never chosen between.
+
+**Recovery.** With a known issue number, the verb reads that issue directly, before any list or
+label lookup. A matching open body with an absent session label receives the label, then is read
+again. A failed label response also triggers that read: the observed label and body decide success.
+Every refusal after a known create retains its number, URL, identity and digest on stderr.
+Without a known number, recovery enumerates by identity. Zero matches remains UNKNOWN and creates
+nothing. A lost create response triggers this same recovery read immediately.
+
+**Remaining race.** First attempts enumerate twice before creation. These are complete list reads,
+not an atomic repository snapshot or a lock. Two first attempts can both finish their reads before
+either creates, and can both succeed. Later identity recovery refuses the duplicates. A known-number
+recovery verifies that issue, not repository-wide uniqueness. Recovery mode cannot create a twin;
+the caller must retain the attempt state and choose it on retries. Repeating the first-attempt
+command after an uncertain response is outside that guarantee. There is no exactly-once promise.
+
+**Output.** Audit create/resume success prints
+`{"session":9412,"url":"https://github.com/<owner>/<repo>/issues/9412","created":true,"runId":"audit-run-20260910","digest":"<sha256>"}`.
+The body identity, digest and `grilling:session` label have been read back. The title is descriptive;
+it is neither an identity check nor a recovery key. After success, `grill read <session>` returns
+the context and existing question frontier before another question is posted.
+
+| Exit | Audit meaning |
+|---|---|
+| 1 | incompatible flags |
+| 5 | local path leak |
+| 7 | missing session label or invalid predecessor |
+| 8 | create/label result UNKNOWN, or recovery found no session |
+| 9 | known issue readback failed or changed during label recovery |
+| 11 | input file, repository or complete issue read UNKNOWN |
+| 16 | duplicate audit identity |
+| 20 | malformed context, wrong target repository or invalid predecessor context |
+| 21 | final body exceeds the application limit |
+| 22 | identity or retained research differs |
+| 23 | matching session is closed |
+
+These refusals write no replacement body. Codes 20/21 are `INPUT-REFUSED`, 22/23 are
+`SESSION-UNRESOLVED`; the existing terminal table covers the shared codes.
 
 ## `grill round`
 
@@ -727,6 +798,12 @@ $ echo $?
 
 ## `grill read`
 
+The output also carries `auditContext`, the total result from the
+[`audit-context` reader](../../../../packages/fabrika-cli/src/wire/audit-context.ts).
+An audit handoff succeeds only on `Found`; `Absent` and `Malformed` remain visible beside readable
+questions. Ordinary topic, ticket and bound sessions need no audit context. Context recommendations
+never enter the ruling reader, which reads comments and their authorization as before.
+
 **Invocation**
 
 ```
@@ -743,7 +820,7 @@ fabrika grill read 9412 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
+{"session":9412,"ticket":null,"auditContext":{"_tag":"Absent","reason":"no audit context heading"},"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
 ```
 
 **`ticket`** is the issue the session was opened on, read back from its body's `came-from` binding,
@@ -865,7 +942,7 @@ pagination is load-bearing rather than hygiene.
 
 ```
 $ fabrika grill read 9412
-{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
+{"session":9412,"ticket":null,"auditContext":{"_tag":"Absent","reason":"no audit context heading"},"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in members inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
 $ echo $?
 0
 ```

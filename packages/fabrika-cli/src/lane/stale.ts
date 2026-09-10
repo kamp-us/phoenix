@@ -16,12 +16,14 @@
  *   - Everything else is a lane something is supposed to be doing: a task in a state that routes to
  *     a shell (`lane brief`'s own routing, so the two agree by construction), or a `queued` task
  *     nobody has dispatched. Silence there is the defect.
+ *
+ * How long that silence may run is **not** one number for the pipeline: it is the budget of the work
+ * actually being done, off `./shell-budget.ts`, so the same sweep judges a shipper and a builder on
+ * their own horizons.
  */
 import {shellState} from "../wire/lane-brief.ts";
 import type {LaneStatus} from "./fold.ts";
-
-/** The default silence a lane may hold before it is called stale, in minutes. */
-export const DEFAULT_STALE_MINUTES = 60;
+import {budgetMinutesFor} from "./shell-budget.ts";
 
 /**
  * Whether a leaf state is a park — a hold only a human or a driver clears.
@@ -99,36 +101,49 @@ export interface Judgement {
 	readonly ageMinutes: number | null;
 	/** The `at` the age was measured from; `null` when the lane has never moved. */
 	readonly lastEventAt: string | null;
+	/** The horizon this lane's age was judged against — its own, derived from what is driving it. */
+	readonly budgetMinutes: number;
 }
 
 /**
  * Judge one lane against the clock. `nowEpochMs` is the caller's, so the answer is a pure function
  * of its inputs and a test needs no fake timer.
+ *
+ * The horizon is the lane's **own**, read off {@link budgetMinutesFor} against the leaves that are
+ * driving it, so a shipper's ten minutes and a builder's forty are two different silences rather
+ * than one number the sweep applies to both. `override` is the caller's explicit horizon and takes
+ * precedence when it is given — a sweep asking "what has been quiet for two hours" is asking its own
+ * question, not disagreeing with the budget.
  */
 export const judge = (
 	status: LaneStatus,
 	moved: LastMoved,
 	nowEpochMs: number,
-	olderThanMinutes: number,
+	override: number | null,
 ): Judgement => {
 	const at = moved._tag === "Moved" ? moved.at : null;
 	const disposition = dispositionOf(status);
+	const budgetMinutes = override ?? budgetMinutesFor(activeLeaves(status));
 	if (disposition !== "driven") {
 		return {
 			verdict: disposition === "terminal" ? "terminal" : "parked",
 			ageMinutes: moved._tag === "Moved" ? ageInMinutes(moved.epochMs, nowEpochMs) : null,
 			lastEventAt: at,
+			budgetMinutes,
 		};
 	}
-	if (moved._tag === "Never") return {verdict: "unstarted", ageMinutes: null, lastEventAt: null};
+	if (moved._tag === "Never") {
+		return {verdict: "unstarted", ageMinutes: null, lastEventAt: null, budgetMinutes};
+	}
 	if (moved._tag === "Unreadable") {
-		return {verdict: "unreadable", ageMinutes: null, lastEventAt: null};
+		return {verdict: "unreadable", ageMinutes: null, lastEventAt: null, budgetMinutes};
 	}
 	const ageMinutes = ageInMinutes(moved.epochMs, nowEpochMs);
 	return {
-		verdict: ageMinutes >= olderThanMinutes ? "stale" : "moving",
+		verdict: ageMinutes >= budgetMinutes ? "stale" : "moving",
 		ageMinutes,
 		lastEventAt: at,
+		budgetMinutes,
 	};
 };
 

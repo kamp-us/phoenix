@@ -27,6 +27,14 @@ export interface InPort<T = unknown> {
 	readonly direction: "in";
 	readonly accepts: (payload: unknown) => payload is T;
 	readonly bound: PortBound;
+	/**
+	 * The predicate an answer to this port must fit, present only on a port that answers its caller
+	 * — `port.request(In, Out)` in the authoring layer (#8716 R17.1). A request port arrives like any
+	 * other in-port, so it is one field here rather than a fourth `PortSchema` member every
+	 * `direction === "in"` reader would have to learn; its absence is what "this port answers
+	 * nothing" means, and an `ask` against such a port is refused (#8756).
+	 */
+	readonly answers?: (payload: unknown) => boolean;
 }
 
 export interface OutPort<T = unknown> {
@@ -223,6 +231,13 @@ export interface Program<
 	 */
 	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
+	/**
+	 * The service keys this program's args are read through, one per arg the author declared, keyed
+	 * by the arg's name (#8716 R15.1). Data only: an arg's value never rides the row — it rides the
+	 * row's existing `R`, provided by the Layer the config call builds when it fills the args
+	 * (`src/authoring/args.ts`). A row whose program declares none omits the field.
+	 */
+	readonly args?: Readonly<Record<string, string>>;
 	/**
 	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only
 	 * `true` or absent: a row that never asked for keys is never sent one, so a keystroke landing on

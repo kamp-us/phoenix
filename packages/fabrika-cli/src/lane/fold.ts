@@ -63,6 +63,15 @@ export interface LogEntry {
 	readonly pr?: string;
 	readonly comment?: string;
 	readonly cause?: string;
+	/**
+	 * Why the driver cleared this park, on an `UNBLOCKED` it took on its own recommendation.
+	 *
+	 * Evidence, like `cause`, and the mirror of it: a cause says why the lane parked, a rationale
+	 * says why it was let out. It is the whole audit of a driver-routed clear — a clearance no line
+	 * records is one nobody can review afterwards — so `recipe unpark` refuses the clear rather than
+	 * record an `UNBLOCKED` without it.
+	 */
+	readonly rationale?: string;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -126,6 +135,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			pr?: unknown;
 			comment?: unknown;
 			cause?: unknown;
+			rationale?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
@@ -153,6 +163,15 @@ export const parseLog = (text: string): ParseLogResult => {
 			(record.cause !== undefined && typeof record.cause !== "string")
 		) {
 			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\`/\`cause\` field`);
+			continue;
+		}
+		// A blank rationale reads back as a recorded one and says nothing, which is the unauditable
+		// clearance the field exists to prevent — so it is a parse defect, never a present field.
+		if (
+			record.rationale !== undefined &&
+			!(typeof record.rationale === "string" && record.rationale.trim() !== "")
+		) {
+			defects.push(`line ${index + 1} carries a \`rationale\` field that says nothing`);
 			continue;
 		}
 		if (record.round !== undefined && !Number.isInteger(record.round)) {
@@ -293,6 +312,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.pr === undefined ? {} : {pr: record.pr}),
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
+			...(record.rationale === undefined ? {} : {rationale: record.rationale as string}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
@@ -437,6 +457,24 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
  */
 export const standingCauses = (
 	entries: ReadonlyArray<LogEntry>,
+): Readonly<Record<string, string>> => standingField(entries, "cause");
+
+/**
+ * The rationale standing over each task — the `rationale` on that task's latest entry, when it
+ * carries one.
+ *
+ * The mirror of {@link standingCauses}, derived the same way for the same reason: a rationale is a
+ * property of the `UNBLOCKED` that cleared the park, so it stands exactly while that event is the
+ * last thing said about the task, and the next event replaces it. That is what makes a driver's
+ * clearance readable back off the ledger's own re-fold rather than only off the raw log.
+ */
+export const standingRationales = (
+	entries: ReadonlyArray<LogEntry>,
+): Readonly<Record<string, string>> => standingField(entries, "rationale");
+
+const standingField = (
+	entries: ReadonlyArray<LogEntry>,
+	field: "cause" | "rationale",
 ): Readonly<Record<string, string>> => {
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
@@ -444,11 +482,12 @@ export const standingCauses = (
 		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
-	const causes: Record<string, string> = {};
+	const standing: Record<string, string> = {};
 	for (const [task, entry] of Object.entries(latest)) {
-		if (entry.cause !== undefined) causes[task] = entry.cause;
+		const value = entry[field];
+		if (value !== undefined) standing[task] = value;
 	}
-	return causes;
+	return standing;
 };
 
 export interface LaneStatus {
@@ -462,6 +501,7 @@ export const deriveStatus = (
 	lane: CompiledLane,
 	states: Readonly<Record<string, TaskState>>,
 	causes: Readonly<Record<string, string>> = {},
+	rationales: Readonly<Record<string, string>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
@@ -469,17 +509,25 @@ export const deriveStatus = (
 	const context: Record<string, unknown> = {};
 	for (const [taskId, state] of Object.entries(states)) {
 		const cause = causes[taskId];
+		const rationale = rationales[taskId];
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
 			...(state.cleared.length === 0 ? {} : {clearedRounds: state.cleared}),
 			waits: state.waits,
 			maxWaits: state.maxWaits,
+			// Absent on a machine that declares no lap-guarded cell — every lane emitted before the
+			// machinery axis existed, and every one emitted with the key off — so their status is
+			// byte-for-byte what it always was rather than gaining a counter nothing can spend.
+			...(taskIn(lane, taskId).lapStates.size === 0
+				? {}
+				: {laps: state.laps, maxLaps: state.maxLaps}),
 			// Absent rather than empty when unclassed, so an unclassed lane's status is what it always
 			// was; a driver relaying `--class` reads the standing set here.
 			...(state.classes.length === 0 ? {} : {classes: state.classes}),
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
+			...(rationale === undefined ? {} : {rationale}),
 		};
 	}
 	context.errors = errors;
@@ -640,7 +688,7 @@ export const applyEvent = (
 		return refuseEvent(
 			event === CORRECTED_EVENT
 				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned`
-				: `"${event}" is outside the operator's six events (${OPERATOR_EVENTS.join("/")})`,
+				: `"${event}" is outside the operator's event set (${OPERATOR_EVENTS.join("/")})`,
 		);
 	}
 	const previous = deriveStatus(lane, states);
@@ -701,7 +749,7 @@ export const applyEvent = (
 		return {
 			_tag: "Refused",
 			kind: "unbudgeted-resume",
-			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the founder's cleared round first (\`build clear\`); the two may land in either order.${stale}`,
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the cleared round first — \`build clear\` where a pull request carries the founder's grant, \`lane clear\` where the lane has none and the driver grants the round on its own diagnosis; the two may land in either order.${stale}`,
 		};
 	}
 	if (task.waitParks.get(next.type)?.has(from.type) === true && next.waits >= next.maxWaits) {
@@ -824,13 +872,18 @@ export type ClearanceResult =
 	| {readonly _tag: "Refused"; readonly reason: string};
 
 /**
- * The entry a recorded clearance appends — `build clear`'s half of the grant protocol, kept beside
- * {@link applyEvent} because both decide appendability from the same fold.
+ * The entry a recorded clearance appends — the local half of the grant protocol, kept beside
+ * {@link applyEvent} because both decide appendability from the same fold. Two verbs reach it, one
+ * per seat: `build clear` where the grant is a founder's marker on a pull request, and `lane clear`
+ * where the lane has no pull request to carry one.
  *
  * It validates far less than an operator event does, and deliberately: a grant moves no task, so
  * there is no cell to miss, no phase to be outside of, and no terminal to be past. A clearance may
  * land on a lane in any state, in any order relative to the `UNBLOCKED` it enables — which is the
  * whole point of anchoring the budget to the event rather than to mutable context.
+ *
+ * The `rationale` is the driver seat's whole audit: a founder's grant is reviewable on the pull
+ * request it was posted to, and a driver's is reviewable on this line or nowhere.
  */
 export const applyClearance = (
 	lane: CompiledLane,
@@ -838,6 +891,7 @@ export const applyClearance = (
 	taskId: string,
 	round: number,
 	at: string,
+	rationale: string | null = null,
 ): ClearanceResult => {
 	if (lane.tasks[taskId] === undefined) {
 		return {
@@ -855,6 +909,12 @@ export const applyClearance = (
 	if (held) return {_tag: "AlreadyHeld", round};
 	return {
 		_tag: "Appendable",
-		entry: {task: taskId, event: `${taskId.toUpperCase()}.${CLEARED_EVENT}`, at, round},
+		entry: {
+			task: taskId,
+			event: `${taskId.toUpperCase()}.${CLEARED_EVENT}`,
+			at,
+			round,
+			...(rationale === null ? {} : {rationale}),
+		},
 	};
 };

@@ -6,32 +6,44 @@
  *
  *   1. `lane status` folds the ledger — this verb never re-folds a log.
  *   2. {@link classifyPark} seats the leaf, and the cause the parking event named, against the
- *      recipe table — a `blocked` carrying no cause keys on nothing. **Novel refuses here**, before
- *      any read that could write and long before the append, which is what makes the novel exit a
- *      proven no-op rather than a claim about one.
+ *      recipe table — a `blocked` carrying no cause keys on nothing. **A founder-routed novel park
+ *      refuses here**, before any read that could write and long before the append, which is what
+ *      makes the novel exit a proven no-op rather than a claim about one.
  *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s own
- *      discharge table, never a second reading of §CP in this file.
- *   4. `lane transition … UNBLOCKED` records the clear.
+ *      discharge table, never a second reading of §CP in this file. A driver-routed park with no
+ *      recipe has no such read, and clears on the driver's rationale instead.
+ *   4. `lane transition … UNBLOCKED` records the clear, carrying that rationale where there is one.
  *   5. `lane status` is folded **again**, and the answer is emitted only once that re-fold shows the
  *      task out of the park: no recipe reports a mutation it did not read back.
+ *
+ * **Whose park it is comes off the cause, never off a judgment made here.** Every park cause carries
+ * a route (`lane/report.ts`), and `driver` means the park is machinery a driver session may work
+ * itself. Under `.fabrika.jsonc`'s `parkCause.driverRouted: "clear"` that is what happens, and the
+ * price is a `--rationale` on the recorded line — a clearance nothing records is one nobody can
+ * review, so the verb refuses rather than take it silently. A `founder` route reaches none of this:
+ * it behaves exactly as it did before the flag existed.
  *
  * Respawning whatever the lane parked out of is the operator's, not this verb's.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {readClaimants} from "../build/claim.ts";
 import {WORKTREE_HELD} from "../build/codes.ts";
+import {reclaimDeadClaim} from "../build/dead-claim.ts";
 import {worktreeCheckouts} from "../build/git.ts";
 import {childLaneBranches} from "../build/lane.ts";
 import {runRetire} from "../build/retire-verb.ts";
 import {placedRows, selects} from "../campaign/table.ts";
 import {CONFIG_PATH} from "../config/document.ts";
+import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {readRoadmapFile} from "../config/paths.ts";
+import type {Read} from "../config/read-key.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
 import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
+import {routeForCause} from "../lane/report.ts";
+import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {BASE_REF} from "../ledger/ground.ts";
@@ -43,11 +55,12 @@ import {
 	PARK_HOLDS,
 	PARK_NOVEL,
 	PRECONDITION_UNKNOWN,
+	RATIONALE_ABSENT,
 	READBACK_MISMATCH,
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 } from "./codes.ts";
-import {classifyPark, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
+import {classifyPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
 import {buildExit, laneExit, relayRefusal} from "./relay.ts";
 import {clearProof, issueOf, leafOf} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -65,6 +78,25 @@ export interface UnparkOptions {
 	/** The checkout whose `.fabrika.jsonc` declares where the campaigns table lives. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The instant a stranded claim's age is measured against, ISO — the adapter's clock. */
+	readonly now: string;
+	/**
+	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 *
+	 * Its `driverRouted` half is this verb's own axis, and its `uncaused` half rides along to the
+	 * `lane transition` below — which never reaches that rule, since the event it records is always
+	 * `UNBLOCKED`. Passing the whole surface rather than the one sub-key keeps the config a repo
+	 * declares and the config this verb acts on the same object.
+	 */
+	readonly parkCause: Read<ParkCauseSurface>;
+	/**
+	 * The driver's own recommendation for clearing a driver-routed park; `null` names none.
+	 *
+	 * Required exactly where the clear is the driver's to take, and recorded on the `UNBLOCKED` that
+	 * takes it. It reaches no other path: a founder-routed park is refused or cleared by its recipe's
+	 * proving read, and neither is a judgment this flag would be recording.
+	 */
+	readonly rationale: string | null;
 }
 
 type Clearance =
@@ -112,14 +144,38 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				`${VERB}: task "${task}" is "${leaf}", which is not a park — there is nothing to clear.`,
 			);
 		}
-		if (parked._tag === "Novel") {
+		if (options.parkCause._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`${PARK_CAUSE}\` from ${CONFIG_PATH} (${options.parkCause.reason}) — whether this repo lets a driver clear its own parks is UNKNOWN, and nothing was written.`,
+			);
+		}
+		// Normalised once, here, so the line that lands and the answer that reports it carry the same
+		// bytes — and so a rationale that is only whitespace refuses as the absent one it is rather
+		// than travelling to `lane transition`'s own refusal a step later.
+		const rationale = options.rationale?.trim() === "" ? null : (options.rationale?.trim() ?? null);
+		const routed = routeOfPark(parked, options.parkCause.value.driverRouted === "clear");
+		if (routed._tag === "Human") {
 			return refuse(
 				PARK_NOVEL,
-				`${VERB}: task "${task}" is parked at "${leaf}" and ${parked.reason} — refusing with the ledger untouched; route this to a human.`,
+				`${VERB}: task "${task}" is parked at "${leaf}" and ${routed.reason} — refusing with the ledger untouched; route this to a human.`,
+			);
+		}
+		if (routed._tag === "Driver" && rationale === null) {
+			return refuse(
+				RATIONALE_ABSENT,
+				`${VERB}: task "${task}" is parked at "${leaf}" and "${routed.cause}" routes to the driver, so this clear is the driver's to take and no recipe proves it — pass --rationale saying what you are taking it on. Nothing was written.`,
 			);
 		}
 
-		const clearance = yield* clear(options, task, parked.recipe);
+		const clearance: Clearance =
+			routed._tag === "Recipe"
+				? yield* clear(options, task, routed.recipe)
+				: {
+						_tag: "Cleared",
+						mechanism: `driver-rationale:${routed.cause}`,
+						waitGrant: null,
+					};
 		if (clearance._tag === "Refused") return clearance.outcome;
 
 		const recorded = yield* runTransition({
@@ -127,8 +183,10 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 			event: "UNBLOCKED",
 			task,
 			cause: null,
+			parkCause: options.parkCause,
 			classes: [],
 			waitGrant: clearance.waitGrant,
+			rationale,
 		});
 		if (recorded.code !== 0) {
 			return relayRefusal(VERB, "fabrika lane transition", recorded, laneExit(recorded.code));
@@ -149,17 +207,50 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				lane: options.lane,
 				task,
 				park: leaf,
-				clearance: parked.recipe.clearance,
+				clearance: routed._tag === "Recipe" ? routed.recipe.clearance : "driver-rationale",
 				mechanism: clearance.mechanism,
 				current: proof.leaf,
 				...(clearance.waitGrant === null ? {} : {waitGrant: clearance.waitGrant}),
+				...(rationale === null ? {} : {rationale}),
 			}),
 			[
-				`${VERB}: park "${leaf}" matched a known recipe; cleared via ${clearance.mechanism}.`,
+				routed._tag === "Recipe"
+					? `${VERB}: park "${leaf}" matched a known recipe; cleared via ${clearance.mechanism}.`
+					: `${VERB}: park "${leaf}" routes to the driver; cleared on the driver's own rationale.`,
 				`${VERB}: re-fold reads "${proof.leaf}" — the clear is proven.`,
 			],
 		);
 	});
+
+/**
+ * Who clears this park, and how — the one place the recipe table and the cause's route are read
+ * together.
+ *
+ * Three arms and no fourth. `Recipe` is a park with a fixed fix: its clearing condition is read back
+ * whatever the cause routes to, because a proving read is a better answer than anybody's judgment.
+ * `Driver` is a park with no fixed fix whose cause is machinery the driver session owns, in a repo
+ * that declared drivers may take them — there is no read to relay, so the rationale is what stands
+ * in its place. `Human` is everything else, and is the refusal this verb always had.
+ *
+ * A `Driver` arm always names its cause, and that is the route table's own rule rather than a
+ * coincidence of the rows: {@link routeForCause} answers `founder` for a park that named none, so a
+ * cause-less park never reaches this arm.
+ */
+type Routing =
+	| {readonly _tag: "Recipe"; readonly recipe: ParkRecipe}
+	| {readonly _tag: "Driver"; readonly cause: string}
+	| {readonly _tag: "Human"; readonly reason: string};
+
+const routeOfPark = (
+	parked: Extract<ParkClass, {readonly _tag: "Known" | "Novel"}>,
+	driverClears: boolean,
+): Routing => {
+	if (parked._tag === "Known") return {_tag: "Recipe", recipe: parked.recipe};
+	const cause = parked.cause;
+	return driverClears && cause !== null && routeForCause(cause) === "driver"
+		? {_tag: "Driver", cause}
+		: {_tag: "Human", reason: parked.reason};
+};
 
 /**
  * Read whether the recipe's clearing condition holds — one arm per {@link ParkRecipe.clearance}
@@ -462,12 +553,19 @@ const treesFreedOf = (
  *
  * It proves a dispatch is possible, never that the provider is back — no verb can spawn an agent, so
  * the operator's next dispatch is that test and a still-down provider re-parks the lane. The two
- * halves are residue the driver session owns: a build claim the dead shell stranded, which is a hold
- * until `build release` or a board-attested `build adopt` succession retracts it — this verb evicts
- * nothing from absence — and a working tree still holding its lane branch, which the row's
- * `build retire` remedy takes back where a license reaches it. After the release above the only
- * license left is the unclaimed-lane one, which reads the tree for proof it carries nothing rather
- * than leaning on a written board state.
+ * halves are residue the driver session owns: a build claim the dead shell stranded, and a working
+ * tree still holding its lane branch, which the row's `build retire` remedy takes back where a
+ * license reaches it.
+ *
+ * **The stranded claim is retracted here, on proof rather than on absence** — the one age test the
+ * claim protocol allows, confined to this row and to a lane a driver already parked on
+ * `spawn-dead`. There is no heartbeat,
+ * so what proves the shell dead is its claim outliving the budget for the kind of work it took
+ * (`../lane/shell-budget.ts`), and {@link reclaimDeadClaim} retracts it and re-reads the board to
+ * prove it gone. A claim still inside its budget is a shell that may be working, so the park holds;
+ * a retraction the re-read does not confirm is a read-back mismatch, never a clear. That is what
+ * ends the hand `build adopt` + `build release` this row used to require of a person for a failure
+ * nobody chose.
  *
  * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
  * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut
@@ -500,30 +598,56 @@ const clearSpawnClear = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return no(resolved.outcome);
 
-		const claimants = yield* readClaimants(resolved.repo, issue);
-		if (claimants._tag === "Unknown") {
+		const nowEpochMs = Date.parse(options.now);
+		if (Number.isNaN(nowEpochMs)) {
 			return no(
 				refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read who claims #${issue}: ${claimants.reason} — whether the dead shell stranded a claim is UNKNOWN, never cleared.`,
+					`${VERB}: "${options.now}" is not an instant to measure a stranded claim's age against — whether the dead shell's claim is past its budget is UNKNOWN, never cleared.`,
 				),
 			);
 		}
-		const claimed = scannedLine(
-			VERB,
-			claimants.claimants.length,
-			"build claim marker",
-			`#${issue}`,
+		const reclaimed = yield* reclaimDeadClaim(
+			resolved.repo,
+			issue,
+			nowEpochMs,
+			BUILD_CLAIM_BUDGET_MINUTES,
 		);
-		if (claimants.holder !== null) {
+		if (reclaimed._tag === "Unknown") {
+			return no(
+				refuse(PRECONDITION_UNKNOWN, `${VERB}: ${reclaimed.reason} — the park is not cleared.`),
+			);
+		}
+		if (reclaimed._tag === "StillHeld") {
+			return no(
+				refuse(
+					READBACK_MISMATCH,
+					`${VERB}: ${reclaimed.reason} — the retraction is not proven, so nothing here says the park is clear.`,
+				),
+			);
+		}
+		const claimed = scannedLine(VERB, reclaimed.scanned, "build claim marker", `#${issue}`);
+		if (reclaimed._tag === "Alive") {
 			return no(
 				refuse(
 					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${claimants.holder.token} still claims #${issue}; release it, or run the board-attested adopt succession, then unpark again. Nothing was written.`,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${reclaimed.token} has claimed #${issue} for ${reclaimed.ageMinutes} of its ${reclaimed.budgetMinutes} minute(s), so its shell may still be working. Nothing was written.`,
 					[claimed],
 				),
 			);
 		}
+		const released =
+			reclaimed._tag === "Released"
+				? [
+						`${VERB}: ${reclaimed.token} had claimed #${issue} for ${reclaimed.ageMinutes} minute(s), past the ${reclaimed.budgetMinutes}-minute budget for the work it took — ${reclaimed.retracted} marker(s) retracted, and #${issue} re-reads unclaimed.`,
+					]
+				: [];
+		// The retraction rides the mechanism as well as stderr: the mechanism is what the answer
+		// carries, and a clear that silently evicted a claim would leave no trace in the record.
+		const retracted =
+			reclaimed._tag === "Released"
+				? ` (retracted ${reclaimed.token} at ${reclaimed.ageMinutes}m, past the ${reclaimed.budgetMinutes}-minute budget)`
+				: "";
 
 		const branches = yield* localBranches;
 		if (branches._tag === "Failure") {
@@ -531,7 +655,7 @@ const clearSpawnClear = (
 				refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read this clone's local branches: ${branches.reason} — whether a working tree still holds #${issue}'s lane branch is UNKNOWN, never cleared.`,
-					[claimed],
+					[claimed, ...released],
 				),
 			);
 		}
@@ -539,20 +663,20 @@ const clearSpawnClear = (
 		if (candidates.length === 0) {
 			return {
 				_tag: "Cleared",
-				mechanism: `spawn-clear:#${issue} unclaimed, no lane branch`,
+				mechanism: `spawn-clear:#${issue} unclaimed${retracted}, no lane branch`,
 				waitGrant: null,
 			};
 		}
 
-		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed]);
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed, ...released]);
 		if (freed._tag === "Refused") return no(freed.outcome);
 
 		return {
 			_tag: "Cleared",
 			mechanism:
 				freed.retired === 0
-					? `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free`
-					: `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
+					? `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free`
+					: `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
 			waitGrant: null,
 		};
 	});

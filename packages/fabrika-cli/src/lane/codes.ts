@@ -44,7 +44,7 @@ export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the
- * task's current state (tea's `NoCellError`), the event is outside the operator's six, the task is
+ * task's current state (tea's `NoCellError`), the event is outside the operator's set, the task is
  * not in the active phase, or the workflow is already done. A proven refusal — the loud surface
  * a silently event-swallowing state library never gives its reader.
  */
@@ -232,9 +232,9 @@ export const CAUSE_UNRECOGNISED = 35;
  * `active`/`review` on a lane that re-freezes on its next `FAIL`. The
  * remedy is not another event at all but a grant, so a caller reading only the code must not be told
  * to retype the transition. **Which grant differs by axis and the message says which**: a recorded
- * `CLEARED` round for retries (`build clear`), and waits granted on this same resume for
- * the wait axis (`recipe unpark`, else `--grant-wait`) — `build clear` buys a repair round
- * and never a longer wait.
+ * `CLEARED` round for retries — `build clear` where a pull request carries the founder's grant,
+ * `lane clear` where the lane has none — and waits granted on this same resume for the wait axis
+ * (`recipe unpark`, else `--grant-wait`). Neither clear verb buys a longer wait.
  */
 export const RESUME_UNBUDGETED = 36;
 
@@ -350,8 +350,10 @@ export const ASSEMBLY_DIRTY = 45;
 export const SHAPE_MISMATCH = 46;
 
 /**
- * The `--grant-wait` handed to `lane transition` is not a whole grant of at least one wait, or rides
- * on an event that is not `UNBLOCKED` — refused with the log unappended.
+ * A grant is unrecordable as asked: the `--grant-wait` handed to `lane transition` is not a whole
+ * grant of at least one wait or rides on an event that is not `UNBLOCKED`, or `lane clear` was
+ * pointed at a task that still has budget to spend, so there is no round to grant. Refused with the
+ * log unappended.
  *
  * Its own seat rather than {@link RESUME_UNBUDGETED}'s: that one says a resume needs a grant and
  * carries none, and the remedy is to add one. This one says the grant itself is unrecordable, and
@@ -407,6 +409,44 @@ export const LOG_REPLAYS = 50;
 export const CONCURRENCY_CAPPED = 51;
 
 /**
+ * A `BLOCKED` was recorded carrying no `--cause`, in a repo whose `.fabrika.jsonc` declares
+ * `parkCause.uncaused: "refuse"` — refused with the log unappended.
+ *
+ * Its own seat rather than {@link CAUSE_UNRECOGNISED}'s: that one says a cause arrived and could not
+ * be seated, and the remedy is to drop or respell it. This one says none arrived at all, and the
+ * remedy is the opposite — name one. Recording it instead is the defect the code exists to stop: a
+ * park with no cause folds to a `Novel` no recipe keys on, so it always spends a human `UNBLOCKED`
+ * to say a thing the recorder already knew.
+ */
+export const PARK_UNCAUSED = 52;
+
+/**
+ * The `--rationale` handed to `lane transition` says nothing or rides on an event that is not
+ * `UNBLOCKED`, or the one `lane clear` requires is absent or blank — refused with the log
+ * unappended. It is mandatory on that verb and optional on this one because a driver's own grant is
+ * auditable on its line or nowhere, while a founder's is auditable on the pull request it was
+ * posted to.
+ *
+ * Its own seat rather than {@link CAUSE_UNRECOGNISED}'s, which is the same shape one axis over: a
+ * cause is checked against a closed set, while a rationale is prose nothing can validate but its
+ * emptiness and the event it sits on. Folding them would send a reader to the park-cause list for a
+ * field that has none.
+ */
+export const RATIONALE_REFUSED = 53;
+
+/**
+ * `lane integrate` replayed a colliding child onto the assembly tip and the child's branch would not
+ * follow the replayed commits. Nothing was merged and the seat is back where the replay found it.
+ *
+ * Its own seat rather than {@link MERGE_CONFLICT}'s, which is the collision itself: this one is not
+ * about content at all, and its remedy is freeing a branch rather than reconciling two ranges. A
+ * working tree still holding the child's branch is the usual reason — `git branch --force` refuses
+ * to move a branch another tree stands on — so the park it names is `worktree-holds-branch`, whose
+ * clearance a recipe already owns.
+ */
+export const CHILD_UNSEATED = 54;
+
+/**
  * A queue re-fold arrived before the wait axis's elapsed-time floor — refused with the log
  * unappended, and the wait left unspent.
  *
@@ -422,4 +462,4 @@ export const CONCURRENCY_CAPPED = 51;
  * parses as no date — because elapsed time is then UNKNOWN, and an UNKNOWN floor may not resolve to
  * "cleared".
  */
-export const WAIT_TOO_SOON = 52;
+export const WAIT_TOO_SOON = 55;

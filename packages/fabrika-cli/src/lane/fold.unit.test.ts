@@ -2,6 +2,7 @@
  * The six-event contract, tested as the state-ledger spike's recorded runs.
  */
 import {describe, expect, it} from "vitest";
+import {classifyPark} from "../recipe/parks.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
@@ -16,6 +17,7 @@ import {
 	parseLog,
 	resolveTask,
 	standingCauses,
+	standingRationales,
 } from "./fold.ts";
 import {
 	CANCELLED_EVENT,
@@ -23,7 +25,9 @@ import {
 	type CompiledLane,
 	compile,
 	LANDED_EVENT,
+	OPERATOR_EVENTS,
 } from "./machine.ts";
+import {routeForCause} from "./report.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
 	const result = compile(workflow);
@@ -237,24 +241,34 @@ describe("run 5 — BLOCKED then UNBLOCKED resumes the state it left", () => {
 	});
 });
 
-describe("the frozen park — an UNBLOCKED door out of an error final", () => {
+describe("the spent-budget park — the driver's own door out", () => {
 	const round: ReadonlyArray<readonly [string, string]> = [
 		["issue", "DONE"],
 		["issue", "FAIL"],
 	];
-	/** WIP, then a FAIL per round until the budget is spent and the last one freezes the task. */
+	/** WIP, then a FAIL per round until the budget is spent and the last one parks the task. */
 	const freeze: ReadonlyArray<readonly [string, string]> = [
 		["issue", "WIP"],
 		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
 	];
 
-	it("trips the lane on the frozen task rather than hanging its phase", () => {
+	it("trips the lane on the parked task rather than hanging its phase", () => {
 		const compiled = lane(coderWorkflow());
 
 		const status = statusOf(compiled, drive(compiled, freeze));
 		expect(status).toMatchObject({stateValue: "tripped", status: "done"});
 		expect(status.context.errors).toEqual(["issue"]);
 		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
+	});
+
+	// The leaf's name is the whole delta from `frozen`: `isPark` matches `human:*` and matched
+	// `frozen` never, so a child at its cap used to park where no recipe could see a park at all.
+	it("names a park a recipe can see, routed to the driver", () => {
+		expect(classifyPark("human:budget-spent", null)).toMatchObject({
+			_tag: "Novel",
+			cause: "repair-budget-spent",
+		});
+		expect(routeForCause("repair-budget-spent")).toBe("driver");
 	});
 
 	it("refuses the door when the state would come back and the budget would not", () => {
@@ -268,10 +282,12 @@ describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 			"2026-08-16T00:00:00.000Z",
 		);
 		// Never a silent `active`/`review` whose only walkable arm is PASS: the resume is refused with
-		// the log unappended, and the refusal names the remedy.
+		// the log unappended, and the refusal names a remedy for each seat — the founder's grant on a
+		// pull request, and the driver's own on a lane that has none.
 		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
 		if (applied._tag !== "Refused") return;
 		expect(applied.reason).toContain("build clear");
+		expect(applied.reason).toContain("lane clear");
 		expect(applied.reason).toContain(`${RETRY_BUDGET}/${RETRY_BUDGET} retries`);
 	});
 
@@ -306,7 +322,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 			grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND),
 		);
 
-		// The granted round is walkable: FAIL routes to `build`, not straight back to `frozen`.
+		// The granted round is walkable: FAIL routes to `build`, not straight back to the park.
 		const spent = drive(compiled, [["issue", "FAIL"]], resumed);
 		expect(statusOf(compiled, spent).stateValue).toMatchObject({pipeline: {issue: "build"}});
 		expect(statusOf(compiled, drive(compiled, round, spent))).toMatchObject({
@@ -341,7 +357,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 		const workflow = coderWorkflow() as {
 			machine: {states: {pipeline: {states: {issue: {initial: string}}}}};
 		};
-		workflow.machine.states.pipeline.states.issue.initial = "frozen";
+		workflow.machine.states.pipeline.states.issue.initial = "human:budget-spent";
 		const compiled = lane(workflow);
 
 		const applied = applyEvent(
@@ -467,8 +483,8 @@ describe("one lane — an UNBLOCKED, then a `build clear` for that round", () =>
 		const compiled = lane(coderWorkflow());
 		const frozen = drive(compiled, freeze);
 
-		// The fold restored `review` at retries 2 against maxRetries 2, so `ISSUE.PASS` was the
-		// only non-error arm and the lane still read `active` — the signal an operator routes on.
+		// The fold restored `review` at a spent budget, so `ISSUE.PASS` was the only non-error arm and
+		// the lane still read `active` — the signal an operator routes on.
 		expect(statusOf(compiled, frozen).context.issue).toMatchObject({
 			retries: RETRY_BUDGET,
 			maxRetries: RETRY_BUDGET,
@@ -542,7 +558,7 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 		if (applied._tag === "Refused") expect(applied.reason).toContain("NoCellError");
 	});
 
-	it("refuses an event outside the operator's six before touching the machine", () => {
+	it("refuses an event outside the operator's set before touching the machine", () => {
 		const compiled = lane(twoPhaseWorkflow());
 
 		const applied = applyEvent(
@@ -553,7 +569,10 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 			"2026-08-16T00:00:00.000Z",
 		);
 		expect(applied).toMatchObject({_tag: "Refused"});
-		if (applied._tag === "Refused") expect(applied.reason).toContain("six");
+		// The refusal names the whole set rather than a count, so a seventh event does not make it lie.
+		if (applied._tag === "Refused") {
+			for (const event of OPERATOR_EVENTS) expect(applied.reason).toContain(event);
+		}
 	});
 
 	it("refuses a CLEARED handed to the operator's path, naming the verb that appends one", () => {
@@ -810,6 +829,83 @@ describe("the park cause a BLOCKED carries", () => {
 		expect(standingCauses([caused("issue", "BLOCKED", "worktree-holds-branch"), granted])).toEqual({
 			issue: "worktree-holds-branch",
 		});
+	});
+});
+
+describe("the rationale a driver's clearance stands on", () => {
+	const parked = (task: string, cause: string): LogEntry => ({
+		...entry(task, "BLOCKED"),
+		cause,
+	});
+	const cleared = (task: string, rationale: string): LogEntry => ({
+		...entry(task, "UNBLOCKED"),
+		rationale,
+	});
+
+	it("stands the rationale of a task's latest entry, per task", () => {
+		expect(
+			standingRationales([
+				parked("issue_1", "head-behind-base"),
+				cleared("issue_1", "rebased the head onto main"),
+				entry("issue_2", "WIP"),
+			]),
+		).toEqual({issue_1: "rebased the head onto main"});
+	});
+
+	it("drops the rationale once a later event supersedes it", () => {
+		expect(
+			standingRationales([cleared("issue", "rebased the head"), entry("issue", "WIP")]),
+		).toEqual({});
+	});
+
+	it("hangs the standing rationale on the task's own context, where a re-fold reads it back", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [
+			entry("issue", "WIP"),
+			parked("issue", "head-behind-base"),
+			cleared("issue", "rebased the head onto main"),
+		];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(
+			compiled,
+			folded.states,
+			standingCauses(entries),
+			standingRationales(entries),
+		);
+
+		expect(status.stateValue).toEqual({pipeline: {issue: "build"}});
+		expect(status.context.issue).toMatchObject({rationale: "rebased the head onto main"});
+		expect(Object.hasOwn(status.context.issue as object, "cause")).toBe(false);
+	});
+
+	// A recorded reason that says nothing is exactly as unauditable as no reason at all, so the
+	// parse refuses it rather than fold a line that reads as explained.
+	it("is a parse defect on a line whose rationale says nothing", () => {
+		const blank = JSON.stringify({
+			task: "issue",
+			event: "ISSUE.UNBLOCKED",
+			at: "2026-09-09T00:00:00.000Z",
+			rationale: "   ",
+		});
+
+		const parsed = parseLog(`${blank}\n`);
+
+		expect(parsed._tag).toBe("Malformed");
+		if (parsed._tag !== "Malformed") return;
+		expect(parsed.defects.join("; ")).toMatch(/`rationale` field that says nothing/);
+	});
+
+	it("folds a log written before the field existed with no rationale key at all", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [entry("issue", "WIP")];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(compiled, folded.states, {}, standingRationales(entries));
+
+		expect(Object.hasOwn(status.context.issue as object, "rationale")).toBe(false);
 	});
 });
 

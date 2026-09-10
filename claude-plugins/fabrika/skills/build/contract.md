@@ -2692,9 +2692,9 @@ fabrika build verdicts --pr 8 [--repo <owner/name>]
     "reviewId": 98001, "kind": "native", "body": "…the review's text…"}
  ],
  "rounds": 2, "capReached": false,
- "clearances": [{"round": 3, "at": "2026-08-18T07:16:03Z", "by": "usirin", "commentId": 512400,
+ "clearances": [{"round": 4, "at": "2026-08-18T07:16:03Z", "by": "usirin", "commentId": 512400,
                  "authorization": 512399, "honoured": true}],
- "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 3}]}
+ "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 4}]}
 ```
 
 (`frozenCriteria` rows carry `text` and `appendedRound`; the array is empty when nothing was

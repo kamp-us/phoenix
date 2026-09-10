@@ -1,21 +1,25 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
 	LANE_ABSENT,
+	LANE_UNREADABLE,
+	PARK_UNCAUSED,
 	PROOF_ABSENT,
 	PROOF_CONTRADICTED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
 import type {ProveOptions} from "./prove-verb.ts";
-import {SHELL_VOCABULARIES} from "./report.ts";
+import {PARK_CAUSE_TOKENS, SHELL_VOCABULARIES} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -65,6 +69,7 @@ const run = (
 		pr?: string | null;
 		comment?: string | null;
 		cause?: string | null;
+		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver>;
 	} = {},
@@ -80,6 +85,7 @@ const run = (
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
+					parkCause: extra.parkCause ?? parkCauseRead(),
 					classes: extra.classes ?? [],
 					repo: "o/r",
 					cwd: "/repo",
@@ -103,6 +109,7 @@ describe("lane report — every shell terminal token maps to one operator event"
 		reviewer: "review",
 		"ui-reviewer": "review:ui",
 		shipper: "ship",
+		machinery: "ship",
 	};
 
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
@@ -346,6 +353,56 @@ describe("lane report — the park cause a BLOCKED carries", () => {
 	});
 });
 
+describe("lane report — a cause-less park under `parkCause.uncaused: refuse`", () => {
+	const strict = parkCauseRead("refuse");
+
+	it("refuses the bare park at its own code, unappended and without reaching the prover", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, prover});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(out.code).not.toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
+		for (const cause of PARK_CAUSE_TOKENS) expect(out.stderr.join(" ")).toContain(cause);
+	});
+
+	it("records the same terminal once it names a cause", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, cause: "worktree-holds-branch"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs)).cause).toBe("worktree-holds-branch");
+	});
+
+	// The whole containment: a terminal that maps to anything but BLOCKED is untouched by the key.
+	it("leaves a non-park terminal alone", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "BUILT-NO-PR", {parkCause: strict});
+
+		expect(out.code).toBe(0);
+	});
+
+	it("refuses UNKNOWN on a config nobody could read, rather than recording the bare park", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "STOPPED", {
+			parkCause: {_tag: "Refused", reason: "EACCES"},
+			prover,
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
 /**
  * A `PASS` proven over a set short one namespace is a different fact from one proven over the whole
  * set, and only the event line can carry the difference — an epic child hands `review-ui` to its
@@ -476,6 +533,46 @@ describe("lane report — a reviewer's terminal is the one its run reached", () 
 			expect(out.code).toBe(PROOF_CONTRADICTED);
 			expect(fs.written.size).toBe(0);
 		}
+	});
+});
+
+describe("lane report — a machinery terminal lands its own cause", () => {
+	it("seats the token's cause on the line with no --cause typed at all", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "QUEUE-EJECTED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			task: "issue",
+			event: "ISSUE.LAP",
+			cause: "queue-ejected",
+		});
+	});
+
+	it("lets a recorder that knows better name another cause off the routed table", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "BASE-DRIFTED", {cause: "assembly-conflict"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "assembly-conflict"});
+	});
+
+	it("tells an integrate-sourced failure from a review-sourced one on the recorded line", async () => {
+		const machinery = laneAt(LOG_AT.ship);
+		const content = laneAt(LOG_AT.review);
+
+		await run(machinery, "REPLAY-COLLIDED");
+		await run(content, "FAIL");
+
+		expect(JSON.parse(appendedLine(machinery))).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "replay-conflict",
+		});
+		const recorded = JSON.parse(appendedLine(content)) as Record<string, unknown>;
+		expect(recorded).toMatchObject({event: "ISSUE.FAIL"});
+		expect(recorded.cause).toBeUndefined();
 	});
 });
 

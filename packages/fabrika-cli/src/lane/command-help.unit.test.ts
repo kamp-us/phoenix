@@ -80,13 +80,18 @@ describe("the closed park-cause set --cause advertises", () => {
 		expect(flagHelp(leafNamed("transition"))).toContain(token);
 	});
 
-	it("offers the rendered gate's three causes beside the four that predate them", () => {
+	it("offers the two spent-budget parks, the machinery ejection and the rendered gate's three beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
+			"assembly-conflict",
 			"campaign-paused",
 			"head-behind-base",
 			"no-design-manifest",
 			"no-preview-render",
 			"no-rendered-delta",
+			"queue-ejected",
+			"repair-budget-spent",
+			"replay-budget-spent",
+			"replay-conflict",
 			"spawn-dead",
 			"worktree-holds-branch",
 		]);

@@ -9,13 +9,13 @@
  * lockfile change between the two runs.
  */
 import {execFileSync} from "node:child_process";
-import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {ASSEMBLY_RED, RECONCILE_REFUSED} from "./codes.ts";
+import {ASSEMBLY_RED, CHILD_UNSEATED, MERGE_CONFLICT, RECONCILE_REFUSED} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
@@ -43,6 +43,8 @@ interface Fixture {
 	readonly seat: string;
 	readonly lanes: string;
 	readonly base: string;
+	/** The assembly tip a collision fixture starts at — the base for the plain ones. */
+	readonly tip: string;
 }
 
 /**
@@ -82,7 +84,62 @@ const fixture = (reconciler: string | null): Fixture => {
 	const lanes = join(root, ".fabrika", "lanes");
 	mkdirSync(join(lanes, String(EPIC)), {recursive: true});
 	writeFileSync(join(lanes, String(EPIC), "workflow.json"), coderTemplateText());
-	return {root, seat, lanes, base};
+	return {root, seat, lanes, base, tip: base};
+};
+
+/** The registry two children each append a row to — the collision the replay exists for. */
+const REGISTRY = "flags.txt";
+
+const rows = (...lines: ReadonlyArray<string>): string => [...lines, "LAST", ""].join("\n");
+
+/**
+ * The state the epic run is in when two reviewed children collide: the assembly branch already
+ * carries the first child's row, and the second child's branch adds its own at the same place off
+ * the base neither has seen the other from.
+ */
+const collision = (onCollision: string, validate = VALIDATE): Fixture => {
+	const root = join(mkdtempSync(join(tmpdir(), "lane-replay-")), "checkout");
+	mkdirSync(root, {recursive: true});
+	git(root, "init", "--initial-branch=main", ".");
+	git(root, "config", "user.email", "integrate@example.test");
+	git(root, "config", "user.name", "integrate");
+	writeFileSync(join(root, ".gitignore"), ".installed\n.fabrika/\n");
+	writeFileSync(join(root, "lock.txt"), "v1");
+	writeFileSync(join(root, "install.sh"), INSTALL);
+	writeFileSync(join(root, "validate.sh"), validate);
+	writeFileSync(join(root, REGISTRY), rows("one"));
+	writeFileSync(
+		join(root, ".fabrika.jsonc"),
+		JSON.stringify({
+			dependencyReconciler: {command: ["sh", "install.sh"]},
+			codeValidators: [{command: ["sh", "validate.sh"]}],
+			assemblyReplay: {onCollision},
+		}),
+	);
+	git(root, "add", "-A");
+	git(root, "commit", "-m", "base");
+	const base = git(root, "rev-parse", "HEAD");
+
+	git(root, "branch", CHILD);
+	git(root, "checkout", CHILD);
+	writeFileSync(join(root, REGISTRY), rows("one", "child-row"));
+	writeFileSync(join(root, "lock.txt"), "v2");
+	git(root, "add", "-A");
+	git(root, "commit", "-m", "the second child's row");
+	git(root, "checkout", "main");
+
+	const seat = join(root, "assembly");
+	git(root, "worktree", "add", "-b", `epic/${EPIC}`, seat, base);
+	writeFileSync(join(seat, REGISTRY), rows("one", "epic-row"));
+	git(seat, "add", "-A");
+	git(seat, "commit", "-m", "the first child's row, already landed");
+	writeFileSync(join(seat, ".installed"), "v1");
+	const tip = git(seat, "rev-parse", "HEAD");
+
+	const lanes = join(root, ".fabrika", "lanes");
+	mkdirSync(join(lanes, String(EPIC)), {recursive: true});
+	writeFileSync(join(lanes, String(EPIC), "workflow.json"), coderTemplateText());
+	return {root, seat, lanes, base, tip};
 };
 
 const integrate = ({root, lanes}: Fixture) => {
@@ -141,5 +198,89 @@ describe("lane integrate over a real assembly worktree", {
 		expect(code).toBe(RECONCILE_REFUSED);
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.base);
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+	});
+});
+
+describe("a cross-child collision over a real assembly worktree", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	it("refuses it exactly as it always did while assemblyReplay is off", () => {
+		const tree = collision("off");
+
+		const {code, stdout} = integrate(tree);
+
+		expect(code).toBe(MERGE_CONFLICT);
+		expect(stdout).toBe("");
+		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+		expect(git(tree.root, "branch", "--list", "replay/*")).toBe("");
+	});
+
+	it("replays it onto the tip with the key on, and validates the replayed tree", () => {
+		const tree = collision("on");
+
+		const {code, stdout} = integrate(tree);
+
+		expect(code).toBe(0);
+		const lines = stdout.trim().split("\n");
+		expect(lines.at(-1)).toBe("INTEGRATE-VERDICT: REPLAYED");
+		const event = JSON.parse(lines[0] ?? "") as Record<string, unknown>;
+		expect(event.event).toBe("replayed");
+		expect(event.reReview).toBe("required");
+		// The classification the retry-budget wiring reads: machinery worked, the child did not fail.
+		expect(event.budget).toBe("unspent");
+		expect(event.resolved).toEqual([REGISTRY]);
+		expect(event.range).toEqual({from: tree.tip, to: git(tree.seat, "rev-parse", "HEAD^2")});
+
+		// Both children's rows survived, and the branch carries the replay as one nameable landing.
+		expect(readFileSync(join(tree.seat, REGISTRY), "utf8")).toBe(
+			rows("one", "epic-row", "child-row"),
+		);
+		expect(git(tree.seat, "rev-parse", "HEAD^1")).toBe(tree.tip);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+	});
+
+	it("lands the replayed child on its next integrate, with its row written once", () => {
+		// The whole cycle the machine's WIP arm opens: replay, re-review, integrate again. The second
+		// run merged the superseded branch before the replay re-seated it — collided with its own
+		// landing, replayed that, and kept both sides of an empty-base hunk, so the child's row was
+		// written once more every turn and `landed` was unreachable.
+		const tree = collision("on");
+		expect(integrate(tree).code).toBe(0);
+		const landed = readFileSync(join(tree.seat, REGISTRY), "utf8");
+
+		const {code, stdout} = integrate(tree);
+
+		expect(code).toBe(0);
+		expect(stdout.trim().split("\n").at(-1)).toBe("INTEGRATE-VERDICT: MERGED");
+		expect(readFileSync(join(tree.seat, REGISTRY), "utf8")).toBe(landed);
+		expect(landed).toBe(rows("one", "epic-row", "child-row"));
+	});
+
+	it("refuses on 54 when a working tree holds the child branch the replay must re-seat", () => {
+		const tree = collision("on");
+		git(tree.root, "checkout", CHILD);
+
+		const {code, stdout} = integrate(tree);
+
+		expect(code).toBe(CHILD_UNSEATED);
+		expect(stdout).toBe("");
+		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+	});
+
+	it("puts both branches back when the replayed tree fails a validator", () => {
+		const tree = collision("on", "exit 1\n");
+		const graded = git(tree.seat, "rev-parse", CHILD);
+
+		const {code} = integrate(tree);
+
+		expect(code).toBe(ASSEMBLY_RED);
+		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+		// The child's branch is the other half. The replay moved it onto the replayed range before
+		// the merge; with the merge reset away, a branch left there names commits no reviewer graded,
+		// and a refusal writes no stdout, so nothing would carry the move to a reader.
+		expect(git(tree.seat, "rev-parse", CHILD)).toBe(graded);
 	});
 });

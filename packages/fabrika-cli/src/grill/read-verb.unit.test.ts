@@ -1,6 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply} from "../fakes.test-support.ts";
+import {emitFromFields} from "../wire/audit-context.ts";
+import {AUDIT_FIELDS} from "../wire/audit-context-fixture.ts";
 import {cameFromSection} from "../wire/came-from.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
@@ -33,6 +35,41 @@ const options = {
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
+
+describe("audit research beside the frontier", () => {
+	it.each([
+		"absent",
+		"malformed",
+		"found",
+	])("keeps readable questions when context is %s", async (state) => {
+		const composed = emitFromFields(AUDIT_FIELDS);
+		if (composed._tag !== "Composed") throw new Error(composed.reason);
+		const body =
+			state === "absent"
+				? "A normal session"
+				: state === "malformed"
+					? "## Audit context\nbroken"
+					: composed.bytes;
+		const out = await Effect.runPromise(
+			runRead(options).pipe(
+				Effect.provide(
+					fakeSeams([
+						[ISSUE, served(sessionPayload(9412, {body}))],
+						[COMMENTS, served(commentsPayload([ROUND]))],
+					]).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		const result = JSON.parse(out.stdout);
+		expect(result.auditContext._tag.toLowerCase()).toBe(state);
+		expect(result.questions).toHaveLength(2);
+		expect(result.questions.every((question: {state: string}) => question.state === "open")).toBe(
+			true,
+		);
+		expect(result.counts.ruled).toBe(0);
+	});
+});
 
 interface ReadAnswer {
 	readonly session: number;

@@ -38,13 +38,13 @@ const laneBudget = (log: string | undefined): number => {
 const NOW = new Date("2026-08-18T07:16:03Z");
 const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round on this one."';
 
-/** Three graded heads — three rounds, the count at which the declared budget is spent. */
-const THREE_ROUND_COMMENTS = [
-	{id: 1, body: `review-code: FAIL @ ${PRIOR_HEADS[0]} — one`, createdAt: "2026-08-18T01:00:00Z"},
-	{id: 2, body: `review-code: FAIL @ ${PRIOR_HEADS[1]} — two`, createdAt: "2026-08-18T02:00:00Z"},
-	{id: 3, body: `review-code: FAIL @ ${PRIOR_HEADS[2]} — three`, createdAt: "2026-08-18T03:00:00Z"},
-];
-const THREE_ROUNDS = comments(...THREE_ROUND_COMMENTS);
+/** One graded head per round — the count at which the declared budget is spent. */
+const CAPPED_COMMENTS = PRIOR_HEADS.slice(0, CAP_ROUND).map((head, index) => ({
+	id: index + 1,
+	body: `review-code: FAIL @ ${head} — round ${index + 1}`,
+	createdAt: `2026-08-18T0${index + 1}:00:00Z`,
+}));
+const CAPPED = comments(...CAPPED_COMMENTS);
 
 const CONFIGURED: HttpReply = {
 	status: 200,
@@ -93,7 +93,7 @@ const postedBodies = (
 
 const GRANTABLE: ReadonlyArray<Scripted> = [
 	[PULL, pull({number: 4310, base: {ref: "main"}})],
-	[COMMENTS, THREE_ROUNDS],
+	[COMMENTS, CAPPED],
 	[VIEWER, viewer("usirin")],
 	[PERMISSION, permission("admin")],
 ];
@@ -104,7 +104,7 @@ describe("runClear", () => {
 			[
 				...GRANTABLE,
 				[POST, POSTED(900)],
-				[GET_COMMENT, served({body: "cap-cleared: round 3 · 2026-08-18T07:16:03Z\n"})],
+				[GET_COMMENT, served({body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T07:16:03Z\n`})],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -115,7 +115,7 @@ describe("runClear", () => {
 		expect(parsed.cap).toBe(CAP_ROUND + 1);
 		const posted = postedBodies(requests, bodies);
 		expect(posted[0]).toContain("Founder ruling 2026-08-18");
-		expect(posted[1]).toContain("cap-cleared: round 3");
+		expect(posted[1]).toContain(`cap-cleared: round ${CAP_ROUND}`);
 	});
 
 	it("carries the grant into the local lane, so the guard does not freeze the cleared round", async () => {
@@ -123,7 +123,7 @@ describe("runClear", () => {
 			[
 				...GRANTABLE,
 				[POST, POSTED(900)],
-				[GET_COMMENT, served({body: "cap-cleared: round 3 · 2026-08-18T07:16:03Z\n"})],
+				[GET_COMMENT, served({body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T07:16:03Z\n`})],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -135,7 +135,7 @@ describe("runClear", () => {
 	it("refuses an account outside the configured set, writing nothing", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
-			[COMMENTS, THREE_ROUNDS],
+			[COMMENTS, CAPPED],
 			[VIEWER, viewer("someone-else")],
 		]);
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
@@ -146,7 +146,7 @@ describe("runClear", () => {
 		const {outcome} = await run(
 			[
 				[PULL, pull({number: 4310, base: {ref: "main"}})],
-				[COMMENTS, THREE_ROUNDS],
+				[COMMENTS, CAPPED],
 				[VIEWER, viewer("usirin")],
 			],
 			{},
@@ -160,7 +160,7 @@ describe("runClear", () => {
 		const {outcome} = await run(
 			[
 				[PULL, pull({number: 4310, base: {ref: "main"}})],
-				[COMMENTS, THREE_ROUNDS],
+				[COMMENTS, CAPPED],
 				[VIEWER, viewer("usirin")],
 			],
 			{},
@@ -212,11 +212,11 @@ describe("runClear", () => {
 				[
 					COMMENTS,
 					comments(
-						...THREE_ROUND_COMMENTS,
+						...CAPPED_COMMENTS,
 						{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
 						{
 							id: 5,
-							body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+							body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T03:11:00Z`,
 							author: "usirin",
 							createdAt: "2026-08-18T03:11:00Z",
 						},
@@ -226,7 +226,10 @@ describe("runClear", () => {
 				[VIEWER, viewer("usirin")],
 				[PERMISSION, permission("admin")],
 				[POST, POSTED(901)],
-				[GET_COMMENT, served({body: "cap-cleared: round 4 · 2026-08-18T07:16:03Z\n"})],
+				[
+					GET_COMMENT,
+					served({body: `cap-cleared: round ${CAP_ROUND + 1} · 2026-08-18T07:16:03Z\n`}),
+				],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -241,7 +244,7 @@ describe("runClear", () => {
 	it("refuses a configured account that resolves below write at the ACL", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
-			[COMMENTS, THREE_ROUNDS],
+			[COMMENTS, CAPPED],
 			[VIEWER, viewer("usirin")],
 			[PERMISSION, permission("read")],
 		]);
@@ -253,7 +256,7 @@ describe("runClear", () => {
 	it("holds an unreadable permission UNKNOWN rather than granting on the config alone", async () => {
 		const {outcome} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
-			[COMMENTS, THREE_ROUNDS],
+			[COMMENTS, CAPPED],
 			[VIEWER, viewer("usirin")],
 			[PERMISSION, {status: 502, body: "{}"}],
 		]);
@@ -271,11 +274,11 @@ describe("runClear", () => {
 				[
 					COMMENTS,
 					comments(
-						...THREE_ROUND_COMMENTS,
+						...CAPPED_COMMENTS,
 						{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
 						{
 							id: 5,
-							body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+							body: `cap-cleared: round ${CAP_ROUND} · 2026-08-18T03:11:00Z`,
 							author: "usirin",
 							createdAt: "2026-08-18T03:11:00Z",
 						},

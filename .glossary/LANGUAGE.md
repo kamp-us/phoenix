@@ -298,8 +298,9 @@ is addressed by a key, and the key decides where its ledger lives:
 
 - **`chore lane`** — a lane keyed by a **name** rather than an issue number, because a recurring
   chore has no issue to be keyed by; its state lives at `.fabrika/chores/<name>/events.jsonl`,
-  against `.fabrika/lanes/<n>/` for an issue lane. Same fold, same six-event vocabulary
-  (DONE/PASS/FAIL/BLOCKED/WIP/UNBLOCKED), different key. Source:
+  against `.fabrika/lanes/<n>/` for an issue lane. Same fold, same operator-event vocabulary
+  (DONE/PASS/FAIL/BLOCKED/WIP/UNBLOCKED, plus LAP — see **machinery lap** below), different key.
+  Source:
   [`packages/fabrika-cli/src/lane/key.ts`](../packages/fabrika-cli/src/lane/key.ts) (#5840).
 - **`recipe`** (pipeline sense) — one deterministic fabrika verb a chore workflow state applies:
   a fixed sequence with named exit codes and no judgment in it. A recipe **relays a verb's
@@ -311,6 +312,38 @@ is addressed by a key, and the key decides where its ledger lives:
 **Two senses of `recipe`.** This is the pipeline one. The other is the UI composition idiom
 above ("The composition shell / recipe", ADR 0182) — one flat element-prop per zone. They share
 nothing but the word; name which one you mean when the context does not fix it.
+
+### The driver and the founder, the park route, and the machinery lap
+
+Four terms the fabrika skills lean on everywhere and defined nowhere until epic
+[#8810](https://github.com/kamp-us/phoenix/issues/8810). The rulings behind them are ADRs
+[0376](../.decisions/0376-driver-seat-for-non-product-parks.md) and
+[0377](../.decisions/0377-machinery-lap-narrows-repair-budget.md); this is the vocabulary.
+
+**The driver** is the session driving a lane — the seat the `operate` skill runs in. It is a human
+seat in the sense the corpus uses that phrase: it holds the moves no verb takes on its own account,
+for every cause that is not a product call. It diagnoses a park, records the clear with its own
+rationale, and answers for that judgment at the weekly machinery review.
+
+**The founder** is the seat for a product ruling and nothing else — what to build, what a campaign's
+lifecycle is, what a name means to a user. The pair is the whole routing question: *is this a product
+call, or is it machinery?* A driver never takes a founder's, and a founder is not asked about the
+engine.
+
+**A park route** is the field on a park cause that answers that question — `driver` or `founder`,
+two arms and no third, declared once on the cause in
+[`packages/fabrika-cli/src/lane/report.ts`](../packages/fabrika-cli/src/lane/report.ts)'s
+`PARK_CAUSES` and read everywhere through `routeForCause`. A park that named **no** cause routes
+`founder`, fail-closed: nothing named what went wrong, so nothing may attribute it to machinery.
+The route is not the same as a **remedy** — a remedy is a verb that removes the cause, and a
+driver-routed park with no remedy still clears, on the driver's recorded rationale rather than on a
+proving read.
+
+**A machinery lap** is a round the pipeline spent on itself — a child colliding at integrate, the
+trunk drifting under an epic tail, a queue ejection, a seat left dirty, a shell the provider killed.
+It records the `LAP` event and spends the lap counter, never the repair budget. **It is deliberately
+not called a retry**: a retry is a repair round an artifact owes because a reviewer judged it and
+found it wrong, and keeping the two words apart is the point of having two counters.
 
 ### Diátaxis-lite README shape
 

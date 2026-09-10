@@ -1,5 +1,5 @@
 /**
- * `grill open` — open, or resume, the session issue for a topic.
+ * `grill open` topic/ticket path. The audit input and recovery path live in `audit-open.ts`.
  *
  * **Zero matching sessions is a fact, not a failed read**: no session existing is the ordinary
  * first-run state, and the verb mints one. A search that could not complete is

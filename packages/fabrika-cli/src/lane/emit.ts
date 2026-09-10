@@ -23,11 +23,16 @@
  * produce the same machine bytes. A child's state is part of the input: a closed child boots its
  * region in a final state, so re-emitting a partly-built epic yields a machine that can still
  * terminate.
+ *
+ * The machinery lap axis rides one boolean, off by default (`machineryLaps.onEmit`): on, each task
+ * seeds a lap counter and the collision and queue states take a `LAP` arm; off, every byte is what
+ * it was before the axis existed. The machine is fixed at emission, so the flag reaches no lane
+ * already on disk.
  */
 import {type Ref, readTopology} from "../build/dependencies.ts";
 import {type DeclaredLine, findCycle} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
-import {RETRY_BUDGET} from "../retry-budget.ts";
+import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 
 export type EmitResult =
 	| {
@@ -47,16 +52,30 @@ export type EmitResult =
 /**
  * Where a child's region boots. Only a `completed` close asserts the work landed, so only it earns
  * `landed`; every other close (`not_planned`, `duplicate`, a legacy null reason) is
- * closed-without-landing and boots `frozen` — `lane status` reads `frozen` as an error final and
- * trips the phase, which is the loud answer for a topology that still requires a child the board
- * abandoned. Marking it `landed` would fabricate a landing. A child booted there left no state
- * behind it, so `frozen`'s `UNBLOCKED` door has nowhere to resume to and the fold refuses it —
- * that child is re-emitted, not unfrozen.
+ * closed-without-landing and boots `frozen` — a final carrying a door, which the compiler reads as
+ * this region's error final because the region BOOTS there, and the phase trips. That is the loud
+ * answer for a topology that still requires a child the board abandoned; marking it `landed` would
+ * fabricate a landing instead. A child booted there left no state behind it, so `frozen`'s
+ * `UNBLOCKED` door has nowhere to resume to and the fold refuses it — that child is re-emitted, not
+ * unfrozen.
  */
 const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 	if (link.state === "open") return "queued";
 	return link.stateReason === "completed" ? "landed" : "frozen";
 };
+
+/**
+ * The machinery arm, whose two targets are the whole of the lap axis in a document: go round again
+ * while laps remain, else park on `human:machinery-stall`.
+ *
+ * The park is a plain state with an `UNBLOCKED` door rather than a final, because a spent lap is not
+ * a verdict against the work — nothing about the artifact is wrong, the pipeline failed to carry it
+ * — so freezing the task would tell a reader the opposite of what happened.
+ */
+const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
+	{target, guard: "lapsRemaining", actions: "incrementLaps"},
+	{target: "human:machinery-stall"},
+];
 
 /**
  * One child's region — the local loop, namespaced to the child's task id.
@@ -68,13 +87,41 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
  * failed post-merge check, which is the semantic collision — re-enters `build` under the same
- * guarded-FAIL retry array `review` uses, and exhausts into `frozen` — a park with an `UNBLOCKED`
- * door back to the state it left, spent retries held. No route from it reaches a
+ * guarded-FAIL retry array `review` uses, and exhausts into `human:budget-spent` — a park with an
+ * `UNBLOCKED` door back to the state it left, spent retries held. No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
+ *
+ * Its `WIP` is the door that keeps that second half true when the verb resolves the collision
+ * itself. `lane integrate`'s replay puts a colliding child's commits down on the assembly tip, so
+ * the graded range moves and a verdict bound to the old range no longer describes what would land —
+ * the run says as much in `reReview: "required"`. Without an arm out of `integrate` the only move
+ * toward progress was the `DONE` into `landed`, which ends the child on content no reviewer read.
+ *
+ * That arm is a guarded array like `ship:queued`'s, not the plain target it was first written as: a
+ * replay is machinery working rather than the child failing, so it spends `waits` and never a repair
+ * round, which is the whole of `budget: "unspent"`. Spending nothing at all is the shape that was
+ * wrong — `integrate --WIP--> review --PASS--> integrate` is a closed cycle, and a plain target sits
+ * in no wait park, so nothing counted its turns. Its spent-budget fallthrough is
+ * `human:replay-stall` rather than `human:budget-spent` because a replay that will not settle is a
+ * collision between two children a person reads, not a child that failed its review. Its own row in
+ * `report.ts`'s `STRUCTURAL_PARK_CAUSES` is what keeps it a door rather than a dead end: a `WIP`
+ * may carry no `--cause`, so without one the leaf folds causeless, `routeForCause` reads `founder`
+ * and `recipe unpark` refuses it forever — a machinery failure spending a person, which is the whole
+ * defect this region was rewritten to remove.
+ *
+ * `frozen` survives as the boot state {@link initialFor} seats an abandoned child in, and nothing
+ * transitions into it any more: a spent repair budget lands on `human:budget-spent` instead, which
+ * is the SAME shape — a `final` carrying an `UNBLOCKED` door, so the phase folds and the lane trips
+ * loud — under a name `recipe/parks.ts` can see. `isPark` matches `blocked` and `human:*` and
+ * matched `frozen` never, so a child at its cap parked where every recipe answered `NotParked`.
  */
-const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<string, unknown> => ({
+const region = (
+	ns: string,
+	initial: "queued" | "landed" | "frozen",
+	machinery: boolean,
+): Record<string, unknown> => ({
 	initial,
 	states: {
 		queued: {on: {[`${ns}.WIP`]: "build", [`${ns}.BLOCKED`]: "blocked"}},
@@ -85,21 +132,29 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "frozen"},
+					{target: "human:budget-spent"},
 				],
 			},
 		},
 		integrate: {
 			on: {
 				[`${ns}.DONE`]: "landed",
+				[`${ns}.WIP`]: [
+					{target: "review", guard: "waitsRemaining", actions: "incrementWaits"},
+					{target: "human:replay-stall"},
+				],
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "frozen"},
+					{target: "human:budget-spent"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		landed: {type: "final"},
 		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
@@ -126,11 +181,11 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
  * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
- * next verdict is another review. The fallthrough is `human:epic-review`, and it carries the same
- * `final` + `UNBLOCKED` door `frozen` does: a twice-failed epic review is a park a human resumes,
- * not the end of the run.
+ * next verdict is another review. The fallthrough is the same `human:budget-spent` a child's is: an
+ * epic review that spent its budget is a park its driver resumes, not the end of the run, and one
+ * leaf for one fact means one route to read it by.
  */
-const epicRegion = (ns: string): Record<string, unknown> => ({
+const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
 	states: {
 		review: {
@@ -139,7 +194,7 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:epic-review"},
+					{target: "human:budget-spent"},
 				],
 			},
 		},
@@ -150,8 +205,9 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 				[`${ns}.BLOCKED`]: "human:cp-approval",
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:epic-review"},
+					{target: "human:budget-spent"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
 			},
 		},
 		"ship:queued": {
@@ -164,20 +220,32 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 				],
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
-					{target: "human:epic-review"},
+					{target: "human:budget-spent"},
 				],
+				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:queue-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		shipped: {type: "final"},
-		"human:epic-review": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 	},
 });
 
 const taskId = (child: number): string => `issue_${child}`;
+
+/**
+ * One task's seeded context. The lap pair is appended rather than interleaved, so an emission with
+ * the axis off is the object it always was — key order included, which is what makes the byte
+ * comparison a test can hold.
+ */
+const taskContext = (machinery: boolean): Record<string, unknown> =>
+	machinery
+		? {retries: 0, maxRetries: RETRY_BUDGET, laps: 0, maxLaps: MACHINERY_LAP_BUDGET}
+		: {retries: 0, maxRetries: RETRY_BUDGET};
 
 /** The tail phase's name and its one task id. Neither can collide with a `phase<N>`/`issue_<n>`. */
 const EPIC_PHASE = "epic";
@@ -191,6 +259,7 @@ export const emitMachine = (
 	epic: number,
 	body: string,
 	children: ReadonlyArray<SubIssueLink>,
+	machinery = false,
 ): EmitResult => {
 	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
 	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
@@ -258,14 +327,14 @@ export const emitMachine = (
 	const states: Record<string, unknown> = {};
 	for (const [index, phase] of order.entries()) {
 		const members = ascending(phases.get(phase) ?? []);
-		for (const child of members) context[taskId(child)] = {retries: 0, maxRetries: RETRY_BUDGET};
+		for (const child of members) context[taskId(child)] = taskContext(machinery);
 		const next = order[index + 1];
 		states[phaseName(phase)] = {
 			type: "parallel",
 			states: Object.fromEntries(
 				members.map((child) => [
 					taskId(child),
-					region(taskId(child).toUpperCase(), initialOf(child)),
+					region(taskId(child).toUpperCase(), initialOf(child), machinery),
 				]),
 			),
 			onDone: [
@@ -274,10 +343,10 @@ export const emitMachine = (
 			],
 		};
 	}
-	context[epicTaskId(epic)] = {retries: 0, maxRetries: RETRY_BUDGET};
+	context[epicTaskId(epic)] = taskContext(machinery);
 	states[EPIC_PHASE] = {
 		type: "parallel",
-		states: {[epicTaskId(epic)]: epicRegion(epicTaskId(epic).toUpperCase())},
+		states: {[epicTaskId(epic)]: epicRegion(epicTaskId(epic).toUpperCase(), machinery)},
 		onDone: [{target: "complete", guard: "noErrors"}, {target: "tripped"}],
 	};
 	states.complete = {type: "final"};

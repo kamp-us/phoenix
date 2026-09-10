@@ -1,7 +1,7 @@
 ---
 id: 0295
 title: A dead session's build claim passes to a successor by a board-attested adopt marker
-status: accepted
+status: amended-in-part by [0373](0373-shell-budget-claim-retraction.md)
 date: 2026-08-18
 tags: [fabrika, pipeline-hardening]
 ---

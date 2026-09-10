@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {CAP_ROUND} from "../retry-budget.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {
 	ACL_DENIED,
@@ -210,7 +211,7 @@ describe("runAppendCriterion", () => {
 		expect(reachable.map((out) => out.code)).not.toContain(APPEND_ONLY);
 	});
 
-	// Fence 3 — frozen at round 3.
+	// Fence 3 — frozen at CAP_ROUND, read off the one declared budget rather than a literal.
 	it("escalates instead of appending at the freeze, and appends NOTHING", async () => {
 		const shell = fakeSeams([
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -219,10 +220,10 @@ describe("runAppendCriterion", () => {
 			[COMMENT, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runAppendCriterion({...options, round: 3}), shell.layer),
+			Effect.provide(runAppendCriterion({...options, round: CAP_ROUND}), shell.layer),
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("escalated-frozen\t4287\t3\n");
+		expect(out.stdout).toBe(`escalated-frozen\t4287\t${CAP_ROUND}\n`);
 		expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
 		expect(shell.requests.some((request) => COMMENT.test(request))).toBe(true);
 	});
@@ -235,7 +236,7 @@ describe("runAppendCriterion", () => {
 				[ISSUE, served(issue())],
 				[COMMENT, {status: 502, body: "{}"}],
 			],
-			{round: 3},
+			{round: CAP_ROUND},
 		);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the escalation comment failed");
