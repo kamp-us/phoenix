@@ -11,6 +11,7 @@ import {fakeFs} from "../fakes.test-support.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {
 	CLAIM_NOT_MINE,
+	CONCURRENT_WRITE,
 	EVENT_REFUSED,
 	ISSUE_LIVE,
 	ISSUE_UNRESOLVED,
@@ -39,6 +40,7 @@ const LANE = "5983";
 const DIR = `${ROOT}/${LANE}`;
 const WORKFLOW = `${DIR}/workflow.json`;
 const LOG = `${DIR}/events.jsonl`;
+const LOCK = `${DIR}/events.lock`;
 const ISSUE = 5983;
 const SHA = "b0ab5804263e3ca232aa950e906b997e0e6b1963";
 
@@ -583,5 +585,37 @@ describe("lane settle — what never reaches a terminal", () => {
 		const fs = laneFs();
 
 		expect((await settle(fs, {task: "nope"})).code).toBe(TASK_UNKNOWN);
+	});
+
+	it("reads the board before it takes the write lock, so a holder never waits on the network", async () => {
+		// `append-lock.ts`'s stale horizon is a margin over a hold that is local IO only. A board read
+		// under the lock puts the hold on the network's clock instead, and a live lock long enough to
+		// pass the horizon is stolen — the double-append the lock exists to refuse. Proven from
+		// outside the verb: with the lock held by someone else for the whole run, the closure read
+		// still happened, so it cannot have been sequenced behind the acquire.
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = "120";
+		const fs = fakeFs({
+			files: {[WORKFLOW]: coderTemplateText(), [LOG]: PARKED},
+			dirs: {[ROOT]: [LANE]},
+			directories: [ROOT],
+			mkdirExisting: [LOCK],
+			mtimes: {[LOCK]: new Date()},
+		});
+		let reads = 0;
+		const counted: ClosureReader<never> = () =>
+			Effect.sync(() => {
+				reads += 1;
+				return {_tag: "Read" as const, state: "closed" as const, reason: "not_planned"};
+			});
+
+		try {
+			const out = await settle(fs, {closure: counted});
+
+			expect(out.code).toBe(CONCURRENT_WRITE);
+			expect(reads).toBe(1);
+			expect(fs.written.has(LOG)).toBe(false);
+		} finally {
+			delete process.env.FABRIKA_LANE_LOCK_BUDGET_MS;
+		}
 	});
 });
