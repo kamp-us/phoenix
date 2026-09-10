@@ -55,7 +55,7 @@ import {
 	spawned,
 	stopped,
 } from "./effect.ts";
-import {compileTakesKeys, KEY_EVENT, type KeyEvent} from "./keys.ts";
+import {compileTakesKeys, type KEY_EVENT, type KeyEvent} from "./keys.ts";
 import {
 	type AnyPortDecl,
 	compilePorts,
@@ -63,6 +63,15 @@ import {
 	type PortDecls,
 	type PortPayload,
 } from "./port.ts";
+import {
+	type AuthoredWindow,
+	compileWindow,
+	type DerivedLine,
+	initialSelfReport,
+	isSelfReportPort,
+	selfReportPorts,
+	withSelfReport,
+} from "./view.ts";
 
 /** Every event an authored `update` may hold a cell for carries its own type tag, as a Msg does. */
 export interface AuthoredEvent {
@@ -110,6 +119,7 @@ export interface AuthoredProgram<
 	D extends PortDecls,
 	U,
 	C extends CommandArgTypes = Record<string, never>,
+	Out = unknown,
 > {
 	readonly id: string;
 	/** What a surface calls this program; absent falls through to `identity.program`. */
@@ -130,6 +140,15 @@ export interface AuthoredProgram<
 	 * spell registry composes it from the row's id (#8716 R16.1).
 	 */
 	readonly commands?: CommandTable<C>;
+	/**
+	 * One line saying what this program is, off its state. Compiled onto the kernel's `title@1`
+	 * out-port and emitted on every transition that moves it (`./view.ts`).
+	 */
+	readonly title?: DerivedLine<S>;
+	/** One short line saying how it is doing, on `status@1`, by the same rule. */
+	readonly status?: DerivedLine<S>;
+	/** This program's window, as a function of its own state and a `send` into its own events. */
+	readonly window?: AuthoredWindow<S, D, U, Out>;
 	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
 	/**
@@ -195,7 +214,14 @@ const emitHandler = (cmd: EmitEffect) =>
 		const ports = yield* ProcessPorts;
 		yield* ports.emit(cmd.port, cmd.payload);
 		return NO_EVENTS;
-	});
+	}).pipe(
+		// A derived title or status published to nobody is not a failure: a headless process is a
+		// whole process (#7557), and the kernel latches the line before delivery either way
+		// (`../process/self-report.ts`). An authored `emit` keeps #7789's loudness.
+		Effect.catchTag("tuval/ports/PortNotWired", (failure) =>
+			isSelfReportPort(cmd.port) ? Effect.succeed(NO_EVENTS) : Effect.fail(failure),
+		),
+	);
 
 const spawnHandler = (cmd: SpawnEffect) =>
 	Effect.gen(function* () {
@@ -268,9 +294,15 @@ const INTERPRET: Interpret<AuthoredEvent, ProgramEffect, unknown> = {
 };
 
 const compileCore = (authored: AnyAuthoredProgram): ProgramCore<any, any, any, any, any> => ({
-	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract.
-	init: (loaded: unknown) => [loaded ?? authored.init(), NO_EFFECTS],
-	update: authored.update,
+	// A loaded state is answered untouched and with no Cmds, which is Demlik's rehydrate contract —
+	// so a fresh boot is the only place a derived line may be published from `init` (`./view.ts`),
+	// and a restored process republishes on its first transition instead.
+	init: (loaded: unknown) => {
+		if (loaded !== null && loaded !== undefined) return [loaded, NO_EFFECTS];
+		const initial = authored.init();
+		return [initial, initialSelfReport(authored, initial)];
+	},
+	update: withSelfReport(authored, authored.update),
 	...(authored.subs === undefined ? {} : {subs: authored.subs}),
 	interpret: INTERPRET,
 });
@@ -309,6 +341,7 @@ export const FIELD_COMPILERS = {
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	spells: (authored) => compileCommands(authored.commands, HANDLERS),
 	takesKeys: (authored) => compileTakesKeys(authored),
+	renderer: (authored, context) => compileWindow(authored, context),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
 	placement: (authored) => authored.placement ?? LOCAL,
@@ -323,11 +356,15 @@ export const defineProgram = <
 	D extends PortDecls = Record<string, never>,
 	U = unknown,
 	C extends CommandArgTypes = Record<string, never>,
+	Out = unknown,
 >(
-	authored: AuthoredProgram<S, D, U, C>,
+	authored: AuthoredProgram<S, D, U, C, Out>,
 ): AnyProgram => {
 	const id = ProgramId.make(authored.id);
-	const context: CompileContext = {id, ports: compilePorts(id, authored.ports ?? {})};
+	const context: CompileContext = {
+		id,
+		ports: {...compilePorts(id, authored.ports ?? {}), ...selfReportPorts(authored)},
+	};
 	// The record above proved each field's type one key at a time; iterating it erases them, which
 	// is what the closing cast buys back.
 	const compilers = Object.entries(FIELD_COMPILERS) as ReadonlyArray<
