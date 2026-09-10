@@ -18,10 +18,41 @@ const REPORT = "packages/fabrika-cli/src/lane/report-verb.ts";
 const SHA = "6f1a2c4d8e0b3a5f7c9d1e2b4a6c8e0d2f4a6b8c";
 
 const RESOLVE = /^git rev-parse --verify --quiet epic\/5817\^\{commit\}$/;
-const LS_TREE = /^git ls-tree --name-only /;
+const LS_TREE = /^git ls-tree --full-tree --name-only /;
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>, entrypoint = SOURCE) => {
-	const shell = fakeShell(script);
+/** One scripted command line, matched whole so a pathspec that differs cannot answer for it. */
+const argv = (line: string): RegExp =>
+	new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+
+/**
+ * The `ls-tree` reads that answer non-empty in a repo whose tree holds `tree`, run with cwd `cwd`.
+ *
+ * Git resolves a `--full-tree` pathspec against the repository root and a bare one against the
+ * process's directory, so one file is reached by two different argv lines depending on where the
+ * process stands. Everything else falls through to the caller's empty-stdout fallback — the exit-0
+ * answer git gives an unmatched pathspec, which is what this module reads as absence.
+ */
+const treeReadsFrom = (
+	cwd: string,
+	tree: ReadonlyArray<string>,
+): ReadonlyArray<readonly [RegExp, ExecResult]> =>
+	tree.flatMap((file) => {
+		const fromCwd =
+			cwd === "" ? file : file.startsWith(`${cwd}/`) ? file.slice(cwd.length + 1) : null;
+		return [
+			[argv(`git ls-tree --full-tree --name-only ${SHA} -- ${file}`), okOut(`${file}\n`)] as const,
+			...(fromCwd === null
+				? []
+				: [[argv(`git ls-tree --name-only ${SHA} -- ${fromCwd}`), okOut(`${file}\n`)] as const]),
+		];
+	});
+
+const run = (
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	entrypoint = SOURCE,
+	fallback?: ExecResult,
+) => {
+	const shell = fakeShell(script, fallback);
 	return Effect.runPromise(
 		Effect.provide(
 			Effect.gen(function* () {
@@ -42,7 +73,7 @@ describe("carriedVerbs", () => {
 
 		expect(carriage._tag).toBe("Carried");
 		// The path is read out of the branch's tree by sha, never out of the working tree on disk.
-		expect(calls).toContain(`git ls-tree --name-only ${SHA} -- ${REPORT}`);
+		expect(calls).toContain(`git ls-tree --full-tree --name-only ${SHA} -- ${REPORT}`);
 	});
 
 	it("names every verb the tree does not hold, and reads it as absence rather than as a failure", async () => {
@@ -76,6 +107,30 @@ describe("carriedVerbs", () => {
 		expect(carriage._tag).toBe("Carried");
 		expect(calls).toEqual([]);
 	});
+
+	for (const cwd of ["", "packages/fabrika-cli"]) {
+		const where = cwd === "" ? "the repository root" : cwd;
+
+		it(`answers carried for a present module from ${where}`, async () => {
+			const {carriage} = await run(
+				[[RESOLVE, okOut(`${SHA}\n`)], ...treeReadsFrom(cwd, [REPORT])],
+				SOURCE,
+				okOut(""),
+			);
+
+			expect(carriage._tag).toBe("Carried");
+		});
+
+		it(`answers missing for a genuinely absent module from ${where}`, async () => {
+			const {carriage} = await run(
+				[[RESOLVE, okOut(`${SHA}\n`)], ...treeReadsFrom(cwd, [])],
+				SOURCE,
+				okOut(""),
+			);
+
+			expect(carriage).toEqual({_tag: "Missing", verbs: ["report"]});
+		});
+	}
 
 	it("maps every briefed verb to a module this tree actually has", () => {
 		for (const verb of BRIEFED_LANE_VERBS) {

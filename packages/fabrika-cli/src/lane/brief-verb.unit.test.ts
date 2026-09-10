@@ -813,7 +813,7 @@ describe("lane brief on an epic lane", () => {
 		entrypoint: "packages/fabrika-cli/src/bin.ts",
 	} as EntrypointRead;
 	const EPIC_TREE = "0d4f2a6c8e1b3d5f7a9c2e4b6d8f0a2c4e6b8d0f";
-	const LS_TREE = /^git ls-tree --name-only /;
+	const LS_TREE = /^git ls-tree --full-tree --name-only /;
 	const REPORT_MODULE = "packages/fabrika-cli/src/lane/report-verb.ts";
 
 	const readingBranch = (holds: boolean): ReadonlyArray<Scripted> => [
