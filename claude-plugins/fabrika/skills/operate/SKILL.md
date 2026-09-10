@@ -530,6 +530,13 @@ another watch, so this costs a driver pass, not a horizon:
 node <fabrika> ship reconcile <pr> --polls 1
 ```
 
+**`--polls 1` is not optional here.** Dropping it runs `ship reconcile`'s own ~480s horizon inside
+your pass, which does clear the floor below and land a real terminal — and that is exactly why it is
+forbidden: the decision behind this cell keeps that horizon in the shipper and moves the waiting out
+to one driver read per pass, so burning it out here re-absorbs the split that decision was written to
+draw. A driver pass never waits for the queue by any means — not bare `reconcile`, not `sleep`, not a
+backgrounded loop polling the PR until it leaves `OPEN`. The wait belongs to a later pass.
+
 Relay its answer, never your own reading of the PR:
 
 | `reconcile` says | Record |
@@ -543,11 +550,14 @@ Relay its answer, never your own reading of the PR:
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
 this task's last recorded line, so the record is refused with the log byte-identical and the wait
 **unspent**. It is not a failure and not a park — the refusal names the seconds still to run. Leave
-the lane exactly where it is and take the next one; a later pass records the same read. Never
-re-record to get past it, never `sleep` the seconds out on a lane you may not sleep on, and never
-route it to a human: nothing is wrong, and nothing is owed but time. The same code on an `at` that
+the lane exactly where it is and **end `LANE-WAITING`**, naming the PR and the earliest clock time a
+re-read is admissible, which is the refusal's own seconds added to now; a later pass records the same
+read. Never re-record to get past it, never `sleep` the seconds out on a lane you may not sleep on,
+and never route it to a human: nothing is wrong, and nothing is owed but time. The same code on an `at` that
 reads as no date is the one exception — the elapsed time is UNKNOWN rather than short, and a lane
-whose log carries an unreadable clock is a human's to fix.
+whose log carries an unreadable clock is a human's to fix. The ending is a terminal of its own rather
+than a hand-back with none because every caller routes on the token: "every run ends as exactly one
+of" stays total.
 
 The escalation bound is the machine's, not yours: **you never count re-folds and never decide the
 wait is over**. That holds unchanged under the floor — the recorder counts and the recorder decides,
@@ -988,8 +998,9 @@ node <fabrika> lane assembly $lane_key --remove
 It never forces, so a tree holding uncommitted work is refused rather than dropped. That refusal is
 exit `8`, and it carries git's own reason: uncommitted work sitting there is the usual one, a process
 still standing inside the tree (the `cd` in §3 is one) is the other. Read the reason it prints, name
-it in the transcript comment, and leave the tree. A park is not a terminal, so a `LANE-PARKED` run leaves the worktree in place for the
-successor that resumes the lane.
+it in the transcript comment, and leave the tree. Neither a park nor a queue wait is a terminal, so a
+`LANE-PARKED` and a `LANE-WAITING` run both leave the worktree in place for the successor that
+resumes the lane.
 
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
 comment or the transcript has landed, so a successor that wins the lane the moment you let go finds
@@ -1007,8 +1018,9 @@ Exit `0` is released (or `inert` on a chore key, which was never claimable). `31
 holds no claim — say so and stop; you never retract another driver's marker, including a sibling
 driver of your own session. `8` or `11` leaves
 whether the lane is still held UNKNOWN: name the code in your terminal line rather than reporting a
-release you cannot prove. A `STOPPED` run releases too — a claim outliving the driver that took it
-is the same lane nobody can pick up.
+release you cannot prove. A `STOPPED` run releases too, and so does a `LANE-WAITING` one — a claim
+outliving the driver that took it is the same lane nobody can pick up, and a lane handed back for a
+later re-read has to be claimable by whoever takes that pass.
 
 
 **A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
@@ -1258,7 +1270,12 @@ Every run ends as exactly one of — each naming what was recorded and what the 
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
 this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
-posted) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
+posted) · **`LANE-WAITING`** (a `ship:queued` re-read the recorder refused on the wait floor with
+exit `55` — the read happened, the record was refused, the log is byte-identical and the wait
+unspent; the PR and the earliest admissible re-read time named in the terminal line, nothing posted
+and no event recorded. The caller re-dispatches this lane on a later pass, no sooner than the time
+named, and spends no human: nothing is wrong and nothing is owed but time) · **`STOPPED`** (a verb
+exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
 `LANE-PARKED`: a park promises an `UNBLOCKED` resume, which a state this skill does not recognise
