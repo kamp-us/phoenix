@@ -565,7 +565,7 @@ snapshot. Lane state is local and never committed.
 |---|---|
 | `lane status` | the derived state: compound `stateValue`, active/done, per-task context, tripped tasks |
 | `lane transition` | records one operator event after the machine accepts it |
-| `lane report` | a shell's terminal token, mapped to one operator event — plus the machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`, `SHELL-DEAD`), which belongs to no shell, maps to the machine's `LAP`, and carries its own park cause with no `--cause` typed — `SHELL-DEAD` is the shell a provider killed, and it carries `spawn-dead` |
+| `lane report` | a shell's terminal token, mapped to one operator event — plus the machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`), which belongs to no shell, maps to the machine's `LAP`, and carries its own park cause with no `--cause` typed; it also refuses a `ship:queued` re-fold at `55` until the wait axis's elapsed-time floor has run, so the budget measures a dwell rather than a driver's pace |
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
@@ -605,7 +605,9 @@ branch · `42` the child conflicts and the merge was aborted · `43` the merged 
 install, or the install changed a tracked file · `44` the merged tree failed a code validator · `45`
 the assembly worktree already held modified tracked files before the merge, so nothing was merged ·
 `52` a `BLOCKED` named no cause in a repo declaring `parkCause.uncaused: "refuse"` · `53` the
-`--rationale` says nothing, or rides on an event that is not `UNBLOCKED`.
+`--rationale` says nothing, or rides on an event that is not `UNBLOCKED` · `55` a `ship:queued` re-fold arrived inside the wait axis's
+elapsed-time floor, or the clock on that task's last line reads as no date — the log is unappended
+and the wait unspent.
 
 To open a lane, copy a template in and speak the operator's events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED` / `LAP`:

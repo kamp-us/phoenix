@@ -69,6 +69,7 @@ import {
 	type RowItem,
 	rowIndexOfItem,
 	rowKey,
+	SLOT_GONE_ROWS,
 	subagentHeads,
 	subagentRows,
 } from "./rows.ts";
@@ -402,6 +403,13 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "slot-gone") {
+		return (
+			<span className="tuval-chat-head">
+				This subagent's transcript is not in this session's state.
+			</span>
+		);
+	}
 	if (row.kind === "older") {
 		return (
 			<span className="tuval-chat-head">
@@ -702,10 +710,14 @@ function ChatWindow({
 
 	// The swap is a swap of *this* list and nothing else: main's own rows, pages and cursor are left
 	// exactly as they were, which is what lets the back action put the window back where it was.
-	const rows = useMemo(
-		() => (viewedSlot === undefined ? mainRows : subagentRows(viewedSlot, unfolded)),
-		[viewedSlot, mainRows, unfolded],
-	);
+	//
+	// A view open on a slot the session no longer holds gets its own row, never main's: falling
+	// through drew the agent's own transcript inside the open subagent view, which reads as the
+	// worker having said what the agent said (#8814).
+	const rows = useMemo(() => {
+		if (viewedSlot !== undefined) return subagentRows(viewedSlot, unfolded);
+		return viewing === null ? mainRows : SLOT_GONE_ROWS;
+	}, [viewedSlot, viewing, mainRows, unfolded]);
 
 	/** The row the viewport was resting on when the current page was asked for. */
 	const anchorRef = useRef<string | null>(null);
@@ -1221,15 +1233,17 @@ function ChatWindow({
 						})}
 					</div>
 				</div>
-				{viewing === null ? null : (
+				{viewing === null || viewedSlot === undefined ? null : (
 					// Q9, verbatim: "we should show something to user if they are actually inside a
 					// subagent that's already finished." The view stays open on the rows it had and says
 					// so at the end of them; the way back is the navigator's first row, above. Not a live
 					// region — the hidden one above carries this same sentence and announces it once.
-					<p className="tuval-chat-subagent-end" data-status={viewedSlot?.status}>
-						{viewedSlot === undefined ? (
-							"This subagent's transcript is not in this session's state."
-						) : viewedSlot.status === "finished" ? (
+					//
+					// An unresolved slot has no end to report: its whole transcript is the `slot-gone` row
+					// inside the region above, and a second copy of that sentence here would be the one
+					// line a reader reads twice (#8814).
+					<p className="tuval-chat-subagent-end" data-status={viewedSlot.status}>
+						{viewedSlot.status === "finished" ? (
 							<>
 								<span className="tuval-chat-subagent-end-mark">finished</span>
 								{viewedSlot.lastLine}

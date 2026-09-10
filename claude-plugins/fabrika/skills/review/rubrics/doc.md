@@ -33,8 +33,10 @@ Read the CI-at-head result; do not re-derive them.
   the repo declared as its own all resolve nowhere else, and the docs fabrika ships are read
   elsewhere. Raising an allow-list ceiling to fit a new one is itself the finding — that floor only
   shrinks.
-- **Prose craft.** Plain words, short sentences, nothing a reader must re-read to parse; once
-  fabrika's shared writing rubric skill lands, apply it verbatim instead of this line.
+- **Prose craft.** Plain words, short sentences, nothing a reader must re-read to parse. The
+  levers and the pruning tests live in the
+  [`writing-for-agents`](../../writing-for-agents/SKILL.md) skill; apply it verbatim to the
+  doc-class slice, reading it inline as a reference, and state its verdict here.
 
 ## Not this rubric's
 

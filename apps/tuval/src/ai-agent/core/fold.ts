@@ -13,7 +13,7 @@
  */
 
 import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
-import {isRefusal, planTranscriptWindow} from "../history/index.ts";
+import {isRefusal, localEchoes, planTranscriptWindow} from "../history/index.ts";
 import {
 	ItemId,
 	type PendingPermission,
@@ -100,6 +100,72 @@ export const foldItem = (
 	return isRefusal(planned)
 		? transcript
 		: {items: planned.items, omitted: addOmission(transcript.omitted, planned.omitted)};
+};
+
+/** Which rows of the store's history this process is already holding a copy of, by their index. */
+const heldPositions = (
+	held: ReadonlyArray<TranscriptItem>,
+	history: ReadonlyArray<TranscriptItem>,
+): ReadonlySet<number> => {
+	// The operator's own turns join on text, not on id: the core records one at the send under a
+	// `local:<key>` id no backend ever sees (#7978), and a layer that echoes no `user` item never
+	// clears it — so an id-only join would read every unechoed prompt as a row the store lacks.
+	const echoes = localEchoes(history, held);
+	const ids = new Set(held.map((item) => item.id));
+	return new Set(
+		history.flatMap((item, index) => (echoes.has(index) || ids.has(item.id) ? [index] : [])),
+	);
+};
+
+/**
+ * The store's history with the tail this process is holding spliced back in whole.
+ *
+ * **The held tail wins over the range it covers**, rather than each of its rows being merged in one
+ * at a time. Two things live in that tail and in no store: the operator's turns, recorded locally
+ * at the send, and the half-written reply the restart cut, which the backend never finished writing
+ * down. Merged row by row they land at the end — every prompt of the session below the replies it
+ * produced — so the range is what is substituted, and what the store adds is what sits outside it.
+ * Inside the range, our copy is also the one the restore marked `interrupted` (`./state.ts`) and the
+ * operator has already read that way; a row that genuinely moved while the transport was down
+ * arrives on the event stream and upserts over this (#8374).
+ *
+ * A tail with nothing in the store at all is the whole store's junior, so it goes behind it.
+ */
+const rebaseOnStore = (
+	held: ReadonlyArray<TranscriptItem>,
+	history: ReadonlyArray<TranscriptItem>,
+): ReadonlyArray<TranscriptItem> => {
+	if (held.length === 0) return history;
+	const positions = heldPositions(held, history);
+	const covered = [...positions].sort((left, right) => left - right);
+	const first = covered[0];
+	const last = covered[covered.length - 1];
+	if (first === undefined || last === undefined) return [...history, ...held];
+	const outside = (from: number, to: number): ReadonlyArray<TranscriptItem> =>
+		history.slice(from, to).filter((_, offset) => !positions.has(from + offset));
+	return [...outside(0, first), ...held, ...outside(last + 1, history.length)];
+};
+
+/**
+ * The tail a resumed session comes back with: a fresh window over the store's whole history rather
+ * than the one the checkpoint carried (#8855).
+ *
+ * `foldItem` above runs per arriving live item, so it can shed rows and never bring one back — a
+ * checkpoint written under an older window rule stays exactly as unrenderable after every boot.
+ * This is the one entrance that re-plans, which is also what makes any later change to the window
+ * rule self-healing.
+ *
+ * The omission is replaced, not added to: it describes the window that was just planned, and the
+ * count the stale tail carried was about a window that no longer exists. A refused plan leaves the
+ * tail as it was, the same answer `foldItem` gives.
+ */
+export const refillTranscript = (
+	transcript: TranscriptPayload,
+	history: ReadonlyArray<TranscriptItem>,
+	limits: WindowLimits,
+): TranscriptPayload => {
+	const planned = planTranscriptWindow(rebaseOnStore(transcript.items, history), limits);
+	return isRefusal(planned) ? transcript : {items: planned.items, omitted: planned.omitted};
 };
 
 /**

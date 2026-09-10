@@ -76,6 +76,7 @@ export {
 	type CompactionItem,
 	ItemId,
 	isJsonValue,
+	isNestedItem,
 	isTranscriptItem,
 	isTranscriptItems,
 	type JsonValue,

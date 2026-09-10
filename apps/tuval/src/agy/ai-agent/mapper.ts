@@ -20,7 +20,9 @@
  *   usage by plain addition, so a `result` reported as this turn's own total double-counts every
  *   earlier turn ([#8695](https://github.com/kamp-us/phoenix/issues/8695)): the turn is the
  *   cumulative's increment over the last cumulative this child read, and `result.num_turns` is what
- *   says whether there is an earlier one inside it at all.
+ *   says whether there is an earlier one inside it at all — or, when agy sent no `num_turns`, what
+ *   cannot say, which is why that unknown takes the same arm a resumed child does
+ *   ([#8707](https://github.com/kamp-us/phoenix/issues/8707)).
  * - A row with no natural wire key (an unreadable line, a denied-action report) needs an id that
  *   does not collide with the next one.
  *
@@ -130,8 +132,23 @@ const spent = (tokens: Tokens): boolean => tokens.inputTokens > 0 || tokens.outp
 const stepUsageKey = (conversationId: string, stepIndex: number): string =>
 	`agy:usage:${conversationId}:step:${stepIndex}`;
 
-const turnUsageKey = (conversationId: string, turns: number): string =>
-	`agy:usage:${conversationId}:turn:${turns}`;
+/**
+ * The result's own key. `num_turns` names the turn whenever agy sent one; when it did not, the last
+ * `step_index` this turn carried is the only other identity agy itself numbered, and it is as stable
+ * across a restore as the turn number is — both count the conversation, not the process. A turn that
+ * carried no step at all leaves neither, and then the conversation is the whole of the key: a second
+ * such turn folds onto this entry and is dropped, which is the under-reporting side `turnTokensOf`
+ * already takes on an unknown turn number, not the over-charging one.
+ */
+const turnUsageKey = (
+	conversationId: string,
+	turns: number | null,
+	lastStepIndex: number | null,
+): string => {
+	if (turns !== null) return `agy:usage:${conversationId}:turn:${turns}`;
+	if (lastStepIndex !== null) return `agy:usage:${conversationId}:turn-after-step:${lastStepIndex}`;
+	return `agy:usage:${conversationId}:turn:unnumbered`;
+};
 
 export interface AgyTurn {
 	/** `agy/<model>` once `init` names one, else the bare binary — agy omits `init.model` on a default run. */
@@ -144,11 +161,16 @@ export interface AgyTurn {
 	/** What this turn's own steps have already reported, so the `result` reports only the residual. */
 	readonly reported: Tokens;
 	/**
+	 * The last `step_index` this turn's steps carried, `null` before any of them has. It keys the
+	 * result's usage when agy numbered no turn — see `turnUsageKey`.
+	 */
+	readonly lastStepIndex: number | null;
+	/**
 	 * The last `result.usage` this child read — the *conversation's* cumulative, against which the
 	 * next `result` is an increment. `null` before this child has read one, which is the case a
 	 * resumed child is in for its first turn: the cumulative it then reads contains turns this
 	 * process never saw, and `result.num_turns` is what distinguishes that from a genuinely first
-	 * turn whose cumulative is its own.
+	 * turn whose cumulative is its own — unless it is `null`, and then nothing does.
 	 */
 	readonly cumulative: Tokens | null;
 }
@@ -159,6 +181,7 @@ export const idleTurn: AgyTurn = {
 	responseText: "",
 	minted: 0,
 	reported: noTokens,
+	lastStepIndex: null,
 	cumulative: null,
 };
 
@@ -188,18 +211,23 @@ const usageEvent = (model: string, key: string, tokens: Tokens): UsageEvent => (
 /**
  * What this turn spent, read out of a cumulative that may contain turns this child never saw.
  *
- * Three arms, and the middle one is the measurement: with a cumulative of its own to subtract, the
- * turn is the difference. Without one, `num_turns` decides — a first turn's cumulative *is* its own,
- * while a resumed child's first cumulative carries the whole conversation, and then the turn's own
- * steps are the only grounded measure of it. Reporting the cumulative there would charge the operator
- * again for every turn before the restore, which is the defect #8695 caught; reporting the steps
- * under-reports only a turn whose steps said nothing, and that is the smaller lie by the whole of
- * the conversation's history.
+ * Four arms, and the first is the measurement: with a cumulative of its own to subtract, the turn is
+ * the difference. Without one, `num_turns` decides — a first turn's cumulative *is* its own, while a
+ * resumed child's first cumulative carries the whole conversation, and then the turn's own steps are
+ * the only grounded measure of it. Reporting the cumulative there would charge the operator again for
+ * every turn before the restore, which is the defect #8695 caught; reporting the steps under-reports
+ * only a turn whose steps said nothing, and that is the smaller lie by the whole of the
+ * conversation's history.
+ *
+ * A `num_turns` agy did not send takes the steps too, for the same reason the terminal status below
+ * reads only `SUCCESS` as a success: an unknown that could be the costly case is read as the costly
+ * case ([#8707](https://github.com/kamp-us/phoenix/issues/8707)).
  */
 const turnTokensOf = (previous: AgyTurn, result: AgyResult): Tokens => {
 	if (result.usage === undefined) return noTokens;
 	const cumulative = tokensOf(result.usage);
 	if (previous.cumulative !== null) return minus(cumulative, previous.cumulative);
+	if (result.num_turns === null) return previous.reported;
 	return result.num_turns <= 1 ? cumulative : previous.reported;
 };
 
@@ -233,7 +261,7 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 	const events: Array<AgentEvent> = [];
 	const key = `${step.conversation_id}:${step.step_index}`;
 	const delta = step.text_delta ?? "";
-	let next = previous;
+	let next: AgyTurn = {...previous, lastStepIndex: step.step_index};
 
 	switch (step.step_type) {
 		case "user_input":
@@ -340,7 +368,11 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 	const residual = minus(turnTokensOf(previous, result), previous.reported);
 	if (spent(residual)) {
 		events.push(
-			usageEvent(previous.model, turnUsageKey(result.conversation_id, result.num_turns), residual),
+			usageEvent(
+				previous.model,
+				turnUsageKey(result.conversation_id, result.num_turns, previous.lastStepIndex),
+				residual,
+			),
 		);
 	}
 
@@ -367,6 +399,7 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 			responseText: "",
 			minted,
 			reported: noTokens,
+			lastStepIndex: null,
 			cumulative: result.usage === undefined ? previous.cumulative : tokensOf(result.usage),
 		},
 	};

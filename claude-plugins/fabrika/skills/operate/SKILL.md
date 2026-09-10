@@ -473,14 +473,25 @@ Relay its answer, never your own reading of the PR:
 | `reconcile` says | Record |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below) |
-| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own |
+| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
 
+**`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
+elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
+this task's last recorded line, so the record is refused with the log byte-identical and the wait
+**unspent**. It is not a failure and not a park — the refusal names the seconds still to run. Leave
+the lane exactly where it is and take the next one; a later pass records the same read. Never
+re-record to get past it, never `sleep` the seconds out on a lane you may not sleep on, and never
+route it to a human: nothing is wrong, and nothing is owed but time. The same code on an `at` that
+reads as no date is the one exception — the elapsed time is UNKNOWN rather than short, and a lane
+whose log carries an unreadable clock is a human's to fix.
+
 The escalation bound is the machine's, not yours: **you never count re-folds and never decide the
-wait is over**. Record what the read said and re-fold; the cell escalates when its own budget is
-spent — to `human:queue-stall`, a park of its own, so a spent queue wait is never swept as a
-control-plane approval. That budget is separate from the lane's build/review retries, so a long
+wait is over**. That holds unchanged under the floor — the recorder counts and the recorder decides,
+and "too soon" is its answer, never yours to interpret. Record what the read said and re-fold; the
+cell escalates when its own budget is spent — to `human:queue-stall`, a park of its own, so a spent
+queue wait is never swept as a control-plane approval. That budget is separate from the lane's build/review retries, so a long
 dwell cannot cost a later repair round. A non-zero exit from `reconcile` is UNKNOWN — end `STOPPED`
 naming the code, record nothing.
 

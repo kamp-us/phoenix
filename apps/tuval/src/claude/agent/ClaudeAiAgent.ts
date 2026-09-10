@@ -556,6 +556,11 @@ const make = (
 			held: Mode | null,
 		) {
 			const stale: Array<string> = [];
+			// The rows this read maps are the resumed session's whole stored transcript, and the core
+			// re-plans its window over them (#8855). Before that they were mapped for the unsettled
+			// tool ids and thrown away, which is why a checkpointed tail written under an older window
+			// rule could only ever be replayed verbatim.
+			let history: ReadonlyArray<TranscriptItem> | undefined;
 			if (resume !== undefined) {
 				const rows = yield* Effect.tryPromise({
 					try: () => sdk.getSessionMessages(resume, {dir: cwd}),
@@ -573,6 +578,7 @@ const make = (
 				}
 				const {items} = toHistoryItems(rows, {at: Date.now()});
 				stale.push(...unsettledToolIds(items).filter((id) => !parked.has(id)));
+				history = items;
 			}
 
 			// A resumed session already has the CLI's id; a fresh one is opened under an id this layer
@@ -624,6 +630,7 @@ const make = (
 				} satisfies Session,
 				iterator: handle[Symbol.asyncIterator](),
 				stale: stale as ReadonlyArray<string>,
+				history,
 			};
 		});
 
@@ -759,7 +766,10 @@ const make = (
 				drive(out, opened.iterator, emptyMapping, opened.session),
 				opened.session.scope,
 			);
-			return {sessionId: opened.session.id};
+			return {
+				sessionId: opened.session.id,
+				...(opened.history === undefined ? {} : {history: opened.history}),
+			};
 		});
 
 		const prompt = Effect.fn("TuvalAiAgent.prompt")(function* (text: string, key?: string) {

@@ -121,13 +121,16 @@ saying out loud in the notes.
 **The gate is an accounting step, never a filed artifact.** It goes back to the human with the
 finding table and stops there.
 
-Three answers the `auditCatalogs` row can carry, and what each means for the gate:
+Three answers the `auditCatalogs` row's provenance cell can carry, and what each means for the gate:
 
 - **`default`** — the repo declared none. Run the shipped catalog alone. This is the ordinary case.
 - **`declared`** — read each path. A path that does not resolve is a fact to report beside the
   table, not a reason to skip the gate: run the shipped rows and say which catalog was unreadable.
-- **`malformed`** — the declared list did not decode, and the reason names what was rejected. Run
-  the shipped catalog alone and relay the reason. Do not guess at the intended list.
+- **`unknown`** — the declared list did not decode, and the row's detail cell names what was
+  rejected. Run the shipped catalog alone, relay that reason verbatim, and treat the intended list
+  as unread. `status settings` renders a malformed value and an unreadable file as the same
+  `unknown`, precisely so neither can print as the default it never resolved to
+  ([`settings-verb.ts`](../../../../packages/fabrika-cli/src/status/settings-verb.ts)).
 
 ## The finding table
 
@@ -178,13 +181,17 @@ prescribes, and prescribing here is the classification triage owes.
 A picked `note` row skips all of this: it adds to the existing issue only what that issue does not
 already carry, through `fabrika report note`.
 
-## What this skill's shape owes elsewhere
+## What this skill's shape owes the plugin conventions
 
-- **It does not fork.** It declares neither `context: fork` nor `background: true`, because a human
-  is waiting on the finding table and a backgrounded run's table dies with its context — the same
-  clause-2 failure the conversational skills have.
-- **It declares no `arguments:`.** Its scope is a path, not a number, so the frontmatter rule that
-  binds a number-taking skill does not reach it; step 1 of the `SKILL.md` is the whole scope
+Each rule lives in [`skill-conventions.md`](../../docs/skill-conventions.md); this section records
+which side of it this skill falls on and why.
+
+- **It does not fork** (§13). It declares neither `context: fork` nor `background: true`, because a
+  human is waiting on the finding table and a backgrounded run's table dies with its context — the
+  same clause-2 failure the conversational skills have.
+- **It declares no `arguments:`** (§12). Its scope is a path, not a number, so the frontmatter rule
+  that binds a number-taking skill does not reach it; step 1 of the `SKILL.md` is the whole scope
   contract.
-- **Its GitHub access is the `report` verbs' and nothing else.** It makes no direct forge call, so
-  the REST-only rule binds it through those verbs rather than through any invocation of its own.
+- **Its GitHub access is the `report` verbs' and nothing else** (§11). It makes no direct forge
+  call, so the REST-only rule binds it through those verbs rather than through any invocation of
+  its own.

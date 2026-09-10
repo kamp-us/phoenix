@@ -1,31 +1,16 @@
 /*
  * The process board's paint. Every colour, size and radius is a role token from
  * `../ui/tokens.css` — nothing here reaches under the role layer (`design-system-manifest.md`,
- * Pillar 2). The tile's box, border and radius are `@kampus/design`'s `Card`; what is left here is
- * the board's own layout, the row control inside each tile, and the one entry animation.
+ * Pillar 2). The tile's box, border and radius are `@kampus/design`'s `Card`, and the overlay's
+ * panel, backdrop and title are its `Dialog`; what is left here is the board's own layout, the row
+ * control inside each tile, the one entry animation, and the overlay's width.
  */
 
 .tuval-board {
-	flex: 0 0 auto;
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-2);
-	/* Bounded, and scrolling past the bound: the desk under it is the work, and a board that grew
-	   with the process count would push the windows off the page on a busy desk. */
-	max-block-size: 40vh;
-	overflow: auto;
-	padding: var(--s-3);
-	border-block-end: 1px solid var(--border);
-	background: var(--surface-sunken);
-}
-
-.tuval-board-heading {
-	margin: 0;
-	font: var(--t-meta);
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--text-muted);
+	min-block-size: 0;
 }
 
 /* Tiles, not rows: the roots lay out across the width and each takes the height its children need. */
@@ -133,9 +118,9 @@
 }
 
 /*
- * `EmptyState`'s own block is sized for a page region — a 30vh centred well — and this board is a
- * bounded band above the desk. The paired class carries only that divergence, which is the
- * primitive's documented way to keep a surface's own tuning (`packages/design/src/MetaRow.css`).
+ * `EmptyState`'s own block is sized for a page region — a 30vh centred well — and this board is the
+ * body of a dialog. The paired class carries only that divergence, which is the primitive's
+ * documented way to keep a surface's own tuning (`packages/design/src/MetaRow.css`).
  */
 .tuval-board-empty {
 	min-block-size: 0;
@@ -143,15 +128,23 @@
 }
 
 /*
- * The page when the board is on: a column of board over desk. The desk is `block-size: 100%` of
- * this column (`../ui/tokens.css`), so it is the item that gives the board its room back, and
- * `min-block-size: 0` is what lets it shrink past its own content.
+ * The overlay, as tmux's tree picker is: wide enough for two columns of tiles and never wider than
+ * the viewport, scrolling past its own bound rather than growing with the process count. Everything
+ * else about the panel — the backdrop, the radius, the shadow, the title — is `Dialog`'s
+ * (`packages/design/src/Dialog.css`), and this file overrides only the width the same way the
+ * palette does (`../../palette/palette.css`).
  */
-.tuval-board-page {
-	min-block-size: 0;
+[data-scope="dialog"][data-part="content"].tuval-board-overlay {
+	--manti-dialog-max-width: min(64rem, 92vw);
 }
 
-.tuval-board-page > .tuval-surface {
-	flex: 1 1 auto;
-	min-block-size: 0;
+/* The block padding is the focus ring's room, not rhythm. The desk paints the ring 2px outside a
+   focused control (`--focus-ring-offset`, `../ui/tokens.css`), the first grid row sits flush against
+   this box's content edge, and `overflow: auto` clips whatever passes it — so without the inset a
+   keyboard operator on a first-row tile sees three sides of a rectangle (#8867). `--s-1` covers the
+   offset plus the ring's own width at every density. */
+.tuval-board-overlay .tuval-board-tiles {
+	max-block-size: min(60vh, 40rem);
+	overflow: auto;
+	padding-block: var(--s-1);
 }

@@ -11,14 +11,15 @@ import {applyCellChecked} from "@demlik/tea";
 import {describe, expect, it} from "vitest";
 import {
 	assistantItem,
+	nestedUnder,
 	randomStream,
 	systemItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent, Phase} from "../events.ts";
-import {groupBytes} from "../history/index.ts";
-import {Mode, type PermissionDecision} from "../ports/index.ts";
+import {groupBytes, nestedLimitsFor} from "../history/index.ts";
+import {isNestedItem, Mode, type PermissionDecision, type TranscriptItem} from "../ports/index.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
 import {isAiAgentSessionState} from "./snapshot.ts";
@@ -27,6 +28,24 @@ import {type AiAgentSessionState, initialState} from "./state.ts";
 const ITEM_LIMIT = 8;
 const BYTE_LIMIT = 4_000;
 const SENT_AT = 1_700_000_000_000;
+const NESTED_LIMIT = nestedLimitsFor({items: ITEM_LIMIT, bytes: BYTE_LIMIT});
+
+/**
+ * Longest run of rows one spawned worker emits before the generator ends it.
+ *
+ * Well under `NESTED_LIMIT.items`, for the reason the own bounds are asserted strictly too: the
+ * newest group in range is carried whole past every ceiling, so a generator that could put a whole
+ * ceiling's worth of rows in one group would be asserting the exception rather than the bound.
+ */
+const WORKER_ROWS = 6;
+
+/**
+ * How often an item event opens a spawn rather than being the agent's own row.
+ *
+ * High enough that every fixed seed below carries worker rows — the run asserts that it did, and a
+ * seed that happened to spawn nothing would assert the nested ceiling over an empty set.
+ */
+const SPAWN_CHANCE = 0.35;
 
 const machine = aiAgentSessionMachine({
 	cwd: "/repo",
@@ -49,6 +68,7 @@ const decisions: ReadonlyArray<PermissionDecision> = ["allow-once", "allow-alway
 const randomMsg = (
 	random: ReturnType<typeof randomStream>,
 	step: number,
+	spawn: Spawn,
 ): {readonly msg: AiAgentSessionMsg; readonly newItem: boolean} => {
 	const id = `i${step}`;
 	switch (random.int(10)) {
@@ -138,37 +158,75 @@ const randomMsg = (
 			return {msg: {type: "interrupt", at: SENT_AT + step}, newItem: false};
 		default:
 			return {
-				msg: {type: "event", sessionId: "session-1", event: randomItem(random, id)},
+				msg: {type: "event", sessionId: "session-1", event: randomItem(random, id, spawn)},
 				newItem: true,
 			};
 	}
 };
 
-const randomItem = (random: ReturnType<typeof randomStream>, id: string): AgentEvent => {
+/** The spawn currently in flight, if any: the call id its worker's rows are tagged with. */
+interface Spawn {
+	open: string | null;
+	left: number;
+}
+
+const plainItem = (random: ReturnType<typeof randomStream>, id: string): TranscriptItem => {
 	const text = "x".repeat(random.int(300));
 	switch (random.int(4)) {
 		case 0:
-			return {kind: "item", item: userItem(id, text)};
+			return userItem(id, text);
 		case 1:
-			return {kind: "item", item: assistantItem(id, text)};
+			return assistantItem(id, text);
 		case 2:
-			return {kind: "item", item: toolItem(id, text)};
+			return toolItem(id, text);
 		default:
-			return {kind: "item", item: systemItem(id, text)};
+			return systemItem(id, text);
 	}
+};
+
+/**
+ * One transcript item, sometimes a spawned worker's rather than the agent's own.
+ *
+ * A worker's rows arrive as ordinary items tagged with the call they ran inside, and they answer to
+ * a ceiling of their own rather than the agent's (#8814) — so a generator that never emits one
+ * leaves that ceiling unasserted and the bounds test passes vacuously over every session that
+ * spawns anything.
+ */
+const randomItem = (
+	random: ReturnType<typeof randomStream>,
+	id: string,
+	spawn: Spawn,
+): AgentEvent => {
+	if (spawn.open === null) {
+		if (!random.chance(SPAWN_CHANCE)) return {kind: "item", item: plainItem(random, id)};
+		spawn.open = id;
+		spawn.left = 1 + random.int(WORKER_ROWS);
+		return {kind: "item", item: toolItem(id, "spawning")};
+	}
+	const parent = spawn.open;
+	spawn.left -= 1;
+	if (spawn.left <= 0) spawn.open = null;
+	return {kind: "item", item: nestedUnder(plainItem(random, id), parent)};
 };
 
 interface Run {
 	readonly state: AiAgentSessionState;
 	readonly items: number;
+	/** How many of those items a spawned worker emitted, so a test can refuse a vacuous run. */
+	readonly nested: number;
 }
 
 const drive = (seed: number, steps: number): Run => {
 	const random = randomStream(seed);
+	const spawn: Spawn = {open: null, left: 0};
 	let state = initialState("/repo");
 	let items = 0;
+	let nested = 0;
 	for (let step = 0; step < steps; step += 1) {
-		const {msg, newItem} = randomMsg(random, step);
+		const {msg, newItem} = randomMsg(random, step, spawn);
+		if (msg.type === "event" && msg.event.kind === "item" && isNestedItem(msg.event.item)) {
+			nested += 1;
+		}
 		const [next, cmds] = applyCellChecked<
 			AiAgentSessionState,
 			AiAgentSessionMsg,
@@ -181,7 +239,7 @@ const drive = (seed: number, steps: number): Run => {
 		if ((newItem || recorded) && next.phase !== "gone") items += 1;
 		state = next;
 	}
-	return {state, items};
+	return {state, items, nested};
 };
 
 const seeds = [1, 7, 42, 99, 1_337, 20_260_903, 6_553_601, 8_675_309];
@@ -190,14 +248,23 @@ describe("driving random messages through the table", () => {
 	it("never grows the tail past the planner's bounds", () => {
 		for (const seed of seeds) {
 			const {state} = drive(seed, 200);
-			expect({seed, items: state.transcript.items.length <= ITEM_LIMIT}).toEqual({
-				seed,
-				items: true,
-			});
-			expect({seed, bytes: groupBytes(state.transcript.items) <= BYTE_LIMIT}).toEqual({
-				seed,
-				bytes: true,
-			});
+			const own = state.transcript.items.filter((item) => !isNestedItem(item));
+			expect({seed, items: own.length <= ITEM_LIMIT}).toEqual({seed, items: true});
+			expect({seed, bytes: groupBytes(own) <= BYTE_LIMIT}).toEqual({seed, bytes: true});
+		}
+	});
+
+	it("holds a spawned worker's rows to a ceiling of their own", () => {
+		for (const seed of seeds) {
+			const run = drive(seed, 200);
+			// The stream has to have carried worker rows for the two bounds below to mean anything —
+			// before #8814 added the spawn arm the generator emitted none, and every bound over them
+			// passed vacuously. Asserted on what the run emitted, not on what survived: a tail that
+			// evicted them all is exactly the case the ceiling is allowed to produce.
+			expect({seed, spawned: run.nested > 0}).toEqual({seed, spawned: true});
+			const nested = run.state.transcript.items.filter(isNestedItem);
+			expect({seed, items: nested.length <= NESTED_LIMIT.items}).toEqual({seed, items: true});
+			expect({seed, bytes: groupBytes(nested) <= NESTED_LIMIT.bytes}).toEqual({seed, bytes: true});
 		}
 	});
 

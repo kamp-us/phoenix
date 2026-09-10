@@ -198,8 +198,10 @@ write an issue body; a human or triage does. Release the claim
 
 Check any falsifiable claim the body makes against the source before building on it — a summary of a
 contract is not the contract. Name the surface you are on — **code** (compiled/tested text), **prose**
-(docs, decision records, briefs), **plan** (a ledger with topology), or **workflows** (`.github/workflows/**`,
-which reads under [`code.md`](references/code.md)'s rubric) — and read the matching rubric file in
+(docs, decision records, briefs), **plan** (a ledger with topology), **workflows** (`.github/workflows/**`,
+which reads under [`code.md`](references/code.md)'s rubric), or **skill** (agent-facing text under
+`claude-plugins/*/skills/`, which reads [`skill.md`](references/skill.md)'s rubric and, being
+markdown, validates under `prose`) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 

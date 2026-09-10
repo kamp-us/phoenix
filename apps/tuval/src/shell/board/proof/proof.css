@@ -14,10 +14,9 @@ body {
 	block-size: 100%;
 }
 
-/* The desk's seat: the flex child that gives the board its room back on the real page. */
+/* The desk's seat: the whole page, which is what the desk gets now that the board is an overlay. */
 .proof-desk {
-	flex: 1 1 auto;
-	min-block-size: 0;
+	block-size: 100%;
 	align-items: center;
 	justify-content: center;
 }

@@ -27,6 +27,7 @@ export {
 	rowIndexOfItem,
 	rowKey,
 	type SessionRun,
+	SLOT_GONE_ROWS,
 	type ToolRun,
 } from "./rows.ts";
 export {SessionRow} from "./SessionRow.tsx";

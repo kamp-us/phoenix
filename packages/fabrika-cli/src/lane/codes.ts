@@ -455,3 +455,21 @@ export const RATIONALE_REFUSED = 53;
  * clearance a recipe already owns.
  */
 export const CHILD_UNSEATED = 54;
+
+/**
+ * A queue re-fold arrived before the wait axis's elapsed-time floor — refused with the log
+ * unappended, and the wait left unspent.
+ *
+ * The budget in `../wait-budget.ts` counts re-folds, so without a floor it measures how fast a
+ * driver passes rather than how long a PR has sat: lane 6915 spent two of three waits inside roughly
+ * ninety seconds behind a clean queue. The refusal is what makes the count measure a dwell instead,
+ * and it names the seconds still to run so a driver reads "the wait is intact", never "the wait is
+ * lost".
+ *
+ * Its own seat rather than {@link EVENT_REFUSED}'s: that one says the machine holds no cell for this
+ * event and the remedy is a different event, while this one says the cell is exactly right and the
+ * remedy is only time. It also covers the unreadable clock — an `at` on the task's last line that
+ * parses as no date — because elapsed time is then UNKNOWN, and an UNKNOWN floor may not resolve to
+ * "cleared".
+ */
+export const WAIT_TOO_SOON = 55;

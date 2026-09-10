@@ -74,6 +74,13 @@ const patchResult = (line: string, patch: Record<string, unknown>): string => {
 	return JSON.stringify({...parsed, result: {...parsed.result, ...patch}});
 };
 
+/** A captured `result` with `num_turns` taken off it — the line a later agy release could send. */
+const withoutNumTurns = (line: string): string => {
+	const parsed = JSON.parse(line) as {result: Record<string, unknown>};
+	const {num_turns: _dropped, ...result} = parsed.result;
+	return JSON.stringify({...parsed, result});
+};
+
 describe("an unrecognised step_type", () => {
 	// The six that exist as strings in the agy binary and have never been emitted.
 	const neverEmitted = ["thinking", "plan", "error", "command", "memory", "checkpoint"];
@@ -446,6 +453,68 @@ describe("usage", () => {
 		]);
 		const totals = usageTotals(usage.reduce(addUsage, emptyUsage));
 		expect(totals).toMatchObject({inputTokens: 21419 + 4861, outputTokens: 3});
+	});
+
+	// agy v1.1.27 sends `num_turns` on every captured `result` and the stream carries no version field
+	// to branch on, so a later release dropping it is exactly the case `wire.ts`'s tolerance is for.
+	// The unknown takes the arm that cannot over-charge (#8707).
+	describe("a result agy sent no num_turns on", () => {
+		it("reports a first turn from its own steps, not from the whole cumulative", () => {
+			const {events} = fold([
+				fixtures.init,
+				fixtures.responseDone,
+				withoutNumTurns(fixtures.resultSuccess),
+			]);
+			// With the field present this is turn 1 and the cumulative is its own (20963/151). Absent,
+			// the same cumulative could be a resumed child's whole conversation, so the steps are the
+			// only grounded measure and the result adds nothing.
+			expect(events.filter((event) => event.kind === "usage")).toHaveLength(1);
+			expect(summed(events)).toEqual({inputTokens: 4481, outputTokens: 110});
+		});
+
+		it("reports a resumed child exactly as a numbered resumed child is reported", () => {
+			const numbered = fold([
+				fixtures.init,
+				fixtures.censusResumedStep,
+				fixtures.censusResumedResult,
+			]);
+			const {events} = fold([
+				fixtures.init,
+				fixtures.censusResumedStep,
+				withoutNumTurns(fixtures.censusResumedResult),
+			]);
+			expect(summed(events)).toEqual(summed(numbered.events));
+			expect(summed(events)).toEqual({inputTokens: 4861, outputTokens: 1});
+		});
+
+		it("keys two such turns apart, so the core keeps both instead of only the first", () => {
+			// A residual needs a cumulative that outruns the turn's own steps, which the census numbers
+			// never do — so each result here carries input tokens its step did not report.
+			const overCumulative = (line: string, input: number, output: number): string =>
+				patchResult(withoutNumTurns(line), {
+					usage: {input_tokens: input, output_tokens: output, total_tokens: input + output},
+				});
+			const {events} = fold([
+				fixtures.init,
+				fixtures.censusTurnOneStep,
+				withoutNumTurns(fixtures.censusTurnOneResult),
+				fixtures.censusTurnTwoStep,
+				overCumulative(fixtures.censusTurnTwoResult, 21419 + 100, 2),
+				fixtures.censusResumedStep,
+				overCumulative(fixtures.censusResumedResult, 26280 + 200, 3),
+			]);
+			const usage = events.filter((event) => event.kind === "usage");
+			expect(usage.map((event) => event.turn)).toEqual([
+				`agy:usage:${CENSUS_CONVERSATION}:step:1`,
+				`agy:usage:${CENSUS_CONVERSATION}:step:3`,
+				`agy:usage:${CENSUS_CONVERSATION}:turn-after-step:3`,
+				`agy:usage:${CENSUS_CONVERSATION}:step:6`,
+				`agy:usage:${CENSUS_CONVERSATION}:turn-after-step:6`,
+			]);
+			// Both residuals land: under one key per unknown turn the second is dropped by `addUsage`.
+			const totals = usageTotals(usage.reduce(addUsage, emptyUsage));
+			expect(totals).toMatchObject({inputTokens: 16771 + 4648 + 100 + 4861 + 100, outputTokens: 3});
+		});
 	});
 
 	it("falls back to the bare binary name when init announced no model", () => {

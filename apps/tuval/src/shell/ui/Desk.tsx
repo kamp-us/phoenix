@@ -35,6 +35,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
 import {WindowId as ProtocolWindowId} from "../../protocol/ids.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
+import {commandIndexFor} from "../commands/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {inspectorFor, statusFor} from "../desk/index.ts";
@@ -117,6 +118,12 @@ export interface DeskProps {
 	readonly registry?: RegistryDescription | undefined;
 	readonly commandsConnected?: boolean | undefined;
 	/**
+	 * The operator's `processBoard` flag (`../../features.ts`, #8867). It decides which command rows
+	 * this desk holds at all, so the command line and the palette read the gated table rather than
+	 * offering a row no key on this desk can reach.
+	 */
+	readonly board?: boolean;
+	/**
 	 * The operator's `windowTitles` flag (`../../features.ts`, #8721), as the desk's two halves of it
 	 * read it: a window titled by its process's `title@1` line, and the process id under the
 	 * inspector's heading. Off — the default — leaves both exactly as they were, and the resolver
@@ -139,8 +146,10 @@ export function Desk({
 	call,
 	registry,
 	commandsConnected = true,
+	board = false,
 	windowTitles = false,
 }: DeskProps): ReactElement {
+	const commands = useMemo(() => commandIndexFor({processBoard: board}), [board]);
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
 	const [modality, setModality] = useState<InputModality>(INITIAL_INPUT_MODALITY);
@@ -199,6 +208,7 @@ export function Desk({
 			// pressed while an answer is outstanding is the shell's whatever the snapshot says: the
 			// kernel may have armed the prefix on the key before it, and this page has not heard yet.
 			// That is what stops `<prefix> |` typing a pipe into whatever had focus (#8274).
+			const boardOpen = current.desk.boardOpen;
 			const shellOwns =
 				outstanding.current > 0 || shellOwnsKey(grammar, routerPrefix(current), key);
 			if (!shellOwns && isTextEntry(event.target)) return;
@@ -230,6 +240,11 @@ export function Desk({
 						return;
 					}
 					if (reply._tag !== "ToWindow") return;
+					// An overlay holding focus takes the desk's windows out of reach: the board is modal,
+					// so a key typed into it must not also land in whatever chat is behind it. The chord
+					// still reaches the kernel — that is how the same `<c-b> p` closes the board — which is
+					// why this stands down here rather than at ownership above (#8867).
+					if (boardOpen) return;
 					// The window focused when the key was pressed, not the one focused when the answer
 					// came back: the kernel routed this key against the desk as it stood at the press.
 					if (window === null) return;
@@ -389,6 +404,7 @@ export function Desk({
 					onClose={closeCommandLine}
 					registry={registry}
 					snapshot={lineSnapshot}
+					commands={commands}
 					call={commandsConnected ? call : undefined}
 					window={focused === null ? undefined : ProtocolWindowId.make(focused)}
 				/>
@@ -400,6 +416,7 @@ export function Desk({
 					{...(call === undefined || !commandsConnected ? {} : {call})}
 					window={palette.window}
 					onClose={closePalette}
+					commands={commands}
 				/>
 			) : null}
 			<StatusLine frame={statusFrame(state)} bar={bar} prefixKey={table.prefix} />

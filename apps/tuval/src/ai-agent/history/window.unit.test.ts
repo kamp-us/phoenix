@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	assistantItem,
+	nestedUnder,
 	randomStream,
 	randomTranscript,
 	toolItem,
@@ -9,6 +10,7 @@ import {
 import {isTranscriptPayload, type TranscriptItem} from "../ports/index.ts";
 import {groupTranscript, itemBytes} from "./groups.ts";
 import {
+	nestedLimitsFor,
 	planTranscriptWindow,
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
 	TRANSCRIPT_WINDOW_ITEM_LIMIT,
@@ -209,5 +211,66 @@ describe("the window holds both bounds over random transcripts", () => {
 			}
 		}
 		expect(failures).toEqual([]);
+	});
+});
+
+/**
+ * The other half of #8814: a worker's rows ride free of the agent's bounds, but not free of every
+ * bound. With the subagent list off `chatRows` renders them folded under their call, so a window
+ * that exempted them outright would have lifted the ceiling on a rendered tail rather than moved it.
+ */
+describe("the ceiling a spawned worker's rows answer to", () => {
+	const EXCHANGES = 8;
+	const ROWS_PER_WORKER = 30;
+	const ITEM_LIMIT = 40;
+
+	/** `EXCHANGES` operator turns, each ending in a call whose worker rows arrive tagged. */
+	const withWorkers = (rows: number): ReadonlyArray<TranscriptItem> =>
+		Array.from({length: EXCHANGES}).flatMap((_exchange, turn) => {
+			const call = `call-${turn}`;
+			return [
+				userItem(`u${turn}`),
+				assistantItem(`a${turn}`),
+				toolItem(call),
+				...Array.from({length: rows}).map((_row, index) =>
+					nestedUnder(assistantItem(`w${turn}-${index}`), call),
+				),
+			];
+		});
+
+	const ownIds = (items: ReadonlyArray<TranscriptItem>) =>
+		items.filter((item) => item.parentId === undefined).map((item) => item.id);
+
+	const plan = (history: ReadonlyArray<TranscriptItem>) => {
+		const planned = planTranscriptWindow(history, {itemLimit: ITEM_LIMIT});
+		if (planned.kind !== "window") throw new Error(`refused: ${planned.reason}`);
+		return planned;
+	};
+
+	it("puts the oldest of them down once they pass it, keeping every row of the agent's own", () => {
+		const history = withWorkers(ROWS_PER_WORKER);
+		const nestedLimit = nestedLimitsFor({items: ITEM_LIMIT, bytes: TRANSCRIPT_WINDOW_BYTE_LIMIT});
+		const window = plan(history);
+		const nested = window.items.filter((item) => item.parentId !== undefined);
+
+		expect(EXCHANGES * ROWS_PER_WORKER).toBeGreaterThan(nestedLimit.items);
+		expect(ownIds(window.items)).toEqual(ownIds(history));
+		expect(nested.length).toBeLessThanOrEqual(nestedLimit.items);
+		expect(window.omitted.reason).toBe("item-limit");
+	});
+
+	it("counts what it put down as omitted, so no row leaves the tail unaccounted", () => {
+		const history = withWorkers(ROWS_PER_WORKER);
+		const window = plan(history);
+
+		expect(window.items.length + window.omitted.items).toBe(history.length);
+	});
+
+	it("carries them all when they fit, so a spawn under the ceiling costs nothing", () => {
+		const history = withWorkers(4);
+		const window = plan(history);
+
+		expect(window.items.map((item) => item.id)).toEqual(history.map((item) => item.id));
+		expect(window.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
 	});
 });

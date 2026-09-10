@@ -20,12 +20,18 @@ export {
 	parameterNames,
 	type ShellCommand,
 } from "./row.ts";
-export {CommandDispatched, shellSpells} from "./spells.ts";
+export {CommandDispatched, shellSpells, shellSpellsFor} from "./spells.ts";
 export {
+	type CommandIndex,
 	commandFor,
+	commandIndexFor,
 	commandNames,
 	msgForCommandName,
+	noShellCommandFeatures,
 	resolveVerb,
+	type ShellCommandFeatures,
+	shellCommandIndex,
 	shellCommands,
+	shellCommandsFor,
 	verbSpellings,
 } from "./table.ts";
