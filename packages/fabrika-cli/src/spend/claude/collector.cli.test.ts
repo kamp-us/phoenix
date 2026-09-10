@@ -355,6 +355,9 @@ it("keeps a stopped child's explicit transcript path when its start supplied onl
 		}),
 	]);
 	expect(hook(s, "SubagentStart", {agent_id: "external"}).status).toBe(0);
+	const defaults = join(s.dir, "native/subagents");
+	mkdirSync(defaults, {recursive: true});
+	write(join(defaults, "agent-external.jsonl"), [response("old", {agentId: "external"})]);
 	const file = join(s.dir, "elsewhere.jsonl");
 	write(file, [response("external", {agentId: "external"})]);
 	writeFileSync(join(s.dir, "elsewhere.meta.json"), JSON.stringify({toolUseId: "spawn-external"}));
@@ -363,4 +366,12 @@ it("keeps a stopped child's explicit transcript path when its start supplied onl
 	);
 	expect(hook(s, "SubagentStart", {agent_id: "external"}).status).toBe(0);
 	expect(read(s).records.filter((row) => row.kind === "measurement")).toHaveLength(2);
+	expect(
+		read(s)
+			.records.filter((row) => row.kind === "measurement")
+			.map((row) => row.response),
+	).toEqual(["root", "external"]);
+	const before = readFileSync(s.ledger, "utf8");
+	expect(hook(s, "SessionStart").status).toBe(0);
+	expect(readFileSync(s.ledger, "utf8")).toBe(before);
 });

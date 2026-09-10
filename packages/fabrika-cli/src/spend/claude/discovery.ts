@@ -1,4 +1,5 @@
 import {Effect, FileSystem, Path, Result, Schema} from "effect";
+import type {ExpectedTranscript} from "./inventory.ts";
 import {decodeJson, NativeRow, sessionKey} from "./native.ts";
 
 const Meta = Schema.Struct({toolUseId: Schema.String});
@@ -14,11 +15,12 @@ export interface Transcript {
 export const discover = Effect.fn("spend.claude.discover")(function* (
 	root: string,
 	rootPath: string,
-	expected: ReadonlyMap<string, string>,
+	expected: ReadonlyMap<string, ExpectedTranscript>,
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
-	const paths = new Map<string | null, string>([[null, rootPath], ...expected]);
+	const paths = new Map<string | null, string>([[null, rootPath]]);
+	for (const [id, transcript] of expected) paths.set(id, transcript.path);
 	const childRoot = path.join(rootPath.replace(/\.jsonl$/, ""), "subagents");
 	const dirs = [childRoot];
 	const visited = new Set<string>();
@@ -49,7 +51,7 @@ export const discover = Effect.fn("spend.claude.discover")(function* (
 				continue;
 			}
 			const match = /^agent-(.+)\.jsonl$/.exec(entry);
-			if (match?.[1]) paths.set(match[1], file);
+			if (match?.[1] && !expected.get(match[1])?.explicit) paths.set(match[1], file);
 		}
 	}
 	const transcripts: Transcript[] = [];

@@ -10,6 +10,7 @@ const Saved = Schema.Struct({
 	transcript: Schema.String,
 });
 const Child = Schema.Struct({id: Schema.String, path: Schema.String, explicit: Schema.Boolean});
+export type ExpectedTranscript = Pick<typeof Child.Type, "path" | "explicit">;
 
 export const inventory = Effect.fn("spend.claude.inventory")(function* (
 	directory: string,
@@ -45,7 +46,11 @@ export const inventory = Effect.fn("spend.claude.inventory")(function* (
 		// The digest excludes prompt text; concurrent identical events publish identical metadata.
 		yield* fs.writeFileString(path.join(dir, `${digest(child)}.child.json`), JSON.stringify(child));
 	}
-	const sessions: Array<{binding: Binding; transcript: string; expected: Map<string, string>}> = [];
+	const sessions: Array<{
+		binding: Binding;
+		transcript: string;
+		expected: Map<string, ExpectedTranscript>;
+	}> = [];
 	for (const entry of (yield* fs.readDirectory(directory)).sort()) {
 		const savedDir = path.join(directory, entry);
 		const decoded = decodeJson(
@@ -54,17 +59,15 @@ export const inventory = Effect.fn("spend.claude.inventory")(function* (
 		);
 		if (Result.isFailure(decoded))
 			return yield* Effect.fail("Claude inventory unreadable; retry collection.");
-		const expected = new Map<string, string>();
-		const explicit = new Set<string>();
+		const expected = new Map<string, ExpectedTranscript>();
 		for (const file of (yield* fs.readDirectory(savedDir))
 			.filter((name) => name.endsWith(".child.json"))
 			.sort()) {
 			const child = decodeJson(Child, yield* fs.readFileString(path.join(savedDir, file)));
 			if (Result.isFailure(child))
 				return yield* Effect.fail("Claude child inventory unreadable; retry collection.");
-			if (child.success.explicit || !explicit.has(child.success.id))
-				expected.set(child.success.id, child.success.path);
-			if (child.success.explicit) explicit.add(child.success.id);
+			if (child.success.explicit || !expected.get(child.success.id)?.explicit)
+				expected.set(child.success.id, child.success);
 		}
 		sessions.push({binding: decoded.success, transcript: decoded.success.transcript, expected});
 	}
