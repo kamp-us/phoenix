@@ -37,6 +37,7 @@ import {
 	interruptionAfter,
 	phaseAfterFailure,
 	promptItem,
+	refillTranscript,
 	unresolvedAnswer,
 	type WindowLimits,
 } from "./fold.ts";
@@ -213,6 +214,11 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 
 			// Both open completions advance the subscription lifetime: the slot was rebuilt whether
 			// start succeeded or refused. Ordinary failures leave that lifetime alone.
+			//
+			// A layer that read the resumed session's whole stored transcript hands it over here, and
+			// the tail is re-planned over it rather than trusted (#8855). Without the refill a
+			// checkpoint written under an older window rule replays verbatim on every boot: the live
+			// planner runs per arriving item, so it can shed rows and never restore one.
 			started: (state, msg) =>
 				state.phase === "gone"
 					? [state, noCmds]
@@ -224,6 +230,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								connection: state.connection + 1,
 								interruption: null,
 								failure: null,
+								...(msg.history === undefined
+									? {}
+									: {transcript: refillTranscript(state.transcript, msg.history, limits)}),
 							},
 							noCmds,
 						]),

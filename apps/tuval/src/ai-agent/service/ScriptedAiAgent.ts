@@ -238,7 +238,12 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 				mode: openedOn,
 				...(resuming === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
 			}));
-			return {sessionId: script.sessionId};
+			// A resume hands back the whole scripted history, the way a real store-backed layer hands
+			// back what its open read (#8855). A fresh open has no session to have read one from.
+			return {
+				sessionId: script.sessionId,
+				...(resuming === undefined ? {} : {history: script.history}),
+			};
 		});
 
 		const prompt = Effect.fn("TuvalAiAgent.prompt")(function* (text: string, key?: string) {
