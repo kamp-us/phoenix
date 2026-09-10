@@ -105,6 +105,29 @@ describe("an agy SIGINT the child would not take", () => {
 		}),
 	);
 
+	// The relaunch guard is armed from the signal rather than from the child's exit (#8925), so the
+	// refusal arm has to give it back the way it gives the claim back: a backend that said no leaves
+	// the child alive, and a guard held past that locks sends out for the life of the layer.
+	it.live("leaves the next send free: a refused signal is not a relaunch", () =>
+		Effect.gen(function* () {
+			const child = yield* agyChildStub;
+			yield* child.say(init);
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* agent.start({cwd: CWD});
+				yield* collectTo(events, "the opened session's ready", isReady);
+				yield* agent.prompt("say hello");
+				yield* collectTo(events, "the turn's prompting", isPrompting);
+				yield* agent.interrupt;
+				yield* collectTo(events, "the refused signal", isFailure);
+
+				yield* agent.prompt("say hello again");
+			}).pipe(Effect.provide(agyLayerOver(child)), Effect.scoped);
+		}),
+	);
+
 	// The other half the fold routes on: the turn's `result` has landed, so there was nothing left
 	// to stop and the session is owed its way back to `ready`.
 	it.live("says there was no live turn once the result has landed", () =>
