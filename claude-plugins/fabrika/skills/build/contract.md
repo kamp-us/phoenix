@@ -910,13 +910,11 @@ run.
 **The gate binds a build claim and nothing else.** A `plan` or `gate` claim skips the graph read
 outright, printing `build claim: blockedness: the gate binds a build claim only — …` where the
 `scanned` line would go, so a skipped gate is read rather than inferred from a missing line. The
-founder ruled it on
-[#7542](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240): planning and
-plan-gating an epic write no code, and they are exactly the work that should happen while the epic
-the plan waits on is still being built — a downstream epic that cannot be planned until its blocker
-closes stalls every builder who would have started the moment it landed. What stays gated is the
-work itself: each child's own build claim still reads its exact edges, so nothing is built on a
-contract that has not landed. ADR 0301 records the matrix.
+founder ruling scoped it that way: planning and plan-gating an epic write no code, and they are
+exactly the work that should happen while the epic the plan waits on is still being built — a
+downstream epic that cannot be planned until its blocker closes stalls every builder who would have
+started the moment it landed. What stays gated is the work itself: each child's own build claim
+still reads its exact edges, so nothing is built on a contract that has not landed.
 
 **A blocker whose work landed on the epic run's assembly branch is discharged here exactly as it is
 at `build eligible`.** The graph-carrier rule was amended on 2026-08-29 to narrow its own "any
@@ -1167,8 +1165,8 @@ action is identical. The same reading applies wherever a sibling verb's precondi
 and audience against the active campaigns, and — on a build-purpose claim only — its `blocked_by`
 edges with each blocker's state, plus, only when an edge is still undischarged, that issue's parent
 and the commits `epic/<parent>` adds over the trunk in this tree. A `plan` or `gate` claim reads no
-edges at all, so it costs neither the graph call nor the branch read. An unauthorized author's marker is counted and reported on
-stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
+edges at all, so it costs neither the graph call nor the branch read. An unauthorized author's
+marker is counted and reported on stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
 against (`campaigns: 1 active — Search rewrite (#7)`, `campaigns: 2 active — Search rewrite (#7),
 Design tokens (#4)`, or `campaigns: none active — scope fence inert`), so a
 run that claimed under an inert fence is readable as such afterwards.

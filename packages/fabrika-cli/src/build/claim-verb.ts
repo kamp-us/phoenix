@@ -49,7 +49,7 @@
  * **That gate binds a build-purpose claim and no other.** Planning and plan-gating an epic write no
  * code, and they are precisely the work that should happen while the epic's blocker is still being
  * built — so `--purpose plan` and `--purpose gate` skip the graph read entirely and print
- * `purposeBlockednessLine` in its place. ADR 0301 records the ruling and the matrix.
+ * `purposeBlockednessLine` in its place.
  *
  * In repair the number is a **PR**, which carries no home and no audience of its own, so the test
  * runs over the issue that PR serves. The repair route passes that issue explicitly and the
@@ -516,8 +516,8 @@ export const runClaim = (
 		// out of scope should be refused on the fact that cost no call. It runs over the
 		// named target only when that target is an issue — a repair claim names a pull request, which
 		// carries no edges of its own, and a lane repairing an open PR has already started — and only
-		// on a build-purpose claim: the founder ruled that planning and plan-gating an epic are
-		// exactly the work that should happen while its blocker is still open (ADR 0301).
+		// on a build-purpose claim: planning and plan-gating an epic write no code, and are exactly
+		// the work that should happen while its blocker is still open.
 		const gateNotes: string[] = [];
 		const ownTarget = scopeSubjectOf(ready.issue)._tag === "Own";
 		if (ownTarget && purpose !== "build") {

@@ -59,9 +59,8 @@ audience axis — that is the fail-open convention the purpose exists to remove.
 The blockedness gate does not bind a `gate` claim either: gating writes no code, so an epic waiting
 on an open blocker is gateable now and only its children's build claims wait. The claim prints
 `build claim: blockedness: the gate binds a build claim only — …` and reads no edges, so exit `16`
-is unreachable here at the claim as well as everywhere else in this skill. Founder ruling:
-[#7542](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240); the matrix is in
-ADR 0301.
+is unreachable here at the claim as well as everywhere else in this skill. A founder ruling scoped
+the gate that way, and the decision corpus records the matrix.
 
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes

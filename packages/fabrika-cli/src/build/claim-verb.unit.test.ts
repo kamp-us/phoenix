@@ -1780,7 +1780,7 @@ describe("runClaim — the blockedness gate", () => {
 	});
 
 	/**
-	 * The purpose matrix of ADR 0301's 2026-09-10 amendment. A `plan` or `gate` claim produces a
+	 * The purpose matrix the blockedness gate binds. A `plan` or `gate` claim produces a
 	 * document rather than code, so it is the work that should happen while the blocker is still
 	 * being built — and the proof is the absent graph call, since scripting no edges at all would
 	 * otherwise refuse on 11.
@@ -1839,6 +1839,16 @@ describe("runClaim — the blockedness gate", () => {
 				const {out} = await claimFor(purpose, []);
 				expect(out.code).toBe(0);
 				expect(JSON.parse(out.stdout).answer).toBe("won");
+			});
+
+			it(`admits a ${purpose} claim whose blockers are all closed, still reading no edges`, async () => {
+				const {out, shell} = await claimFor(purpose, [
+					[EDGES, blockedBy(210)],
+					[blocker(210), issue({number: 210, state: "closed"})],
+				]);
+				expect(out.code).toBe(0);
+				expect(JSON.parse(out.stdout).answer).toBe("won");
+				expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
 			});
 		}
 	});

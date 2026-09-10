@@ -79,9 +79,8 @@ waits on another epic is exactly the one an operator wants planned while the blo
 built, so builders can start the moment it lands. The claim prints
 `build claim: blockedness: the gate binds a build claim only — …` and reads no edges, so exit `16`
 is unreachable at this step and there is nothing here to wait on. Each child's own build claim
-still reads its exact edges, so nothing gets built on a contract that has not landed. Founder
-ruling: [#7542](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240); the matrix
-is in ADR 0301.
+still reads its exact edges, so nothing gets built on a contract that has not landed. A founder
+ruling scoped the gate that way, and the decision corpus records the matrix.
 
 Work wherever you were spawned; where that is, is the operator's call, not this skill's.
 `13` ends `STOPPED`. `build tree` is called **without** `--issue` — that flag proves the branch
@@ -91,8 +90,8 @@ Done when the claim answers `won`. **Read these codes off `build claim`, whose n
 are its own group's:** `15` is a proven loss (`BACKED-OFF`); `7` is a proven-absent or closed epic
 (`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
 report the axis, and do not route around it with an override. Exits `21` and `16` are not reachable
-at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any other non-zero ends
-`STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
+at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
+other non-zero ends `STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
 back to `build`: you hold no claim, and `build note` requires one.
 
 ## 2 — Open the run
@@ -394,9 +393,10 @@ and every row below that seats one says so.
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
 - `EPIC-NOT-ADMITTED` — `20` from **`build claim`**: proven not admitted on the scope axis. **A
-  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` and `16` are not among
-  this skill's codes: step 1 claims with `--purpose plan`, and the audience axis and the blockedness
-  gate each bind build-purpose claims only. Bypassing the scope axis with the override is not your answer to give.
+  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` and `16` are not
+  among this skill's codes: step 1 claims with `--purpose plan`, and the audience axis and the
+  blockedness gate each bind build-purpose claims only. Bypassing the scope axis with the override
+  is not your answer to give.
 - `CHILD-ORPHANED` — `23` or `26` from `ledger child`: a child was created and something after the
   create could not be proven. **A back-off holding a real artifact.** On `23` the link is unproven
   and the child is in the run manifest, so name it from there. On `26` the manifest write itself

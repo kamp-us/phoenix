@@ -86,10 +86,9 @@ as the sibling contracts do):
   `DANGLING_DEP` / `UNENFORCED_DEP` / `ORPHAN_CHILD`, never as a per-child readiness verdict. The
   claim at step 1 is unreachable for `16` too, and by implementation rather than by convention:
   `build claim`'s blockedness gate binds a build-purpose claim only, so a `gate` claim reads no
-  edges at all (founder ruling
-  [#7542](https://github.com/kamp-us/phoenix/issues/7542#issuecomment-5617229240), matrix in ADR
-  0301). Before that ruling this paragraph and `claim-verb.ts` disagreed: the gate ran for every
-  purpose, so a `gate` claim over an epic with an open edge did refuse on `16`.
+  edges at all. Before the founder ruling that scoped it, this paragraph and `claim-verb.ts`
+  disagreed: the gate ran for every purpose, so a `gate` claim over an epic with an open edge did
+  refuse on `16`.
   `UNENFORCED_DEP` reads the `blocked_by` graph and still is not that verdict: it asks whether the
   graph *carries* the edge the plan states, never whether the blocker behind it is closed.
 - **An epic-body writer.** This gate never edits an issue body. The planner owns splicing, with its
