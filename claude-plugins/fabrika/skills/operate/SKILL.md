@@ -410,9 +410,7 @@ things, none of them a summary you compose:
   The epic's is what makes the PR findable at all — `lane brief` resolves the tail's PR through the
   same nominator `lane prove` uses (GitHub's closing-issue edge unioned with a body search), and a
   body naming the epic on neither refuses every tail dispatch with exit
-  `20`. Either kind of reference makes it findable: the nominator reads closing keywords and
-  `Part of` together, so an epic that must outlive its own tail merge may carry `Part of #<epic>`
-  instead and still be traced. The children's are what make all of them close at the single merge, which is how the epic's
+  `20`. The children's are what make all of them close at the single merge, which is how the epic's
   own auto-close reads under this shape — the epic closes when every child is closed, and that fires
   on the GitHub edge after the merge, never mid-lane. **The epic's own reference must CLOSE it, not
   say `Part of`** — a tail that merges without closing its epic folds this lane to `shipped` and then

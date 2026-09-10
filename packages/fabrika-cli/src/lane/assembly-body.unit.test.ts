@@ -19,6 +19,7 @@ const merged = (body: string) => {
 			merged: true,
 			linkedIssues: refs.numbers,
 			linkKind: refs.kind,
+			referencedIssues: refs.referenced,
 		},
 	]);
 };
