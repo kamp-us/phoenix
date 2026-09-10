@@ -73,6 +73,14 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
+ *
+ * Its `WIP` is the door that keeps that second half true when the verb resolves the collision
+ * itself. `lane integrate`'s replay puts a colliding child's commits down on the assembly tip, so
+ * the graded range moves and the verdict bound to the old one dies (ADR 0276) — the run says as much
+ * in `reReview: "required"`. Without an arm out of `integrate` the only move toward progress was the
+ * `DONE` into `landed`, which ends the child on content no reviewer has read. The arm is a plain
+ * target rather than the guarded array `FAIL` takes, and that is the whole of `budget: "unspent"`: a
+ * replay is machinery working, not the child failing, so it spends no repair round (ADR 0312).
  */
 const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<string, unknown> => ({
 	initial,
@@ -92,6 +100,7 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 		integrate: {
 			on: {
 				[`${ns}.DONE`]: "landed",
+				[`${ns}.WIP`]: "review",
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},

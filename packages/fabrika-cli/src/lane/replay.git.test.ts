@@ -147,6 +147,25 @@ describe("replayChild against real git", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, 
 		expect(repo.read("README.md")).toContain("a second commit");
 	});
 
+	it("names a path kept both ways once, however many of the child's commits conflicted on it", async () => {
+		const repo = collided(registry('existing: "on",', 'laneConcurrencyCap: "4",'));
+		repo.git("checkout", "--quiet", "child");
+		repo.write(
+			REGISTRY,
+			registry('existing: "on",', 'auditCatalogs: "on",', 'laneConcurrencyCap: "4",'),
+		);
+		repo.commit("the second child's other row, in the same registry");
+		repo.git("checkout", "--quiet", BRANCH);
+		const tip = repo.rev(BRANCH);
+
+		const outcome = await replay(repo, tip);
+
+		expect(outcome._tag).toBe("Replayed");
+		if (outcome._tag !== "Replayed") return;
+		expect(outcome.commits).toBe(2);
+		expect(outcome.resolved).toEqual([REGISTRY]);
+	});
+
 	it("leaves the branch where it found it when a hunk is not a plain keep-both", async () => {
 		// The child rewrites the row the tip already carries, which is two sides editing one text.
 		const repo = collided(registry('existing: "off",'));

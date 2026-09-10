@@ -241,6 +241,7 @@ describe("emitMachine", () => {
 				integrate: {
 					on: {
 						"ISSUE_4301.DONE": "landed",
+						"ISSUE_4301.WIP": "review",
 						"ISSUE_4301.BLOCKED": "blocked",
 						"ISSUE_4301.FAIL": [
 							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
@@ -296,6 +297,23 @@ describe("emitMachine", () => {
 				["issue_4301", "PASS"],
 				["issue_4301", "DONE"],
 			]).stateValue,
+		).toMatchObject({phase1: {issue_4301: "landed"}});
+	});
+
+	it("sends a replayed range back through review on a WIP, and spends no retry doing it", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const replayed: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "WIP"],
+		];
+		expect(drive(compiled, replayed).stateValue).toMatchObject({
+			phase1: {issue_4301: "review"},
+		});
+		expect(statesOf(compiled, driveLog(compiled, replayed)).issue_4301?.retries).toBe(0);
+		expect(
+			drive(compiled, [...replayed, ["issue_4301", "PASS"], ["issue_4301", "DONE"]]).stateValue,
 		).toMatchObject({phase1: {issue_4301: "landed"}});
 	});
 

@@ -139,10 +139,32 @@ type Refusal = Extract<ReplayOutcome, {readonly _tag: "NotKeepBoth" | "Unreadabl
  *
  * A refusal whose own put-back failed is UNKNOWN whatever it was going to be: the caller's restore
  * describes a branch, and a detached seat is not one.
+ *
+ * The abort's own exit is read rather than discarded, because a checkout succeeds while a pick is
+ * still in progress — the refusal would come back clean over a seat whose next pick refuses, and
+ * the caller's `restore()` neither removes the in-progress pick nor sees it, since a hard reset
+ * leaves `CHERRY_PICK_HEAD` alone and the proof only re-reads HEAD. A failed abort is not itself the
+ * defect, though: a pick that never started (a bad object, an unreadable commit) leaves nothing to
+ * abort and fails saying so, so the seat is asked directly whether the pick survived.
  */
 const leave = (options: ReplayOptions, outcome: Refusal): Shell<ReplayOutcome> =>
 	Effect.gen(function* () {
-		yield* git(options.path, "cherry-pick", "--abort");
+		const aborted = yield* git(options.path, "cherry-pick", "--abort");
+		if (!aborted.ok) {
+			const surviving = yield* git(
+				options.path,
+				"rev-parse",
+				"--verify",
+				"--quiet",
+				"CHERRY_PICK_HEAD",
+			);
+			if (surviving.ok) {
+				return {
+					_tag: "Unreadable" as const,
+					reason: `${outcome.reason} — and the pick would not abort: ${aborted.reason}, so ${options.path} still carries one at ${surviving.stdout.trim()} and what a reset would leave there is UNKNOWN`,
+				};
+			}
+		}
 		const back = yield* git(options.path, "checkout", options.branch);
 		return back.ok
 			? outcome
@@ -192,7 +214,10 @@ export const replayChild = (
 			};
 		}
 
-		const resolved: Array<string> = [];
+		// A path that conflicts on two of the child's commits is one path kept both ways, not two: the
+		// set is what keeps the note's count and the event's `resolved` field naming files rather than
+		// collisions.
+		const resolved = new Set<string>();
 		for (const commit of commits) {
 			const picked = yield* git(
 				path,
@@ -220,7 +245,7 @@ export const replayChild = (
 			}
 			const answered = yield* resolveAll(path, unmerged);
 			if (answered._tag !== "Resolved") return yield* leave(options, answered);
-			resolved.push(...answered.paths);
+			for (const file of answered.paths) resolved.add(file);
 
 			const continued = yield* git(path, "-c", "core.editor=true", "cherry-pick", "--continue");
 			if (!continued.ok) {
@@ -272,6 +297,6 @@ export const replayChild = (
 			replayBranch,
 			range: {from: tip, to: head},
 			commits: commits.length,
-			resolved,
+			resolved: [...resolved],
 		};
 	});

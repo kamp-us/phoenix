@@ -109,6 +109,38 @@ describe("replayChild", () => {
 		if (outcome._tag === "Unreadable") expect(outcome.reason).toContain("detached");
 	});
 
+	// A checkout takes while a pick is still in progress, so the abort's own exit is what tells a
+	// clean seat from one whose next pick refuses — the caller's hard reset clears neither.
+	it("is UNKNOWN when the pick will not abort and the seat still carries one", async () => {
+		const {outcome, calls} = await run([
+			[REV_LIST, okOut(`${PICK}\n`)],
+			[DETACH, okOut("")],
+			[PICK_START, errOut("CONFLICT")],
+			[/diff --name-only/, okOut("")],
+			[/cherry-pick --abort/, errOut("error: cannot abort from a branch yet to be born")],
+			[/rev-parse --verify --quiet CHERRY_PICK_HEAD/, okOut(`${PICK}\n`)],
+		]);
+
+		expect(outcome._tag).toBe("Unreadable");
+		if (outcome._tag === "Unreadable") expect(outcome.reason).toContain("would not abort");
+		expect(calls.some((line) => line.includes(`checkout ${BRANCH}`))).toBe(false);
+	});
+
+	// A pick that never started leaves nothing to abort and says so — that refusal is not the defect.
+	it("keeps the content refusal when the abort failed because no pick survives", async () => {
+		const {outcome} = await run([
+			[REV_LIST, okOut(`${PICK}\n`)],
+			[DETACH, okOut("")],
+			[PICK_START, errOut("fatal: bad object")],
+			[/diff --name-only/, okOut("")],
+			[/cherry-pick --abort/, errOut("error: no cherry-pick in progress")],
+			[/rev-parse --verify --quiet CHERRY_PICK_HEAD/, errOut("")],
+			[CHECKOUT_BRANCH, okOut("")],
+		]);
+
+		expect(outcome._tag).toBe("NotKeepBoth");
+	});
+
 	it("is UNKNOWN when the replayed range cannot be named", async () => {
 		const {outcome} = await run([
 			...cleanPick(),

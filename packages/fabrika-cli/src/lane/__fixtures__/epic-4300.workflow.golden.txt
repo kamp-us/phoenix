@@ -60,6 +60,7 @@
 							"integrate": {
 								"on": {
 									"ISSUE_4301.DONE": "landed",
+									"ISSUE_4301.WIP": "review",
 									"ISSUE_4301.BLOCKED": "blocked",
 									"ISSUE_4301.FAIL": [
 										{
@@ -126,6 +127,7 @@
 							"integrate": {
 								"on": {
 									"ISSUE_4302.DONE": "landed",
+									"ISSUE_4302.WIP": "review",
 									"ISSUE_4302.BLOCKED": "blocked",
 									"ISSUE_4302.FAIL": [
 										{
@@ -206,6 +208,7 @@
 							"integrate": {
 								"on": {
 									"ISSUE_4303.DONE": "landed",
+									"ISSUE_4303.WIP": "review",
 									"ISSUE_4303.BLOCKED": "blocked",
 									"ISSUE_4303.FAIL": [
 										{
