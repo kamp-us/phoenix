@@ -799,7 +799,7 @@ read-back.
 
 | Verb | Answers |
 |---|---|
-| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; the red-CI row re-reads `ship checks`'s rollup at the live head and clears only on `green` with the PR still open and every derived namespace still bound there, holding at `13` on any other rollup; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
 | `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a head-bound `governance` PASS |
 | `recipe route` | which recipe a chore-lane state applies, and which operator event one exit folds to |
 

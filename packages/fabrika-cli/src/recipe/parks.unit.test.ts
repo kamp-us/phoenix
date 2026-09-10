@@ -86,7 +86,17 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Novel" && parked.reason).toMatch(/some-cause-nobody-wrote-a-row-for/);
 	});
 
-	it("is Novel for the §CP park carrying a cause — a row matches the cause it names", () => {
+	it("is Known for the §CP leaf carrying the red-CI cause, without shadowing the null-cause row", () => {
+		const red = classifyPark("human:cp-approval", "head-ci-red");
+		const approval = classifyPark("human:cp-approval", null);
+
+		expect(red._tag === "Known" && red.recipe.clearance).toBe("ci-green");
+		expect(approval._tag === "Known" && approval.recipe.clearance).toBe("cp-approval");
+		// Turning a red head green is `heal-ci`'s repair work, so this row runs no remedy first.
+		expect(red._tag === "Known" && red.recipe.remedy).toBeNull();
+	});
+
+	it("is Novel for the §CP park carrying a cause no row on that leaf names", () => {
 		const parked = classifyPark("human:cp-approval", "worktree-holds-branch");
 
 		expect(parked._tag).toBe("Novel");
