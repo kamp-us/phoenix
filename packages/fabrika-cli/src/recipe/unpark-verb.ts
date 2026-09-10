@@ -558,7 +558,8 @@ const treesFreedOf = (
  * license reaches it.
  *
  * **The stranded claim is retracted here, on proof rather than on absence** — the one age test the
- * claim protocol allows, authorized by ADR 0373 and confined to this row. There is no heartbeat,
+ * claim protocol allows, confined to this row and to a lane a driver already parked on
+ * `spawn-dead`. There is no heartbeat,
  * so what proves the shell dead is its claim outliving the budget for the kind of work it took
  * (`../lane/shell-budget.ts`), and {@link reclaimDeadClaim} retracts it and re-reads the board to
  * prove it gone. A claim still inside its budget is a shell that may be working, so the park holds;
