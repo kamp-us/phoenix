@@ -8,6 +8,7 @@ import {
 	LANE_ABSENT,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
+	MALFORMED_RECORD,
 	TOPOLOGY_ABSENT,
 	TOPOLOGY_CYCLE,
 	TOPOLOGY_FOREIGN,
@@ -148,6 +149,21 @@ describe("lane emit", () => {
 
 		expect(out.code).toBe(TOPOLOGY_ABSENT);
 		expect(out.stderr.join("\n")).toContain("Dependencies");
+	});
+
+	it("refuses a prose line inside the topology, naming it and teaching where prose belongs", async () => {
+		const note = "_Shell shipped out-of-band via epic #2711._";
+		const {out, fs} = await run([
+			[ISSUE, epic({body: `## Dependencies\n\n- phase 1: #4301\n${note}\n`})],
+			[SUBS, children],
+		]);
+
+		expect(out.code).toBe(MALFORMED_RECORD);
+		expect(fs.written.size).toBe(0);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(`line 4 does not parse: "${note}"`);
+		expect(stderr).toContain("editorial or history prose belongs below a `---` thematic break");
+		expect(stderr).toContain("which ends the section");
 	});
 
 	it("refuses a topology referencing a non-child, naming the ref", async () => {
