@@ -58,6 +58,20 @@ describe("the settlement entitlement", () => {
 		expect(read).toMatchObject({_tag: "Landed", landed: [6874, 6900]});
 	});
 
+	it("lands an epic over its own tail, which closes the children and only names the epic", () => {
+		const tail = fact({
+			number: 8996,
+			linkedIssues: [7940, 7941],
+			linkKind: "fixes",
+			referencedIssues: [7940, 7941, ISSUE],
+		});
+
+		expect(entitlement(ISSUE, "closed", "completed", [tail])).toMatchObject({
+			_tag: "Landed",
+			landed: [8996],
+		});
+	});
+
 	it("refuses an open issue: its closure has said nothing yet", () => {
 		expect(entitlement(ISSUE, "open", null, null)).toEqual({_tag: "Live"});
 		expect(entitlement(ISSUE, "open", "reopened", null)).toEqual({_tag: "Live"});
