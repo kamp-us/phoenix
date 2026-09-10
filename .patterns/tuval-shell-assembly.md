@@ -579,6 +579,20 @@ provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve
 about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
 to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.
 
+**A state you can only reach by typing owes a proof page that starts in it.** `fabrika ui render`
+navigates a bare route and drives nothing, so a surface behind a keystroke — the window picker is
+behind `<c-b> w`, its filter behind a further `/` — is invisible to the design gate however well it
+paints, and `ship gate` then refuses the PR with `review-ui absent` (#8450 on PR #8914). The fix is
+one page that mounts the state directly rather than one surface per sub-state:
+`src/shell/picker/proof/` renders two empty windows through the real `WindowView`, one plain and one
+with a query already in its filter. Two things that page has to get right and neither is obvious.
+Only one element on a page holds the caret, so the pane whose focus is under judgment is the focused
+one and the other is not. And a capture is taken at network-idle, so any product delay longer than
+the page's own load — the picker's 1000 ms announce pause — is missed unless a request outlives it
+(`proof/vite.config.ts`'s `/announce-pause`, whose body the page must *read*: an unread response
+stream leaves the request in flight and network-idle never arrives). The wider fix, letting a capture
+set be produced by an interaction script so no gated state owes its own surface, is [#7306](https://github.com/kamp-us/phoenix/issues/7306).
+
 Two more mechanics the Claude vertical added
 (`apps/tuval/src/claude/proof/claude-vertical.integration.test.ts`).
 
