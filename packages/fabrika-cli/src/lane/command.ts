@@ -489,6 +489,11 @@ const emitLane = leafCommand(
 			Argument.withDescription("the type:epic issue whose plan topology becomes the machine"),
 		),
 		root: rootFlag,
+		children: Flag.boolean("children").pipe(
+			Flag.withDescription(
+				"start from the board's live sub-issue list: drop every topology ref it does not name instead of refusing at 16",
+			),
+		),
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -496,7 +501,7 @@ const emitLane = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({epic, root, repo}) {
+	Effect.fn(function* ({epic, root, children, repo}) {
 		const cap = yield* readKey(process.cwd(), laneConcurrencyCapKey);
 		const machinery = yield* readKey(process.cwd(), machineryLapsKey);
 		const resolvedRoot = yield* resolveRootOrRefuse(
@@ -518,6 +523,7 @@ const emitLane = leafCommand(
 					env: process.env,
 					cap,
 					machinery,
+					children,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
 				}),
 			),
@@ -526,7 +532,7 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named; a defective line's refusal also teaches the placement, since editorial or history prose belongs below a `---` thematic break, which ends the section), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `.fabrika.jsonc`'s `machineryLaps.onEmit` picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. Example: fabrika lane emit 5680",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, dropped:{count,rows}, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named; a defective line's refusal also teaches the placement, since editorial or history prose belongs below a \`---\` thematic break, which ends the section), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first, or under --children every ref the topology placed was dropped so it declares no child), 16 (the topology references a non-child, named — the refusal names both escapes: re-run with --children, or repair the body with `fabrika ledger retopology <epic>`; unreachable under --children), 17 (the topology holds a cycle, path named — checked over what survives --children), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many CLAIMED lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other while a driver claims it, and the idle unclaimed count is named separately). `.fabrika.jsonc`'s `machineryLaps.onEmit` picks which machine is written: `off`, the shipped default, emits today's bytes exactly, and `on` adds the machinery LAP arms and seeds each task's lap counter, so a machinery failure spends laps rather than the repair budget and a spent lap parks on `human:machinery-stall` rather than on the repair budget's own `human:budget-spent`. The machine is fixed at emission, so flipping it moves no lane already on disk; an unreadable key is UNKNOWN at 11 with nothing written. `--children` starts from the board's live sub-issue list: every ref the topology names and that list does not leaves its phase and every requires list naming it, a phase left with no members is elided, and every ref that went is reported whole on stdout and stderr — the descope escape, opt-in because the same stale ref is a typo on the other reading. Every other topology defect refuses exactly as it does without the flag. Examples: fabrika lane emit 5680 · fabrika lane emit 5817 --children",
 	),
 );
 
