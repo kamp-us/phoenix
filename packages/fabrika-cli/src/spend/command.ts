@@ -119,6 +119,7 @@ const record = leafCommand(
 		yield* emit(yield* runRecord({ledger, stdin: Effect.sync(readStdin)}));
 	}),
 ).pipe(
+	Command.withShortDescription("Record one native model and token usage envelope."),
 	Command.withDescription(
 		"Record one version-2 usage envelope from stdin. Emits JSON status. Exit 11 means recording failed; retry the same envelope without changing the task result.",
 	),

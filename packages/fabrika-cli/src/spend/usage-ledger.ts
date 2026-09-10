@@ -5,6 +5,7 @@ import {
 	decodeUsageRecord,
 	parseUsageRecord,
 	recordKey,
+	refinesIssue,
 	sameRecord,
 	USAGE_RECORD_VERSION,
 	type UsageRecord,
@@ -24,11 +25,14 @@ export const readUsageLedger = (text: string) => {
 		if (Result.isSuccess(record)) {
 			const key = recordKey(record.success);
 			const prior = identities.get(key) ?? [];
-			if (prior.some((row) => sameRecord(row, record.success))) duplicates++;
+			if (prior.some((row) => sameRecord(row, record.success) || refinesIssue(row, record.success)))
+				duplicates++;
 			else {
-				if (prior.length > 0) conflicts++;
-				prior.push(record.success);
-				identities.set(key, prior);
+				const replaced = prior.filter((row) => refinesIssue(record.success, row));
+				for (const row of replaced) records.splice(records.indexOf(row), 1);
+				const remaining = prior.filter((row) => !replaced.includes(row));
+				if (remaining.length > 0) conflicts++;
+				identities.set(key, [...remaining, record.success]);
 				records.push(record.success);
 			}
 		} else {
@@ -96,21 +100,29 @@ export const recordUsage = Effect.fn("spend.recordUsage")(
 				const old = readUsageLedger(before).records.filter(
 					(row) => recordKey(row) === recordKey(record),
 				);
-				if (old.some((row) => !sameRecord(row, record)))
+				if (
+					old.some(
+						(row) =>
+							!sameRecord(row, record) && !refinesIssue(row, record) && !refinesIssue(record, row),
+					)
+				)
 					return yield* new RecordingFailed({
 						reason: "Conflicting usage for the same identity; existing data retained.",
 					});
-				if (old.length === 0) yield* appendFile(path, `${JSON.stringify(record)}\n`);
+				const duplicate = old.some((row) => sameRecord(row, record) || refinesIssue(row, record));
+				if (!duplicate) yield* appendFile(path, `${JSON.stringify(record)}\n`);
 				const file = yield* fs.open(path, {flag: "a"});
 				yield* file.sync;
 				const landed = readUsageLedger(yield* fs.readFileString(path)).records.some(
-					(row) => recordKey(row) === recordKey(record) && sameRecord(row, record),
+					(row) =>
+						recordKey(row) === recordKey(record) &&
+						(sameRecord(row, record) || refinesIssue(row, record)),
 				);
 				if (!landed)
 					return yield* new RecordingFailed({
 						reason: "Appended usage could not be read back; retry this record.",
 					});
-				return {status: old.length === 0 ? ("recorded" as const) : ("duplicate" as const)};
+				return {status: duplicate ? ("duplicate" as const) : ("recorded" as const)};
 			}),
 		);
 		if (!released)

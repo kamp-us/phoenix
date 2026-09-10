@@ -1,11 +1,20 @@
 import {execFileSync} from "node:child_process";
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterEach, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {readUsageLedger} from "./usage-ledger.ts";
+import {rollUpUsage} from "./usage-rollup.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -95,9 +104,14 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 		expect(
 			run({...unknown, hook_event_name: "Stop", tool_input: undefined}).systemMessage,
 		).toContain("association");
+		const unbound = readUsageLedger(readFileSync(ledger, "utf8"));
+		expect(rollUpUsage(unbound).responses).toBe(1);
+		expect(rollUpUsage(unbound).unattributed.responses).toBe(1);
+		renameSync(ledger, `${ledger}.saved`);
 		mkdirSync(ledger, {recursive: true});
 		expect(run(event)).toHaveProperty("systemMessage");
 		rmSync(ledger, {recursive: true});
+		renameSync(`${ledger}.saved`, ledger);
 		expect(run(event)).toEqual({});
 		expect(run({...event, hook_event_name: "Stop"})).toEqual({});
 		const read = readUsageLedger(readFileSync(ledger, "utf8"));
@@ -127,11 +141,12 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 		expect(run({...next, hook_event_name: "Stop", tool_input: undefined}).systemMessage).toContain(
 			"association",
 		);
-		expect(
-			readUsageLedger(readFileSync(ledger, "utf8")).records.filter(
-				(row) => row.kind === "measurement",
-			),
-		).toHaveLength(3);
+		const pending = readUsageLedger(readFileSync(ledger, "utf8"));
+		expect(pending.records.filter((row) => row.kind === "measurement")).toHaveLength(6);
+		expect(rollUpUsage(pending).responses).toBe(2);
+		expect(rollUpUsage(pending).unattributed.responses).toBe(1);
+		expect(rollUpUsage(pending, {run: "codex:native:next"}).responses).toBe(1);
+		expect(rollUpUsage(pending, {run: "codex:native:next"}).unattributed.responses).toBe(1);
 		expect(
 			run({...next, tool_input: {command: "fabrika review criteria --repo=o/r 8951"}}),
 		).toEqual({});
@@ -146,6 +161,10 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 				}),
 			]),
 		);
+		const resolved = readUsageLedger(readFileSync(ledger, "utf8"));
+		expect(rollUpUsage(resolved).responses).toBe(2);
+		expect(rollUpUsage(resolved).unattributed.responses).toBe(0);
+		expect(resolved.diagnostics.conflicts).toBe(0);
 		expect(run({})).toHaveProperty("systemMessage");
 		expect(run(next).systemMessage).toContain("association");
 		expect(

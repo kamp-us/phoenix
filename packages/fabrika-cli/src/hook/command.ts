@@ -29,6 +29,7 @@ const claudeSpend = leafCommand(
 		yield* emitOutcome(yield* runClaudeSpend({stdin: Effect.sync(readStdin), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Record Claude model and token usage from a native hook."),
 	Command.withDescription(
 		"Collect Claude native response usage from a hook payload on stdin. A systemMessage warning on stdout and diagnostics on stderr; no hook decisions or model context. Always exits 0, including visible collection failures. Replay the payload to recover.",
 	),

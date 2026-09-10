@@ -84,7 +84,7 @@ and 13 for an empty legacy date window. Malformed and future-version line counts
 |---|---|
 | Claude | Claude Code 2.1.217 metadata fixtures and lifecycle hook tests; [collector reference](../../../claude-plugins/fabrika/docs/claude-usage.md) and [setup/recovery](../../../claude-plugins/fabrika/docs/claude-usage-setup.md). Provider remains unknown when native records do not supply it. |
 | Codex | Native 0.153.4 and 0.154.0 record fixtures, dispatch collection and native callback tests; [source contract and recovery](./codex-usage.md). Unknown versions remain unsupported. |
-| Pi | The required observer integration is pending. Availability and descendant inventory remain unknown; no zero-token or complete result is inferred. |
+| Pi | Unsupported in this release; deferred to [issue 8951](https://github.com/kamp-us/phoenix/issues/8951). Availability and descendant inventory remain unknown; no zero-token or complete result is inferred. |
 
 For Effect callers, the package root exports `UsageRecords` and `UsageLedger` namespaces:
 
@@ -180,10 +180,15 @@ to split a conflicting identity into two charges. A copied record may have a dif
 Without sufficient native identity, only the stable adapter `recordId` within its known binding
 deduplicates. Such records stay visibly uncertain and cannot establish cross-source completeness.
 
-Exact re-ingestion is a duplicate. A different payload under the same identity is a visible refusal;
-the original is retained. The reader also removes exact duplicate lines and counts conflicting
+Exact re-ingestion is a duplicate. Except for the issue refinement below, a different payload
+under the same identity is a visible refusal; the original is retained. The reader also removes exact duplicate lines and counts conflicting
 variants without selecting one. Version-1 rows use the historical decoder; malformed version-2 rows
 are damage, and valid integer versions above 2 get a distinct future-version diagnostic.
+
+An issue binding may refine `null` to one known issue only when every other record field and its
+native identity match. The recorder appends that refinement under the same lock. The reader keeps
+one resolved record; replaying the earlier unknown binding cannot undo it. Different known issues,
+counters, models or runs still conflict. The original unknown row remains in the file.
 
 The [write protocol](../../../.patterns/serialized-usage-ledger.md) covers serialization and recovery.
 It heals an unterminated tail with a newline, preserves the damaged bytes for diagnosis, syncs the
@@ -214,4 +219,5 @@ noncached input/output/cache-read/cache-write 8/28/80/40. The source relationshi
 [Codex `TokenUsageRecord` and `non_cached_input`](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs)
 and [Claude's token breakdown](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#understanding-the-token-breakdown).
 The tests then add an unbound response and prove only run/overall totals include it. They invoke
-no model. All-host epic acceptance still waits for Pi.
+no model. This release covers Claude and Codex. Pi remains unsupported and deferred to
+[issue 8951](https://github.com/kamp-us/phoenix/issues/8951).

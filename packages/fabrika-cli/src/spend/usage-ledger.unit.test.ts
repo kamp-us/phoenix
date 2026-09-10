@@ -167,3 +167,36 @@ it("retains expected and missing participants and refuses complete coverage with
 	expect(records).toHaveLength(2);
 	expect(records.map((record) => record.kind)).toEqual(["participant", "participant"]);
 });
+
+it("refines only an unknown issue while retaining the original append and replay identity", async () => {
+	const path = ledger();
+	const unknown = {...fixture, work: {...fixture.work, issue: null}};
+	expect((await live(recordUsage(path, unknown))).status).toBe("recorded");
+	expect(readUsageLedger(readFileSync(path, "utf8")).records).toEqual([unknown]);
+	expect((await live(recordUsage(path, fixture))).status).toBe("recorded");
+	expect((await live(recordUsage(path, unknown))).status).toBe("duplicate");
+	expect((await live(recordUsage(path, fixture))).status).toBe("duplicate");
+	const raw = readFileSync(path, "utf8");
+	expect(raw.trim().split("\n")).toHaveLength(2);
+	const read = readUsageLedger(raw);
+	expect(read.records).toEqual([fixture]);
+	expect(read.diagnostics.conflicts).toBe(0);
+	expect(
+		(await live(recordUsage(path, {...fixture, work: {...fixture.work, issue: 999}}))).status,
+	).toBe("failed");
+	expect((await live(recordUsage(path, {...unknown, model: "changed"}))).status).toBe("failed");
+});
+
+it("keeps differing known issues conflicting even beside an unknown issue", () => {
+	const unknown = {...fixture, work: {...fixture.work, issue: null}};
+	const other = {...fixture, work: {...fixture.work, issue: 999}};
+	for (const rows of [
+		[unknown, fixture, other],
+		[fixture, unknown, other],
+		[fixture, other, unknown],
+	]) {
+		const read = readUsageLedger(rows.map((row) => JSON.stringify(row)).join("\n"));
+		expect(read.records).toEqual([fixture, other]);
+		expect(read.diagnostics.conflicts).toBe(1);
+	}
+});

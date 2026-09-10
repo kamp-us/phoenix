@@ -4,6 +4,9 @@ The Codex adapter writes through the shared [usage recorder](usage-recording.md)
 It reads native session JSONL, never dispatch stdout or final `--json` output.
 The [Codex setup guide](../../../claude-plugins/fabrika/guide/codex.md) installs the interactive callback.
 
+The hook handler also runs against a [captured native SessionStart input](../src/spend/__fixtures__/codex-session-start.payload.golden.json).
+Its [capture record](../src/spend/__fixtures__/PROVENANCE.md) distinguishes runtime input from constructed usage scenarios.
+
 ## Supported records
 
 The filesystem tests construct minimal native records matching the captured Codex 0.153.4 and
@@ -45,7 +48,9 @@ quoted words stay together. Options may precede the issue, including `--repo val
 `--repo=value`. An unresolved issue command, shell expansion or conflicting issues produces an
 advisory warning and saves an unresolved association. Later callbacks keep that warning visible
 and do not inherit the previous issue for that turn. A literal issue read can resolve the binding
-and replay its usage. Commands that do not name an issue continue an existing association;
+and replay its usage. Until then, available responses are recorded with `issue: null` at their
+known native run and remain visible in run and overall summaries. Resolution supplies the issue
+without replacing counters or counting the response again. Commands that do not name an issue continue an existing association;
 without one, a Fabrika callback warns that collection has no issue association.
 
 Bindings live under the shared Git directory's `fabrika-codex-usage` directory. The ledger lives
