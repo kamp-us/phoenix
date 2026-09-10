@@ -749,7 +749,7 @@ export const applyEvent = (
 		return {
 			_tag: "Refused",
 			kind: "unbudgeted-resume",
-			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the founder's cleared round first (\`build clear\`); the two may land in either order.${stale}`,
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the cleared round first — \`build clear\` where a pull request carries the founder's grant, \`lane clear\` where the lane has none and the driver grants the round on its own diagnosis; the two may land in either order.${stale}`,
 		};
 	}
 	if (task.waitParks.get(next.type)?.has(from.type) === true && next.waits >= next.maxWaits) {
@@ -872,13 +872,18 @@ export type ClearanceResult =
 	| {readonly _tag: "Refused"; readonly reason: string};
 
 /**
- * The entry a recorded clearance appends — `build clear`'s half of the grant protocol, kept beside
- * {@link applyEvent} because both decide appendability from the same fold.
+ * The entry a recorded clearance appends — the local half of the grant protocol, kept beside
+ * {@link applyEvent} because both decide appendability from the same fold. Two verbs reach it, one
+ * per seat: `build clear` where the grant is a founder's marker on a pull request, and `lane clear`
+ * where the lane has no pull request to carry one.
  *
  * It validates far less than an operator event does, and deliberately: a grant moves no task, so
  * there is no cell to miss, no phase to be outside of, and no terminal to be past. A clearance may
  * land on a lane in any state, in any order relative to the `UNBLOCKED` it enables — which is the
  * whole point of anchoring the budget to the event rather than to mutable context.
+ *
+ * The `rationale` is the driver seat's whole audit: a founder's grant is reviewable on the pull
+ * request it was posted to, and a driver's is reviewable on this line or nowhere.
  */
 export const applyClearance = (
 	lane: CompiledLane,
@@ -886,6 +891,7 @@ export const applyClearance = (
 	taskId: string,
 	round: number,
 	at: string,
+	rationale: string | null = null,
 ): ClearanceResult => {
 	if (lane.tasks[taskId] === undefined) {
 		return {
@@ -903,6 +909,12 @@ export const applyClearance = (
 	if (held) return {_tag: "AlreadyHeld", round};
 	return {
 		_tag: "Appendable",
-		entry: {task: taskId, event: `${taskId.toUpperCase()}.${CLEARED_EVENT}`, at, round},
+		entry: {
+			task: taskId,
+			event: `${taskId.toUpperCase()}.${CLEARED_EVENT}`,
+			at,
+			round,
+			...(rationale === null ? {} : {rationale}),
+		},
 	};
 };

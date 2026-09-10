@@ -403,9 +403,10 @@ export const PARK_CAUSES = {
 	 * It is the one cause no recorder ever types, because no `FAIL` may carry a `--cause`: it is
 	 * bound to its park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold.
 	 *
-	 * No remedy: nothing a verb runs makes a thrice-failed artifact right, and `build clear` is not
-	 * it — that verb is PR-keyed, so an epic child, which opens no PR, could never reach it. That
-	 * dead end is what routing this to the driver replaces.
+	 * No remedy, because a remedy is a read a recipe reruns to prove the cause gone, and nothing a
+	 * verb runs makes a repeatedly-failed artifact right. The door out is a grant rather than a
+	 * remedy: `build clear` where a pull request carries the founder's, `lane clear` where the lane
+	 * has none — the seat an epic child and a chore lane were missing entirely.
 	 *
 	 * Route `driver`: deciding what a stuck task needs next — another round, a re-scope, a park a
 	 * person reads — is the driver's own diagnosis, and only a product call goes past it.

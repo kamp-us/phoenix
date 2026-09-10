@@ -252,16 +252,18 @@ describe("the spent-budget park — the driver's own door out", () => {
 		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
 	];
 
-	it("parks the task on a driver-routed leaf rather than tripping its phase", () => {
+	it("trips the lane on the parked task rather than hanging its phase", () => {
 		const compiled = lane(coderWorkflow());
 
 		const status = statusOf(compiled, drive(compiled, freeze));
-		expect(status).toMatchObject({
-			stateValue: {pipeline: {issue: "human:budget-spent"}},
-			status: "active",
-		});
-		expect(status.context.errors).toEqual([]);
+		expect(status).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(status.context.errors).toEqual(["issue"]);
 		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
+	});
+
+	// The leaf's name is the whole delta from `frozen`: `isPark` matches `human:*` and matched
+	// `frozen` never, so a child at its cap used to park where no recipe could see a park at all.
+	it("names a park a recipe can see, routed to the driver", () => {
 		expect(classifyPark("human:budget-spent", null)).toMatchObject({
 			_tag: "Novel",
 			cause: "repair-budget-spent",
@@ -269,21 +271,24 @@ describe("the spent-budget park — the driver's own door out", () => {
 		expect(routeForCause("repair-budget-spent")).toBe("driver");
 	});
 
-	// The park was a `final`, so this door was refused as `unbudgeted-resume` and the one remedy the
-	// refusal named was `build clear` — PR-keyed, and an epic child opens no PR. The leaf is an
-	// ordinary park now, so the driver's own resume walks it and the spent retries stand behind it.
-	it("opens the door on the driver's resume alone, with no cleared round in the log", () => {
+	it("refuses the door when the state would come back and the budget would not", () => {
 		const compiled = lane(coderWorkflow());
 
-		const resumed = drive(compiled, [["issue", "UNBLOCKED"]], drive(compiled, freeze));
-		expect(statusOf(compiled, resumed)).toMatchObject({
-			stateValue: {pipeline: {issue: "review"}},
-			status: "active",
-		});
-		expect(statusOf(compiled, resumed).context.issue).toMatchObject({
-			retries: RETRY_BUDGET,
-			maxRetries: RETRY_BUDGET,
-		});
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, drive(compiled, freeze)),
+			"issue",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		// Never a silent `active`/`review` whose only walkable arm is PASS: the resume is refused with
+		// the log unappended, and the refusal names a remedy for each seat — the founder's grant on a
+		// pull request, and the driver's own on a lane that has none.
+		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+		if (applied._tag !== "Refused") return;
+		expect(applied.reason).toContain("build clear");
+		expect(applied.reason).toContain("lane clear");
+		expect(applied.reason).toContain(`${RETRY_BUDGET}/${RETRY_BUDGET} retries`);
 	});
 
 	it("opens the door once a CLEARED is in the log, in either order", () => {
@@ -309,7 +314,7 @@ describe("the spent-budget park — the driver's own door out", () => {
 		expect(statusOf(compiled, resumed).context.errors).toEqual([]);
 	});
 
-	it("spends the granted round exactly once — the next FAIL parks again", () => {
+	it("spends the granted round exactly once — the next FAIL freezes again", () => {
 		const compiled = lane(coderWorkflow());
 		const resumed = drive(
 			compiled,
@@ -321,8 +326,8 @@ describe("the spent-budget park — the driver's own door out", () => {
 		const spent = drive(compiled, [["issue", "FAIL"]], resumed);
 		expect(statusOf(compiled, spent).stateValue).toMatchObject({pipeline: {issue: "build"}});
 		expect(statusOf(compiled, drive(compiled, round, spent))).toMatchObject({
-			stateValue: {pipeline: {issue: "human:budget-spent"}},
-			status: "active",
+			stateValue: "tripped",
+			status: "done",
 		});
 	});
 
@@ -344,11 +349,26 @@ describe("the spent-budget park — the driver's own door out", () => {
 		const compiled = lane(coderWorkflow());
 		const granted = grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND);
 
-		expect(statusOf(compiled, granted)).toMatchObject({
-			stateValue: {pipeline: {issue: "human:budget-spent"}},
-			status: "active",
-		});
-		expect(statusOf(compiled, granted).context.errors).toEqual([]);
+		expect(statusOf(compiled, granted)).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(statusOf(compiled, granted).context.errors).toEqual(["issue"]);
+	});
+
+	it("refuses the door on a region booted in the park — there is no state to resume", () => {
+		const workflow = coderWorkflow() as {
+			machine: {states: {pipeline: {states: {issue: {initial: string}}}}};
+		};
+		workflow.machine.states.pipeline.states.issue.initial = "human:budget-spent";
+		const compiled = lane(workflow);
+
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, []),
+			"issue",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused"});
+		if (applied._tag === "Refused") expect(applied.reason).toContain("no state to resume");
 	});
 
 	/** twoPhaseWorkflow with task_a's `tripped` turned into a park, optionally booted into it. */
@@ -459,24 +479,8 @@ describe("one lane — an UNBLOCKED, then a `build clear` for that round", () =>
 		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
 	];
 
-	/**
-	 * The coder template's spent-budget leaf is an ordinary park now, so its resume is unconditional
-	 * and this incident cannot arise there. The guard it left behind still binds every document that
-	 * declares a FINAL park, which is what this drives: the same template with that one leaf sealed.
-	 */
-	const sealedPark = (): unknown => {
-		const workflow = coderWorkflow();
-		const states = (
-			workflow as {
-				machine: {states: {pipeline: {states: {issue: {states: Record<string, unknown>}}}}};
-			}
-		).machine.states.pipeline.states.issue.states;
-		states["human:budget-spent"] = {type: "final", on: {"ISSUE.UNBLOCKED": "hist"}};
-		return workflow;
-	};
-
 	it("refuses the UNBLOCKED that folded with no budget rather than advertising `active`", () => {
-		const compiled = lane(sealedPark());
+		const compiled = lane(coderWorkflow());
 		const frozen = drive(compiled, freeze);
 
 		// The fold restored `review` at a spent budget, so `ISSUE.PASS` was the only non-error arm and

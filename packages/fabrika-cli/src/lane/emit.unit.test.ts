@@ -349,11 +349,11 @@ describe("emitMachine", () => {
 		expect(parked?.retries).toBe(0);
 	});
 
-	// A collided child used to exhaust into `frozen`, which trips the phase and is no park at all to
-	// `recipe/parks.ts` — so the run ended with a child nothing could resume and no PR for the one
-	// verb that grants a round. It parks on a driver-routed leaf now: the phase stays open, and the
-	// driver takes the next move off the cause.
-	it("parks the child on a driver-routed leaf when integrate keeps colliding past the budget", () => {
+	// A collided child used to exhaust into `frozen`, which `recipe/parks.ts` reads as no park at all
+	// — so the run ended with a child no recipe could see and no PR for the one verb that grants a
+	// round. The leaf is a driver-routed park now, and still the final it always was: the phase folds
+	// and the lane trips loud, and the driver takes the next move off the cause.
+	it("trips the lane on a driver-routed park when integrate keeps colliding past the budget", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		/** One collided integration: the range passes review, the merge fails, the repair rebuilds. */
 		const collide: ReadonlyArray<readonly [string, string]> = [
@@ -377,11 +377,11 @@ describe("emitMachine", () => {
 		});
 		expect(routeForCause("repair-budget-spent")).toBe("driver");
 
-		// The phase stays open behind the park: a landed sibling does not carry the run past a child
-		// still waiting on its driver, and no tail starts over one.
-		const held = drive(compiled, [...exhausted, ...land("issue_4302")]);
-		expect(held.status).toBe("active");
-		expect(held.stateValue).toMatchObject({phase1: {issue_4301: "human:budget-spent"}});
+		// The phase still folds behind the park, so the run ends loud rather than hanging: a landed
+		// sibling carries the phase to its `onDone`, and the parked child is the error it trips on.
+		const tripped = drive(compiled, [...exhausted, ...land("issue_4302")]);
+		expect(tripped).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(tripped.context.errors).toEqual(["issue_4301"]);
 	});
 
 	it("carries an epic tail phase whose one region reviews the single PR, then ships it", () => {
@@ -409,7 +409,7 @@ describe("emitMachine", () => {
 					},
 				},
 				shipped: {type: "final"},
-				"human:budget-spent": {on: {"EPIC_4300.UNBLOCKED": "hist"}},
+				"human:budget-spent": {type: "final", on: {"EPIC_4300.UNBLOCKED": "hist"}},
 			},
 		});
 	});
@@ -437,53 +437,51 @@ describe("emitMachine", () => {
 			]).flat(),
 			["epic_4300", "FAIL"],
 		]);
-		expect(spent).toMatchObject({
-			stateValue: {epic: {epic_4300: "human:budget-spent"}},
-			status: "active",
-		});
-		expect(spent.context.errors).toEqual([]);
+		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
 
-	it("parks the tail when the epic review fails past its retry budget — never `complete`", () => {
+	it("trips the tail when the epic review fails past its retry budget — never `complete`", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const fails = Array.from({length: RETRY_BUDGET}, () => ["epic_4300", "FAIL"] as const);
 		expect(drive(compiled, [...LAND_ALL, ...fails]).stateValue).toEqual({
 			epic: {epic_4300: "review"},
 		});
 		const spent = drive(compiled, [...LAND_ALL, ...fails, ["epic_4300", "FAIL"]]);
-		expect(spent).toMatchObject({
-			stateValue: {epic: {epic_4300: "human:budget-spent"}},
-			status: "active",
-		});
-		expect(spent.context.errors).toEqual([]);
+		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
 
-	// The whole of the no-door fix: this park used to be a `final`, so `applyEvent` refused the resume
-	// as `unbudgeted-resume` and the only way past it was a `build clear` grant — a verb keyed on a PR
-	// an epic child does not have. The leaf is an ordinary park now, so the driver's `UNBLOCKED` walks
-	// it with no grant at all, and the spent retries stand behind it.
-	it("walks the spent-budget park back into review on the driver's own resume", () => {
+	// The no-door half of this fix is the leaf's NAME, not its finality: `frozen` matched no `isPark`,
+	// so a spent tail parked where `recipe unpark` answered `NotParked`, and the only grant left was
+	// `build clear` — PR-keyed, and an epic child opens none. `lane clear` is the seat that opens; the
+	// budget guard on the door is unchanged, which is what this drives.
+	it("walks the spent-budget park back into review on a granted round", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const parked = driveLog(compiled, [
 			...LAND_ALL,
 			...Array.from({length: CAP_ROUND}, () => ["epic_4300", "FAIL"] as const),
 		]);
 		expect(deriveStatus(compiled, statesOf(compiled, parked))).toMatchObject({
-			stateValue: {epic: {epic_4300: "human:budget-spent"}},
-			status: "active",
+			stateValue: "tripped",
+			status: "done",
 		});
 
-		const resumed = driveLog(compiled, [["epic_4300", "UNBLOCKED"]], parked);
+		// The door is walkable and the budget still gates it, exactly as `frozen`'s did.
+		expect(
+			applyEvent(compiled, statesOf(compiled, parked), "epic_4300", "UNBLOCKED", AT),
+		).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+
+		const resumed = driveLog(
+			compiled,
+			[["epic_4300", "UNBLOCKED"]],
+			grant(compiled, parked, "epic_4300", CAP_ROUND),
+		);
 		expect(deriveStatus(compiled, statesOf(compiled, resumed))).toMatchObject({
 			stateValue: {epic: {epic_4300: "review"}},
 			status: "active",
 		});
-		expect(statesOf(compiled, resumed).epic_4300?.retries).toBe(RETRY_BUDGET);
-
-		// The founder grant is untouched beside it: a cleared round still raises the budget, and the
-		// resumed tail can spend it.
-		const granted = grant(compiled, parked, "epic_4300", CAP_ROUND);
-		expect(statesOf(compiled, granted).epic_4300?.maxRetries).toBe(RETRY_BUDGET + 1);
+		expect(statesOf(compiled, resumed).epic_4300?.maxRetries).toBe(RETRY_BUDGET + 1);
 	});
 
 	it("terminates a partly-built epic — every child closed still leaves the epic review to run", () => {

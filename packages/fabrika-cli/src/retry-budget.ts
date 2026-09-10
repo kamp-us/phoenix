@@ -26,8 +26,10 @@ export const RETRY_BUDGET = 3;
  * The round the budget is spent at — derived, never a second number.
  *
  * Spending it is a park and not an end: the guarded FAIL arms fall through to `human:budget-spent`,
- * whose cause routes to the driver, rather than to a `frozen` final no recipe could even see as a
- * park. `lane/report.ts`'s `PARK_CAUSES` carries that cause as `repair-budget-spent`.
+ * a final that carries a door, so the phase still folds and the lane still ends loud. What the
+ * rename off `frozen` bought is that `recipe/parks.ts`'s `isPark` matches a `human:*` leaf and
+ * matched `frozen` never — the park was invisible to every recipe. `lane/report.ts`'s `PARK_CAUSES`
+ * carries its cause as `repair-budget-spent`, and that cause routes to the driver.
  */
 export const CAP_ROUND = RETRY_BUDGET + 1;
 

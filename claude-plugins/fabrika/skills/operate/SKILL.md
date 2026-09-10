@@ -206,7 +206,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
-| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. Its cause is `repair-budget-spent`, which routes to the driver, and its `UNBLOCKED` door needs no cleared round |
+| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you**, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4. Only an emitted epic child boots here, on a board close that was never a landing. It is an error final, so it trips the phase where it sits and the fold says so; its door leads back to itself, so that child is re-emitted rather than resumed |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
@@ -1000,14 +1000,31 @@ never compose the routing: whose park it is comes off the cause table, and a `fo
 
 You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head; for `human:budget-spent` it is the driver's own diagnosis, since the cause routes to
-the driver and the door needs no grant.
+current head).
 
-A founder-cleared repair round is still recorded with `build clear`, which appends a
+**`human:budget-spent` is the one park you clear yourself, and it is the only one.** Its cause routes
+to you, and the authority is a recorded decision in the repository's own corpus — the one that rules
+a spent budget's route out to be the driver's, acting on its own recommendation and logging it. Read
+it before you take the seat the first time; the search is the leaf's name. `recipe unpark` is not the
+way in: the cause carries no remedy, so the recipe table classes this park `Novel` and refuses it
+with the ledger untouched, which is correct. Two calls, in this order, and the second is refused
+without the first:
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane clear <lane> --task <task> --rationale "<your own read>"
+node packages/fabrika-cli/src/bin.ts lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
+```
+
+`lane clear` derives the round — one call, one round — and refuses a blank rationale, because that
+line is the whole audit the weekly machinery review reads. Decide what the task actually needs first:
+another round is one answer, and a re-scope or a founder ask is often the better one. Every other
+`human:*` park is somebody else's to clear and stays exactly as it reads above.
+
+A founder-cleared repair round is recorded with `build clear` instead, where the lane has a pull
+request carrying the grant. Either verb appends the same
 `<TASK>.CLEARED` event to the lane's log
 and moves the task nowhere — the door out is
-still the human's `UNBLOCKED`, and the two land in either order. Where a lane's own machine seals
-its spent-budget park as a FINAL — every lane emitted before the park was opened — that `UNBLOCKED`
+still the `UNBLOCKED`, and the two land in either order. That `UNBLOCKED`
 without a `CLEARED` behind it is **refused** on exit `36`: the resume would restore the state and not the budget, so
 every guarded route out falls straight back to the park — the retry budget is anchored to a recorded
 event, not to the state. Read that code as "the grant
@@ -1158,11 +1175,11 @@ guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPP
 `LANE-PARKED`: a park promises an `UNBLOCKED` resume, which a state this skill does not recognise
 cannot honour — and appending `BLOCKED` toward cells you do not know is exactly the guess step 2's
 routing table forbids. That resume is mechanical from `blocked` and from the `human:*` parks that
-are not error finals, `human:budget-spent` among them. From an error final carrying a door — a lane
-whose own machine predates the spent-budget park, and seals it as a final — it needs a recorded
-`CLEARED` behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the park-clearing
-paragraph in step 4 above, so its promise is "the founder grants the round, then the resume walks",
-not "the next driver records `UNBLOCKED`". A park reported as a
+are not error finals. From an error final carrying a door — `human:budget-spent`, and `frozen` on
+every lane emitted before it was renamed — it needs a recorded `CLEARED` behind it first: a bare
+`UNBLOCKED` is refused on exit `36`, per the park-clearing paragraph in step 4 above. So its promise
+is "the round is granted, then the resume walks" — by you, through `lane clear`, on a lane with no
+pull request, and by the founder through `build clear` on one that has. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

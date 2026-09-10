@@ -94,6 +94,7 @@
 								}
 							},
 							"human:budget-spent": {
+								"type": "final",
 								"on": {
 									"ISSUE_4301.UNBLOCKED": "hist"
 								}
@@ -180,6 +181,7 @@
 								}
 							},
 							"human:budget-spent": {
+								"type": "final",
 								"on": {
 									"ISSUE_4302.UNBLOCKED": "hist"
 								}
@@ -280,6 +282,7 @@
 								}
 							},
 							"human:budget-spent": {
+								"type": "final",
 								"on": {
 									"ISSUE_4303.UNBLOCKED": "hist"
 								}
@@ -396,6 +399,7 @@
 								"type": "final"
 							},
 							"human:budget-spent": {
+								"type": "final",
 								"on": {
 									"EPIC_4300.UNBLOCKED": "hist"
 								}

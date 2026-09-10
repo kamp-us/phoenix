@@ -200,13 +200,15 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual([
 			CANCELLED_STATE,
 			LANDED_STATE,
+			"human:budget-spent",
 			"shipped",
 		]);
-		// A coder lane owns no error final any more: a spent repair budget lands on the park
-		// `human:budget-spent`, so the task waits for a driver rather than folding the phase to
-		// `tripped` out of a `frozen` no recipe could see as a park at all.
-		expect([...defined(lane.tasks.issue).errorFinals]).toEqual([]);
-		expect([...defined(lane.tasks.issue).openFinals]).toEqual([]);
+		// The spent-budget leaf is a final that carries a door — in `errorFinals` so the phase folds
+		// and the lane trips loud, and in `openFinals` so the door stays walkable. Renaming it out of
+		// `frozen` changed which of those sets it is in not at all; what changed is that `isPark`
+		// matches a `human:*` leaf, so a recipe can see the park it always was.
+		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["human:budget-spent"]);
+		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["human:budget-spent"]);
 		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual([
 			"review",
 			"review:ui",
@@ -229,7 +231,7 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.task_a).guardedStates]).toEqual(["checking"]);
 	});
 
-	it("leaves every coder final an end, though all of them take the injected cells", () => {
+	it("leaves every final an end but the spent-budget park, though all take the injected cells", () => {
 		const summary = topology(compiled(coderWorkflow()));
 
 		// Both injected cells are on `shipped` too, and neither must make it a park: an open final is
@@ -244,7 +246,9 @@ describe("the compiler — structural recognition", () => {
 		// movement that did not happen.
 		expect(defined(summary.tasks.issue).states[CANCELLED_STATE]).toEqual([CLEARED_EVENT]);
 		expect(defined(summary.tasks.issue).states[LANDED_STATE]).toEqual([CLEARED_EVENT]);
-		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual([]);
+		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual([
+			"human:budget-spent",
+		]);
 	});
 
 	it("reads a guarded array as retry-or-fallthrough by shape, never by guard name", () => {
@@ -312,8 +316,8 @@ describe("the compiler — structural recognition", () => {
 			CANCELLED_EVENT,
 			LANDED_EVENT,
 		]);
-		// The spent-budget fallthrough is a park with a door, not a final: the lane sits there for its
-		// driver instead of tripping the phase.
+		// The spent-budget fallthrough is a final that carries a door: a park the lane trips on, not an
+		// end — and the lane sits there until its driver acts.
 		expect(defined(summary.tasks.issue).states["human:budget-spent"]).toEqual([
 			"UNBLOCKED",
 			CLEARED_EVENT,

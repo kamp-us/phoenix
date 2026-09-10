@@ -178,6 +178,7 @@
 								}
 							},
 							"human:budget-spent": {
+								"type": "final",
 								"on": {
 									"ISSUE.UNBLOCKED": "hist"
 								}

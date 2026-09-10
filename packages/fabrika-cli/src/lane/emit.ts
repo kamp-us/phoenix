@@ -108,9 +108,10 @@ const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
  * collision between two children a person reads, not a child that failed its review.
  *
  * `frozen` survives as the boot state {@link initialFor} seats an abandoned child in, and nothing
- * transitions into it any more: a spent repair budget lands on `human:budget-spent`, which
- * `recipe/parks.ts` reads as a park at all — `isPark` never matched `frozen`, so a child at its cap
- * had no door a recipe could even see.
+ * transitions into it any more: a spent repair budget lands on `human:budget-spent` instead, which
+ * is the SAME shape — a `final` carrying an `UNBLOCKED` door, so the phase folds and the lane trips
+ * loud — under a name `recipe/parks.ts` can see. `isPark` matches `blocked` and `human:*` and
+ * matched `frozen` never, so a child at its cap parked where every recipe answered `NotParked`.
  */
 const region = (
 	ns: string,
@@ -148,7 +149,7 @@ const region = (
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:replay-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:budget-spent": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		landed: {type: "final"},
@@ -226,7 +227,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},
 		shipped: {type: "final"},
-		"human:budget-spent": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:budget-spent": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 	},
 });
 
