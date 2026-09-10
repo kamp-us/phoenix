@@ -414,4 +414,38 @@ describe("lane transition — the proof gate", () => {
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(appended.deferred).toEqual(["review-ui"]);
 	});
+
+	// `partial` reaches the line through `applyEvent`'s payload rather than the entry spread the
+	// other prover fields take, and it is the one that routes: it picks the `merge:partial` arm.
+	it("records the prover's `partial` on the line and routes the merge back to queued", async () => {
+		const fs = freshLane(logLine("WIP") + logLine("DONE") + logLine("PASS"));
+		const prover = fakeProver(undefined, [], true, [4242]);
+
+		const out = await run(fs, "DONE", null, null, [], null, undefined, null, prover);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			previous: {pipeline: {issue: "ship"}},
+			current: {pipeline: {issue: "queued"}},
+			partial: true,
+			landed: [4242],
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended.partial).toBe(true);
+	});
+
+	it("records a discharged `partial` as false and lets the merge land", async () => {
+		const fs = freshLane(logLine("WIP") + logLine("DONE") + logLine("PASS"));
+		const prover = fakeProver(undefined, [], false, [4242]);
+
+		const out = await run(fs, "DONE", null, null, [], null, undefined, null, prover);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			current: "complete",
+			partial: false,
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended.partial).toBe(false);
+	});
 });
