@@ -664,7 +664,7 @@ Author an epic's plan and its children — the write half of epic planning. Cont
 |---|---|
 | `ledger open` | the ground proved and the plan run opened for an epic |
 | `ledger draft` | the plan block on stdin, validated and staged |
-| `ledger child` | one child issue minted with every birth attribute at once |
+| `ledger child` | one child issue minted with every birth attribute at once — never a `type:decision` child routed to an agent, which no builder can claim |
 | `ledger topology` | the declared topology validated — every out-of-epic prerequisite proven at the boundary, and a prerequisite naming the epic itself refused — and its Dependencies block rendered |
 | `ledger write` | the staged plan and topology spliced into the epic body |
 | `ledger edges` | the epic's declared dependencies reconciled into GitHub's native blocked_by graph |

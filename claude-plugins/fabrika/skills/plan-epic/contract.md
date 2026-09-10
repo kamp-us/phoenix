@@ -717,7 +717,7 @@ EOF
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the parent epic |
 | `--title` | string | yes | — | the child's title; carries no type or priority prefix |
-| `--type` | string, one of `type:bug`/`type:feature`/`type:chore`/`type:decision`/`type:investigation` | yes | — | the child's type label |
+| `--type` | string, one of `type:bug`/`type:feature`/`type:chore`/`type:decision`/`type:investigation` | yes | — | the child's type label; `type:decision` with `--ready-for agent` is refused on `10` |
 | `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
@@ -756,6 +756,14 @@ signal, born-assignment is the enforced hold, and neither substitutes for the ot
 without assignment has no teeth, an assignment without the label hides the intent from queries.
 This is not merely a convention: the gate's floor reds `HELD_CHILD_UNASSIGNED` over the **whole
 epic**, so one held-and-unassigned child blocks every sibling.
+
+**A `type:decision` child is never born `ready-for:agent`** — the pair is refused on `10` beside the
+other pre-write input checks, before stdin, GitHub or the run file is read. A build claim admits a
+decision only against a ruling comment recorded **on that decision issue**, and a child a second old
+carries none, so the pair publishes a child every builder refuses on its type axis, which parks the
+epic lane. The parent epic's ruling comment is not a substitute: the citation binds to the claimed
+issue. The supported route is `--ready-for human` with `--assignee`, then a child-local ruling and
+`fabrika decision rule <n> --cites <child-comment-url>`.
 
 Order of operations, each guard against a named v1 failure. **The manifest append sits before the
 link, deliberately** — see step 5.
@@ -811,7 +819,7 @@ link, deliberately** — see step 5.
 | `7` | the epic is proven absent or closed |
 | `8` | the create was attempted and no re-read could prove its outcome — UNKNOWN |
 | `9` | the child was created and the re-read does not match what was sent |
-| `10` | a label, `--type`, `--priority`, `--milestone` or `--ready-for` value off its closed vocabulary; `--ready-for` absent; `--ready-for human` without `--assignee`; or the issue is not a `type:epic` |
+| `10` | a label, `--type`, `--priority`, `--milestone` or `--ready-for` value off its closed vocabulary; `--ready-for` absent; `--ready-for human` without `--assignee`; `--type type:decision` with `--ready-for agent`; or the issue is not a `type:epic` |
 | `11` | a precondition read failed — **nothing was created** |
 | `15` | this lane does not hold the epic's claim |
 | `23` | the child was created and its sub-issue link could not be proven |
@@ -833,6 +841,7 @@ link, deliberately** — see step 5.
 | `ledger child: created #<c> and it does not read back as sent — it needs a human eye.` | 9 | refusal |
 | `ledger child: --ready-for is required — a child must never inherit its audience by omission.` | 10 | refusal |
 | `ledger child: --ready-for human requires --assignee — a held child is born assigned.` | 10 | refusal |
+| `ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.` | 10 | refusal |
 | `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
 | `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
@@ -860,12 +869,22 @@ $ echo $?
 10
 ```
 
+```
+$ fabrika ledger child 3 --title "record the i18n ruling as an ADR" --type type:decision --priority p1 --ready-for agent --milestone "fabrika campaign" --token <claim-token> < child.md
+ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with `fabrika decision rule <n> --cites <child-comment-url>`.
+$ echo $?
+10
+```
+
 **Grounding**
 
 - Every child carries exactly one `ready-for:` value, set explicitly at creation and never
   inherited by omission.
 - The label is the routing signal and born-assignment is the enforced hold; neither substitutes for
   the other. The gate's `HELD_CHILD_UNASSIGNED` is the enforcement, and it fails the whole epic.
+- A decision claim's citation binds to the claimed issue, so a decision child born `ready-for:agent`
+  is unbuildable from birth — the recorded incident needed a control-plane human to mirror the
+  epic's ruling onto the child before its lane could move.
 - v1 scar (`create-child.sh:48-55`) — three hardcoded `labels[]`, no pass-through, no milestone, so
   the create was not atomic over the child's birth attributes despite its own docblock's claim.
 - v1 scar (`amend-child-labels.sh:2-4,18-19`) — the amend endpoint is additive, so "adjust" could
