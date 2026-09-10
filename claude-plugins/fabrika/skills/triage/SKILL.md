@@ -288,11 +288,18 @@ cold, and the block is what the promise is made of. Author one back in step 6 an
 drift is `triage repair-criteria`'s. `--type epic` is exempt because an epic's criteria arrive per
 child from the plan ledger, and `--ready-for human` is never asked for one.
 
+**`--type epic --ready-for agent` writes no audience label, and that is not a failure.** On an epic
+`ready-for:agent` is `check-epic-plan`'s statement that the plan floor came back clean, so the gate
+is its only writer: the verb stamps the type, the priority, `status:triaged` and the home, prints
+`none` in the ready-for column with a stderr line naming the gate, and leaves the epic
+un-pickable until it is gated. Stamp it anyway — that is the correct triaged shape for an epic, and
+`--ready-for human` is what parks one for a person instead.
+
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
-Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home,
-and every `--blocked-by` edge you asked for.
+Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on
+an epic sent to `agent`), a home, and every `--blocked-by` edge you asked for.
 
 ## 8 — The two outcomes that are not "triaged"
 

@@ -9,6 +9,11 @@
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
  *
+ * **The audience column reports the stamp, and on `--type epic --ready-for agent` there is none**:
+ * that flip belongs to `check-epic-plan` and to nothing else, so `audienceKeep` writes no label, the
+ * tab line prints `none` in that column and `--json` reports `readyFor: null`. Reporting the asked-for
+ * `agent` there would be the same fallback the read-back exists to refuse.
+ *
  * `--blocked-by` rides the same verb and prints as the machine line's last column
  * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>`); its reads, writes and
  * read-back are `./blocked-by.ts`. **That column reports this run, not the graph**: the dependency
@@ -33,10 +38,12 @@ import {guardConfig} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {
 	decodeMember,
+	EPIC_TYPE,
 	planReconcile,
 	renderShape,
 	shapeViolations,
 	triagedFacets,
+	typeLabel,
 } from "./facets.ts";
 import {scannedLine} from "./scope.ts";
 import {guardTarget} from "./target-guard.ts";
@@ -72,10 +79,11 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
  * `review criteria` refuse exactly what it refuses, so stamping over a body it will not answer
  * `Found` on only defers the refusal to a lane that cannot repair it.
  *
- * **`--type epic` is exempt**, and that is the load-bearing carve-out: an epic is stamped here
- * *before* it is planned, and its own criteria are written by `plan-epic` beside the ledger, so at
- * stamp time it still carries no block and a blanket refusal would make a triaged epic unstampable. `--ready-for human` is exempt on every type — the promise the block backs is the
- * one made to an agent.
+ * **`--type epic --ready-for agent` never reaches this precondition**, because it never reaches the
+ * stamp either: the audience flip on an epic is `check-epic-plan`'s alone, so `audienceKeep` in
+ * `./facets.ts` writes no label and there is no promise here to back with a block. The epic's own
+ * criteria are written by `plan-epic` beside the ledger, later. `--ready-for human` is exempt on
+ * every type — the promise the block backs is the one made to an agent.
  */
 const criteriaRefusal = (
 	issue: number,
@@ -209,6 +217,15 @@ export const runApply = (
 		// Only the labels THIS invocation writes, not the whole vocabulary: checking all six types
 		// would refuse a good `--type bug` in a repo that merely lacks `type:investigation`.
 		const facets = triagedFacets({type, priority, readyFor, lane}, resolved);
+		// What LANDED, never what was asked: an epic asked for the agent audience is stamped by
+		// `check-epic-plan` and by nothing here, so both channels report the absence.
+		const stampedAudience =
+			facets.find((facet) => facet.name === "audience")?.keep.length === 0 ? null : readyFor;
+		if (stampedAudience === null) {
+			diagnostics.push(
+				`triage apply: no ready-for label was stamped on #${issue} — the agent audience on a ${typeLabel(EPIC_TYPE)} is \`check-epic-plan\`'s flip alone, written when that epic's plan floor comes back clean.`,
+			);
+		}
 		const willWrite = facets.flatMap((facet) => facet.keep);
 		const missing = willWrite.find((label) => !vocabulary.value.includes(label));
 		if (missing !== undefined) {
@@ -248,9 +265,9 @@ export const runApply = (
 			);
 		}
 
-		const expected = `expected exactly one type, one priority, ${resolved.board.statuses.triaged}, one ready-for, and ${
-			home === null ? "no milestone" : `milestone ${home}`
-		}`;
+		const expected = `expected exactly one type, one priority, ${resolved.board.statuses.triaged}, ${
+			stampedAudience === null ? "no ready-for" : "one ready-for"
+		}, and ${home === null ? "no milestone" : `milestone ${home}`}`;
 		const back = yield* getIssue(repo, issue);
 		if (back._tag !== "Present") {
 			return refuse(
@@ -286,7 +303,7 @@ export const runApply = (
 						number: issue,
 						type,
 						priority,
-						readyFor,
+						readyFor: stampedAudience,
 						home: home === null ? lane : home,
 						removed: plan.removed,
 						blockedBy: landed.value,
@@ -295,7 +312,7 @@ export const runApply = (
 					diagnostics,
 				)
 			: answer(
-					`triaged\t${issue}\t${type}\t${priority}\t${readyFor}\t${homeColumn}\t${edgeColumn}`,
+					`triaged\t${issue}\t${type}\t${priority}\t${stampedAudience ?? "none"}\t${homeColumn}\t${edgeColumn}`,
 					diagnostics,
 				);
 	});

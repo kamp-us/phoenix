@@ -1128,7 +1128,7 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage homes` | the assignable homes: open milestones and standing lanes |
 | `triage split` | one child of a bundled report, created exactly once |
 | `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering or composes no criteria block over a `ready-for:agent` target |
-| `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back |
+| `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back — an epic's `ready-for:agent` excepted, which is `check-epic-plan`'s to write |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
 | `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason, carrying `closed-by-triage` and no triage status label |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
@@ -1143,6 +1143,17 @@ already carrying the label · `17` a live claim marker names another session · 
 may be used · `19` the asking lane holds no live claim on the target · `20` the composed body states
 an ordering the live `blocked_by` graph carries no edge for · `21` a `--blocked-by` target is a pull
 request. `4` is a deliberate gap.
+
+**`triage apply` never writes an epic's `ready-for:agent`.** `check-epic-plan` documents itself as
+that flip's only owner — it writes the label when the epic's plan floor comes back clean — and triage
+stamping it too made the label say "triaged" rather than "gated", so an ungated or defectively
+planned epic read pickable to anything filtering on it — one live epic reached its gate already
+carrying the stamp, and only a floor that happened to come back clean kept that from mattering. Under
+`--type epic --ready-for agent` the audience facet keeps nothing: no label is written, the machine
+line's ready-for column prints `none`, `--json` reports `readyFor: null`, and a stamp an earlier gate
+run left is reconciled away, because re-classifying an epic sends it back through the gate. The
+exemption is the epic's and the agent audience's alone — `--ready-for human` still stamps on every
+type, since parking an epic for a person is triage's own claim.
 
 **`triage apply --blocked-by` is the one triage route to the dependency graph.** ADR 0301 makes the
 native `blocked_by` graph the one carrier of "do not start this yet", and until this flag only

@@ -67,6 +67,9 @@ export {audienceLabel, typeLabel};
  */
 export const EPIC_TYPE_LABEL = typeLabel("epic");
 
+/** The same type as a bare `--type` value, for the input-side reads that never see the label. */
+export const EPIC_TYPE = "epic";
+
 /** The default `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
 export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 
@@ -167,6 +170,23 @@ const ownsIn = (
  * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
  * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.
  */
+/**
+ * The audience facet's keep set — empty for an epic asked for the agent audience.
+ *
+ * `ready-for:agent` on an epic is `check-epic-plan`'s statement that the ledger's floor came back
+ * clean, and that gate documents itself as the flip's only owner. Triage stamping it too made the
+ * label mean "triaged" rather than "gated", so an ungated or defectively-planned epic read pickable
+ * to anything filtering on it — one live epic reached its gate already carrying the stamp, and only
+ * a floor that happened to come back clean kept that run from being a real one.
+ *
+ * The facet still **owns** `ready-for:*` here, so re-triaging an epic that a gate run had already
+ * flipped strips the stamp rather than preserving it — re-classifying an epic sends it back through
+ * the gate, which is the same ownership rule read the other way. `--ready-for human` is untouched on
+ * every type: that is triage parking the epic for a person, a claim the gate never makes.
+ */
+export const audienceKeep = (type: string, readyFor: string): ReadonlyArray<string> =>
+	type === EPIC_TYPE && readyFor === "agent" ? [] : [audienceLabel(readyFor)];
+
 export const triagedFacets = (
 	input: {
 		readonly type: string;
@@ -186,7 +206,7 @@ export const triagedFacets = (
 	{
 		name: "audience",
 		owns: ownsIn(resolved.facets, "audience"),
-		keep: [audienceLabel(input.readyFor)],
+		keep: audienceKeep(input.type, input.readyFor),
 	},
 	{
 		name: "lane",
