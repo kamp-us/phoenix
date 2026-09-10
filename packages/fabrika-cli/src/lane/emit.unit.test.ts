@@ -663,6 +663,15 @@ describe("emitMachine — the --children drop axis", () => {
 		expect(JSON.parse(out.text)).toMatchObject({machine: {initial: "phase2"}});
 	});
 
+	it("records a ref that appears only in the needs of a requires line whose subject went", () => {
+		const text =
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9998\n- #9998 requires: #4301, #9999\n";
+		const out = drop(text, [open(4301)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["#9998", "#9999"]);
+		expect(out.children).toBe(1);
+	});
+
 	it("drops a ledger-local ref too — it is in no child list either", () => {
 		const out = drop("## Dependencies\n\n- phase 1: C1, #4301\n", [open(4301)]);
 		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);

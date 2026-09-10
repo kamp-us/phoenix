@@ -49,7 +49,7 @@ const AMENDMENT = "---\n\n**Amendment 2026-09-01** — a line filed below the bl
 const body = (topology: string, tail = AMENDMENT): string =>
 	`An epic brief about the moderation queue.\n\n${ENVELOPE}\n\n${PLAN}\n${topology}\n${tail}`;
 
-/** The block a descope leaves stale: it still names #4302, which the board has unlinked. */
+/** The block a descope leaves stale: it still names the child the board has unlinked. */
 const STALE =
 	"## Dependencies\n\n- phase 1: #4301\n- phase 2: #4302, #4303\n- #4302 requires: #4301\n- #4303 requires: #4301\n";
 const REPAIRED = "## Dependencies\n\n- phase 1: #4301\n- phase 2: #4303\n- #4303 requires: #4301\n";
@@ -191,6 +191,39 @@ describe("runRetopology", () => {
 		const {outcome} = await run(happy({before: broken}), bodyDigest(broken));
 		expect(outcome.code).toBe(BAD_SECTIONS);
 		expect(outcome.stderr.join("\n")).toContain("does not parse");
+	});
+
+	it("collapses a long dropped list on stderr the same way its stdout answer does", async () => {
+		const many = body(
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9901, #9902, #9903, #9904, #9905, #9906, #9907\n",
+		);
+		const {outcome} = await run(
+			happy({
+				before: many,
+				after: body("## Dependencies\n\n- phase 1: #4301\n"),
+				live: subIssues({number: 4301}),
+			}),
+			bodyDigest(many),
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "rewritten",
+			dropped: {count: 7, rows: ["#9901", "#9902", "#9903", "#9904", "#9905"], more: 2},
+		});
+		const stderr = outcome.stderr.join("\n");
+		expect(stderr).toContain("dropping 7 ref(s): #9901, #9902, #9903, #9904, #9905 (+2 more)");
+		expect(stderr).not.toContain("#9906");
+	});
+
+	it("collapses the dropped list on the emptied refusal too", async () => {
+		const foreign = body(
+			"## Dependencies\n\n- phase 1: #9901, #9902, #9903, #9904, #9905, #9906, #9907\n",
+		);
+		const {outcome} = await run(happy({before: foreign}), bodyDigest(foreign));
+		expect(outcome.code).toBe(TOPOLOGY_INVALID);
+		const stderr = outcome.stderr.join("\n");
+		expect(stderr).toContain("#9901, #9902, #9903, #9904, #9905 (+2 more)");
+		expect(stderr).not.toContain("#9906");
 	});
 
 	it("refuses a live child the block places in no phase", async () => {

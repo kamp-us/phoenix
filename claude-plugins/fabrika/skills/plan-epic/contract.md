@@ -1321,9 +1321,12 @@ fabrika ledger retopology 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
 
 ```
 {"answer": "rewritten", "epic": 3, "children": 2, "phases": 2,
- "dropped": {"count": 1, "rows": ["#6006"], "more": 0},
+ "dropped": {"count": 1, "rows": ["#7"], "more": 0},
  "bodyDigest": "8f2c1a90b4d7", "newDigest": "c41b7e0a91f6", "verified": true}
 ```
+
+`dropped` carries the full count beside a capped sample of the refs, and the stderr note collapses
+the same list the same way, so the two channels never state different numbers.
 
 **What it is for.** A founder descope unlinks a child on the board and leaves the epic body's
 topology naming it, so `lane emit` refuses at `16` forever and the epic's tail can never boot. No
@@ -1344,8 +1347,10 @@ Order of operations:
    `readDeclared` (`src/ledger/topology-doc.ts`) `lane emit --children` reads through, so the two
    surfaces can never disagree about which refs survive: a dropped ref leaves its phase and every
    `requires` list naming it, a `requires` line whose subject went is dropped whole, and a phase
-   left with no members is elided. No heading, or a heading no `phase` line places anybody under,
-   is `7`; a line that does not parse is `4`.
+   left with no members is elided. A line dropped whole still has its `needs` read, so a ref that
+   appears **only** there is reported like any other — the count never states fewer drops than the
+   rewrite made. No heading, or a heading no `phase` line places anybody under, is `7`; a line that
+   does not parse is `4`.
 5. **Validate and render** through `checkTopology` — duplicates, a live child the block places in
    no phase, a cycle, and the round trip back through the shipped reader are all `24`, with
    nothing written.
@@ -1404,14 +1409,14 @@ Zero scope is `7`: an epic with no live children, and an epic with no block to r
 **Examples**
 
 ```
-$ fabrika ledger retopology 5817 --body-digest 8f2c1a90b4d7 --token <claim-token>
-{"answer":"rewritten","epic":5817,"children":2,"phases":2,"dropped":{"count":1,"rows":["#6006"],"more":0},"bodyDigest":"8f2c1a90b4d7","newDigest":"c41b7e0a91f6","verified":true}
+$ fabrika ledger retopology 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
+{"answer":"rewritten","epic":3,"children":2,"phases":2,"dropped":{"count":1,"rows":["#7"],"more":0},"bodyDigest":"8f2c1a90b4d7","newDigest":"c41b7e0a91f6","verified":true}
 ```
 
 ```
-$ fabrika ledger retopology 5817 --body-digest c41b7e0a91f6 --token <claim-token>
-ledger retopology: #5817's topology already names exactly its 2 live child(ren) — no PATCH was issued.
-{"answer":"unchanged","epic":5817,"children":2,"phases":2,"dropped":{"count":0,"rows":[],"more":0},"bodyDigest":"c41b7e0a91f6","newDigest":"c41b7e0a91f6","verified":true}
+$ fabrika ledger retopology 3 --body-digest c41b7e0a91f6 --token <claim-token>
+ledger retopology: #3's topology already names exactly its 2 live child(ren) — no PATCH was issued.
+{"answer":"unchanged","epic":3,"children":2,"phases":2,"dropped":{"count":0,"rows":[],"more":0},"bodyDigest":"c41b7e0a91f6","newDigest":"c41b7e0a91f6","verified":true}
 ```
 
 **Grounding**

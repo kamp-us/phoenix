@@ -44,8 +44,17 @@ import {type LaneRef, placeMachine} from "./store.ts";
 
 const VERB = "fabrika lane emit";
 
-/** `dropped` is an evidence-array with no reason vocabulary, so it collapses cap-and-count (ADR 0308). */
+/**
+ * `dropped` is an evidence-array with no reason vocabulary, so it collapses cap-and-count per the
+ * bounded-evidence-output-shape decision.
+ */
 const DROPPED_CAP = 5;
+
+/** The one spelling of a capped `dropped` list, so the two channels never state different counts. */
+const droppedList = (dropped: ReadonlyArray<string>): string => {
+	const {rows, more} = capAndCount(dropped, DROPPED_CAP);
+	return `${rows.join(", ")}${more === 0 ? "" : ` (+${more} more)`}`;
+};
 
 export interface EmitOptions<R = never> {
 	readonly epic: number;
@@ -105,7 +114,7 @@ const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}
 		case "Emptied":
 			return refuse(
 				TOPOLOGY_ABSENT,
-				`${VERB}: --children dropped every ref #${epic}'s topology places (${result.dropped.join(", ")}), so it declares no child — nothing was placed.`,
+				`${VERB}: --children dropped every ref #${epic}'s topology places (${droppedList(result.dropped)}), so it declares no child — nothing was placed.`,
 			);
 		case "Cycle":
 			return refuse(
@@ -183,7 +192,7 @@ export const runEmit = <R = never>(
 				...(emitted.dropped.length === 0
 					? []
 					: [
-							`${VERB}: --children dropped ${emitted.dropped.length} ref(s) #${options.epic}'s topology names and its child list does not: ${dropped.rows.join(", ")}${dropped.more === 0 ? "" : ` (+${dropped.more} more)`}.`,
+							`${VERB}: --children dropped ${emitted.dropped.length} ref(s) #${options.epic}'s topology names and its child list does not: ${droppedList(emitted.dropped)}.`,
 						]),
 			],
 		);

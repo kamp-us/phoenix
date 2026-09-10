@@ -123,9 +123,13 @@ export const readDeclared = (
 			phases.set(edge.phase, [...(phases.get(edge.phase) ?? []), ...members]);
 			continue;
 		}
-		if (!known(edge.subject)) continue;
-		const subject = edge.subject.number;
+		// The needs walk runs before the subject short-circuit because `known` is what records a
+		// drop: returning early on a dropped subject would leave a ref that appears only in its
+		// needs out of `dropped`, and the run would report fewer drops than it made.
+		const subjectKnown = known(edge.subject);
 		const needs = edge.needs.filter(known).map((ref) => ref.number);
+		if (!subjectKnown) continue;
+		const subject = edge.subject.number;
 		requires.set(subject, [...(requires.get(subject) ?? []), ...needs]);
 	}
 	if (phases.size === 0) return {_tag: "Absent"};

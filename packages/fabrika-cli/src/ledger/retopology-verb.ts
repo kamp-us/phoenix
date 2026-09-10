@@ -47,8 +47,17 @@ import {checkTopology, type Declared, readDeclared} from "./topology-doc.ts";
 
 const VERB = "ledger retopology";
 
-/** `dropped` is an evidence-array with no reason vocabulary, so it collapses cap-and-count (ADR 0308). */
+/**
+ * `dropped` is an evidence-array with no reason vocabulary, so it collapses cap-and-count per the
+ * bounded-evidence-output-shape decision.
+ */
 const DROPPED_CAP = 5;
+
+/** The one spelling of a capped `dropped` list, so the two channels never state different counts. */
+const droppedList = (dropped: ReadonlyArray<string>): string => {
+	const {rows, more} = capAndCount(dropped, DROPPED_CAP);
+	return `${rows.join(", ")}${more === 0 ? "" : ` (+${more} more)`}`;
+};
 
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
@@ -95,7 +104,7 @@ const declaredRefusal = (
 		case "Emptied":
 			return refuse(
 				TOPOLOGY_INVALID,
-				`${VERB}: every ref #${epic}'s topology places (${declared.dropped.join(", ")}) is outside its live child list, so the rewrite would place no child — nothing was written.`,
+				`${VERB}: every ref #${epic}'s topology places (${droppedList(declared.dropped)}) is outside its live child list, so the rewrite would place no child — nothing was written.`,
 				notes,
 			);
 		// A drop read never returns `Foreign`; the arm exists so the switch stays total.
@@ -230,7 +239,7 @@ export const runRetopology = (
 				verified: true,
 			}),
 			[
-				`${VERB}: rewrote #${epic.number}'s \`## Dependencies\` block over ${live.length} live child(ren)${declared.dropped.length === 0 ? "" : `, dropping ${declared.dropped.join(", ")}`}.`,
+				`${VERB}: rewrote #${epic.number}'s \`## Dependencies\` block over ${live.length} live child(ren)${declared.dropped.length === 0 ? "" : `, dropping ${declared.dropped.length} ref(s): ${droppedList(declared.dropped)}`}.`,
 				...notes,
 			],
 		);
