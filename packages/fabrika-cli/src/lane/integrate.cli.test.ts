@@ -15,7 +15,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {ASSEMBLY_RED, MERGE_CONFLICT, RECONCILE_REFUSED} from "./codes.ts";
+import {ASSEMBLY_RED, CHILD_UNSEATED, MERGE_CONFLICT, RECONCILE_REFUSED} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
@@ -237,6 +237,35 @@ describe("a cross-child collision over a real assembly worktree", {
 			rows("one", "epic-row", "child-row"),
 		);
 		expect(git(tree.seat, "rev-parse", "HEAD^1")).toBe(tree.tip);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+	});
+
+	it("lands the replayed child on its next integrate, with its row written once", () => {
+		// The whole cycle the machine's WIP arm opens: replay, re-review, integrate again. The second
+		// run merged the superseded branch before the replay re-seated it — collided with its own
+		// landing, replayed that, and kept both sides of an empty-base hunk, so the child's row was
+		// written once more every turn and `landed` was unreachable.
+		const tree = collision("on");
+		expect(integrate(tree).code).toBe(0);
+		const landed = readFileSync(join(tree.seat, REGISTRY), "utf8");
+
+		const {code, stdout} = integrate(tree);
+
+		expect(code).toBe(0);
+		expect(stdout.trim().split("\n").at(-1)).toBe("INTEGRATE-VERDICT: MERGED");
+		expect(readFileSync(join(tree.seat, REGISTRY), "utf8")).toBe(landed);
+		expect(landed).toBe(rows("one", "epic-row", "child-row"));
+	});
+
+	it("refuses on 54 when a working tree holds the child branch the replay must re-seat", () => {
+		const tree = collision("on");
+		git(tree.root, "checkout", CHILD);
+
+		const {code, stdout} = integrate(tree);
+
+		expect(code).toBe(CHILD_UNSEATED);
+		expect(stdout).toBe("");
+		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
 	});
 

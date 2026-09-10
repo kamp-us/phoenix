@@ -16,7 +16,10 @@
  * A textual collision is not always the end of the run: under `assemblyReplay.onCollision`, the
  * child's commits are replayed onto the tip and the plain keep-both hunks kept both ways, which is
  * the repair a hand-resolved cross-child collision always was (`replay.ts`). The key ships `off`, so
- * a repo declaring nothing gets the refusal byte for byte.
+ * a repo declaring nothing gets the refusal byte for byte. The replay also moves the child's branch
+ * onto the range it replayed, and refuses on exit 54 rather than merging when it cannot: the branch
+ * is where every later read takes the child's range from, so one left on superseded commits sends
+ * the child's next integrate into a collision with this one's own landing.
  *
  * On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED` or, after a replay,
  * `INTEGRATE-VERDICT: REPLAYED` — the line above it the merged head either way, and above that, on a
@@ -50,6 +53,7 @@ import {
 	ASSEMBLY_DIRTY,
 	ASSEMBLY_RED,
 	ASSEMBLY_UNSEATED,
+	CHILD_UNSEATED,
 	LANE_UNREADABLE,
 	MERGE_CONFLICT,
 	PRIMARY_CHECKOUT,
@@ -268,6 +272,20 @@ const land = (
 				),
 			};
 		}
+		if (replayed._tag === "ChildUnseated") {
+			return {
+				_tag: "Refused" as const,
+				outcome: yield* restore(
+					path,
+					head,
+					head,
+					refuse(
+						CHILD_UNSEATED,
+						`${VERB}: ${child} replayed onto ${head} as ${replayed.replayBranch} and ${replayed.reason} — the replayed range is the child's range now, so nothing was merged and ${path} is back at ${head}. A working tree still standing on ${child} is the usual reason: free it with \`fabrika build retire\` and integrate again, or park the lane on \`--cause worktree-holds-branch\`.`,
+					),
+				),
+			};
+		}
 		if (replayed._tag === "NotKeepBoth") {
 			return {
 				_tag: "Refused" as const,
@@ -288,6 +306,7 @@ const land = (
 			_tag: "Landed" as const,
 			notes: [
 				`${VERB}: ${child} conflicted with ${branch} and was replayed onto ${head} as ${replayed.replayBranch} — ${replayed.commits} commit(s), ${replayed.resolved.length} path(s) kept both ways — then merged into ${branch} at ${path}.`,
+				`${VERB}: ${child} was moved onto the replayed range, so it names the commits ${branch} carries and the child's next integrate is up to date.`,
 			],
 			// `git cherry-pick` writes no `ORIG_HEAD`, so the replay path resets through the sha this run
 			// captured rather than a ref something else last wrote.

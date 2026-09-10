@@ -293,18 +293,22 @@ worktree, run once over the assembly. Exit `0` prints the merged head with
 **A textual collision is not always where the run stops.** Under `assemblyReplay.onCollision` — a
 `.fabrika.jsonc` key that ships `off`, so a repo declaring nothing keeps the refusal it has today —
 the verb replays the colliding child's commits onto the assembly tip, keeps both sides of a hunk
-where both sides only added lines, and merges the replayed range `--no-ff` like any other landing.
+where both sides only added lines, moves the child's own branch onto the replayed range, and merges
+that range `--no-ff` like any other landing.
 That run answers `INTEGRATE-VERDICT: REPLAYED` over a machinery event naming the moved range. **The
 moved range is a review obligation, not a merge you may push on**: the child's commits now sit on a
 head its reviewer never saw, so send that child back through `review` over the range the event names
 before the tail. The event says so itself, in `reReview` — and its `budget: "unspent"` is the other
 half: a replay is machinery working, so the round it costs is not one of the child's repair retries.
+
 The move that discharges both is the `WIP` §3's table records: it is the child region's one arm out
-of `integrate` back into `review`, and it is a plain arm rather than `FAIL`'s guarded array, so it
-takes the round without spending a retry. Recording a `DONE` instead lands the child on content
-nobody read.
+of `integrate` back into `review`, and it is a guarded array like the tail's `ship:queued`, so it
+spends a wait rather than a retry and falls into `human:replay-stall` when the waits run out.
+Recording a `DONE` instead lands the child on content nobody read.
 A hunk that is not a plain keep-both is exit `42` with the branch reset and proved back, and it parks
-on `--cause replay-conflict` — resolving content is a judgment no verb makes.
+on `--cause replay-conflict` — resolving content is a judgment no verb makes. A child branch the
+replay cannot move onto its own replayed range is exit `54` with nothing merged — park it on
+`--cause worktree-holds-branch`, whose clearance `recipe unpark` already owns.
 Which event each exit is, is single-homed in
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s `integrate` row and nowhere else —
 read it there rather than from this paragraph. Only `42`, `43` and `44` are the `FAIL` that re-enters
@@ -780,17 +784,18 @@ the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a P
 is the range's own commits — a child opens no PR to prove one against.
 
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
-is the one home for that mapping — the verb exits thirteen ways and every one is here, so there is
+is the one home for that mapping — the verb exits fourteen ways and every one is here, so there is
 no code left over for a catch-all to guess at. Exit `0` takes two rows because its two verdicts owe
 different next moves, and the verdict line is what tells them apart:
 
 | Exit | What it says | Record |
 | --- | --- | --- |
 | `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
-| `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends no retry |
+| `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends a wait rather than a retry |
 | `42` | the child conflicts and was not replayed, or the replay hit a hunk that is not a plain keep-both | `FAIL` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
 | `44` | the merged tree failed a code validator | `FAIL` |
+| `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
 The bottom row is the whole reason this table is closed. Only `42`/`43`/`44` judge the child's

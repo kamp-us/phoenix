@@ -60,7 +60,16 @@
 							"integrate": {
 								"on": {
 									"ISSUE_4301.DONE": "landed",
-									"ISSUE_4301.WIP": "review",
+									"ISSUE_4301.WIP": [
+										{
+											"target": "review",
+											"guard": "waitsRemaining",
+											"actions": "incrementWaits"
+										},
+										{
+											"target": "human:replay-stall"
+										}
+									],
 									"ISSUE_4301.BLOCKED": "blocked",
 									"ISSUE_4301.FAIL": [
 										{
@@ -75,6 +84,11 @@
 								}
 							},
 							"blocked": {
+								"on": {
+									"ISSUE_4301.UNBLOCKED": "hist"
+								}
+							},
+							"human:replay-stall": {
 								"on": {
 									"ISSUE_4301.UNBLOCKED": "hist"
 								}
@@ -127,7 +141,16 @@
 							"integrate": {
 								"on": {
 									"ISSUE_4302.DONE": "landed",
-									"ISSUE_4302.WIP": "review",
+									"ISSUE_4302.WIP": [
+										{
+											"target": "review",
+											"guard": "waitsRemaining",
+											"actions": "incrementWaits"
+										},
+										{
+											"target": "human:replay-stall"
+										}
+									],
 									"ISSUE_4302.BLOCKED": "blocked",
 									"ISSUE_4302.FAIL": [
 										{
@@ -142,6 +165,11 @@
 								}
 							},
 							"blocked": {
+								"on": {
+									"ISSUE_4302.UNBLOCKED": "hist"
+								}
+							},
+							"human:replay-stall": {
 								"on": {
 									"ISSUE_4302.UNBLOCKED": "hist"
 								}
@@ -208,7 +236,16 @@
 							"integrate": {
 								"on": {
 									"ISSUE_4303.DONE": "landed",
-									"ISSUE_4303.WIP": "review",
+									"ISSUE_4303.WIP": [
+										{
+											"target": "review",
+											"guard": "waitsRemaining",
+											"actions": "incrementWaits"
+										},
+										{
+											"target": "human:replay-stall"
+										}
+									],
 									"ISSUE_4303.BLOCKED": "blocked",
 									"ISSUE_4303.FAIL": [
 										{
@@ -223,6 +260,11 @@
 								}
 							},
 							"blocked": {
+								"on": {
+									"ISSUE_4303.UNBLOCKED": "hist"
+								}
+							},
+							"human:replay-stall": {
 								"on": {
 									"ISSUE_4303.UNBLOCKED": "hist"
 								}

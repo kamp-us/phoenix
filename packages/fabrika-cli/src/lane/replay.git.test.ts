@@ -109,6 +109,7 @@ describe("replayChild against real git", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, 
 		expect(() => repo.git("merge", "--no-ff", "--no-edit", "child")).toThrow();
 		repo.git("merge", "--abort");
 
+		const before = repo.rev("child");
 		const outcome = await replay(repo, tip);
 
 		expect(outcome._tag).toBe("Replayed");
@@ -119,8 +120,11 @@ describe("replayChild against real git", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, 
 
 		// The range moved: it is the child's work on a head its reviewer never saw.
 		expect(outcome.range.from).toBe(tip);
-		expect(outcome.range.to).not.toBe(repo.rev("child"));
+		expect(outcome.range.to).not.toBe(before);
 		expect(repo.rev(outcome.replayBranch)).toBe(outcome.range.to);
+
+		// And the child's branch followed it, so the range the branch names is the range that landed.
+		expect(repo.rev("child")).toBe(outcome.range.to);
 
 		// Both rows survived, and the seat is back on its branch carrying the merge.
 		expect(repo.read(REGISTRY)).toBe(
@@ -178,6 +182,47 @@ describe("replayChild against real git", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, 
 		expect(outcome.paths).toEqual([REGISTRY]);
 		expect(outcome.reason).toContain(REGISTRY);
 
+		expect(repo.git("rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(BRANCH);
+		expect(repo.rev(BRANCH)).toBe(tip);
+		expect(repo.git("status", "--porcelain").trim()).toBe("");
+	});
+
+	it("leaves the child's next merge up to date, so a second landing duplicates no row", async () => {
+		// The defect this closes: the second `lane integrate` used to merge the branch the replay
+		// superseded, collide with the replay's own landing, replay THAT, and keep both sides of an
+		// empty-base hunk — writing the child's row a second time, once more every turn.
+		const repo = collided(registry('existing: "on",', 'laneConcurrencyCap: "4",'));
+		const landed = registry(
+			'existing: "on",',
+			'assemblyRefresh: "off",',
+			'laneConcurrencyCap: "4",',
+		);
+
+		const outcome = await replay(repo, repo.rev(BRANCH));
+		expect(outcome._tag).toBe("Replayed");
+		expect(repo.read(REGISTRY)).toBe(landed);
+
+		// The child's next integrate, run exactly as the verb runs it.
+		const again = repo.git("merge", "--no-ff", "--no-edit", "child");
+		expect(again).toContain("Already up to date");
+		expect(repo.read(REGISTRY)).toBe(landed);
+	});
+
+	it("refuses without merging when the child branch cannot follow the replayed range", async () => {
+		const repo = collided(registry('existing: "on",', 'laneConcurrencyCap: "4",'));
+		const tip = repo.rev(BRANCH);
+		// A second working tree standing on the child's branch: git refuses to move a branch another
+		// tree holds, which is the hold `fabrika build retire` clears.
+		repo.git("worktree", "add", "--quiet", mkdtempSync(join(tmpdir(), "fabrika-held-")), "child");
+
+		const outcome = await replay(repo, tip);
+
+		expect(outcome._tag).toBe("ChildUnseated");
+		if (outcome._tag !== "ChildUnseated") return;
+		expect(outcome.reason).toContain("child");
+		expect(repo.rev(outcome.replayBranch)).toBe(outcome.head);
+
+		// Nothing landed: the assembly branch is where the replay found it.
 		expect(repo.git("rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(BRANCH);
 		expect(repo.rev(BRANCH)).toBe(tip);
 		expect(repo.git("status", "--porcelain").trim()).toBe("");

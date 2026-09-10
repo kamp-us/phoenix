@@ -13,6 +13,12 @@
  * The replay lands on its own branch and that branch is merged `--no-ff`, exactly as the plain path
  * merges the child: the assembly branch keeps one commit per landing either way, so the epic
  * reviewer reads the same history shape whichever path a child took.
+ *
+ * The child's own branch is moved onto the replayed range before that merge, and the leg refuses
+ * rather than merging when it cannot be. The range a child owns is whatever its branch names, and
+ * every later read takes it from there — the re-review's, a repair's resume, the next integrate's
+ * merge. Left on commits the replay rewrote, that branch says a range the assembly branch does not
+ * carry, and the next integrate collides with the landing this one made.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -51,6 +57,16 @@ export type ReplayOutcome =
 	  }
 	/** A hunk no keep-both reaches. The seat is back on its branch; the caller proves the reset. */
 	| {readonly _tag: "NotKeepBoth"; readonly reason: string; readonly paths: ReadonlyArray<string>}
+	/**
+	 * The commits replayed and the child's branch would not follow them. Nothing was merged, so the
+	 * assembly branch is where the replay found it and the caller proves that reset like any other.
+	 */
+	| {
+			readonly _tag: "ChildUnseated";
+			readonly reason: string;
+			readonly replayBranch: string;
+			readonly head: string;
+	  }
 	/** Something on the path could not be read or run — UNKNOWN, never a clean refusal. */
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
@@ -283,6 +299,23 @@ export const replayChild = (
 				reason: `the replay landed at ${head} and ${path} cannot be put back on ${branch}: ${back.reason} — the seat is detached and what it carries is UNKNOWN`,
 			};
 		}
+		// The replayed commits ARE the child's range now: the originals are not on the assembly branch
+		// and never will be, because the replay rewrote them. A child branch left on the originals
+		// makes the next `lane integrate` merge a range this one superseded — it collides again,
+		// replays again, and the second replay's hunk has an empty base with both sides non-empty, so
+		// `resolveKeepBoth` accepts it and the child's row lands twice. Re-seating before the merge is
+		// what keeps the branch, the assembly history and the range a re-review reads all naming one
+		// thing; doing it after would leave a landed merge beside a branch that disagrees with it.
+		const reseated = yield* git(path, "branch", "--force", child, head);
+		if (!reseated.ok) {
+			return {
+				_tag: "ChildUnseated" as const,
+				reason: `${child} cannot be moved onto the replayed range: ${reseated.reason}`,
+				replayBranch,
+				head,
+			};
+		}
+
 		const merged = yield* git(path, "merge", "--no-ff", "--no-edit", replayBranch);
 		if (!merged.ok) {
 			yield* git(path, "merge", "--abort");
