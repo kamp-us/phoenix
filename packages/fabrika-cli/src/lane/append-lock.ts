@@ -20,6 +20,18 @@
  * otherwise leave the sidecar forever, so a lock whose directory mtime is older than
  * {@link STALE_LOCK_MS} is stolen on sight. Anything newer is presumed alive; waiting is the honest
  * answer.
+ *
+ * **The two durations are one setting, which is why only one of them is written down.** A waiter
+ * gives up at its budget and a lock only becomes stealable at the stale horizon, so a budget
+ * shorter than the horizon makes the horizon unreachable: every writer arriving inside the
+ * difference refuses {@link CONCURRENT_WRITE} against a lock nobody holds, and nothing waits the
+ * window out. That gap shipped — a 5s budget against a 60s horizon left an orphaned lock
+ * un-stealable for 55 seconds, and a shell lost its terminal to it twice seconds apart. So the
+ * horizon is the knob and the default budget is **derived** from it: raise or lower
+ * {@link STALE_LOCK_MS} and the budget moves with it, because the one thing a reader must not be
+ * able to do is tune one of them alone.
+ * `FABRIKA_LANE_LOCK_BUDGET_MS` still overrides the budget on purpose — a caller asking to refuse
+ * fast is asking not to reach the horizon at all.
  */
 import {Effect, type FileSystem, Option, type Path, Result} from "effect";
 import {CONCURRENT_WRITE} from "./codes.ts";
@@ -28,8 +40,28 @@ import {WORKFLOW_FILE} from "./store.ts";
 /** The sidecar directory a holding writer creates inside the lane directory. */
 export const LOCK_DIR_NAME = "events.lock";
 
-/** How long a writer waits for a held lock before refusing rather than writing blind. */
-const DEFAULT_LOCK_BUDGET_MS = 5_000;
+/**
+ * A held lock older than this is presumed crashed, not slow, and is stolen.
+ *
+ * It is a margin over how long a legitimate holder can take, and that is bounded: everything inside
+ * the lock is local IO — load, fold, validate, append — because each verb's board read runs before
+ * it. Ten seconds is two orders of magnitude over a hold that measures in milliseconds, which is
+ * the honest reading of "this process is gone", while staying inside a wait a shell can afford.
+ */
+const STALE_LOCK_MS = 10_000;
+
+/** Poll cadence while waiting for a held lock. */
+const POLL_MS = 50;
+
+/**
+ * How long a writer waits for a held lock before refusing rather than writing blind — the stale
+ * horizon plus enough polls to notice and steal, never a second number to keep in step by hand.
+ *
+ * The grace matters because the two clocks start apart: a waiter arriving the instant a lock was
+ * created reaches the horizon a full {@link STALE_LOCK_MS} later and still needs a poll to act on
+ * it. A budget equal to the horizon would expire in that gap.
+ */
+const DEFAULT_LOCK_BUDGET_MS = STALE_LOCK_MS + 20 * POLL_MS;
 
 /**
  * The budget is an operations surface, not just a constant: a caller that would rather refuse fast
@@ -40,12 +72,6 @@ const lockBudgetMs = (): number => {
 	const parsed = raw === undefined ? Number.NaN : Number(raw);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LOCK_BUDGET_MS;
 };
-
-/** A held lock older than this is presumed crashed, not slow, and is stolen. */
-const STALE_LOCK_MS = 60_000;
-
-/** Poll cadence while waiting for a held lock. */
-const POLL_MS = 50;
 
 export interface LockRefusal {
 	readonly _tag: "Locked";
@@ -74,17 +100,30 @@ const acquireOnce = (
 		return made.failure.reason._tag === "NotFound" ? "absent" : "held";
 	});
 
+const removeLock = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect<void, never> =>
+	Effect.ignore(fs.remove(lockDir, {recursive: true}));
+
+/**
+ * Take a lock whose holder is presumed dead, answering whether a retry is now worth making.
+ *
+ * **The removal is the steal.** Reading the mtime only reaches a verdict; the sidecar is still
+ * there, so a re-`mkdir` that followed a bare verdict would fail `AlreadyExists` against the very
+ * directory being stolen and the waiter would poll to its deadline against a lock nobody holds.
+ * A `stat` that fails or reports no mtime is UNKNOWN, and UNKNOWN never steals.
+ *
+ * Losing the re-`mkdir` to another waiter is not a failure of this function: the caller reads
+ * `held` and keeps polling, which is the right answer once someone else holds it.
+ */
 const stealIfStale = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect<boolean, never> =>
 	Effect.gen(function* () {
 		const probed = yield* Effect.result(fs.stat(lockDir));
 		if (Result.isFailure(probed)) return false;
 		const mtime = probed.success.mtime;
 		if (Option.isNone(mtime)) return false;
-		return Date.now() - mtime.value.getTime() > STALE_LOCK_MS;
+		if (Date.now() - mtime.value.getTime() <= STALE_LOCK_MS) return false;
+		yield* removeLock(fs, lockDir);
+		return true;
 	});
-
-const removeLock = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect<void, never> =>
-	Effect.ignore(fs.remove(lockDir, {recursive: true}));
 
 /**
  * Wait for and hold the lane's write lock. `acquired` means this writer holds it — release is the
