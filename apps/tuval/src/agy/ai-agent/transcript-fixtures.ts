@@ -31,6 +31,19 @@ export const toolResult =
 export const toolResultRunning =
 	'{"step_index":2,"source":"MODEL","type":"GENERIC","status":"RUNNING","created_at":"2026-09-03T09:32:29Z","content":"Created At: 2026-09-03T02:32:29-07:00\\nTool is running as a background task with task id: task-86"}';
 
+/**
+ * Two calls on one `PLANNER_RESPONSE`, and constructed rather than captured: the census found the
+ * shape but no multi-call line survived the cut described above. It keeps the captured call line's
+ * exact key set and `args`-as-JSON-text shape, so what it tests is the reader's handling of
+ * `tool_calls.length > 1` and makes no claim about agy's wire the captured lines do not already make.
+ */
+export const toolCallBatch =
+	'{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-09-03T04:17:43Z","tool_calls":[{"name":"list_dir","args":{"DirectoryPath":"\\"/Users/founder/agyprobe\\""}},{"name":"read_file","args":{"AbsolutePath":"\\"/Users/founder/agyprobe/README.md\\""}}]}';
+
+/** The batch's one outcome line: agy writes a single `GENERIC` for both calls above, not one each. */
+export const toolResultBatch =
+	'{"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-09-03T04:17:49Z","content":"Created At: 2026-09-02T21:17:49-07:00\\nCompleted At: 2026-09-02T21:17:49-07:00\\nthe batch finished"}';
+
 /** The reply. A `PLANNER_RESPONSE` carries `content`, `tool_calls`, or both. */
 export const assistantReply =
 	'{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-09-03T04:18:01Z","content":"The workspace holds a **README.md** and a **src/** directory."}';

@@ -23,6 +23,7 @@ import {
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import {
+	BATCH_OUTCOME_HEAD,
 	CLIPPED_MARK,
 	readTranscriptPage,
 	TRANSCRIPT_FILE,
@@ -165,6 +166,57 @@ describe("the agy transcript reader", () => {
 
 	it("spends the result line on its call rather than also rendering it as a row", () => {
 		expect(kinds(itemsOf([fixtures.toolCall, fixtures.toolResult]))).toEqual(["tool"]);
+	});
+
+	/**
+	 * The regression #8689 fixed: the batch's one outcome was copied onto each of N rows, so every row
+	 * claimed to be the result of that call. The assertion is on the rows' own `result`, because that
+	 * is the field the claim was made in.
+	 */
+	it("renders a two-call batch's one outcome once, never as each call's own result", () => {
+		const items = itemsOf([fixtures.toolCallBatch, fixtures.toolResultBatch]);
+		expect(kinds(items)).toEqual(["tool", "tool", "system"]);
+		const [first, second] = items as ReadonlyArray<ToolItem>;
+		expect([first?.name, second?.name]).toEqual(["list_dir", "read_file"]);
+		expect(first?.result.text).toBe("");
+		expect(second?.result.text).toBe("");
+		// The batch's status is reported for the batch, so it is read onto both rows.
+		expect([first?.status, second?.status]).toEqual(["ok", "ok"]);
+		const batch = texts(items)[2] ?? "";
+		expect(batch).toContain(BATCH_OUTCOME_HEAD);
+		expect(batch).toContain("the batch finished");
+	});
+
+	it("keeps a one-call batch's outcome on its row, where the attribution is unambiguous", () => {
+		const items = itemsOf([fixtures.toolCall, fixtures.toolResult]);
+		expect(kinds(items)).toEqual(["tool"]);
+		expect(texts(items)[0]).toContain('{"name":"README.md", "isDir":false}');
+	});
+
+	it("keeps the clip mark on a multi-call row whose own tool_calls were cut short", () => {
+		const clippedCalls = JSON.stringify({
+			step_index: 1,
+			source: "MODEL",
+			type: "PLANNER_RESPONSE",
+			status: "DONE",
+			created_at: "2026-09-03T04:17:43Z",
+			tool_calls: [
+				{name: "list_dir", args: {}},
+				{name: "read_file", args: {}},
+			],
+			truncated_fields: ["tool_calls"],
+		});
+		const items = itemsOf([clippedCalls]) as ReadonlyArray<ToolItem>;
+		expect(items.map((item) => item.result.text)).toEqual([CLIPPED_MARK, CLIPPED_MARK]);
+	});
+
+	it("adds no batch row for a multi-call line agy has written no outcome for yet", () => {
+		const items = itemsOf([fixtures.toolCallBatch]);
+		expect(kinds(items)).toEqual(["tool", "tool"]);
+		expect((items as ReadonlyArray<ToolItem>).map((item) => item.status)).toEqual([
+			"running",
+			"running",
+		]);
 	});
 
 	it("renders a GENERIC line that follows no call, so nothing is dropped", () => {

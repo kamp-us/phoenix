@@ -150,11 +150,20 @@ interface Placed {
 	readonly ordinal: number;
 }
 
+/** The head of the batch row, and the whole of what distinguishes it from a per-call result. */
+export const BATCH_OUTCOME_HEAD =
+	"agy reported one outcome for this batch of tool calls and attributes nothing per call";
+
 /**
- * Every call on one `PLANNER_RESPONSE` line carries the *same* result text, because agy writes one
- * `MODEL`/`GENERIC` line for the whole batch and attributes nothing per call — there is no id on
- * either side to pair them by. So a multi-call line renders N rows repeating one outcome, which
- * over-reports rather than drops. Tracked as #8476 pending a captured multi-call transcript.
+ * One `PLANNER_RESPONSE`'s calls → their rows, and on a multi-call line the batch's own outcome row.
+ *
+ * agy writes one `MODEL`/`GENERIC` line for the whole batch, so its `content` is a fact about the
+ * batch and never about a call — there is no id on either side to pair them by. A one-call line is
+ * the only place that distinction collapses, and there the outcome is the row's result. On a
+ * multi-call line it is rendered once, as its own row under `BATCH_OUTCOME_HEAD`: copying it onto
+ * each of N rows asserted an attribution agy never made, with the confidence a real one carries
+ * (#8689). The batch's `status` is still read onto every row, because that one *is* reported for the
+ * batch as a whole — dropping it would leave every row of a finished batch reading as still pending.
  */
 const toolItemsOf = (
 	id: string,
@@ -163,17 +172,30 @@ const toolItemsOf = (
 	result: string,
 	status: string,
 	clipped: boolean,
-): ReadonlyArray<TranscriptItem> =>
-	calls.map((call, index) =>
+): ReadonlyArray<TranscriptItem> => {
+	const single = calls.length === 1;
+	const rows = calls.map((call, index) =>
 		toolItem({
 			id: `${id}:${index}`,
 			timestamp,
 			name: call.name,
 			input: call.args,
-			result: marked(result, clipped),
+			// A multi-call row carries no result, but it still carries the clip mark when agy clipped
+			// one: a row whose `args` are cut short must not read like a whole one.
+			result: marked(single ? result : "", clipped),
 			status: toolStatusOf(status),
 		}),
 	);
+	if (single || result.length === 0) return rows;
+	return [
+		...rows,
+		systemItem(
+			`${id}:batch`,
+			timestamp,
+			marked(`${BATCH_OUTCOME_HEAD} (${status}):\n${result}`, clipped),
+		),
+	];
+};
 
 /**
  * The unrecognised arm's row. Nothing is dropped and nothing throws: the combination is named so a
