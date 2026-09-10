@@ -56,6 +56,12 @@ binds build-purpose claims only. A `gate` claim is admitted without the label; t
 binds, so an out-of-scope epic is still exit `20`. Never reach for `--override` to get past the
 audience axis — that is the fail-open convention the purpose exists to remove.
 
+The blockedness gate does not bind a `gate` claim either: gating writes no code, so an epic waiting
+on an open blocker is gateable now and only its children's build claims wait. The claim prints
+`build claim: blockedness: the gate binds a build claim only — …` and reads no edges, so exit `16`
+is unreachable here at the claim as well as everywhere else in this skill. A founder ruling scoped
+the gate that way, and the decision corpus records the matrix.
+
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
 the session identity from the environment (`FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, else
@@ -63,8 +69,8 @@ the session identity from the environment (`FABRIKA_SESSION_ID`, else `CLAUDE_CO
 an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
 postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
-is a proven out-of-scope epic. Exit `21` is no longer reachable at this step, because a `gate` claim
-is not bound by the audience axis.
+is a proven out-of-scope epic. Exits `21` and `16` are not reachable at this step: a `gate` claim is
+bound by neither the audience axis nor the blockedness gate.
 
 ```bash
 fabrika plan read $epic_number

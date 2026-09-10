@@ -907,6 +907,15 @@ the blocker closes or its work lands, and the next read answers unblocked. In re
 PR, which carries no edges of its own and names a lane that has already started, so the gate does not
 run.
 
+**The gate binds a build claim and nothing else.** A `plan` or `gate` claim skips the graph read
+outright, printing `build claim: blockedness: the gate binds a build claim only — …` where the
+`scanned` line would go, so a skipped gate is read rather than inferred from a missing line. The
+founder ruling scoped it that way: planning and plan-gating an epic write no code, and they are
+exactly the work that should happen while the epic the plan waits on is still being built — a
+downstream epic that cannot be planned until its blocker closes stalls every builder who would have
+started the moment it landed. What stays gated is the work itself: each child's own build claim
+still reads its exact edges, so nothing is built on a contract that has not landed.
+
 **A blocker whose work landed on the epic run's assembly branch is discharged here exactly as it is
 at `build eligible`.** The graph-carrier rule was amended on 2026-08-29 to narrow its own "any
 blocker open" clause to "open **and undischarged**", which is what authorizes this. A child's issue
@@ -1049,10 +1058,10 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum, or `--issue` was passed for a non-PR target |
-| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the campaigns table or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
+| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the campaigns table or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim --purpose build` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
 | `14` | `claim --issue` only: the repair PR's complete linkage set does not contain the explicitly requested served issue — no marker was written |
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
-| `16` | `claim` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes or its work lands on the epic run's assembly branch |
+| `16` | `claim --purpose build` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes or its work lands on the epic run's assembly branch. Unreachable under `--purpose plan` and `--purpose gate`, which skip the graph read |
 | `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
@@ -1109,6 +1118,7 @@ the pieces is what handed a builder an ordering decision it then got wrong.
 | `build claim: --cites <detail>; nothing was written.` — the URL is not an issue-comment URL, or names another repository or another issue | 1 | refusal |
 | `build claim: cannot read the "## Campaigns" table: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
 | `build claim: blocked by <n> open blocked_by edges: #<a>, #<b> — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.` — preceded by `build claim: scanned <n> blocked_by edges.` | 16 | refusal |
+| `build claim: blockedness: the gate binds a build claim only — a <purpose> claim writes no code, and authoring or checking a ledger is the work that should happen while the blocker is still open.` — printed instead of the graph read under `--purpose plan` and `--purpose gate` | 0 | detail line, once |
 | `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` (`<reason>` also covers a parent that could not be read, which leaves the assembly-branch discharge unread) | 11 | refusal |
 | `build claim: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.` | 0, 11 or 16 | detail line, once |
 | `build claim: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
@@ -1152,10 +1162,11 @@ action is identical. The same reading applies wherever a sibling verb's precondi
 "claim confirmed (`15`/`11`)": an unclaimed target refuses on `15` with the no-claim message.
 
 **Scope** — one issue's comment markers, paginated in full, plus — for `claim` — that issue's home
-and audience against the active campaigns, its `blocked_by` edges with each blocker's state, and —
-only when an edge is still undischarged — that issue's parent and the commits `epic/<parent>` adds
-over the trunk in this tree. An unauthorized author's marker is counted and reported on
-stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
+and audience against the active campaigns, and — on a build-purpose claim only — its `blocked_by`
+edges with each blocker's state, plus, only when an edge is still undischarged, that issue's parent
+and the commits `epic/<parent>` adds over the trunk in this tree. A `plan` or `gate` claim reads no
+edges at all, so it costs neither the graph call nor the branch read. An unauthorized author's
+marker is counted and reported on stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
 against (`campaigns: 1 active — Search rewrite (#7)`, `campaigns: 2 active — Search rewrite (#7),
 Design tokens (#4)`, or `campaigns: none active — scope fence inert`), so a
 run that claimed under an inert fence is readable as such afterwards.
@@ -1169,8 +1180,14 @@ $ fabrika build claim 4
 
 ```
 $ fabrika build claim 3 --purpose gate
+build claim: campaigns: 1 active — Search rewrite (#7).
+build claim: purpose: gate — the audience axis does not bind a gate claim; this issue carries no "ready-for:" label.
+build claim: blockedness: the gate binds a build claim only — a gate claim writes no code, and authoring or checking a ledger is the work that should happen while the blocker is still open.
 {"answer":"won","number":3,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"gate"}
 ```
+
+An epic whose own `blocked_by` edge is still open claims for `plan` exactly the same way — that edge
+refuses only the build claims that would write code against contracts nobody has landed yet.
 
 ```
 $ fabrika build claim 29
