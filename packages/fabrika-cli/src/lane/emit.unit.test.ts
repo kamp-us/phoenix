@@ -21,11 +21,17 @@ const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/ep
 const golden = (): string =>
 	readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.workflow.golden.txt");
 
-const open = (number: number) => ({number, state: "open" as const, stateReason: null});
+const open = (number: number, classes: ReadonlyArray<string> = []) => ({
+	number,
+	state: "open" as const,
+	stateReason: null,
+	classes,
+});
 const closed = (number: number, stateReason: string | null = "completed") => ({
 	number,
 	state: "closed" as const,
 	stateReason,
+	classes: [],
 });
 
 const CHILDREN = [open(4301), open(4302), open(4303)];
@@ -887,5 +893,65 @@ describe("emitMachine — the machinery lap axis", () => {
 		// its status carries none to read — the whole containment, in two assertions.
 		expect(lapStatesOf(before, "issue_4301")).toBe(0);
 		expect(lapStatesOf(after, "issue_4301")).toBe(1);
+	});
+});
+
+/**
+ * The class axis: an unclassed emission is the bytes it always was, and a `ui` child carries the
+ * seed AND the two guarded arms. Without the arms the seed reaches an emitted child and turns
+ * nothing — the half of the ui-lane wiring a folded report named from the other end.
+ */
+describe("emitMachine — the class axis", () => {
+	const classedChildren = [open(4301, ["ui"]), open(4302), open(4303)];
+	const classedText = (): string => emitted(emitMachine(4300, body(), classedChildren));
+
+	it("leaves every byte alone when no child carries a class", () => {
+		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
+	});
+
+	it("seeds the classed child's context entry, and only that child's", () => {
+		const document = JSON.parse(classedText()) as {
+			machine: {context: Record<string, Record<string, unknown>>};
+		};
+		expect(document.machine.context.issue_4301).toMatchObject({classes: ["ui"]});
+		expect(document.machine.context.issue_4302).not.toHaveProperty("classes");
+		expect(document.machine.context.epic_4300).not.toHaveProperty("classes");
+	});
+
+	it("gives the classed child the two ui states, and no sibling one of them", () => {
+		const classed = regionOf(classedText(), "issue_4301") as {
+			states: Record<string, unknown>;
+		};
+		const plain = regionOf(classedText(), "issue_4302") as {states: Record<string, unknown>};
+
+		expect(Object.keys(classed.states)).toContain("build:ui");
+		expect(Object.keys(classed.states)).toContain("review:ui");
+		expect(Object.keys(plain.states)).not.toContain("build:ui");
+	});
+
+	it("routes the classed child's FIRST WIP to build:ui, and its PASS to review:ui", () => {
+		const lane = laneOf(classedText());
+		const log = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+		]);
+
+		expect(lane.tasks.issue_4301?.initial.classes).toEqual(["ui"]);
+		expect(statesOf(lane, log).issue_4301?.type).toBe("review:ui");
+		expect(statesOf(lane, log.slice(0, 1)).issue_4301?.type).toBe("build:ui");
+	});
+
+	it("still lands the classed child through integrate — the ui arms add a leg, not a detour", () => {
+		const lane = laneOf(classedText());
+		const log = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "PASS"],
+			["issue_4301", "DONE"],
+		]);
+
+		expect(statesOf(lane, log).issue_4301?.type).toBe("landed");
 	});
 });

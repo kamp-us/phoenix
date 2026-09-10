@@ -1118,8 +1118,11 @@ a tenth is a change to this table, not a new rule.
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
-`PRIORITIES`, `TYPES` and `AUDIENCES` for the rest — so a seventh `TYPES` member widens what this
-verb creates with no second edit anywhere. v1 restated two statuses and `PRIORITIES` and stopped, and
+`PRIORITIES`, `TYPES` and `AUDIENCES` for the rest, and `CLASSES` for the four `class:*` labels
+`triage apply --class` stamps — so a seventh `TYPES` member widens what this
+verb creates with no second edit anywhere. The class row is the one that does not come off the
+board: its set is closed in code, because a class is what a diff partitions to and no repo declares
+that. v1 restated two statuses and `PRIORITIES` and stopped, and
 the eleven it omitted are each a label some verb writes; since a verb finds its label absent and
 refuses rather than letting the API mint it, a repo that ran the whole documented bootstrap
 could not `triage apply`, `triage park`, `plan flip` or `ship release`. In a repo bootstrapped

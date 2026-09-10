@@ -48,7 +48,7 @@ describe("expectationReader reads an epic ahead of a child, however the issue al
 			[SUBS, NO_CHILDREN],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Epic", children: 0}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Epic", children: 0}, classes: []});
 	});
 
 	it("reads an unlabelled issue carrying sub-issue links as an Epic of that many children", async () => {
@@ -57,7 +57,7 @@ describe("expectationReader reads an epic ahead of a child, however the issue al
 			[SUBS, subIssues(901, 902, 903)],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Epic", children: 3}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Epic", children: 3}, classes: []});
 	});
 
 	it("reads a pre-plan epic — labelled, no children yet — as an Epic rather than an ordinary issue", async () => {
@@ -66,7 +66,7 @@ describe("expectationReader reads an epic ahead of a child, however the issue al
 			[SUBS, NO_CHILDREN],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Epic", children: 0}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Epic", children: 0}, classes: []});
 	});
 });
 
@@ -77,7 +77,7 @@ describe("expectationReader names the parent an issue hangs under when nothing s
 			[SUBS, NO_CHILDREN],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Child", parent: 4304}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Child", parent: 4304}, classes: []});
 	});
 
 	it("reads a named parent off `parent_issue_url` alone", async () => {
@@ -86,7 +86,7 @@ describe("expectationReader names the parent an issue hangs under when nothing s
 			[SUBS, NO_CHILDREN],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Child", parent: 4304}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Child", parent: 4304}, classes: []});
 	});
 
 	it("reads an edge whose number does not parse as a Child with no parent to name", async () => {
@@ -95,7 +95,7 @@ describe("expectationReader names the parent an issue hangs under when nothing s
 			[SUBS, NO_CHILDREN],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Child", parent: null}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Child", parent: null}, classes: []});
 	});
 
 	it("reads an issue with no epic signal and no parent edge as Single", async () => {
@@ -104,7 +104,7 @@ describe("expectationReader names the parent an issue hangs under when nothing s
 			[SUBS, NO_CHILDREN],
 		]);
 
-		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Single"}});
+		expect(read).toEqual({_tag: "Read", expectation: {_tag: "Single"}, classes: []});
 	});
 });
 
@@ -162,7 +162,7 @@ describe("one reader resolves its repo once", () => {
 		const first = await Effect.runPromise(Effect.provide(read(ISSUE_NUMBER), layer));
 		const second = await Effect.runPromise(Effect.provide(read(ISSUE_NUMBER), layer));
 
-		expect(first).toEqual({_tag: "Read", expectation: {_tag: "Single"}});
+		expect(first).toEqual({_tag: "Read", expectation: {_tag: "Single"}, classes: []});
 		expect(second).toEqual(first);
 		expect(shell.calls).toEqual(["git remote get-url origin"]);
 	});

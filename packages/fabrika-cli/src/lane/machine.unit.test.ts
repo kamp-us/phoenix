@@ -170,6 +170,12 @@ const defectsOf = (workflow: unknown): string => {
 	return result._tag === "Malformed" ? result.defects.join("\n") : "";
 };
 
+/** Reach one task's `context` entry, for a test to seed or corrupt a declaration in it. */
+const taskContext = (workflow: Record<string, unknown>, task: string): Record<string, unknown> =>
+	(
+		(workflow.machine as Record<string, unknown>).context as Record<string, Record<string, unknown>>
+	)[task] as Record<string, unknown>;
+
 /** Reach a fixture's machine-level `states` map, for a test to mutate one phase or terminal. */
 const machineStates = (
 	workflow: Record<string, unknown>,
@@ -568,6 +574,27 @@ describe("the compiler — refusals", () => {
 	it("refuses a document that is not machine-shaped at all", () => {
 		expect(defectsOf(null)).toContain("machine.states");
 		expect(defectsOf({})).toContain("machine.states");
+	});
+
+	it("refuses a seeded class outside the closed set, which would route as unclassed", () => {
+		const workflow = twoPhaseWorkflow();
+		taskContext(workflow, "task_a").classes = ["UI"];
+
+		expect(defectsOf(workflow)).toContain('context `classes` declares "UI"');
+	});
+
+	it("refuses a non-string class entry too — it is no more routable than a misspelling", () => {
+		const workflow = twoPhaseWorkflow();
+		taskContext(workflow, "task_a").classes = [7];
+
+		expect(defectsOf(workflow)).toContain("context `classes` declares 7");
+	});
+
+	it("reads a NON-ARRAY `classes` as silence: declaring nothing is not a defect", () => {
+		const workflow = twoPhaseWorkflow();
+		taskContext(workflow, "task_a").classes = "ui";
+
+		expect(defined(compiled(workflow).tasks.task_a).initial.classes).toEqual([]);
 	});
 });
 

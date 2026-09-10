@@ -14,11 +14,16 @@
  * tab line prints `none` in that column and `--json` reports `readyFor: null`. Reporting the asked-for
  * `agent` there would be the same fallback the read-back exists to refuse.
  *
- * `--blocked-by` rides the same verb and prints as the machine line's last column
- * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>`); its reads, writes and
+ * `--blocked-by` rides the same verb and prints as the machine line's sixth column
+ * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>\t<classes>`); its reads, writes and
  * read-back are `./blocked-by.ts`. **That column reports this run, not the graph**: the dependency
  * endpoint is read only when the flag is present, so a flagless run prints it empty whatever the
  * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close.
+ *
+ * `--class` is the last column, and it is the **producer** the lane's `context.<task>.classes` seed
+ * had none of: `lane open` and `lane emit` read the `class:<name>` labels it stamps, so a
+ * rendered-surface issue routes to `build:ui` on its first pass rather than after a `review-ui` FAIL
+ * raised the class off a diff. Its vocabulary is closed in code, never on the board.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -38,6 +43,7 @@ import {guardConfig} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {
 	audienceKeep,
+	CLASSES,
 	decodeMember,
 	EPIC_TYPE,
 	EPIC_TYPE_LABEL,
@@ -56,6 +62,14 @@ export interface ApplyOptions {
 	readonly readyFor: string;
 	readonly home: number | null;
 	readonly lane: string | null;
+	/**
+	 * Repeatable `--class`: the artifact classes this issue's lane routes its shells off.
+	 *
+	 * The producer for the lane document's `context.<task>.classes` seed — `lane open` and `lane emit`
+	 * read the label this stamps, so a rendered-surface issue reaches `build:ui` on its first pass
+	 * instead of after a `review-ui` FAIL has raised the class off a diff.
+	 */
+	readonly classes: ReadonlyArray<string>;
 	/** Repeatable `--blocked-by`: the issues this one waits on, written as native graph edges. */
 	readonly blockedBy: ReadonlyArray<number>;
 	readonly repo: string | null;
@@ -174,6 +188,21 @@ export const runApply = (
 			}
 		}
 
+		// The class set is closed in code rather than declared on the board, so the refusal enumerates
+		// `CLASSES` and not a resolved list: a spelling outside it matches no `class:<name>` arm and
+		// routes as unclassed, which is the silent misroute this decode exists to make loud.
+		const classes: string[] = [];
+		for (const raw of options.classes) {
+			const decoded = decodeMember(CLASSES, raw);
+			if (decoded === null) {
+				return refuse(
+					OFF_VOCABULARY,
+					`triage apply: --class must be one of ${CLASSES.join(", ")} — got "${raw}". Nothing was written.`,
+				);
+			}
+			if (!classes.includes(decoded)) classes.push(decoded);
+		}
+
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {
 			return refuse(
@@ -219,7 +248,7 @@ export const runApply = (
 
 		// Only the labels THIS invocation writes, not the whole vocabulary: checking all six types
 		// would refuse a good `--type bug` in a repo that merely lacks `type:investigation`.
-		const facets = triagedFacets({type, priority, readyFor, lane}, resolved);
+		const facets = triagedFacets({type, priority, readyFor, lane, classes}, resolved);
 		// What LANDED, never what was asked: an epic asked for the agent audience is stamped by
 		// `check-epic-plan` and by nothing here, so both channels report the absence.
 		const stampedAudience = audienceKeep(type, readyFor).length === 0 ? null : readyFor;
@@ -269,7 +298,9 @@ export const runApply = (
 
 		const expected = `expected exactly one type, one priority, ${resolved.board.statuses.triaged}, ${
 			stampedAudience === null ? "no ready-for" : "one ready-for"
-		}, and ${home === null ? "no milestone" : `milestone ${home}`}`;
+		}, ${classes.length === 0 ? "no class" : `class ${classes.join(", ")}`}, and ${
+			home === null ? "no milestone" : `milestone ${home}`
+		}`;
 		const back = yield* getIssue(repo, issue);
 		if (back._tag !== "Present") {
 			return refuse(
@@ -306,6 +337,7 @@ export const runApply = (
 						type,
 						priority,
 						readyFor: stampedAudience,
+						classes,
 						home: home === null ? lane : home,
 						removed: plan.removed,
 						blockedBy: landed.value,
@@ -314,7 +346,7 @@ export const runApply = (
 					diagnostics,
 				)
 			: answer(
-					`triaged\t${issue}\t${type}\t${priority}\t${stampedAudience ?? "none"}\t${homeColumn}\t${edgeColumn}`,
+					`triaged\t${issue}\t${type}\t${priority}\t${stampedAudience ?? "none"}\t${homeColumn}\t${edgeColumn}\t${classes.join(",")}`,
 					diagnostics,
 				);
 	});

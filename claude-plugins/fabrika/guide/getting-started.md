@@ -88,12 +88,12 @@ anything can move. Create them:
 fabrika status bootstrap label-taxonomy
 ```
 
-On a fresh board that reports `created` and names all sixteen. On a board that already has them it
+On a fresh board that reports `created` and names all twenty. On a board that already has them it
 reports `exists` and writes nothing:
 
 ```
-status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent is already present for label-taxonomy — nothing written.
-bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent	-
+status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui is already present for label-taxonomy — nothing written.
+bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui	-
 ```
 
 Three more labels mark what an issue *is* rather than where it sits:
