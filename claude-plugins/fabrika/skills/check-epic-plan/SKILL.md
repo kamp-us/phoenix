@@ -87,7 +87,10 @@ approval bound to the scope it now derives:
 fabrika plan approval $epic_number
 ```
 
-It exits `0` on every arm and the answer's `state` is the discriminator — `current`, `stale` or
+It exits `0` on every **state** arm — `current`, `stale` or `absent` — and that `state` is the
+discriminator; a missing approval is this verb's answer, not a refusal. It still refuses non-zero on
+everything else (`4`, `7`, `10`, `11` and the reserved codes), and a refusal is not a fourth state:
+the opening UNKNOWN rule holds, so read the code, then re-run or stop, and never read one as
 `absent`. Only `current` proceeds to step 2. On `stale` or `absent` end at `PLAN-UNAPPROVED`,
 **naming which**: `absent` means nobody with authority has approved this plan, `stale` means the plan
 moved after he read it and a re-plan does not inherit the old approval. You never write the marker
