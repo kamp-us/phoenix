@@ -68,6 +68,56 @@ describe("runEdges", () => {
 		expect(JSON.parse(bodies[at] ?? "null")).toEqual({issue_id: 43010});
 	});
 
+	/**
+	 * The cross-epic edge the decision corpus sanctions: the prerequisite belongs to another epic, and nothing
+	 * on this path treats it differently — `requiredEdges` derives the pair and `addBlockedBy` writes it.
+	 */
+	it("writes and proves an edge whose prerequisite is outside this epic", async () => {
+		const {outcome, bodies, requests} = await run([
+			...ground(
+				epic({
+					body: "## Dependencies\n\n- phase 1: #4301\n- phase 2: #4302\n- #4302 requires: #7511\n",
+				}),
+			),
+			[once(GRAPH(4302)), blockers()],
+			[ISSUE(7511), served({number: 7511, id: 75110})],
+			[WRITE(4302), served({}, 201)],
+			[GRAPH(4302), blockers(7511)],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({required: 1, already: 0, written: 1});
+		const at = requests.findIndex((line) => WRITE(4302).test(line));
+		expect(JSON.parse(bodies[at] ?? "null")).toEqual({issue_id: 75110});
+	});
+
+	it("re-runs over a reconciled external edge as an idempotent zero write", async () => {
+		const {outcome, requests} = await run([
+			...ground(
+				epic({
+					body: "## Dependencies\n\n- phase 1: #4301\n- phase 2: #4302\n- #4302 requires: #7511\n",
+				}),
+			),
+			[GRAPH(4302), blockers(7511)],
+		]);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({required: 1, already: 1, written: 0});
+		expect(requests.some((line) => WRITE(4302).test(line))).toBe(false);
+	});
+
+	it("refuses 9 when an external edge is POSTed and does not read back", async () => {
+		const {outcome} = await run([
+			...ground(
+				epic({
+					body: "## Dependencies\n\n- phase 1: #4301\n- phase 2: #4302\n- #4302 requires: #7511\n",
+				}),
+			),
+			[ISSUE(7511), served({number: 7511, id: 75110})],
+			[WRITE(4302), served({}, 201)],
+			[GRAPH(4302), blockers()],
+		]);
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stderr).toContain("ledger edges: #4302 → #7511.");
+	});
+
 	it("is idempotent — an edge already on the graph is `already` and is not re-POSTed", async () => {
 		const {outcome, requests} = await run([...ground(), [GRAPH(4302), blockers(4301)]]);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({required: 1, already: 1, written: 0});

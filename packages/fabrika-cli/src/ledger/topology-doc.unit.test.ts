@@ -97,7 +97,38 @@ describe("checkTopology", () => {
 				_tag: "Ok",
 				phases: 2,
 				edges: [["#4303", "#4301"]],
+				external: [],
 			},
+		);
+	});
+
+	/**
+	 * The corpus ruling: a `requires:` ref to an issue another epic owns is a legitimate gating edge. The
+	 * manifest closes over subjects, so the external target rides out for the verb to prove.
+	 */
+	it("accepts a prerequisite outside the manifest and names it as external", () => {
+		expect(
+			checkTopology(4300, [line(4301, 1), line(4303, 2, [4301, 7511])], [4301, 4303]),
+		).toMatchObject({
+			_tag: "Ok",
+			edges: [
+				["#4303", "#4301"],
+				["#4303", "#7511"],
+			],
+			external: [7511],
+		});
+	});
+
+	it("dedupes and orders the external set across lines", () => {
+		expect(
+			checkTopology(4300, [line(4301, 1, [7513]), line(4303, 2, [7513, 7511])], [4301, 4303]),
+		).toMatchObject({_tag: "Ok", external: [7511, 7513]});
+	});
+
+	it("renders an external prerequisite in the block and round-trips it", () => {
+		const checked = checkTopology(4300, [line(4301, 1), line(4303, 2, [7511])], [4301, 4303]);
+		expect(checked._tag === "Ok" && checked.block).toBe(
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #4303\n- #4303 requires: #7511\n",
 		);
 	});
 
@@ -108,10 +139,11 @@ describe("checkTopology", () => {
 		});
 	});
 
-	it("refuses a reference to something that is not a child", () => {
-		expect(checkTopology(4300, [line(4301, 1), line(4302, 2, [9999])], [4301, 4302])).toEqual({
+	/** A stranger placed in one of this epic's phases is still a broken epic, external refs or not. */
+	it("refuses a subject that is not a child", () => {
+		expect(checkTopology(4300, [line(4301, 1), line(9999, 2, [4301])], [4301, 4302])).toEqual({
 			_tag: "Invalid",
-			reason: "#9999 is referenced but is not a child of #4300.",
+			reason: "#9999 is placed in a phase but is not a child of #4300.",
 		});
 	});
 

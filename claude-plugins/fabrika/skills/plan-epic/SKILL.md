@@ -314,13 +314,25 @@ closed while still linked. It refuses a child that is not this epic's, and one t
 fabrika ledger topology $epic_number --token <claim-token> <<'EOF'
 #<child-a> phase 1
 #<child-b> phase 1
-#<child-c> phase 2 requires #<child-a>
+#<child-c> phase 2 requires #<child-a>, #<other-epics-issue>
 EOF
 ```
 
-Each reference is the child's real issue number. The verb validates against the manifest and
-renders the block; it refuses a cycle, a reference to something that is not a child, and a child
-that appears nowhere. `24` is a proven-bad topology and nothing has been written to the epic.
+Each phase member and each `requires:` subject is one of this epic's children, by its real issue
+number. The verb validates against the manifest and renders the block; it refuses a cycle, a
+subject that is not a child, and a child that appears nowhere. `24` is a proven-bad topology and
+nothing has been written to the epic.
+
+**A prerequisite may sit in another epic, and this is the only place to say so.** The decision corpus
+rules a `requires:` reference to an issue another epic owns a legitimate gating edge, so write it on
+the line exactly like a sibling's number — the block keeps it, and step 8's `ledger edges` puts it on
+the graph. There is no raw `gh api` write for a cross-epic edge, and an edge the block does not name
+is an edge the epic body does not show.
+
+The verb proves each out-of-epic target before it stages anything, so those refusals are about the
+target, not the shape: `24` says it is proven absent or is a pull-request number — the corpus names
+a blocking pull request by the issue its merge closes — and `11` says it could not be read at all.
+Fix the number and re-run; nothing was staged either way.
 
 **Two slices are only parallel if they do not write the same file.** A phase that puts two
 children on one central list reads parallel and serializes in practice. The verb cannot see your

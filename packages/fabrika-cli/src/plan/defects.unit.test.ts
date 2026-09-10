@@ -101,6 +101,21 @@ describe("each of the fourteen types fires on its own condition", () => {
 	});
 
 	/**
+	 * The shape `ledger topology` now stages: a child requiring an issue another epic owns. The floor
+	 * grades it on the probe and the graph alone — accepted when the target exists and the edge is
+	 * carried, `UNENFORCED_DEP` when it is not, `DANGLING_DEP` only on a proven 404.
+	 */
+	it("grades a cross-epic requires: reference on the probe and the graph, never on ownership", () => {
+		const external = {
+			topology: {phases: [{phase: 1, members: ["#4301"]}], edges: [["#4301", "#7511"] as const]},
+		};
+		const required = [{dependent: 4301, prerequisite: 7511}];
+		expect(types(external, [], {required, observed: {4301: [7511]}})).toEqual([]);
+		expect(types(external, [], {required})).toContain("UNENFORCED_DEP");
+		expect(types(external, [7511], {required})).toContain("DANGLING_DEP");
+	});
+
+	/**
 	 * The pre-fix state, in one assertion: a phase-2 child requiring an open phase-1 decision, with the
 	 * dependency in prose and nothing on the graph. Before `UNENFORCED_DEP` this floor read `clean`,
 	 * `plan flip` made the child pickable, and `build claim` admitted it on
