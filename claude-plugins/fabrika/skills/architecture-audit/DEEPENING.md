@@ -9,7 +9,7 @@ redefined here.
 ## Dependency categories
 
 Classify a finding's dependencies. The category decides how the deepened module is tested across its
-seam.
+seam, and **every finding whose direction proposes deepening carries exactly one of the four.**
 
 ### 1. In-process
 
@@ -27,11 +27,8 @@ interface.
 
 Your own services across a network or isolate boundary. Define a **port** at the seam: the deep
 module owns the logic and the transport is injected as an **adapter** — an in-memory one for tests,
-the real one in production.
-
-Recommendation shape: *"define a port at the seam, implement a transport adapter for production and
-an in-memory adapter for tests, so the logic sits in one deep module even though it is deployed
-across a boundary."*
+the real one in production — so the logic sits in one deep module even though it is deployed across
+a boundary.
 
 ### 4. True external
 

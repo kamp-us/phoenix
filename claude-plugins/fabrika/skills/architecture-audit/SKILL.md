@@ -1,6 +1,6 @@
 ---
 name: architecture-audit
-description: "Walk one folder for architectural friction and hand back a ranked table of deepening opportunities for a human to pick from. Trigger on \"/fabrika:architecture-audit\", \"audit the architecture of <folder>\", \"find deepening opportunities\", \"find shallow modules\", \"find refactor candidates\", \"where should we deepen\" — and reach for it whenever someone is about to re-derive that question by hand. It files nothing until a human picks; filing the picked set is `report`'s path. Not a code review, not a grilling loop, and it never edits the code it reads."
+description: "Audit one folder for architectural friction and hand back a ranked table of deepening opportunities a human picks from. Trigger on \"/fabrika:architecture-audit\", \"audit the architecture of <folder>\", \"where should we deepen this code\" — and reach for it whenever someone is about to re-derive that question by hand. Read-only on the code, and it files exactly what the human picks, through `report`. Judging a pull request is `review`'s lane; drilling one finding is `grilling`'s."
 ---
 
 # architecture-audit
@@ -63,10 +63,10 @@ fabrika glossary check --register both
 
 `clean` or `defects` both mean the registers exist — read `.glossary/LANGUAGE.md` for the
 architecture vocabulary and `.glossary/TERMS.md` for the domain nouns, and use those terms exactly.
-On `defects`, read them anyway and say in your report which rows looked stale. **`bootstrap` means
-this repo has no vocabulary yet**: stop on `STOPPED-NO-VOCABULARY` and say that `/fabrika:glossary`
-seeds it. Do not substitute your own definitions — a vocabulary invented for one run is one nothing
-later can compare against. A non-zero exit is UNKNOWN, not `clean`: re-run it.
+The registers are the only source: a vocabulary invented for one run is one nothing later can
+compare against. On `defects`, read them anyway and say in your report which rows looked stale.
+**`bootstrap` means this repo has no vocabulary yet**: stop on `STOPPED-NO-VOCABULARY` and say that
+`/fabrika:glossary` seeds it. A non-zero exit is UNKNOWN, not `clean`: re-run it.
 
 Then read the decided ground, so the audit does not surface a finding against something already
 settled. Where the decision corpus lives is the repo's own answer, not this skill's:
@@ -81,7 +81,8 @@ decision is decided ground: do not surface a finding that contradicts one unless
 enough to reopen it, and then say so inside the finding. A repo that declined a corpus has no decided
 ground to read; note that in your report and carry on.
 
-Done when you can name the terms you will use and the decisions your scope sits under.
+Done when both registers are read and every record under `decisionsDir` that touches the scope is
+open in front of you.
 
 ## 3 — Walk the folder through three lenses, in parallel
 
@@ -126,18 +127,16 @@ canonical surface. A smell the lenses already raised lands as `✗ found` pointi
 smell you find here that they missed is promoted into the finding set; a smell that genuinely does
 not apply is `— N/A` with a one-line reason.
 
-**Never hardcode the row count.** Emit one row per smell the catalog defines.
+**Count the rows at run time**, one per smell the catalog defines.
 
 Then extend the gate with the repo's own catalogs, if it declared any. `fabrika status settings`
 prints the `auditCatalogs` row: a list of repo-relative markdown paths, each a catalog in the same
 table shape. **The extension is add-only, and the order is the rule that makes it so**: emit every
 shipped row first, in the shipped order, then each declared catalog's rows in the order the key lists
-them. A repo catalog can only append smells. It can never remove or replace a shipped one, and a
-declared row that restates a shipped smell is a duplicate row, not an override — the gate keeps
-both, and the shipped one is the one that counts. A `Malformed` row for the key means the repo's
-catalog list did not decode: say so, run the shipped catalog alone, and do not guess at what it meant.
+them.
 
-The row grammar and what each status commits you to are one section:
+The row grammar, what each status commits you to, and what each `auditCatalogs` answer means for the
+gate are one section:
 
 ```bash
 fabrika wire doc-section --heading "The coverage gate" < <skill-base>/contract.md
@@ -153,8 +152,13 @@ lens findings and a gate row describing one duplicated contract are one finding 
 attributions, not three findings. Nor is the reverse acceptable — three unrelated problems in one
 finding make triage do the splitting.
 
-Rank the set. Rank on the cost of leaving it, not on how much you enjoyed finding it: how much
-scatters, what the interface fails to hide, what cannot be tested through it today.
+Rank the set. Rank on the cost of leaving it: how much scatters, what the interface fails to hide,
+what cannot be tested through it today.
+
+Each finding's deepening direction carries one dependency category, and
+[DEEPENING.md](DEEPENING.md) is where the four categories and the test seam each implies live. The
+category is a non-binding hint that travels with the finding into the table's Direction column and
+into the filed issue's suggested next step.
 
 Then check each against what is already on the board, immediately before you hand the table over:
 
@@ -169,7 +173,7 @@ is UNKNOWN, never `none` — say in the table that the dedup did not run for tha
 reads is the verb's own section
 (`fabrika wire doc-section --heading "report dedup" < ../report/contract.md`).
 
-Done when every finding carries a rank, an attribution, and a dedup answer.
+Done when every finding carries a rank, an attribution, a dependency category, and a dedup answer.
 
 ## 7 — Hand back the table, and stop
 
@@ -186,9 +190,9 @@ The column list and the recommendation vocabulary are one section:
 fabrika wire doc-section --heading "The finding table" < <skill-base>/contract.md
 ```
 
-Then stop and wait. Do not file the set you would have picked, do not file the unambiguous ones
-early, and do not read silence as approval. An audit that files ahead of the pick has spent the whole
-gate.
+Then stop and wait for a named pick — every row of it, including the ones you would have picked
+yourself and the ones nothing could argue with. Silence is a run still waiting, and an audit that
+files ahead of the pick has spent the whole gate.
 
 Done when the table is in front of a human and nothing has been written.
 
@@ -225,8 +229,9 @@ Done when every picked finding has a number and a URL, and nothing unpicked was 
 
 ## 9 — Report
 
-End on exactly one terminal. Name the scope, then the numbers and URLs — never re-state the findings
-the table already carried, and never triage, prioritize or fix what you filed.
+End on exactly one terminal. Name the scope, then the numbers and URLs, and stop there — the table
+already carried the findings, and triaging, prioritizing or fixing what you filed is someone else's
+turn.
 
 - **`FILED`** — the picked set is on the board; the count, the numbers, and any finding that went on
   an existing issue as a note. Nothing else was written.
@@ -243,19 +248,10 @@ the table already carried, and never triage, prioritize or fix what you filed.
 
 ## Hard rules
 
-- **The output is issues, never a doc.** No audit doc, no vault file, no decision record. A finding
-  becomes an issue or it becomes nothing.
-- **Nothing is filed without a human's pick.** The table is the terminal of the audit half.
-- **Read-only on the code.** The explorer's tool restriction is the contract; the orchestrator holds
-  itself to it too.
-- **Vocabulary comes from the registers, read at run time.** This skill carries no copy of them.
-- **Three lenses, parallel, framed as instructions.** Not one lens, not serial, and never as a
-  persona — "you are a senior testability auditor" costs measurable accuracy against "focus this
-  pass on testability".
-- **Single-lens findings survive.** Cluster size ranks; it never filters.
-- **The catalog is a coverage gate.** It proves the walk covered the surface; it is not the
-  discovery mechanism.
-- **Repo catalogs add and never subtract.** Shipped rows first, always.
-- **Type-blind, priority-blind on file.** Only `status:needs-triage`.
-- **No embedded grilling.** Stop after filing. A finding worth drilling into is `/fabrika:grilling`,
-  one command away.
+The two rules that bind the whole run rather than one step of it — every other invariant is stated
+where it acts, and the step that states it is the one that owns it.
+
+- **Every finding leaves as an issue, or it leaves as nothing.** The run writes no audit doc, no
+  vault file, and no decision record; the ranked table and the filed issues are its entire output.
+- **The run stops after filing.** A finding worth drilling into is `/fabrika:grilling`, one command
+  away, and that is a fresh run someone starts on purpose.
