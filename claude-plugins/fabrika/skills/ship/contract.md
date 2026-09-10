@@ -1695,8 +1695,9 @@ enqueued	03135b91	queued
   refused by the platform on a conflicted PR, so the gate is load-bearing rather than redundant.
 - **The measured cost of arming on a definite `dirty` anyway**: a parked intent, an
   enqueue round, and one of a lane's two retries. The refusal is that evidence applied.
-- **The measured cost of *charging* a definite `dirty` a repair round**: lane 6580 spent two of
-  three retries on two conflicts in twelve minutes each, with no defect in the diff either round.
+- **The measured cost of *charging* a definite `dirty` a repair round**: measured on a live lane,
+  two of three retries went to two conflicts in twelve minutes each, with no defect in the diff
+  either round.
   `21` and its `BASE-CONFLICTED` terminal are that evidence applied — the round still happens, and
   the budget that bounds how often a builder may fail a review is not what pays for it.
 

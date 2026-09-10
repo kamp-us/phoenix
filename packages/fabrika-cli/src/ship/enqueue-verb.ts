@@ -27,8 +27,8 @@
  * so the split is a code rather than a state string a shipper would have to parse. What it does not
  * change is that the repair round happens: a dirty base moves the merge-base blob every verdict's
  * content digest covers (`../review/content-binding.ts`), so every verdict on the PR is void and
- * the re-review is genuinely owed. This verb
- * moves no branch — rebasing the head is the builder's, on a re-reviewed round.
+ * the re-review is genuinely owed. This verb moves no branch — rebasing the head is the builder's,
+ * on a re-reviewed round.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

@@ -383,15 +383,6 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
-	 * The merge queue ejected the PR before it merged — a sibling's red, a base that moved under the
-	 * batch, a queue timeout. The head is where the shipper left it and the verdicts still stand.
-	 *
-	 * Naming-only: re-enqueuing is `ship`'s own next dispatch, and a verb that "removed" this cause
-	 * would be taking that act rather than observing it.
-	 *
-	 * Route `driver`: a queue ejection is machinery, and nothing about the artifact was judged.
-	 */
-	/**
 	 * `ship enqueue`'s pre-arm read answered a definite `mergeable_state: dirty` — the base moved
 	 * under the branch and the merge now conflicts. Nothing about the artifact was judged, so the
 	 * round it owes is not one the repair budget is bounding.
@@ -400,8 +391,7 @@ export const PARK_CAUSES = {
 	 * clean and only needs moving. This one has a hunk two sides both edited, so it needs a builder.
 	 * The re-review is owed with it — a dirty base moves the merge-base blob every verdict's content
 	 * digest covers (`../review/content-binding.ts`), so every verdict on the PR is void — which is
-	 * why this cause routes the lap to `build`
-	 * rather than back to `ship`.
+	 * why this cause routes the lap to `build` rather than back to `ship`.
 	 *
 	 * No remedy: rebasing a conflicted branch is a judgment about content, and a verb that "removed"
 	 * this cause would be making it.
@@ -414,6 +404,15 @@ export const PARK_CAUSES = {
 		route: "driver",
 		remedy: null,
 	},
+	/**
+	 * The merge queue ejected the PR before it merged — a sibling's red, a base that moved under the
+	 * batch, a queue timeout. The head is where the shipper left it and the verdicts still stand.
+	 *
+	 * Naming-only: re-enqueuing is `ship`'s own next dispatch, and a verb that "removed" this cause
+	 * would be taking that act rather than observing it.
+	 *
+	 * Route `driver`: a queue ejection is machinery, and nothing about the artifact was judged.
+	 */
 	"queue-ejected": {
 		meaning: "the merge queue ejected this PR before it merged, and no verdict against it changed",
 		route: "driver",
@@ -515,6 +514,10 @@ export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
  * a different stage, so an old cell would fold it back into `ship`, where the next enqueue read
  * refuses identically, until sixteen laps have gone and the lane parks having done nothing. Refusing
  * it with the log untouched is what leaves the shipper a fallback to take.
+ *
+ * The epic tail's `ship:queued` cell carries no routes for the same reason it needs none:
+ * `base-conflicted` is `ship enqueue`'s `21`, which fires only from the `ship` stage, and a PR that
+ * leaves the queue reports `QUEUE-EJECTED` instead.
  */
 export const ROUTED_MACHINERY_CAUSES: ReadonlySet<string> = new Set<ParkCause>(["base-conflicted"]);
 
