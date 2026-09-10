@@ -201,6 +201,12 @@ export const sameRecord = (left: UsageRecord, right: UsageRecord): boolean => {
 	return canonical(content(left)) === canonical(content(right));
 };
 
+export const refinesIssue = (candidate: UsageRecord, prior: UsageRecord): boolean =>
+	prior.work.issue === null &&
+	candidate.work.issue !== null &&
+	recordKey(candidate) === recordKey(prior) &&
+	sameRecord(candidate, {...prior, work: {...prior.work, issue: candidate.work.issue}});
+
 export const decodeUsageRecord = Schema.decodeUnknownResult(UsageRecord, {
 	onExcessProperty: "error",
 });

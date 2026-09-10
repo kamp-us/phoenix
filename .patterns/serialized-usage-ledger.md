@@ -13,7 +13,10 @@ return immediately. A scoped finalizer releases the lock. Release failure is its
 The entire read, identity comparison and append happens while the lock is held. Comparing before
 acquiring the lock lets two processes both see an absent record. A retry with an already persisted
 record still syncs and verifies it, covering a prior failure after append but before acknowledgment.
-Changed payloads under one identity refuse instead of silently replacing the earlier measurement.
+Changed measurements under one identity refuse instead of silently replacing earlier counters.
+The sole binding refinement fills an unknown issue while retaining every other field, as defined
+in the [identity contract](../packages/fabrika-cli/docs/usage-recording.md#identity-and-storage).
+That append uses the same lock and read-back checks.
 
 The shared [appendFile](../packages/fabrika-cli/src/io/fs.ts) inserts a newline after an interrupted
 tail. It retains the damaged bytes. The versioned reader counts that damaged line, while a new row

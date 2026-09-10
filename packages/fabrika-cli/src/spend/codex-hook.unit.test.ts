@@ -128,3 +128,23 @@ it("binds interactive work at the native tool callback and collects again at Sto
 		),
 	).toHaveLength(6);
 });
+
+it("keeps an unresolved issue warning when the native callback has no turn ID", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "codex-unresolved-"));
+	dirs.push(dir);
+	const result = await live(
+		runCodexHook({
+			input: JSON.stringify({
+				session_id: "native",
+				hook_event_name: "PreToolUse",
+				tool_input: {command: "fabrika review criteria $ISSUE"},
+			}),
+			sessions: join(dir, "sessions"),
+			state: join(dir, "state"),
+			ledger: join(dir, "ledger"),
+			repo: "o/r",
+		}),
+	);
+	expect(result.code).toBe(0);
+	expect(JSON.parse(result.stdout).systemMessage).toContain("association is unresolved");
+});

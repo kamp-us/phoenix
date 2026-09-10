@@ -71,7 +71,6 @@ export const runCodexHook = Effect.fn("spend.codexHook")(
 				yield* fs.writeFileString(binding, JSON.stringify({unresolved: true, previous}));
 			}
 			yield* fs.writeFileString(active, unresolved);
-			return advisory([unknown]);
 		}
 		if (issue !== null && turn && !dispatched) {
 			const candidate = {repo: options.repo, issue, run: `codex:${rootThread}:${turn}`};
@@ -106,7 +105,7 @@ export const runCodexHook = Effect.fn("spend.codexHook")(
 			? (yield* fs.readDirectory(roster)).map((name) => decodeURIComponent(name))
 			: [];
 		const bindings: Array<{work: CodexWork; rootTurn?: string}> = work ? [{work}] : [];
-		const notices: string[] = [];
+		const notices: string[] = !dispatched && association.kind === "unresolved" ? [unknown] : [];
 		if (!work && (yield* fs.exists(options.state))) {
 			for (const name of yield* fs.readDirectory(options.state)) {
 				const prefix = `${encodeURIComponent(rootThread)}-`;
@@ -114,6 +113,11 @@ export const runCodexHook = Effect.fn("spend.codexHook")(
 				const saved = json(yield* fs.readFileString(path.join(options.state, name)));
 				if (object(saved).unresolved === true) {
 					notices.push(unknown);
+					const rootTurn = decodeURIComponent(name.slice(prefix.length, -5));
+					bindings.push({
+						work: {repo: options.repo, issue: null, run: `codex:${rootThread}:${rootTurn}`},
+						rootTurn,
+					});
 					continue;
 				}
 				const bound = readWork(saved);
