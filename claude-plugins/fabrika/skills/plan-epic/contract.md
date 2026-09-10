@@ -367,11 +367,15 @@ Every `ledger` verb obeys these; stated once.
   verb that half-succeeded across N children could not tell its caller which N, and the design
   answer is not to write such a verb.
 - **Preconditions.** Every verb runs `resolveTargetRepo`, refuses a non-`type:epic` target on
-  `10`, resolves the run directory (`11` when the tree root cannot be read), and runs
-  the imported `requireClaim` on the **epic** number (`15`). Every verb's `7` means **zero scope**;
-  for five of the seven that is the epic proven absent (404) or closed, and two add one documented
-  arm each — an empty run manifest for `ledger topology`, an epic declaring no topology for `ledger
-  edges` — stated in their own tables with their reasons.
+  `10`, reads the tree root through `assertGround` (`11` when it cannot be read), and runs
+  the imported `requireClaim` on the **epic** number (`15`). **The run directory is seven verbs'
+  precondition, not nine's**: `ledger retopology` and `ledger digest` read no run directory at all —
+  they answer from the live epic body — which is why either one runs on a lane with no staged plan.
+  Every verb's `7` means **zero scope**;
+  for six of the nine that is the epic proven absent (404) or closed, and three widen it with
+  documented arms — an empty run manifest for `ledger topology`, an epic declaring no topology for
+  `ledger edges`, and two for `ledger retopology`: an epic with no readable `## Dependencies` block,
+  and one with no live child links — stated in their own tables with their reasons.
   **`13` is not this group's.** `--require-clean` belongs to `fabrika build tree`, called once at
   the skill's step 1; no `ledger` verb declares that flag, so none can seat the code. It is carried
   in the matrix below only as a reserved seat with `build`'s meaning.

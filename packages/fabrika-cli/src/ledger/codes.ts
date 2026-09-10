@@ -1,5 +1,5 @@
 /**
- * The one exit table the eight `ledger` verbs allocate from.
+ * The one exit table the nine `ledger` verbs allocate from.
  *
  * Three tiers, and the tier decides how a constant gets here rather than what it means:
  *
