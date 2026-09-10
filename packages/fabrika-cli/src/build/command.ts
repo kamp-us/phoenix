@@ -639,13 +639,19 @@ const deviations = leafCommand(
 			Argument.withDescription("the epic child the disclosure is for, and sits on"),
 		),
 		token: tokenFlag,
+		standing: Flag.boolean("standing").pipe(
+			Flag.withDescription(
+				"print the standing disclosure and write nothing — the entries this round carries forward (default: false)",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({issue, token, repo}) {
+	Effect.fn(function* ({issue, token, standing, repo}) {
 		yield* emit(
 			yield* runDeviations({
 				issue,
 				token,
+				standing,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				stdin: Effect.sync(readStdin),
@@ -655,7 +661,7 @@ const deviations = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post an epic child's deviation disclosure as its one marker."),
 	Command.withDescription(
-		'Post the "## Deviations" section on STDIN as the epic child\'s build-deviations marker comment — the disclosure surface a child has instead of a PR body. ONE marker per issue: the standing marker is edited in place and every superseded one of this account\'s is retracted, so `fabrika wire read --format build-deviations` never meets two conforming headings. The marker line is composed from the positional, so a disclosure cannot name an issue other than the one it sits on. The section is validated through the wire format before anything is written, and the landed comment is read back from live issue state. Prints {"answer":"posted","issue":n,"commentId":n,"upsert":"created"|"edited","retracted":n,"url":"…"}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 4 (the "## Deviations" section is missing or malformed), 5 (machine-local path), 6 (bare @ reference), 7 (the issue is proven absent or closed), 8 (the write failed, or a superseded marker could not be retracted — UNKNOWN), 9 (posted but does not read back), 10 (the number is a pull request, which discloses in its body), 11 (a precondition read failed), 15 (this LANE does not hold the claim). Example: fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md',
+		'Post the "## Deviations" section on STDIN as the epic child\'s build-deviations marker comment — the disclosure surface a child has instead of a PR body. ONE marker per issue: the standing marker is edited in place and every superseded one of this account\'s is retracted, so `fabrika wire read --format build-deviations` never meets two conforming headings. That marker discloses the WHOLE reviewed range, so the replacement is compared against the standing disclosure and refused when it drops an entry — an entry leaves only by restating it with a **Disposition:** saying what became of it. With --standing the verb reads instead: stdin is not read, nothing is written, and the standing section is printed for the round to carry forward (empty when the child carries no marker yet). The marker line is composed from the positional, so a disclosure cannot name an issue other than the one it sits on. The section is validated through the wire format before anything is written, and the landed comment is read back from live issue state. Prints {"answer":"posted","issue":n,"commentId":n,"upsert":"created"|"edited","retracted":n,"url":"…"}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 4 (the "## Deviations" section is missing or malformed), 5 (machine-local path), 6 (bare @ reference), 7 (the issue is proven absent or closed), 8 (the write failed, or a superseded marker could not be retracted — UNKNOWN), 9 (posted but does not read back), 10 (the number is a pull request, which discloses in its body), 11 (a precondition read failed), 15 (this LANE does not hold the claim), 35 (the replacement drops a standing entry). Example: fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md',
 	),
 );
 
