@@ -234,7 +234,9 @@ an unknown read nor a proven conflict is green. Neither refusal is a stall and n
 on `11` say mergeability is unknown, on `16` route to repair; the PR needs a rebase before any of
 this runs again. `reconcile`'s terminals are
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
-repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts.
+repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
+routing is to repair and the *charge* is not: see the ejection row below for which token records it,
+and why an ejection costs the ticket no repair round.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is
 neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
@@ -275,7 +277,12 @@ which folds the lane to `ship:queued` for the driver to re-read) ·
 **refused — <reason>** (a successful decline: disarmed,
 noted, nothing mutated beyond the note) · **awaiting control-plane approval** · **routed to
 repair** · **routed to heal-ci** · **routed to review** ·
-**EJECTED — routed to repair** ·
+**EJECTED — routed to repair** (an ejection is **machinery**: a sibling's red, a base that moved
+under the batch, a queue timeout. Nothing about this artifact was judged, so it **spends no repair
+budget** — report it as `QUEUE-EJECTED`, which records the machine's own lap and carries the
+`queue-ejected` cause off the routed table. `EJECTED` is the pre-lap token, and it spends a retry;
+where the lap axis is off, the lane's machine holds no lap cell and `QUEUE-EJECTED` is refused on
+exit `12` with the log untouched, which is the one case that token is right) ·
 **UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
 terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and
 a flat "routed" parks the lane on an approval nobody is waiting on. A refusal is not a back-off:
@@ -288,7 +295,8 @@ branded reference, no steering prose; the receiver re-fetches from the PR itself
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
 per terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
-`ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a
+`ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `QUEUE-EJECTED` falling back to
+`EJECTED` on exit `12`, `UNKNOWN`), mapped to a
 lane event in its code, with the PR as the event's evidence. The routing token names the arm
 your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
 reviewer's token and means something else. `<fabrika>` is that same section's `fabrika:` entrypoint,
