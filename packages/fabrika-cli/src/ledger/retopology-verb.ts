@@ -11,8 +11,9 @@
  * So this verb is deliberately the smallest thing that ends the wedge: it holds the epic's claim
  * through {@link openGround} like every sibling, and reads **no** run directory — no `run.json`, no
  * manifest, no staged document — because a cleared run is exactly the state a descoped epic is
- * found in. It closes, unlinks and comments on nothing; retiring a child stays `ledger supersede`'s
- * job.
+ * found in. Its `--body-digest` comes from `ledger digest` for the same reason: `ledger open` prints
+ * the same value only by allocating the run this verb needs none of. It closes, unlinks and comments
+ * on nothing; retiring a child stays `ledger supersede`'s job.
  *
  * It renders through `renderDependencies` and re-parses through the shipped reader before writing
  * (`checkTopology`'s round trip), so a block the emitter would read differently from how it was

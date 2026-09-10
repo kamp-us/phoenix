@@ -664,6 +664,7 @@ Author an epic's plan and its children — the write half of epic planning. Cont
 | `ledger edges` | the epic's declared dependencies reconciled into GitHub's native blocked_by graph |
 | `ledger supersede` | a child the re-plan no longer contains, retired |
 | `ledger retopology` | the `## Dependencies` block rewritten from the live child links — the repair a founder descope owes, without which `lane emit` refuses at `16` forever. It needs no staged plan run (no `run.json`, no manifest, no staged document), closes and unlinks nothing, preserves every byte outside the block including the plan block, the brief envelope and any amendment below a thematic break, and is idempotent: a block already naming exactly the live children answers `unchanged` with no PATCH |
+| `ledger digest` | the live body digest `--body-digest` takes, printed on its own — the source `ledger retopology`'s route reads, because `ledger open` prints the same value only by staging the plan run that verb needs none of. It writes nothing: no run directory, no file, no issue |
 
 **Exit codes.** The shared table and the `build` lane seats (`13`–`19`), plus `20` the ground moved
 under the run · `21` the epic body moved — the recomputed digest differs from `--body-digest` ·

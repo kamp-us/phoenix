@@ -148,6 +148,7 @@ as the sibling contracts do):
 | `ledger edges` | write the epic's written `## Dependencies` block into the native `blocked_by` graph, reconciling rather than replacing | a total derivation from the block to the pairs it owes, plus a guarded write with a read-back — no judgment; *what the topology should be* was decided at `ledger topology` |
 | `ledger supersede` | retire a child the re-plan no longer contains | an ordered three-leg write with a read-back; *which child to retire* is the skill's |
 | `ledger retopology` | rewrite the `## Dependencies` block from the live child links, so a descope stops wedging `lane emit` | a total derivation from the live child set to a block, plus a guarded PATCH with a round-trip diff — no judgment; *which child to descope* was the founder's |
+| `ledger digest` | print the live body digest `--body-digest` takes, staging nothing, so the repair route needs no plan run | one hash of one body — no judgment at all |
 
 **Considered and not derived: a `ledger validate` verb** that pre-runs the gate's floor. It would
 compute a second answer to a question `fabrika plan check` decides, which is the `adr classify`
@@ -412,30 +413,30 @@ overlap `build`'s, `epic`'s and `plan`'s private bands and that is correct — n
 can prove a fact about a *plan being authored*, an exit code is read off the command that produced
 it, and the alignment checker is base-only by design (`occupied = allocatedCodes(base)`).
 
-| Code | Meaning | `open` | `draft` | `child` | `topology` | `write` | `supersede` | `retopology` |
-|---|---|---|---|---|---|---|---|---|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | ✓ | ✓ | ✓ | — | — | — |
-| `4` | an authored document's required section or field is missing, duplicated, or mis-numbered | — | ✓ | ✓ | ✓ | — | — | ✓ |
-| `5` | the **authored** text carries a machine-local path | — | ✓ | ✓ | — | — | ✓ | — |
-| `6` | the authored text is a bare `@` path reference — not redactable | — | ✓ | ✓ | — | — | ✓ | — |
-| `7` | zero scope: the epic is proven absent (404) or closed — and, for `topology` alone, an empty run manifest; for `retopology` alone, an epic with no block to rewrite or no live children | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | — | ✓ | ✓ | ✓ |
-| `9` | the write landed but the read-back does not match | — | — | ✓ | — | ✓ | ✓ | ✓ |
-| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `13` | proven: the tree was dirty at a `--require-clean` open (`build`'s meaning, reserved — no `ledger` verb declares that flag) | — | — | — | — | — | — | — |
-| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `20` | proven: the tree's base is behind `origin/main` | ✓ | — | — | — | — | — | — |
-| `21` | proven: the epic body moved — the recomputed digest differs from `--body-digest` | — | ✓ | — | — | ✓ | — | ✓ |
-| `22` | proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts | ✓ | — | — | — | ✓ | — | ✓ |
-| `23` | proven: the child was created and its sub-issue link could not be proven | — | — | ✓ | — | — | — | — |
-| `24` | proven: the declared topology is invalid — a cycle, a dangling ref, or an unplaced child | — | — | — | ✓ | — | — | ✓ |
-| `25` | proven: a document this verb must splice was never staged in this run | — | — | — | — | ✓ | — | — |
-| `26` | proven: a child was created and the run manifest could not record it | — | — | ✓ | — | — | — | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | `open` | `draft` | `child` | `topology` | `write` | `supersede` | `retopology` | `digest` |
+|---|---|---|---|---|---|---|---|---|---|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | ✓ | ✓ | ✓ | — | — | — | — |
+| `4` | an authored document's required section or field is missing, duplicated, or mis-numbered | — | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| `5` | the **authored** text carries a machine-local path | — | ✓ | ✓ | — | — | ✓ | — | — |
+| `6` | the authored text is a bare `@` path reference — not redactable | — | ✓ | ✓ | — | — | ✓ | — | — |
+| `7` | zero scope: the epic is proven absent (404) or closed — and, for `topology` alone, an empty run manifest; for `retopology` alone, an epic with no block to rewrite or no live children | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | — | ✓ | ✓ | ✓ | — |
+| `9` | the write landed but the read-back does not match | — | — | ✓ | — | ✓ | ✓ | ✓ | — |
+| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `13` | proven: the tree was dirty at a `--require-clean` open (`build`'s meaning, reserved — no `ledger` verb declares that flag) | — | — | — | — | — | — | — | — |
+| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `20` | proven: the tree's base is behind `origin/main` | ✓ | — | — | — | — | — | — | — |
+| `21` | proven: the epic body moved — the recomputed digest differs from `--body-digest` | — | ✓ | — | — | ✓ | — | ✓ | — |
+| `22` | proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts | ✓ | — | — | — | ✓ | — | ✓ | — |
+| `23` | proven: the child was created and its sub-issue link could not be proven | — | — | ✓ | — | — | — | — | — |
+| `24` | proven: the declared topology is invalid — a cycle, a dangling ref, or an unplaced child | — | — | — | ✓ | — | — | ✓ | — |
+| `25` | proven: a document this verb must splice was never staged in this run | — | — | — | — | ✓ | — | — | — |
+| `26` | proven: a child was created and the run manifest could not record it | — | — | ✓ | — | — | — | — | — |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 `13` is seated by **no** `ledger` verb. `--require-clean` is `fabrika build tree`'s flag, asserted
 once at the skill's step 1, and the whole group inherits that ground rather than re-testing a tree
@@ -1313,7 +1314,7 @@ fabrika ledger retopology 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose `## Dependencies` block is rewritten |
-| `--body-digest` | string, 12 lowercase hex | yes | — | the digest taken over the live body; the rewrite refuses if the body has moved since |
+| `--body-digest` | string, 12 lowercase hex | yes | — | the digest taken over the live body — **`ledger digest <epic>` prints it**, and that is the source this verb's route takes, because `ledger open` prints the same value only by staging the plan run this verb is built not to need; the rewrite refuses `21` if the body has moved since |
 | `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
@@ -1410,6 +1411,8 @@ Zero scope is `7`: an epic with no live children, and an epic with no block to r
 **Examples**
 
 ```
+$ fabrika ledger digest 3 --token <claim-token>
+{"answer":"digest","epic":3,"bodyDigest":"8f2c1a90b4d7"}
 $ fabrika ledger retopology 3 --body-digest 8f2c1a90b4d7 --token <claim-token>
 {"answer":"rewritten","epic":3,"children":2,"phases":2,"dropped":{"count":1,"rows":["#7"]},"bodyDigest":"8f2c1a90b4d7","newDigest":"c41b7e0a91f6","verified":true}
 ```
@@ -1430,6 +1433,85 @@ ledger retopology: #3's topology already names exactly its 2 live child(ren) —
 - The region module exists because v1 cut from the `## Dependencies` heading to end-of-file and
   destroyed a body. This splice is bounded, and bounded at the parser's own boundary rather than
   the plan splice's: a heading-only bound would swallow a dated amendment filed under a `---`.
+
+---
+
+## `ledger digest`
+
+**Invocation**
+
+```
+fabrika ledger digest 3 --token <claim-token>
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<number>` | positional integer | yes | — | the epic whose live body is hashed |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking |
+| `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
+
+**Output** — machine.
+
+```
+{"answer": "digest", "epic": 3, "bodyDigest": "8f2c1a90b4d7"}
+```
+
+**What it is for.** `--body-digest` had one source: `ledger open`, which allocates the run
+directory, seeds `children.jsonl` and refuses `20` on a tree behind `origin/main`. Inside a plan run
+that is right — `draft` and `write` run in the run `open` allocated. For `ledger retopology` it was
+a contradiction: that verb's whole claim is that it needs no staged plan run, and the only way to
+obtain its required digest was to stage one, so the route `operate/SKILL.md` sanctions for a
+wedged `16` could not be executed as written. This verb is the digest and nothing else.
+
+Order of operations:
+
+1. **Open the ground** — the same `openGround` every sibling runs: the repo, the `type:epic` check
+   (`10`), the tree root, and this lane's claim (`15`). It allocates no run directory and reads
+   none.
+2. **Hash the live body** through the shared `bodyDigest` (`src/ledger/digest.ts`) — the same
+   function `open`, `draft`, `write` and `retopology` call, so a value printed here and a value
+   recomputed there can differ only because the body moved, which is what `21` is for.
+
+**It writes nothing** — no directory, no file, no issue. Two runs a second apart are one call, and
+a digest read here goes stale the moment anyone edits the body, which the guarded verb proves
+rather than assumes.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `7` | the epic is proven absent or closed |
+| `10` | the issue is not a `type:epic` |
+| `11` | the epic, the tree or the claim could not be read — the digest is UNKNOWN |
+| `15` | this lane does not hold the epic's claim |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ledger digest: #<n> is not a type:epic — no verb in this group is held to its body digest.` | 10 | refusal |
+| `ledger digest: cannot read #<n>: <reason> — the digest is UNKNOWN.` | 11 | refusal |
+| `ledger digest: this lane does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger digest: #<n>'s body digests to <hex> — carry it to \`ledger retopology\` before the body moves.` | 0 | note |
+
+**Scope** — one epic body read. Zero scope is `7`: an epic proven absent or closed.
+
+**Examples**
+
+```
+$ fabrika ledger digest 3 --token <claim-token>
+ledger digest: #3's body digests to 8f2c1a90b4d7 — carry it to `ledger retopology` before the body moves.
+{"answer":"digest","epic":3,"bodyDigest":"8f2c1a90b4d7"}
+```
+
+**Grounding**
+
+- The gap it closes was found by review on PR #8978 (#6237's criterion 20): a sanctioned operator
+  route whose one required input had no source outside the staged run the route disclaims.
+- It computes nothing of its own. A second implementation of the hash would be a second answer to
+  the question `21` exists to settle.
 
 ---
 
@@ -1460,12 +1542,14 @@ The three hand-checks the presence tests cannot perform:
    rendered block from §The ledger grammar; the child's `observed` labels from the flags that
    created them. `comment` and the child number are server-assigned and named as such.
 3. **Every value a later verb needs arrives as an argument or off an artifact — nothing is
-   remembered.** `--body-digest` is threaded explicitly from `open` to `draft` and `write`. The run
+   remembered.** `--body-digest` is threaded explicitly from `open` to `draft` and `write`, and
+   from `ledger digest` to `retopology` — the repair route has its own source because `open`'s
+   copy arrives only with a staged run. The run
    directory is re-derived from `runKey(epic, nonce)` by every verb rather than passed. The child
    set reaches `ledger topology` and `ledger supersede` through `<dir>/children.jsonl`, and the
    staged documents reach `ledger write` through the run directory — so a compaction between
    minting and splicing loses nothing, which is the v1 failure this shape exists to remove.
-4. **Sibling verbs guard shared preconditions identically.** All eight run `resolveTargetRepo`, the
+4. **Sibling verbs guard shared preconditions identically.** All nine run `resolveTargetRepo`, the
    `type:epic` check (`10`), `assertGround` (`11`), the imported `requireClaim` (`15`) and the
    same `7` trigger, with three documented widenings of `7` — `topology`'s empty run manifest,
    `edges`' epic that declares no topology, and `retopology`'s epic with no block or no live

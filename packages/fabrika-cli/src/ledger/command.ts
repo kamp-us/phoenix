@@ -8,8 +8,10 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * Seven leaves author a plan run; `retopology` is the eighth and reads no run directory at all,
- * because the descope it repairs is found on epics whose run was long since cleared.
+ * Seven leaves author a plan run. `retopology` and `digest` are the two that read no run directory
+ * at all — the descope one repairs is found on epics whose run was long since cleared, and the
+ * digest the other prints is the input that repair takes, so sourcing it from `ledger open` would
+ * put the staged run back in a route built not to need one.
  *
  * **`--ready-for` is optional at the parser and refused in the verb body.** A parser-required flag's
  * absence is exit `1`, indistinguishable from a typo; an absent audience is a decision nobody made,
@@ -24,6 +26,7 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
+import {runDigest} from "./digest-verb.ts";
 import {runDraft} from "./draft-verb.ts";
 import {runEdges} from "./edges-verb.ts";
 import {runOpen} from "./open-verb.ts";
@@ -51,7 +54,7 @@ const tokenFlag = Flag.string("token").pipe(
 
 const bodyDigestFlag = Flag.string("body-digest").pipe(
 	Flag.withDescription(
-		"the 12-lowercase-hex body digest `ledger open` printed; the verb recomputes it from the live body and refuses on 21 if the epic moved",
+		"the 12-lowercase-hex body digest `ledger open` printed, or `ledger digest` for a route that stages no run; the verb recomputes it from the live body and refuses on 21 if the epic moved",
 	),
 );
 
@@ -226,6 +229,27 @@ const write = leafCommand(
 	),
 );
 
+const digest = leafCommand(
+	"digest",
+	{number: epicArg, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(
+			yield* runDigest({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Print an epic's body digest, staging nothing."),
+	Command.withDescription(
+		'Print the 12-lowercase-hex digest of an epic\'s live body — the value --body-digest takes — without allocating a run directory, seeding a manifest or probing the base. It is the source for `ledger retopology`, whose whole claim is that it needs no staged plan run: `ledger open` prints the same value and is the right source inside a plan run, but it stages one, so the repair route reads it here instead. It writes NOTHING: no directory, no file, no issue. Prints {"answer":"digest","epic":n,"bodyDigest":"…"}. Exits 7 (the epic is proven absent or closed), 10 (not a type:epic), 11 (the epic or its claim could not be read — the digest is UNKNOWN), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger digest 5817 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
 const retopology = leafCommand(
 	"retopology",
 	{number: epicArg, bodyDigest: bodyDigestFlag, token: tokenFlag, repo: repoFlag},
@@ -311,9 +335,10 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		edges,
 		supersede,
 		retopology,
+		digest,
 	]),
 	Command.withShortDescription("Author an epic's plan and its children."),
 	Command.withDescription(
-		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body — plus the one repair that needs no run, `retopology`, which rewrites a descoped epic's Dependencies block from its live child links",
+		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body — plus the two verbs that need no run: `retopology`, which rewrites a descoped epic's Dependencies block from its live child links, and `digest`, which prints the body digest that repair requires",
 	),
 );
