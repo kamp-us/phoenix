@@ -73,6 +73,7 @@ const DeclaredFeatures = Schema.Struct({
 	kernelChildren: Schema.optionalKey(Schema.Boolean),
 	windowTitles: Schema.optionalKey(Schema.Boolean),
 	processBoard: Schema.optionalKey(Schema.Boolean),
+	prReviewExample: Schema.optionalKey(Schema.Boolean),
 });
 
 export {featuresDefault, type TuvalFeatures} from "./features.ts";

@@ -47,6 +47,18 @@ export interface TuvalFeatures {
 	 * is today.
 	 */
 	readonly processBoard: boolean;
+	/**
+	 * Register the worked `pr-review` example as a program row, so the authoring layer's own
+	 * thirty-line program is in the box a booted desk reads (#8734). Off: the desk is the eight rows
+	 * it carried before this flag — no row, no graph node, no `:pr-review` spells.
+	 *
+	 * The first flag over a program *row*, and a row is stated one layer lower than every other flag
+	 * here: `.tuval/tuval.config.ts` reads its own `features` block to decide whether to build the
+	 * row, because the merged record does not exist while a config module is being evaluated (#8595).
+	 * So a global `~/.tuval/tuval.config.ts` stating this flag reaches the `Features` service and not
+	 * the row. ADR 0375.
+	 */
+	readonly prReviewExample: boolean;
 }
 
 /**
@@ -62,4 +74,5 @@ export const featuresDefault: TuvalFeatures = {
 	kernelChildren: false,
 	windowTitles: false,
 	processBoard: false,
+	prReviewExample: false,
 };
