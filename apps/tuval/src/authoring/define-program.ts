@@ -15,7 +15,8 @@
  * each add their own line and none edits another's; `define-program.unit.test.ts` holds that shape.
  *
  * Everything the layer does not sugar is still reachable, because the row is a plain object:
- * `{...defineProgram({...}), restorable, checkpointWorthy}`.
+ * `{...defineProgram({...}), restorable, checkpointWorthy}`. `configChanged` is one of those, and
+ * deliberately so — `./resume.ts` says why the reload half stays a spread while `resume` does not.
  */
 
 import type {DepKeyedSub, Interpret} from "@demlik/tea";
@@ -74,6 +75,7 @@ import {
 	type PortPayload,
 	type RequestPortDecl,
 } from "./port.ts";
+import {type AuthoredResume, compileResume} from "./resume.ts";
 import {
 	type AuthoredWindow,
 	compileWindow,
@@ -176,6 +178,11 @@ export interface AuthoredProgram<
 	readonly status?: DerivedLine<S>;
 	/** This program's window, as a function of its own state and a `send` into its own events. */
 	readonly window?: AuthoredWindow<S, D, U, Out>;
+	/**
+	 * What this program is sent when it comes back from a checkpoint (`./resume.ts`). A restored
+	 * process starts on its loaded state with no Cmds, so this is its only way back into the world.
+	 */
+	readonly resume?: AuthoredResume<S, U>;
 	/** Demlik's own dep-keyed Subs, taken as the row's core already takes them. */
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, AuthoredEvent, unknown>>;
 	/**
@@ -415,6 +422,7 @@ export const FIELD_COMPILERS = {
 	args: (authored) => (authored.args === undefined ? undefined : argKeys(authored.args)),
 	spells: (authored) => compileCommands(authored.commands, COMMAND_HANDLERS),
 	takesKeys: (authored) => compileTakesKeys(authored),
+	resume: (authored) => compileResume(authored),
 	renderer: (authored, context) => compileWindow(authored, context),
 	capabilities: (authored) => authored.capabilities ?? NO_CAPABILITIES,
 	identity: (authored) => compileIdentity(authored),
