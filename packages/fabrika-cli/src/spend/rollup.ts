@@ -1,5 +1,5 @@
 /**
- * The spend roll-up — what fabrika's runs cost, summed out of the durable ledger.
+ * Historical version-1 rollup. Native response/category summaries live in usage-rollup.ts.
  *
  * Pure and total: it takes what {@link readSpendLedger} already produced and a resolved window, and
  * returns the answer. Nothing here reads a file, spawns anything, or re-parses a transcript — the
