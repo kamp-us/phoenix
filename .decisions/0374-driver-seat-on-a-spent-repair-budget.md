@@ -1,12 +1,12 @@
 ---
-id: 0373
+id: 0374
 title: A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
 status: accepted
 date: 2026-09-10
 tags: [fabrika, lane, pipeline, state-machine]
 ---
 
-# 0373 — A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
+# 0374 — A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
 
 **What this decides:** the leaf a spent repair budget falls into is renamed so a recipe can see it as
 a park, its finality is unchanged, and the clearance that reopens its door may now be recorded by the
@@ -24,7 +24,7 @@ or spent budget is the driver, acting on its own recommendation and logging it, 
 routed to only when the cause is a product ruling* — and its stated trade-off is that *"the driver's
 judgement lands unreviewed until the weekly review; the log is what keeps it auditable."*
 
-Two live records stand in the way of implementing that carelessly, and both are right.
+Three live records stand in the way of implementing that carelessly, and all three are right.
 
 - ADR [0297](0297-frozen-is-a-park-not-an-end.md) rules that the spent-budget leaf is a `final` that
   carries an `on`: it stays in `finals` and `errorFinals`, its phase folds, the lane trips loud, and
@@ -34,8 +34,13 @@ Two live records stand in the way of implementing that carelessly, and both are 
 - ADR [0312](0312-event-anchored-retry-budget.md) rules that a walkable non-`PASS` route comes from a
   recorded `<TASK>.CLEARED` event and from nothing else, and makes a resume without one a stated
   refusal (`applyEvent`'s `unbudgeted-resume`) rather than a silent `active`.
+- ADR [0341](0341-a-failed-epic-review-is-a-park.md) rules the same shape for the epic tail's own
+  spent review budget: `human:epic-review` keeps its finality, gains the `UNBLOCKED` door, and gets
+  its own `operate` routing row so a driver does not derive the shape from the state's name. It
+  states the seat independently of 0297 — *"Budget comes from a founder clearance recorded with
+  `build clear` and from nowhere else."*
 
-The actual defect R5.1 answers is narrower than either, and neither record caused it. `frozen` was a
+The actual defect R5.1 answers is narrower than any of them, and none of them caused it. `frozen` was a
 park no *recipe* could see: `recipe/parks.ts`'s `isPark` matches `blocked` and `human:*` and matched
 `frozen` never, so a task at its cap folded to `NotParked` and no park cause, no route and no recipe
 row could key on it. Underneath that, the one verb that grants a round —
@@ -80,6 +85,17 @@ amended to this: the *event* is unchanged and remains the only source of a repai
   of `build clear`, which epic [#8810](https://github.com/kamp-us/phoenix/issues/8810) names an
   explicit non-goal: it reads no board, holds no ACL, and posts no marker.
 
+**The epic tail's park collapses into the same leaf, and 0341 is amended with the other two.** R5.1
+reads *"any park or spent budget"*, which covers the tail as plainly as it covers a child, so the
+tail's three `FAIL` arms now fall through to `human:budget-spent` and `human:epic-review` is gone
+from the machine. Everything 0341 ruled about that park survives under the new name: the same
+`final` beside the same `UNBLOCKED` door, the same `LANE-PARKED` reading, and its own routing row in
+`operate`. The one clause that moves is the seat — the tail's grant is recordable through
+`lane clear` by the driver, bounded by the same three properties below as every other grant, and
+`build clear` remains the founder's seat on the pull request the tail carries. A lane emitted before
+this change still carries `human:epic-review`, still parks, and is cleared the way 0341 already
+says.
+
 **Three properties keep the driver's seat bounded, and they are what hold the cap now.**
 
 - **The round is derived, never typed.** `lane clear` reads the round off the task's own declared cap
@@ -91,7 +107,7 @@ amended to this: the *event* is unchanged and remains the only source of a repai
 - **The refusal still stands between the two.** A resume out of the park with no grant behind it is
   `unbudgeted-resume` with the log unappended, on the shipped template as on every emitted machine.
 
-**The driver records the `UNBLOCKED` out of this park too, and that is the third amendment.** 0297's
+**The driver records the `UNBLOCKED` out of this park too, and that is the last amendment.** 0297's
 binding constraint reads *"`operate` never records the `UNBLOCKED` itself — clearing a park stays a
 human's event"*, and ADR [0302](0302-known-parks-clear-novel-routes-human.md) narrows the exception
 to a recipe verb. Neither reaches this park: `repair-budget-spent` carries no `remedy`, because there
@@ -140,6 +156,8 @@ epic [#8810](https://github.com/kamp-us/phoenix/issues/8810) and its child
 [#8820](https://github.com/kamp-us/phoenix/issues/8820);
 [#6525](https://github.com/kamp-us/phoenix/issues/6525),
 [#8779](https://github.com/kamp-us/phoenix/issues/8779);
+ADRs [0297](0297-frozen-is-a-park-not-an-end.md), [0312](0312-event-anchored-retry-budget.md) and
+[0341](0341-a-failed-epic-review-is-a-park.md), each amended in part by this record;
 [`packages/fabrika-cli/src/lane/machine.ts`](../packages/fabrika-cli/src/lane/machine.ts),
 [`packages/fabrika-cli/src/lane/fold.ts`](../packages/fabrika-cli/src/lane/fold.ts),
 [`packages/fabrika-cli/src/lane/clear-verb.ts`](../packages/fabrika-cli/src/lane/clear-verb.ts),
