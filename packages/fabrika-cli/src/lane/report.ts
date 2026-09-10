@@ -341,8 +341,7 @@ export type FloorResolution =
 
 /**
  * Decide whether a queue re-fold has run out the wait axis's elapsed-time floor, or arrives too soon
- * to spend a wait — ADR
- * [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)'s 2026-08-29 amendment.
+ * to spend a wait.
  *
  * The floor reaches exactly the records that meet a wait-guarded cell: a `WIP` standing in a state
  * the task's own `waitParks` names, which today is `ship:queued` and nothing else. Every other

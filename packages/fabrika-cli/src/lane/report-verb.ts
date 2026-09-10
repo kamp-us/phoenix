@@ -20,7 +20,7 @@
  * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
  * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
  * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
- * driver passes — ADR 0313's 2026-08-29 amendment.
+ * driver passes.
  *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append

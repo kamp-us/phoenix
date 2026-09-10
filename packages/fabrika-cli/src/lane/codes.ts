@@ -427,9 +427,9 @@ export const CONCURRENCY_CAPPED = 51;
  *
  * The budget in `../wait-budget.ts` counts re-folds, so without a floor it measures how fast a
  * driver passes rather than how long a PR has sat: lane 6915 spent two of three waits inside roughly
- * ninety seconds behind a clean queue. The refusal is the whole mechanism ADR 0313's 2026-08-29
- * amendment authorises, and it names the seconds still to run so a driver reads "the wait is
- * intact", never "the wait is lost".
+ * ninety seconds behind a clean queue. The refusal is what makes the count measure a dwell instead,
+ * and it names the seconds still to run so a driver reads "the wait is intact", never "the wait is
+ * lost".
  *
  * Its own seat rather than {@link EVENT_REFUSED}'s: that one says the machine holds no cell for this
  * event and the remedy is a different event, while this one says the cell is exactly right and the

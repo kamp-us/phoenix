@@ -15,9 +15,7 @@
  * **The budget is floored as well as counted.** A count alone measures driver speed: lane 6915 spent
  * two of its three waits inside roughly ninety seconds while its PR was clean and simply queued, so
  * the third pass would have parked a person over a dwell this pipeline calls normal. Each re-fold
- * now has to clear {@link WAIT_FLOOR_SECONDS} of elapsed time before `lane report` will record it —
- * see ADR
- * [0313](../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)'s 2026-08-29 amendment.
+ * now has to clear {@link WAIT_FLOOR_SECONDS} of elapsed time before `lane report` will record it.
  */
 
 /** The re-folds a waiting task gets before its wait escalates to a human park. */

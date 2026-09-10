@@ -449,8 +449,8 @@ whose log carries an unreadable clock is a human's to fix.
 The escalation bound is the machine's, not yours: **you never count re-folds and never decide the
 wait is over**. That holds unchanged under the floor — the recorder counts and the recorder decides,
 and "too soon" is its answer, never yours to interpret. Record what the read said and re-fold; the
-cell escalates when its own budget is spent — to `human:queue-stall`, a park of its own, so a spent queue wait is never swept as a
-control-plane approval. That budget is separate from the lane's build/review retries, so a long
+cell escalates when its own budget is spent — to `human:queue-stall`, a park of its own, so a spent
+queue wait is never swept as a control-plane approval. That budget is separate from the lane's build/review retries, so a long
 dwell cannot cost a later repair round. A non-zero exit from `reconcile` is UNKNOWN — end `STOPPED`
 naming the code, record nothing.
 
