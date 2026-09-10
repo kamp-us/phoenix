@@ -1,12 +1,12 @@
 ---
-id: 0373
+id: 0375
 title: A program row's feature flag is read off its own config layer's features block, not the merged record
 status: accepted
 date: 2026-09-09
 tags: [tuval, config, feature-flags, programs]
 ---
 
-# 0373 — A program row's feature flag is read off its own config layer's `features` block, not the merged record
+# 0375 — A program row's feature flag is read off its own config layer's `features` block, not the merged record
 
 **What this decides:** a flag that gates whether a **program row** is registered is read out of the
 `features` block of the config module that would build the row — the same file, one const above the
@@ -18,7 +18,7 @@ that owns the row, so a global `~/.tuval/tuval.config.ts` naming it moves everyt
 part; it does not overturn it.** 0363's merge rule holds for every flag but the one class this
 record names: a flag gating whether a program row is registered is read before the merge exists, so
 a lower layer stating it does not move the row. That is a case 0363 did not have to answer, because
-until #8734 no flag gated a row. 0363 carries the reciprocal `amended-in-part by [0373]` status-line
+until #8734 no flag gated a row. 0363 carries the reciprocal `amended-in-part by [0375]` status-line
 pointer; its body is untouched.
 
 ## Context

@@ -56,7 +56,7 @@ export interface TuvalFeatures {
 	 * here: `.tuval/tuval.config.ts` reads its own `features` block to decide whether to build the
 	 * row, because the merged record does not exist while a config module is being evaluated (#8595).
 	 * So a global `~/.tuval/tuval.config.ts` stating this flag reaches the `Features` service and not
-	 * the row. ADR 0373.
+	 * the row. ADR 0375.
 	 */
 	readonly prReviewExample: boolean;
 }

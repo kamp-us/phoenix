@@ -101,7 +101,7 @@ describe("authoring.example.pr-review, registered", () => {
 
 	it("is absent from the booted config while its flag is off", () => {
 		// The config layer's own block, not `featuresDefault`: that block is what gates the row, and a
-		// row is built before boot has a merged record to read (#8595, ADR 0373).
+		// row is built before boot has a merged record to read (#8595, ADR 0375).
 		expect(config.features?.prReviewExample).toBe(false);
 		const ids = config.programs.map((row) => (row as AnyProgram).id);
 		expect(ids).not.toContain("pr-review");

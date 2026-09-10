@@ -64,7 +64,7 @@ const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope}
  * it directly, because a row is built while this module is being evaluated and the merge does not
  * exist yet (#8595). One consequence, and it is the whole difference between a row's flag and every
  * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
- * — a row is this file's to state. ADR 0373 records that.
+ * — a row is this file's to state. ADR 0375 records that.
  */
 const features = {prReviewExample: false};
 
