@@ -80,8 +80,19 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect(violations(surface)).toEqual([]);
 	});
 
-	it("declares every hook on an event whose real envelope is committed beside this test", () => {
-		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual(["SessionStart"]);
+	it("keeps check on its captured event; the usage collector has its own native-payload suite", () => {
+		expect(
+			[
+				...new Set(
+					surface.filter((hook) => hook.command === "fabrika hook check").map((hook) => hook.event),
+				),
+			].sort(),
+		).toEqual(["SessionStart"]);
+		expect(
+			surface.every((hook) =>
+				["fabrika hook check", "fabrika hook claude-spend"].includes(hook.command),
+			),
+		).toBe(true);
 	});
 
 	/**
