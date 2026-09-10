@@ -16,6 +16,7 @@ const fact = (over: Partial<PullFact> = {}): PullFact => ({
 	merged: true,
 	linkedIssues: [ISSUE],
 	linkKind: "fixes",
+	referencedIssues: over.linkedIssues ?? [ISSUE],
 	...over,
 });
 

@@ -1,15 +1,25 @@
 /**
- * The floor: a total function from the ledger to a sorted defect list over a closed fourteen-type
+ * The floor: a total function from the ledger to a sorted defect list over a closed fifteen-type
  * enum. `plan check` is this function plus a fetch; nothing above it can change the answer.
  *
- * **`UNENFORCED_DEP` is the one defect about the *board* rather than the document.** The native
- * `blocked_by` graph is the only carrier of blockedness, so a plan whose dependency lives in
- * `## Dependencies` alone is a plan whose gates are blind: an epic once admitted a child gated behind
- * an open, unruled decision, because the prose said so and the graph did not. This defect is what
- * makes "floor clean" mean the graph agrees with the prose; `ledger edges` is the write that clears
- * it.
+ * **Two defects are about the *board* rather than the document, and they face opposite ways across
+ * the same seam.**
  *
- * **Fifteen names, fourteen defects.** `ZERO_SCOPE` is the fifteenth and is seated as exit `7`
+ * `UNENFORCED_DEP` asks whether the graph carries what the prose declares. The native `blocked_by`
+ * graph is the only carrier of blockedness, so a plan whose dependency lives in `## Dependencies`
+ * alone is a plan whose gates are blind: an epic once admitted a child gated behind an open, unruled
+ * decision, because the prose said so and the graph did not. It is what makes "floor clean" mean the
+ * graph agrees with the prose; `ledger edges` is the write that clears it.
+ *
+ * `DROPPED_EPIC_BLOCKER` asks whether the prose declares what the **epic's own** graph carries, and
+ * it is why that edge reaches the children at all. An epic takes a `gate` claim while its own
+ * blockers are open — the purpose matrix admits it — `plan flip` then makes every child pickable, and
+ * a child's build claim reads that child's edges alone, so an external prerequisite recorded only at
+ * epic level fences nothing. The corpus's carry-down ruling has the planner write each open target
+ * onto every child's refs; this defect is the check half of that ruling, and `plan-epic`'s contract
+ * clause is the write half.
+ *
+ * **Sixteen names, fifteen defects.** `ZERO_SCOPE` is the sixteenth and is seated as exit `7`
  * rather than as defect zero: v1 made a childless epic defect #1 and early-returned, so the ledger
  * was never validated and the verdict reported exactly one thing wrong about a plan it had not read.
  * A refused scope is not a defect list of length one.
@@ -33,6 +43,7 @@ export const DEFECT_TYPES = [
 	"DEP_CYCLE",
 	"DANGLING_DEP",
 	"UNENFORCED_DEP",
+	"DROPPED_EPIC_BLOCKER",
 	"ORPHAN_CHILD",
 	"MISSING_STORIES_SECTION",
 	"UNCOVERED_STORY",
@@ -170,6 +181,30 @@ const appearsInTopology = (ledger: LedgerScope, child: number): boolean => {
 	);
 };
 
+/** The prerequisites the block already requires of one child, off the same pairs `ledger edges` writes. */
+const requiredPrerequisites = (
+	required: ReadonlyArray<RequiredEdge>,
+	child: number,
+): ReadonlySet<number> =>
+	new Set(required.filter((edge) => edge.dependent === child).map((edge) => edge.prerequisite));
+
+/**
+ * The epic's open blockers that every child owes a ref to: the external ones.
+ *
+ * An open blocker that is itself a child of this epic is not carried down — that edge is the plan's
+ * own sequencing, already stated by the phase spine or a `requires:` row, and copying it onto every
+ * sibling would demand a cycle. The epic's own number is dropped for the same reason.
+ */
+const carriedDown = (
+	ledger: LedgerScope,
+	epicBlockers: ReadonlyArray<number>,
+): ReadonlyArray<number> => {
+	const children = new Set(ledger.children.map((child) => child.number));
+	return [...new Set(epicBlockers)]
+		.filter((blocker) => blocker !== ledger.epic && !children.has(blocker))
+		.sort((a, b) => a - b);
+};
+
 const missingLabelKinds = (labels: ReadonlyArray<string>): ReadonlyArray<string> => {
 	const missing: string[] = [];
 	if (!labels.some((label) => label.startsWith("type:"))) missing.push("type:");
@@ -206,6 +241,15 @@ export interface FloorInput {
 	 */
 	readonly observed: ReadonlyMap<number, ReadonlySet<number>>;
 	/**
+	 * The epic's **own** open `blocked_by` targets, ascending — what `DROPPED_EPIC_BLOCKER` is derived
+	 * over.
+	 *
+	 * Only proven-open targets belong here: the verb reads the epic's list through the one shared
+	 * `readBlockedness`, so "open" means what it means at every build gate, and a blocker whose state
+	 * went unread refuses the whole floor on `11` rather than shortening this set.
+	 */
+	readonly epicBlockers: ReadonlyArray<number>;
+	/**
 	 * The resolved containment vocabulary — config, not ledger, which is why it is an input here
 	 * rather than a field of the ledger the scope digest is taken over.
 	 */
@@ -217,6 +261,7 @@ export const deriveFloor = ({
 	provenAbsent,
 	required,
 	observed,
+	epicBlockers,
 	vocabulary,
 }: FloorInput): Floor => {
 	const defects: Defect[] = [];
@@ -256,14 +301,29 @@ export const deriveFloor = ({
 		});
 	}
 
+	// Both classes below are suppressed on an absent section for one reason: with no block to read,
+	// every child is an orphan and drops every blocker, and `MISSING_DEPS_SECTION` already reds the
+	// single fact behind all of them.
 	if (!ledger.dependenciesAbsent) {
+		const dropped = carriedDown(ledger, epicBlockers);
 		for (const child of ledger.children) {
-			if (appearsInTopology(ledger, child.number)) continue;
-			defects.push({
-				type: "ORPHAN_CHILD",
-				refs: [child.number],
-				detail: `#${child.number} appears in no phase or requires line`,
-			});
+			if (!appearsInTopology(ledger, child.number)) {
+				defects.push({
+					type: "ORPHAN_CHILD",
+					refs: [child.number],
+					detail: `#${child.number} appears in no phase or requires line`,
+				});
+			}
+
+			const carried = requiredPrerequisites(required, child.number);
+			for (const blocker of dropped) {
+				if (blocker === child.number || carried.has(blocker)) continue;
+				defects.push({
+					type: "DROPPED_EPIC_BLOCKER",
+					refs: [child.number, blocker].sort((a, b) => a - b),
+					detail: `#${child.number} does not require #${blocker}, an open blocker of #${ledger.epic}`,
+				});
+			}
 		}
 	}
 

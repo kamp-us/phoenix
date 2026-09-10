@@ -1,7 +1,9 @@
 # Testing Effect code
 
-**Scope: `apps/web`.** Its integration tier uses real remote D1. Tuval's integration
-project exercises real local sessions and sockets, with no D1 or cloud credentials.
+**Scope:** test projects and database guidance below describe `apps/web`, whose
+integration tier uses real remote D1. Fiber coordination and bounded-wait guidance
+also apply to Tuval. Its integration project exercises real local sessions and
+sockets, with no D1 or cloud credentials.
 Use the owning app's Vitest projects; the shared tier vocabulary is in
 [LANGUAGE.md](../.glossary/LANGUAGE.md#the-two-test-tiers-unit--integration-and-seam-graduation).
 
@@ -170,6 +172,37 @@ Two scoped exceptions:
 Existing plain-vitest tests that run Effects via `runPromise` convert to `it.effect`
 opportunistically — when a change next touches the file, not as a churn pass.
 
+## A race between two synchronous ops is not a race a test can pin
+
+`Scheduler.MaxOpsBeforeYield` is not a coordination primitive. Cutting the run loop's yield budget
+to force two fibers to interleave tunes a number between two failure modes — one op too high and the
+fibers never interleave, one op too low and they starve — and the value that interleaves on an idle
+box is the value that starves on a loaded CI runner. Tuval's interleaved-stop case was pinned at a
+budget of `3` and timed out at 5000ms on a PR that touched no Tuval code (#8940).
+
+Nothing replaces the budget where the window is two **adjacent synchronous ops** — a `Ref.get`
+followed by a `Ref.set`, say. No `Latch` or `Deferred` a test owns can suspend a fiber between them,
+because the fiber never reaches a suspension point there; the only thing that splits the pair is a
+scheduler preemption, which is the non-determinism you were trying to remove.
+
+So close the window by construction instead, and judge *that* at a named seam:
+
+- Move the read-and-write into a module that owns the `Ref` and exposes only the atomic operation
+  (`apps/tuval/src/agy/ai-agent/stop-claim.ts` — one `Ref.modify`, no `Ref` on the interface). The
+  two-step shape stops being something a caller can spell.
+- At the seam, assert the invariant that holds under *every* interleaving ("exactly one owner"), so
+  no load can red it falsely, and read the single step off the module's own source for the one
+  property no call can observe (`stop-claim.unit.test.ts`).
+
+## An inner wait must be bounded strictly below the per-test budget
+
+A helper that bounds its own wait at the per-test timeout can never reach its own message: vitest's
+bare `Test timed out in 5000ms` always wins the race, and that is all the CI log carries. Bound every
+in-test wait strictly under the budget the project runs on — `interrupt-respawn.unit.test.ts` holds
+one `INNER_BOUND` constant under the 5000ms `unit` default — so a starved wait names what it was
+waiting for. Raising `testTimeout` to fix a flake is the inverse move: it spends the budget and keeps
+the dependence.
+
 ## Which tier to write
 
 Apply the litmus — *"could this be wrong even if the database behaved perfectly?"* In practice:
@@ -263,6 +296,8 @@ Never use `setTimeout`, `Date.now()`, or real wall-clock sleeps in tests. `TestC
 - **Booting a SQL engine and calling it a unit test** (the banned `node:sqlite` / `makeSqliteTestDb` pattern, ADR 0082). If a test needs a database, it is an `integration` test on real D1.
 - **Proving a pure-logic or decision-level fact at `integration`.** It belongs in `unit` — offline and flake-free. `integration` pays remote-D1 latency; spend it only on real-D1 fidelity.
 - **Setting up a unit-test layer inside `beforeEach`** when it doesn't change between tests. Module-scope it.
+- **`Scheduler.MaxOpsBeforeYield` to force an interleave**, and an inner wait bounded at the per-test
+  timeout — see the two sections above.
 - **`setTimeout`/timer ticks as fiber coordination.** Await a `Latch`/`Deferred` the program resolves — see "Fiber coordination" above. Timers are for negative liveness checks only.
 - **Snapshot tests against effect-internal shapes** (Causes, Exits) — they include implementation details that change between effect versions. Assert on the success value or the error `_tag`, not the cause structure.
 

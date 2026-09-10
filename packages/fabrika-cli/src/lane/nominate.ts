@@ -21,6 +21,11 @@
  * builds the field off the single PR a recorded ship line names, because a merged `Part of #N` is
  * invisible to both reads above and that is the case the read exists for.
  *
+ * The numbers ride in two sets, and the difference only shows on a body carrying both kinds — an
+ * epic tail's. `referencedIssues` is every number either kind names and is what `tracePulls` traces;
+ * `linkedIssues` is the winning kind's alone and is what the closure reads test against `linkKind`.
+ * One set for both questions is what left a finished epic run with no PR the nominator could find.
+ *
  * **Why it is shared rather than copied.** `lane prove` unioned both reads while `lane brief` read
  * the edge alone, so a `Part of #N` PR proved a `DONE`, folded the lane to `review`, and then had no
  * reviewer dispatchable against it — a park no event could clear, because the divergence was a
@@ -90,6 +95,7 @@ export const nominatePulls = (
 				merged: pull.value.merged,
 				linkedIssues: refs.numbers,
 				linkKind: refs.kind,
+				referencedIssues: refs.referenced,
 				htmlUrl: pull.value.htmlUrl,
 			});
 		}

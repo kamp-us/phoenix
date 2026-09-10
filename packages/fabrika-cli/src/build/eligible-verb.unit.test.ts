@@ -218,7 +218,7 @@ describe("runEligible", () => {
 			]);
 			expect(out.code).toBe(0);
 			expect(JSON.parse(out.stdout)).toEqual({answer: "eligible", number: 4312, parent: 4300});
-			expect(out.stderr.at(-1)).toContain("origin/main..epic/4300 adds a commit naming #210");
+			expect(out.stderr.at(-1)).toContain("origin/main..epic/4300 adds a commit that lands #210");
 		});
 
 		it("reads no branch at all when every blocker is already closed", async () => {

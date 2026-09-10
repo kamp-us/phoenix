@@ -43,6 +43,29 @@ export const MARKER_RE = /^<!-- fabrika:enriched issue=(\d+) mode=(rewrite|wrap)
 export const renderMarker = (issue: number, mode: EnrichMode): string =>
 	`<!-- fabrika:enriched issue=${issue} mode=${mode} -->`;
 
+/**
+ * The `[start, end]` line span of the preserved brief, or `null` when the body carries no marker.
+ *
+ * Both bounds are inclusive line indices: `start` is the marker line, `end` the `</details>` that
+ * closes the block below it — or `start` again where the closer is missing, which is an empty span
+ * rather than a swallowed rest-of-body.
+ *
+ * It lives here rather than beside either caller because the envelope is this module's shape: the
+ * marker is the boundary. Every verb that resolves a region in an epic body needs the bound — a
+ * heading that resolves *inside* the preserved brief is content, not this run's anchor — and two
+ * copies of that rule is two answers about which bytes are safe to overwrite.
+ */
+export const preservedEnvelope = (
+	lines: ReadonlyArray<string>,
+): {readonly start: number; readonly end: number} | null => {
+	const start = lines.findIndex((line) => MARKER_RE.test(line.trim()));
+	if (start === -1) return null;
+	const closing = lines.findIndex(
+		(line, index) => index > start && line.trim().toLowerCase() === "</details>",
+	);
+	return {start, end: closing === -1 ? start : closing};
+};
+
 export type Detection =
 	/** No enrichment of *this* issue is present, so the whole body is the original to preserve. */
 	| {

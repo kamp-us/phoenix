@@ -82,9 +82,11 @@ export const assemblyNotes = (verb: string, discharge: Discharge): ReadonlyArray
 	}
 	const range = `${assembly.baseRef}..${assembly.branch}`;
 	return discharged.length === 0
-		? [`${verb}: ${range} adds ${assembly.commits} commit(s), none naming an undischarged blocker.`]
+		? [
+				`${verb}: ${range} adds ${assembly.commits} commit(s), none landing an undischarged blocker.`,
+			]
 		: [
-				`${verb}: ${range} adds a commit naming ${discharged.map((blocker) => `#${blocker}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.`,
+				`${verb}: ${range} adds a commit that lands ${discharged.map((blocker) => `#${blocker}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.`,
 			];
 };
 

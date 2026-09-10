@@ -142,7 +142,14 @@ fabrika ship checks $pr_number --sha 03135b91 --wait
 ```
 
 Terminals: `green` → continue. `red` → disarm, note, route the failing gating runs the notes channel
-names to `heal-ci`, stop.
+names to `heal-ci`, stop. **Name the cause when you record that terminal**, so the park is one a
+recipe can clear rather than one that spends a person: a red head is the park class whose cause most
+often goes away with nobody acting, and `recipe unpark` clears it by re-reading this same rollup.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-HEAL-CI --cause head-ci-red --pr <pr-url>
+```
+
 `wedged` → disarm, note naming the stranded check; **the cancel-and-rerun lever belongs to a
 human** — you diagnose, you never pull it. `no-runs` → one bounded nudge:
 `fabrika ship nudge $pr_number --sha 03135b91` re-derives the dropped-trigger state itself and refuses

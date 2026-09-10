@@ -34,7 +34,8 @@ export type Clearance =
 	| "branch-free"
 	| "campaign-active"
 	| "spawn-clear"
-	| "queue-moved";
+	| "queue-moved"
+	| "ci-green";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -89,7 +90,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: two keyed by their leaf, three by their cause.
+ * The parks with a fixed fix today: two keyed by their leaf, four by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table, relayed rather than
  * re-derived — the §CP cardinality question has exactly one answer in this package, and a second
@@ -122,6 +123,15 @@ export const QUEUE_MOVED_GRANT = 1;
  * for the same reason `campaign-active` does not: a recipe that "removed" this cause would be merging
  * the PR. What it does instead is grant: the recipe is the grantor, so the clear and the wait it buys
  * ride one recorded event and there is no bare `UNBLOCKED` into a spent budget for the fold to refuse.
+ *
+ * `human:cp-approval` + `head-ci-red` is the second row on that leaf, and the cause key is what makes
+ * two rows there legal: `ship`'s `BLOCKED` folds to `human:cp-approval` whatever the block was, so a
+ * shipper that routed to `heal-ci` and one that stopped on a §CP approval land on the same state. The
+ * §CP row keys on `null` and this one on the cause, so neither can match the other's park. Its
+ * clearance is the shipper's own step-4 read taken again — `ship checks`'s rollup at the live head —
+ * conjoined with the reads that step ran before it, so the clear proves the whole floor the shipper
+ * was standing on rather than the one condition that failed. It names no remedy because turning a red
+ * head green is `heal-ci`'s repair work, and a recipe that "removed" this cause would be doing it.
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -143,6 +153,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		cause: null,
 		clearance: "cp-approval",
 		waitingOn: "a control-plane approval at the PR's current head",
+	}),
+	row({
+		park: "human:cp-approval",
+		cause: "head-ci-red",
+		clearance: "ci-green",
+		waitingOn:
+			"the head's CI to go green with the PR still open and every derived namespace still bound to that head",
 	}),
 	row({
 		park: "human:queue-stall",

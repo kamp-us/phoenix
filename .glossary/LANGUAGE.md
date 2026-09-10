@@ -345,6 +345,21 @@ It records the `LAP` event and spends the lap counter, never the repair budget. 
 not called a retry**: a retry is a repair round an artifact owes because a reviewer judged it and
 found it wrong, and keeping the two words apart is the point of having two counters.
 
+### The local-tree guard
+
+A shipped fabrika guard a builder can run offline: argument-free, reading only the checked-out tree,
+needing no PR number, no board read and no auth. That predicate is the whole definition, and each
+guard answers it beside its own registration in
+[`packages/fabrika-cli/src/guard/command.ts`](../packages/fabrika-cli/src/guard/command.ts) — read
+membership there, never off a list kept anywhere else. A member runs under its own leaf, which is
+not always `check`: the decisions-index guard's is `validate`.
+
+`fabrika build check` runs every member on every surface and names each in its answer — the ruling is
+ADR [0381](../.decisions/0381-local-tree-guards-run-in-build-check.md). **A member that refuses is
+skipped, not passed**: a zero-scope or UNKNOWN exit is named as `skipped: <name> (<reason>)` on the
+local run, and the CI gate — which fails closed on the same exit under ADR
+[0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) — still owns the verdict.
+
 ### Diátaxis-lite README shape
 
 The name for the package README's navigation order. Its section and page-splitting

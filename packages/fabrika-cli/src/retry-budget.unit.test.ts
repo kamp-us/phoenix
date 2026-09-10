@@ -128,7 +128,7 @@ describe("the one machinery lap budget", () => {
 	});
 
 	it("is what an epic machine emitted with the axis on carries into every task", () => {
-		const emitted = emitMachine(EPIC, epicBody(), CHILDREN, true);
+		const emitted = emitMachine(EPIC, epicBody(), CHILDREN, {machinery: true});
 		if (emitted._tag !== "Emitted") throw new Error(`expected Emitted, got ${emitted._tag}`);
 
 		expect(compiledLapBudgets(emitted.text)).toEqual(

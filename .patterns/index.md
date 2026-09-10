@@ -20,7 +20,7 @@ Shared Effect concepts apply across consumers. Match API examples to the owning 
 | [effect-error-operators.md](./effect-error-operators.md) | Effect consumers | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | Effect consumers | Writing or naming a service method |
 | [effect-platform-access.md](./effect-platform-access.md) | Effect consumers | Reading/writing files, building paths, or minting ids in Effect code ([#3461](https://github.com/kamp-us/phoenix/issues/3461)), or migrating a directory walk ([#3922](https://github.com/kamp-us/phoenix/issues/3922)) |
-| [effect-testing.md](./effect-testing.md) | apps/web worker | Writing a worker test; choose the web tier and storage substitute |
+| [effect-testing.md](./effect-testing.md) | Web test setup; shared Effect coordination | Choosing a web test tier or storage substitute, or coordinating fibers and bounding waits in Effect tests |
 | [effect-schema-validation.md](./effect-schema-validation.md) | Effect consumers | Validating untyped input (`HttpApi` payloads, external responses, persisted JSON) |
 | [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | Web SSE | Building an SSE response written to from another component (e.g. the `LiveDO` topic `deliver` RPC) |
 | [effect-socket-session.md](./effect-socket-session.md) | Effect consumers | Writing a per-connection socket handler, or a socket that opens and then goes silent |
@@ -174,6 +174,7 @@ For `apps/tuval`. Its local integration tests use real sessions and sockets, not
 | [tuval-codex.md](./tuval-codex.md) | apps/tuval | Changing `apps/tuval/src/codex/` |
 | [tuval-detached-child-tail.md](./tuval-detached-child-tail.md) | apps/tuval | A Tuval AI-agent layer whose subagent rows come from a child process rather than the session stream |
 | [tuval-program-row-effects.md](./tuval-program-row-effects.md) | apps/tuval | Writing a Tuval program row, or giving one a service, a resource or an out-port emission ([#7603](https://github.com/kamp-us/phoenix/issues/7603)) |
+| [tuval-history-cursor-join.md](./tuval-history-cursor-join.md) | apps/tuval | A Tuval AI-agent layer whose history read keys rows differently from its live stream, or a `cursor-not-found` on `Load earlier messages` |
 | [tuval-authored-programs.md](./tuval-authored-programs.md) | apps/tuval | Writing or reviewing an authored Tuval program, giving one a `resume` or a `configChanged`, or wiring one into a config graph ([#8735](https://github.com/kamp-us/phoenix/issues/8735)) |
 | [window-renderer-admission.md](./window-renderer-admission.md) | apps/tuval | Adding a renderer to a page's table, giving a program a window, or touching `apps/tuval/src/page/readable-state.tsx` or `apps/tuval/src/shell/ui/WindowView.tsx` ([#8157](https://github.com/kamp-us/phoenix/issues/8157)) |
 | [node-listener-total-boundary.md](./node-listener-total-boundary.md) | apps/tuval | Registering a listener that reads a value an unauthenticated client controls, or touching the Pi server's `upgrade`/`message` boundary ([#7567](https://github.com/kamp-us/phoenix/issues/7567)) |

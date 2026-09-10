@@ -97,7 +97,38 @@ describe("checkTopology", () => {
 				_tag: "Ok",
 				phases: 2,
 				edges: [["#4303", "#4301"]],
+				external: [],
 			},
+		);
+	});
+
+	/**
+	 * The corpus ruling: a `requires:` ref to an issue another epic owns is a legitimate gating edge. The
+	 * manifest closes over subjects, so the external target rides out for the verb to prove.
+	 */
+	it("accepts a prerequisite outside the manifest and names it as external", () => {
+		expect(
+			checkTopology(4300, [line(4301, 1), line(4303, 2, [4301, 7511])], [4301, 4303]),
+		).toMatchObject({
+			_tag: "Ok",
+			edges: [
+				["#4303", "#4301"],
+				["#4303", "#7511"],
+			],
+			external: [7511],
+		});
+	});
+
+	it("dedupes and orders the external set across lines", () => {
+		expect(
+			checkTopology(4300, [line(4301, 1, [7513]), line(4303, 2, [7513, 7511])], [4301, 4303]),
+		).toMatchObject({_tag: "Ok", external: [7511, 7513]});
+	});
+
+	it("renders an external prerequisite in the block and round-trips it", () => {
+		const checked = checkTopology(4300, [line(4301, 1), line(4303, 2, [7511])], [4301, 4303]);
+		expect(checked._tag === "Ok" && checked.block).toBe(
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #4303\n- #4303 requires: #7511\n",
 		);
 	});
 
@@ -108,11 +139,32 @@ describe("checkTopology", () => {
 		});
 	});
 
-	it("refuses a reference to something that is not a child", () => {
-		expect(checkTopology(4300, [line(4301, 1), line(4302, 2, [9999])], [4301, 4302])).toEqual({
+	/** A stranger placed in one of this epic's phases is still a broken epic, external refs or not. */
+	it("refuses a subject that is not a child", () => {
+		expect(checkTopology(4300, [line(4301, 1), line(9999, 2, [4301])], [4301, 4302])).toEqual({
 			_tag: "Invalid",
-			reason: "#9999 is referenced but is not a child of #4300.",
+			reason: "#9999 is placed in a phase but is not a child of #4300.",
 		});
+	});
+
+	/**
+	 * The epic exists, so the boundary prove answers Present and the line would stage — and
+	 * `findCycle` walks the declared lines, whose nodes are all children, so the self-parent edge is
+	 * invisible to it. The pure check is the only thing that catches it.
+	 */
+	it("refuses a prerequisite naming the epic that owns the child", () => {
+		expect(checkTopology(4300, [line(4301, 1), line(4303, 2, [4300])], [4301, 4303])).toEqual({
+			_tag: "Invalid",
+			reason:
+				"#4303 requires #4300, the epic that owns it — an epic closes only once its children close, so that edge can never clear and #4303 would never be claimable.",
+		});
+	});
+
+	/** The refusal reaches the epic's own number and leaves the sanctioned cross-epic edge alone. */
+	it("still accepts a prerequisite naming another epic's issue alongside the refusal", () => {
+		expect(checkTopology(4300, [line(4301, 1), line(4303, 2, [7511])], [4301, 4303])).toMatchObject(
+			{_tag: "Ok", external: [7511]},
+		);
 	});
 
 	it("refuses a child declared twice", () => {

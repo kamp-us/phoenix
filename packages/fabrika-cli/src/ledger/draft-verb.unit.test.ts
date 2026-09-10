@@ -74,7 +74,7 @@ describe("runDraft", () => {
 			answer: "staged",
 			epic: 4300,
 			document: "plan",
-			sections: 10,
+			sections: 11,
 			stories: [1, 2],
 		});
 		expect(written.get(planPath(DIR))).toBe(block);

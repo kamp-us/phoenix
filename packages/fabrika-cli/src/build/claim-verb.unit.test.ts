@@ -1747,7 +1747,7 @@ describe("runClaim — the blockedness gate", () => {
 			]);
 			expect(out.code).toBe(0);
 			expect(JSON.parse(out.stdout).answer).toBe("won");
-			expect(out.stderr.join("\n")).toContain("adds a commit naming #210");
+			expect(out.stderr.join("\n")).toContain("adds a commit that lands #210");
 		});
 
 		it("still refuses on 16 when the branch carries no commit naming the blocker", async () => {
@@ -1759,7 +1759,7 @@ describe("runClaim — the blockedness gate", () => {
 			]);
 			expect(out.code).toBe(BLOCKED);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-			expect(out.stderr.join("\n")).toContain("none naming an undischarged blocker");
+			expect(out.stderr.join("\n")).toContain("none landing an undischarged blocker");
 		});
 
 		it("refuses on 16 when the branch cannot be read — never admits on unread evidence", async () => {
@@ -1777,6 +1777,80 @@ describe("runClaim — the blockedness gate", () => {
 			expect(out.code).toBe(BLOCKED);
 			expect(shell.calls.some((line) => /rev-parse/.test(line))).toBe(false);
 		});
+	});
+
+	/**
+	 * The purpose matrix the blockedness gate binds. A `plan` or `gate` claim produces a
+	 * document rather than code, so it is the work that should happen while the blocker is still
+	 * being built — and the proof is the absent graph call, since scripting no edges at all would
+	 * otherwise refuse on 11.
+	 */
+	describe("the purpose matrix", () => {
+		const OPEN_EDGE: ReadonlyArray<Scripted> = [
+			[EDGES, blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "open"})],
+		];
+
+		const claimFor = (purpose: string, graph: ReadonlyArray<Scripted>) => {
+			const shell = fakeSeams([
+				[ISSUE, CLAIMABLE],
+				...graph,
+				STANDALONE,
+				unclaimed(),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), WRITES],
+			]);
+			return Effect.runPromise(
+				Effect.provide(
+					runClaim({...options, purpose}),
+					Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
+				),
+			).then((out) => ({out, shell}));
+		};
+
+		it("refuses a build claim over an open edge on 16, and posts NOTHING", async () => {
+			const {out, shell} = await claimFor("build", OPEN_EDGE);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stdout).toBe("");
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		});
+
+		it("admits a build claim whose blockers are all closed", async () => {
+			const {out} = await claimFor("build", [
+				[EDGES, blockedBy(210)],
+				[blocker(210), issue({number: 210, state: "closed"})],
+			]);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout).answer).toBe("won");
+		});
+
+		for (const purpose of ["plan", "gate"] as const) {
+			it(`admits a ${purpose} claim over an open edge, reading no edges at all`, async () => {
+				const {out, shell} = await claimFor(purpose, OPEN_EDGE);
+				expect(out.code).toBe(0);
+				expect(JSON.parse(out.stdout).purpose).toBe(purpose);
+				expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
+				expect(out.stderr.join("\n")).toContain("the gate binds a build claim only");
+			});
+
+			it(`admits a ${purpose} claim with no graph scripted — an unread gate is not an 11`, async () => {
+				const {out} = await claimFor(purpose, []);
+				expect(out.code).toBe(0);
+				expect(JSON.parse(out.stdout).answer).toBe("won");
+			});
+
+			it(`admits a ${purpose} claim whose blockers are all closed, still reading no edges`, async () => {
+				const {out, shell} = await claimFor(purpose, [
+					[EDGES, blockedBy(210)],
+					[blocker(210), issue({number: 210, state: "closed"})],
+				]);
+				expect(out.code).toBe(0);
+				expect(JSON.parse(out.stdout).answer).toBe("won");
+				expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
+			});
+		}
 	});
 
 	/**

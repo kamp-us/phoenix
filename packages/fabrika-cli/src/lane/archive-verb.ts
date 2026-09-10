@@ -142,7 +142,7 @@ export const runArchive = <R = never>(
 		if (judged._tag === "Replays") {
 			return refuse(
 				LOG_REPLAYS,
-				`${VERB}: ${loaded.logPath} replays through this lane's own machine and through the committed template, so every sweep can judge it — this is not a lane to move out of their scope. Nothing was moved.`,
+				`${VERB}: ${loaded.logPath} replays through every machine that exists for this lane, so every sweep can judge it — this is not a lane to move out of their scope. Nothing was moved.`,
 			);
 		}
 

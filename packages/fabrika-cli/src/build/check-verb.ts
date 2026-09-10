@@ -12,6 +12,13 @@
  * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
+ * **Every run also sweeps the shipped local-tree guards, whatever the surface.** A guard that only
+ * needs the checked-out tree runs here so it reds on the builder's machine before it reds in CI, and
+ * each member is named in the answer — `guard <name> <leaf>` in `ran`, or `skipped: <name>
+ * (<reason>)` for one that refused, which is a disclosure and never a pass. Membership is declared
+ * beside each guard's registration in `guard/command.ts` and nowhere else; see
+ * {@link sweepLocalTreeGuards}.
+ *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
  * makes reading the issue, and a verb that guessed it from file extensions would be wrong exactly on
  * the mixed diffs where the answer matters. The verb takes the skill's answer and refuses one the diff
@@ -26,7 +33,7 @@
  * that merely enters a diff no longer hands its author every defect line it already carried; the
  * shape and its deliberate limits live in `prose-baseline.ts`.
  */
-import {Effect, FileSystem} from "effect";
+import {Effect, FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {Resolution} from "../config/key-group.ts";
@@ -38,6 +45,7 @@ import {
 } from "../config/keys/code-validators.ts";
 import {loadConfig, resolve} from "../config/load.ts";
 import {readConfigSource} from "../config/source.ts";
+import type {LocalTreeGuard} from "../guard/local-tree.ts";
 import {execStatus} from "../io/exec.ts";
 import {
 	CONFIG_PATH,
@@ -45,7 +53,7 @@ import {
 	readWorkflowValidators,
 	type WorkflowValidator,
 } from "../repo-config.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
 import {
 	OFF_VOCABULARY,
@@ -90,6 +98,14 @@ export interface CheckOptions {
 	readonly surface: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/**
+	 * The local-tree guards to sweep, whatever the surface — the adapter hands over the set
+	 * `guard/command.ts` derives from its own registry, and a test names the guards it means.
+	 *
+	 * An operand rather than an import, because a verb that reached for the registry itself would
+	 * make every existing test of this verb run twenty guards over a fake filesystem.
+	 */
+	readonly guards: ReadonlyArray<LocalTreeGuard>;
 }
 
 /**
@@ -473,6 +489,79 @@ const diagnostics = (output: string): ReadonlyArray<string> => {
 			];
 };
 
+/**
+ * The two guard refusals a sweep may report beside a green, and how each reads back.
+ *
+ * Everything else — a violation (`12`), or any code a guard is not supposed to speak — is red. A
+ * guard that refused proved nothing about the tree, so folding it into the green would be exactly
+ * the "I could not tell" this verb refuses to spell as a pass. The repo's fail-closed-on-zero-scope
+ * rule for its CI gates is untouched by this: the gate still owns the verdict, and this predicts it.
+ */
+const SKIP_REASONS: ReadonlyMap<number, string> = new Map([
+	[ZERO_SCOPE, "zero scope"],
+	[PRECONDITION_UNKNOWN, "UNKNOWN read"],
+]);
+
+/** What a clean sweep contributes to the answer: the members that passed, and the ones that refused. */
+export interface GuardSweep {
+	/** One `guard <name> <leaf>` label per member that ran and passed, folded into the green's `ran`. */
+	readonly ran: ReadonlyArray<string>;
+	/** One `<name> (<reason>)` line per member that refused — never a pass. */
+	readonly skipped: ReadonlyArray<string>;
+}
+
+type SweepOutcome =
+	| {readonly _tag: "Swept"; readonly sweep: GuardSweep; readonly notes: ReadonlyArray<string>}
+	| {
+			readonly _tag: "Red";
+			readonly label: string;
+			readonly notes: ReadonlyArray<string>;
+			readonly output: string;
+	  };
+
+/**
+ * Run every local-tree guard over this tree, on every surface, and name each one in the answer.
+ *
+ * The sweep is deliberately **not** anchored by `--surface`: `portability-guard` reads shipped
+ * markdown and `patch-guard` reads `patches/`, so a prose-only diff is exactly the diff that kept
+ * reaching review red under a `code`-only check — three repair rounds went on guards a surface-bound
+ * check could never reach. The anchor stays what it was: a claim about the repo's *declared*
+ * validators.
+ *
+ * The first red stops the sweep: the builder has a guard to fix, and the sixteen that would have
+ * run after it say nothing about that.
+ */
+const sweepLocalTreeGuards = (
+	guards: ReadonlyArray<LocalTreeGuard>,
+	root: string,
+	env: Readonly<Record<string, string | undefined>>,
+): Effect.Effect<
+	SweepOutcome,
+	never,
+	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.gen(function* () {
+		const ran: string[] = [];
+		const skipped: string[] = [];
+		const notes: string[] = [];
+		for (const guard of guards) {
+			const label = `guard ${guard.name} ${guard.leaf}`;
+			const outcome = yield* guard.run({root, env});
+			if (outcome.code === ANSWER) {
+				ran.push(label);
+				continue;
+			}
+			const reason = SKIP_REASONS.get(outcome.code);
+			if (reason === undefined) {
+				return {_tag: "Red", label, notes, output: outcome.stderr.join("\n")} as const;
+			}
+			const line = `${guard.name} (${reason}: ${outcome.stderr.at(-1) ?? `exit ${outcome.code}`})`;
+			skipped.push(line);
+			notes.push(`${VERB}: skipped: ${line} — not a pass; CI's own gate answers this one.`);
+		}
+		return {_tag: "Swept", sweep: {ran, skipped}, notes} as const;
+	});
+
 /** The code validators to run, or why the answer is UNKNOWN. */
 type CodeScope =
 	| {
@@ -523,6 +612,7 @@ const runCodeSurface = (
 	root: string,
 	unvalidated: ReadonlyArray<string>,
 	noted: ReadonlyArray<string>,
+	sweep: GuardSweep,
 ): Effect.Effect<
 	VerbOutcome,
 	never,
@@ -565,7 +655,14 @@ const runCodeSurface = (
 			}
 		}
 		return answer(
-			JSON.stringify({verdict: "green", surface: "code", tree: root, ran, unvalidated}),
+			JSON.stringify({
+				verdict: "green",
+				surface: "code",
+				tree: root,
+				ran: [...ran, ...sweep.ran],
+				skipped: sweep.skipped,
+				unvalidated,
+			}),
 			scoped,
 		);
 	});
@@ -636,6 +733,7 @@ const runWorkflowSurface = (
 	workflows: ReadonlyArray<string>,
 	unvalidated: ReadonlyArray<string>,
 	noted: ReadonlyArray<string>,
+	sweep: GuardSweep,
 ): Effect.Effect<
 	VerbOutcome,
 	never,
@@ -726,7 +824,8 @@ const runWorkflowSurface = (
 				verdict: "green",
 				surface: "workflows",
 				tree: root,
-				ran,
+				ran: [...ran, ...sweep.ran],
+				skipped: sweep.skipped,
 				unvalidated: [...unvalidated, ...unopened],
 			}),
 			disclosed,
@@ -738,7 +837,10 @@ export const runCheck = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | HttpClient.HttpClient
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const surface = options.surface.trim().toLowerCase();
@@ -808,7 +910,7 @@ export const runCheck = (
 		// workflow files whose `ran` line was true and misleading at once, and a `--surface code` green
 		// then did the same to markdown while reporting an empty list.
 		const unvalidated = notCoveredBy(surface as Surface, files);
-		const noted =
+		const covered =
 			unvalidated.length === 0
 				? scope
 				: [
@@ -816,9 +918,19 @@ export const runCheck = (
 						`${VERB}: ${unvalidated.length} changed file(s) --surface ${surface} does not validate — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
 					];
 
+		const swept = yield* sweepLocalTreeGuards(options.guards, lane.root, options.env);
+		const noted = [...covered, ...swept.notes];
+		if (swept._tag === "Red") {
+			return refuse(VALIDATION_RED, `${VERB}: red — ${swept.label} failed; diagnostics above.`, [
+				...noted,
+				...diagnostics(swept.output),
+			]);
+		}
+		const sweep = swept.sweep;
+
 		const fs = yield* FileSystem.FileSystem;
 		if (surface === "code") {
-			return yield* runCodeSurface(lane.root, unvalidated, noted);
+			return yield* runCodeSurface(lane.root, unvalidated, noted, sweep);
 		}
 
 		if (surface === "workflows") {
@@ -828,6 +940,7 @@ export const runCheck = (
 				classifyDiff(files).workflows,
 				unvalidated,
 				noted,
+				sweep,
 			);
 		}
 
@@ -898,7 +1011,11 @@ export const runCheck = (
 				verdict: "green",
 				surface,
 				tree: lane.root,
-				ran: surface === "plan" ? [MARKDOWN_SCAN, PLAN_GRAMMAR] : [MARKDOWN_SCAN],
+				ran: [
+					...(surface === "plan" ? [MARKDOWN_SCAN, PLAN_GRAMMAR] : [MARKDOWN_SCAN]),
+					...sweep.ran,
+				],
+				skipped: sweep.skipped,
 				unvalidated,
 			}),
 			scoped,

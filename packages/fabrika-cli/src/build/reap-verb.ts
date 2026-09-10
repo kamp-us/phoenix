@@ -29,22 +29,14 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {
-	diffRange,
-	diffRangePaths,
-	mergeBase,
-	noMergeBaseReason,
-	originHeadRef,
-	patchIdsIn,
-	patchIdsOf,
-} from "../io/git.ts";
+import {containmentOf} from "../io/containment.ts";
+import {originHeadRef} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {isAncestor, removeWorktree, worktreeRegistrations, worktreeStatusPaths} from "./git.ts";
+import {removeWorktree, worktreeRegistrations, worktreeStatusPaths} from "./git.ts";
 import {
 	classify,
 	isAgentWorktree,
-	type Landing,
 	type License,
 	type TreeFacts,
 	type Uncommitted,
@@ -54,15 +46,6 @@ import {
 import {readTree} from "./tree.ts";
 
 const VERB = "fabrika build reap";
-
-/**
- * How far back along the trunk a squash is looked for.
- *
- * Bounded because the scan reads patches, not commit names. Past it the answer is "not found",
- * which classifies KEEP — the fail-safe direction, and the reason a bound is allowed to exist here
- * at all.
- */
-const TRUNK_SCAN = 200;
 
 export interface ReapOptions {
 	/** Removals happen only under this flag. Default is a dry run that mutates nothing. */
@@ -115,7 +98,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				locked: tree.locked,
 				prunable: tree.prunable,
 				uncommitted: yield* uncommittedIn(tree.path, tree.prunable),
-				landing: yield* landingOf(tree.head, trunk.value),
+				landing: yield* containmentOf(tree.head, trunk.value),
 			};
 			seated.push({facts, verdict: classify(facts, trunk.value, selfPaths)});
 		}
@@ -242,65 +225,4 @@ const uncommittedIn = (path: string, prunable: boolean): Effect.Effect<Uncommitt
 		return dirty._tag === "Failure"
 			? {_tag: "Unknown" as const, reason: dirty.reason}
 			: {_tag: "Read" as const, paths: dirty.value};
-	});
-
-/**
- * What `trunk` says about one HEAD commit — the three positive answers, or why there is none.
- *
- * The ancestor test comes first because it is one cheap call and it settles the majority: a detached
- * agent tree usually stands on the trunk commit it was spawned at. Only what survives it costs the
- * patch reads.
- *
- * The squash arm is patch-identity, not ancestry, and it was measured rather than reasoned about:
- * on `build/4082-db-schema-readme-diataxis-43cc4b51` the branch's own net patch id and the trunk
- * commit's path-limited one are both `d18b491a48c861494a35740f571a90a45b596aae`. The pathspec is
- * what makes those two comparable — limited to the paths the branch touches, a squash commit's diff
- * is that branch's net diff exactly. A squash landed on top of an intervening change to the same
- * paths will not match, and answers `Unlanded`, which is the fail-safe direction.
- */
-const landingOf = (head: string, trunk: string): Effect.Effect<Landing, never, Deps> =>
-	Effect.gen(function* () {
-		if (head === "") return {_tag: "Unknown" as const, reason: "its record names no HEAD commit"};
-		if (yield* isAncestor(head, trunk)) return {_tag: "Ancestor" as const};
-
-		const diff = yield* diffRange(trunk, head);
-		if (diff._tag === "Failure") {
-			return {_tag: "Unknown" as const, reason: `cannot diff it against ${trunk}: ${diff.reason}`};
-		}
-		if (diff.value.trim() === "") return {_tag: "NoChange" as const};
-
-		const own = yield* patchIdsOf(diff.value);
-		const mine = own._tag === "Ok" ? own.value[0] : undefined;
-		if (mine === undefined) {
-			return {
-				_tag: "Unknown" as const,
-				reason: `cannot compute the patch id of what its HEAD adds${own._tag === "Failure" ? `: ${own.reason}` : ""}`,
-			};
-		}
-
-		const paths = yield* diffRangePaths(trunk, head);
-		if (paths._tag === "Failure") {
-			return {
-				_tag: "Unknown" as const,
-				reason: `cannot list the paths it changes: ${paths.reason}`,
-			};
-		}
-		const base = yield* mergeBase(trunk, head);
-		if (base._tag === "Failure") {
-			return {
-				_tag: "Unknown" as const,
-				reason: `it shares ${yield* noMergeBaseReason(trunk, base.reason)}`,
-			};
-		}
-		const landed = yield* patchIdsIn(base.value, trunk, paths.value, TRUNK_SCAN);
-		if (landed._tag === "Failure") {
-			return {
-				_tag: "Unknown" as const,
-				reason: `cannot scan ${trunk} for the patch it adds: ${landed.reason}`,
-			};
-		}
-		const match = landed.value.find((row) => row.patch === mine.patch);
-		return match === undefined
-			? {_tag: "Unlanded" as const}
-			: {_tag: "Squashed" as const, commit: match.commit};
 	});
