@@ -682,7 +682,12 @@ because staleness was the only wrongness it could see and a coder-template lane 
 grafts cleanly and read `current`. Exit `46` names the lanes running a machine their issue
 does not call for; each is skipped, never written, and an epic's is rebuilt in two steps — retire the
 lane directory, then `lane emit <n>`. Every judged row carries `shape` — `matches`, `mismatched` with
-a reason, or `unknown` with one — and `unknown` is a board read that failed, never a lane that passed.
+a reason, `duplicate` with a reason and the parent, or `unknown` with one — and `unknown` is a board
+read that failed, never a lane that passed.
+
+A `duplicate` row is a lane booted for an epic's **child**, whose parent's lane already owns the
+work. It is report-only and moves no exit code: the reason names the parent's lane, and retiring the
+stray directory is an operator's act this sweep never takes.
 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:
 
