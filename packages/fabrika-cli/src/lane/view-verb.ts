@@ -6,9 +6,10 @@
  * the same roots) and HOW AN EVENT IS RECORDED ({@link runTransition}).
  *
  * That second one is why this is safe to add. The page never touches `events.jsonl` — it asks this
- * verb, which asks `lane transition`, which validates against the folded state FIRST and appends
- * only an event the machine accepts. One writer, one set of rules, exactly as before this verb
- * existed: the screen cannot drift from the ledger because it cannot write to it.
+ * verb, which asks `lane transition`, which validates against the folded state FIRST, proves the
+ * artifact the event claims, and appends only what clears both. One writer, one set of rules,
+ * exactly as before this verb existed: the screen cannot drift from the ledger because it cannot
+ * write to it, and a park recorded from a button is proof-gated like one typed at the CLI.
  */
 import {serveLaneViewer, type TransitionRequest} from "@demlik/tea/chart/lane/server";
 import {Effect, type FileSystem, type Path, Result, Schema} from "effect";
@@ -17,6 +18,7 @@ import type {Read} from "../config/read-key.ts";
 import {readDir} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
+import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const VERB = "fabrika lane view";
@@ -61,11 +63,17 @@ export interface ViewOptions {
 	 * this door exactly as it binds the CLI's — a park recorded from a button is still a park.
 	 */
 	readonly parkCause: Read<ParkCauseSurface>;
+	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
+	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	readonly cwd: string;
+	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-export const runView = (
+export const runView = <R>(
 	options: ViewOptions,
-): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+	prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>,
+): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		const listing = yield* Effect.result(readDir(options.root));
 		if (Result.isFailure(listing)) {
@@ -78,23 +86,29 @@ export const runView = (
 
 		// The HTTP callbacks are plain promises, so the verb's services have to cross into them.
 		// Effect v4 has no `Runtime`: grab the context once and run each callback with it.
-		const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
-		const run = <A>(effect: Effect.Effect<A, never, FileSystem.FileSystem | Path.Path>) =>
+		const services = yield* Effect.context<FileSystem.FileSystem | Path.Path | R>();
+		const run = <A>(effect: Effect.Effect<A, never, FileSystem.FileSystem | Path.Path | R>) =>
 			Effect.runPromiseWith(services)(effect);
 
 		const transition = (req: TransitionRequest) =>
 			run(
-				runTransition({
-					root: options.root,
-					lane: req.lane,
-					event: req.event,
-					task: req.task ?? null,
-					cause: null,
-					parkCause: options.parkCause,
-					classes: [],
-					waitGrant: null,
-					rationale: null,
-				}).pipe(
+				runTransition(
+					{
+						root: options.root,
+						lane: req.lane,
+						event: req.event,
+						task: req.task ?? null,
+						cause: null,
+						parkCause: options.parkCause,
+						classes: [],
+						waitGrant: null,
+						rationale: null,
+						repo: options.repo,
+						cwd: options.cwd,
+						env: options.env,
+					},
+					prove,
+				).pipe(
 					// The transition verb's own words, either way: a refusal it proved beats anything
 					// this file could compose, and its answer line already names what it appended.
 					Effect.map((out) => ({ok: out.code === 0, message: out.stderr.join(" ")})),

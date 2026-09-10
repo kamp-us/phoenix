@@ -2,9 +2,37 @@
  * Shared lane fixtures: the committed coder and chore templates read verbatim (the golden-fixture
  * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
+import {Effect} from "effect";
 import type {DriverRouted, ParkCauseSurface, Uncaused} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
+import {answer, type VerbOutcome} from "../verb.ts";
+import type {ProveOptions} from "./prove-verb.ts";
+
+/**
+ * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
+ * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
+ * at exit 0 for an event that claims no artifact, so the default lets an append through.
+ *
+ * Both appending verbs take their prover as a parameter so their unit tiers stay offline; this is
+ * the one stand-in, shared so the driver's path and the shell's are exercised against one fake.
+ */
+export const fakeProver = (
+	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
+	deferred: ReadonlyArray<string> = [],
+	partial: boolean | null = null,
+	landed: ReadonlyArray<number> = [],
+) => {
+	const asked: ProveOptions[] = [];
+	return {
+		asked,
+		prove: (options: ProveOptions) =>
+			Effect.sync(() => {
+				asked.push(options);
+				return {...outcome, deferred, partial, landed};
+			}),
+	};
+};
 
 /** A `parkCause` read at any arm, for a verb test that does not open a config file. */
 export const parkCauseRead = (

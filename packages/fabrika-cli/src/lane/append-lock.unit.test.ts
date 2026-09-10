@@ -13,7 +13,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {acquireLedgerLock} from "./append-lock.ts";
 import {CONCURRENT_WRITE, EVENT_REFUSED, LANE_ABSENT} from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -30,17 +30,23 @@ const freshLane = (extra: Parameters<typeof fakeFs>[0] = {}) =>
 const run = (fs: ReturnType<typeof fakeFs>) =>
 	Effect.runPromise(
 		Effect.provide(
-			runTransition({
-				root: ROOT,
-				lane: "42",
-				event: "WIP",
-				task: null,
-				cause: null,
-				parkCause: parkCauseRead(),
-				classes: [],
-				waitGrant: null,
-				rationale: null,
-			}),
+			runTransition(
+				{
+					root: ROOT,
+					lane: "42",
+					event: "WIP",
+					task: null,
+					cause: null,
+					parkCause: parkCauseRead(),
+					classes: [],
+					waitGrant: null,
+					rationale: null,
+					repo: "o/r",
+					cwd: "/checkout",
+					env: {},
+				},
+				fakeProver().prove,
+			),
 			fs.layer,
 		),
 	);
