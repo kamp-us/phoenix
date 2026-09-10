@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
 	LANE_ABSENT,
@@ -9,6 +10,7 @@ import {
 	PROOF_CONTRADICTED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
@@ -474,5 +476,79 @@ describe("lane report — a reviewer's terminal is the one its run reached", () 
 			expect(out.code).toBe(PROOF_CONTRADICTED);
 			expect(fs.written.size).toBe(0);
 		}
+	});
+});
+
+describe("lane report — a queue wait is floored on elapsed time, not on driver passes", () => {
+	const secondsAgo = (seconds: number): string =>
+		new Date(Date.now() - seconds * 1000).toISOString();
+
+	/** The `ship:queued` prefix, with the entering `WIP`'s clock under the test's control. */
+	const queuedSince = (at: string): string =>
+		`${LOG_AT.ship}${JSON.stringify({task: "issue", event: "ISSUE.WIP", at})}\n`;
+
+	it("refuses a re-fold inside the floor, naming the seconds still to run, log byte-identical", async () => {
+		const fs = laneAt(queuedSince(secondsAgo(90)));
+
+		const out = await run(fs, "UNRESOLVED");
+
+		expect(out.code).toBe(WAIT_TOO_SOON);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(out.stderr.at(-1)).toContain("390s are still to run");
+		expect(out.stderr.at(-1)).toContain("The wait is intact");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records a re-fold past the floor, spending the wait", async () => {
+		const fs = laneAt(queuedSince(secondsAgo(WAIT_FLOOR_SECONDS + 1)));
+
+		const out = await run(fs, "UNRESOLVED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({token: "UNRESOLVED", event: "ISSUE.WIP"});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({task: "issue", event: "ISSUE.WIP"});
+	});
+
+	/**
+	 * Only the re-read of the same queue is floored. Every other event out of `ship:queued` is an
+	 * answer about that queue, spends no wait, and must land the moment the shipper has it.
+	 */
+	it("leaves every non-wait record on the same task unaffected inside the floor", async () => {
+		const answers: ReadonlyArray<readonly [string, string]> = [
+			["LANDED", "DONE"],
+			["EJECTED", "FAIL"],
+			["AWAITING-CP-APPROVAL", "BLOCKED"],
+		];
+		for (const [token, event] of answers) {
+			const fs = laneAt(queuedSince(secondsAgo(1)));
+
+			const out = await run(fs, token);
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(appendedLine(fs))).toMatchObject({event: `ISSUE.${event}`});
+		}
+	});
+
+	/** Entering the queue is not a re-read of it, so the shipper's own `QUEUED` is never floored. */
+	it("records the enqueue that enters ship:queued however fresh the line before it", async () => {
+		const fs = laneAt(
+			`${LOG_AT.review}${JSON.stringify({task: "issue", event: "ISSUE.PASS", at: secondsAgo(1)})}\n`,
+		);
+
+		const out = await run(fs, "QUEUED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.WIP"});
+	});
+
+	it("refuses a re-fold whose clock reads as no date — an unreadable floor never cleared", async () => {
+		const fs = laneAt(queuedSince("whenever"));
+
+		const out = await run(fs, "UNRESOLVED");
+
+		expect(out.code).toBe(WAIT_TOO_SOON);
+		expect(out.stderr.at(-1)).toContain("UNKNOWN");
+		expect(fs.written.size).toBe(0);
 	});
 });
