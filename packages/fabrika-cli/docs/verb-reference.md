@@ -566,6 +566,7 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
+| `hook pre-bash` | whether a Bash command opens with a directory jump out of the linked worktree it runs in |
 | `hook worktree-create` | the absolute path of the provisioned worktree the envelope named, after a bounded sweep of what this clone can reclaim |
 
 **Exit codes.** `3` stdin held nothing · `12` bytes arrived and are provably not an envelope ·
@@ -573,7 +574,9 @@ surface's convention lives in
 judges. Three failure codes rather than one, so an unread pipe cannot pass for a bad payload.
 `worktree-create` adds four proven refusals of its own: `15` the envelope names no creatable
 worktree · `16` the base could not be fetched · `17` `git worktree add` failed · `18` the tree was
-created and arrived dep-less.
+created and arrived dep-less. `pre-bash` adds `19` the working tree the envelope's `cwd` belongs to
+could not be established — a fail-open, since a guard that could not read its own ground has judged
+nothing.
 
 - **The required fields are captured, not assumed.** They are the keys present in every real
   envelope committed at `src/hook/__fixtures__/`, with each capture's method and harness version
@@ -617,6 +620,23 @@ created and arrived dep-less.
   ([#7331](https://github.com/kamp-us/phoenix/issues/7331)). Any other diagnostic refuses on the
   first attempt, an exhausted one still refuses at `16`/`17` naming git's own line, and a recovered
   add is still held to the tree existing and its virtual store landing.
+- **`hook pre-bash` is the one verb here that decides anything, and it decides one thing.** A Bash
+  command whose *leading* `cd`/`pushd` resolves outside the linked worktree it runs in is denied,
+  whatever follows it — because what follows can reach git in a child process, which carries no
+  `git` token for the harness's textual check to match and moved the shared checkout's HEAD twice
+  ([#6072](https://github.com/kamp-us/phoenix/issues/6072), ADR
+  [0388](../../../.decisions/0388-a-leading-directory-jump-out-of-an-isolated-worktree-is-refused.md)).
+  A target that only exists once the shell has expanded it is denied too, on the same ground the
+  harness gives for a command it cannot statically verify. It arms **only** inside a linked worktree:
+  the primary checkout and a cwd under no repository are allowed untouched, because which tree an
+  operator works in is their call, made at spawn time
+  ([#5386](https://github.com/kamp-us/phoenix/issues/5386)) — the escape is what is judged, not the
+  isolation.
+- **Its verdict is JSON on stdout, never an exit code.** A deny is
+  `hookSpecificOutput.permissionDecision`, at exit 0, because `2` is the harness's one blocking code
+  and fabrika allocates it nowhere. An allow carries **no** decision field at all: `"allow"` is not
+  "no objection" to the harness, it bypasses the permission rules the operator configured, which is
+  a far larger claim than this guard makes.
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human

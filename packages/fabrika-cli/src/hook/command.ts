@@ -15,6 +15,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runPreBash} from "./pre-bash-verb.ts";
 import {type CliEntry, runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
@@ -44,6 +45,21 @@ const codes = leafCommand(
 	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
 		"Print the exit taxonomy every verb in this group allocates from. Stdout is one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika hook codes",
+	),
+);
+
+const preBash = leafCommand(
+	"pre-bash",
+	{},
+	Effect.fn(function* () {
+		yield* emitOutcome(
+			yield* runPreBash({stdin: Effect.sync(readStdin), env: globalThis.process.env}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Refuse a Bash command that jumps out of its isolated worktree."),
+	Command.withDescription(
+		"Judge the PreToolUse Bash envelope on STDIN and refuse a command whose LEADING directory jump (`cd`, `pushd`) resolves outside the linked worktree it runs in — whatever follows it, because a program that reaches git in a child process carries no `git` token for the harness's textual check to match and has moved a shared checkout's HEAD in the field. Arms only inside a linked worktree; the primary checkout and a cwd under no repository are allowed untouched, since isolation is the operator's call. A jump whose target expands at run time is refused too — where it lands cannot be decided before it runs. THE VERDICT IS JSON ON STDOUT, NEVER AN EXIT CODE: a deny is `hookSpecificOutput.permissionDecision` at exit 0, because `2` is the harness's one blocking code and fabrika allocates it nowhere; an allow carries no decision field at all, since `allow` would bypass the operator's own permission rules. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (an event or tool this verb does not judge), 19 (the cwd's working tree could not be established — the jump was NOT judged and the command proceeds). Every non-zero exit shows stderr and lets the command through. Example: fabrika hook pre-bash",
 	),
 );
 
@@ -90,6 +106,7 @@ export const hookCommand = Command.make("hook").pipe(
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		check,
 		codes,
+		preBash,
 		worktreeCreate,
 	]),
 	Command.withShortDescription("Own fabrika's Claude Code hook surface."),
