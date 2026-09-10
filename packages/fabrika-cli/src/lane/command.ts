@@ -46,7 +46,7 @@ import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {boardReaders, runSettle} from "./settle-verb.ts";
-import {DEFAULT_STALE_MINUTES} from "./stale.ts";
+import {DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
 import {
@@ -812,7 +812,7 @@ const stale = leafCommand(
 		olderThan: Flag.integer("older-than").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`minutes of silence before a lane something is owed on is stale (default: ${DEFAULT_STALE_MINUTES})`,
+				`override the horizon for every lane, in minutes (default: each lane's own shell budget — ${SHELL_BUDGETS.build.minutes} for a build, ${SHELL_BUDGETS.review.minutes} for a review, ${SHELL_BUDGETS.ship.minutes} for a ship, ${DISPATCH_BUDGET.minutes} for a task awaiting dispatch)`,
 			),
 		),
 		claims: Flag.boolean("claims").pipe(
@@ -846,7 +846,7 @@ const stale = leafCommand(
 			yield* onGround("stale", roots, process.cwd(), () =>
 				runStale({
 					roots,
-					olderThanMinutes: Option.getOrElse(olderThan, () => DEFAULT_STALE_MINUTES),
+					olderThanMinutes: Option.getOrNull(olderThan),
 					now: new Date().toISOString(),
 					claims: claims ? claimReader(Option.getOrNull(repo), process.env) : null,
 				}),
@@ -856,7 +856,7 @@ const stale = leafCommand(
 ).pipe(
 	Command.withShortDescription("Which lanes have gone quiet with something owed on them."),
 	Command.withDescription(
-		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever; the age here comes off the \`at\` every event line already carries — nothing new is stored. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that. Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded BUILD claim leaves through "fabrika build adopt" then "fabrika build release", and the LANE claim a killed operator seat strands on the same issue — which this sweep does not read — leaves through "fabrika lane adopt" then "fabrika lane release". "fabrika build claimants <n>" reads one issue's build claims the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane stale · fabrika lane stale --older-than 30 · fabrika lane stale --claims`,
+		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever; the age here comes off the \`at\` every event line already carries — nothing new is stored. How long a lane may be silent is its OWN horizon, not one number for the pipeline: each lane is judged against the budget of the work driving it — a build shell's, a review shell's, a ship shell's, or the dispatch budget for a task nothing has picked up — and every row reports the budgetMinutes it was judged against. --older-than overrides that for every lane; without it, olderThanMinutes in the answer is null, which says the budgets did the judging. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes, the budget it was judged against and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that. Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded BUILD claim leaves through "fabrika build adopt" then "fabrika build release", and the LANE claim a killed operator seat strands on the same issue — which this sweep does not read — leaves through "fabrika lane adopt" then "fabrika lane release". "fabrika build claimants <n>" reads one issue's build claims the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane stale · fabrika lane stale --older-than 120 · fabrika lane stale --claims`,
 	),
 );
 

@@ -63,6 +63,10 @@ export const SHELL_VOCABULARIES = {
 		"BASE-DRIFTED": "LAP",
 		"QUEUE-EJECTED": "LAP",
 		"SEAT-DIRTY": "LAP",
+		// A shell the provider killed is machinery by the same test as the four above: nothing about
+		// the artifact was judged, so a death that spent a repair round would be charging the ticket
+		// for the pipeline's failure.
+		"SHELL-DEAD": "LAP",
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
@@ -311,6 +315,11 @@ export const PARK_CAUSES = {
 	 * because no verb can spawn an agent to test the latter: the operator's next dispatch is that
 	 * test.
 	 *
+	 * **A death is noticed by the clock, not by a person.** There is no heartbeat, so what says a
+	 * shell died is its claim outliving the budget for the kind of work it took (`./shell-budget.ts`),
+	 * and the `SHELL-DEAD` machinery terminal is how that recording reaches the ledger — as a lap,
+	 * carrying this cause, leaving the repair budget alone.
+	 *
 	 * Route `driver`: the residue is the driver's own, and the re-dispatch is the driver's move.
 	 */
 	"spawn-dead": {
@@ -399,6 +408,7 @@ export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"BASE-DRIFTED": "head-behind-base",
 	"QUEUE-EJECTED": "queue-ejected",
 	"SEAT-DIRTY": "worktree-holds-branch",
+	"SHELL-DEAD": "spawn-dead",
 };
 
 /** The cause a machinery terminal carries on its own, or `null` for every other token. */

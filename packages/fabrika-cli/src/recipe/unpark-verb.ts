@@ -27,8 +27,8 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {readClaimants} from "../build/claim.ts";
 import {WORKTREE_HELD} from "../build/codes.ts";
+import {reclaimDeadClaim} from "../build/dead-claim.ts";
 import {worktreeCheckouts} from "../build/git.ts";
 import {childLaneBranches} from "../build/lane.ts";
 import {runRetire} from "../build/retire-verb.ts";
@@ -43,6 +43,7 @@ import {isRecord, parseJson} from "../io/json.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {routeForCause} from "../lane/report.ts";
+import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {BASE_REF} from "../ledger/ground.ts";
@@ -77,6 +78,8 @@ export interface UnparkOptions {
 	/** The checkout whose `.fabrika.jsonc` declares where the campaigns table lives. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The instant a stranded claim's age is measured against, ISO — the adapter's clock. */
+	readonly now: string;
 	/**
 	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
 	 *
@@ -550,12 +553,17 @@ const treesFreedOf = (
  *
  * It proves a dispatch is possible, never that the provider is back — no verb can spawn an agent, so
  * the operator's next dispatch is that test and a still-down provider re-parks the lane. The two
- * halves are residue the driver session owns: a build claim the dead shell stranded, which is a hold
- * until `build release` or a board-attested `build adopt` succession retracts it — this verb evicts
- * nothing from absence — and a working tree still holding its lane branch, which the row's
- * `build retire` remedy takes back where a license reaches it. After the release above the only
- * license left is the unclaimed-lane one, which reads the tree for proof it carries nothing rather
- * than leaning on a written board state.
+ * halves are residue the driver session owns: a build claim the dead shell stranded, and a working
+ * tree still holding its lane branch, which the row's `build retire` remedy takes back where a
+ * license reaches it.
+ *
+ * **The stranded claim is retracted here, on proof rather than on absence.** There is no heartbeat,
+ * so what proves the shell dead is its claim outliving the budget for the kind of work it took
+ * (`../lane/shell-budget.ts`), and {@link reclaimDeadClaim} retracts it and re-reads the board to
+ * prove it gone. A claim still inside its budget is a shell that may be working, so the park holds;
+ * a retraction the re-read does not confirm is a read-back mismatch, never a clear. That is what
+ * ends the hand `build adopt` + `build release` this row used to require of a person for a failure
+ * nobody chose.
  *
  * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
  * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut
@@ -588,30 +596,56 @@ const clearSpawnClear = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return no(resolved.outcome);
 
-		const claimants = yield* readClaimants(resolved.repo, issue);
-		if (claimants._tag === "Unknown") {
+		const nowEpochMs = Date.parse(options.now);
+		if (Number.isNaN(nowEpochMs)) {
 			return no(
 				refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read who claims #${issue}: ${claimants.reason} — whether the dead shell stranded a claim is UNKNOWN, never cleared.`,
+					`${VERB}: "${options.now}" is not an instant to measure a stranded claim's age against — whether the dead shell's claim is past its budget is UNKNOWN, never cleared.`,
 				),
 			);
 		}
-		const claimed = scannedLine(
-			VERB,
-			claimants.claimants.length,
-			"build claim marker",
-			`#${issue}`,
+		const reclaimed = yield* reclaimDeadClaim(
+			resolved.repo,
+			issue,
+			nowEpochMs,
+			BUILD_CLAIM_BUDGET_MINUTES,
 		);
-		if (claimants.holder !== null) {
+		if (reclaimed._tag === "Unknown") {
+			return no(
+				refuse(PRECONDITION_UNKNOWN, `${VERB}: ${reclaimed.reason} — the park is not cleared.`),
+			);
+		}
+		if (reclaimed._tag === "StillHeld") {
+			return no(
+				refuse(
+					READBACK_MISMATCH,
+					`${VERB}: ${reclaimed.reason} — the retraction is not proven, so nothing here says the park is clear.`,
+				),
+			);
+		}
+		const claimed = scannedLine(VERB, reclaimed.scanned, "build claim marker", `#${issue}`);
+		if (reclaimed._tag === "Alive") {
 			return no(
 				refuse(
 					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${claimants.holder.token} still claims #${issue}; release it, or run the board-attested adopt succession, then unpark again. Nothing was written.`,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${reclaimed.token} has claimed #${issue} for ${reclaimed.ageMinutes} of its ${reclaimed.budgetMinutes} minute(s), so its shell may still be working. Nothing was written.`,
 					[claimed],
 				),
 			);
 		}
+		const released =
+			reclaimed._tag === "Released"
+				? [
+						`${VERB}: ${reclaimed.token} had claimed #${issue} for ${reclaimed.ageMinutes} minute(s), past the ${reclaimed.budgetMinutes}-minute budget for the work it took — ${reclaimed.retracted} marker(s) retracted, and #${issue} re-reads unclaimed.`,
+					]
+				: [];
+		// The retraction rides the mechanism as well as stderr: the mechanism is what the answer
+		// carries, and a clear that silently evicted a claim would leave no trace in the record.
+		const retracted =
+			reclaimed._tag === "Released"
+				? ` (retracted ${reclaimed.token} at ${reclaimed.ageMinutes}m, past the ${reclaimed.budgetMinutes}-minute budget)`
+				: "";
 
 		const branches = yield* localBranches;
 		if (branches._tag === "Failure") {
@@ -619,7 +653,7 @@ const clearSpawnClear = (
 				refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read this clone's local branches: ${branches.reason} — whether a working tree still holds #${issue}'s lane branch is UNKNOWN, never cleared.`,
-					[claimed],
+					[claimed, ...released],
 				),
 			);
 		}
@@ -627,20 +661,20 @@ const clearSpawnClear = (
 		if (candidates.length === 0) {
 			return {
 				_tag: "Cleared",
-				mechanism: `spawn-clear:#${issue} unclaimed, no lane branch`,
+				mechanism: `spawn-clear:#${issue} unclaimed${retracted}, no lane branch`,
 				waitGrant: null,
 			};
 		}
 
-		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed]);
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed, ...released]);
 		if (freed._tag === "Refused") return no(freed.outcome);
 
 		return {
 			_tag: "Cleared",
 			mechanism:
 				freed.retired === 0
-					? `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free`
-					: `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
+					? `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free`
+					: `spawn-clear:#${issue} unclaimed${retracted}, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
 			waitGrant: null,
 		};
 	});

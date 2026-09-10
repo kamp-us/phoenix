@@ -53,6 +53,7 @@ const unparkFrom = (fs: ReturnType<typeof fakeFs>, cwd: string, root: Option.Opt
 							repo: null,
 							cwd,
 							env: ENV,
+							now: "2026-08-29T00:20:00.000Z",
 							parkCause: parkCauseRead(),
 							rationale: null,
 						})
