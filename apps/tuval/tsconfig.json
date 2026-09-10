@@ -41,7 +41,9 @@
 	// `src/shell/chat/rows.ts` — pure, but inside the slice this lens excludes whole.
 	// `src/ai-agent/restore/refill.unit.test.ts` is split for that same directory reason: it asserts
 	// what a restored tail *renders*, so it reaches `src/shell/chat/rows.ts` — pure, but inside the
-	// slice this lens excludes whole (#8855). `src/agy/ai-agent/paging-from-live.unit.test.ts` is
+	// slice this lens excludes whole (#8855). `interrupted-mark.unit.test.tsx` beside it goes further
+	// and mounts the window itself, so it reaches `@kampus/design` through it (#8895).
+	// `src/agy/ai-agent/paging-from-live.unit.test.ts` is
 	// split for the same reason: it joins agy's history page to the live tail the window holds, so it
 	// reaches that same pure module for the stitch (#8900).
 	// `src/pi/renderer-ref.ts`, `src/claude/renderer-ref.ts`, `src/agy/renderer-ref.ts`,
@@ -67,6 +69,7 @@
 		"src/claude/proof/subagent-vertical.integration.test.ts",
 		"src/claude/proof/subagent-paging.integration.test.ts",
 		"src/ai-agent/restore/refill.unit.test.ts",
+		"src/ai-agent/restore/interrupted-mark.unit.test.tsx",
 		"src/agy/ai-agent/paging-from-live.unit.test.ts"
 	]
 }
