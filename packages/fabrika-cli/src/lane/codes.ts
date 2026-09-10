@@ -478,3 +478,24 @@ export const CHILD_UNSEATED = 54;
  * "cleared".
  */
 export const WAIT_TOO_SOON = 55;
+
+/**
+ * The issue the assembly PR's prose was asked for is not an epic — it carries no `type:epic`.
+ *
+ * Its own seat rather than {@link ISSUE_UNRESOLVED}'s: the issue resolved fine, and what is wrong is
+ * which issue was named. A non-epic's title would take a `chore`/`fix` prefix and the `(epic)` scope
+ * would be a lie about a subject that is going to land on `main` — so the refusal names the number
+ * rather than deriving a title nobody meant.
+ */
+export const NOT_AN_EPIC = 56;
+
+/**
+ * The derived `## About this epic` section still asserts something `build pr`'s body guard refuses,
+ * after the mechanical neutralisation — a closing keyword aimed elsewhere, or a classification
+ * claim, each named.
+ *
+ * Fail-closed on purpose. The alternative is editing a claim about a gated question until it only
+ * *looks* safe, and the remedy is a person's: reword the epic's Problem paragraph, or write the
+ * section by hand. The title is unaffected and a second call with `--field title` still answers.
+ */
+export const ABOUT_UNSAFE = 57;
