@@ -52,6 +52,10 @@
 		"packages/fabrika-cli/src/build/claim-verb.unit.test.ts": {
 			"ceiling": 3,
 			"why": "The three `--cites` values a claim is admitted on, bound to the same hosted citation grammar `parseCitation` pins; every other fixture URL in the file is either a placeholder host or an API endpoint the matcher does not reach. The pin itself is the portability defect, parked behind #8359."
+		},
+		"packages/fabrika-cli/src/build/resume-child-verb.unit.test.ts": {
+			"ceiling": 3,
+			"why": "The three `--cites` values `build resume-child` forwards to its claim step, bound to the same hosted citation grammar `parseCitation` pins in its own regex: one URL the run is admitted on, one naming another repository and one naming another issue. Those two bindings are what the fail-closed cases assert, and neither can be exercised by a URL the regex never reaches. Same class and same clearing edge as its two siblings above; the pin itself is the portability defect, parked behind #8359."
 		}
 	},
 	"unmigrated": {
@@ -146,8 +150,8 @@
 			]
 		},
 		"cli-tail": {
-			"ceiling": 7,
-			"why": "#8310 swept the remaining small groups and the top-level modules under src/ to four residues, none of them prose. All four were citation URLs under test in packages/fabrika-cli/src/decision — three in rule-verb.unit.test.ts and one in ruling-verb.unit.test.ts. `parseCitation` and `RULING_URL_RE` pin the github.com host in their own regexes, so a citation on any other host exercises nothing and the assertion stops testing what it names. Same class as the two build/ rows already carved out for it; the host pin itself is the portability defect, parked behind #8359. The ceiling moved 4 to 7 when `build resume-child` gained the same `--cites` arm and its battery in packages/fabrika-cli/src/build/resume-child-verb.unit.test.ts had to cover it: one URL the run admits, one naming another repository and one naming another issue, which are the two bindings `parseCitation` enforces and cannot be asserted without a URL that reaches its regex. Identical class, identical clearing edge — the three leave with the other four on #8359.",
+			"ceiling": 4,
+			"why": "#8310 swept the remaining small groups and the top-level modules under src/ to four residues, none of them prose. All four are citation URLs under test in packages/fabrika-cli/src/decision — three in rule-verb.unit.test.ts and one in ruling-verb.unit.test.ts. `parseCitation` and `RULING_URL_RE` pin the github.com host in their own regexes, so a citation on any other host exercises nothing and the assertion stops testing what it names. Same class as the two build/ rows already carved out for it; the host pin itself is the portability defect, parked behind #8359.",
 			"paths": ["packages/fabrika-cli/src"]
 		}
 	}
