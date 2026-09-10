@@ -41,8 +41,7 @@ model a subagent runs on is a per-run human choice, named at the spawn, and a ho
 guesses it only blocks the choice the human already made.
 
 Every shell leaves `model:` unset, so a spawn inherits the caller's model unless the caller names
-one. [`packages/fabrika-cli/src/models.ts`](../../../packages/fabrika-cli/src/models.ts) is still
-the house vocabulary — the canonical ids and their harness aliases.
+one. The unused model vocabulary and its tests were also deleted; historical lookup stays in git.
 
 ## Which shells carry a spawn tool
 
