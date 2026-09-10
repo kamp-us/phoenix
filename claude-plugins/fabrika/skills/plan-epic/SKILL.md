@@ -328,8 +328,13 @@ EOF
 
 Each phase member and each `requires:` subject is one of this epic's children, by its real issue
 number. The verb validates against the manifest and renders the block; it refuses a cycle, a
-subject that is not a child, and a child that appears nowhere. `24` is a proven-bad topology and
-nothing has been written to the epic.
+subject that is not a child, a child that appears nowhere, and a `requires:` naming the epic itself.
+`24` is a proven-bad topology and nothing has been written to the epic.
+
+**Never write `requires #$epic_number`.** A child blocked on its own parent can never be claimed —
+an epic closes only once its children close — so the verb refuses that line on `24` before it reads
+anything. It reaches the immediate parent only: a grandparent epic reads to the verb exactly like
+the cross-epic edge below, so keep an ancestor of this child off the line yourself.
 
 **A prerequisite may sit in another epic, and this is the only place to say so.** The decision corpus
 rules a `requires:` reference to an issue another epic owns a legitimate gating edge, so write it on

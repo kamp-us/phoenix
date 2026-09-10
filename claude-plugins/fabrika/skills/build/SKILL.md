@@ -357,6 +357,22 @@ round leaves two markers, and the reader refuses two conforming headings as unde
 UNKNOWN the tail review cannot pass. Re-run the verb on every round: it edits the standing
 marker in place.
 
+**On every round after the first, the section you send is the whole range's disclosure, not the
+round's.** Editing in place means what you send *replaces* what stands, so the entries the round
+before yours disclosed — still true of the range a reviewer grades — leave with your rewrite unless
+you carry them. Read what stands first, and build this round's section out of it:
+
+```bash
+fabrika build deviations <n> --token <claim-token> --standing > round.md
+```
+
+That prints the standing `## Deviations` section, or nothing when yours is the first round. Edit
+`round.md`: keep every entry still true, add this round's, and **retire an entry by restating it
+with a `Disposition` that says what became of it** — `corrected — the revert in <sha> removes it`,
+never by deleting the bullet. Entries match on `Said`, so revise `Did`, `Why` and `Disposition`
+freely. Send the result on stdin as above; a section that drops a standing entry is exit `35`,
+naming each one.
+
 The epic-tail review reads every landed child's comment from there, so a child with nothing to
 disclose still posts the checked `None.` — an absent comment reads as "never considered it", not as
 "nothing to disclose". A child that lands its commit and posts that comment ends on `BUILT-NO-PR`,
@@ -623,6 +639,10 @@ and report that terminal with `--cause worktree-holds-branch`, the park this exa
 `recipe unpark` can clear it without a person. From
 there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
+**That comment discloses this child's whole `base..tip` range, not the commits this round added** —
+so run `build deviations <n> --standing` before you author it, judge every entry it prints against
+the range as it now stands, and send back all of them plus your own. The verb refuses a section that
+drops one.
 `build clear` is not the door on this path — it is pull-request-keyed from its first line, and a
 child opens none — so a child at its cap escalates to the driver, whose `lane clear` records the
 grant against the lane's own log instead. That is still not yours to run: you escalate, the driver
