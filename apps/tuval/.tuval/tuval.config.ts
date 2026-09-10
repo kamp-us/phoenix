@@ -5,7 +5,9 @@
 // agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
 // The ninth is the worked `pr-review` example (#8734), and it is the only row behind a flag —
 // `prReviewExample` in the `features` block below, default-off, so a desk booted today carries the
-// eight. Flip that line and restart the desk to get the ninth.
+// eight. Flip that line and restart the desk to get the ninth. The tenth is `cron` (#8716's
+// authoring layer, written on it rather than for it), behind `cron` in the same block and
+// default-ON — it is planned in `graph`, so it is one of the processes a fresh boot stands up.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -32,8 +34,10 @@ import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
+import {cron, sessionAsJob} from "../src/cron/cron.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
+import {NodeId} from "../src/ports/graph.ts";
 import {ProcessId} from "../src/process/process.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
@@ -66,7 +70,28 @@ const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope}
  * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
  * — a row is this file's to state. ADR 0375 records that.
  */
-const features = {prReviewExample: false};
+const features = {prReviewExample: false, cron: true};
+
+/** The desk's own scheduler. Named here because both its row and its graph node read it. */
+const cronNode = NodeId.make("cron");
+
+/**
+ * The first job: a read-only standup off the `gh` CLI. Ten minutes between wakes is deliberate — a
+ * planned node ticks from boot, and a job that spends tokens on a short timer is a desk nobody
+ * leaves running. `:cron run` is the on-demand path.
+ *
+ * **The job does not start yet, and the log says so every wake.** `spawn` on a shaped arg resolves
+ * the arg's own service key through the registry rather than reading the filled program back out of
+ * `R` (#8762, and `../src/authoring/args.ts` says as much), so every tick logs one
+ * `UnknownProgram: tuval/arg/cron/job` and cron's status stays `idle` — which is the truth. The
+ * fill below is the one this row wants the day that seam closes.
+ */
+const cronJob = cron({
+	everyMs: 10 * 60 * 1000,
+	prompt:
+		"Using the gh CLI, summarize what changed on kamp-us/phoenix in the last 24 hours: merged PRs, new issues, anything labeled ready-for:human. Five lines max, most important first.",
+	job: sessionAsJob(claudeSession({cwd: projectRoot, scope: claudeSessionScope})),
+});
 
 export default {
 	version: 1,
@@ -93,10 +118,19 @@ export default {
 		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
 		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
 		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
+		// The scheduler (#8716's authoring layer, first program written on it). Planned below, so it
+		// is live at boot and its tile says what the last run did.
+		...(features.cron ? [cronJob] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),
 	],
 	features,
-	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
+	graph: {
+		nodes: [
+			shellGraphNode,
+			...demoGraph.nodes,
+			...(features.cron ? [{id: cronNode, program: cronJob.id, on: []}] : []),
+		],
+	},
 } satisfies TuvalConfigInput;
