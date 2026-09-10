@@ -19,9 +19,13 @@
  *      pass against the fabricated shape too, which is the litmus the pattern doc sets.
  */
 import {spawnSync} from "node:child_process";
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {loadGoldenPayload, readGoldenFixture} from "../golden-fixture.ts";
+import {readUsageLedger} from "../spend/usage-ledger.ts";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {MALFORMED_ENVELOPE, WRONG_EVENT} from "./codes.ts";
 import {argvOf, declaredHooks, violations} from "./declaration.ts";
@@ -80,8 +84,23 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect(violations(surface)).toEqual([]);
 	});
 
-	it("declares every hook on an event whose real envelope is committed beside this test", () => {
-		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual(["SessionStart"]);
+	it("requires captured-input coverage for every declared handler", () => {
+		expect([...new Set(surface.map((hook) => hook.command))].sort()).toEqual([
+			"fabrika hook check",
+			"fabrika hook claude-spend",
+		]);
+		expect(
+			[
+				...new Set(
+					surface.filter((hook) => hook.command === "fabrika hook check").map((hook) => hook.event),
+				),
+			].sort(),
+		).toEqual(["SessionStart"]);
+		expect(
+			surface.every((hook) =>
+				["fabrika hook check", "fabrika hook claude-spend"].includes(hook.command),
+			),
+		).toBe(true);
 	});
 
 	/**
@@ -92,6 +111,71 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 	 */
 	it("declares no provider event on the plugin surface, which adopting repos inherit", () => {
 		expect(surface.filter((hook) => hook.event.startsWith("Worktree"))).toEqual([]);
+	});
+});
+
+describe("the declared usage collector, run against captured envelopes", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	it.each([
+		["SessionStart", "__fixtures__/session-start.payload.golden.json"],
+		["SubagentStop", "../spend/claude/fixtures/subagent-stop.payload.golden.json"],
+	])("collects from the captured %s key set", (event, fixture) => {
+		const declared = surface.find(
+			(row) => row.event === event && row.command === "fabrika hook claude-spend",
+		);
+		expect(declared).toBeDefined();
+		if (!declared) throw new Error(`missing collector on ${event}`);
+		const captured = loadGoldenPayload(import.meta.url, fixture);
+		expect(captured.hook_event_name).toBe(event);
+		const dir = mkdtempSync(join(tmpdir(), "claude-captured-hook-"));
+		try {
+			const transcript = join(dir, "root.jsonl");
+			const child = join(dir, "child.jsonl");
+			const input = {...captured, cwd: dir, transcript_path: transcript};
+			if ("agent_transcript_path" in input) input.agent_transcript_path = child;
+			expect(Object.keys(input).sort()).toEqual(Object.keys(captured).sort());
+			const message = {
+				id: "captured-root",
+				role: "assistant",
+				model: "fixture-model",
+				usage: {input_tokens: 2, output_tokens: 3},
+				content: [{type: "tool_use", id: "spawn-child", name: "Agent"}],
+			};
+			writeFileSync(
+				transcript,
+				JSON.stringify({
+					type: "assistant",
+					sessionId: captured.session_id,
+					message,
+				}),
+			);
+			if (captured.agent_id) {
+				writeFileSync(
+					child,
+					JSON.stringify({
+						type: "assistant",
+						sessionId: captured.session_id,
+						agentId: captured.agent_id,
+						message: {...message, id: "captured-child", content: []},
+					}),
+				);
+				writeFileSync(join(dir, "child.meta.json"), JSON.stringify({toolUseId: "spawn-child"}));
+			}
+			const result = runDeclared(declared.command, JSON.stringify(input));
+			expect(result.code, result.stderr).toBe(0);
+			expect(Object.keys(JSON.parse(result.stdout))).toEqual(["systemMessage"]);
+			expect(result.stderr).not.toContain("invalid hook payload");
+			expect(result.stderr).not.toContain("collector failed");
+			const rows = readUsageLedger(
+				readFileSync(join(dir, ".fabrika/spend-ledger.jsonl"), "utf8"),
+			).records.filter((row) => row.kind === "measurement");
+			expect(rows.map((row) => row.response)).toEqual(
+				captured.agent_id ? ["captured-root", "captured-child"] : ["captured-root"],
+			);
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
 	});
 });
 
@@ -224,6 +308,30 @@ describe("the declared hook, run against the captured envelope", {
 describe("the captured envelope shape, pinned by exact key set", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
+	it("SubagentStop preserves the recorded child identity and transcript fields", () => {
+		const payload = loadGoldenPayload(
+			import.meta.url,
+			"../spend/claude/fixtures/subagent-stop.payload.golden.json",
+		);
+		expect(Object.keys(payload).sort()).toEqual([
+			"agent_id",
+			"agent_transcript_path",
+			"agent_type",
+			"background_tasks",
+			"cwd",
+			"effort",
+			"hook_event_name",
+			"last_assistant_message",
+			"permission_mode",
+			"prompt_id",
+			"session_crons",
+			"session_id",
+			"stop_hook_active",
+			"transcript_path",
+		]);
+		expect(payload.agent_id).toBe("aa2a9583f18c0b8fe");
+		expect(payload.hook_event_name).toBe("SubagentStop");
+	});
 	it("SessionStart carries these keys and no others", () => {
 		const payload = loadGoldenPayload(
 			import.meta.url,

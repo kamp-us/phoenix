@@ -15,7 +15,7 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-One hook is declared **on this surface** today. An adopting repo may declare a second on its own, in
+The plugin declares the envelope check and the [Claude usage collector](claude-usage.md). An adopting repo may declare a second on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
 guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. Both
@@ -34,7 +34,7 @@ The one thing this cannot do is notice the **harness** changing. No gate here ex
 <a id="the-events-fabrika-does-not-declare"></a>
 ### The events fabrika does not declare, and why
 
-Five events were considered for this surface and all five were refused. Each entry below says what the event carries, why a fabrika verb cannot act on it, and — for the three non-worktree ones — what a payload would have had to carry instead, so a later reader can tell whether a newer build has fixed it.
+Five events were considered for task control and all five were refused for that purpose. `SubagentStop` is now declared for usage collection only; it still supplies no task verdict. Each entry below says what the event carries, why a fabrika verb cannot act on it, and — for the three non-worktree ones — what a payload would have had to carry instead, so a later reader can tell whether a newer build has fixed it.
 
 Everything here is read out of the **installed Claude Code executable, build 2.1.233**, by two methods, named per claim so neither is mistaken for the other:
 
@@ -151,7 +151,7 @@ It carries `agent_id` and `agent_type`, so the subagent is identified. What no f
 
 **What a verb would have needed:** an outcome field — a status, or the subagent's terminal token carried as data rather than embedded in its last message.
 
-Until then the artifact is the only place an outcome can be read — the PR, the posted verdict, the claim marker — and fabrika's verbs already read it there, which is why nothing is lost by leaving this event undeclared.
+Until then the artifact is the only place an outcome can be read — the PR, the posted verdict, the claim marker — and fabrika's verbs already read it there, so the usage collector never derives a task outcome from this event.
 
 <a id="the-harness-exit-code-contract"></a>
 ### The harness exit-code contract — exit `2` blocks, and only on `PreToolUse`

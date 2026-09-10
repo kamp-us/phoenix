@@ -1,5 +1,5 @@
 /**
- * `hook check` — the verb the fabrika hook surface's one declared hook runs.
+ * `hook check` reads the SessionStart envelope; usage collection is a separate hook.
  *
  * It answers a single question: did a fabrika hook fire, and did the harness hand it an envelope
  * fabrika can read? That is a small answer on purpose. It is the surface's own proof, so it must not

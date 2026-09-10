@@ -13,12 +13,25 @@ import {Command, Flag} from "effect/unstable/cli";
 import {emit as emitOutcome} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {runClaudeSpend} from "../spend/claude/collector.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
+);
+
+const claudeSpend = leafCommand(
+	"claude-spend",
+	{},
+	Effect.fn(function* () {
+		yield* emitOutcome(yield* runClaudeSpend({stdin: Effect.sync(readStdin), env: process.env}));
+	}),
+).pipe(
+	Command.withDescription(
+		"Collect Claude native response usage from a hook payload on stdin. A systemMessage warning on stdout and diagnostics on stderr; no hook decisions or model context. Always exits 0, including visible collection failures. Replay the payload to recover.",
+	),
 );
 
 const check = leafCommand(
@@ -74,6 +87,7 @@ export const hookCommand = Command.make("hook").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		check,
+		claudeSpend,
 		codes,
 		worktreeCreate,
 	]),
