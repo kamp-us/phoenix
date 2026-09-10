@@ -19,9 +19,16 @@ const ADD = /^git worktree add /;
 const REMOVE = /^git worktree remove /;
 const FETCH = /^git fetch /;
 const BRANCHES = /^git for-each-ref /;
+const SET_HEAD = /^git remote set-head /;
+const TRUNK = /^git rev-parse --verify origin\/HEAD/;
+const ANCESTOR = /^git merge-base --is-ancestor /;
 
 const NO_BRANCHES = okOut("main\n");
 const BRANCH_SURVIVED = okOut(`main\n${BRANCH}\n`);
+const TRUNK_HEAD = okOut("bbbb222\n");
+/** `merge-base --is-ancestor` answers through its status alone: zero is contained, non-zero is not. */
+const CONTAINED = okOut("");
+const DIVERGED = errOut("");
 
 const listing = (
 	...blocks: ReadonlyArray<readonly [string, string | null] | readonly [string, string, "prunable"]>
@@ -75,13 +82,20 @@ describe("runAssembly", () => {
 		expect(calls.some((line) => line.startsWith("git switch"))).toBe(false);
 	});
 
-	it("resumes an already-placed worktree and writes nothing", async () => {
-		const {outcome, calls} = await run([[LIST, SEATED]]);
+	it("resumes an already-placed worktree still holding unlanded work, writing nothing", async () => {
+		const {outcome, calls} = await run([
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, DIVERGED],
+		]);
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
 		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
-		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
+		expect(calls.some((line) => line.startsWith("git worktree remove"))).toBe(false);
 	});
 
 	it("refuses the main working tree standing on the assembly branch, placing nothing", async () => {
@@ -165,15 +179,98 @@ describe("runAssembly", () => {
 			[once(LIST), CLEAN],
 			[LIST, SEATED],
 			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, DIVERGED],
 		]);
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
 		expect(calls).toContain(`git worktree add ${EXPECTED} ${BRANCH}`);
-		expect(calls.some((line) => line.includes("worktree add -b"))).toBe(false);
-		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
+		expect(calls.some((line) => line.includes("worktree add --no-track"))).toBe(false);
 		// A branch cut by an older fabrika carries a stale upstream into every resume.
 		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
+	});
+
+	it("re-cuts a branch origin/HEAD already contains, and says so rather than answering a dead base", async () => {
+		const {outcome, calls} = await run([
+			[once(LIST), CLEAN],
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, CONTAINED],
+			[ADD, okOut("")],
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout.trim()).toBe(EXPECTED);
+		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(outcome.stderr.join("\n")).toContain("re-cut");
+		expect(calls.some((line) => line.includes("--force"))).toBe(false);
+	});
+
+	it("drops the seat of a contained branch before re-cutting it, and never forces that removal", async () => {
+		const {outcome, calls} = await run([
+			[once(LIST), SEATED],
+			[once(LIST), CLEAN],
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, CONTAINED],
+			[REMOVE, okOut("")],
+			[ADD, okOut("")],
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(calls).toContain(`git worktree remove ${EXPECTED}`);
+		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(calls.some((line) => line.includes("--force"))).toBe(false);
+	});
+
+	it("re-cuts nothing when the contained branch's seat holds work git will not drop", async () => {
+		const {outcome, calls} = await run([
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, CONTAINED],
+			[REMOVE, errOut("fatal: contains modified or untracked files")],
+		]);
+
+		expect(outcome.code).toBe(APPEND_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
+	});
+
+	it("is UNKNOWN, never a re-cut, when origin/HEAD names no commit after the fetch", async () => {
+		const {outcome, calls} = await run([
+			[LIST, CLEAN],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, errOut("fatal: Needed a single revision")],
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
+	});
+
+	it("never judges an existing branch landed against a stale origin — a failed fetch places nothing", async () => {
+		const {outcome, calls} = await run([
+			[LIST, CLEAN],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, errOut("network is unreachable")],
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
+		expect(calls.some((line) => line.startsWith("git merge-base"))).toBe(false);
 	});
 
 	it("clears a worktree record whose directory is gone, then places the branch again", async () => {
@@ -183,6 +280,10 @@ describe("runAssembly", () => {
 			[LIST, SEATED],
 			[REMOVE, okOut("")],
 			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, DIVERGED],
 			[ADD, okOut("")],
 		]);
 
@@ -190,9 +291,13 @@ describe("runAssembly", () => {
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
 		expect(calls).toEqual([
 			"git worktree list --porcelain",
+			"git for-each-ref --format=%(refname:short) refs/heads",
+			"git fetch --quiet origin",
+			"git remote set-head origin --auto",
+			"git rev-parse --verify origin/HEAD^{commit}",
+			`git merge-base --is-ancestor ${BRANCH} bbbb222`,
 			`git worktree remove ${EXPECTED}`,
 			"git worktree list --porcelain",
-			"git for-each-ref --format=%(refname:short) refs/heads",
 			`git worktree add ${EXPECTED} ${BRANCH}`,
 			`git branch --unset-upstream ${BRANCH}`,
 			"git worktree list --porcelain",
@@ -202,6 +307,11 @@ describe("runAssembly", () => {
 	it("never answers the dead path of a stale record whose registration would not clear", async () => {
 		const {outcome, calls} = await run([
 			[LIST, STALE],
+			[BRANCHES, BRANCH_SURVIVED],
+			[FETCH, okOut("")],
+			[SET_HEAD, okOut("")],
+			[TRUNK, TRUNK_HEAD],
+			[ANCESTOR, DIVERGED],
 			[REMOVE, errOut("fatal: validation failed, cannot remove working tree")],
 		]);
 

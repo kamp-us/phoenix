@@ -12,6 +12,12 @@
  * Every mode reads the outcome back off `git worktree list` before answering. A `git worktree add`
  * that reported success and left no tree, or a `remove` that left one behind, is UNKNOWN and seats
  * on `8` — the same discipline `lane push` holds against a remote ref.
+ *
+ * A resume asks one more question than "does the branch exist": whether `origin/HEAD` already
+ * contains its head. A multi-phase epic that ships an intermediate tail lands in exactly that state,
+ * and the branch is then simultaneously the sanctioned base for every remaining child and guaranteed
+ * to conflict with the trunk. Containment is the one proof that re-cutting loses nothing, so it is
+ * what opens that arm and nothing weaker does.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -98,30 +104,6 @@ export const runAssembly = (
 		}
 
 		if (seat._tag === "Conscripted") return conscripted(branch, seat.path);
-		if (seat._tag === "Isolated") {
-			return answer(`${seat.path}\n`, [
-				`${VERB}: resuming the assembly worktree of the lane at ${loaded.dir}.`,
-			]);
-		}
-		if (seat._tag === "Stale") {
-			// A record whose directory is gone is no tree to work in, and git refuses to add over the
-			// registration ("missing but already registered worktree"), so it is cleared before the
-			// placement rather than answered as a path §2 would then try to `git -C` into.
-			const cleared = yield* execCapture("git", ["worktree", "remove", seat.path]);
-			const recheck = yield* seatOf(options.epic, branch);
-			if (recheck._tag === "Unreadable") {
-				return refuse(
-					APPEND_UNKNOWN,
-					`${VERB}: cleared the stale worktree record at ${seat.path} and cannot re-read the working trees: ${recheck.reason} — the outcome is UNKNOWN.`,
-				);
-			}
-			if (recheck.seat._tag !== "Absent") {
-				return refuse(
-					APPEND_UNKNOWN,
-					`${VERB}: git still carries a worktree record for ${branch} at ${seat.path}${cleared.ok ? "" : `: ${cleared.reason}`} — nothing was placed, because a placement over a registered path is refused.`,
-				);
-			}
-		}
 
 		const branches = yield* localBranches;
 		if (branches._tag === "Failure") {
@@ -130,33 +112,91 @@ export const runAssembly = (
 				`${VERB}: cannot read this repository's branches: ${branches.reason} — whether ${branch} already exists is UNKNOWN, so nothing was placed.`,
 			);
 		}
+		const existing = branches.value.includes(branch);
+
+		// Both arms need a fresh `origin/HEAD` — git's own pointer at the default branch, which
+		// `set-head` writes in a checkout where it was never set. A cut is never taken off a stale
+		// base, and a containment answer computed against one would call a live branch landed.
+		const fetched = yield* execCapture("git", ["fetch", "--quiet", "origin"]);
+		if (!fetched.ok) {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot fetch origin: ${fetched.reason} — the assembly branch is never cut off a stale base, nor judged landed against one.`,
+			);
+		}
+		yield* execCapture("git", ["remote", "set-head", "origin", "--auto"]);
+
 		// The branch outliving its worktree is the ordinary state after `--remove` at a terminal, a
-		// pruned tree, or a crash mid-run — so it is resumed, checked out as it stands. Only a first
-		// placement cuts, and only a cut needs a fresh base: `origin/HEAD` is git's own pointer at the
-		// default branch, and `set-head` writes it in a checkout where it was never set.
-		const resuming = branches.value.includes(branch);
-		if (!resuming) {
-			const fetched = yield* execCapture("git", ["fetch", "--quiet", "origin"]);
-			if (!fetched.ok) {
+		// pruned tree, or a crash mid-run — so it is resumed, checked out as it stands. The one
+		// exception is a branch `origin/HEAD` already contains: its content landed, it holds nothing
+		// the trunk lacks, and every child cut from it conflicts with what the trunk took since. That
+		// containment is the whole warrant for re-cutting, so an unreadable answer refuses instead.
+		let landed = false;
+		if (existing) {
+			const trunk = yield* execCapture("git", ["rev-parse", "--verify", "origin/HEAD^{commit}"]);
+			if (!trunk.ok) {
 				return refuse(
 					LANE_UNREADABLE,
-					`${VERB}: cannot fetch origin: ${fetched.reason} — the assembly branch is never cut off a stale base.`,
+					`${VERB}: origin was fetched and origin/HEAD names no commit: ${trunk.reason} — whether ${branch} is already contained in the default branch is UNKNOWN, so nothing was placed.`,
 				);
 			}
-			yield* execCapture("git", ["remote", "set-head", "origin", "--auto"]);
+			const contained = yield* execCapture("git", [
+				"merge-base",
+				"--is-ancestor",
+				branch,
+				trunk.stdout.trim(),
+			]);
+			landed = contained.ok;
 		}
+
+		if (seat._tag === "Isolated" && !landed) {
+			return answer(`${seat.path}\n`, [
+				`${VERB}: resuming the assembly worktree of the lane at ${loaded.dir}.`,
+			]);
+		}
+		if (seat._tag !== "Absent") {
+			// A `Stale` record's directory is gone, and git refuses to add over the registration
+			// ("missing but already registered worktree"); a landed `Isolated` seat stands on a branch
+			// the placement below re-cuts. Both have to go first, and neither goes by `--force`: git
+			// refusing to drop a dirty tree is what keeps uncommitted work out of a re-cut.
+			const cleared = yield* execCapture("git", ["worktree", "remove", seat.path]);
+			const recheck = yield* seatOf(options.epic, branch);
+			if (recheck._tag === "Unreadable") {
+				return refuse(
+					APPEND_UNKNOWN,
+					`${VERB}: cleared the worktree at ${seat.path} and cannot re-read the working trees: ${recheck.reason} — the outcome is UNKNOWN.`,
+				);
+			}
+			if (recheck.seat._tag !== "Absent") {
+				return refuse(
+					APPEND_UNKNOWN,
+					`${VERB}: ${seat.path} still holds ${branch}${cleared.ok ? "" : `: ${cleared.reason}`} — nothing was placed, because a placement over a tree git still carries is refused.`,
+				);
+			}
+		}
+
+		// `-B` re-points the landed branch at the fresh trunk in the same operation that places the
+		// tree, so there is no window where the branch is deleted and the placement has yet to run.
 		const created = yield* execCapture(
 			"git",
-			resuming
+			existing && !landed
 				? ["worktree", "add", seat.expected, branch]
-				: ["worktree", "add", "--no-track", "-b", branch, seat.expected, "origin/HEAD"],
+				: [
+						"worktree",
+						"add",
+						"--no-track",
+						existing ? "-B" : "-b",
+						branch,
+						seat.expected,
+						"origin/HEAD",
+					],
 		);
 		// A branch cut off `origin/HEAD` without `--no-track` records `refs/heads/main` as its
 		// upstream, which aimed the run's pushes at the default branch. `--no-track` covers a
 		// fresh cut; a branch cut by an older fabrika carries the config into every resume, so it is
 		// cleared here. There is nothing to unset on a branch that tracks nothing, hence the ignored
 		// result.
-		if (resuming) yield* execCapture("git", ["branch", "--unset-upstream", branch]);
+		if (existing && !landed) yield* execCapture("git", ["branch", "--unset-upstream", branch]);
 		const after = yield* seatOf(options.epic, branch);
 		if (after._tag === "Unreadable") {
 			return refuse(
@@ -172,6 +212,8 @@ export const runAssembly = (
 			);
 		}
 		return answer(`${after.seat.path}\n`, [
-			`${VERB}: ${resuming ? "re-placed the worktree of the existing" : "placed"} ${branch} for the lane at ${loaded.dir}; the invoking checkout was not switched.`,
+			landed
+				? `${VERB}: re-cut ${branch} off origin/HEAD for the lane at ${loaded.dir} — its head was already contained in the default branch, so it carried no unlanded work and every child cut from it would have conflicted with what the trunk took since; the invoking checkout was not switched.`
+				: `${VERB}: ${existing ? "re-placed the worktree of the existing" : "placed"} ${branch} for the lane at ${loaded.dir}; the invoking checkout was not switched.`,
 		]);
 	});
