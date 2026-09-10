@@ -8,12 +8,14 @@ import {
 	LANE_EXISTS,
 	LANE_IS_CHILD,
 	LANE_UNREADABLE,
+	PRIOR_LANE,
 	SHAPE_MISMATCH,
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
 import type {ExpectationRead} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
+import type {PriorLane} from "./prior-lane.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT} from "./store.ts";
 
@@ -46,6 +48,10 @@ const parentMachine = (...children: ReadonlyArray<number>): string => {
 	return emitted.text;
 };
 
+const drove = (read: PriorLane) => () => Effect.succeed(read);
+/** The board hangs no pull request off the issue — the lane it never had. */
+const undriven = drove({_tag: "Fresh"});
+
 /** No cap declared — the cap's own arms live in [`concurrency.unit.test.ts`](concurrency.unit.test.ts). */
 const UNCAPPED = {_tag: "Value", value: null, note: "test"} as const;
 
@@ -55,6 +61,7 @@ const OPTIONS = {
 	templatePath: TEMPLATE,
 	issue: 42,
 	expectation: childless,
+	priorLane: undriven,
 	cap: UNCAPPED,
 	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 };
@@ -93,6 +100,7 @@ describe("lane open", () => {
 			templatePath: "/pkg/src/lane/templates/chore.workflow.json",
 			issue: null,
 			expectation: null,
+			priorLane: null,
 			cap: UNCAPPED,
 			claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 		};
@@ -119,6 +127,17 @@ describe("lane open", () => {
 		expect(out.stdout).toBe("");
 		expect(fs.written.size).toBe(0);
 		expect(out.stderr.join("\n")).toContain("already");
+	});
+
+	it("sends an existing lane's driver at the lane, never at removing the directory", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, directories: [DIR]});
+		const out = await run(fs, runOpen(OPTIONS));
+		const stderr = out.stderr.join("\n");
+
+		expect(out.code).toBe(LANE_EXISTS);
+		expect(stderr).toContain(`fabrika lane status ${OPTIONS.lane}`);
+		expect(stderr).toContain("granted round recorded on the board");
+		expect(stderr).not.toContain("remove the directory to rebuild it");
 	});
 
 	it("refuses when the lane dir's existence cannot be established — UNKNOWN, never a boot", async () => {
@@ -278,9 +297,65 @@ describe("lane open", () => {
 
 	it("boots offline when no reader is passed, asking the board nothing", async () => {
 		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
-		const out = await run(fs, runOpen({...OPTIONS, expectation: null}));
+		const out = await run(fs, runOpen({...OPTIONS, expectation: null, priorLane: null}));
 
 		expect(out.code).toBe(0);
 		expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
+	});
+
+	it("refuses an issue the board says already had a lane, naming the PRs and the granted round", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({...OPTIONS, priorLane: drove({_tag: "Prior", pulls: [7991]})}),
+		);
+
+		expect(out.code).toBe(PRIOR_LANE);
+		expect(out.stdout).toBe("");
+		expect(fs.written.size).toBe(0);
+		const said = out.stderr.join("\n");
+		expect(said).toContain("#42 already had a lane");
+		expect(said).toContain("#7991");
+		expect(said).toContain("build clear 7991");
+		expect(said).toContain("Nothing was written.");
+	});
+
+	it("boots a lane retired for the wrong template — the sanctioned retire, which opened no PR", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(fs, runOpen({...OPTIONS, priorLane: undriven}));
+
+		expect(out.code).toBe(0);
+		expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
+	});
+
+	it("refuses when the prior-lane fact cannot be established — UNKNOWN, never a fresh lane", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({...OPTIONS, priorLane: drove({_tag: "Unknown", reason: "the API answered 502"})}),
+		);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("502");
+	});
+
+	it("leaves an existing lane dir answering its own code, without asking the board at all", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, directories: [DIR]});
+		let asked = 0;
+		const out = await run(
+			fs,
+			runOpen({
+				...OPTIONS,
+				priorLane: () => {
+					asked += 1;
+					return Effect.succeed({_tag: "Prior", pulls: [7991]} as const);
+				},
+			}),
+		);
+
+		expect(out.code).toBe(LANE_EXISTS);
+		expect(asked).toBe(0);
+		expect(fs.written.size).toBe(0);
 	});
 });

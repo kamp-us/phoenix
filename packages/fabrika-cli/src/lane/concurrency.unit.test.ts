@@ -64,6 +64,7 @@ const options = (
 	templatePath: TEMPLATE,
 	issue: 42,
 	expectation: null,
+	priorLane: null,
 	cap,
 	claimed,
 });
@@ -184,6 +185,7 @@ describe("what frees a seat, and what never held one", () => {
 				templatePath: CHORE_TEMPLATE,
 				issue: null,
 				expectation: null,
+				priorLane: null,
 				cap: capped(2),
 				claimed: claims("7000", "7001"),
 			}),
