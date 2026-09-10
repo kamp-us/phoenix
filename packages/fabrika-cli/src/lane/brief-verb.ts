@@ -19,6 +19,11 @@
  * range is resolved here, off this tree, through the same read `lane prove` stands its proof on
  * (`./range.ts`) — the two verbs cannot name different ranges for one child, and a range the tree
  * cannot pin refuses the dispatch instead of printing one that resolves to nothing.
+ *
+ * A brief standing on that branch is also checked against it: the entrypoint is repo-relative in a
+ * checkout, so it resolves inside the shell's worktree, and a branch cut before a lane verb landed
+ * hands the shell a CLI that cannot execute the contract this brief states. `./briefed-verbs.ts`
+ * reads the branch's own tree, and a missing verb refuses at {@link BRIEFED_VERB_ABSENT}.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,6 +35,7 @@ import {
 	artifactUrl,
 	emit as emitBrief,
 	epicBranch,
+	type FabrikaEntry,
 	fabrikaEntry,
 	isBuildState,
 	isReviewState,
@@ -41,7 +47,9 @@ import {
 	shellState,
 } from "../wire/lane-brief.ts";
 import {headSha} from "../wire/marker-line.ts";
+import {carriedVerbs} from "./briefed-verbs.ts";
 import {
+	BRIEFED_VERB_ABSENT,
 	ISSUE_UNRESOLVED,
 	LANE_UNREADABLE,
 	NO_SHELL,
@@ -198,6 +206,39 @@ const childGround = (
 		} as const;
 	});
 
+/**
+ * The refusal a brief owes when the assembly branch its shell will stand on does not carry a lane
+ * verb the brief tells that shell to run — `null` when there is nothing to stop.
+ *
+ * Only a ground naming that branch is judged; every other shell's worktree is cut from the driver's
+ * own head, which is the tree this process is already running out of.
+ */
+const briefedVerbRefusal = (
+	path: Path.Path,
+	ground: LaneGround,
+	fabrika: FabrikaEntry,
+	epic: number,
+	notes: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome | null, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (ground._tag === "Pull" || ground._tag === "Tail") return null;
+		const carriage = yield* carriedVerbs(path, ground.branch, fabrika);
+		if (carriage._tag === "Carried") return null;
+		if (carriage._tag === "Unreadable") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: ${carriage.reason} — whether the shell's tree carries the lane verbs this brief tells it to run is UNKNOWN.`,
+				notes,
+			);
+		}
+		const absent = carriage.verbs.map((verb) => `\`lane ${verb}\``).join(", ");
+		return refuse(
+			BRIEFED_VERB_ABSENT,
+			`${VERB}: ${ground.branch} does not carry ${absent}, and the shell runs its verbs through this brief's own \`${fabrika}\` inside a worktree cut from that branch — it would do the work, produce its verdict, and be unable to record it. Remedy: \`fabrika lane refresh ${epic}\` from the assembly worktree, then brief again.`,
+			notes,
+		);
+	});
+
 export const runBrief = (
 	options: BriefOptions,
 ): Effect.Effect<
@@ -284,6 +325,8 @@ export const runBrief = (
 			if (child._tag === "Refused") return child.outcome;
 			const ground = child.ground;
 			notes.push(...child.notes);
+			const stale = yield* briefedVerbRefusal(path, ground, fabrika, epic, notes);
+			if (stale !== null) return stale;
 			const brief: LaneBrief = {
 				lane: options.lane,
 				root,
@@ -353,6 +396,10 @@ export const runBrief = (
 					? {_tag: "TailRepair", pr: prUrl, epic: read.url, branch: epicBranch(epic)}
 					: {_tag: "Tail", pr: prUrl, epic: read.url}
 				: {_tag: "Pull", pr: prUrl};
+		if (epic !== null) {
+			const stale = yield* briefedVerbRefusal(path, ground, fabrika, epic, notes);
+			if (stale !== null) return stale;
+		}
 		const brief: LaneBrief = {
 			lane: options.lane,
 			root,

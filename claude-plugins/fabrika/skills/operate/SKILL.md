@@ -274,6 +274,26 @@ It preserves Codex configuration and waits for the child process. A zero exit is
 a new task terminal and the existing artifact proof must both stand. A refused dispatch retains
 its worktree; inspect its named cause before retrying. Never replace it with a non-isolated spawn.
 
+**An epic child is briefed off the assembly branch, so the branch is refreshed before it and checked
+by it.** A child's worktree is cut from `epic/<lane_key>`, and that branch was cut once — so it runs
+whatever copy of fabrika it carried on the day it was cut, and a `lane` verb that landed on `main`
+afterwards is simply not there. The shell then does real work, produces a real verdict, and cannot
+record it. Two steps close that, and neither is yours to type:
+
+- **`lane dispatch` refreshes the branch itself**, through `lane refresh`'s own code and before the
+  brief is emitted, gated by `assemblyRefresh.onDispatch`. The shipped `off` fetches, merges and
+  reads nothing, so a repo that declared nothing keeps exactly the dispatch path it has today;
+  `"onDispatch": "on"` in `.fabrika.jsonc` performs the merge. Exit `42` there is a real conflict —
+  the branch is proven back at its pre-merge head and no worktree was created, so record the park it
+  names (`lane transition … BLOCKED --cause assembly-conflict`) rather than dispatching over the
+  stale branch. On a Claude spawn you run `lane brief` rather than `lane dispatch`, so run
+  `lane refresh $lane_key` from the assembly worktree yourself before briefing a child.
+- **`lane brief` refuses at `59`** when that branch's tree does not carry a lane verb the brief tells
+  the shell to run — `lane report` today. The refusal names every missing verb and the remedy: run
+  `lane refresh $lane_key` from the assembly worktree, then brief again. It is not a park to record
+  and not a shell to spawn: refresh, re-brief, and the lane moves. A brief whose entrypoint is an
+  installed copy of fabrika is never judged this way, because no branch carries it.
+
 `lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
 the state needs one or several where one is required. It counts a PR only when the PR **declares it
@@ -505,7 +525,9 @@ trunk. Exit `42` is a real conflict: the merge was aborted and the branch proven
 so record the park the refusal names — `lane transition … BLOCKED --cause assembly-conflict` — rather
 than dispatching a review over a head the queue will reject. Every other refusal is UNKNOWN and
 nothing may be recorded against the tree. A driver may also call `lane refresh $lane_key` by hand
-with no flag at any point; only the automatic call is gated.
+with no flag at any point; only the automatic calls are gated, and the other one is
+`assemblyRefresh.onDispatch`, which `lane dispatch` makes itself before it cuts a child's worktree
+off the branch (the child-dispatch step above).
 
 **A tail `FAIL` routes to a repair builder on the assembly branch — the tail is not repair-less.**
 The tail region seats its own `build` cell, and the review's `FAIL` retries into it under the same

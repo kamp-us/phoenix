@@ -533,3 +533,16 @@ export const ABOUT_UNSAFE = 57;
  * or do not open the run's PR yet.
  */
 export const TAIL_NOT_CLOSING = 58;
+
+/**
+ * The tree behind the brief's own `fabrika:` entrypoint does not carry a lane verb the brief
+ * instructs the shell to run — so the brief is not emitted and no shell is spawned.
+ *
+ * Its own seat rather than {@link LANE_UNREADABLE}'s, which is the entrypoint the driver could not
+ * resolve at all: this one resolved, is node-runnable, and names a tree whose copy of this CLI is
+ * older than the contract the brief hands out. An epic run cuts its assembly branch once and every
+ * child shell runs that branch's own in-tree fabrika, so a lane verb that landed on the trunk after
+ * the cut is absent there — the shell does real work, produces a real verdict, and cannot record it.
+ * The remedy is the driver's `lane refresh`, named on the refusal beside every missing verb.
+ */
+export const BRIEFED_VERB_ABSENT = 59;

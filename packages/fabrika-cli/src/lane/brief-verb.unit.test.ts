@@ -21,6 +21,7 @@ import {
 } from "../wire/lane-brief.ts";
 import {runBrief} from "./brief-verb.ts";
 import {
+	BRIEFED_VERB_ABSENT,
 	ISSUE_UNRESOLVED,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
@@ -801,5 +802,73 @@ describe("lane brief on an epic lane", () => {
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
+	});
+
+	/**
+	 * A checkout of fabrika's own repo, where the entrypoint is repo-relative and therefore resolves
+	 * inside the shell's worktree — the one shape whose tree the assembly branch decides.
+	 */
+	const IN_TREE = {
+		_tag: "Entrypoint",
+		entrypoint: "packages/fabrika-cli/src/bin.ts",
+	} as EntrypointRead;
+	const EPIC_TREE = "0d4f2a6c8e1b3d5f7a9c2e4b6d8f0a2c4e6b8d0f";
+	const LS_TREE = /^git ls-tree --name-only /;
+	const REPORT_MODULE = "packages/fabrika-cli/src/lane/report-verb.ts";
+
+	const readingBranch = (holds: boolean): ReadonlyArray<Scripted> => [
+		[REV("epic/5800"), okOut(`${EPIC_TREE}\n`)],
+		[LS_TREE, okOut(holds ? `${REPORT_MODULE}\n` : "")],
+	];
+
+	it("refuses a child build when the assembly branch does not carry a lane verb the brief names", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				...readingBranch(false),
+			],
+			{task: "issue_5828", entrypoint: IN_TREE},
+		);
+
+		expect(out.code).toBe(BRIEFED_VERB_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("`lane report`");
+		// The refusal carries the remedy, so the driver is not left to infer why the brief stopped.
+		expect(out.stderr.join("\n")).toContain("fabrika lane refresh 5800");
+	});
+
+	it("briefs a child build unchanged when the branch carries every lane verb the brief names", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				...readingBranch(true),
+			],
+			{task: "issue_5828", entrypoint: IN_TREE},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {ground: {_tag: "Epic", epic: EPIC_URL, branch: "epic/5800"}},
+		});
+		expect(out.stdout).toContain("fabrika: packages/fabrika-cli/src/bin.ts");
+	});
+
+	it("leaves the branch unread for an installed entrypoint it cannot carry", async () => {
+		const {out, calls} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
 });
