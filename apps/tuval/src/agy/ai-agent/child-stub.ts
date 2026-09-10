@@ -64,7 +64,7 @@ export const agyChildStub = Effect.gen(function* () {
 	};
 });
 
-/** One launched stub child, and the three things a test does to it. */
+/** One launched stub child, and the four things a test does to it. */
 export interface StubChild {
 	/** One agy stdout line, as the fan reads it. */
 	readonly say: (line: string) => Effect.Effect<void>;
@@ -72,7 +72,15 @@ export interface StubChild {
 	readonly signals: Effect.Effect<ReadonlyArray<string>>;
 	/** The exit a delivered signal earns: the pipes end, then the code lands. */
 	readonly exit: (code: number) => Effect.Effect<void>;
+	/**
+	 * Every line that really crossed this child's stdin, decoded. A send the layer dropped onto a
+	 * shut-down queue is absent here, which is the only way a test can tell it apart from one that
+	 * landed (#8709).
+	 */
+	readonly written: Effect.Effect<ReadonlyArray<string>>;
 }
+
+const decoder = new TextDecoder();
 
 const stubChild = Effect.gen(function* () {
 	const stdout = yield* Queue.unbounded<Uint8Array, Cause.Done>();
@@ -80,6 +88,7 @@ const stubChild = Effect.gen(function* () {
 	// and a stderr that completes at once wins that race and ends the fan before a line is read.
 	const stderr = yield* Queue.unbounded<Uint8Array, Cause.Done>();
 	const signals = yield* Ref.make<ReadonlyArray<string>>([]);
+	const written = yield* Ref.make<ReadonlyArray<string>>([]);
 	const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
 	const exit = (code: number): Effect.Effect<void> =>
 		Queue.end(stdout).pipe(
@@ -108,8 +117,9 @@ const stubChild = Effect.gen(function* () {
 		say: (line: string) => Effect.asVoid(Queue.offer(stdout, encoder.encode(`${line}\n`))),
 		signals: Ref.get(signals),
 		exit,
+		written: Ref.get(written),
 	};
-	return {handle, child};
+	return {handle, child, written};
 });
 
 /** A spawner that launches a fresh stub child every time, which is what a respawn asks of it. */
@@ -117,8 +127,21 @@ export const agyChildrenStub = Effect.gen(function* () {
 	const launched = yield* Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]);
 	const children = yield* Ref.make<ReadonlyArray<StubChild>>([]);
 	const spawn = Effect.fnUntraced(function* (command: ChildProcess.Command) {
-		const {handle, child} = yield* stubChild;
+		const {handle, child, written} = yield* stubChild;
 		const argv = ChildProcess.isStandardCommand(command) ? [...command.args] : [];
+		// The real spawner runs the command's input stream into the child's stdin; a stub that only
+		// hands back a handle never consumes it, and then no test can see which child a send reached.
+		// Forked into the spawn's own scope, so it dies with the child like the real pipe does.
+		const input = ChildProcess.isStandardCommand(command) ? command.options.stdin : undefined;
+		const piped =
+			typeof input === "object" && input !== null && "stream" in input ? input.stream : input;
+		if (typeof piped === "object" && piped !== null) {
+			yield* Effect.forkScoped(
+				Stream.runForEach(piped, (bytes) =>
+					Ref.update(written, (seen) => [...seen, decoder.decode(bytes)]),
+				).pipe(Effect.ignore),
+			);
+		}
 		yield* Ref.update(launched, (seen) => [...seen, argv]);
 		yield* Ref.update(children, (seen) => [...seen, child]);
 		return handle;

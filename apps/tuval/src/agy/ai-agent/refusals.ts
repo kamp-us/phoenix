@@ -42,6 +42,20 @@ export const noSession = (): PromptError =>
 		detail: "start has not opened an agy session on this layer",
 	});
 
+/**
+ * A send that arrived while the child it would have crossed on was being replaced.
+ *
+ * `no-session` rather than `disconnected`, and that choice is the whole point of the refusal: the
+ * relaunch window is the one moment the layer knows for certain no text crossed, and `sends.ts`
+ * settles a `no-session` prompt failure `refused`, which is what renders the unsent bar the operator
+ * can Restore or Discard from (#8709).
+ */
+export const relaunchInFlight = (): PromptError =>
+	new PromptError({
+		reason: "no-session",
+		detail: "agy is being relaunched on this conversation, so the send did not reach it",
+	});
+
 /** A turn this layer refused before it reached stdin — see `launch.ts`'s `promptLine`. */
 export const malformedPrompt = (detail: string): PromptError =>
 	new PromptError({reason: "refused", detail});

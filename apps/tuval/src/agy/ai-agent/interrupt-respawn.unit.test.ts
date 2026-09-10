@@ -14,7 +14,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, Option, Queue, Scheduler, Stream} from "effect";
+import {Cause, Effect, Exit, Fiber, Option, Queue, Scheduler, Stream} from "effect";
 import type {AgentEvent, StartError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {agyChildrenStub, agyLayerOver, type StubChild} from "./child-stub.ts";
@@ -51,6 +51,28 @@ const signalled = (child: StubChild): Effect.Effect<void> =>
 		Effect.timeoutOrElse({
 			duration: "5 seconds",
 			orElse: () => Effect.die(new Error("the stop sent no signal")),
+		}),
+	);
+
+/** The refusal a failed call carries, as the two fields a test asserts on. */
+const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?: string} =>
+	Exit.isFailure(exit)
+		? ((Option.getOrUndefined(Cause.findErrorOption(exit.cause)) ?? {}) as {
+				_tag?: string;
+				reason?: string;
+			})
+		: {};
+
+/** Every line one stub child really took on stdin, waited for rather than sampled once. */
+const writtenTo = (child: StubChild): Effect.Effect<ReadonlyArray<string>> =>
+	Effect.flatMap(child.written, (lines) =>
+		lines.length === 0
+			? Effect.andThen(Effect.sleep("5 millis"), writtenTo(child))
+			: Effect.succeed(lines),
+	).pipe(
+		Effect.timeoutOrElse({
+			duration: "5 seconds",
+			orElse: () => Effect.succeed<ReadonlyArray<string>>([]),
 		}),
 	);
 
@@ -180,6 +202,96 @@ describe("an agy turn the operator stops", () => {
 				assert.isEmpty(
 					after.filter((event) => event.kind === "phase" && event.phase === "gone"),
 					"the second press narrated a session the layer went on to keep",
+				);
+			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
+		}),
+	);
+
+	/**
+	 * Where the window is, and what is in it.
+	 *
+	 * Driven to the one instant the issue's own flow lands in: the terminal `result` has published
+	 * `ready`, so the operator's hand is free, and the relaunch is past its teardown and waiting on the
+	 * new child's `init`. `session` holds the torn-down child there — its stdin queue is shut down, and
+	 * an offer onto a queue that is not `Open` answers `false` rather than failing, so a send admitted
+	 * here would be dropped with its key burned and nothing left to settle it (#8709). Returns the
+	 * stopped child, the relaunching one, and the stop still in flight.
+	 */
+	const inTheRelaunchWindow = (children: {
+		readonly child: (index: number) => Effect.Effect<StubChild>;
+		readonly launches: Effect.Effect<ReadonlyArray<ReadonlyArray<string>>>;
+	}) =>
+		Effect.gen(function* () {
+			const agent = yield* TuvalAiAgent;
+			yield* opened(children);
+			const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+			yield* agent.prompt("something long");
+			yield* collectTo(events, "the turn's prompting", isPrompting);
+
+			const stopping = yield* Effect.forkChild(agent.interrupt);
+			const first = yield* children.child(0);
+			yield* signalled(first);
+			yield* first.say(userInput);
+			yield* first.say(resultInterrupted);
+			yield* collectTo(events, "the stop's ready", isReady);
+			yield* first.exit(1);
+			const second = yield* children.child(1);
+			return {agent, events, stopping, first, second};
+		});
+
+	it.live("refuses a send that arrives inside the relaunch, and writes it to no stdin", () =>
+		Effect.gen(function* () {
+			const children = yield* agyChildrenStub;
+
+			yield* Effect.gen(function* () {
+				const {agent, first, second, stopping} = yield* inTheRelaunchWindow(children);
+
+				const refused = causeError(yield* Effect.exit(agent.prompt("resent text", "resend-key")));
+				assert.strictEqual(
+					refused._tag,
+					"tuval/ai-agent/PromptError",
+					"the send inside the relaunch was admitted",
+				);
+				// `no-session` and not `disconnected`: `sends.ts` settles the first `refused` and the
+				// second `uncertain`, and only `refused` renders the unsent bar the text comes back from.
+				assert.strictEqual(refused.reason, "no-session");
+				assert.deepStrictEqual(
+					(yield* first.written).filter((line) => line.includes("resent text")),
+					[],
+					"the refused send was written to the torn-down child's stdin",
+				);
+
+				yield* second.say(init);
+				yield* Fiber.join(stopping);
+			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
+		}),
+	);
+
+	it.live("closes the window: the next send crosses on the child the relaunch opened", () =>
+		Effect.gen(function* () {
+			const children = yield* agyChildrenStub;
+
+			yield* Effect.gen(function* () {
+				const {agent, events, second, stopping} = yield* inTheRelaunchWindow(children);
+				// Refused first, so the key this send carries is one a refusal has already been asked
+				// to leave unburned — a send dropped silently would have burned it and this would be
+				// deduped into nothing.
+				yield* Effect.exit(agent.prompt("resent text", "resend-key"));
+
+				yield* second.say(init);
+				yield* Fiber.join(stopping);
+				yield* collectTo(events, "the relaunched session at ready", isReady);
+
+				yield* agent.prompt("resent text", "resend-key");
+				const crossed = yield* writtenTo(second);
+				assert.isTrue(
+					crossed.some((line) => line.includes("resent text")),
+					`the send after the relaunch reached no child; saw ${JSON.stringify(crossed)}`,
+				);
+				assert.strictEqual(
+					(yield* children.launches).length,
+					2,
+					"the send after the relaunch launched a child of its own",
 				);
 			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
 		}),
