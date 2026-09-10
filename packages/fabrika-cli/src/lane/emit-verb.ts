@@ -9,6 +9,12 @@
  * never read as no edge), and `readTopology` ends the section at the first thematic break, so the
  * refusal names where such a line belongs instead of loosening the grammar to take it.
  *
+ * `--children` is the descope escape: a founder who unlinks a child leaves the body's topology naming
+ * it, and without the flag that is `16` forever. It is opt-in and not the default because the same
+ * stale ref is a typo on the other reading, where dropping the child silently emits a machine short
+ * one region. The `16` refusal names both escapes — this flag, and `ledger retopology`, which
+ * repairs the body instead of routing around it.
+ *
  * An existing lane is refused, and nothing carves an exception into that refusal: an overwrite path
  * for a lane already on disk by name was rejected, and that left
  * `placeMachine`'s refusal standing as the answer. What this verb owes instead is a refusal that
@@ -44,6 +50,9 @@ import {type LaneRef, placeMachine} from "./store.ts";
 
 const VERB = "fabrika lane emit";
 
+/** The one spelling of the `dropped` list, so the two channels never state different refs. */
+const droppedList = (dropped: ReadonlyArray<string>): string => dropped.join(", ");
+
 export interface EmitOptions<R = never> {
 	readonly epic: number;
 	readonly root: string;
@@ -61,7 +70,16 @@ export interface EmitOptions<R = never> {
 	 * driven for the life of the lane.
 	 */
 	readonly machinery: Read<MachineryLapsSurface>;
+	/**
+	 * `--children`: start from the board's live child list, dropping every topology ref it does not
+	 * name, instead of refusing on `16`.
+	 */
+	readonly children: boolean;
 }
+
+/** The two escapes a `16` names, worded once so the flag and the repair verb are never named apart. */
+const FOREIGN_REMEDIES =
+	"re-run with --children to emit from the board's live child list, or repair the body with `fabrika ledger retopology <epic>`";
 
 const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}>): VerbOutcome => {
 	switch (result._tag) {
@@ -88,7 +106,12 @@ const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}
 		case "Foreign":
 			return refuse(
 				TOPOLOGY_FOREIGN,
-				`${VERB}: the topology references ${result.ref}, which is not a child of #${epic}.`,
+				`${VERB}: the topology references ${result.ref}, which is not a child of #${epic} — ${FOREIGN_REMEDIES}.`,
+			);
+		case "Emptied":
+			return refuse(
+				TOPOLOGY_ABSENT,
+				`${VERB}: --children dropped every ref #${epic}'s topology places (${droppedList(result.dropped)}), so it declares no child — nothing was placed.`,
 			);
 		case "Cycle":
 			return refuse(
@@ -134,12 +157,10 @@ export const runEmit = <R = never>(
 				`${VERB}: cannot read \`${MACHINERY_LAPS}\` from ${CONFIG_PATH} (${options.machinery.reason}) — which machine this epic gets is UNKNOWN, and a machine is emitted once, so nothing was emitted.`,
 			);
 		}
-		const emitted = emitMachine(
-			options.epic,
-			target.issue.body,
-			listed.value,
-			options.machinery.value.onEmit === "on",
-		);
+		const emitted = emitMachine(options.epic, target.issue.body, listed.value, {
+			machinery: options.machinery.value.onEmit === "on",
+			dropForeign: options.children,
+		});
 		if (emitted._tag !== "Emitted") return emitRefusal(options.epic, emitted);
 		const ref: LaneRef = {root: options.root, lane: String(options.epic)};
 		const capped = yield* capRefusal(VERB, options.cap, options.root, options.claimed);
@@ -159,10 +180,16 @@ export const runEmit = <R = never>(
 				workflow: placed.workflow,
 				phases: emitted.phases,
 				children: emitted.children,
+				dropped: {count: emitted.dropped.length, rows: emitted.dropped},
 				bytes: new TextEncoder().encode(emitted.text).length,
 			}),
 			[
 				`${VERB}: read #${options.epic} and ${listed.value.length} sub-issue link(s) from ${resolved.repo}.`,
+				...(emitted.dropped.length === 0
+					? []
+					: [
+							`${VERB}: --children dropped ${emitted.dropped.length} ref(s) #${options.epic}'s topology names and its child list does not: ${droppedList(emitted.dropped)}.`,
+						]),
 			],
 		);
 	});

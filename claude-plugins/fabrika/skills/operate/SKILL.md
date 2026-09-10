@@ -144,6 +144,41 @@ Children but a `15` out of `lane emit` means the plan is there and its `## Depen
 missing or unparseable, which is `plan-epic`'s too — same `STOPPED`, different repair. Either way you
 never fall through to the template.
 
+**Exit `16` is the descope, and it is yours to clear.** The block names a ref the epic's live
+sub-issue list does not — a founder unlinked a child and the body still names it — and the refusal
+line names both escapes. Prefer the repair: `ledger retopology` rewrites that one
+block from the live child links, is refusal-first the same way `triage repair-criteria` is, and
+leaves the emit that follows needing no flag. It needs no plan run, closes and unlinks nothing, and
+preserves every byte outside the block — but it does hold the epic's claim and it does take the
+body digest, so it is four calls, not one:
+
+```bash
+node packages/fabrika-cli/src/bin.ts build claim <epic> --purpose plan
+node packages/fabrika-cli/src/bin.ts ledger digest <epic> --token <claim-token>
+node packages/fabrika-cli/src/bin.ts ledger retopology <epic> --body-digest <12-hex> --token <claim-token>
+node packages/fabrika-cli/src/bin.ts build release <epic> --token <claim-token>
+```
+
+`ledger digest` is the digest's source on this route and it writes nothing — no run directory, no
+file, no issue. **Take it from there and never from `ledger open`**, which prints the same value
+only by staging a plan run and refuses `20` on a tree behind `origin/main`, so a mid-drive lane on
+a slightly stale tree would be wedged at the middle step with the body still unrepaired. A `21` out
+of `ledger retopology` means the body moved between the two reads: re-run `ledger digest` and pass
+the new value.
+
+**The release is a step, not a tidy-up.** Nothing else in the drive retracts it: the builders you
+spawn claim children under their own nonces and never touch a marker on the epic. So a claim left
+standing outlives you, and the next session that needs it — a re-plan, another `ledger` verb, a
+second driver repairing the same epic — refuses at `15` against a holder who is gone, which is the
+wedge this whole route exists to end, moved one seam over. Release after a refusal too: the repair
+failing is no reason to keep the claim. If the release itself refuses, the marker is standing and
+only a human can retract it — end `STOPPED` naming the code rather than driving on.
+
+`lane emit <epic> --children` is the other escape and it routes *around* the stale block instead of
+fixing it — take it when the body is not yours to repair, and read the dropped refs it reports so
+the staleness is still on the record. It reports every one of them on both channels, however many
+the descope took, so the record you put on the board is the whole list and never a sample of it. On a refusal out of either, end `STOPPED` naming the code.
+
 **Exit `48` is the mirror: the issue is an epic's *child*, so the lane to drive is the parent's.**
 The parent epic's lane already carries this number as one of its tasks, and a second ledger booted
 over it is two documents describing one piece of work with nothing reconciling them. The `46` guard
@@ -1236,7 +1271,17 @@ re-dispatch the shell that fail-louded and record **no** `BLOCKED`: nothing park
 nothing for a human to clear. Five lanes once spent a human cycle each on this park in one night for
 a defect this verb repairs.
 
-The permission is exactly that one call and stops there. **Never edit the body yourself** — you are
+**The sanctioned body-repair set is two verbs, not one.** The other is
+`fabrika ledger retopology <epic>`, which owns an epic's `## Dependencies` block exactly as
+`triage repair-criteria` owns a criteria block: it rewrites that block from the live child links
+and nothing else, so a founder descope stops wedging `lane emit` at `16` — the boot step above is
+where you meet it, and its four-call fence lives there. It refuses rather than guesses on every
+other shape, so running it never makes you the one choosing what the body says. The other three
+calls in that fence do not widen this set: `build claim` and `build release` write and retract a
+claim marker comment, and `ledger digest` writes nothing at all — no run directory, no file, no
+issue. None of the three touches a body.
+
+The permission is exactly those two calls and stops there. **Never edit the body yourself** — you are
 type-blind, and a driven issue's body is not your artifact — so no hand-edit, no other section, and
 no second run after a refusal. A refusal is the verb's answer, not a prompt to retry.
 

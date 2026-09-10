@@ -95,6 +95,13 @@ const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}
 				TOPOLOGY_FOREIGN,
 				`${VERB}: the topology references ${result.ref}, which is not a child of #${epic} — nothing was written.`,
 			);
+		// Unreachable while this verb leaves `dropForeign` off — only that axis empties a topology.
+		// Kept total rather than thrown, so the arm stays a refusal if the axis is ever turned on.
+		case "Emptied":
+			return refuse(
+				TOPOLOGY_ABSENT,
+				`${VERB}: every ref #${epic}'s topology places was dropped, so it declares no child — there is nothing to amend this lane's machine to, and nothing was written.`,
+			);
 		case "Cycle":
 			return refuse(
 				TOPOLOGY_CYCLE,
@@ -157,12 +164,12 @@ export const runAmend = (
 			);
 		}
 
-		const emitted = emitMachine(
-			options.epic,
-			target.issue.body,
-			listed.value,
-			carriesLaps(loaded.lane),
-		);
+		// `dropForeign` is left off deliberately: dropping a ref the live child list does not name is a
+		// descope only the operator can read as one, and this verb reconciles nothing. A foreign ref
+		// refuses at 16 here, and `plan restage` is the repair.
+		const emitted = emitMachine(options.epic, target.issue.body, listed.value, {
+			machinery: carriesLaps(loaded.lane),
+		});
 		if (emitted._tag !== "Emitted") return emitRefusal(options.epic, emitted);
 		if (sameMachine(onDisk.success, emitted.text)) {
 			return answer(
