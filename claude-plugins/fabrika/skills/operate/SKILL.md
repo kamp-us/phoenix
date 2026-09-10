@@ -392,9 +392,16 @@ record it. Two steps close that, and neither is yours to type:
 
 `lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
-the state needs one or several where one is required. It counts a PR only when the PR **declares it
-closes** the task's issue — GitHub's own closing-issue link, not a body mention — so a PR that
-quotes the number in prose never makes `20` fire. An epic child's `review` brief adds three
+the state needs one or several where one is required. **What counts is wider than the closing
+link.** [`nominate.ts`](../../../../packages/fabrika-cli/src/lane/nominate.ts) is the one nominator
+this verb and `lane prove` both call, and it unions two reads — GitHub's closing-issue edge with a
+search over the open PRs whose body names the issue — so a `Part of #N` PR counts exactly as a
+`Fixes #N` one does, and refusing it as unlinked parks the lane on a blocker that is not there. What
+still does not count is a number in **prose**: nomination only widens the candidates, and the body's
+own links decide membership, so a PR quoting `#N` under neither a closing keyword nor `Part of`
+carries no reference and leaves the state's count at zero. Counting a `Part of` PR says which PR is
+the lane's, and nothing more — a lane whose partial merge closed nothing still goes back to
+`queued`. An epic child's `review` brief adds three
 more, because it resolves the child's range off this tree rather than printing one the spawned shell
 re-resolves: `22` is no branch here carrying the child's commits, `25` is several of them,
 and `11` is a ref this tree cannot read — the same three facts, and the same remedies, `lane prove`
