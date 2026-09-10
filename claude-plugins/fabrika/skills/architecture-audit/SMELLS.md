@@ -1,12 +1,12 @@
 # Smell catalog
 
 The finite list of code-shape smells the audit checks explicitly. It runs as a **coverage gate**
-after the lens passes ([SKILL.md](SKILL.md) step 5). Each smell gets one row, and one of three
-statuses:
+after the lens passes ([SKILL.md](SKILL.md) step 5): each smell gets one row carrying `✓ checked`,
+`— N/A` or `✗ found`. What each status commits you to, and the table's shape, are the contract's:
 
-- **✓ checked** — looked, found none
-- **— N/A** — the smell does not apply to this code shape, with a one-line reason
-- **✗ found** — present, with the file or symbol, and the finding that covers it
+```bash
+fabrika wire doc-section --heading "The coverage gate" < <skill-base>/contract.md
+```
 
 The gate converts open-ended audit output into a **covered surface**. Two runs that surface
 different findings can still be honestly compared, because they checked the same finite list. **The
@@ -14,20 +14,19 @@ catalog is the durable artifact; the candidate set is not.**
 
 ## Why a catalog at all
 
-Smell catalogs are the transferable half of pre-LLM refactoring research: the search algorithms did
-not survive, the catalogs did. So the list is borrowed and the metrics are not — every smell below is
-a qualitative predicate, never a numeric threshold, because a reader who cannot count tokens
-precisely will invent a count that clears whatever bar you set.
+Every smell below is a **qualitative predicate**, never a numeric threshold: a reader who cannot
+count tokens precisely will invent a count that clears whatever bar you set, so the bar is a shape
+you can see rather than a number you have to measure.
 
-## Why these ten
+## Why these smells
 
 They are language-neutral, and each one names friction in the architecture vocabulary the repo's own
-`.glossary/LANGUAGE.md` defines — depth, seam, locality, leverage. **This file does not define those
-terms and must not**: it points at the register, and the audit reads the register at run time.
+`.glossary/LANGUAGE.md` defines — depth, seam, locality, leverage. **The register is where those
+terms are defined**, read at run time; this file points at it and holds no copy.
 
-The ten are a starter, not a ceiling. A repo adds its own in the same table shape through the
-`auditCatalogs` config key, and the gate emits those rows after the shipped ones. The extension is
-add-only: nothing a repo declares can remove or replace a smell below.
+The shipped list is a starter, not a ceiling. A repo adds its own in the same table shape through
+the `auditCatalogs` config key, and the gate emits those rows after the shipped ones. The extension
+is add-only: nothing a repo declares can remove or replace a smell below.
 
 ## The smells
 
@@ -80,27 +79,10 @@ Symptom: "always do X" in docs, with no lint rule, type, or runtime check behind
 
 ## Reporting the gate
 
-The gate is an internal accounting step, **not a filed artifact**. This skill files one issue per
-picked finding and writes no audit document. Run the gate as a table, then promote any `✗ found`
-smell the lens passes missed into the finding set before the table goes back to the human:
-
-```markdown
-| Smell | Status | Notes |
-|---|---|---|
-| 1. Shallow module | ✗ found | finding 2 (`adapt-payload`) |
-| 2. Pass-through layer | ✓ checked | none |
-| 3. Duplicated contract | ✗ found | finding 1 |
-| 4. Magic-string seam | ✗ found | finding 4 |
-| 5. Stale module | ✓ checked | none |
-| 6. Test surface mismatch | ✗ found | finding 3 |
-| 7. Hidden global state | — N/A | no shared mutable state in scope |
-| 8. Shotgun surgery hotspot | ✓ checked | none in this scope |
-| 9. Stale duplicate test | ✓ checked | none |
-| 10. Convention-over-code drift | — N/A | no convention claims in scope |
-```
+Run the gate as a table, then promote any `✗ found` smell the lens passes missed into the finding
+set before the table goes back to the human.
 
 Two runs over the same code may surface different findings, and **their rows should still match** —
 that is what the gate buys. A Status column that moves between runs is itself worth looking at.
 
-**Never hardcode the row count.** Emit one row per smell defined above, in order, then one per smell
-in each declared repo catalog, in the order the `auditCatalogs` key lists them.
+**Count the rows at run time**, one per smell defined above, in order.
