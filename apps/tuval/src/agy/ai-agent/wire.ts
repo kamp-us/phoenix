@@ -9,11 +9,16 @@
  * protocol or schema version field of any kind — so nothing downstream can branch on a version,
  * and the two tolerances below are the only defence a later release leaves us:
  *
- * - **`step_type` is an open string, never a closed union.** Five values are observed —
+ * - **`step_type` is an open string, never a closed union.** Five values are observed at this pin —
  *   `user_input`, `agent_response`, `tool`, `subagent`, `system_message` — and two of those were
- *   found only after the first census. Six more (`thinking`, `plan`, `error`, `command`, `memory`,
- *   `checkpoint`) exist as strings in the binary and have never been emitted. `state` and
- *   `result.status` are typed open for the same reason.
+ *   found only after the first census. A sixth, `error_message`, was observed on a **later release,
+ *   v1.2.0**, and is named here as a later-version reading rather than written back onto the five
+ *   above: it rides the step agy emits when a reply was cut and the turn is about to retry, carries
+ *   no `text_delta`, and `mapper.ts` now has an arm for it
+ *   ([#8896](https://github.com/kamp-us/phoenix/issues/8896)). Six more (`thinking`, `plan`, `error`,
+ *   `command`, `memory`, `checkpoint`) exist as strings in the binary and have never been emitted.
+ *   `state` and `result.status` are typed open for the same reason — which is the tolerance that let
+ *   the new value through without a decode change.
  * - **Only the fields that route a line are required.** Every other field is optional and
  *   defaulted, because a line refused for a key this pin has not seen is content the operator
  *   never gets. A default never aliases the unknown onto a real value a reader branches on, though:
@@ -28,7 +33,13 @@
 import {Predicate} from "effect";
 import {isJsonValue, type JsonValue} from "../../ai-agent/ports/index.ts";
 
-/** The release every shape below was captured from. There is no version field on the wire. */
+/**
+ * The release every shape below was captured from. There is no version field on the wire.
+ *
+ * It stays at `1.1.27` deliberately. The v1.2.0 `error_message` reading above is one step type on one
+ * machine, not a re-census, and moving this constant would restate the whole module's capture as a
+ * v1.2.0 one — the laundering ADR 0362 rules out. It moves when the module is captured again.
+ */
 export const AGY_VERSION = "1.1.27";
 
 /**

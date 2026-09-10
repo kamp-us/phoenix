@@ -9,7 +9,10 @@
  * `build retire` does not cover this: that verb targets the trees holding ONE number's lane branch
  * and needs a board statement about that number to release them. A finished agent tree usually holds
  * no lane branch at all — the harness detaches it — so there is no number to ask the board about.
- * This verb asks git instead, and reclaims only what git can prove.
+ * This verb asks git instead, and reclaims only what git can prove — plus one non-git question on the
+ * same fail-safe polarity: is the tree still in use? Git cannot answer it, because an operator or
+ * reviewer seat drives its lane without committing or editing, so `./reap.ts`'s {@link Liveness}
+ * carries the tree's own recency and any live or unreadable reading is a KEEP.
  *
  * The order is the contract:
  *
@@ -17,35 +20,38 @@
  *   2. Every registration is read whole (`./git.ts`) and narrowed to the agent population.
  *   3. The trunk is derived from `origin/HEAD`, never spelled — a wrong ref resolves to nothing and
  *      would make every tree look unlanded.
- *   4. Each tree's uncommitted count and its HEAD's landing are read, and {@link classify} seats it.
- *      **Every read that fails is a KEEP**, per-tree: a sweep of seventy trees must not lose its
- *      whole answer to one unreadable directory.
+ *   4. Each tree's uncommitted count, its HEAD's landing and its liveness are read, and
+ *      {@link classify} seats it. **Every read that fails is a KEEP**, per-tree: a sweep of seventy
+ *      trees must not lose its whole answer to one unreadable directory.
  *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
- *   6. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
+ *   6. `--limit` bounds the executed set to that many removals; everything past it stays planned and
+ *      is reported unattempted, so a population too large for one watchdog window is walked in
+ *      pieces instead of being all-or-nothing.
+ *   7. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
  *      path — and every one is read back off a second `worktree list`.
+ *   8. Each removal git reports is appended to {@link REAP_JOURNAL} under this run's tree root
+ *      before the next candidate is attempted, so a sweep killed mid-loop still leaves its executed
+ *      set readable on disk. The read-back at 7 proves the sweep; the journal is what survives a
+ *      process that never reaches it. A journal write that fails is reported and demotes nothing —
+ *      the removal is the fact, the record is the convenience.
  *
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
  * checkout, it does not delete a ref.
  */
-import {Effect} from "effect";
+import {Effect, FileSystem, Option, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {
-	diffRange,
-	diffRangePaths,
-	mergeBase,
-	noMergeBaseReason,
-	originHeadRef,
-	patchIdsIn,
-	patchIdsOf,
-} from "../io/git.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {containmentOf} from "../io/containment.ts";
+import {appendText} from "../io/fs.ts";
+import {originHeadRef} from "../io/git.ts";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {isAncestor, removeWorktree, worktreeRegistrations, worktreeStatusPaths} from "./git.ts";
+import {removeWorktree, worktreeRegistrations, worktreeStatusPaths} from "./git.ts";
 import {
 	classify,
 	isAgentWorktree,
-	type Landing,
 	type License,
+	type Liveness,
+	QUIET_WINDOW_SECONDS,
 	type TreeFacts,
 	type Uncommitted,
 	unprovenAmong,
@@ -56,23 +62,28 @@ import {readTree} from "./tree.ts";
 const VERB = "fabrika build reap";
 
 /**
- * How far back along the trunk a squash is looked for.
+ * Where the removals land as they happen, relative to this run's own tree root.
  *
- * Bounded because the scan reads patches, not commit names. Past it the answer is "not found",
- * which classifies KEEP — the fail-safe direction, and the reason a bound is allowed to exist here
- * at all.
+ * A leaf of `.fabrika/`, which the repository gitignores whole, so the record of a machine-local
+ * sweep never reaches a diff.
  */
-const TRUNK_SCAN = 200;
+export const REAP_JOURNAL = ".fabrika/reap.jsonl";
 
 export interface ReapOptions {
 	/** Removals happen only under this flag. Default is a dry run that mutates nothing. */
 	readonly execute: boolean;
+	/** At most this many removals are attempted; `null` attempts every removable tree. */
+	readonly limit: number | null;
 }
 
-type Deps = ChildProcessSpawner.ChildProcessSpawner;
+type Deps = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path;
 
 export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never, Deps> =>
 	Effect.gen(function* () {
+		if (options.limit !== null && (!Number.isInteger(options.limit) || options.limit <= 0)) {
+			return refuse(FAILED, `${VERB}: --limit "${options.limit}" is not a positive integer.`);
+		}
+
 		const self = yield* readTree;
 		if (self._tag === "Failure") {
 			return refuse(
@@ -115,7 +126,8 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				locked: tree.locked,
 				prunable: tree.prunable,
 				uncommitted: yield* uncommittedIn(tree.path, tree.prunable),
-				landing: yield* landingOf(tree.head, trunk.value),
+				landing: yield* containmentOf(tree.head, trunk.value),
+				liveness: yield* livenessOf(tree.path, tree.prunable),
 			};
 			seated.push({facts, verdict: classify(facts, trunk.value, selfPaths)});
 		}
@@ -133,6 +145,15 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				? [`${VERB}: KEEP ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
 				: [],
 		);
+
+		const attempted = options.limit === null ? removable : removable.slice(0, options.limit);
+		const unattempted = removable.slice(attempted.length);
+		const boundLine =
+			options.limit === null
+				? []
+				: [
+						`${VERB}: --limit ${options.limit} bounds this sweep to ${attempted.length} of ${removable.length} removable tree(s); the other ${unattempted.length} stay registered for a later run.`,
+					];
 
 		if (!options.execute) {
 			const planned = seated.flatMap(({facts, verdict}) =>
@@ -153,18 +174,39 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 					scope,
 					...planned,
 					...keptLines,
+					...boundLine,
 					`${VERB}: ${removable.length} removable, ${kept.length} kept — nothing was removed; re-run with --execute to remove them.`,
 				],
 			);
 		}
 
+		const journalPath = (yield* Path.Path).join(self.value.root, REAP_JOURNAL);
+		const run = new Date().toISOString();
 		const removed: Array<{path: string; license: License}> = [];
 		const failed: Array<{path: string; reason: string}> = [];
-		for (const candidate of removable) {
+		const unjournalled: Array<{path: string; reason: string}> = [];
+		for (const candidate of attempted) {
 			const gone = yield* removeWorktree(candidate.path);
-			if (gone._tag === "Failure") failed.push({path: candidate.path, reason: gone.reason});
-			else removed.push(candidate);
+			if (gone._tag === "Failure") {
+				failed.push({path: candidate.path, reason: gone.reason});
+				continue;
+			}
+			removed.push(candidate);
+			const written = yield* Effect.result(
+				appendText(
+					journalPath,
+					`${JSON.stringify({run, trunk: trunk.value, path: candidate.path, license: candidate.license})}\n`,
+				),
+			);
+			if (Result.isFailure(written)) {
+				unjournalled.push({path: candidate.path, reason: written.failure.reason});
+			}
 		}
+
+		const journalLines = unjournalled.map(
+			(row) =>
+				`${VERB}: NOT JOURNALLED — ${row.path} was removed and the record did not land in ${journalPath}: ${row.reason}. The removal stands; a run killed after this point leaves it off the disk record.`,
+		);
 
 		let unproven: ReadonlyArray<string> = [];
 		if (removed.length > 0) {
@@ -173,7 +215,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				return refuse(
 					READBACK_MISMATCH,
 					`${VERB}: ${removed.length} tree(s) were removed and the registrations could not be read back: ${after.reason} — the removals are NOT proven.`,
-					[scope, ...keptLines],
+					[scope, ...journalLines, ...keptLines],
 				);
 			}
 			unproven = unprovenAmong(
@@ -194,6 +236,11 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			...unproven.map(
 				(path) =>
 					`${VERB}: UNPROVEN — git reported ${path} removed and it is still registered; this clone needs a human.`,
+			),
+			...journalLines,
+			...unattempted.map(
+				(row) =>
+					`${VERB}: UNATTEMPTED ${row.path} (${row.license}) — past --limit ${options.limit}; it stays registered and is removable on the next run.`,
 			),
 			...keptLines,
 		];
@@ -218,11 +265,16 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				executed: true,
 				trunk: trunk.value,
 				scanned: population.length,
+				journal: journalPath,
 				removed,
 				failed,
+				unattempted,
 				kept,
 			}),
-			[...report, `${VERB}: ${removed.length} removed, ${kept.length} kept.`],
+			[
+				...report,
+				`${VERB}: ${removed.length} removed, ${unattempted.length} unattempted, ${kept.length} kept.`,
+			],
 		);
 	});
 
@@ -235,7 +287,10 @@ const branchOf = (facts: TreeFacts): string =>
  * A registration git already calls prunable has no directory to read, so it is not asked: the
  * failure would be noise on a tree {@link classify} keeps for a different reason anyway.
  */
-const uncommittedIn = (path: string, prunable: boolean): Effect.Effect<Uncommitted, never, Deps> =>
+const uncommittedIn = (
+	path: string,
+	prunable: boolean,
+): Effect.Effect<Uncommitted, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		if (prunable) return {_tag: "Unknown" as const, reason: "its directory is gone"};
 		const dirty = yield* worktreeStatusPaths(path);
@@ -245,62 +300,46 @@ const uncommittedIn = (path: string, prunable: boolean): Effect.Effect<Uncommitt
 	});
 
 /**
- * What `trunk` says about one HEAD commit — the three positive answers, or why there is none.
+ * Whether one tree still reads as in use, or the reason that is UNKNOWN.
  *
- * The ancestor test comes first because it is one cheap call and it settles the majority: a detached
- * agent tree usually stands on the trunk commit it was spawned at. Only what survives it costs the
- * patch reads.
+ * The signal is the worktree root's own mtime, and that tracks the root's **entry list** — a create,
+ * delete or rename directly in it — not a write to a file inside it. So for a seat that drives
+ * without editing, this reads the tree's provisioning time, and a young tree is one provisioned
+ * recently rather than one somebody was recently active in; {@link QUIET_WINDOW_SECONDS} carries the
+ * ground for that and what it costs. It is still the only liveness reading available without asking
+ * the OS for process cwds.
  *
- * The squash arm is patch-identity, not ancestry, and it was measured rather than reasoned about:
- * on `build/4082-db-schema-readme-diataxis-43cc4b51` the branch's own net patch id and the trunk
- * commit's path-limited one are both `d18b491a48c861494a35740f571a90a45b596aae`. The pathspec is
- * what makes those two comparable — limited to the paths the branch touches, a squash commit's diff
- * is that branch's net diff exactly. A squash landed on top of an intervening change to the same
- * paths will not match, and answers `Unlanded`, which is the fail-safe direction.
+ * A clock skew that puts the mtime in the future reads Live, not Quiet: the arm's whole polarity is
+ * that an answer it cannot trust must not license a removal.
  */
-const landingOf = (head: string, trunk: string): Effect.Effect<Landing, never, Deps> =>
+const livenessOf = (
+	path: string,
+	prunable: boolean,
+): Effect.Effect<Liveness, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		if (head === "") return {_tag: "Unknown" as const, reason: "its record names no HEAD commit"};
-		if (yield* isAncestor(head, trunk)) return {_tag: "Ancestor" as const};
-
-		const diff = yield* diffRange(trunk, head);
-		if (diff._tag === "Failure") {
-			return {_tag: "Unknown" as const, reason: `cannot diff it against ${trunk}: ${diff.reason}`};
-		}
-		if (diff.value.trim() === "") return {_tag: "NoChange" as const};
-
-		const own = yield* patchIdsOf(diff.value);
-		const mine = own._tag === "Ok" ? own.value[0] : undefined;
-		if (mine === undefined) {
+		if (prunable) return {_tag: "Unknown" as const, reason: "its directory is gone"};
+		const fs = yield* FileSystem.FileSystem;
+		const stat = yield* Effect.result(fs.stat(path));
+		if (Result.isFailure(stat)) {
 			return {
 				_tag: "Unknown" as const,
-				reason: `cannot compute the patch id of what its HEAD adds${own._tag === "Failure" ? `: ${own.reason}` : ""}`,
+				reason: `its directory could not be read: ${stat.failure.message}`,
 			};
 		}
-
-		const paths = yield* diffRangePaths(trunk, head);
-		if (paths._tag === "Failure") {
+		const mtime = stat.success.mtime;
+		if (Option.isNone(mtime)) {
 			return {
 				_tag: "Unknown" as const,
-				reason: `cannot list the paths it changes: ${paths.reason}`,
+				reason: "this platform reported no modification time for it",
 			};
 		}
-		const base = yield* mergeBase(trunk, head);
-		if (base._tag === "Failure") {
-			return {
-				_tag: "Unknown" as const,
-				reason: `it shares ${yield* noMergeBaseReason(trunk, base.reason)}`,
-			};
-		}
-		const landed = yield* patchIdsIn(base.value, trunk, paths.value, TRUNK_SCAN);
-		if (landed._tag === "Failure") {
-			return {
-				_tag: "Unknown" as const,
-				reason: `cannot scan ${trunk} for the patch it adds: ${landed.reason}`,
-			};
-		}
-		const match = landed.value.find((row) => row.patch === mine.patch);
-		return match === undefined
-			? {_tag: "Unlanded" as const}
-			: {_tag: "Squashed" as const, commit: match.commit};
+		const ageSeconds = Math.floor((Date.now() - mtime.value.getTime()) / 1000);
+		return ageSeconds >= QUIET_WINDOW_SECONDS
+			? {_tag: "Quiet" as const}
+			: {
+					_tag: "Live" as const,
+					signals: [
+						{_tag: "RecentActivity" as const, ageSeconds, windowSeconds: QUIET_WINDOW_SECONDS},
+					],
+				};
 	});

@@ -14,11 +14,30 @@
 
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
 	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
+
+/**
+ * Stdin was read and held nothing — `lane assembly-body`, the group's one verb that takes authored
+ * bytes. Distinct from a read that failed, which is `1`: an unread pipe is UNKNOWN, and collapsing
+ * it into "empty" would let the guard answer over a body it never saw.
+ */
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
+
+/** The authored body carries a machine-local path headed for a public pull request. */
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
+
+/**
+ * The authored body IS a bare `@` path reference. Its own seat because the remedies are opposite: a
+ * leak is redacted and resent, while a body that is a pointer has to be written first.
+ */
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 
 /**
  * The lane is not there: no `workflow.json` under the lane directory. A proven absence — the lane
@@ -379,14 +398,19 @@ export const SHAPE_MISMATCH = 46;
 export const GRANT_REFUSED = 47;
 
 /**
- * The issue a boot was pointed at hangs under a parent, whose lane already carries it as a task —
- * the mirror of {@link SHAPE_MISMATCH}, and the one that guard could not reach, since both facts
- * that guard reads are facts about the issue itself. A child booted its own coder-template ledger
- * while the parent epic's lane held the same number, and nothing reconciled the two.
+ * The issue a boot was pointed at hangs under a parent — the mirror of {@link SHAPE_MISMATCH}, and
+ * the one that guard could not reach, since both facts that guard reads are facts about the issue
+ * itself. A child booted its own coder-template ledger while the parent epic's lane held the same
+ * number, and nothing reconciled the two.
  *
  * Its own seat rather than {@link SHAPE_MISMATCH}'s, because the remedies are opposite: an epic
  * needs a machine of its own and is booted with `lane emit`, while a child needs no lane at all —
- * the parent's is the one to drive, and a second boot is exactly the harm.
+ * and a second boot is exactly the harm.
+ *
+ * One code, three routes: the parent lane's emitted task set is read before the refusal speaks, so
+ * a child the parent machine holds says drive that lane, one it provably does not hold says place
+ * the child in the epic's `## Dependencies` block and `lane amend` the parent first, and a task set
+ * that did not read says so instead of asserting membership either way.
  */
 export const LANE_IS_CHILD = 48;
 
@@ -478,3 +502,117 @@ export const CHILD_UNSEATED = 54;
  * "cleared".
  */
 export const WAIT_TOO_SOON = 55;
+
+/**
+ * The issue the assembly PR's prose was asked for is not an epic — it carries no `type:epic`.
+ *
+ * Its own seat rather than {@link ISSUE_UNRESOLVED}'s: the issue resolved fine, and what is wrong is
+ * which issue was named. A non-epic's title would take a `chore`/`fix` prefix and the `(epic)` scope
+ * would be a lie about a subject that is going to land on `main` — so the refusal names the number
+ * rather than deriving a title nobody meant.
+ */
+export const NOT_AN_EPIC = 56;
+
+/**
+ * The assembled `## About this epic` section is one `build pr`'s body guard would refuse — a closing
+ * keyword the swap did not reach, or a classification claim the block quote did not cover, each
+ * named.
+ *
+ * Both should be impossible while the swap list matches that module's `CLOSING_RE` and the lifted
+ * text stays quoted, and this seat is what keeps it so: the section is read back through the guard's
+ * own predicates, and the refusal is fail-closed rather than an assumption that the two still agree.
+ * The remedy is a person's — reword the epic's Problem paragraph, or write the section by hand. The
+ * title is unaffected and a second call with `--field title` still answers.
+ */
+export const ABOUT_UNSAFE = 57;
+
+/**
+ * The assembly PR body handed to `lane assembly-body` carries no closing keyword aimed at the epic —
+ * refused, and nothing is printed for a `gh pr create` to open.
+ *
+ * An epic run is one branch and one PR, so that PR is the run's landing: a tail merging as
+ * `Part of #<epic>`, or closing only its children, folds the lane to `shipped` over an epic the
+ * board still calls open, and an operator re-dispatched on it parks on `LANE-TERMINAL` with no door
+ * out. Its own seat rather than {@link MALFORMED_RECORD}'s, which is a record on disk:
+ * nothing here is on disk yet, and the remedy is the author's — write `Fixes #<epic>` into the body,
+ * or do not open the run's PR yet.
+ */
+export const TAIL_NOT_CLOSING = 58;
+
+/**
+ * The tree behind the brief's own `fabrika:` entrypoint does not carry a lane verb the brief
+ * instructs the shell to run — so the brief is not emitted and no shell is spawned.
+ *
+ * Its own seat rather than {@link LANE_UNREADABLE}'s, which is the entrypoint the driver could not
+ * resolve at all: this one resolved, is node-runnable, and names a tree whose copy of this CLI is
+ * older than the contract the brief hands out. An epic run cuts its assembly branch once and every
+ * child shell runs that branch's own in-tree fabrika, so a lane verb that landed on the trunk after
+ * the cut is absent there — the shell does real work, produces a real verdict, and cannot record it.
+ * The remedy is the driver's `lane refresh`, named on the refusal beside every missing verb.
+ */
+export const BRIEFED_VERB_ABSENT = 59;
+
+/**
+ * `lane amend` would drop a task the lane already carries as landed: the epic's current
+ * `## Dependencies` block no longer places a child whose region has reached its success final.
+ * Refused with nothing written — not the log, not the machine.
+ *
+ * Its own seat rather than {@link MIGRATION_UNSAFE}'s, which is a machine swap that would relocate a
+ * lane's state: here nothing would move, the task would simply stop existing, and the ledger's
+ * record of work that actually landed would go with it. The remedy is the epic body's — put the
+ * child back in a phase, or close the epic over what it built.
+ */
+export const AMEND_DROPS_LANDED = 60;
+
+/**
+ * `lane amend`'s re-derived machine cannot replay a task's recorded history to the leaf that task
+ * stands on — the task is dropped while carrying history, or its log reaches a cell the new region
+ * does not hold. Refused with nothing written.
+ *
+ * Its own seat rather than {@link AMEND_DROPS_LANDED}'s: that one is about work the ledger proves
+ * finished, and its remedy is the topology. This one is about a task mid-flight, and the remedy is
+ * to let it reach a leaf the amendment can carry — or to amend a different part of the topology.
+ */
+export const AMEND_UNREPLAYABLE = 61;
+
+/**
+ * The epic body's `## Dependencies` block was read in full and is not a topology: a line that does
+ * not parse, a child placed in two phases, or a requires subject placed in none. Refused before the
+ * lane's own record is judged and before any write.
+ *
+ * Its own seat rather than {@link MALFORMED_RECORD}'s, which says a record ON DISK is not the shape
+ * and sends its reader at `.fabrika/lanes/<n>/`: here both on-disk records are fine and the
+ * defective document is the issue body, which no lane verb writes — `fabrika plan restage` is the
+ * repair, and a reader routed at the ledger would go looking for a fault that is not there.
+ */
+export const TOPOLOGY_MALFORMED = 62;
+
+/**
+ * An issue-keyed boot was pointed at an issue the board says already had a lane — refused with
+ * nothing written.
+ *
+ * A lane's ledger is the whole of its state and it is gitignored, so deleting the directory and
+ * booting again mints a lane at a full repair budget with no record anywhere that a round was
+ * granted. That is how one frozen lane's spent budget came back, and a successor driver cannot tell
+ * the rebuilt ledger from a first boot.
+ *
+ * Its own seat rather than {@link LANE_EXISTS}'s, which says the directory is in the way and the
+ * remedy is to drive it; here nothing is in the way and that is the problem. Rather than
+ * {@link SHAPE_MISMATCH}'s or {@link LANE_IS_CHILD}'s too, whose remedies are a different verb and a
+ * different lane: the remedy here is neither, because a spent repair budget comes back only through
+ * a recorded round grant.
+ */
+export const PRIOR_LANE = 63;
+
+/**
+ * A named deferral does not describe this lane — refused with nothing written.
+ *
+ * Its own seat rather than {@link AMEND_UNREPLAYABLE}'s, and the split is what makes either code
+ * actionable. `61` says the LOG cannot survive the amendment, and its remedy is to change the
+ * topology or wait for the task to reach a leaf. This one says the DEFERRAL is wrong — the task is
+ * not this lane's, or the topology still places it, or it carries no history to defer, or a live
+ * worker still holds the child — and every one of those is repaired by changing the flag or the
+ * board, never by changing the plan. Seating them together would send an operator whose `--defer`
+ * had a typo to re-plan the epic.
+ */
+export const DEFERRAL_REFUSED = 64;

@@ -24,6 +24,14 @@ import {PROOF_ABSENT} from "./codes.ts";
 import {runDispatch} from "./dispatch-verb.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
+/**
+ * Every lane here is a single-issue one, which owns no assembly branch: a refresher reached at all
+ * would be dispatch refreshing a branch that does not exist.
+ */
+const neverRefreshed = () => {
+	throw new Error("a single-issue lane dispatched through a pre-dispatch assembly refresh");
+};
+
 const git = (cwd: string, ...args: string[]) =>
 	execFileSync("git", args, {cwd, encoding: "utf8"}).trim();
 
@@ -128,6 +136,7 @@ describe("Codex dispatch against real git and a fake child process", {
 						return answer("proven");
 					});
 				},
+				neverRefreshed,
 			).pipe(Effect.provide(NodeServices.layer)),
 		);
 		expect(result.code).toBe(0);
@@ -171,6 +180,7 @@ describe("Codex dispatch against real git and a fake child process", {
 					proved = true;
 					return Effect.succeed(answer("proven"));
 				},
+				neverRefreshed,
 			).pipe(Effect.provide(NodeServices.layer)),
 		);
 		expect(result.code).toBe(mode === "fail" ? 11 : PROOF_ABSENT);
@@ -191,6 +201,7 @@ describe("Codex dispatch against real git and a fake child process", {
 				options,
 				() => Effect.succeed(answer(briefFor(options))),
 				() => Effect.succeed(refuse(PROOF_ABSENT, "missing artifact")),
+				neverRefreshed,
 			).pipe(Effect.provide(NodeServices.layer)),
 		);
 		expect(result.code).toBe(PROOF_ABSENT);
@@ -198,7 +209,7 @@ describe("Codex dispatch against real git and a fake child process", {
 	it("refuses unsupported harnesses before reading the board or starting a child", async () => {
 		const options = {...fixture(), harness: "unknown"};
 		const result = await Effect.runPromise(
-			runDispatch(options, runBrief, () => Effect.succeed(answer("unused"))).pipe(
+			runDispatch(options, runBrief, () => Effect.succeed(answer("unused")), neverRefreshed).pipe(
 				Effect.provide(NodeServices.layer),
 			),
 		);
@@ -219,6 +230,7 @@ describe("Codex dispatch against real git and a fake child process", {
 				options,
 				() => Effect.succeed(answer(briefFor(options))),
 				() => Effect.succeed(answer("unused")),
+				neverRefreshed,
 			).pipe(Effect.provide(NodeServices.layer)),
 		);
 		expect(result.code).not.toBe(0);
@@ -234,6 +246,7 @@ describe("Codex dispatch against real git and a fake child process", {
 				options,
 				() => Effect.succeed(answer(briefFor(options))),
 				() => Effect.succeed(answer("unused")),
+				neverRefreshed,
 			).pipe(Effect.provide(NodeServices.layer)),
 		);
 		expect(result.code).toBe(11);

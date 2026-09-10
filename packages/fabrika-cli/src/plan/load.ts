@@ -13,6 +13,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readBlockedness} from "../build/blockedness.ts";
 import {
 	type PhaseLine,
 	type RequiredEdge,
@@ -141,6 +142,12 @@ const criteriaOf = (body: string): {token: CriteriaToken; count: number} => {
 	const read = readAcceptanceCriteria(body);
 	if (read._tag === "Found") return {token: "found", count: read.value.length};
 	return {token: read._tag === "Absent" ? "absent" : "malformed", count: 0};
+};
+
+/** The epic's own criteria texts, in body order — empty on anything but a `Found`. */
+const epicCriteriaOf = (body: string): ReadonlyArray<string> => {
+	const read = readAcceptanceCriteria(body);
+	return read._tag === "Found" ? read.value.map((criterion) => criterion.text) : [];
 };
 
 /**
@@ -276,6 +283,7 @@ export const loadLedger = (
 			epic: number,
 			children,
 			epicStories: stories.ids,
+			epicCriteria: epicCriteriaOf(epic.body),
 			cycleDoc: yield* probeCycleDoc(repo, cycleDocPath, env),
 			topology: {phases, edges},
 			dependenciesAbsent: topology._tag === "Absent",
@@ -304,12 +312,16 @@ export type FloorRead =
 	| {readonly _tag: "Floor"; readonly floor: Floor};
 
 /**
- * The floor over a loaded ledger, including the two reads it needs: the 404-discriminating probe
- * behind `DANGLING_DEP`, and each dependent's `blocked_by` list behind `UNENFORCED_DEP`.
+ * The floor over a loaded ledger, including the three reads it needs: the 404-discriminating probe
+ * behind `DANGLING_DEP`, each dependent's `blocked_by` list behind `UNENFORCED_DEP`, and the epic's
+ * own open blockers behind `DROPPED_EPIC_BLOCKER`.
  *
  * An `Unknown` probe refuses on `11` rather than resolving either way — "I could not tell whether
  * this ref exists" is not "it does", and it is certainly not "it does not". An unread `blocked_by`
- * list refuses the same way: an edge nobody could see is never an edge that is there.
+ * list refuses the same way: an edge nobody could see is never an edge that is there. The epic's own
+ * list is read through `readBlockedness`, the one derivation every build gate shares, so "open" means
+ * the same thing here as at the claim seam — and a blocker whose state it could not read leaves the
+ * carried-down set incomplete, which is `11` rather than a shorter set.
  */
 export const deriveFloorFor = (
 	messages: PlanMessages,
@@ -369,8 +381,38 @@ export const deriveFloorFor = (
 			observed.set(number, new Set(found.value));
 		}
 
+		const own = yield* readBlockedness(repo, ledger.epic);
+		if (own._tag === "Unknown") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					messages.unreadable(`#${ledger.epic}'s own blocked_by list`, own.reason),
+				),
+			};
+		}
+		if (own.unread.length > 0) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					messages.unreadable(
+						`#${ledger.epic}'s own blocker${own.unread.length === 1 ? "" : "s"}`,
+						own.unread.map((row) => `#${row.number}: ${row.reason}`).join("; "),
+					),
+				),
+			};
+		}
+
 		return {
 			_tag: "Floor" as const,
-			floor: deriveFloor({ledger, provenAbsent, required, observed, vocabulary}),
+			floor: deriveFloor({
+				ledger,
+				provenAbsent,
+				required,
+				observed,
+				epicBlockers: own.open,
+				vocabulary,
+			}),
 		};
 	});

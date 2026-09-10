@@ -466,10 +466,14 @@ const refusalFor = (outcome: Rest & {_tag: "Response"}): Failure & {readonly sta
  * value the caller can refuse on; it does not become implicit because the header got easier to
  * reach.
  */
-export const pagedWithLinkProof = (token: string, path: string): Api<PagedAttempt<PagedProof>> =>
+export const pagedWithLinkProof = (
+	token: string,
+	path: string,
+	pageLimit = PAGE_CAP,
+): Api<PagedAttempt<PagedProof>> =>
 	Effect.gen(function* () {
 		const entries: unknown[] = [];
-		for (let page = 1; page <= PAGE_CAP; page++) {
+		for (let page = 1; page <= pageLimit; page++) {
 			const outcome = yield* restRead(token, "GET", paged(path, page));
 			if (outcome._tag === "Unreachable") return statusless(outcome.reason);
 			if (outcome.status < 200 || outcome.status >= 300) return refusalFor(outcome);

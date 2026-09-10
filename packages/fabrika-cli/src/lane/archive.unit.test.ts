@@ -55,6 +55,13 @@ const widenedLaneText = (): string => {
 	return JSON.stringify(document, null, "\t");
 };
 
+/** `lane emit`'s shape: a machine whose `id` binds no committed template, so no candidate exists. */
+const emittedLaneText = (): string => {
+	const document = JSON.parse(coderTemplateText());
+	document.id = "epic-5817";
+	return JSON.stringify(document, null, "\t");
+};
+
 describe("judgeArchive", () => {
 	it("names the lane's own machine when the log will not replay through it", () => {
 		const text = coderTemplateText();
@@ -83,9 +90,7 @@ describe("judgeArchive", () => {
 	});
 
 	it("folds the lane's own machine BEFORE looking for a candidate, so a generated one still judges", () => {
-		const emitted = JSON.parse(coderTemplateText());
-		emitted.id = "epic-5817";
-		const text = JSON.stringify(emitted, null, "\t");
+		const text = emittedLaneText();
 
 		expect(judgeArchive([coderTemplateText()], text, compiled(text), log("PASS"))).toMatchObject({
 			_tag: "Unreplayable",
@@ -93,13 +98,41 @@ describe("judgeArchive", () => {
 		});
 	});
 
-	it("is UNKNOWN, never `Replays`, when a generated machine's replaying log has no candidate", () => {
-		const emitted = JSON.parse(coderTemplateText());
-		emitted.id = "epic-5817";
-		const text = JSON.stringify(emitted, null, "\t");
+	it("answers `Replays` for a generated machine that folds the log, having no second machine", () => {
+		const text = emittedLaneText();
+
+		expect(judgeArchive([coderTemplateText()], text, compiled(text), log("WIP", "DONE"))).toEqual({
+			_tag: "Replays",
+		});
+	});
+
+	it("is UNKNOWN when a committed template cannot be grafted at all", () => {
+		const template = JSON.parse(coderTemplateText());
+		delete template.id;
+		const lane = coderTemplateText();
 
 		expect(
-			judgeArchive([coderTemplateText()], text, compiled(text), log("WIP", "DONE")),
+			judgeArchive(
+				[JSON.stringify(template, null, "\t")],
+				lane,
+				compiled(lane),
+				log("WIP", "DONE"),
+			),
+		).toMatchObject({_tag: "Unjudgeable"});
+	});
+
+	it("is UNKNOWN when the grafted candidate does not compile", () => {
+		const template = JSON.parse(coderTemplateText());
+		delete template.machine.states;
+		const lane = coderTemplateText();
+
+		expect(
+			judgeArchive(
+				[JSON.stringify(template, null, "\t")],
+				lane,
+				compiled(lane),
+				log("WIP", "DONE"),
+			),
 		).toMatchObject({_tag: "Unjudgeable"});
 	});
 });
@@ -237,6 +270,25 @@ describe("lane archive", () => {
 
 		expect(out.code).toBe(LOG_REPLAYS);
 		expect(asked).toBe(0);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a generated machine's replaying log on LOG_REPLAYS, not as UNKNOWN", async () => {
+		const fs = fakeFs({
+			files: {
+				[TEMPLATE]: coderTemplateText(),
+				[`${DIR}/workflow.json`]: emittedLaneText(),
+				[`${DIR}/events.jsonl`]: logText("WIP", "DONE"),
+			},
+			dirs: {[ROOT]: ["6037"], [ARCHIVED]: []},
+			directories: [ROOT, ARCHIVED, DIR],
+		});
+		const out = await run(fs, runArchive(OPTIONS));
+
+		expect(out.code).toBe(LOG_REPLAYS);
+		expect(out.stderr.join("\n")).toContain(
+			"replays through every machine that exists for this lane",
+		);
 		expect(fs.written.size).toBe(0);
 	});
 

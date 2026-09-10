@@ -545,6 +545,8 @@ describe("the append-only fence", () => {
 	const options = {
 		issue: 4287,
 		pr: 4321,
+		base: null,
+		tip: null,
 		round: 1,
 		repo: null,
 		json: false,

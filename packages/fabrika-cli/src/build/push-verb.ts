@@ -17,6 +17,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {isAncestor} from "../io/git.ts";
 import {currentBranch} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
@@ -31,7 +32,6 @@ import {
 	commitsDropped,
 	ensureCommitPresent,
 	headSha,
-	isAncestor,
 	publishTarget,
 	push,
 	remoteSha,

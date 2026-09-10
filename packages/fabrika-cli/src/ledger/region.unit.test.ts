@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {splicePlan} from "./region.ts";
+import {spliceDependencies, splicePlan} from "./region.ts";
 
 const PLAN = "## Plan (plan-epic)\n\n### Summary\n\nA plan.\n";
 const TOPOLOGY = "## Dependencies\n\n- phase 1: #4301\n";
@@ -100,6 +100,63 @@ describe("splicePlan on a re-plan", () => {
 	it("refuses two plan headings", () => {
 		expect(splice(`${PLANNED}\n${PLAN}`, "re-plan")).toMatchObject({
 			reason: expect.stringContaining('carries 2 "## Plan (plan-epic)" headings'),
+		});
+	});
+});
+
+describe("spliceDependencies", () => {
+	const REWRITTEN = "## Dependencies\n\n- phase 1: #4301\n- phase 2: #4303\n";
+	const splice = (body: string) => spliceDependencies({epic: 4300, body, topology: REWRITTEN});
+
+	const bodyWith = (topology: string, tail: string): string =>
+		`${ENRICHED}\n${PLAN}\n${topology}\n${tail}`;
+
+	it("replaces the block alone, leaving the plan and the envelope byte-identical", () => {
+		const before = bodyWith("## Dependencies\n\n- phase 1: #4301, #4302\n", "");
+		const spliced = splice(before);
+		expect(spliced).toMatchObject({_tag: "Composed"});
+		expect(spliced._tag === "Composed" && spliced.body).toBe(`${ENRICHED}\n${PLAN}\n${REWRITTEN}`);
+	});
+
+	it("ends the region at a thematic break, so a dated amendment below it survives", () => {
+		const amendment = "---\n\n**Amendment** — filed below the block.\n";
+		const before = bodyWith("## Dependencies\n\n- phase 1: #4301, #4302\n", amendment);
+		const spliced = splice(before);
+		expect(spliced._tag === "Composed" && spliced.body).toBe(bodyWith(REWRITTEN, amendment));
+	});
+
+	it("refuses a body carrying no Dependencies heading", () => {
+		expect(splice(`${ENRICHED}\n${PLAN}`)).toMatchObject({
+			reason: expect.stringContaining('carries 0 "## Dependencies" headings'),
+		});
+	});
+
+	it("refuses two Dependencies headings", () => {
+		const twice = bodyWith("## Dependencies\n\n- phase 1: #4301\n", `${TOPOLOGY}\n`);
+		expect(splice(twice)).toMatchObject({
+			reason: expect.stringContaining('carries 2 "## Dependencies" headings'),
+		});
+	});
+
+	it("refuses a heading that resolves inside the preserved brief envelope", () => {
+		const trap = [
+			"## Pitch",
+			"",
+			"<!-- fabrika:enriched issue=4300 mode=wrap -->",
+			"<details>",
+			"<summary>Original brief (verbatim)</summary>",
+			"",
+			"## Dependencies",
+			"",
+			"- phase 1: #4301",
+			"",
+			"## Notes",
+			"",
+			"</details>",
+			"",
+		].join("\n");
+		expect(splice(trap)).toMatchObject({
+			reason: expect.stringContaining("resolves inside the preserved brief envelope"),
 		});
 	});
 });

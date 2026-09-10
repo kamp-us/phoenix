@@ -74,6 +74,14 @@ label; the scope axis still binds, so an out-of-scope epic is still exit `20`. N
 `--override` to get past the audience axis — that is the fail-open convention the purpose exists to
 remove.
 
+**The blockedness gate does not bind a `plan` claim either**, on the same reasoning: an epic that
+waits on another epic is exactly the one an operator wants planned while the blocker is still being
+built, so builders can start the moment it lands. The claim prints
+`build claim: blockedness: the gate binds a build claim only — …` and reads no edges, so exit `16`
+is unreachable at this step and there is nothing here to wait on. Each child's own build claim
+still reads its exact edges, so nothing gets built on a contract that has not landed. A founder
+ruling scoped the gate that way, and the decision corpus records the matrix.
+
 Work wherever you were spawned; where that is, is the operator's call, not this skill's.
 `13` ends `STOPPED`. `build tree` is called **without** `--issue` — that flag proves the branch
 carries the claim's nonce, and this skill cuts no branch.
@@ -81,9 +89,9 @@ carries the claim's nonce, and this skill cuts no branch.
 Done when the claim answers `won`. **Read these codes off `build claim`, whose numbers above `11`
 are its own group's:** `15` is a proven loss (`BACKED-OFF`); `7` is a proven-absent or closed epic
 (`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
-report the axis, and do not route around it with an override. Exit `21` is no longer reachable at
-this step, because a `plan` claim is not bound by the audience axis. Any other non-zero ends
-`STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
+report the axis, and do not route around it with an override. Exits `21` and `16` are not reachable
+at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
+other non-zero ends `STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
 back to `build`: you hold no claim, and `build note` requires one.
 
 ## 2 — Open the run
@@ -127,6 +135,10 @@ fabrika ledger draft $epic_number --body-digest 8f2c1a90b4d7 --token <claim-toke
 
 1. As a yazar, I want to draft a başlık, so that I can publish it when it's ready.
 2. As a moderator, I want reported entries in a review queue, so that I can act on them.
+
+### Acceptance criteria
+- [ ] a draft başlık keeps its slug through publish
+- [ ] a reported entry lands in the moderator queue within one refresh
 EOF
 ```
 
@@ -135,6 +147,20 @@ are an ordered list and the leading integer is the id** — an unordered bullet 
 parses as *zero stories*, and `ledger draft` refuses that on `4` rather than letting it reach the
 gate. `4` names what is missing, duplicated or mis-numbered, so the repair is a re-draft, never a
 re-plan.
+
+**`### Acceptance criteria` is the contract the epic's own tail PR is graded against, and you write
+it here.** Every issue kind carries the same gradeable surface, so `review criteria <epic>` and
+`review append-criterion <epic>` work on a tail unchanged; an epic body carrying no such block
+leaves both of them with nothing to serve. Write it about the *epic*, not the children: coherence
+across the slices, the end-to-end behaviour no single child owns, the shape the tail must leave
+behind. The bytes are the child's, and
+[`contract.md`](contract.md)'s `## The ledger grammar this skill WRITES` states them — `ledger draft`
+refuses prose under that heading on `4`.
+
+**It is authored here, on this stdin, and never appended after `ledger write`.** These criteria go
+through step 4's grilling and the founder plan approval with the rest of the plan, and the scope
+digest binds them: edit one after approval and the standing approval resolves `stale`, which is the
+point.
 
 Write the product layer first and let the slices fall out of it. A `### Task-split rationale` that
 cannot say which story each slice serves is telling you the split is wrong.
@@ -252,6 +278,14 @@ exit `20`, so `ledger child` refuses it at mint instead of publishing an issue n
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
+**A `type:decision` child is always held.** `--type type:decision --ready-for agent` is refused on
+exit `10` before anything is read: a build claim admits a decision only against a ruling comment
+recorded on **that** issue, and a child you just minted carries none — so the pair publishes a child
+every builder refuses, which parks the whole epic lane.
+Naming the epic's own ruling comment does not open it either; the citation binds to the claimed
+issue. Mint the child `--ready-for human` with `--assignee`, and once the ruling is recorded on the
+child a control-plane human flips it with `fabrika decision rule <n> --cites <child-comment-url>`.
+
 **Choosing that assignee is yours when the work belongs to the team, and not yours when it does
 not.** Pick from the repository's contributors and say in the child body why — a wrong pick is one
 re-assignment. But where the epic says the owner sits *outside* the roster you can see (a legal
@@ -288,13 +322,45 @@ closed while still linked. It refuses a child that is not this epic's, and one t
 fabrika ledger topology $epic_number --token <claim-token> <<'EOF'
 #<child-a> phase 1
 #<child-b> phase 1
-#<child-c> phase 2 requires #<child-a>
+#<child-c> phase 2 requires #<child-a>, #<other-epics-issue>
 EOF
 ```
 
-Each reference is the child's real issue number. The verb validates against the manifest and
-renders the block; it refuses a cycle, a reference to something that is not a child, and a child
-that appears nowhere. `24` is a proven-bad topology and nothing has been written to the epic.
+Each phase member and each `requires:` subject is one of this epic's children, by its real issue
+number. The verb validates against the manifest and renders the block; it refuses a cycle, a
+subject that is not a child, a child that appears nowhere, and a `requires:` naming the epic itself.
+`24` is a proven-bad topology and nothing has been written to the epic.
+
+**Never write `requires #$epic_number`.** A child blocked on its own parent can never be claimed —
+an epic closes only once its children close — so the verb refuses that line on `24` before it reads
+anything. It reaches the immediate parent only: a grandparent epic reads to the verb exactly like
+the cross-epic edge below, so keep an ancestor of this child off the line yourself.
+
+**A prerequisite may sit in another epic, and this is the only place to say so.** The decision corpus
+rules a `requires:` reference to an issue another epic owns a legitimate gating edge, so write it on
+the line exactly like a sibling's number — the block keeps it, and step 8's `ledger edges` puts it on
+the graph. There is no raw `gh api` write for a cross-epic edge, and an edge the block does not name
+is an edge the epic body does not show.
+
+**Read the epic's own blockers first, and put every open one on every child's line.** Nothing else
+carries that edge down: the epic takes its `gate` claim while its blockers are open, `plan flip`
+makes every child pickable, and each child's build claim reads that child's edges alone — so a
+blocker recorded only at epic level fences the epic and nobody else, and every child is buildable
+against a contract that has not landed. The ref goes in the same shape as any other prerequisite:
+
+```bash
+fabrika build eligible $epic_number
+```
+
+`eligible` means there is nothing to carry; `16` names every open blocker, and those are the refs.
+
+A blocker that is itself a child of this epic is not carried down — that edge is your own sequencing.
+The gate reds `DROPPED_EPIC_BLOCKER` on each child you dropped one from.
+
+The verb proves each out-of-epic target before it stages anything, so those refusals are about the
+target, not the shape: `24` says it is proven absent or is a pull-request number — the corpus names
+a blocking pull request by the issue its merge closes — and `11` says it could not be read at all.
+Fix the number and re-run; nothing was staged either way.
 
 **Two slices are only parallel if they do not write the same file.** A phase that puts two
 children on one central list reads parallel and serializes in practice. The verb cannot see your
@@ -329,7 +395,8 @@ fabrika ledger edges $epic_number --token <claim-token>
 
 It reads the epic's own block, writes every edge it requires, and proves each one by re-reading the
 graph. Done when it answers `reconciled` with `verified: true`. It is idempotent and reconciles
-rather than replaces, so re-running it writes nothing and an edge no ledger authored is left alone.
+rather than replaces, so re-running it writes nothing, re-reads nothing, and an edge no ledger
+authored is left alone.
 
 `9` means an edge was POSTed and does not read back, and `8` means the graph could not be re-read
 after a POST — both leave the graph UNKNOWN and need a human eye; say the epic body **is** written,
@@ -385,9 +452,10 @@ and every row below that seats one says so.
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
 - `EPIC-NOT-ADMITTED` — `20` from **`build claim`**: proven not admitted on the scope axis. **A
-  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` is not among this
-  skill's codes: step 1 claims with `--purpose plan`, and the audience axis binds build-purpose
-  claims only. Bypassing the scope axis with the override is not your answer to give.
+  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` and `16` are not
+  among this skill's codes: step 1 claims with `--purpose plan`, and the audience axis and the
+  blockedness gate each bind build-purpose claims only. Bypassing the scope axis with the override
+  is not your answer to give.
 - `CHILD-ORPHANED` — `23` or `26` from `ledger child`: a child was created and something after the
   create could not be proven. **A back-off holding a real artifact.** On `23` the link is unproven
   and the child is in the run manifest, so name it from there. On `26` the manifest write itself

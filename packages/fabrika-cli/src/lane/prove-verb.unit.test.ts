@@ -1501,6 +1501,26 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 		});
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
 	});
+
+	/**
+	 * Where the ui-bearing child's deferral lands. The child hands `review-ui` on rather than
+	 * dropping it, so the tail — whose one PR carries those same rendered files — must still refuse
+	 * without it, at a head a preview exists for.
+	 */
+	it("still owes review-ui on the tail's own rendered head, so the child's deferral moved the gate", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "apps/site/src/routes/page.tsx"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await runEpic(epicLaneAt("tail"), seams, "PASS", "epic_4300");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+	});
 });
 
 /**

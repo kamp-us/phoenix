@@ -2,9 +2,11 @@
  * The body digest: the first 12 lowercase hex of the SHA-256 of the epic's body, taken **after**
  * `normalizeForReadback`.
  *
- * `ledger open` prints it; `ledger draft` and `ledger write` require it as `--body-digest`, re-read the
- * live body, recompute, and refuse on `21` if it differs. The gap between deciding and writing is
- * closed by re-deciding, not by trusting.
+ * Two verbs print it and four take it. `ledger open` prints it for the run it allocates, and `ledger
+ * draft` and `ledger write` take it from there. `ledger digest` prints it staging nothing, which is
+ * the source `ledger retopology` takes — a repair that needs no plan run cannot get its one required
+ * input from the verb that starts one. All four re-read the live body, recompute, and refuse on `21`
+ * if it differs: the gap between deciding and writing is closed by re-deciding, not by trusting.
  *
  * **Normalizing before hashing is a scar fix, not tidiness.** v1's splice round-trip compared
  * raw bytes while its only caller captured stdout through command substitution, which strips every

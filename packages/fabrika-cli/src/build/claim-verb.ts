@@ -46,6 +46,11 @@
  * same derivation `build eligible` answers from: without it the two seams disagreed on one edge, and
  * every sequential epic tracer after the first parked at a human.
  *
+ * **That gate binds a build-purpose claim and no other.** Planning and plan-gating an epic write no
+ * code, and they are precisely the work that should happen while the epic's blocker is still being
+ * built — so `--purpose plan` and `--purpose gate` skip the graph read entirely and print
+ * `purposeBlockednessLine` in its place.
+ *
  * In repair the number is a **PR**, which carries no home and no audience of its own, so the test
  * runs over the issue that PR serves. The repair route passes that issue explicitly and the
  * plural linkage reader selects it without reference-order dependence — and when that issue is
@@ -107,6 +112,7 @@ import {
 	NOT_REPAIR,
 	parseCitation,
 	parseClaimPurpose,
+	purposeBlockednessLine,
 	purposeScopeLine,
 	readDeclaredDispatch,
 	scopeSubjectOf,
@@ -509,9 +515,14 @@ export const runClaim = (
 		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number
 		// out of scope should be refused on the fact that cost no call. It runs over the
 		// named target only when that target is an issue — a repair claim names a pull request, which
-		// carries no edges of its own, and a lane repairing an open PR has already started.
+		// carries no edges of its own, and a lane repairing an open PR has already started — and only
+		// on a build-purpose claim: planning and plan-gating an epic write no code, and are exactly
+		// the work that should happen while its blocker is still open.
 		const gateNotes: string[] = [];
-		if (scopeSubjectOf(ready.issue)._tag === "Own") {
+		const ownTarget = scopeSubjectOf(ready.issue)._tag === "Own";
+		if (ownTarget && purpose !== "build") {
+			gateNotes.push(purposeBlockednessLine(CLAIM, purpose));
+		} else if (ownTarget) {
 			const {gate, notes} = yield* readDischargedGate(CLAIM, options.env, repo, number);
 			if (gate._tag === "Unknown") {
 				return refuse(
@@ -533,9 +544,9 @@ export const runClaim = (
 
 			// Last of the three IO gates, and last for the same reason blockedness is second: it costs a
 			// comment page, and a number the pure axes already refused should never pay for it. Only a
-			// fresh build-purpose claim asks — `plan` and `gate` claim epics, and a repair claim names a
-			// PR, whose own verdicts `build verdicts` already folds.
-			if (purpose === "build" && repair._tag === "NotRepair") {
+			// fresh build-purpose claim asks — a repair claim names a PR, whose own verdicts
+			// `build verdicts` already folds.
+			if (repair._tag === "NotRepair") {
 				const prior = yield* readPriorBuild(repo, number, options.resume, lines);
 				if (prior._tag === "Refused") return prior.outcome;
 				gateNotes.push(...prior.notes);

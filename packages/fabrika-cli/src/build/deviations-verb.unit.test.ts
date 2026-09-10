@@ -3,9 +3,11 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import * as buildDeviations from "../wire/build-deviations.ts";
+import * as deviations from "../wire/deviations.ts";
 import {
 	BAD_SECTIONS,
 	CLAIM_NOT_MINE,
+	DISCLOSURE_INCOMPLETE,
 	EMPTY_STDIN,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -49,6 +51,60 @@ const FULL = [
 	"",
 ].join("\n");
 
+/**
+ * The two rounds of the epic child the carry-forward gate was written from.
+ *
+ * Round 1 disclosed the three entries below; round 2's repair rewrote the section with its own and
+ * left all three behind, so a cold later reviewer read a narrower range than the one being graded
+ * and the dropped entries survived only in GitHub's comment edit history.
+ */
+const SERVER_BINDING = [
+	"- **Out-of-scope change** — **Said:** the child names the history mapper. **Did:** also narrowed",
+	"  `QueryOptionsInput.server` to `ServerBinding`. **Why:** the mapper's caller does not type-check",
+	"  without it. **Disposition:** stated here.",
+].join("\n");
+
+const NEWLINE_JOIN = [
+	"- **Known defect left unfixed** — **Said:** map every content block to a row. **Did:** the",
+	"  `content_block_start` arm joins its text on a newline. **Why:** the stream sends no separator.",
+	"  **Disposition:** stated here.",
+].join("\n");
+
+const UNSETTLED_STREAM = [
+	"- **Known defect left unfixed** — **Said:** every row settles. **Did:** an unsettled stream leaves",
+	"  its last row partial until the next `message_start`. **Why:** nothing else closes the row.",
+	"  **Disposition:** filed as a follow-up.",
+].join("\n");
+
+/** The same deviation the repair corrected — same **Said**, a disposition that says so. */
+const UNSETTLED_STREAM_RETIRED = UNSETTLED_STREAM.replace(
+	"**Disposition:** filed as a follow-up.",
+	"**Disposition:** corrected — the row now settles on stream end.",
+);
+
+/** The repair round's own entry — what an author writes when the section is rewritten from scratch. */
+const ROUND_TWO_OWN = [
+	"- **Pre-existing test or fixture changed** — **Said:** leave the round-1 fixtures alone. **Did:**",
+	"  re-recorded the mapper fixture. **Why:** the repair changes the rows it asserts.",
+	"  **Disposition:** stated here.",
+].join("\n");
+
+const sectionOf = (...entries: ReadonlyArray<string>): string =>
+	["## Deviations", "", ...entries, ""].join("\n");
+
+const ROUND_ONE = sectionOf(SERVER_BINDING, NEWLINE_JOIN, UNSETTLED_STREAM);
+
+/** Round 2 as it must be authored: the standing entries carried, the corrected one disposed of. */
+const ROUND_TWO_COMPLETE = sectionOf(
+	SERVER_BINDING,
+	NEWLINE_JOIN,
+	UNSETTLED_STREAM_RETIRED,
+	ROUND_TWO_OWN,
+);
+
+/** Round 2 as the bug wrote it: the round's own commits, and nothing of the range before them. */
+const ROUND_TWO_RESET = sectionOf(ROUND_TWO_OWN);
+
 /** What the format composes for this issue — the bytes the verb must land, byte for byte. */
 const composed = (section: string): string => {
 	const read = buildDeviations.read(`${buildDeviations.KEY_PREFIX} #${ISSUE}\n\n${section}`);
@@ -56,9 +112,22 @@ const composed = (section: string): string => {
 	return buildDeviations.emit(read.value);
 };
 
+/** The disclosure a marker's bytes carry — read out of the fixture, never asserted by hand. */
+const disclosureOf = (marker: string): deviations.DeviationsDisclosure => {
+	const read = buildDeviations.read(marker);
+	if (read._tag !== "Found") throw new Error(`fixture marker is not readable: ${read._tag}`);
+	return read.value.disclosure;
+};
+
+/** stdin `--standing` must never reach: the read mode asks for no section and writes nothing. */
+const UNREAD: Effect.Effect<StdinRead> = Effect.sync(() => {
+	throw new Error("stdin was read under --standing");
+});
+
 const options = {
 	issue: ISSUE,
 	token: LANE_TOKEN,
+	standing: false,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
@@ -159,6 +228,102 @@ describe("runDeviations", () => {
 		expect(second.requests.some((line) => POST.test(line))).toBe(false);
 		// The second emit's bytes are what the verb read back — the criterion's other half.
 		expect(writtenBody(second, PATCH)).toBe(composed(FULL));
+	});
+
+	it("lands a repair round that carries the standing entries beside its own", async () => {
+		const seams = seamsFor([
+			...board({id: 900, body: composed(ROUND_ONE)}),
+			[PATCH, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"})],
+			[getComment(900), served({body: composed(ROUND_TWO_COMPLETE)})],
+			[POST, served({message: "a second comment must never be created"}, 500)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDeviations({
+					...options,
+					stdin: Effect.succeed({_tag: "Text", text: ROUND_TWO_COMPLETE}),
+				}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({commentId: 900, upsert: "edited"});
+
+		// One marker, four entries: the three round 1 disclosed and the one round 2 added — so a cold
+		// later reviewer reads the whole range off the standing text, never off the edit history.
+		const landed = writtenBody(seams, PATCH);
+		const read = buildDeviations.read(landed);
+		expect(read._tag).toBe("Found");
+		expect(landed.split("\n").filter((line) => line === "## Deviations")).toHaveLength(1);
+		const disclosure = read._tag === "Found" ? read.value.disclosure : null;
+		expect(disclosure?._tag === "Entries" ? disclosure.entries.length : 0).toBe(4);
+		for (const said of ["QueryOptionsInput", "content block", "every row settles"]) {
+			expect(landed).toContain(said);
+		}
+	});
+
+	/**
+	 * The bug itself: round 2's natural rewrite discloses its own commits, and the standing
+	 * entries — still true of the range the next reviewer grades — go with it.
+	 */
+	it("refuses a replacement that drops a standing entry, naming each one, before any write", async () => {
+		const seams = seamsFor(board({id: 900, body: composed(ROUND_ONE)}));
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDeviations({...options, stdin: Effect.succeed({_tag: "Text", text: ROUND_TWO_RESET})}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(DISCLOSURE_INCOMPLETE);
+		const said = out.stderr.join("\n");
+		expect(said).toContain("the child names the history mapper");
+		expect(said).toContain("map every content block to a row");
+		expect(said).toContain("every row settles");
+		expect(seams.requests.some((line) => POST.test(line) || PATCH.test(line))).toBe(false);
+	});
+
+	it('refuses a replacement that resets the disclosure to "None."', async () => {
+		const out = await run(board({id: 900, body: composed(ROUND_ONE)}), {
+			stdin: Effect.succeed({_tag: "Text", text: NONE}),
+		});
+		expect(out.code).toBe(DISCLOSURE_INCOMPLETE);
+	});
+
+	it("takes a re-stated entry as carried however its later fields read", async () => {
+		const seams = seamsFor([
+			...board({id: 900, body: composed(sectionOf(UNSETTLED_STREAM))}),
+			[PATCH, served({id: 900, html_url: "https://example.test/o/r/issues/6566#c900"})],
+			[getComment(900), served({body: composed(sectionOf(UNSETTLED_STREAM_RETIRED))})],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDeviations({
+					...options,
+					stdin: Effect.succeed({_tag: "Text", text: sectionOf(UNSETTLED_STREAM_RETIRED)}),
+				}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(writtenBody(seams, PATCH)).toContain("corrected — the row now settles");
+	});
+
+	it("prints the standing disclosure under --standing, and writes nothing", async () => {
+		const seams = seamsFor(board({id: 900, body: composed(ROUND_ONE)}));
+		const out = await Effect.runPromise(
+			Effect.provide(runDeviations({...options, standing: true, stdin: UNREAD}), seams.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(deviations.emit(disclosureOf(composed(ROUND_ONE))));
+		expect(out.stderr.join("\n")).toContain("comment 900");
+		expect(seams.requests.some((line) => POST.test(line) || PATCH.test(line))).toBe(false);
+	});
+
+	it("prints nothing under --standing when the child carries no marker yet", async () => {
+		const out = await run(board(), {standing: true, stdin: UNREAD});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("no standing marker");
 	});
 
 	it("retracts a stacked marker a pre-fix lane left, so one comment survives", async () => {

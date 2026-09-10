@@ -142,7 +142,7 @@ export const SUB_ISSUES = new RegExp(
 );
 export const CHILD = (number: number): RegExp =>
 	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}$`);
-/** The native `blocked_by` list `UNENFORCED_DEP` is derived over. */
+/** The native `blocked_by` list `UNENFORCED_DEP` and `DROPPED_EPIC_BLOCKER` are derived over. */
 export const BLOCKED_BY = (number: number): RegExp =>
 	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}\\/dependencies\\/blocked_by`);
 /** The list payload that endpoint answers — full issue rows, of which the reader takes `number`. */
@@ -194,7 +194,9 @@ export const planSeams = (
 	const shell = fakeShell(
 		script.filter((entry): entry is readonly [RegExp, ExecResult] => !isServed(entry)),
 	);
-	const http = fakeHttp(script.filter(isServed));
+	// Appended, never prepended: the first match wins, so a case about `DROPPED_EPIC_BLOCKER` scripts
+	// its own epic edge list and every other case reads an unblocked epic without saying so.
+	const http = fakeHttp([...script.filter(isServed), [BLOCKED_BY(EPIC), blockers()]]);
 	return {layer: Layer.merge(planContext(shell, config), http.layer), shell, http};
 };
 

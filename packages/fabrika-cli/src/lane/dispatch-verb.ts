@@ -1,5 +1,6 @@
 import {Effect, FileSystem, Path, Result, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
+import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
 import {dependencyReconcilerKey} from "../config/keys/dependency-reconciler.ts";
 import {readKey} from "../config/read-key.ts";
 import {execCapture, execStatus} from "../io/exec.ts";
@@ -10,9 +11,11 @@ import {read as readBrief} from "../wire/lane-brief.ts";
 import type {BriefOptions} from "./brief-verb.ts";
 import {LANE_UNREADABLE, NO_SHELL, PROOF_ABSENT} from "./codes.ts";
 import {CODEX_ROLE_SKILLS, codexPrompt, reportedTerminal} from "./codex-dispatch.ts";
-import {applyEvent, foldLog} from "./fold.ts";
+import {applyEvent, foldLog, resolveTask} from "./fold.ts";
 import {bareEvent} from "./machine.ts";
+import {epicOf, roleOf} from "./prove.ts";
 import type {ProveOptions} from "./prove-verb.ts";
+import {DEFAULT_TRUNK_REF, type RefreshOptions} from "./refresh-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LoadedLane, loadLane} from "./store.ts";
 
@@ -27,10 +30,54 @@ export interface DispatchOptions extends BriefOptions {
 	readonly worktree: string;
 }
 
+type Refresher = (options: RefreshOptions) => Effect.Effect<VerbOutcome, never, Services>;
+
+type PreRefresh =
+	/** Not an epic child, so no assembly branch is about to be cut from. */
+	| {readonly _tag: "Skipped"}
+	| {readonly _tag: "Refreshed"; readonly notes: ReadonlyArray<string>}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Put the trunk under the assembly branch before a child's worktree is cut from it.
+ *
+ * Ahead of the brief rather than after it, because the brief itself judges that branch for the lane
+ * verbs it is about to tell the shell to run: refreshing afterwards would refuse the stale branch
+ * one step before the step that fixes it.
+ *
+ * A lane this cannot read is `Skipped`, never refused here — every one of those reads is made again
+ * below, and refusing twice in two voices for one fact is how a caller learns to distrust the first.
+ */
+const refreshBeforeChild = (
+	options: DispatchOptions,
+	refresh: Refresher,
+): Effect.Effect<PreRefresh, never, Services> =>
+	Effect.gen(function* () {
+		const skipped = {_tag: "Skipped"} as const;
+		const loaded = yield* loadLane(options);
+		if (loaded._tag !== "Loaded") return skipped;
+		const epic = epicOf(Object.keys(loaded.lane.tasks));
+		if (epic === null) return skipped;
+		const resolved = resolveTask(loaded.lane, options.task);
+		if (resolved._tag !== "Task" || roleOf(resolved.taskId, epic)._tag !== "Child") return skipped;
+		const assemblyRefresh = yield* readKey(options.cwd, assemblyRefreshKey);
+		const outcome = yield* refresh({
+			...options,
+			epic,
+			base: DEFAULT_TRUNK_REF,
+			gate: "onDispatch",
+			assemblyRefresh,
+		});
+		return outcome.code === 0
+			? ({_tag: "Refreshed", notes: outcome.stderr} as const)
+			: ({_tag: "Refused", outcome} as const);
+	});
+
 export const runDispatch = Effect.fn("lane.dispatch")(function* (
 	options: DispatchOptions,
 	brief: (options: BriefOptions) => Effect.Effect<VerbOutcome, never, Services>,
 	prove: (options: ProveOptions, snapshot: Snapshot) => Effect.Effect<VerbOutcome, never, Services>,
+	refresh: Refresher,
 ): Effect.fn.Return<VerbOutcome, never, Services> {
 	if (options.harness !== "codex") return refuse(NO_SHELL, `${VERB}: unsupported harness.`);
 	const identity = sessionIdFrom(options.env);
@@ -40,6 +87,9 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 	if (!path.isAbsolute(options.worktree) || !path.isAbsolute(options.skills)) {
 		return refuse(LANE_UNREADABLE, `${VERB}: --worktree and --skills must be absolute paths.`);
 	}
+	const refreshed = yield* refreshBeforeChild(options, refresh);
+	if (refreshed._tag === "Refused") return refreshed.outcome;
+	const refreshNotes = refreshed._tag === "Refreshed" ? refreshed.notes : [];
 	const emitted = yield* brief(options);
 	if (emitted.code !== 0) return emitted;
 	const parsed = readBrief(emitted.stdout);
@@ -255,10 +305,10 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 			),
 		);
 		if (proof.code !== 0) return proof;
-		return answer(
-			JSON.stringify({harness: "codex", task, event: report.event, worktree: actual}),
-			proof.stderr,
-		);
+		return answer(JSON.stringify({harness: "codex", task, event: report.event, worktree: actual}), [
+			...refreshNotes,
+			...proof.stderr,
+		]);
 	}).pipe(
 		Effect.ensuring(Effect.ignore(fs.remove(lock, {recursive: true}))),
 		Effect.catchTag("PlatformError", (error) =>

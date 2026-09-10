@@ -396,6 +396,25 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * `ship checks` read the head's CI as red, so the shipper routed to `heal-ci` instead of
+	 * enqueuing. Nothing about the artifact was judged: the head is where the shipper left it and
+	 * every verdict against it still stands.
+	 *
+	 * It is the park class whose cause most often goes away with nobody acting — a flake gets re-run,
+	 * an unrelated fix lands — and that is what its `KNOWN_PARKS` row buys: the clearance re-reads the
+	 * same rollup at the live head rather than spending a person on a condition a verb can read again.
+	 *
+	 * No remedy: turning a red head green is repair work, and a verb that "removed" this cause would
+	 * be doing the `heal-ci` skill's job rather than observing it.
+	 *
+	 * Route `driver`: a red CI is machinery, and no product call is in it.
+	 */
+	"head-ci-red": {
+		meaning: "the head's CI is red, so the shipper routed to heal-ci rather than enqueue",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The task spent its whole repair budget on content FAILs, so the guarded FAIL arm fell through
 	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
 	 * and found it wrong `RETRY_BUDGET` times.

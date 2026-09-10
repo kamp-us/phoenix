@@ -12,9 +12,22 @@
  * The cycle walk runs over the **union** of the declared `requires` edges and the edges the phase
  * order implies, so a `requires` that contradicts its phases (a phase-1 child requiring a phase-2 one)
  * surfaces as the cycle it is rather than staging cleanly.
+ *
+ * **A phase member is a manifest child; a prerequisite need not be.** The decision corpus rules a
+ * `requires:` reference to an issue another epic owns a legitimate gating edge, and only a reference
+ * proven absent dangling. So the manifest closes over subjects alone, and every prerequisite outside it rides out in
+ * {@link TopologyCheck}'s `external` for the verb to prove at the boundary — a pure module cannot ask
+ * GitHub whether an issue exists.
+ *
+ * **The one prerequisite refused before that boundary is the epic's own number.** It is not dangling
+ * — the epic exists, so the boundary prove answers Present and the line stages — and it is not a
+ * cycle either, since {@link findCycle} walks the declared lines and every node in those is a child.
+ * `ledger edges` then writes the child `blocked_by` its own parent, an epic closes only once its
+ * children close, and the child is never claimable. So {@link checkTopology} tests `ref === epic`
+ * ahead of the `external` arm.
  */
 
-import {readTopology} from "../build/dependencies.ts";
+import {type Ref, readTopology} from "../build/dependencies.ts";
 
 const LINE_RE = /^#(\d+)\s+phase\s+(\S+)(?:\s+requires\s+(.+))?$/i;
 const REF_RE = /^#(\d+)$/;
@@ -57,6 +70,103 @@ export const parseLine = (text: string, index: number): LineParse => {
 			requires,
 		},
 	};
+};
+
+/**
+ * What a body's `## Dependencies` block declares, read against the epic's live child set.
+ *
+ * `Absent` fuses two facts on purpose — no heading at all, and a heading under which no `phase` line
+ * places anybody — because neither yields a topology and both take the same repair: plan the epic.
+ *
+ * `drop` is the axis `lane emit --children` and `ledger retopology` turn on, and it is the whole of
+ * the descope story: off, the first ref the child set does not name is `Foreign` and the read stops
+ * there; on, every such ref leaves its phase membership and every `requires` list naming it, a
+ * `requires` line whose subject went is dropped whole, and the refs that went are reported in
+ * `dropped` so a caller can say what the body still gets wrong.
+ */
+export type Declared =
+	| {
+			readonly _tag: "Declared";
+			readonly lines: ReadonlyArray<DeclaredLine>;
+			readonly dropped: ReadonlyArray<string>;
+	  }
+	| {readonly _tag: "Absent"}
+	| {readonly _tag: "Unparseable"; readonly line: number; readonly text: string}
+	| {readonly _tag: "Foreign"; readonly ref: string}
+	| {readonly _tag: "Duplicate"; readonly child: number}
+	| {readonly _tag: "Unplaced"; readonly child: number}
+	/** Every ref the block placed was dropped — a surviving topology with no child in it. */
+	| {readonly _tag: "Emptied"; readonly dropped: ReadonlyArray<string>};
+
+type IssueRef = Extract<Ref, {_tag: "Issue"}>;
+
+const refLabel = (ref: Ref): string => (ref._tag === "Issue" ? `#${ref.number}` : ref.id);
+
+/** Read the block and restrict it to `children`. See {@link Declared} for what `drop` decides. */
+export const readDeclared = (
+	body: string,
+	children: ReadonlySet<number>,
+	drop: boolean,
+): Declared => {
+	const topo = readTopology(body);
+	if (topo._tag === "Absent") return {_tag: "Absent"};
+	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};
+
+	const dropped: string[] = [];
+	const known = (ref: Ref): ref is IssueRef => {
+		if (ref._tag === "Issue" && children.has(ref.number)) return true;
+		const label = refLabel(ref);
+		if (!dropped.includes(label)) dropped.push(label);
+		return false;
+	};
+
+	const phases = new Map<number, number[]>();
+	const requires = new Map<number, number[]>();
+	for (const edge of topo.edges) {
+		if (!drop) {
+			const refs = edge._tag === "Phase" ? edge.members : [edge.subject, ...edge.needs];
+			for (const ref of refs) {
+				if (ref._tag !== "Issue" || !children.has(ref.number)) {
+					return {_tag: "Foreign", ref: refLabel(ref)};
+				}
+			}
+		}
+		if (edge._tag === "Phase") {
+			const members = edge.members.filter(known).map((ref) => ref.number);
+			phases.set(edge.phase, [...(phases.get(edge.phase) ?? []), ...members]);
+			continue;
+		}
+		// The needs walk runs before the subject short-circuit because `known` is what records a
+		// drop: returning early on a dropped subject would leave a ref that appears only in its
+		// needs out of `dropped`, and the run would report fewer drops than it made.
+		const subjectKnown = known(edge.subject);
+		const needs = edge.needs.filter(known).map((ref) => ref.number);
+		if (!subjectKnown) continue;
+		const subject = edge.subject.number;
+		requires.set(subject, [...(requires.get(subject) ?? []), ...needs]);
+	}
+	if (phases.size === 0) return {_tag: "Absent"};
+
+	const placed = new Map<number, number>();
+	for (const [phase, members] of phases) {
+		for (const child of members) {
+			if (placed.has(child)) return {_tag: "Duplicate", child};
+			placed.set(child, phase);
+		}
+	}
+	for (const [subject, needs] of requires) {
+		for (const child of [subject, ...needs]) {
+			if (!placed.has(child)) return {_tag: "Unplaced", child};
+		}
+	}
+	if (placed.size === 0) return {_tag: "Emptied", dropped};
+
+	const lines = [...placed.entries()].map(([child, phase]) => ({
+		child,
+		phase,
+		requires: requires.get(child) ?? [],
+	}));
+	return {_tag: "Declared", lines, dropped};
 };
 
 /** `[dependent, prerequisite]` — the first entry requires the second. */
@@ -186,6 +296,11 @@ export type TopologyCheck =
 			readonly block: string;
 			readonly phases: number;
 			readonly edges: ReadonlyArray<Edge>;
+			/**
+			 * Every prerequisite number outside the run manifest, ascending — the set the verb must
+			 * prove exists before it stages. Empty on a topology whose every edge stays inside the epic.
+			 */
+			readonly external: ReadonlyArray<number>;
 	  }
 	| {readonly _tag: "Invalid"; readonly reason: string};
 
@@ -196,9 +311,18 @@ const invalid = (reason: string): TopologyCheck => ({_tag: "Invalid", reason});
  * trip.
  *
  * The manifest is the epic's **whole** child set, retained children included — which is what makes a
- * `re-plan` placeable. A manifest child with no line is an unplaced child; a line naming a number that
- * is not in the manifest is a dangling reference. Both are the same refusal, because both produce a
- * block the gate reads as a broken epic.
+ * `re-plan` placeable. A manifest child with no line is an unplaced child, and a line whose *subject*
+ * is not in the manifest places a stranger in one of this epic's phases; both are the same refusal,
+ * because both produce a block the gate reads as a broken epic. A *prerequisite* outside the manifest
+ * is neither — it is the cross-epic edge the decision corpus sanctions, and it rides out in `external`
+ * unjudged, because whether it names a real issue is a question only the boundary can answer. The one
+ * exception is the epic's own number, refused here rather than passed out.
+ *
+ * **That refusal reaches the immediate parent and stops there, by construction.** A grandparent epic
+ * — or any other epic that transitively contains this child — can never clear either, but its number
+ * is neither `epic` nor in `manifest`, so nothing here distinguishes it from the sanctioned cross-epic
+ * prerequisite. Deciding it means walking the child's parent chain, which is a boundary read this
+ * module cannot take.
  */
 export const checkTopology = (
 	epic: number,
@@ -214,9 +338,18 @@ export const checkTopology = (
 	}
 
 	const known = new Set(manifest);
+	const external = new Set<number>();
 	for (const line of lines) {
-		for (const ref of [line.child, ...line.requires]) {
-			if (!known.has(ref)) return invalid(`#${ref} is referenced but is not a child of #${epic}.`);
+		if (!known.has(line.child)) {
+			return invalid(`#${line.child} is placed in a phase but is not a child of #${epic}.`);
+		}
+		for (const ref of line.requires) {
+			if (ref === epic) {
+				return invalid(
+					`#${line.child} requires #${epic}, the epic that owns it — an epic closes only once its children close, so that edge can never clear and #${line.child} would never be claimable.`,
+				);
+			}
+			if (!known.has(ref)) external.add(ref);
 		}
 	}
 	for (const child of manifest) {
@@ -244,5 +377,6 @@ export const checkTopology = (
 		block,
 		phases: new Set(lines.map((line) => line.phase)).size,
 		edges,
+		external: ascending([...external]),
 	};
 };

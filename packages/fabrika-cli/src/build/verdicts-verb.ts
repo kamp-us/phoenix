@@ -1,10 +1,15 @@
 /**
- * `build verdicts` — the paginated, current-head, per-gate verdict fold on a PR.
+ * `build verdicts` — the paginated, per-gate verdict fold on a PR, at its live head.
  *
  * Three properties the repair loop rests on:
  *
  * - **A stale marker is visible AS stale, never dropped.** "The FAIL is old" and "there is no FAIL"
  *   are different facts, and folding them is how a FAIL'd PR reads as unreviewed.
+ *
+ * - **Staleness is the content question**, decided by `bindToContent` off the head digest
+ *   `../review/head-content.ts` resolves — the same derivation `ship gate` reads. This verb tells a
+ *   builder "your verdicts are void, re-review"; the gate decides whether the PR may merge, and the
+ *   two answering one marker differently spent a lane a repair round nobody had found a defect in.
  * - **Native reviews are their own row kind**, never coerced into markers. Whether a
  *   `CHANGES_REQUESTED` with no marker drives a repair is still undecided; this verb reports the
  *   state honestly and pre-rules nothing.
@@ -25,10 +30,11 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {capNote, capReached} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
-import {bindToHead, read as readMarker} from "../wire/verdict-marker.ts";
+import {bindToContent, read as readMarker, type VerdictMarker} from "../wire/verdict-marker.ts";
 import {clearancesOn, grantedFrom} from "./clearances.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {contentOf, gate} from "./content-gate.ts";
@@ -107,22 +113,40 @@ export const runVerdicts = (
 
 		// Latest marker per gate namespace. The round count is `roundsOn`'s, so this verb and `build
 		// clear` cannot disagree about how many rounds the PR has been through.
-		const latest = new Map<string, Row>();
+		const latest = new Map<string, {readonly marker: VerdictMarker; readonly commentId: number}>();
+		const bodies = new Map<number, string>();
 		for (const comment of listed.value) {
 			const parsed = readMarker(comment.body);
 			if (parsed._tag !== "Found") continue;
-			const marker = parsed.value;
-			latest.set(marker.namespace, {
-				gate: marker.namespace,
-				polarity: marker.polarity,
-				sha: marker.sha,
-				current: bindToHead(marker, head)._tag === "Current",
-				commentId: comment.id,
-				kind: "marker",
-				body: contentOf(gate("comment-body", `comment ${comment.id}`, comment.body)),
-			});
+			latest.set(parsed.value.namespace, {marker: parsed.value, commentId: comment.id});
+			bodies.set(
+				comment.id,
+				contentOf(gate("comment-body", `comment ${comment.id}`, comment.body)),
+			);
 		}
-		const rows: Row[] = [...latest.values()];
+
+		// One derivation with `ship gate` (`../review/head-content.ts`), so the repair loop and the
+		// merge gate cannot answer one marker's staleness differently.
+		const headContent = yield* headContentFor(
+			VERB,
+			repo,
+			pr,
+			target.pull,
+			null,
+			[...latest.values()].map(({marker}) => marker),
+			head,
+		);
+		const rows: Row[] = [...latest.values()].map(({marker, commentId}) => ({
+			gate: marker.namespace,
+			polarity: marker.polarity,
+			sha: marker.sha,
+			// A digest this checkout could not derive is `Unbindable`, and `Unbindable` is not-current
+			// exactly as `Stale` is: a failed derivation must never launder a stale verdict.
+			current: bindToContent(marker, head, headContent.digest)._tag === "Current",
+			commentId,
+			kind: "marker" as const,
+			body: bodies.get(commentId) ?? "",
+		}));
 		for (const review of reviews.value) {
 			if (review.state === "COMMENTED" || review.state === "PENDING") continue;
 			rows.push({
@@ -165,6 +189,7 @@ export const runVerdicts = (
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
+				...headContent.diagnostics,
 			],
 		);
 	});

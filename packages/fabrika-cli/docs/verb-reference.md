@@ -95,15 +95,26 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, explicitly select a repair PR's served issue, re-prove it, retract it, or take a dead session's |
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
-| `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
-| `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof |
+| `build branch` / `scratch` | the lane's branch off a fresh base it derives — `epic/<parent>` for an epic child, `origin/main` for a proven-standalone issue — fetched from a remote, named by commit in the answer, re-proved on a re-run, and its scratch directory |
+| `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof — `--cites` carries a ruled `type:decision` child's founder ruling to the claim step |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
-| `build check` | this surface's validators, run in this tree |
+| `build check` | this surface's validators plus every shipped local-tree guard, run in this tree — each guard named in `ran`, or in `skipped` when it refused |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
-| `build verdicts` | the latest gate verdict per namespace at a PR's live head |
+| `build verdicts` | the latest gate verdict per namespace, each judged current or not against the PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
-| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute` |
+| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute`, journalled per removal, bounded by `--limit` |
 | `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
+
+**`build verdicts`' `current` column is the content question, not the head question.** A row reads
+`current` when the marker names this head, and also when it names another head while binding a
+content digest that is still this head's — a rebase carrying no content change keeps its verdicts.
+The comparison is [`verdict-marker.ts`](../src/wire/verdict-marker.ts)'s `bindToContent`, resolved
+off the same head digest `ship gate` reads
+([`review/head-content.ts`](../src/review/head-content.ts)), so the repair loop and the merge gate
+cannot disagree about one marker (ADR
+[0276](../../../.decisions/0276-verdict-binds-content-not-only-head.md)). A marker carrying no
+`content:` field falls back to head equality, and a digest this checkout could not derive is
+`Unbindable`, which reads as not-current — a failed derivation never launders a stale verdict.
 
 `build reap` is the bulk counterpart to `build retire`. `retire` targets the trees holding ONE
 number's lane branch and needs a board statement to release them; `reap` sweeps the whole agent
@@ -111,6 +122,24 @@ population, which usually holds no lane branch at all (the harness detaches thos
 git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the trunk — reachable
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
+
+A sweep records as it goes rather than at the end. Each removal git reports is appended to
+`.fabrika/reap.jsonl` under the run's own tree root before the next candidate is attempted, so the
+executed set of a run the harness kills mid-loop is still on disk — the terminal JSON of such a run
+was never composed at all, which is what left a 116-of-134 sweep with no record. `--limit` is the
+other half: it bounds the executed set, so a population too large for one 600s watchdog window is
+walked in pieces, and every removable tree past the bound is reported UNATTEMPTED and stays
+registered for the next run.
+
+Those three are git facts, and a fourth one is not, because git has nothing to say about it. An
+operator or reviewer **seat** drives its lane without ever committing and usually without editing a
+file, so its HEAD sits on the trunk and its status is clean for its whole life — the exact shape the
+git facts read as "carries nothing", and the shape a sweep removed mid-drive. So a tree also has to
+read **quiet**: its own directory untouched for 24h. Any live signal keeps it, the KEEP line names
+which signal held, and a liveness read that failed keeps it too. Read "untouched" narrowly: a
+directory's mtime moves only when an entry is added, removed or renamed directly in it, so for a seat
+that never edits, that timestamp is the tree's provisioning time and the window is a bound on a
+seat's life rather than on its idle gap.
 
 The one place `retire` borrows that polarity is ADR
 [0342](../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)'s third license, for the lane
@@ -339,11 +368,11 @@ comments. Contract:
 
 | Verb | Answers |
 |---|---|
-| `grill open` | opens, or resumes, the session issue for a topic — `created` says which |
+| `grill open` | opens/resumes a topic or ticket, or preserves initial research from `--audit-context`; audit success adds run identity and digest; `--audit-recover` never creates, and `--audit-session` targets a known partial create |
 | `grill round` | validates one round from stdin, posts it, and returns its number, digest and ids |
 | `grill answer` | records an agent-established answer to a `fact` question, behind a kind guard |
 | `grill rule` | records a founder ruling, refusing without a verbatim dated authorization |
-| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token |
+| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token and total `auditContext` result; malformed research does not hide readable questions |
 
 **Exit codes.** The shared table, plus `12` the invoking token is below `write` · `13` the question
 id names no question · `14` the round could not be digested · `15` `--authorization` is missing,
@@ -571,10 +600,14 @@ snapshot. Lane state is local and never committed.
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
-| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, naming the parent whose lane already carries it as a task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run. `emit` reads `.fabrika.jsonc`'s `machineryLaps.onEmit`: `off` (the shipped default) writes today's bytes exactly, `on` adds the machinery `LAP` arms and seeds each task's lap counter, so a collision or a queue ejection spends laps rather than the repair budget and exhaustion parks on `human:machinery-stall` instead of freezing. The machine is fixed at emission, so the key reaches no lane already on disk |
-| `lane brief` | the spawn prompt for one task's current leaf state |
-| `lane dispatch` | run one active task through Codex in a verified worktree; [contract](./codex-dispatch.md) |
-| `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
+| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, which reads the parent lane's emitted task set before it speaks — the parent machine holds the child's `issue_<n>` task and the line says drive that lane, it provably holds none and the line names the ruled route (place the child in the parent epic's `## Dependencies` block, `fabrika lane amend <parent>`, then drive it), or the parent lane is absent/unreadable/malformed or the parent number did not read and the line says the task set is UNKNOWN; a child gets no lane of its own on any of the three; `open` also refuses an issue the board says already had a lane at `63`, naming every pull request that proves it — a driven lane's ledger is its whole state and `.fabrika/` is gitignored, so removing the directory and booting again restores a spent repair budget with nothing recording a granted round (ADR 0384, #8047); the fact is a caller-passed reader like the epic one, asked only over an absent directory so a resume still reads `14`, an unreadable answer is `11` and never "no prior lane", and the door out of a spent budget is a recorded round grant (`build clear`, or `lane clear` on a lane with no PR) rather than a re-boot. `emit` refuses a lane already on disk at `14` and names the two-step remedy for a wrong MACHINE — retire the directory then re-run — beside `lane amend` for a changed PLAN, and refuses an unparseable topology line at `4` naming that line and where prose belongs instead — editorial or history notes sit below a `---` thematic break, which ends the `## Dependencies` section, so the grammar stays strict rather than learning to skip prose. `emit --children` starts from the board's live sub-issue list — every topology ref that list does not name leaves its phase and every `requires` list naming it, an emptied phase is elided, and every ref that went is reported whole on both channels — so a founder descope stops wedging the lane at `16`; the flag is opt-in because the same stale ref is a typo on the other reading, and the `16` refusal names it beside `ledger retopology`, which repairs the body instead. `emit` reads `.fabrika.jsonc`'s `machineryLaps.onEmit`: `off` (the shipped default) writes today's bytes exactly, `on` adds the machinery `LAP` arms and seeds each task's lap counter, so a collision or a queue ejection spends laps rather than the repair budget and exhaustion parks on `human:machinery-stall` instead of freezing. The machine is fixed at emission, so the key reaches no lane already on disk |
+| `lane amend` | one RUNNING epic lane's task set re-derived from the epic body's current `## Dependencies` block — the verb for a plan that changed after emission, where the only routes used to be retiring the directory (which discards `events.jsonl` and every landed child's record with it) or hand-driving the rest outside the ledger. **The log is appended to, never rewritten**: one `<EPIC_N>.AMENDED` line lands beside the machine write, it moves no task and reaches no machine — the fold consumes it, as it consumes `lane reconcile`'s `CORRECTED` — and its `tasks` payload names the set the re-derived machine holds. A task new to the topology boots `queued` carrying no history; a not-started task may move to any phase, later ones included, which is exactly what a non-destructive re-emit could not express. It reconciles nothing: the block is read as it stands, and one still naming a board-closed child is `plan restage`'s to repair. The lap axis is read off the lane's own machine, never `.fabrika.jsonc`, so an `machineryLaps.onEmit` flip since emission does not ride in on a child being added. Three refusals, each proven before the append and before the machine write, so the lane is byte-identical after one: `60` the new topology drops a task the ledger records as landed, named with the final it landed in; `61` a task carrying history cannot replay to the leaf it stands on; `62` the `## Dependencies` block is not a topology — an unparseable line, a child in two phases, a requires subject in none — which is the ISSUE BODY's defect, so `plan restage` is the repair and nothing on disk is at fault. An unchanged topology answers `current` with nothing appended and nothing written. **`--defer <task>` (with `--defer-reason`) is the one route out of a mid-flight descope** and the only way a historied drop is admitted — without it that drop still refuses at `61`. It names the plan change rather than performing it silently: the amendment line gains a `defers` payload carrying the task, the `at` of that task's last recorded entry as the bound (derived off the log under the append lock, never typed) and the reason, so the ledger goes on accounting for every entry the dropped task recorded — a later fold excuses exactly those bounded lines from the unknown-task check and refuses anything the bound does not cover, a child reintroduced after the deferral included. A live `build-claim:` marker on the deferred child refuses at `64` and an unreadable thread is `11`, so a deferral detaches no worker and discards no branch. It touches the child issue not at all — `ledger defer` unlinks it and leaves it open — and `lane status` then prints the deferred rows so deferred does not read as completed (ADR 0385) |
+| `lane brief` | the spawn prompt for one task's current leaf state. A brief standing on an epic run's assembly branch is checked against that branch's own tree first: the `fabrika:` entrypoint is repo-relative in a checkout, so it resolves inside the *shell's* worktree, and a branch cut before a lane verb landed on the trunk hands that shell a copy of this CLI which cannot execute the contract the brief states — the shell does the work, produces a real verdict, and cannot record it. So the branch's tree is read for every lane verb the brief instructs the shell to run (`lane report` today), and a missing one refuses at `59` naming it and the remedy, `lane refresh`. An absolute entrypoint is an installed copy the branch does not carry and is not judged |
+| `lane refresh` | the trunk merged into an epic run's assembly branch, in the worktree `lane assembly` placed — nothing else in this package touches trunk after the first cut, so the branch drifts behind `main` while the children build and the queue ejects the tail for it. Refuse a dirty seat, `git fetch origin`, resolve `--base` to a commit, answer `CURRENT` when the branch already carries it, else `git merge --no-ff` and re-read HEAD; on exit 0 the last stdout line is `REFRESH-VERDICT: MERGED`, `CURRENT` or `DECLINED` and the line above it the head. A conflict aborts, resets through `ORIG_HEAD` and **proves** the reset by re-reading HEAD, and names `--cause assembly-conflict` as the park to record; a reset that will not take is `8`, never the clean `42`. Two callers reach it automatically and each is gated by its own `assemblyRefresh` arm, both shipped `off`: `--on-review`, typed by the driver on the tail's way into review (`onReview`), and the pre-dispatch call `lane dispatch` makes itself before it cuts a child's worktree off the branch (`onDispatch`), which is never typed. A driver typing the verb is never gated. It pushes nothing and records nothing |
+| `lane dispatch` | run one active task through Codex in a verified worktree; [contract](./codex-dispatch.md). On an epic run's child it first refreshes the assembly branch the worktree is about to be cut from — `lane refresh`'s own code, before the brief is emitted, under `assemblyRefresh.onDispatch`. A conflict there is `42` with the branch proven back where it stood and no worktree created: record the park it names rather than dispatching over the unrefreshed branch |
+| `lane assembly` / `push` | an epic run's assembly worktree, and its published branch. Every resume fetches and asks whether `origin/HEAD` already carries the content of the branch it found — the state a multi-phase epic lands in the moment it ships an intermediate tail. The read is squash-aware, because every landing here is a squash and ancestry alone answers "not contained" for every branch there is: ancestry is the fast path, and what survives it is settled by cumulative patch id — the branch's net diff against the trunk, matched against the patches the trunk took since their merge base, limited to the paths the branch touches. A contained branch is re-cut off the trunk in one `worktree add --no-track -B` and the note says which proof opened it; its seat is dropped first without `--force`, so git refusing a dirty tree keeps unlanded bytes out of the re-cut. Anything less than containment resumes as it always did, no board is read, and an unreadable answer is `11` |
+| `lane assembly-pr` | the assembly PR's title and `## About this epic` section, derived from the epic issue — `--field title` prints `feat(epic): <the epic's own title>`, whose conventional type is `build/pr-title.ts`'s map rather than a second copy of the release-please rule, and `--field about` prints the section derived from the epic's `## Pitch` **Problem** paragraph — a closing keyword swapped for a word GitHub's documented keyword list does not carry (the reference left as written), cut to its opening sentences under a word budget with `[…]` marking what a triage-length Problem left behind, and lifted as a block quote so a label or a control-plane phrase in the epic's own sentence is reproduced rather than reworded, which is the shape `build pr`'s body guard exempts. The assembled section is then re-read through that guard's own predicates so it cannot be one it refuses. Bare values, one per call, because the operate skill's `gh pr create` fence interpolates them and derives nothing itself. An unpitched epic is an ANSWER — empty stdout, the reason on stderr — so a run still publishes its PR with no section. It opens and edits no pull request |
+| `lane assembly-body` | the guard the epic run's single assembly PR body passes through on its way to `gh pr create` — the body arrives on STDIN and leaves on stdout unchanged when a closing keyword aims at the epic — the same bytes, plus a trailing newline when the body lacked one — so the fence pipes rather than deriving. A body reaching the epic through `Part of #<epic>`, or closing only its landed children, is refused on `58` with nothing printed, and a pipe carrying nothing opens no PR: one epic run is one branch and one PR, so a tail that does not close its epic folds the lane to `shipped` and then `complete` over an epic the board still calls open (ADR 0382). The link reader is `issueRefsOf`, the very one `lane/closure.ts` judges the merged PR with, so this refuses exactly the bodies that reader would later call partial or leave unreadable and the two seams cannot disagree. Membership, not first match — a tail carries one closing keyword per landed child, and those are not judged. Reads no board and takes no `--repo`: the number's epic-ness was established one command earlier by `lane assembly-pr`'s `56`. It opens, edits and reads back no pull request |
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch and pushes nothing. Under `assemblyReplay.onCollision` (shipped `off`) a colliding child is replayed onto the tip instead of stopping the run: the plain keep-both hunks are kept both ways, the child's own branch is moved onto the replayed range so its next integrate is up to date rather than a second collision, and that range is merged `--no-ff` like any other landing; the verdict is `INTEGRATE-VERDICT: REPLAYED` over a machinery event naming the moved range the child owes one review round over. A hunk that is not a plain keep-both restores, proves the reset, and parks on `--cause replay-conflict`; a child branch that will not move is exit `54` with nothing merged, and a working tree standing on it is the usual reason. A refusal below a replayed merge puts the child branch back on the revision its reviewer graded as well as resetting the assembly branch, so a replay the verb did not keep moves no range — and a branch that will not go back is `8`, never the red |
 | `lane stale` | which lanes have gone quiet with something owed on them, each judged against its OWN horizon — the budget of the work driving it (a build shell's, a review shell's, a ship shell's, or the dispatch budget for a task nothing picked up), reported per row as `budgetMinutes`. `--older-than` overrides that horizon for every lane; without it the answer's `olderThanMinutes` is `null`, which says the budgets did the judging. Offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
 | `lane reconcile` | which lanes recorded a merge closure the board never confirmed, and the `<TASK>.CORRECTED` line that records what the board says — `partial: true` sends the lane round again (`corrected`), `partial: false` confirms the closure and moves no task (`confirmed`); either way the lane stops nominating, so a sweep costs one PR read per never-confirmed lane rather than hundreds every time (ADR 0351). Two kinds of line nominate: one carrying no `partial`, and one whose `partial: false` names no `landed` evidence, which is the mark of the nominator blind to a merged `Part of #N` that wrote every `false` before the ship stage began reading closures off the named PR. The evidence is what tells the two apart, never the line's timestamp: a cutoff date would hold only while that fix's own merge beat it (#7457). `--check` reports and appends nothing, so it buys nothing for the next sweep and pays the same reads twice; a read that proves no closure is `unknown`, never `closes`; ordered after `lane migrate`, which is what an `unmigrated` row names (ADR 0350) |
@@ -611,7 +644,22 @@ the assembly worktree already held modified tracked files before the merge, so n
 `52` a `BLOCKED` named no cause in a repo declaring `parkCause.uncaused: "refuse"` · `53` the
 `--rationale` says nothing, rides on an event that is not `UNBLOCKED`, or is absent on
 `lane clear` · `55` a `ship:queued` re-fold arrived inside the wait axis's elapsed-time floor, or
-the clock on that task's last line reads as no date — the log is unappended and the wait unspent.
+the clock on that task's last line reads as no date — the log is unappended and the wait unspent ·
+`56` the issue `lane assembly-pr` was pointed at carries no `type:epic` · `57` that verb's assembled
+About section is one `build pr`'s body guard would refuse — a stray closing keyword, or a
+classification claim outside the block quote; reword the epic's Problem paragraph, or write the
+section by hand · `59` the assembly branch a brief's shell would stand on does not carry a lane verb
+that brief instructs it to run; every missing verb is named and the remedy is `lane refresh` · `60`
+`lane amend`'s re-derived topology drops a task the ledger records as landed · `61` a task carrying
+recorded history cannot replay to the leaf it stands on under that machine — an authorized descope
+names it with `--defer` instead · `64` a `lane amend --defer` does not describe this lane: the task is
+not in this machine, the new topology still places it, it carries no recorded history to defer,
+`--defer` and `--defer-reason` were not given together, or a live build claim on the child says a
+worker is still on it · `62` the epic body's
+`## Dependencies` block is not a topology, which is the issue body's defect and `plan restage`'s
+repair — nothing on disk is at fault · `63` the board says the issue an `open` was pointed at already had a lane — every pull request that proves
+it is named, and nothing was written, because a re-boot over a retired ledger restores a spent repair
+budget nothing granted.
 
 To open a lane, copy a template in and speak the operator's events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED` / `LAP`:
@@ -658,17 +706,21 @@ Author an epic's plan and its children — the write half of epic planning. Cont
 |---|---|
 | `ledger open` | the ground proved and the plan run opened for an epic |
 | `ledger draft` | the plan block on stdin, validated and staged |
-| `ledger child` | one child issue minted with every birth attribute at once |
-| `ledger topology` | the declared topology validated, and its Dependencies block rendered |
+| `ledger child` | one child issue minted with every birth attribute at once — never a `type:decision` child routed to an agent, which no builder can claim |
+| `ledger topology` | the declared topology validated — every out-of-epic prerequisite proven at the boundary, and a prerequisite naming the epic itself refused — and its Dependencies block rendered |
 | `ledger write` | the staged plan and topology spliced into the epic body |
 | `ledger edges` | the epic's declared dependencies reconciled into GitHub's native blocked_by graph |
 | `ledger supersede` | a child the re-plan no longer contains, retired |
+| `ledger defer` | a child taken out of a running epic's plan and left OPEN as the follow-up — the board half of an authorized deferral, `lane amend --defer` being the ledger half. Comment, unlink, then a read-back proving the child open and no longer a sub-issue: it never calls the close endpoint, because a superseded child is work the plan abandoned and a deferred one is work the founder still wants out of *this* epic's scope. Like `retopology` it reads no staged plan run — a descoped epic is found with its run already cleared — and like every verb here it runs under the epic claim (ADR 0385) |
+| `ledger retopology` | the `## Dependencies` block rewritten from the live child links — the repair a founder descope owes, without which `lane emit` refuses at `16` forever. It needs no staged plan run (no `run.json`, no manifest, no staged document), closes and unlinks nothing, preserves every byte outside the block including the plan block, the brief envelope and any amendment below a thematic break, and is idempotent: a block already naming exactly the live children answers `unchanged` with no PATCH |
+| `ledger digest` | the live body digest `--body-digest` takes, printed on its own — the source `ledger retopology`'s route reads, because `ledger open` prints the same value only by staging the plan run that verb needs none of. It writes nothing: no run directory, no file, no issue |
 
 **Exit codes.** The shared table and the `build` lane seats (`13`–`19`), plus `20` the ground moved
 under the run · `21` the epic body moved — the recomputed digest differs from `--body-digest` ·
 `22` the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts ·
 `23` the child was created and its sub-issue link could not be proven · `24` the declared topology
-is invalid — a cycle, a dangling ref, or an unplaced child · `25` a document this verb must splice
+is invalid — a cycle, a dangling ref, an unplaced child, or (`retopology`) a rendered block that
+does not parse back to what was rendered · `25` a document this verb must splice
 was never staged in this run · `26` a child was created and the run manifest could not record it.
 
 ## The `map` group
@@ -766,14 +818,20 @@ Gate an epic's plan before its children build — the read-and-verdict half of e
 | Verb | Answers |
 |---|---|
 | `plan read` | the epic, its children and its parsed ledger |
-| `plan check` | the deterministic floor over the fourteen hard defect types |
+| `plan check` | the deterministic floor over the fifteen hard defect types |
 | `plan flip` | every planned child flipped to triaged, re-gated first |
 | `plan verdict` | the plan gate's verdict, posted bound to the scope digest |
+| `plan approve` | a control-plane approval of the epic's plan, recorded |
+| `plan approval` | the epic's approval state — current, stale or absent |
+| `plan restage` | a minted epic's `## Dependencies` region, reconciled against its children's close state |
 
 **Exit codes.** The shared table, plus `15` this session does not hold the claim · `20` the floor
 found a hard defect · `21` the recomputed scope digest differs from the `--digest` the caller
 carried · `22` at least one child is `unchanged` — the flip did not fully apply · `23` a label the
-flip must write is absent from the repository's taxonomy.
+flip must write is absent from the repository's taxonomy · `24` the invoking account may not approve
+this epic's plan · `25` the plan is not approved as it now stands · `26` the `## Dependencies` region
+has no single meaning — two headings, or the only one inside the preserved brief · `27` restaging
+would leave the topology with no phase at all.
 
 ## The `recipe` group
 
@@ -785,7 +843,7 @@ read-back.
 
 | Verb | Answers |
 |---|---|
-| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; the red-CI row re-reads `ship checks`'s rollup at the live head and clears only on `green` with the PR still open and every derived namespace still bound there, holding at `13` on any other rollup; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
 | `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a head-bound `governance` PASS |
 | `recipe route` | which recipe a chore-lane state applies, and which operator event one exit folds to |
 
@@ -865,7 +923,7 @@ back. Contract:
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head |
-| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
+| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
@@ -1143,8 +1201,8 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage provenance` | whether an issue was reported by an agent or a human |
 | `triage homes` | the assignable homes: open milestones and standing lanes |
 | `triage split` | one child of a bundled report, created exactly once |
-| `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering |
-| `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back |
+| `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering or composes no criteria block over a `ready-for:agent` target |
+| `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back — an epic's `ready-for:agent` excepted, which is `check-epic-plan`'s to write |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
 | `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason, carrying `closed-by-triage` and no triage status label |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
@@ -1153,11 +1211,22 @@ Take one intake-queue issue from arrival to triaged. Contract:
 **Exit codes.** The shared table, plus `12` the issue is human-filed and no `--duplicate-of` fold
 was named · `13` close-eligible, but the kill is unconfirmed (ADR 0159) · `14` the criteria block is
 drifted in a way no mechanical repair covers · `15` the composed body's authored region carries a
-`Malformed` criteria block · `16` `--ready-for agent` over a body whose criteria block does not
-read `Found` · `17` a live claim marker names another session · `18` no value of `.fabrika.jsonc`
+`Malformed` criteria block · `16` the `ready-for:agent` audience over a body whose criteria block
+does not read `Found` — stamped by `--ready-for agent`, or composed by `enrich` over a target
+already carrying the label · `17` a live claim marker names another session · `18` no value of `.fabrika.jsonc`
 may be used · `19` the asking lane holds no live claim on the target · `20` the composed body states
 an ordering the live `blocked_by` graph carries no edge for · `21` a `--blocked-by` target is a pull
 request. `4` is a deliberate gap.
+
+**`triage apply` never writes an epic's `ready-for:agent`.** `check-epic-plan` is that flip's only
+owner, and it writes the label when the epic's plan floor comes back clean. Under
+`--type epic --ready-for agent` the audience facet keeps nothing: no label is written, the machine
+line's ready-for column prints `none`, `--json` reports `readyFor: null`, and a stamp an earlier gate
+run left is reconciled away, because re-classifying an epic sends it back through the gate. The
+exemption is the epic's and the agent audience's alone — `--ready-for human` still stamps on every
+type, since parking an epic for a person is triage's own claim. Why a second writer made the label
+ambiguous is in the `triage apply` section of
+[the triage contract](../../../claude-plugins/fabrika/skills/triage/contract.md).
 
 **`triage apply --blocked-by` is the one triage route to the dependency graph.** ADR 0301 makes the
 native `blocked_by` graph the one carrier of "do not start this yet", and until this flag only
@@ -1284,9 +1353,11 @@ Five behaviours are worth knowing:
   over an artifact read in full; `4` is a proven defect; `6` means nothing is proven at all.
 - **The artifact arrives on stdin only.** No `--body`, no `--body-file` — a flag that accepts a
   path turns the artifact into a string the verb could echo onto a public surface.
-- **A `found` verdict marker is well-formed, not current.** Whether a marker binds the head you
-  hold is [`verdict-marker.ts`](../src/wire/verdict-marker.ts)'s `bindToHead` — `Current` / `Stale`
-  / `Unbindable`, because a head the caller could not resolve is not a comparison anyone made.
+- **A `found` verdict marker is well-formed, not current.** Whether it still binds is
+  [`verdict-marker.ts`](../src/wire/verdict-marker.ts)'s — `Current` / `Stale` / `Unbindable`,
+  because a head the caller could not resolve is not a comparison anyone made. `bindToHead` is the
+  head-only rule; `bindToContent` is the one every PR-scoped reader ships, taking head equality
+  first and the marker's `content:` digest when the head has moved.
 - **A registered format is a conforming format.** A registry row carries the fixtures its laws are
   driven from and the brands its value is built from, both required by the row type, so
   [`conformance.ts`](../src/wire/conformance.ts) holds every row to the same laws without naming it.

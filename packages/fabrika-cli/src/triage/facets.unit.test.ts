@@ -51,6 +51,27 @@ describe("the containment invariant", () => {
 		expect(facet?.owns(`ready-for:${readyFor}`)).toBe(true);
 	});
 
+	/** On an epic that label is `check-epic-plan`'s statement, so triage keeps none of it. */
+	it("keeps no audience label on an epic asked for the agent audience", () => {
+		const facets = triagedFacets({type: "epic", priority: "p2", readyFor: "agent", lane: null});
+		const facet = facets.find((f) => f.name === "audience");
+		expect(facet?.keep).toEqual([]);
+		// Still owned, so a stamp a gate run left is reconciled away rather than preserved.
+		expect(facet?.owns("ready-for:agent")).toBe(true);
+	});
+
+	it("keeps ready-for:human on an epic — parking it for a person is triage's own claim", () => {
+		const facets = triagedFacets({type: "epic", priority: "p2", readyFor: "human", lane: null});
+		expect(facets.find((f) => f.name === "audience")?.keep).toEqual(["ready-for:human"]);
+	});
+
+	it.each(
+		TYPES.filter((type) => type !== "epic"),
+	)("keeps ready-for:agent on %s — the exemption is the epic's alone", (type) => {
+		const facets = triagedFacets({type, priority: "p2", readyFor: "agent", lane: null});
+		expect(facets.find((f) => f.name === "audience")?.keep).toEqual(["ready-for:agent"]);
+	});
+
 	it.each(STANDING_LANES)("keeps %s under the facet that owns the standing lanes", (lane) => {
 		const facets = triagedFacets({type: "bug", priority: "p2", readyFor: "agent", lane});
 		const facet = facets.find((f) => f.name === "lane");

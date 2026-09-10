@@ -18,11 +18,13 @@ import {
 	once,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {FAILED} from "../verb.ts";
 import {
 	CLAIM_NOT_MINE,
 	DIRTY_TREE,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
+	TYPE_NOT_BUILDABLE,
 	WRONG_LANE,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -72,6 +74,11 @@ const ECHO = served({body: MINE});
 
 const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name}));
 const CLAIMABLE = issue({labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent")});
+/** The shape that found this: a decision triage stamped for an agent once a founder had ruled on it. */
+const RULED_DECISION = issue({
+	labels: labelled("type:decision", "p1", "status:triaged", "ready-for:agent"),
+});
+const RULING = `https://github.com/o/r/issues/${CHILD}#issuecomment-5335398768`;
 
 const RANGE = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4..03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
 const rangeVerdict = (polarity: string) =>
@@ -92,6 +99,14 @@ const HOLDS_THE_CLAIM: ReadonlyArray<Scripted> = [
 	NO_BLOCKERS,
 ];
 
+/** The same standing marker, over the decision child — the continuation asks for no ruling again. */
+const HOLDS_THE_DECISION_CLAIM: ReadonlyArray<Scripted> = [
+	[COMMENTS, CLAIMED_THREAD],
+	[ISSUE, RULED_DECISION],
+	[PERM, WRITES],
+	NO_BLOCKERS,
+];
+
 /** No `ROADMAP.md`: the scope fence is inert, so this suite asks only about the sequence. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
@@ -102,6 +117,17 @@ const WINS_THE_CLAIM: ReadonlyArray<Scripted> = [
 	[GET_COMMENT, ECHO],
 	[COMMENTS, CLAIMED_THREAD],
 	[ISSUE, CLAIMABLE],
+	[PERM, WRITES],
+	NO_BLOCKERS,
+];
+
+/** The same race, over a ruled decision child: only the type the issue carries differs. */
+const WINS_AS_DECISION: ReadonlyArray<Scripted> = [
+	[once(COMMENTS), graded("FAIL")],
+	[POST, POSTED],
+	[GET_COMMENT, ECHO],
+	[COMMENTS, CLAIMED_THREAD],
+	[ISSUE, RULED_DECISION],
 	[PERM, WRITES],
 	NO_BLOCKERS,
 ];
@@ -129,6 +155,7 @@ const GENERIC_CHECKOUT: ReadonlyArray<Scripted> = [
 const options = {
 	issue: CHILD,
 	token: null as string | null,
+	cites: null as string | null,
 	repo: null,
 	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
@@ -372,5 +399,93 @@ describe("runResumeChild — continuing a lane that already holds its claim", ()
 		expect(shell.calls.findIndex((line) => SWITCH.test(line))).toBeLessThan(
 			shell.calls.findIndex((line) => ABBREV_REF.test(line)),
 		);
+	});
+});
+
+/**
+ * The citation passthrough, executed.
+ *
+ * A `type:decision` child is the common first child of an epic — a ruling gets recorded before the
+ * work it governs is built — so the first repair round of the common shape hit a `30` the entry had
+ * no flag to answer, and the only route left was hand-assembling the five steps this verb exists to
+ * take out of a builder's hands. What the coverage has to prove is that the value reaches the claim
+ * step and stops there: the arm opens, and nothing else about the fence moves.
+ */
+describe("runResumeChild — the ruled decision child's repair", () => {
+	it("opens the lane on a cited ruling, running the same sequence to the armed proof", async () => {
+		const {outcome, shell} = await run([...WINS_AS_DECISION, ...GENERIC_CHECKOUT], {
+			cites: RULING,
+		});
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			answer: "resumed",
+			issue: CHILD,
+			token: LANE_TOKEN,
+			branch: RESUMED,
+			root: "/repo/trees/lane-a",
+			claim: {number: CHILD, nonce: NONCE},
+		});
+		expect(outcome.stderr.join("\n")).toContain(
+			`admitted as transcription of the founder ruling at ${RULING}`,
+		);
+		expect(shell.calls).toContain(`git branch -m ${PRIOR} ${RESUMED}`);
+		expect(shell.calls).toContain(`git switch ${RESUMED}`);
+	});
+
+	it("still refuses an uncited decision on 30, before any marker or git step", async () => {
+		const {outcome, shell} = await run([...WINS_AS_DECISION, ...GENERIC_CHECKOUT]);
+		expect(outcome.code).toBe(TYPE_NOT_BUILDABLE);
+		expect(outcome.stderr.join("\n")).toContain("type not buildable");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		expect(shell.calls).toEqual([]);
+	});
+
+	it.each([
+		["malformed", "issues/4312#issuecomment-5335398768"],
+		["another repository's", "https://github.com/other/repo/issues/4312#issuecomment-5335398768"],
+		["another issue's", "https://github.com/o/r/issues/9999#issuecomment-5335398768"],
+	])("keeps build claim's own refusal for %s citation, moving no branch", async (_kind, cites) => {
+		const {outcome, shell} = await run([...WINS_AS_DECISION, ...GENERIC_CHECKOUT], {cites});
+		expect(outcome.code).toBe(FAILED);
+		expect(outcome.stderr.at(-1)).toContain("build claim: --cites");
+		expect(outcome.stderr.at(-1)).toContain("nothing was written");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		expect(shell.calls).toEqual([]);
+	});
+
+	it("leaves an ordinary bug child's repair unchanged, cited or not", async () => {
+		const bare = await run([...WINS_THE_CLAIM, ...GENERIC_CHECKOUT]);
+		const cited = await run([...WINS_THE_CLAIM, ...GENERIC_CHECKOUT], {cites: RULING});
+		expect(bare.outcome.code).toBe(0);
+		expect(cited.outcome.code).toBe(0);
+		expect(cited.outcome.stdout).toBe(bare.outcome.stdout);
+	});
+
+	it("admits no type a citation was never an arm for — an epic child is still 30", async () => {
+		const {outcome, shell} = await run(
+			[
+				[once(COMMENTS), graded("FAIL")],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, CLAIMED_THREAD],
+				[ISSUE, issue({labels: labelled("type:epic", "p1", "status:triaged", "ready-for:agent")})],
+				[PERM, WRITES],
+				NO_BLOCKERS,
+				...GENERIC_CHECKOUT,
+			],
+			{cites: RULING},
+		);
+		expect(outcome.code).toBe(TYPE_NOT_BUILDABLE);
+		expect(shell.calls).toEqual([]);
+	});
+
+	it("continues the decision lane on --token alone, with no citation and no second marker", async () => {
+		const {outcome, shell} = await run([...HOLDS_THE_DECISION_CLAIM, ...GENERIC_CHECKOUT], {
+			token: LANE_TOKEN,
+		});
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).branch).toBe(RESUMED);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		expect(outcome.stderr.join("\n")).toContain("already held by this lane");
 	});
 });

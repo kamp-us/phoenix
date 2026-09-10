@@ -10,11 +10,19 @@
 		},
 		"assemblyRefresh": {
 			"type": "object",
-			"description": "Whether the driver merges the trunk into an epic's assembly branch on its way into review.",
+			"description": "Whether the driver merges the trunk into an epic's assembly branch before the tail enters review and before a child shell is dispatched off it.",
 			"properties": {
 				"onReview": {
 					"type": "string",
 					"description": "What `lane refresh --on-review` does: `off` (declines and merges nothing — the shipped default, and today's path into review) or `on` (performs the merge, so the tail review binds to a head the queue can take). A hand-called `lane refresh` is never gated by this.",
+					"enum": [
+						"off",
+						"on"
+					]
+				},
+				"onDispatch": {
+					"type": "string",
+					"description": "What `lane dispatch`'s pre-dispatch refresh does before it cuts a child's worktree off the assembly branch: `off` (declines and merges nothing — the shipped default, and today's dispatch path) or `on` (performs the merge, so the child builds and runs its verbs in a tree at least as new as the trunk). A hand-called `lane refresh` is never gated by this.",
 					"enum": [
 						"off",
 						"on"

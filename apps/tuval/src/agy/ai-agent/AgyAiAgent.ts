@@ -104,6 +104,7 @@ import {
 	transcriptUnreadable,
 	unknownCursor,
 } from "./refusals.ts";
+import {makeStopClaim} from "./stop-claim.ts";
 import {conversationDir, readTranscriptPage} from "./transcript.ts";
 import {decodeLine} from "./wire.ts";
 
@@ -179,13 +180,9 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		const session = yield* Ref.make<Session | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const commandCache = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
-		// The child a stop was delivered to, which is the stop itself: set to that child's handle when
-		// SIGINT goes, given back by a refused signal. Two members read it — `processGone` spends it
-		// where the wire said nothing (`refusals.ts`), and the exit watch reads it to tell an exit
-		// this layer asked for from one it did not. It is the *child* and not a layer-wide flag
-		// because a relaunch whose `openSession` failed would otherwise leave a boolean stale-`true`
-		// and the next child's own death would read as a stop nobody sent (#8709).
-		const stopSentTo = yield* Ref.make<ChildProcessSpawner.ChildProcessHandle | null>(null);
+		// The child a stop was delivered to, which is the stop itself — see `stop-claim.ts` for why
+		// the memory is a domain object rather than a `Ref` this scope can read and write.
+		const stop = yield* makeStopClaim;
 		// Set from the delivered signal through to the session the relaunch reopened: the span in
 		// which `session` still holds a torn-down child. `prompt` refuses across it — see there.
 		const relaunching = yield* Ref.make(false);
@@ -304,7 +301,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				const ended = Effect.gen(function* () {
 					const code = yield* child.handle.exitCode.pipe(Effect.orElseSucceed(() => null));
 					yield* Ref.set(turnLive, false);
-					const stopped = (yield* Ref.get(stopSentTo)) === child.handle;
+					const stopped = yield* stop.heldBy(child.handle);
 					const failure = processGone(code, stopped);
 					// A child that died before it ever said `init` is a start that failed, and its
 					// caller is still holding that await.
@@ -327,20 +324,6 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 					ended,
 				);
 			});
-
-		/**
-		 * Claim the stop for one child, in a single step.
-		 *
-		 * A read and a write are two steps: two presses that interleave between them both find the
-		 * stop unclaimed and both go on to relaunch, and the second tears down the child the first
-		 * just opened (#8883). `false` is "this child's stop is already in flight", which is all a
-		 * second press has to be told — and because the claim names the child, a stop left behind by a
-		 * relaunch that failed can never be read as the next child's.
-		 */
-		const claimStop = (child: Child): Effect.Effect<boolean> =>
-			Ref.modify(stopSentTo, (held) =>
-				held === child.handle ? [false, held] : [true, child.handle],
-			);
 
 		/**
 		 * Run one relaunch's span with `relaunching` set, given back on every exit — a failure and an
@@ -584,7 +567,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			// A stop already in flight has nothing for a second press to send, and a second press must
 			// not be able to take the first one's claim back: an exit read as one nobody asked for
 			// fails the very queue the relaunch is keeping (#8883).
-			if (!(yield* claimStop(current.child))) return;
+			if (!(yield* stop.claim(current.child.handle))) return;
 			const delivered = yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
 				Effect.as(true),
 				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
@@ -593,7 +576,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				// with it: one that was never delivered must not speak for whatever ends this child.
 				Effect.catch((refusal) =>
 					Effect.gen(function* () {
-						yield* Ref.set(stopSentTo, null);
+						yield* stop.release;
 						const live = yield* Ref.get(turnLive);
 						yield* publish([{kind: "failure", failure: interruptFailureOf(refusal, live)}]);
 						return false;

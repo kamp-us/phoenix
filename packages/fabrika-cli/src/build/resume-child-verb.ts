@@ -9,7 +9,9 @@
  *
  * It sequences and derives nothing. Every step is the verb a builder would have typed, called through
  * the same `run*` function the CLI calls, so each refusal keeps its own exit code, its own words and
- * its own fail-closed reading; this module adds only the line naming which step stopped.
+ * its own fail-closed reading; this module adds only the line naming which step stopped. `--cites`
+ * rides along on that same principle: the claim step's decision arm is the one admission a child
+ * repair can need, so the value is carried to it unchanged and judged only there.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -35,6 +37,16 @@ export interface ResumeChildOptions {
 	 * tokenless re-run over a held claim posts a second marker and loses to the first on `15`.
 	 */
 	readonly token: string | null;
+	/**
+	 * The founder-ruling comment a `type:decision` child's repair transcribes — `null` on every other
+	 * type, and on a decision whose ruling nobody cited.
+	 *
+	 * Forwarded unchanged to the claim step and read by nothing else here. `build claim` binds the URL
+	 * to this repository and this child before it opens the type axis, so the wrapper carries the
+	 * value without judging it: a decision child that fails review is otherwise unrepairable through
+	 * the one sanctioned entry, because the arm its own `30` refusal names has no way in.
+	 */
+	readonly cites: string | null;
 	readonly repo: string | null;
 	/** Where to look for `ROADMAP.md` — the checkout this run stands in. */
 	readonly cwd: string;
@@ -97,7 +109,7 @@ export const runResumeChild = (
 			purpose: "build",
 			override: null,
 			overrideLane: null,
-			cites: null,
+			cites: options.cites,
 			token: options.token,
 			resume: true,
 		});
@@ -132,9 +144,9 @@ export const runResumeChild = (
 		const branched = yield* runBranch({
 			number: issue,
 			slug: null,
-			// Inert, not a rebase: the `resumeLane` path returns before it fetches or reads `base`, and a
-			// repair keeps the child's commits where they are. This is the CLI's own default for the flag.
-			base: "origin/main",
+			// Nobody named one, and nothing here needs one: the `resumeLane` path returns before any base
+			// is resolved or fetched, and a repair keeps the child's commits where they are.
+			base: null,
 			resume: null,
 			resumeLane: true,
 			token: won,

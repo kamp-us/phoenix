@@ -180,6 +180,7 @@ describe("provenClosure", () => {
 		merged: true,
 		linkedIssues: [6980],
 		linkKind: "part-of",
+		referencedIssues: over.linkedIssues ?? [6980],
 		...over,
 	});
 
@@ -212,6 +213,25 @@ describe("provenClosure", () => {
 	it("reads a body whose `fixes` refs drop this lane's issue as unknown", () => {
 		expect(provenClosure(6980, [fact({linkKind: "fixes", linkedIssues: [7000]})])).toMatchObject({
 			_tag: "Unknown",
+		});
+	});
+
+	/**
+	 * The permissive fold on an epic tail: its closing children push the epic out of `linkedIssues`,
+	 * so a reader keyed on that field alone reports the merge closed the epic it was written to
+	 * spare.
+	 */
+	it("proves an epic tail's merge partial over the epic it names with `Part of`", () => {
+		const tail = fact({
+			number: 7861,
+			linkKind: "fixes",
+			linkedIssues: [6642, 6643],
+			referencedIssues: [6642, 6643, 6980],
+		});
+		expect(provenClosure(6980, [tail])).toEqual({
+			_tag: "Read",
+			closure: {_tag: "Partial", prs: [7861]},
+			landed: [7861],
 		});
 	});
 });
