@@ -58,6 +58,7 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {applyBoardTerminal, foldLog, resolveTask, type SettlementEvidence} from "./fold.ts";
+import type {KeyIssue} from "./key.ts";
 import {CANCELLED_EVENT} from "./machine.ts";
 import {type Nomination, nominatePulls} from "./nominate.ts";
 import type {PullFact} from "./prove.ts";
@@ -179,8 +180,8 @@ export const boardReaders = (
 };
 
 export interface SettleOptions<R = never> extends LaneRef {
-	/** The issue this lane drives, or `null` for a key that names none. */
-	readonly issue: number | null;
+	/** The issue this lane drives, or which of the two ways its key names none. */
+	readonly issue: KeyIssue;
 	/** The task the terminal addresses; `null` resolves only on a single-task lane. */
 	readonly task: string | null;
 	/** The lane-claim token, when this caller is the driver holding the lane; `null` otherwise. */
@@ -212,13 +213,15 @@ export const runSettle = <R = never>(
 		// and have its live lock stolen, which is the silent double-append the lock exists to refuse.
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
-		const {issue} = options;
-		if (issue === null) {
+		if (options.issue._tag !== "Issue") {
 			return refuse(
 				ISSUE_UNRESOLVED,
-				`${VERB}: "${options.lane}" names no issue, and settling a lane stands on that issue's own closure — a chore lane can never satisfy it. Nothing was appended.`,
+				options.issue._tag === "Chore"
+					? `${VERB}: "${options.lane}" is a chore lane, and settling a lane stands on an issue's own closure — a lane with no issue can never satisfy it. Nothing was appended.`
+					: `${VERB}: "${options.lane}" carries no leading issue number, so there is no issue whose closure could settle it — this is not a chore lane, so what is wrong is the directory name. A quarantined lane is named "<issue>.<suffix>" precisely so it keeps naming its issue. Nothing was appended.`,
 			);
 		}
+		const issue = options.issue.number;
 		const task = resolveTask(loaded.lane, options.task);
 		if (task._tag === "Unresolved") {
 			return refuse(TASK_UNKNOWN, `${VERB}: ${task.reason}`);

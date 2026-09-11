@@ -32,6 +32,7 @@ import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
+import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
@@ -190,8 +191,7 @@ export const claimOf = (
 export const issueOf = (taskId: string, lane: string): number | null => {
 	const region = /^(?:issue|epic)_(\d+)$/.exec(taskId);
 	if (region?.[1] !== undefined) return Number.parseInt(region[1], 10);
-	const key = lane.trim();
-	return /^\d+$/.test(key) ? Number.parseInt(key, 10) : null;
+	return rawKeyIssue(lane.trim());
 };
 
 /** One local branch, with the commits it adds over its own fork point already read off the tree. */
