@@ -25,11 +25,23 @@
  * Whether the diff renders anything is the *skill's* judgment over `review diff`'s refusal-guarded
  * bytes, and it stays there. No verb decides it: that was a rejected candidate, because a
  * second path heuristic is the first one's defect relocated.
+ *
+ * **Where the route rests on a hand-verification instead of a render, this verb also judges whether
+ * that evidence is still current.** `--verified-at` names the head the hand-verification ran at, and
+ * the evidence stands exactly when no file in the range to `--sha` raises the `ui` class — the same `isUiSurface` over the same prefixes, never a second predicate.
+ * Left off, the range is never read and the route behaves as it always did: a prose-only diff under
+ * a declared prefix rests on the body alone and has no head to compare against.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getComment, listComments} from "../io/issues.ts";
-import {listPullFiles, patchComment, viewerLogin} from "../io/pulls.ts";
+import {
+	COMPARE_FILE_CAP,
+	compareFiles,
+	listPullFiles,
+	patchComment,
+	viewerLogin,
+} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
@@ -68,6 +80,13 @@ export interface RouteOptions {
 	readonly sha: string;
 	/** The one-line why, carried on the record's first line. */
 	readonly clause: string;
+	/**
+	 * The head a hand-verification standing in for the render ran at, or `null` where the route
+	 * rests on no such evidence — a prose-only diff under a `uiSurfaces` prefix rests on the body
+	 * alone and has no head to compare. Given one, the range to {@link sha} decides whether the
+	 * evidence is still evidence of the tree being attested.
+	 */
+	readonly verifiedAt: string | null;
 	/** This repo's `uiSurfaces` prefixes, resolved by the caller off the tree it stands in. */
 	readonly uiPrefixes: ReadonlyArray<string>;
 	readonly repo: string | null;
@@ -104,6 +123,13 @@ export const runRoute = (
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --clause is blank — a route with no stated reason records nothing a reader can check.`,
+			);
+		}
+		const verified = options.verifiedAt === null ? null : headSha(options.verifiedAt);
+		if (options.verifiedAt !== null && verified === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --verified-at "${options.verifiedAt}" is not a head SHA — expected 7–40 hex characters.`,
 			);
 		}
 
@@ -160,6 +186,40 @@ export const runRoute = (
 				`${VERB}: #${pr}'s diff raises no ui class, so ship gate requires no ${NAMESPACE} namespace — there is nothing to route.`,
 				diagnostics,
 			);
+		}
+
+		if (verified !== null) {
+			const range = `${verified}..${inspected}`;
+			const compared = yield* compareFiles(repo, verified, inspected);
+			if (compared._tag === "Failure") {
+				return unreadable(`the range ${range}`, pr, compared.reason);
+			}
+			const spent = compared.value.files.filter((file) => isUiSurface(file, options.uiPrefixes));
+			diagnostics.push(
+				scannedLine(
+					VERB,
+					compared.value.files.length,
+					"file",
+					`changed in ${range}; ${spent.length} raise the ui class`,
+				),
+			);
+			// The compare declares no total, so a capped list can only ever *hide* a ui-class file —
+			// the same asymmetry the truncated changed-file read above refuses on. UNKNOWN, never a
+			// range the evidence is then cleared over.
+			if (compared.value.capped) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the comparison over ${range} came back at GitHub's ${COMPARE_FILE_CAP}-file ceiling — refusing to clear the hand-verification against a capped read.`,
+					diagnostics,
+				);
+			}
+			if (spent.length > 0) {
+				return refuse(
+					STALE_TREE,
+					`${VERB}: ${spent.join(", ")} raise the ui class in ${range} — the hand-verification at ${verified} is spent; re-run it at ${inspected}.`,
+					diagnostics,
+				);
+			}
 		}
 
 		const composed = `${emitRecord({namespace: NAMESPACE, sha: inspected, clause})}\n${authored.text.replace(/\n+$/, "")}\n`;
@@ -241,6 +301,7 @@ export const runRoute = (
 				namespace: NAMESPACE,
 				sha: inspected,
 				uiFiles: ui.length,
+				verifiedAt: verified,
 				upsert: mine === undefined ? "created" : "edited",
 				commentUrl: landed.url,
 			}),

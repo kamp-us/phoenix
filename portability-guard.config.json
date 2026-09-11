@@ -75,7 +75,7 @@
 			"paths": ["claude-plugins/fabrika/skills/review/contract.md"]
 		},
 		"plugin-review-ui": {
-			"ceiling": 8,
+			"ceiling": 7,
 			"why": "Same class as the `review` contract's row: verbatim pins of stderr lines the shipped `review-ui` verbs print, whose source strings live in packages/fabrika-cli/src/review-ui/ and move with #8305.",
 			"paths": ["claude-plugins/fabrika/skills/review-ui/contract.md"]
 		},

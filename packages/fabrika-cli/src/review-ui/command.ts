@@ -194,9 +194,15 @@ const route = leafCommand(
 		clause: Flag.string("clause").pipe(
 			Flag.withDescription("the one-line why this PR renders nothing; blank is not a reason"),
 		),
+		verifiedAt: Flag.string("verified-at").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the head a hand-verification standing in for the render ran at (7–40 lowercase hex); the route is refused when any file in that range to --sha raises the ui class, because the evidence is then spent (omit it where the route rests on no such evidence)",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, sha, clause, repo}) {
+	Effect.fn(function* ({pr, sha, clause, verifiedAt, repo}) {
 		// The reviewer's own checked-out tree, never the PR head: the class this route resolves was
 		// raised over these prefixes, so they are read where the verb is running.
 		const surfaces = yield* uiSurfacesOr(
@@ -213,6 +219,7 @@ const route = leafCommand(
 				pr,
 				sha,
 				clause,
+				verifiedAt: Option.getOrNull(verifiedAt),
 				uiPrefixes: surfaces.prefixes,
 				repo: Option.getOrNull(repo),
 				env: process.env,
@@ -223,7 +230,7 @@ const route = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record that this PR renders nothing, so no verdict is owed."),
 	Command.withDescription(
-		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship's gate resolves the namespace as routed. The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or a blank --clause), 11 (a precondition read failed or the file list was truncated — nothing was posted), 12 (the live head moved past --sha). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
+		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship's gate resolves the namespace as routed. The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Where the route rests on a hand-verification instead, --verified-at names the head that ran at and the route is refused when any file in the range to --sha raises the ui class — the same isUiSurface over the same prefixes, and a comparison at GitHub's 300-file ceiling is UNKNOWN rather than a cleared range. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or --verified-at, or a blank --clause), 11 (a precondition read failed, the file list was truncated, or the --verified-at comparison came back capped — nothing was posted), 12 (the live head moved past --sha, or a ui-class file changed since --verified-at). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
 	),
 );
 
