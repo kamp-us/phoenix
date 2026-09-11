@@ -918,8 +918,10 @@ this order:
   the ticket is terminal, or an adopt marker names the holding lane's session as gone, or **no claim
   marker holds that lane at all** — which is the state the release above just created, so the two
   steps compose in this order. That last arm is the
-  one that reads the tree, having no board statement to lean on: it retires a tree carrying nothing
-  and refuses `33` naming the uncommitted paths or the commits past `origin/main` that block it. **Run it from wherever
+  one that reads the tree, having no board statement to lean on: it retires a tree whose removal
+  would strand nothing and refuses `33` naming the uncommitted paths, or the commits no branch,
+  remote-tracking ref or tag reaches, that block it. Commits on the tree's own lane branch do not
+  block it — the removal leaves the branch behind. **Run it from wherever
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
