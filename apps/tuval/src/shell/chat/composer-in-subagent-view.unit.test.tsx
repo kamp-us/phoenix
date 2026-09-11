@@ -13,7 +13,7 @@
  * behaviour can depend on which layer owns the parent.
  */
 
-import {act, fireEvent, render, within} from "@testing-library/react";
+import {act, fireEvent, render, waitFor, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
@@ -64,12 +64,23 @@ const open = async () => {
 		expect(found, "no composer field").toBeTruthy();
 		return found as HTMLTextAreaElement;
 	};
+	const send = () => root.querySelector<HTMLButtonElement>("button[type='submit']");
+	// The transcript wait above says nothing about the composer. `AgentChatInput.Root` seeds
+	// `connection` as `"loading"` and leaves it only once its four bridge loaders resolve and React
+	// commits the answer, and `PrimaryActions` disables send for exactly that state — so an enabled
+	// send control is the one fact in this DOM that proves the bridge settled. Waiting on it rather
+	// than on a tick count is what keeps this helper right for a bridge slower than tuval's
+	// pre-resolved loaders (#9185).
+	await waitFor(() => {
+		expect(send(), "no send control").toBeTruthy();
+		expect(send()?.disabled, "composer bridge still loading").toBe(false);
+	});
 	return {
 		rendered,
 		root,
 		process,
 		composer,
-		send: () => root.querySelector<HTMLButtonElement>("button[type='submit']"),
+		send,
 		view: () => bound.view(),
 	};
 };
