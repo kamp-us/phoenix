@@ -1344,9 +1344,11 @@ driver of your own session. `8` or `11` leaves
 whether the lane is still held UNKNOWN: name the code in your terminal line rather than reporting a
 release you cannot prove. A `STOPPED` run releases too, and so does a `LANE-WAITING` one on the wait
 floor — a claim outliving the driver that took it is the same lane nobody can pick up, and a lane
-handed back for a later re-read has to be claimable by whoever takes that pass. The cap-full
-`LANE-WAITING` is the one ending that reaches no release at all: step 1 ended before the claim, so
-there is no marker of yours to retract and no worktree to give back.
+handed back for a later re-read has to be claimable by whoever takes that pass. Step 1's *pre-claim*
+`LANE-WAITING` is the one ending that reaches no release at all: the seat read ended the run before
+`lane claim`, so there is no marker of yours to retract and no worktree to give back. The cap's
+other ending is the opposite — `lane open`'s exit `51` meets the same cap one step later, holding a
+claim, and step 1 routes it here precisely to hand that claim back.
 
 
 **A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
@@ -1609,13 +1611,16 @@ event was owed, or the `BLOCKED` this run recorded put it there and the re-fold 
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
 this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
 posted) · **`LANE-WAITING`** (nothing is wrong and nothing is owed but time — two
-causes reach it. Step 1's `lane seats` answered `full`: the cap has no room, so no claim was taken,
-nothing exists under `.fabrika/lanes`, and the read's own `retryAfter` instant is named in the
-terminal line. Or a `ship:queued` re-read the recorder refused on the wait floor with
-exit `55` — the read happened, the record was refused, the log is byte-identical and the wait
+causes reach it, and the cap reaches it by either of two paths. Step 1's `lane seats` answered
+`full`: the cap has no room, so no claim was taken, nothing exists under `.fabrika/lanes`, and the
+read's own `retryAfter` instant is named in the terminal line. Or `lane open` refused with exit
+`51`: the same cap met one step later, so a claim **is** held, step 4's `lane release` hands it back
+before the run ends, and the retry instant is the one a later `lane seats` prints rather than any
+this run read. The other cause is a `ship:queued` re-read the recorder refused on the wait floor
+with exit `55` — the read happened, the record was refused, the log is byte-identical and the wait
 unspent; the PR and the earliest admissible re-read time named in the terminal line, nothing posted
-and no event recorded. Either way the caller re-dispatches this lane on a later pass, no sooner than
-the time named, and spends no human) · **`STOPPED`** (a verb
+and no event recorded. In every case the caller re-dispatches this lane on a later pass, no sooner
+than the time named, and spends no human) · **`STOPPED`** (a verb
 exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
