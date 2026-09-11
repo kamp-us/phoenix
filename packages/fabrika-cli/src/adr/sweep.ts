@@ -6,11 +6,6 @@
  * over the live-accepted corpus, so a term every ADR uses ("the", "gate", "pipeline") contributes
  * almost nothing and a term two ADRs share contributes a lot.
  *
- * **All three outcomes exit 0 and all three are answers** — that is the whole point. v1's
- * `adr-sweep` exits 1 on the one case it was asked to produce, so a caller reads its informative
- * shortlist as a failed run; and it writes `--json` to stderr leaving stdout empty. Neither
- * scar is repeated here.
- *
  * None of the outcomes is a clearance, which is why `no-overlap` is a distinct token rather than an
  * empty shortlist: an ADR that disagrees with the subject about what a *label means*, sharing no
  * distinctive vocabulary, never appears at all, and the skill reads the domain by hand regardless.
@@ -201,6 +196,5 @@ export const sweep = (
 	};
 };
 
-/** The line grammar for one shortlist entry: `<id>\t<score>\t<file>\t<title>`. */
 export const renderEntry = (entry: SweepEntry): string =>
 	`${entry.id}\t${entry.score.toFixed(2)}\t${entry.file}\t${entry.title}`;

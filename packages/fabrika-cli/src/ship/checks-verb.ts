@@ -6,11 +6,7 @@
  * group adds two things on top — the wedge diagnosis and the informational-check carve-out — and
  * both live in that same module so a second copy cannot drift the way v1's two `jq` copies did.
  *
- * `no-runs` is a **positively evidenced** state, not an empty read: workflows ≥ 1 and zero runs at
- * this head means Actions exist and none fired, which is the dropped-trigger state `ship nudge`
- * re-derives for itself. Zero workflows is `no-producer` — a different fact from `pending`, never
- * collapsed into it: a repo with no CI is not a repo whose CI is still running, and
- * printing the second over the first tells an operator to wait for a run nothing will ever start.
+ * See the checks help in ./command.ts for rollup states and output fields.
  *
  * A `green` is served only over bytes a gate of this repo's own inspected: the coverage read is
  * `../review/gate-coverage.ts`, the same module `review ci` refuses on, and a head where every

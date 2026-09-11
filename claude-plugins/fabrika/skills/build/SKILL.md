@@ -215,16 +215,11 @@ markdown, validates under `prose`) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 
-**When the change alters what a fabrika verb prints, the surface is wider than the file you opened.**
-That grammar is hand-copied into six places and nothing compares them, so a sweep scoped to the
-directory you started in leaves a copy that still reads as true — one child died three repair rounds
-running on exactly that, because each round fixed the copies under the directory it opened and CI
-kept reading a seventh. The six are the verb's **Output** paragraph in `contract.md`, the fenced
-worked examples further down that same file, the `SKILL.md` step that runs the verb and routes off
-its tokens, the verb's `Command.withDescription` help string, the verb's row on the package's verb
-reference page, and the source docblocks on the verb module and its helpers. The prose and the
-examples are two passes rather than one, and a sweep scoped to markdown never opens the `.ts`
-surfaces at all — walk all six and land every one in this PR.
+**When a fabrika verb's contract changes, update it with the implementation in the same PR.**
+Read [command documentation ownership](../../docs/interface-convention.md#command-documentation-ownership)
+before changing what a verb prints. Update the help callers use, the contract requirements and
+examples affected, and any skill step whose next action changes. Done when each changed fact has
+an owner, retained pointers resolve, and the caller can still read and act on the answer.
 
 ## 4 — Branch, build, verify in this tree
 

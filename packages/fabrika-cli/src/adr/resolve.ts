@@ -1,10 +1,6 @@
 /**
- * `adr resolve`'s state resolution, pure.
- *
- * All four states are answers and every one is a positive token: `absent` on exit 0 means *proven
- * absent against a current tree* — the fetch succeeded, the records were read, the open pull
- * requests were enumerated, and no one holds this id. It is never what a failed read prints; a
- * failed read exits 11, 17 or 18 with nothing on stdout.
+ * `adr resolve` state resolution. See `adr resolve --help` for the reported states.
+ * The caller must prove both the base and open-PR sets readable before resolving an id.
  */
 import {isLive} from "./records.ts";
 
@@ -96,5 +92,4 @@ export const resolveId = (
 	return {id, state: "absent", file: "-", detail: "-"};
 };
 
-/** The line grammar: one tab-separated `<state>\t<file>\t<detail>` row per id, in argument order. */
 export const renderResolution = (r: Resolution): string => `${r.state}\t${r.file}\t${r.detail}`;

@@ -1,9 +1,6 @@
 /**
- * `ui law` — the typed prohibition registry, schema-validated whole-file, rows in file order.
- *
- * Three different facts, three different codes, and the skill's prose fallback is legal only in the
- * first: untyped (`13` — no registry beside the manifest), mistyped (`4` — a registry that violates
- * the schema), unreadable (`11` — the law is UNKNOWN, never "untyped").
+ * `ui law` reads the typed prohibition registry and validates it whole-file.
+ * See `ui law --help` for the refusal contract.
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

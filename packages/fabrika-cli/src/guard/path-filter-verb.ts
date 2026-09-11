@@ -4,10 +4,7 @@
  * The verb is the IO boundary and nothing else: read the two workflows, hand their texts to the
  * pure rule in `./path-filter.ts`, seat the answer on the group's exit taxonomy.
  *
- * Drift, an unlocatable filter list and an unreadable workflow are three different reds: a
- * real drift is `12`, an unlocatable list is `7` and an unreadable file is `11` — all
- * still red, so the gate's strictness is unchanged, but a human reproducing the red can tell which
- * of the three happened.
+ * See `guard path-filter-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

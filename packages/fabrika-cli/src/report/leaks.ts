@@ -101,7 +101,6 @@ export const isBareAtReference = (body: string): boolean => {
 	return first.startsWith("@") && first.includes("/");
 };
 
-/** The stderr detail lines a refusal prints under its message: one `line <n>, <class>` per hit. */
 export const renderLeaks = (leaks: ReadonlyArray<Leak>): ReadonlyArray<string> =>
 	leaks.map((leak) => `  line ${leak.line}, ${leak.class}`);
 

@@ -1,10 +1,7 @@
 /**
  * `wire read` — read a format's block out of an artifact on stdin.
  *
- * The one verb whose *negative* answers are the point. `Found` is the only outcome that reaches
- * stdout; `Absent` and `Malformed` are proven refusals on distinct codes, and an artifact that was
- * never seen is a third code again (`./codes.ts`). Nothing here can produce a well-formed empty
- * answer.
+ * See `wire read --help` for the answer format and exit codes.
  */
 import {Effect} from "effect";
 import type {StdinRead} from "../io/stdin.ts";

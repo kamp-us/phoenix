@@ -6,10 +6,7 @@
  * feature's mutation keys / publisher reference / live targets, hand them to the rule in
  * `./fanout.ts`, seat the answer on the group's exit taxonomy.
  *
- * **v1's single non-zero splits into three seats here.** A missing feature dir or an unreadable file
- * is UNKNOWN (`11`) — the scan never completed; zero discovered mutations and a present-but-empty
- * manifest are both a broken scope assumption (`7`); a real drift, omission or mis-aim is
- * the violation (`12`). All three stay red, so the gate's strictness is unchanged.
+ * See `guard fanout-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

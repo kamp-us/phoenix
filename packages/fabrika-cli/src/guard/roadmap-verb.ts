@@ -2,11 +2,8 @@
  * `guard roadmap-guard check` — the IO shell around `./roadmap.ts`.
  *
  * It reads two things and judges neither: `ROADMAP.md` off the repo root, and the milestone
- * projection off `gh api`. Every invariant lives in the pure core, so the only decisions here are
- * which failure is which — and that split is the port's whole point. The v1 original exited
- * `1` for drift, for an unreadable `ROADMAP.md` and for a `gh` that could not answer; those three
- * have opposite remedies, so here they are `12`, `11` and `11`, and a roadmap with no arcs or a repo
- * with no milestones is `7` rather than a green over nothing.
+ * projection off `gh api`. Every invariant lives in the pure core.
+ * See `guard roadmap-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

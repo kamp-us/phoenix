@@ -6,9 +6,6 @@
  * hand-rolled posting call — which is the exact call that has shipped a literal path as a body and
  * a comment whose landed text nobody read back, both of them comment posts rather than issue
  * creates.
- *
- * A note is free prose: no section template applies and no footer is appended. Stated in code as
- * well as in the contract because the sibling verb does both.
  */
 
 import {Effect} from "effect";

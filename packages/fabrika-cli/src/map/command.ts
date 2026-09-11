@@ -10,10 +10,6 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * **The answer channel is machine, unconditionally, so there is no `--json` flag.** v1's structured
- * output was opt-in behind `--json` while the default was English prose, so the shape a skill
- * captured by default was sentences.
- *
  * **`--kind` and `--outcome` are declared as strings and checked in the verb.** The check is the
  * closed set's, and seating it in the verb is what lets the refusal name the whole vocabulary rather
  * than emit the parser's generic message; it still exits `1`, which is where an off-vocabulary flag

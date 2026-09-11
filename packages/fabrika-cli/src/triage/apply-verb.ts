@@ -9,21 +9,16 @@
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
  *
- * **The audience column reports the stamp, and on `--type epic --ready-for agent` there is none**:
- * that flip belongs to `check-epic-plan` and to nothing else, so `audienceKeep` writes no label, the
- * tab line prints `none` in that column and `--json` reports `readyFor: null`. Reporting the asked-for
- * `agent` there would be the same fallback the read-back exists to refuse.
+ * Only check-epic-plan stamps an epic ready for an agent. Reporting the requested audience
+ * instead of the reconciled stamp would recreate the read-back fallback this verb forbids.
  *
- * `--blocked-by` rides the same verb and prints as the machine line's sixth column
- * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>\t<classes>`); its reads, writes and
- * read-back are `./blocked-by.ts`. **That column reports this run, not the graph**: the dependency
+ * `--blocked-by` reads, writes and read-back live in `./blocked-by.ts`.
+ * **Its output column reports this run, not the graph**: the dependency
  * endpoint is read only when the flag is present, so a flagless run prints it empty whatever the
  * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close.
  *
- * `--class` is the last column, and it is the **producer** the lane's `context.<task>.classes` seed
- * had none of — [`lane/class-seed.ts`](../lane/class-seed.ts) carries what that gap cost. Its
- * vocabulary is closed in code rather than on the board, which is the one asymmetry against the
- * other five facets.
+ * `--class` supplies the seed read by `../lane/class-seed.ts`. Unlike the other facets,
+ * its vocabulary is closed in code rather than declared on the board.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

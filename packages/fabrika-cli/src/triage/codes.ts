@@ -1,25 +1,10 @@
 /**
- * The one exit table every `triage` verb allocates from, so a code means one thing across this
- * group whichever verb produced it.
+ * Exit allocations for `triage`; `triage codes` renders TRIAGE_EXIT_TABLE.
+ * Each leaf in `./command.ts` documents its triggers. Shared meanings import `../exit-codes.ts`;
+ * `../exit-code-alignment.ts` checks that private allocations do not collide with them.
  *
- * `0`, `1`, `126` and `127` are reserved by the interface convention (see `../verb.ts` and the
- * bootstrap failure in `../bin.ts`); everything else here is `3` and up, the band a verb owns for
- * outcomes it PROVED. `2` is allocated by nothing anywhere in fabrika — it is the harness's block
- * code on `PreToolUse` (`../hook/harness-exit.ts`).
- *
- * **The alignment with `report` is deliberate, code-for-code, and re-exported rather than
- * re-typed.** Where this table overlaps `report`'s writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
- * `10`, `11` — the values are *imported* from `../exit-codes.ts`, so a caller driving `report` and
- * `triage` in one sweep reads one meaning and a drift between the two is unrepresentable rather than
- * merely detectable (`../review/codes.ts` set the precedent; `../exit-code-alignment.ts` owns the
- * policy and checks the direction an import cannot cover — that the codes added below clear
- * `report`'s whole table). That alignment does **not** extend repo-wide: `wire` allocates `3`-`6`
- * for facts about an artifact, so its `3` is *the format's block is provably not in it*.
- *
- * **`4` is a deliberate gap, not a free slot.** It once held "the target issue does not exist, or is
- * not readable" — a proven fact and an unknown fused into one code. {@link ZERO_SCOPE} and
- * {@link PRECONDITION_UNKNOWN} took the halves; leaving `4` unallocated keeps the alignment with
- * `report file`, where it is a body-section failure no verb here performs.
+ * Code 4 is retired. It combined an absent issue with an unreadable one. Keeping it empty
+ * preserves the split between ZERO_SCOPE and PRECONDITION_UNKNOWN and the shared allocation.
  */
 
 import {
@@ -34,14 +19,10 @@ import {
 } from "../exit-codes.ts";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 
-/** The answer is on stdout. Restated here because {@link TRIAGE_EXIT_TABLE} spans the whole matrix. */
 const ANSWER = 0;
-/** Usage error, an unresolvable repo, or the verb failed to run. */
 const FAILED = 1;
 
-/** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
-/** The **authored** text carries a machine-local path and it was not redacted. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /**
  * The **authored** text is a bare `@` path reference — **not** redactable.
@@ -69,7 +50,6 @@ export const ZERO_SCOPE = SHARED_NO_TARGET;
  * children.
  */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match. The artifact exists and needs a human. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * The supplied value is not permitted in this position — off a closed enum, a `--home` naming a
@@ -82,7 +62,6 @@ export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
  * seats it here for the same reason).
  */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
-/** A precondition read failed — nothing was written and no outcome is proven. `report`'s `11`. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * Refused: the issue is human-filed and this is not a `--duplicate-of` fold.
@@ -99,7 +78,6 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
  * the other's seat.
  */
 export const HUMAN_FILED = 12;
-/** Refused: close-eligible, but the kill is unconfirmed. */
 export const UNCONFIRMED = 13;
 /**
  * Refused: the acceptance-criteria block is drifted in a way no mechanical repair covers.
