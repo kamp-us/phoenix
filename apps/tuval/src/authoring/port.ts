@@ -116,14 +116,23 @@ export const compilePort = <D extends AnyPortDecl>(
 	const kind = portKind(program, name);
 	const compiled: PortSchema =
 		decl.direction === "out"
-			? {kind, direction: "out", accepts: admits(decl.schema)}
+			? {kind, direction: "out", accepts: admits(decl.schema), schema: decl.schema}
 			: decl.direction === "in"
-				? {kind, direction: "in", accepts: admits(decl.schema), bound: decl.bound}
+				? {
+						kind,
+						direction: "in",
+						accepts: admits(decl.schema),
+						bound: decl.bound,
+						schema: decl.schema,
+					}
 				: {
 						kind,
 						direction: "in",
 						accepts: admits(decl.input),
 						bound: decl.bound,
+						// A request arrives as its input, so that is the schema the row publishes — what a
+						// `Program.shape` reading this row compares on the in side (#8887, #8770).
+						schema: decl.input,
 						// The output schema is kept, not dropped: it is the only check an answer's shape
 						// gets, and the kernel runs it where the answer is handed back (#8756).
 						answers: admits(decl.output),

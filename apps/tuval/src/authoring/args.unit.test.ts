@@ -89,6 +89,42 @@ describe("authoring.args", () => {
 		expect(failure?.side).toBe("out");
 	});
 
+	it("accepts a shipped row, which is what a config actually has in hand (#8887)", async () => {
+		// Not a record of `port.in(…)` declarations: the compiled row `defineProgram` answers, whose
+		// ports carry the kernel's predicate plus the schema the compiler publishes beside it.
+		const shippedReviewer = defineProgram({
+			id: "shipped-reviewer",
+			ports: {prompt: port.in(Prompt), result: port.out(Verdict)},
+			init: (): number => 0,
+			update: {prompt: (state: number) => [state + 1, []]},
+		});
+		const filled = fillArgs(args, {model: "opus", reviewer: shippedReviewer});
+		const layer = Result.isSuccess(filled) ? filled.success : undefined;
+		if (layer === undefined) throw new Error("expected a Layer");
+		expect(
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					return (yield* args.reviewer.key).id;
+				}).pipe(Effect.provide(layer)),
+			),
+		).toBe("shipped-reviewer");
+	});
+
+	it("refuses a shipped row whose port carries the wrong payload, at the config", () => {
+		const wrong = defineProgram({
+			id: "shipped-wrong",
+			ports: {prompt: port.in(Schema.Struct({pr: Schema.String})), result: port.out(Verdict)},
+			init: (): number => 0,
+			update: {prompt: (state: number) => [state, []]},
+		});
+		const filled = fillArgs(args, {model: "opus", reviewer: wrong});
+		const failure = Result.isFailure(filled) ? filled.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.arg).toBe("reviewer");
+		expect(failure?.port).toBe("prompt");
+		expect(failure?.side).toBe("in");
+	});
+
 	it("types a program-valued arg by its shape at the `spawn` use site", () => {
 		const cells = prReview.core.update as Readonly<
 			Record<string, (state: unknown, event: unknown) => readonly [unknown, ReadonlyArray<unknown>]>
