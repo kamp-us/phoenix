@@ -14,6 +14,9 @@
  * A key that resolves to no issue is skipped and NAMED rather than fatal: the quarantine convention
  * puts `<issue>.<suffix>` directories in the root, and a root holding one unaddressable name must
  * not cost every other lane its sweep.
+ *
+ * A row has three outcomes, not two, because "skipped" asserts the directory is where it was: a lane
+ * whose rename landed and whose destination will not read back is `moved-unverified` instead.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import {exists, readDir} from "../io/fs.ts";
@@ -44,8 +47,7 @@ export type SkipReason =
 	| "no-issue"
 	| "unreadable"
 	| "occupied"
-	| "unmoved"
-	| "unverified";
+	| "unmoved";
 
 export type SweepRow =
 	| {
@@ -60,6 +62,16 @@ export type SweepRow =
 			readonly key: string;
 			readonly outcome: "skipped";
 			readonly reason: SkipReason;
+			readonly detail: string;
+	  }
+	// The lane whose rename landed and whose destination will not read back is neither archived nor
+	// skipped: calling it skipped says the directory is where it was, which is the one thing the
+	// operator now knows is false.
+	| {
+			readonly key: string;
+			readonly outcome: "moved-unverified";
+			readonly from: string;
+			readonly to: string;
 			readonly detail: string;
 	  };
 
@@ -147,11 +159,13 @@ const rowOf = (key: string, outcome: ArchiveOutcome): SweepRow => {
 				`the move of ${outcome.from} to ${outcome.to} did not land: ${outcome.reason} — the lane is NOT archived`,
 			);
 		case "Unverified":
-			return skipped(
+			return {
 				key,
-				"unverified",
-				`the move of ${outcome.from} reported success and ${outcome.to}/workflow.json does not read back`,
-			);
+				outcome: "moved-unverified",
+				from: outcome.from,
+				to: outcome.to,
+				detail: `the move of ${outcome.from} reported success and ${outcome.to}/workflow.json does not read back`,
+			};
 	}
 };
 
@@ -198,22 +212,24 @@ export const runArchiveSweep = <R = never>(
 		}
 
 		const archived = lanes.filter((row) => row.outcome === "archived");
+		const unverified = lanes.filter((row) => row.outcome === "moved-unverified");
 		const stderr = [
-			`${VERB}: swept ${options.root} — ${lanes.length} lane(s) examined, ${archived.length} archived.`,
-			...lanes.map((row) =>
-				row.outcome === "archived"
-					? `${VERB}: ${row.key}: archived to ${row.to} (#${row.issue} is closed; the log does not replay through the ${row.through === "current" ? "lane's own machine" : "committed template"}).`
-					: `${VERB}: ${row.key}: skipped (${row.reason}) — ${row.detail}.`,
-			),
+			`${VERB}: swept ${options.root} — ${lanes.length} lane(s) examined, ${archived.length} archived${unverified.length > 0 ? `, ${unverified.length} moved and unverified` : ""}.`,
+			...lanes.map((row) => {
+				if (row.outcome === "archived") {
+					return `${VERB}: ${row.key}: archived to ${row.to} (#${row.issue} is closed; the log does not replay through the ${row.through === "current" ? "lane's own machine" : "committed template"}).`;
+				}
+				if (row.outcome === "moved-unverified") {
+					return `${VERB}: ${row.key}: moved to ${row.to} and unverified — ${row.detail}.`;
+				}
+				return `${VERB}: ${row.key}: skipped (${row.reason}) — ${row.detail}.`;
+			}),
 		];
 
 		// A half-landed move is the one row a clean sweep may not absorb: the readback failure needs a
 		// human eye before anything else touches that record, and a move that did not land leaves a
 		// lane the operator still believes is archived. Every row reaches stderr either way, so a
 		// refusal here still enumerates what did move.
-		const unverified = lanes.filter(
-			(row) => row.outcome === "skipped" && row.reason === "unverified",
-		);
 		if (unverified.length > 0) {
 			return refuse(
 				MARKER_READBACK,

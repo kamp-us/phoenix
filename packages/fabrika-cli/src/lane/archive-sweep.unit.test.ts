@@ -217,7 +217,7 @@ describe("lane archive --sweep", () => {
 		expect(out.stderr.join("\n")).toContain("7500: skipped (unmoved)");
 	});
 
-	it("refuses when a lane moved and does not read back at the archived root", async () => {
+	it("reports a lane that moved and does not read back as moved, never as skipped", async () => {
 		const fs = fakeFs({
 			files: {[TEMPLATE]: coderTemplateText(), ...lane("6037", BROKEN)},
 			dirs: {[ROOT]: ["6037"], [ARCHIVED]: []},
@@ -228,6 +228,9 @@ describe("lane archive --sweep", () => {
 
 		expect(out.code).toBe(MARKER_READBACK);
 		expect(out.stderr.join("\n")).toContain("needs a human eye");
+		expect(out.stderr.join("\n")).toContain(`6037: moved to ${ARCHIVED}/6037 and unverified`);
+		expect(out.stderr.join("\n")).not.toContain("6037: skipped");
+		expect(out.stderr.join("\n")).toContain("1 moved and unverified");
 	});
 
 	it("skips rather than buries a lane the archived root already holds", async () => {
