@@ -35,11 +35,19 @@ reads the hand-verification nowhere.
 PR #8449 is what that cost. The hand-verification ran at `8efd315a`; the record bound `fb01065b`. One
 commit apart, and it moved two rendered readouts of the exact surface the record stood in for — the
 doubling usage header ([#8695](https://github.com/kamp-us/phoenix/issues/8695)) and the cut reply row
-now carrying `interrupted: true` ([#8693](https://github.com/kamp-us/phoenix/issues/8693)). Neither
-rendered state was hand-verified at any head. What made the record postable was a check that gate
-invented for itself: that `8efd315a..fb01065b` touches nothing under `apps/tuval/src/agy/window/` or
-`apps/tuval/src/page/`, so the composition is byte-identical. No verb asked for it, and the next gate
-had to invent it again.
+now carrying `interrupted: true` ([#8693](https://github.com/kamp-us/phoenix/issues/8693)). The record
+posted clean anyway, with the only hand-verification then standing bound to the earlier head. What
+made it postable was a check the gate invented for itself: that `8efd315a..fb01065b` touches nothing
+under `apps/tuval/src/agy/window/` or `apps/tuval/src/page/`, so the composition is byte-identical. No
+verb asked for it, and the next gate had to invent it again.
+
+What caught it was not a verb either. The epic lane parked on the rendered gate, no recipe covered the
+cause, and the park routed to a human who called for a fresh desk run at the record's head — which the
+builder posted 27 minutes after the record
+([the park](https://github.com/kamp-us/phoenix/issues/8162#issuecomment-5598042302),
+[the re-run](https://github.com/kamp-us/phoenix/pull/8449#issuecomment-5598219196)). So #8449 ended up
+with evidence at the head it bound, and nothing mechanical put it there. A human reading one epic's
+park is not a gate, and the next gate has no reason to repeat it.
 
 The failure is quiet. The `routed-elsewhere` format carries no polarity and no attached captures, so
 a record backed by current evidence and one backed by stale evidence read identically, and `ship
@@ -60,8 +68,8 @@ so a commit that moves no rendered surface does not void it.**
    `review-ui route` already re-uses. Otherwise the evidence is spent and a fresh desk run is owed.
    A reader holding the PR and the record needs the two heads and that one range, and nothing else.
 2. **The hand-verification states its own head.** Evidence that does not name the tree it was taken
-   at cannot be compared to anything, and the near-miss above is what an unnamed head looks like when
-   someone finally goes looking.
+   at cannot be compared to anything. Both of #8449's desk runs named theirs in their first line, and
+   the comparison was still nobody's job; a run that names no head removes even the possibility.
 3. **`review-ui route` enforces it, not the gate's own reading.** The verb takes the
    hand-verification's head as an operand and refuses when the range to the record's sha raises the
    `ui` class. A condition each gate re-derives is a condition each gate can re-derive differently,
@@ -80,8 +88,8 @@ so a commit that moves no rendered surface does not void it.**
 **Rejected: binding the hand-verification to the record's own head.** It is the simpler sentence and
 the cheaper check, and it throws away good evidence on every commit that changes no rendered
 surface — a docs-only commit, a fabrika-side fix, a rebase. The cost lands as a full desk session per
-repair round, which is the price that gets a hand-verification skipped altogether; #8449 reached a
-gate carrying none.
+repair round: a real `agy` binary, a scratch project, every readout driven again, for a range that
+moved no pixel.
 
 **Sunset.** This decision lives exactly as long as the exception it conditions. When #7306 lands a
 trusted evidence path and the exception ends, this record is retired with it rather than left
