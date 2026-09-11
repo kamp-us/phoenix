@@ -1,22 +1,29 @@
-/**
- * `spend read` — one fabrika run's billed token spend, reconstructed from its transcript.
- *
- * The meter is imported, never re-derived: `token-spend.ts` owns the four-component sum, and a
- * second one here is the two-rulers problem its own header already argues against.
- *
- * The three refusals below are the point of the verb. A measurement that cannot be made must not
- * resolve to a plausible zero, so "the transcript is not there", "the transcript could not be read"
- * and "the transcript was read in full and billed nothing" stay three distinct exit codes — the same
- * split `token-spend.ts`'s `RunSpend` union draws, which is why the classification is borrowed from
- * there rather than restated.
- */
+/** `spend read`: records plus their shared usage summary, or the historical transcript calculation. */
 import {Effect, type FileSystem, Result} from "effect";
 import {exists, readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED} from "./codes.ts";
 import {classifyRunSpend, type StageSpend} from "./token-spend.ts";
+import {readUsageLedger} from "./usage-ledger.ts";
+import {rollUpUsage} from "./usage-rollup.ts";
 
 const VERB = "fabrika spend read";
+
+export const runLedgerRead = Effect.fn("spend.readLedger")(function* (path: string) {
+	const text = yield* Effect.result(readFile(path));
+	if (Result.isFailure(text)) {
+		const probe = yield* Effect.result(exists(path));
+		const absent = Result.isSuccess(probe) && !probe.success;
+		return refuse(
+			absent ? INPUT_ABSENT : INPUT_UNREADABLE,
+			`spend read: ledger ${absent ? "absent" : "unreadable"}; usage is unknown`,
+		);
+	}
+	const read = readUsageLedger(text.success);
+	return answer(JSON.stringify({...read, usage: rollUpUsage(read)}), [
+		`spend read: ${read.records.length} attributed record(s), ${read.legacy.length} legacy row(s); ${read.diagnostics.malformed} malformed, ${read.diagnostics.newerVersion} future-version, ${read.diagnostics.duplicates} duplicate, ${read.diagnostics.conflicts} conflicting line(s). Records and notices are not a completeness verdict.`,
+	]);
+});
 
 export interface ReadOptions {
 	/** Path to the run's JSONL transcript. */

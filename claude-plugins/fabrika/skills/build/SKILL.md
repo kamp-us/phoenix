@@ -116,7 +116,17 @@ fabrika build claim $issue_or_pr_number
 `won` prints your token. **Keep it — it is your lane's name, and every later verb takes it as
 `--token`**; a session runs several lanes at once, so without it a verb can only tell that *some*
 lane of this session holds the number, which is how two lanes both ran one repair. `lost`
-names the winner — that lane is theirs, back off, including when the winner shares your session. Exit
+names the winner — that lane is theirs, back off, including when the winner shares your session.
+**One arm opens that loss, and the refusal prints it.** A marker outlives the session that posted
+it, so a driver killed mid-claim strands its number indefinitely; where the winning marker's session
+is provably gone, `fabrika build adopt <n> --session <its session id> --reason "<why>"` then
+`fabrika build release <n> --token <the token adopt prints>` clears the stranded claim and a fresh
+`build claim` wins normally. **Provably gone is read, never inferred from silence** —
+`fabrika build claims stale` lists every claim standing past a horizon, and it calls no session dead
+either: the succession is attested on the board with your reason on it, so post one you would defend
+and back off otherwise. The refusal withholds that route when the winner is a sibling lane of your
+own session, because `build adopt` refuses your own session and there is nothing there to adopt.
+Exit
 `20` (out of scope) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. Exit `16` is the blockedness gate that runs after those two: the issue's
@@ -418,7 +428,8 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
-epic driver to fold); `BACKED-OFF` (claim lost, blocked, or no readable contract — branch removed,
+epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it, blocked, or no
+readable contract — branch removed,
 nothing written); `ESCALATED` (repair cap reached — branch left pushed at its last verified head,
 escalation note posted);
 `STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An

@@ -94,6 +94,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build eligible` | whether one issue's dependency gate is open |
 | `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, explicitly select a repair PR's served issue, re-prove it, retract it, or take a dead session's |
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
+| `build claims stale` | which claim markers stand on the board past a horizon (default a day), oldest silence first — the sweep `claimants` is the per-number half of; it reads and reports, and clears nothing |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
 | `build branch` / `scratch` | the lane's branch off a fresh base it derives — `epic/<parent>` for an epic child, `origin/main` for a proven-standalone issue — fetched from a remote, named by commit in the answer, re-proved on a re-run, and its scratch directory |
 | `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof — `--cites` carries a ruled `type:decision` child's founder ruling to the claim step |
@@ -681,7 +682,7 @@ snapshot. Lane state is local and never committed.
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch and pushes nothing. Under `assemblyReplay.onCollision` (shipped `off`) a colliding child is replayed onto the tip instead of stopping the run: the plain keep-both hunks are kept both ways, the child's own branch is moved onto the replayed range so its next integrate is up to date rather than a second collision, and that range is merged `--no-ff` like any other landing; the verdict is `INTEGRATE-VERDICT: REPLAYED` over a machinery event naming the moved range the child owes one review round over. A hunk that is not a plain keep-both restores, proves the reset, and parks on `--cause replay-conflict`; a child branch that will not move is exit `54` with nothing merged, and a working tree standing on it is the usual reason. A refusal below a replayed merge puts the child branch back on the revision its reviewer graded as well as resetting the assembly branch, so a replay the verb did not keep moves no range — and a branch that will not go back is `8`, never the red |
 | `lane stale` | which lanes have gone quiet with something owed on them, each judged against its OWN horizon — the budget of the work driving it (a build shell's, a review shell's, a ship shell's, or the dispatch budget for a task nothing picked up), reported per row as `budgetMinutes`. `--older-than` overrides that horizon for every lane; without it the answer's `olderThanMinutes` is `null`, which says the budgets did the judging. Offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
 | `lane reconcile` | which lanes recorded a merge closure the board never confirmed, and the `<TASK>.CORRECTED` line that records what the board says — `partial: true` sends the lane round again (`corrected`), `partial: false` confirms the closure and moves no task (`confirmed`); either way the lane stops nominating, so a sweep costs one PR read per never-confirmed lane rather than hundreds every time (ADR 0351). Two kinds of line nominate: one carrying no `partial`, and one whose `partial: false` names no `landed` evidence, which is the mark of the nominator blind to a merged `Part of #N` that wrote every `false` before the ship stage began reading closures off the named PR. The evidence is what tells the two apart, never the line's timestamp: a cutoff date would hold only while that fix's own merge beat it (#7457). `--check` reports and appends nothing, so it buys nothing for the next sweep and pays the same reads twice; a read that proves no closure is `unknown`, never `closes`; ordered after `lane migrate`, which is what an `unmigrated` row names (ADR 0350) |
-| `lane archive` | one lane whose log will never replay, moved out of the swept root — refused unless the log fails the same `Unreplayable` judgement `lane migrate` makes, so a genuinely broken lane still shows up on every sweep. The issue may be open or closed: a bricked ledger whose issue is open had no route out at all, and the unreplayable log already proves nobody can drive the lane (ADR 0389 retired the closed-issue gate ADR 0352 set). A live `lane-claim` marker is retracted before the move, so the issue does not read as held by a lane that is gone; a claim the caller does not name refuses at `31` (`--token`, or `lane adopt` then `lane release` for a dead seat — release is what deletes the marker). The archived root is a sibling of the lanes root, so `reconcile` and `migrate` are never handed it and need no skip rule; the record stays readable through `lane history --root <archived-root>` (ADR 0352) |
+| `lane archive` | one lane whose log will never replay, moved out of the swept root — refused unless the log fails the same `Unreplayable` judgement `lane migrate` makes, so a genuinely broken lane still shows up on every sweep. The issue may be open or closed: a bricked ledger whose issue is open had no route out at all, and the unreplayable log already proves nobody can drive the lane (ADR 0389 retired the closed-issue gate ADR 0352 set). A live `lane-claim` marker is retracted before the move, so the issue does not read as held by a lane that is gone; a claim the caller does not name refuses at `31` (`--token`, or `lane adopt` then `lane release` for a dead seat — release is what deletes the marker). The archived root is a sibling of the lanes root, so `reconcile` and `migrate` are never handed it and need no skip rule; the record stays readable through `lane history --root <archived-root>` (ADR 0352) `--sweep` takes no lane and keeps the closed-issue gate the named route dropped — nothing has ruled on a sweep that moves a lane whose issue is still open, so it archives only a lane whose issue reads closed AND whose log will never replay, printing one row per lane examined: archived, or skipped with the reason (replays / issue open / unjudgeable / key names no issue / unreadable / the archived root already holds it / the move did not land), or `moved-unverified` where the move landed and the destination does not read back. A skip is a row and not a failure, so it exits 0; only an unlistable root (`11`) and a move that cleared both gates and then did not land (`8`) or did not read back (`9`) refuse. It retracts no claim: the named single-lane route is the one that does. |
 | `lane settle` | one lane whose own flow never reached a terminal, ended against its issue's own closure as a recorded event. Two stranded shapes: a lane parked while its issue closed `not_planned`/`duplicate` owes no artifact, and a lane sitting in `build`/`review` while its issue closed `completed` over a merged PR was hand-shipped past the ledger. Neither is reachable by the operator's own events (`DONE` claims an open PR that is not there, `BLOCKED` only parks, `UNBLOCKED` resumes work already over), and the only prior remedy was deleting the ledger. The issue's own `state_reason` is the whole entitlement: not-planned/duplicate appends `<TASK>.CANCELLED`; `completed` PLUS at least one merged PR whose body links the issue (closing keyword or `Part of`) appends `<TASK>.LANDED` carrying those PR numbers as `landed` and the merge commit as `sha`. An open issue refuses at `49`; a failed read, a close with no `state_reason`, a reason outside the three, and a `completed` close naming no merged linking PR are all UNKNOWN at `11` with the log unappended. `--landed-by <pr>` supplies the link that last read lacks — the closure a human made by hand over a merge whose body cites another issue — and nothing more: the board must still read that PR merged, so an unmerged one refuses at `23`, one this repository does not hold at `22`, and an unreadable read stays UNKNOWN at `11`. A body-proven landing is judged first and wins, so the flag can only fill a gap; the line it appends carries `assertedBy: "caller"`, which is how a reader of the verb's own stdout or `lane history` tells an asserted link from a body-proven one, and a body-proven line carries no such field. `lane view` does not show it: the viewer page rebuilds every log line as `{task, event, at}` and drops the rest — `landed` and `sha` already among them — so that screen reads an asserted landing and a body-proven one identically. A live authorized lane claim refuses at `31` unless `--token` names it. The lane folds to `board:cancelled` or `board:landed` — its own terminals, neither `complete` nor `tripped` — so `lane status`, `lane stale` and `lane view` read it terminal and it holds no seat against `laneConcurrencyCap`; the directory stays where it is and `lane history` still reads the whole log. stdout is `{answer:"settled", lane, issue, previous, event, current, taskAffected, outcome}` plus `landed`/`sha` on a landing and `assertedBy` on an asserted one (ADR 0365) |
 | `lane claim` / `release` | who is driving this lane |
 
@@ -1091,47 +1092,55 @@ permits no merge method at all · `23` a label this run would POST is absent fro
 
 ## The `spend` group
 
-What one fabrika run cost, in tokens, read from its transcript. `billed` is *specified* by ADR 0112
-§2, not chosen, so the implementation is held to that ruler by a committed transcript fixture the
-unit tier asserts against ([`src/spend/token-spend.ts`](../src/spend/token-spend.ts)).
+Record and read model/token usage. The attributed recorder preserves native response counters and
+coverage notices; [the host contract](./usage-recording.md) defines its callable API and fields.
+The positional transcript reader retains the historical four-component calculation specified by
+ADR 0112 §2, pinned by [token-spend.ts](../src/spend/token-spend.ts)'s fixture.
 
 | Verb | Answers |
 |---|---|
-| `spend read` | one run's billed token spend, its four `usage` components, the ex-cache-read comparator, its billed turn count and its model |
-| `spend rollup` | what **all** of fabrika's recorded runs cost, summed out of the durable ledger and broken down by day, by skill and by stage-and-arm |
+| `spend record` | ingest one version-2 envelope from stdin; `--ledger` overrides the default; JSON `status` is `recorded` or `duplicate`; exit 11 reports a recording failure separately from the task result |
+| `spend read` | `--ledger <path>` emits JSON `records`, `legacy`, `diagnostics` and the shared `usage` summary; the positional transcript form retains its historical calculation and last-observed model |
+| `spend rollup` | issue/run/provider/model response counters with coverage; `--issue`, `--run` and `--repo` intersect exact bindings; historical totals remain separate and are excluded by binding filters |
 
 **Exit codes.** `7` the input is proven absent · `11` the input could not be read, or its absence
 could not be established · `12` the input was read in full and carries nothing to measure · `13`
-the ledger holds rows and this window selects none.
+the legacy ledger holds rows and this date window selects none. Exit `1` also covers invalid date
+bounds and date filtering when version-2 rows exist, since those rows carry no timestamps.
 
-Three behaviours are worth knowing:
-
-- **The cache-read share stays its own number.** It dominates `billed` and grows with turn count,
-  which makes it the context-bloat signal; folding it into one total hides what the measurement
-  exists to show.
-- **"I could not measure it" is never a zero.** `12` is a real transcript a failed run writes, and
-  reporting it as a measured zero would price a broken run as a free one.
-- **It cannot gate.** No threshold, no budget flag, and no exit code that varies with a spend
-  magnitude — asserted by a test that a very large total still exits `0`.
+Native totals retain each field's additive, subset, aggregate or unknown meaning. Each counter
+has nullable `tokens` and `states` counts, so missing values remain distinct from measured zero.
+Conflicting identities and cumulative snapshots are excluded. Run/overall totals include unbound
+issue usage under `unattributed`; issue filters count it under `excluded.unattributed`.
+Coverage names missing participants, retained notices and unknown inventory. Pi remains unavailable.
+No result changes a task outcome or records prices.
 
 ### The spend ledger
 
-`spend read` prices one transcript on demand; the ledger is where measured runs survive. A producer
-appends one **JSON Lines** row per completed run to `.fabrika/spend-ledger.jsonl` (repo-relative,
-gitignored, `--spend-ledger` overrides it). **There is no in-repo producer today**, so `spend
-rollup` reads whatever an operator or a future producer wrote and reports an empty ledger
-otherwise. The core is [`src/spend/ledger.ts`](../src/spend/ledger.ts): `readSpendLedger` reads back
-the well-formed rows **and the count of lines it skipped**, so a truncated tail costs one line
-rather than the file. Every line stamps its own `v`.
+`spend record` appends version-2 envelopes to `.fabrika/spend-ledger.jsonl`, gitignored and
+repo-relative. `--ledger` overrides the path. [usage-ledger.ts](../src/spend/usage-ledger.ts) reads
+new records and delegates historical rows to [ledger.ts](../src/spend/ledger.ts). An interrupted
+tail remains a malformed-line diagnostic; later records remain readable. Claude and Codex collectors
+feed this recorder; [host coverage and recovery](./usage-recording.md#current-host-evidence) describes
+their supported sources and limits. The following commands need no model call:
 
 ```bash
-fabrika spend rollup                                    # everything recorded so far
-fabrika spend rollup --since 2026-08-01 --until 2026-08-09
-fabrika spend rollup --json
+node packages/fabrika-cli/src/bin.ts spend record --ledger .fabrika/example-usage.jsonl < packages/fabrika-cli/src/spend/fixtures/attributed/codex.json
+node packages/fabrika-cli/src/bin.ts spend read --ledger .fabrika/example-usage.jsonl --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usage.jsonl --issue 42 --json
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usage.jsonl --run run-1
+```
+
+The existing evaluation summary remains available for historical rows:
+
+```bash
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/legacy.jsonl
+node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/legacy.jsonl --since 2026-08-01 --until 2026-08-09
 ```
 
 `--since`/`--until` are **inclusive at both edges**, and a bare `YYYY-MM-DD` widens to that whole
-UTC day. stdout is one record per line, the first field naming the kind:
+UTC day on a legacy-only ledger. Text keeps the historical lines below and appends `legacy` and
+`usage.<field>` lines. Each appended line contains a tab followed by its JSON value:
 
 ```
 billed        <n>          exCacheRead <n>   assistantTurns <n>
@@ -1144,6 +1153,15 @@ skill      <name>              …
 skillMore     <n>
 stage-arm  <stage> <arm>       …
 stageArmMore  <n>
+legacy        {"attribution":"unavailable","categories":"historical-four-component","excludedByScope":0}
+usage.scope   {"repo":null,"issue":null,"run":null}
+usage.responses <n>
+usage.counters <JSON array>
+usage.byModel <JSON array>
+usage.excluded <JSON object>
+usage.unattributed <JSON object>
+usage.coverage <JSON object>
+usage.diagnostics <JSON object>
 ```
 
 Three things about that output are load-bearing:
@@ -1158,6 +1176,11 @@ Three things about that output are load-bearing:
   ten biggest-billing rows and then a `…More` count of the rows the cap dropped — `0` included, so a
   missing remainder never looks like a breakdown that fit. The scalar totals above them are whole.
   `--json` carries the same shape: `byDay`, `bySkill` and `byStageArm` are each `{rows, more}`.
+
+The new `usage.counters`, `usage.byModel` and coverage lists stay whole: their rows answer the
+operator's model/category/participant question. The [summary reference](./usage-recording.md#issue-and-run-summaries)
+defines every field. Legacy totals cannot be treated as attributed usage; modern coverage remains
+partial until collector evidence can establish all participants, including Pi.
 
 ## The `spike` group
 
