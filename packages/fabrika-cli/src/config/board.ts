@@ -16,6 +16,7 @@
  * add members and rename the others; renaming those two away drops the behaviour they carry.
  */
 
+import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {containmentRefusal, type FacetVocabulary, type Ownership} from "./containment.ts";
 
 /** Each `status:` label by the role it plays, so a rename cannot lose which status it renamed. */
@@ -46,6 +47,16 @@ export const typeLabel = (type: string): string => `type:${type}`;
 export const audienceLabel = (audience: string): string => `ready-for:${audience}`;
 
 /**
+ * The label form of one artifact class — the facet a lane reads its build/review shells off.
+ *
+ * The class vocabulary is `SHIP_CLASS_NAMES` and is **not** part of {@link BoardVocabulary}: a repo
+ * may rename its statuses and widen its types, but the classes are the partition
+ * `../review/classes.ts` derives from a diff, so a board that declared its own would name a class no
+ * `review scope` run can raise.
+ */
+export const classLabel = (name: string): string => `class:${name}`;
+
+/**
  * The five statuses in the order the bootstrap reports them. A status a verb writes and this list
  * omits is a label the bootstrap will not create.
  */
@@ -67,10 +78,13 @@ export const triageStatuses = (statuses: StatusNames): ReadonlyArray<string> => 
 	statuses.needsInfo,
 ];
 
-export const FACET_NAMES = ["type", "priority", "status", "audience", "lane"] as const;
+export const FACET_NAMES = ["type", "priority", "status", "audience", "lane", "class"] as const;
 export type FacetName = (typeof FACET_NAMES)[number];
 
-/** Every label an input can make each facet keep, off one board vocabulary. */
+/**
+ * Every label an input can make each facet keep. Five come off the board vocabulary; `class` comes
+ * off {@link classLabel}'s closed set, which no repo declares.
+ */
 export const facetValues = (
 	board: BoardVocabulary,
 ): Readonly<Record<FacetName, ReadonlyArray<string>>> => ({
@@ -79,6 +93,7 @@ export const facetValues = (
 	status: triageStatuses(board.statuses),
 	audience: board.audiences.map(audienceLabel),
 	lane: [...board.standingLanes],
+	class: SHIP_CLASS_NAMES.map(classLabel),
 });
 
 /** A board vocabulary and the facet table that reconciles it — what a call site is handed. */

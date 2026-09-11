@@ -42,3 +42,15 @@ export const readDefiniteMergeability = (repo: string, pr: number): Shell<Mergea
 		}
 		return definiteOf(attempt);
 	});
+
+/**
+ * The one definite not-mergeable value that is a fact about the **base** rather than the head.
+ *
+ * `dirty` is GitHub's word for "the merge of this head into its base conflicts", so it is base
+ * movement that reached a path the PR changed. Every other definite not-mergeable value —
+ * `blocked`, `behind`, `draft` — says something about the head or its checks. Callers split on this
+ * because the two route to different lane budgets, and reading a prose state string at each caller
+ * is how the split drifts.
+ */
+export const isBaseConflict = (value: Mergeability): boolean =>
+	!value.mergeable && value.state.trim().toLowerCase() === "dirty";

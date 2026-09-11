@@ -17,8 +17,8 @@ const shell = (overrides: Script = [], slug = "worker-queue-retry") =>
 		[/^git remote$/, okOut("origin\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
-		[/^git ls-tree --name-only \w+ -- \S+\.md$/, okOut(`${DIR}/${slug}.md\n`)],
-		[/^git ls-tree --name-only \w+ -- \S+\.yaml$/, okOut(`${MANIFEST}\n`)],
+		[/^git ls-tree --full-tree --name-only \w+ -- \S+\.md$/, okOut(`${DIR}/${slug}.md\n`)],
+		[/^git ls-tree --full-tree --name-only \w+ -- \S+\.yaml$/, okOut(`${MANIFEST}\n`)],
 		[/^git show \w+:\S+\.yaml$/, okOut(FIXTURE_MANIFEST)],
 		[/^git show \w+:\S+plain-doc\.md$/, okOut(PLAIN_DOC)],
 		[/^git show \w+:/, okOut(ANCHORED_DOC)],
@@ -167,7 +167,7 @@ describe("runAnchor", () => {
 	});
 	// The degrade path: a repo that pins nothing centrally is a fact about that repo, not a failure.
 	it("degrades to `unpinned` at exit 0 when the manifest is absent, and says so on stderr", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+ -- \S+\.yaml$/, okOut("")]]);
+		const out = await run([[/^git ls-tree --full-tree --name-only \w+ -- \S+\.yaml$/, okOut("")]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("anchor\tunpinned\t2\t0\t2\t0");
 		expect(out.stderr.join("\n")).toContain("is absent at");
@@ -183,7 +183,7 @@ describe("runAnchor", () => {
 	// `unborn` mirrors `pattern drift` deliberately: one tree state must not produce two verdicts.
 	it("answers `unborn` for a doc in the working tree and absent at the base", async () => {
 		const out = await run(
-			[[/^git ls-tree --name-only \w+ -- \S+\.md$/, okOut("")]],
+			[[/^git ls-tree --full-tree --name-only \w+ -- \S+\.md$/, okOut("")]],
 			{},
 			{
 				[`${DIR}/worker-queue-retry.md`]: "# New\n",
@@ -194,7 +194,7 @@ describe("runAnchor", () => {
 	});
 
 	it("refuses a slug with no doc anywhere on the same code pattern drift uses", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+ -- \S+\.md$/, okOut("")]], {
+		const out = await run([[/^git ls-tree --full-tree --name-only \w+ -- \S+\.md$/, okOut("")]], {
 			slug: "no-such-doc",
 		});
 		expect(out.code).toBe(DOC_ABSENT);

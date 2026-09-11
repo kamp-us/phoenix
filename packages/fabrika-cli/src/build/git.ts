@@ -197,16 +197,19 @@ export interface WorktreeRegistration {
 	readonly branch: string | null;
 	/** git's own lock reason, `""` when locked without one, `null` when unlocked. */
 	readonly locked: string | null;
-	/** Set when git already considers the record stale — its working directory is gone. */
-	readonly prunable: boolean;
 }
 
 /**
- * Every registration of this clone, with the four facts a bulk sweep judges on.
+ * Every registration of this clone, with the three facts a bulk sweep judges on.
  *
  * {@link worktreeCheckouts} answers a narrower question — who holds a branch — and drops the
  * detached majority on the floor. The harness detaches the trees it registers, so a reclaimer built
  * on that reader would be blind to most of what it exists to reclaim.
+ *
+ * git's `prunable` line is deliberately not among them: its condition is the worktree's `.git` file
+ * rather than its directory, so it is a hint and not a proof of absence, and reading it into a fact
+ * this module carries is how a caller comes to judge on it. `./reap-verb.ts`'s `observe` states the
+ * ground; `./stale-registration.git.test.ts` measures it.
  */
 export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistration>>> =
 	Effect.gen(function* () {
@@ -215,11 +218,9 @@ export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistra
 		const records: Array<WorktreeRegistration> = [];
 		let open: {path: string; head: string; branch: string | null; locked: string | null} | null =
 			null;
-		let prunable = false;
 		const close = () => {
-			if (open !== null) records.push({...open, prunable});
+			if (open !== null) records.push(open);
 			open = null;
-			prunable = false;
 		};
 		for (const line of r.stdout.split("\n")) {
 			if (line.startsWith("worktree ")) {
@@ -231,7 +232,7 @@ export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistra
 				open.branch = line.slice("branch refs/heads/".length).trim();
 			} else if (line === "locked" || line.startsWith("locked ")) {
 				open.locked = line.slice("locked".length).trim();
-			} else if (line === "prunable" || line.startsWith("prunable ")) prunable = true;
+			}
 		}
 		close();
 		return ok(records);
@@ -269,6 +270,23 @@ export const pruneWorktrees: Shell<Attempt<void>> = Effect.gen(function* () {
 	return r.ok ? ok<void>(undefined) : fail(r.reason);
 });
 
+/**
+ * Drop one registration's lock, so {@link pruneWorktrees} can reach it.
+ *
+ * `git worktree prune` skips a locked entry, which is right while a checkout exists and wrong once
+ * it does not: a lock protects a tree, and a lock whose tree is gone protects nothing while keeping
+ * a dead record permanent. Fourteen of this clone's registrations were in exactly that state, locked
+ * by a harness process that died in August with their directories long gone.
+ *
+ * **Only a caller that has proved the directory absent may run this** — that proof is the whole
+ * license, and `../build/reap.ts`'s `Presence` is where it is made.
+ */
+export const unlockWorktree = (path: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["worktree", "unlock", path]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
 /** How many paths another worktree has uncommitted — `0` is a clean tree, salvage-free. */
 export const worktreeDirtyPaths = (path: string): Shell<Attempt<number>> =>
 	Effect.gen(function* () {
@@ -278,24 +296,37 @@ export const worktreeDirtyPaths = (path: string): Shell<Attempt<number>> =>
 	});
 
 /**
- * How many commits `branch` carries that `base` does not — `0` is a branch that added nothing.
+ * How many commits the worktree at `path` reaches that no ref of this clone does — `0` is a tree
+ * whose every commit stays addressable after the checkout goes.
  *
- * It asks *this* tree, not the one holding the branch: refs are shared across every worktree of a
- * clone, so the branch tip and the base are the same objects from anywhere in it, and a reader that
- * needed the other directory would answer UNKNOWN exactly when that directory is the problem.
+ * It asks that directory, because HEAD is the one ref a worktree owns privately: counted from
+ * anywhere else it would answer about the reader's own checkout. Everything a removal leaves behind
+ * is the exclusion set — every branch, remote-tracking ref and tag — so a commit sitting on the
+ * tree's own lane branch is not counted: `git worktree remove` takes the checkout and never the
+ * branch.
  *
- * A stale local `base` can only inflate the count, which errs toward "this branch carries work" —
- * the direction a caller deciding whether a tree is disposable wants to be wrong in. Nothing here
- * fetches: a cleanup verb that reached the network would fail on the offline path it exists for.
+ * A ref this clone has not fetched can only inflate the count, which errs toward "this tree carries
+ * work" — the direction a caller deciding whether a tree is disposable wants to be wrong in. Nothing
+ * here fetches: a cleanup verb that reached the network would fail on the offline path it exists for.
  */
-export const commitsPastBase = (branch: string, base: string): Shell<Attempt<number>> =>
+export const commitsNoRefReaches = (path: string): Shell<Attempt<number>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["rev-list", "--count", `${base}..${branch}`]);
+		const r = yield* execCapture("git", [
+			"-C",
+			path,
+			"rev-list",
+			"--count",
+			"HEAD",
+			"--not",
+			"--branches",
+			"--remotes",
+			"--tags",
+		]);
 		if (!r.ok) return fail(r.reason);
 		const count = Number.parseInt(r.stdout.trim(), 10);
 		return Number.isInteger(count) && count >= 0
 			? ok(count)
-			: fail(`git counted no commits between ${base} and ${branch}: "${r.stdout.trim()}"`);
+			: fail(`git counted no commits for ${path}'s HEAD: "${r.stdout.trim()}"`);
 	});
 
 /**

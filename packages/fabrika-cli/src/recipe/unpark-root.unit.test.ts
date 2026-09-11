@@ -9,7 +9,7 @@
 import {Effect, Layer, Option} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams} from "../fakes.test-support.ts";
-import {NOT_A_REPO} from "../lane/codes.ts";
+import {NOT_A_REPO, ROOT_NOT_OWNED} from "../lane/codes.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {resolveRootOrRefuse} from "../lane/ground.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
@@ -89,11 +89,27 @@ describe("the lanes root recipe unpark resolves", () => {
 	});
 
 	// The control: the bare relative leaf this verb used to default to, from the same cwd and the
-	// same tree the derived root reaches the lane in.
-	it("proves the lane absent under the cwd-relative leaf the defect defaulted to", async () => {
+	// same tree the derived root reaches the lane in. It used to prove the lane absent at 7 — an
+	// exit `operate` reads as "boot"; the ground guard now refuses it before any read.
+	it("refuses the cwd-relative leaf the defect defaulted to, never proving the lane absent", async () => {
 		const out = await unparkFrom(repoFs(), WORKTREE_CWD, Option.some(DEFAULT_LANES_ROOT));
 
-		expect(out.code).toBe(TARGET_ABSENT);
+		expect(out.code).toBe(NOT_A_REPO);
+		expect(out.code).not.toBe(TARGET_ABSENT);
+	});
+
+	// This verb reaches `resolveRootOrRefuse` and no `onGround`, so an explicit root it took on
+	// trust was a root nothing checked — the stale-copy shape, one verb away from the guard.
+	it("refuses an explicit root under the worktree instead of folding that copy", async () => {
+		const out = await unparkFrom(
+			repoFs(),
+			WORKTREE_CWD,
+			Option.some(`${WORKTREE}/${DEFAULT_LANES_ROOT}`),
+		);
+
+		expect(out.code).toBe(ROOT_NOT_OWNED);
+		expect(out.stderr.join("\n")).toContain(`${WORKTREE}/${DEFAULT_LANES_ROOT}`);
+		expect(out.stderr.join("\n")).toContain(PRIMARY);
 	});
 
 	it("refuses a cwd under no repository rather than resolving a relative path", async () => {

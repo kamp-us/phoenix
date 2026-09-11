@@ -5,7 +5,7 @@ import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {runClear} from "./clear-verb.ts";
 import {recordClearedRound} from "./clearance.ts";
 import {APPEND_UNKNOWN, GRANT_REFUSED, LANE_ABSENT, RATIONALE_REFUSED} from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {foldLog, parseLog} from "./fold.ts";
 import {compileText} from "./machine.ts";
 import {runTransition} from "./transition-verb.ts";
@@ -43,17 +43,23 @@ describe("lane clear — the grant", () => {
 		const transition = (event: string) =>
 			Effect.runPromise(
 				Effect.provide(
-					runTransition({
-						root: ROOT,
-						lane: "42",
-						task: "issue",
-						event,
-						cause: null,
-						classes: [],
-						waitGrant: null,
-						parkCause: parkCauseRead(),
-						rationale: null,
-					}),
+					runTransition(
+						{
+							root: ROOT,
+							lane: "42",
+							task: "issue",
+							event,
+							cause: null,
+							classes: [],
+							waitGrant: null,
+							parkCause: parkCauseRead(),
+							rationale: null,
+							repo: "o/r",
+							cwd: "/checkout",
+							env: {},
+						},
+						fakeProver().prove,
+					),
 					fs.layer,
 				),
 			);
