@@ -23,6 +23,7 @@ const CHILDREN = [4301, 4302, 4303].map((number) => ({
 	number,
 	state: "open" as const,
 	stateReason: null,
+	classes: [],
 }));
 
 const epicBody = (): string =>

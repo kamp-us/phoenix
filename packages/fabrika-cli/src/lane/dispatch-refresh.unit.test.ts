@@ -53,7 +53,7 @@ const upToMerge = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 
 const emitted = () => {
 	const machine = emitMachine(EPIC, `## Dependencies\n\n- phase 1: #${CHILD}\n`, [
-		{number: CHILD, state: "open", stateReason: null},
+		{number: CHILD, state: "open", stateReason: null, classes: []},
 	]);
 	if (machine._tag !== "Emitted") throw new Error(`the epic fixture did not emit: ${machine._tag}`);
 	return machine.text;

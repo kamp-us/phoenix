@@ -156,7 +156,7 @@ describe("runBase", () => {
 		const fake = fakeSeams(happy);
 		await Effect.runPromise(Effect.provide(runBase(options), fake.layer));
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
-		expect(fake.calls).toContain(`git ls-tree -r --name-only -z ${MERGE_BASE}`);
+		expect(fake.calls).toContain(`git ls-tree -r --full-tree --name-only -z ${MERGE_BASE}`);
 		expect(fake.calls).toContain(`git rev-parse --verify --quiet ${HEAD}^{commit}`);
 	});
 });
@@ -260,6 +260,6 @@ describe("runBase over a range", () => {
 		await Effect.runPromise(Effect.provide(runBase({...options, ...ranged}), fake.layer));
 		expect(fake.requests).toEqual([]);
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
-		expect(fake.calls).toContain(`git ls-tree -r --name-only -z ${RANGE_MERGE_BASE}`);
+		expect(fake.calls).toContain(`git ls-tree -r --full-tree --name-only -z ${RANGE_MERGE_BASE}`);
 	});
 });

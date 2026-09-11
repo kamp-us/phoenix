@@ -15,7 +15,7 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-The plugin declares the envelope check and the [Claude usage collector](claude-usage.md). An adopting repo may declare a second on its own, in
+The plugin declares the envelope check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
 guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. Both
@@ -25,7 +25,9 @@ two rules; what differs is which events each may carry.
 
 `fabrika hook check` on `SessionStart` is this surface's proof — it reads the envelope the harness writes to a hook's stdin and answers whether it is one fabrika can act on ([`../../../packages/fabrika-cli/src/hook/check-verb.ts`](../../../packages/fabrika-cli/src/hook/check-verb.ts)).
 
-There was a second: `fabrika hook spawn` on `PreToolUse`, a model-allowlist guard. It is **retired** — verb and declaration both deleted — because which model a subagent runs on is a per-run human choice, and a hook that second-guesses it only blocks the choice the human already made. So **no fabrika hook decides anything today**; the surface answers questions and blocks nothing.
+`fabrika hook pre-bash` on `PreToolUse`/`Bash` is the only fabrika hook that **decides** anything: it denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
+
+The former `fabrika hook spawn` on `PreToolUse` was a model-allowlist guard. It is **retired** — verb and declaration both deleted — because which model a subagent runs on is a per-run human choice, and a hook that second-guesses it only blocks the choice the human already made.
 
 A declared hook nobody ever runs is a false green, so the proof does not stop at the declaration. The test **runs the argv it reads out of the committed `hooks.json`** — never a literal in the test — against **captured** `SessionStart` and `PreToolUse` envelopes, with the two subagent-spawn captures pinned by shape, all committed at [`../../../packages/fabrika-cli/src/hook/__fixtures__/`](../../../packages/fabrika-cli/src/hook/__fixtures__/) with their capture method, date and harness version beside them in `PROVENANCE.md`. Capture the real runtime artifact before coding against it: a hand-authored envelope encodes what its author assumed, and the assertions then pin the assumption rather than the payload. Two properties are what make that a proof rather than a schema asserted against itself: the argv comes from the declaration, so a green test cannot be exercising a verb the surface does not name; and the fixtures are what Claude Code 2.1.226 really sent, so the shape assertions pin keys a doc-assumed envelope would have missed — `PreToolUse` carries `prompt_id`, `permission_mode` and `effort`, and the hand-authored spawn-guard envelope that preceded these captures knew about none of them.
 
@@ -170,7 +172,9 @@ Both legs were also confirmed live on build 2.1.227: a probe hook on matcher `Ta
 
 The consequence is a **polarity**, not a style preference. A bootstrap or dispatch failure is a state in which no verb ran and no evidence exists, which must fail **open**; seating any such state on `2` makes it deny instead. Three sites did — `bin.ts`'s `ERR_MODULE_NOT_FOUND`, and `delegate/entry.ts`'s foreign-checkout refusal and walk-fault — plus a fourth found while fixing them, `delegate/resolve.ts`'s spawn fault. All four now exit `126` ([`../../../packages/fabrika-cli/src/verb.ts`](../../../packages/fabrika-cli/src/verb.ts), `NO_IMPLEMENTATION`), and the polarity is pinned by [`../../../packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts`](../../../packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts), which runs the argv out of the committed declaration against a real cross-checkout refusal and asserts the exit code is not the blocking one.
 
-**A deny never used an exit code anyway.** The retired `fabrika hook spawn` denied by returning exit **0** carrying `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",…}}`. That JSON mechanism is independent of the exit status, so any future `PreToolUse` hook that means to refuse has a way to say so without touching `2`. fabrika declares no `PreToolUse` hook today, so the exposure this section describes is latent, not live — the polarity is pinned regardless, because the bootstrap sites it constrains are shared by every hook.
+**A deny never used an exit code anyway.** The retired `fabrika hook spawn` denied by returning exit **0** carrying `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",…}}`, and `fabrika hook pre-bash` denies the same way. That JSON mechanism is independent of the exit status, so a `PreToolUse` hook that means to refuse says so without touching `2`. The exposure this section describes is **live** rather than latent: `pre-bash` is consulted on every Bash call, so a bootstrap failure seated on `2` would block the whole session's shell — which is what the polarity is pinned against.
+
+**The allow side is the half that is easy to get wrong.** `permissionDecision: "allow"` is not "I have no objection": it bypasses the permission rules the operator configured. So a hook whose answer is "nothing to refuse here" emits no decision field at all, and `pre-bash`'s allow carries a fabrika-namespaced token the harness ignores — a positive answer for the convention's rule 2, and no decision for the harness.
 
 <a id="the-dispatch-failure-policy-point"></a>
 ### The dispatch-failure policy point — a hook that cannot run fails open
@@ -189,7 +193,7 @@ This section previously grouped `2` and `127` together as "the verb never ran, s
 
 Failing *closed* still has no admissible form, and for the reason the ruling gives: it would mean minting the interception rule 5 forbids. Do not spread the behaviour to a per-verb site; this section is the one place a later ruling flips.
 
-A `PreToolUse` hook makes that cost real, and it is named rather than left implicit: a machine where `fabrika` does not resolve runs every spawn with that defence silently absent — the exact silence the defence exists to remove.
+`hook pre-bash` makes that cost real, and it is named rather than left implicit: a machine where `fabrika` does not resolve runs every Bash call with the escape refusal silently absent — the exact silence the defence exists to remove.
 
 **The notice is owed and only half-implementable today, so it is recorded rather than assumed.** On exit `126` the process did start and fabrika speaks for itself (`resolve.ts`'s foreign-checkout refusal). On exit `127` fabrika cannot speak, because `fabrika` is what failed to resolve — so that half has **no owner**, and its structural cure is installing the package: available to any machine that takes it, absent on any that does not. An adversarial review precedes any implementation of this horn in either direction.
 

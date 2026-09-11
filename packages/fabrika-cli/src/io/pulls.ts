@@ -30,6 +30,25 @@ import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import type {Existence} from "./issues.ts";
 import {isRecord} from "./json.ts";
 
+/**
+ * Whether a PR can merge into its base, as three values rather than a boolean.
+ *
+ * GitHub computes `mergeable` lazily, so the single-PR GET returns `null` with
+ * `mergeable_state: "unknown"` while the background job runs. That is the platform declining to
+ * answer, and a two-valued type has nowhere to put it but the clean arm — which is the whole
+ * defect: a conflicting PR then reads as one nobody has to fix. `ship`'s landing verbs poll the
+ * same fact through `../ship/mergeability.ts`; a caller that only *reports* the state takes the one
+ * read this record already carries.
+ */
+export type PullMergeability = "mergeable" | "conflicting" | "unknown";
+
+/** The single-PR GET's `mergeable` / `mergeable_state` pair, judged. A `null` is `unknown`. */
+const mergeabilityOf = (value: Record<string, unknown>): PullMergeability => {
+	const state = typeof value.mergeable_state === "string" ? value.mergeable_state : "";
+	if (typeof value.mergeable !== "boolean" || state === "" || state === "unknown") return "unknown";
+	return value.mergeable ? "mergeable" : "conflicting";
+};
+
 export interface PullRecord {
 	readonly number: number;
 	readonly state: string;
@@ -61,6 +80,8 @@ export interface PullRecord {
 	readonly assignees: ReadonlyArray<string>;
 	/** The platform's own last-activity stamp — one operand of the strand age. */
 	readonly updatedAt: string;
+	/** Whether the PR can merge into its base, with the platform's uncomputed read kept as `unknown`. */
+	readonly mergeability: PullMergeability;
 }
 
 const toPullRecord = (value: unknown): PullRecord | null => {
@@ -92,6 +113,7 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 				)
 			: [],
 		updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
+		mergeability: mergeabilityOf(value),
 	};
 };
 

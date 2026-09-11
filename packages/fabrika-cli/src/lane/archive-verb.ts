@@ -32,6 +32,7 @@ import {
 	LOG_REPLAYS,
 	MARKER_READBACK,
 } from "./codes.ts";
+import type {KeyIssue} from "./key.ts";
 import {loadRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -91,8 +92,8 @@ export interface ArchiveOptions<R = never> {
 	readonly archivedRoot: string;
 	/** The committed templates this root's lanes may have booted from; the lane's `id` picks. */
 	readonly templatePaths: ReadonlyArray<string>;
-	/** The issue this lane drives, or `null` for a key that names none. */
-	readonly issue: number | null;
+	/** The issue this lane drives, or which of the two ways its key names none. */
+	readonly issue: KeyIssue;
 	readonly closed: ClosedReader<R>;
 }
 
@@ -101,13 +102,16 @@ export const runArchive = <R = never>(
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const {ref, issue} = options;
-		if (issue === null) {
+		const {ref} = options;
+		if (options.issue._tag !== "Issue") {
 			return refuse(
 				ISSUE_UNRESOLVED,
-				`${VERB}: "${ref.lane}" names no issue, and an archive turns on that issue reading closed — a chore lane can never satisfy it, so there is nothing here to prove. Nothing was moved.`,
+				options.issue._tag === "Chore"
+					? `${VERB}: "${ref.lane}" is a chore lane, and an archive turns on an issue reading closed — a lane with no issue can never satisfy it, so there is nothing here to prove. Nothing was moved.`
+					: `${VERB}: "${ref.lane}" carries no leading issue number, so there is no issue for the closed-issue gate to read — this is not a chore lane, so what is wrong is the directory name. A quarantined lane is named "<issue>.<suffix>" precisely so it keeps naming its issue. Nothing was moved.`,
 			);
 		}
+		const issue = options.issue.number;
 
 		const loaded = yield* loadLane(ref);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);

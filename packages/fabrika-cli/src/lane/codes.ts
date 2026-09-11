@@ -616,3 +616,19 @@ export const PRIOR_LANE = 63;
  * had a typo to re-plan the epic.
  */
 export const DEFERRAL_REFUSED = 64;
+
+/**
+ * The lanes root a verb was handed sits inside a linked worktree, whose ledger is a copy of the
+ * owning repository's rather than the ledger itself — refused with nothing read and nothing
+ * appended.
+ *
+ * Its own seat rather than {@link NOT_A_REPO}'s, whose remedy is to move or pass `--root`: here the
+ * root is a real directory in a real checkout and passing it again changes nothing. Rather than
+ * {@link LANE_ABSENT}'s above all, and that is the whole point — the copy is usually *present*, so
+ * the fold succeeds and answers from a ledger frozen at whatever moment the copy was written. On
+ * lane 8810 that read a `tripped` lane with a `frozen` task off a copy the live ledger had already
+ * moved past, refused a legal terminal, and spent a granted repair round with no record of it. A
+ * plausible wrong fold is worse than any refusal, because no reader downstream can tell it from a
+ * right one.
+ */
+export const ROOT_NOT_OWNED = 65;

@@ -21,6 +21,7 @@ const PULL_RECORD = {
 	authorLogin: "an-author",
 	assignees: [],
 	updatedAt: "2026-08-08T00:00:00Z",
+	mergeability: "mergeable" as const,
 };
 
 const TAIL = "the file list cannot be bound to a commit, so the derivation is UNKNOWN.";
