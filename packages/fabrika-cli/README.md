@@ -55,6 +55,9 @@ from a consumer repo — are in
 
 ## Reference
 
+- [`docs/usage-recording.md`](./docs/usage-recording.md) describes the shared host recording API,
+  versioned usage envelopes, issue/run model and token summaries, native counter meanings and
+  recovery. Claude and Codex totals report their coverage; Pi observation remains unavailable.
 - [`docs/verb-reference.md`](./docs/verb-reference.md) — every registered verb group, its verbs, its
   flags and its exit codes, plus the four caller-facing interface rules, the shared exit table those
   codes are read against, and the `capture` library subpath. The governing convention is

@@ -10,7 +10,7 @@ import {classifyPark} from "../recipe/parks.ts";
 import {CAP_ROUND, MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
-import {parkCauseRead} from "./fixtures.test-support.ts";
+import {fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {declaresClosureGuard} from "./reconcile.ts";
@@ -21,11 +21,17 @@ const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/ep
 const golden = (): string =>
 	readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.workflow.golden.txt");
 
-const open = (number: number) => ({number, state: "open" as const, stateReason: null});
+const open = (number: number, classes: ReadonlyArray<string> = []) => ({
+	number,
+	state: "open" as const,
+	stateReason: null,
+	classes,
+});
 const closed = (number: number, stateReason: string | null = "completed") => ({
 	number,
 	state: "closed" as const,
 	stateReason,
+	classes: [],
 });
 
 const CHILDREN = [open(4301), open(4302), open(4303)];
@@ -154,17 +160,23 @@ describe("emitMachine", () => {
 		});
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runTransition({
-					root: ".fabrika/lanes",
-					lane: "4300",
-					event: "WIP",
-					task: "issue_4301",
-					cause: null,
-					parkCause: parkCauseRead(),
-					classes: [],
-					waitGrant: null,
-					rationale: null,
-				}),
+				runTransition(
+					{
+						root: ".fabrika/lanes",
+						lane: "4300",
+						event: "WIP",
+						task: "issue_4301",
+						cause: null,
+						parkCause: parkCauseRead(),
+						classes: [],
+						waitGrant: null,
+						rationale: null,
+						repo: "o/r",
+						cwd: "/checkout",
+						env: {},
+					},
+					fakeProver().prove,
+				),
 				fs.layer,
 			),
 		);
@@ -199,17 +211,23 @@ describe("emitMachine", () => {
 		const fs = fakeFs({files: {".fabrika/lanes/4300/workflow.json": text}});
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runTransition({
-					root: ".fabrika/lanes",
-					lane: "4300",
-					event: "WIP",
-					task: "issue_4303",
-					cause: null,
-					parkCause: parkCauseRead(),
-					classes: [],
-					waitGrant: null,
-					rationale: null,
-				}),
+				runTransition(
+					{
+						root: ".fabrika/lanes",
+						lane: "4300",
+						event: "WIP",
+						task: "issue_4303",
+						cause: null,
+						parkCause: parkCauseRead(),
+						classes: [],
+						waitGrant: null,
+						rationale: null,
+						repo: "o/r",
+						cwd: "/checkout",
+						env: {},
+					},
+					fakeProver().prove,
+				),
 				fs.layer,
 			),
 		);
@@ -656,8 +674,98 @@ describe("emitMachine", () => {
 	});
 });
 
+describe("emitMachine — the --children drop axis", () => {
+	const drop = (text: string, links = CHILDREN): EmitResult =>
+		emitMachine(4300, text, links, {dropForeign: true});
+
+	const phasesOf = (text: string): Record<string, {states: Record<string, unknown>}> =>
+		(JSON.parse(text) as {machine: {states: Record<string, {states: Record<string, unknown>}>}})
+			.machine.states;
+
+	it("takes the dropped ref out of its phase and out of every requires list naming it", () => {
+		const text =
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9999, #4302\n- #4302 requires: #4301, #9999\n- #9999 requires: #4301\n";
+		const out = drop(text, [open(4301), open(4302)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["#9999"]);
+		expect(out.children).toBe(2);
+		expect(out.text).not.toContain("9999");
+		expect(Object.keys(phasesOf(out.text))).toEqual([
+			"phase1",
+			"phase2",
+			"epic",
+			"complete",
+			"tripped",
+		]);
+	});
+
+	it("elides a phase the drop left with no members, and keeps the surviving order", () => {
+		const text = "## Dependencies\n\n- phase 1: #9999\n- phase 2: #4301\n- phase 3: #4302\n";
+		const out = drop(text, [open(4301), open(4302)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.phases).toBe(2);
+		expect(Object.keys(phasesOf(out.text))).toEqual([
+			"phase2",
+			"phase3",
+			"epic",
+			"complete",
+			"tripped",
+		]);
+		expect(JSON.parse(out.text)).toMatchObject({machine: {initial: "phase2"}});
+	});
+
+	it("records a ref that appears only in the needs of a requires line whose subject went", () => {
+		const text =
+			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #9998\n- #9998 requires: #4301, #9999\n";
+		const out = drop(text, [open(4301)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["#9998", "#9999"]);
+		expect(out.children).toBe(1);
+	});
+
+	it("drops a ledger-local ref too — it is in no child list either", () => {
+		const out = drop("## Dependencies\n\n- phase 1: C1, #4301\n", [open(4301)]);
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual(["C1"]);
+	});
+
+	it("reports nothing dropped when every ref is a live child", () => {
+		const out = drop(body());
+		if (out._tag !== "Emitted") throw new Error(`expected Emitted, got ${out._tag}`);
+		expect(out.dropped).toEqual([]);
+		expect(out.text).toBe(golden());
+	});
+
+	it("refuses an emission the drop emptied, naming what went", () => {
+		const out = drop("## Dependencies\n\n- phase 1: #9998, #9999\n");
+		expect(out).toEqual({_tag: "Emptied", dropped: ["#9998", "#9999"]});
+	});
+
+	it("still refuses every other topology defect over what survives the drop", () => {
+		expect(drop("## Dependencies\n\n- phase one: #4301\n")).toMatchObject({
+			_tag: "Unparseable",
+		});
+		expect(drop("## Dependencies\n\n- phase 1: #4301\n- phase 2: #4301, #9999\n")).toEqual({
+			_tag: "Duplicate",
+			child: 4301,
+		});
+		expect(drop("## Dependencies\n\n- phase 1: #4301\n- #4303 requires: #4301, #9999\n")).toEqual({
+			_tag: "Unplaced",
+			child: 4303,
+		});
+		const cyclic =
+			"## Dependencies\n\n- phase 1: #4301, #4302, #9999\n- #4301 requires: #4302, #9999\n- #4302 requires: #4301\n";
+		expect(drop(cyclic)).toMatchObject({_tag: "Cycle"});
+	});
+
+	it("leaves the 16 refusal exactly where it was without the flag", () => {
+		const text = "## Dependencies\n\n- phase 1: #4301\n- phase 2: #9999\n";
+		expect(emitMachine(4300, text, CHILDREN)).toEqual({_tag: "Foreign", ref: "#9999"});
+	});
+});
+
 describe("emitMachine — the machinery lap axis", () => {
-	const withLaps = (): string => emitted(emitMachine(4300, body(), CHILDREN, true));
+	const withLaps = (): string => emitted(emitMachine(4300, body(), CHILDREN, {machinery: true}));
 
 	const lapStatesOf = (lane: CompiledLane, task: string): number => {
 		const compiled = lane.tasks[task];
@@ -666,7 +774,7 @@ describe("emitMachine — the machinery lap axis", () => {
 	};
 
 	it("emits today's machine byte for byte with the axis off", () => {
-		expect(emitted(emitMachine(4300, body(), CHILDREN, false))).toBe(golden());
+		expect(emitted(emitMachine(4300, body(), CHILDREN, {machinery: false}))).toBe(golden());
 		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
 	});
 
@@ -785,5 +893,76 @@ describe("emitMachine — the machinery lap axis", () => {
 		// its status carries none to read — the whole containment, in two assertions.
 		expect(lapStatesOf(before, "issue_4301")).toBe(0);
 		expect(lapStatesOf(after, "issue_4301")).toBe(1);
+	});
+});
+
+/**
+ * The class axis: an unclassed emission is the bytes it always was, and a `ui` child carries the
+ * seed AND the guarded arm into `build:ui`. Without the arm the seed reaches an emitted child and
+ * turns nothing — the half of the ui-lane wiring a folded report named from the other end.
+ *
+ * The rendered REVIEW cell is asserted absent, because the decision record on a child's rendered
+ * review rules it the epic tail's: a `review:ui` cell a child entered dispatches a gate over a range
+ * with no pull request and proves nothing.
+ */
+describe("emitMachine — the class axis", () => {
+	const classedChildren = [open(4301, ["ui"]), open(4302), open(4303)];
+	const classedText = (): string => emitted(emitMachine(4300, body(), classedChildren));
+
+	it("leaves every byte alone when no child carries a class", () => {
+		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
+	});
+
+	it("seeds the classed child's context entry, and only that child's", () => {
+		const document = JSON.parse(classedText()) as {
+			machine: {context: Record<string, Record<string, unknown>>};
+		};
+		expect(document.machine.context.issue_4301).toMatchObject({classes: ["ui"]});
+		expect(document.machine.context.issue_4302).not.toHaveProperty("classes");
+		expect(document.machine.context.epic_4300).not.toHaveProperty("classes");
+	});
+
+	it("gives the classed child build:ui and NO review:ui, and no sibling either", () => {
+		const classed = regionOf(classedText(), "issue_4301") as {
+			states: Record<string, unknown>;
+		};
+		const plain = regionOf(classedText(), "issue_4302") as {states: Record<string, unknown>};
+
+		expect(Object.keys(classed.states)).toContain("build:ui");
+		expect(Object.keys(classed.states)).not.toContain("review:ui");
+		expect(Object.keys(plain.states)).not.toContain("build:ui");
+	});
+
+	it("leaves the classed child's review PASS a plain target into integrate", () => {
+		const classed = regionOf(classedText(), "issue_4301") as {
+			states: Record<string, {on: Record<string, unknown>}>;
+		};
+
+		expect(classed.states.review?.on["ISSUE_4301.PASS"]).toBe("integrate");
+	});
+
+	it("routes the classed child's FIRST WIP to build:ui, and its PASS straight to integrate", () => {
+		const lane = laneOf(classedText());
+		const log = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+		]);
+
+		expect(lane.tasks.issue_4301?.initial.classes).toEqual(["ui"]);
+		expect(statesOf(lane, log.slice(0, 1)).issue_4301?.type).toBe("build:ui");
+		expect(statesOf(lane, log).issue_4301?.type).toBe("integrate");
+	});
+
+	it("still lands the classed child through integrate — the ui arm adds a shell, not a leg", () => {
+		const lane = laneOf(classedText());
+		const log = driveLog(lane, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "DONE"],
+		]);
+
+		expect(statesOf(lane, log).issue_4301?.type).toBe("landed");
 	});
 });

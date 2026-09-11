@@ -1,0 +1,203 @@
+---
+id: 0389
+title: A bricked lane is archived while its issue is open, and its claim goes with it
+status: accepted
+date: 2026-09-10
+tags: [fabrika, lane, pipeline]
+---
+
+# 0389 — A bricked lane is archived while its issue is open, and its claim goes with it
+
+**What this decides:** `lane archive` no longer requires the lane's issue to read closed, and it
+retracts the issue's live `lane-claim` marker as part of the move.
+
+This record **amends ADR [0215](0215-claim-identity-continuity-proof.md) §5 and ADR
+[0325](0325-lane-namespace-claim-succession.md) in part.** 0215 §5 bans "a second retraction verb"
+and 0325 carried that ban into the `lane` namespace unchanged; §2 below makes `lane archive` delete a
+`lane-claim` comment, which is a second one. The Reconciliation section says so plainly rather than
+arguing the crossing away, and pretending otherwise would leave the corpus lying about its own code.
+So: **the second-retraction-verb ban is narrowed to exactly the population below — `lane archive`
+spending a token its caller already presents, over markers carrying that token and no others — and
+stands everywhere else.** Nothing else 0215 §5 or 0325 bans moves: no second keyspace, no lease, no
+TTL, no repair-specific claim mechanism, and no way to acquire or infer ownership.
+
+## Context
+
+A lane whose `events.jsonl` carries an event its machine has no update cell for is unreadable by
+every lane verb: they all replay the whole log first, so `lane prove`, `lane report` and `lane
+status` refuse at exit `4`. The log is append-only, so there is no in-band correction either —
+appending needs the replay that is broken.
+
+ADR [0352](0352-an-unreplayable-lane-is-archived-not-sealed.md) built the route out and ruled its
+shape: move the record aside, never rewrite it. But it gated the move on **two** facts, and the
+second one closed the route for exactly the lane that needs it most:
+
+- the log does not replay (exit `50` when it does), and
+- the lane's issue reads **closed** on the board (exit `49` when it is open).
+
+Lane 8810 hit that gap on 2026-09-10. Its epic was open, so the archive refused; `lane settle` needs
+a board closure too; and repair needs the replay that is broken. Four current PASS verdicts and a
+tail FAIL could not reach the ledger, and a second child's `BUILT-NO-PR` and a third's PASS were
+refused the same way — the brick is per-lane, not per-task, because every verb replays the whole log
+([#8922](https://github.com/kamp-us/phoenix/issues/8922)).
+
+It is not one lane. A `lane open 8201` on the same day refused at exit `51` with eleven seats
+standing against a cap of two, nine of them bricked ledgers:
+`packages/fabrika-cli/src/lane/concurrency.ts` counts a lane whose log will not fold as an
+`unaccountable` seat, so a bricked ledger holds a seat with no driver behind it. With no archive
+route, the only remedy was deleting the lane directory — the exact act ADR
+[0384](0384-a-retired-lane-does-not-re-open-over-its-own-work.md) closed off, and the thing an
+append-only log exists to prevent.
+
+## Decision
+
+The founder ruled it on 2026-09-10
+([the ruling comment](https://github.com/kamp-us/phoenix/issues/8922#issuecomment-5625310849)):
+relax the closed-issue gate.
+
+### 1. The unreplayable log is the whole entitlement
+
+`lane archive` refuses a log that replays (`50`) and moves everything else. The lane's issue state is
+neither read nor judged.
+
+0352 kept the closed-issue gate because "an archived lane is beyond every sweep, and a live one
+belongs where the sweeps can see it" — the fear being an archive that quietly hides live work. The
+replay judgement already carries that: **a log no machine can fold is a lane nobody can drive.** Every
+verb refuses it at exit `4`, so there is no live work to hide — only a dead directory holding a cap
+seat and a claim. The gate was protecting against a state the other gate makes unreachable.
+
+The open-issue arm is not a weaker archive. It is the *only* archive that ever mattered for a live
+brick, and the closed-issue arm was always the easy case.
+
+### 2. The claim dies with the lane, and the verb kills it
+
+A lane that leaves the swept root while its issue carries a live `lane-claim` marker strands the
+issue: the next `lane claim` reads a foreign holder on a lane that is no longer there. So the archive
+retracts the marker itself — every `lane-claim` comment carrying the holder's token, plus any
+`lane-adopt` marker naming the holder's session, since an adopt exists only to make one claim
+releasable and does not outlive it.
+
+**A claim the caller does not name is refused, not swept.** `--token` names it, exactly as `lane
+settle` already demands, and it is compared against the winning claimant's token as raw equality, so
+a dead seat's claim goes through `lane adopt` and then `lane release` — adopt mints the successor
+token, release is what deletes the marker. Sweeping another
+driver's marker is the one write the claim protocol must never make
+(`packages/fabrika-cli/src/lane/claim-verb.ts`), and being about to delete a lane does not buy a
+verb that permission. Exit `31` `CLAIM_NOT_MINE`.
+
+**Retraction runs before the move.** The two failure orders are not symmetric: a retraction that
+lands over a move that does not leaves an unclaimed lane where it was, which the next run archives;
+the reverse leaves a claim on a lane nothing can release. A marker that will not delete is exit `8`
+with nothing moved.
+
+### 3. The lane re-lanes through the boot gates, and nothing new
+
+After the move the issue is claimable and `.fabrika/lanes/<n>` is absent, so `lane open <n>` decides
+whether it re-lanes — including ADR 0384's `63` `PRIOR_LANE` refusal when the board already hangs a
+closing pull request off the issue. No re-open rule is added here, and none is relaxed.
+
+### 4. A chore lane becomes archivable
+
+0352 refused a chore key at exit `19` on the ground that "a chore lane can never satisfy the
+closed-issue gate". With that gate gone the refusal has no ground left, and a bricked chore ledger is
+the same defect. A chore key names no issue, so there is no claim thread and nothing to retract.
+
+## Reconciliation with ADR 0215 §5 and ADR 0325
+
+§2 puts a second verb in the business of deleting a `lane-claim` marker, and standing law names that
+act. This section is the accounting.
+
+ADR [0215](0215-claim-identity-continuity-proof.md) §5 closes the set of ways a claim ends and bans,
+verbatim:
+
+> A second claim keyspace, a second retraction verb, or a repair-specific claim mechanism.
+
+ADR [0325](0325-lane-namespace-claim-succession.md) carried that enumeration into the `lane`
+namespace unchanged — "Everything else that ruling bans stays banned" — and its own ruling rejected
+the read-the-token-off-the-issue route as "sanctioning exactly the hand-composed token-guessing ADR
+[0295](0295-board-attested-claim-succession.md) was built to prevent".
+
+### It is 0215 §5's first ending, not a fourth one
+
+0215 §5's three endings are affirmative release by its owner, proven claimant death, and operator
+clearance. **`lane archive --token` is the first.** The retraction fires only over markers carrying
+the token the caller presented and over nothing else: it supersedes nobody, probes no pid, evicts on
+no age, and infers from no absence. 0215 §5's binding constraint — "Release retracts only markers
+carrying the token the caller presents" — is exactly what `runArchive` enforces at
+`holder.token !== options.token`. So the enumeration stays closed at three, and this is a second
+*caller* of the first ending rather than a new way for a claim to end.
+
+### It is a second retraction verb, and that is the crossing
+
+Named plainly: before this change `lane release` was the only verb that deleted a `lane-claim`
+comment, and now `lane archive` deletes one too. `lane settle` demands the same `--token` under the
+same comparison but retracts nothing, so archive is the second.
+
+It is taken because the retraction is not separable from the move. §2's ordering argument runs both
+ways: a claim left standing on a lane that has left the swept root is a marker nothing can release,
+and an archive that refused while any claim stood would put a second gate on the route that exists
+because there was no route — the case Rejected below. Routing archive's retraction through `lane
+release` is mechanically possible (release folds no log, so it works on a bricked ledger), but it
+makes archiving a claimed lane a two-command dance for the population that by construction has no
+driver left to run it. What 0215 §5 and 0325 ban is a second way to *acquire* or *infer* ownership —
+a parallel keyspace, a lease, a TTL, a repair-specific claim mechanism. `lane archive` acquires
+nothing and infers nothing: it spends a token its caller already holds.
+
+### Why raw token equality, and what it costs
+
+`runArchive` compares `holder.token` against `--token` as raw equality over the earliest authorized
+claimant. That is `lane settle`'s shape verbatim
+(`packages/fabrika-cli/src/lane/settle-verb.ts`), so the two board-writing lane terminals answer
+ownership the same way, which is the parity one shared marker needs.
+
+It is **not** `lane release`'s shape, and that difference is accepted rather than overlooked.
+`runLaneRelease` binds the presented token to the calling session through `requireCallerToken` and
+then resolves through the shared `resolveOwnership`
+(`packages/fabrika-cli/src/lane/claim-verb.ts`), so it reads an adopted successor as its own;
+archive consults the `adopts` array not at all and reads that same successor as foreign. Two
+consequences follow, both disclosed rather than guarded:
+
+- **A dead seat's claim takes three commands, not two** — `lane adopt`, then `lane release` to delete
+  the marker, then the archive over an unclaimed thread. §2 says so, and the `31` refusal says so.
+- **The `31` refusal prints the holder's token**, which is the string that satisfies the check, so
+  raw equality here is an accident guard and not an authority guard. That is `lane settle`'s standing
+  exposure too, not one introduced here, and the authority guard under both is the poster's
+  repository write permission (ADR [0055](0055-acl-sourced-review-authz.md)).
+
+Whether both verbs should resolve through `resolveOwnership` instead is live and filed as
+[#9145](https://github.com/kamp-us/phoenix/issues/9145). It is deliberately not answered here: it
+moves `lane settle` as much as `lane archive`, so it is a claim-protocol decision rather than a
+consequence of relaxing this verb's gate. If it lands, §2's ownership rule becomes "resolve through
+`resolveOwnership`" and the three-command dead-seat route collapses to one.
+
+## Rejected
+
+**A separate quarantine verb** for a live bricked lane, distinct from archive's done-and-dusted
+semantics — the second named alternative on #8922. Rejected: it is the same act on the same
+directory with the same "never rewrite" law, and a second mover would need its own root, its own
+sweep exclusion and its own read-back path. Two verbs one fact apart is how the sweeps and the mover
+come to disagree, which is the argument `archive.ts` already makes for calling `judgeMigration`
+rather than re-deriving it.
+
+**Leaving the claim to the operator** — refuse the archive while any claim stands, and say so.
+Rejected: it makes the standing claim a second gate on the route that exists because there was no
+route, and the nine dead seats on #8922 are exactly the case where nobody is left to release one.
+The verb decides; `--token` and `lane adopt` are the two ways a *live* driver stays protected.
+
+## Consequences
+
+- A bricked ledger has one shipped route out at any point in its issue's life, and it frees the
+  `laneConcurrencyCap` seat the moment it runs. `lane open` becomes reachable again without a human
+  running nine archives by hand.
+- Exit `49` `ISSUE_LIVE` is now `lane settle`'s alone. It stays in the table with its meaning
+  unchanged; only `lane archive` stopped answering there.
+- Exit `19` `ISSUE_UNRESOLVED` leaves `lane archive`'s table with the gate that produced it.
+- `lane archive` gains `--token` and a board write. It was a read-and-move verb; it now retracts up
+  to a handful of comments before moving, and a failed retraction is a refusal, never a silent move.
+- **The lane namespace now has two verbs that delete a claim marker, and they resolve ownership
+  differently** — `lane release` through succession, `lane archive` by raw token equality. The
+  Reconciliation section accounts for that against ADR 0215 §5 and ADR 0325; #9145 carries the
+  question of collapsing the two.
+- An archived lane's issue reads unclaimed even where the board still shows the work in flight. That
+  is the point — the lane is gone, so a claim naming it is a lie — but a driver reading the issue
+  alone sees no trace of the archived lane, and the archived ledger is the only record of it.

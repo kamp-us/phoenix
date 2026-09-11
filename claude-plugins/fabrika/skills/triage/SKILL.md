@@ -245,6 +245,15 @@ A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) 
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
 lane-exempt issue is banned outright.
 
+**Repeatable `--class <name>` says which shells the lane runs, and `ui` is the one that changes a
+route.** Pass `--class ui` when the deliverable is a rendered surface, so the lane boots into
+`build:ui` — and, on a single-issue lane, `review:ui` too. This stamp is the *only* producer of that
+routing before a head has graded a diff: `lane open` and `lane emit` read the `class:<name>` label
+and seed the lane document from it, and without it a rendered ticket builds its first round in a
+shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
+vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
+any label is written. Most tickets need no `--class`: text is what the plain shells already serve.
+
 **Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
 route to them, and where an ordering belongs. Pass one per issue this one waits on
 (`--blocked-by 5 --blocked-by 6`); the verb resolves each target's internal id, skips the edges
@@ -288,11 +297,18 @@ cold, and the block is what the promise is made of. Author one back in step 6 an
 drift is `triage repair-criteria`'s. `--type epic` is exempt because an epic's criteria arrive per
 child from the plan ledger, and `--ready-for human` is never asked for one.
 
+**`--type epic --ready-for agent` writes no audience label, and that is not a failure.** On an epic
+`ready-for:agent` is `check-epic-plan`'s statement that the plan floor came back clean, so the gate
+is its only writer: the verb stamps the type, the priority, `status:triaged` and the home, prints
+`none` in the ready-for column with a stderr line naming the gate, and leaves the epic
+un-pickable until it is gated. Stamp it anyway — that is the correct triaged shape for an epic, and
+`--ready-for human` is what parks one for a person instead.
+
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
-Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home,
-and every `--blocked-by` edge you asked for.
+Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on
+an epic sent to `agent`), a home, and every `--blocked-by` edge you asked for.
 
 ## 8 — The two outcomes that are not "triaged"
 

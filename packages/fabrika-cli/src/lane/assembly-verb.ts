@@ -14,13 +14,15 @@
  * on `8` — the same discipline `lane push` holds against a remote ref.
  *
  * A resume asks one more question than "does the branch exist": whether `origin/HEAD` already
- * contains its head. A multi-phase epic that ships an intermediate tail lands in exactly that state,
- * and the branch is then simultaneously the sanctioned base for every remaining child and guaranteed
- * to conflict with the trunk. Containment is the one proof that re-cutting loses nothing, so it is
- * what opens that arm and nothing weaker does.
+ * carries its content. A multi-phase epic that ships an intermediate tail lands in exactly that
+ * state, and the branch is then simultaneously the sanctioned base for every remaining child and
+ * guaranteed to conflict with the trunk. Containment is the one proof that re-cutting loses nothing,
+ * so it is what opens that arm and nothing weaker does — and on this repository's squash trunk the
+ * proof is `../io/containment.ts`'s, never ancestry alone.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type Containment, containmentOf} from "../io/containment.ts";
 import {execCapture} from "../io/exec.ts";
 import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -45,6 +47,18 @@ const seatOf = (epic: number, branch: string) =>
 			? ({_tag: "Unreadable", reason: listed.reason} as const)
 			: ({_tag: "Read", seat: assemblySeat(listed.value, epic, branch)} as const);
 	});
+
+/** Which proof opened the re-cut, named on stderr so a reader can re-run it by hand. */
+const whyContained = (contained: Containment): string => {
+	switch (contained._tag) {
+		case "Ancestor":
+			return "its head was already reachable from the default branch";
+		case "Squashed":
+			return `what it adds already landed on the default branch as ${contained.commit}`;
+		default:
+			return "it adds nothing the default branch does not already carry";
+	}
+};
 
 const conscripted = (branch: string, path: string): VerbOutcome =>
 	refuse(
@@ -128,10 +142,10 @@ export const runAssembly = (
 
 		// The branch outliving its worktree is the ordinary state after `--remove` at a terminal, a
 		// pruned tree, or a crash mid-run — so it is resumed, checked out as it stands. The one
-		// exception is a branch `origin/HEAD` already contains: its content landed, it holds nothing
+		// exception is a branch `origin/HEAD` already carries: its content landed, it holds nothing
 		// the trunk lacks, and every child cut from it conflicts with what the trunk took since. That
 		// containment is the whole warrant for re-cutting, so an unreadable answer refuses instead.
-		let landed = false;
+		let contained: Containment = {_tag: "Unlanded"};
 		if (existing) {
 			const trunk = yield* execCapture("git", ["rev-parse", "--verify", "origin/HEAD^{commit}"]);
 			if (!trunk.ok) {
@@ -140,14 +154,15 @@ export const runAssembly = (
 					`${VERB}: origin was fetched and origin/HEAD names no commit: ${trunk.reason} — whether ${branch} is already contained in the default branch is UNKNOWN, so nothing was placed.`,
 				);
 			}
-			const contained = yield* execCapture("git", [
-				"merge-base",
-				"--is-ancestor",
-				branch,
-				trunk.stdout.trim(),
-			]);
-			landed = contained.ok;
+			contained = yield* containmentOf(branch, trunk.stdout.trim());
+			if (contained._tag === "Unknown") {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: whether ${branch} is already contained in the default branch is UNKNOWN — ${contained.reason}; nothing was placed, because a re-cut is opened by a proof and never by a failed read.`,
+				);
+			}
 		}
+		const landed = contained._tag !== "Unlanded";
 
 		if (seat._tag === "Isolated" && !landed) {
 			return answer(`${seat.path}\n`, [
@@ -215,7 +230,7 @@ export const runAssembly = (
 		}
 		return answer(`${after.seat.path}\n`, [
 			landed
-				? `${VERB}: re-cut ${branch} off origin/HEAD for the lane at ${loaded.dir} — its head was already contained in the default branch, so it carried no unlanded work and every child cut from it would have conflicted with what the trunk took since; the invoking checkout was not switched.`
+				? `${VERB}: re-cut ${branch} off origin/HEAD for the lane at ${loaded.dir} — ${whyContained(contained)}, so it carried no unlanded work and every child cut from it would have conflicted with what the trunk took since; the invoking checkout was not switched.`
 				: `${VERB}: ${existing ? "re-placed the worktree of the existing" : "placed"} ${branch} for the lane at ${loaded.dir}; the invoking checkout was not switched.`,
 		]);
 	});

@@ -116,7 +116,17 @@ fabrika build claim $issue_or_pr_number
 `won` prints your token. **Keep it — it is your lane's name, and every later verb takes it as
 `--token`**; a session runs several lanes at once, so without it a verb can only tell that *some*
 lane of this session holds the number, which is how two lanes both ran one repair. `lost`
-names the winner — that lane is theirs, back off, including when the winner shares your session. Exit
+names the winner — that lane is theirs, back off, including when the winner shares your session.
+**One arm opens that loss, and the refusal prints it.** A marker outlives the session that posted
+it, so a driver killed mid-claim strands its number indefinitely; where the winning marker's session
+is provably gone, `fabrika build adopt <n> --session <its session id> --reason "<why>"` then
+`fabrika build release <n> --token <the token adopt prints>` clears the stranded claim and a fresh
+`build claim` wins normally. **Provably gone is read, never inferred from silence** —
+`fabrika build claims stale` lists every claim standing past a horizon, and it calls no session dead
+either: the succession is attested on the board with your reason on it, so post one you would defend
+and back off otherwise. The refusal withholds that route when the winner is a sibling lane of your
+own session, because `build adopt` refuses your own session and there is nothing there to adopt.
+Exit
 `20` (out of scope) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. Exit `16` is the blockedness gate that runs after those two: the issue's
@@ -227,7 +237,20 @@ parent and cuts an epic child off the run's assembly branch `epic/<parent>`, a p
 issue off `origin/main`, and refuses rather than guessing when either read fails — so never hand it
 `--base` to "make sure" a child lands on the epic branch. It says which base it used and where that
 came from on stderr; read that line instead of re-deriving it. Pass `--base` only when you mean a
-ref the derivation would not pick, and expect it to be honoured verbatim.
+ref the derivation would not pick, and expect it to be honoured verbatim — qualified against `origin`
+when it names no remote, because every base is fetched and none is read off a local ref.
+
+**The answer names the commit, so prove the cut off it rather than off a `git merge-base` of your
+own.** A create-mode success prints a second line — `cut build/… off origin/epic/7497 at <sha>.`, or
+`… already existed and carries origin/epic/7497 at <sha>` on a re-run — and that line beside the base
+note above it is the whole proof that this branch stands where the lane needs it. A re-run over a
+branch that does **not** carry the base refuses on `36` instead of switching to it, naming the commit
+the two actually share: that branch was cut off something else, or the base has moved since. **Clear
+a `36` with git, never with a verb** — the refusal spells out the one `git rebase --onto` that moves
+the branch onto the base, and deleting the branch is the other way out when it carries nothing you
+need; `build retire-branch` cannot do it, because the branch a `36` names is never the superseded one
+it retires. Four builders on one epic run each caught a wrong base by hand because the verb named
+none; none of that is yours to redo.
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
 invalid states unrepresentable. Before the first `build branch` cut, re-run
@@ -405,7 +428,8 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
-epic driver to fold); `BACKED-OFF` (claim lost, blocked, or no readable contract — branch removed,
+epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it, blocked, or no
+readable contract — branch removed,
 nothing written); `ESCALATED` (repair cap reached — branch left pushed at its last verified head,
 escalation note posted);
 `STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An
@@ -507,8 +531,19 @@ the same decision issue claimed by its own number reads its own audience label a
 `ready-for:human`, and the scope fence binds this claim exactly as it binds a build.
 
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
-included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
-UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
+included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer **about the
+gates**, but an UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**.
+
+**Read the fold's `mergeability` beside its rows, because no gate emits a FAIL for a conflict.**
+`conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
+would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
+a conflicting PR. `unknown` is GitHub not having computed the field yet, never a clean read: treat
+it as unproven and re-run. Who clears the conflict is **not ruled** — neither fixing it in this lane
+nor handing it on is this skill's instruction — so what you owe is that the conflict leaves the
+lane named: state it in your `build note` and in your terminal report, and never end a round
+claiming there was nothing to fix.
+
+The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
 
@@ -619,6 +654,17 @@ past the claim, the repair claim stands, and the stop line prints the token it s
 that same lane with `fabrika build resume-child <n> --token <token>`. **The token is not optional on a
 re-run** — a bare `resume-child <n>` over a held claim mints a second one, loses the earliest-wins
 tiebreak to your own prior claim and refuses on `15`.
+
+**A `type:decision` child is repaired through the same entry, and it needs its ruling named.** The
+claim step's type axis binds here exactly as it binds a fresh claim, so an uncited decision child
+stops the entry at `30` — pass the ruling on `fabrika build resume-child <n> --cites <url>` and the
+entry carries it to that step and nowhere else. The refusal's own line prints the grammar, the URL
+has to name this repository and this child, and citing one buys nothing but that type: a malformed
+or foreign URL is `1` at the claim step, and no citation makes an epic or an out-of-scope child
+admissible. **Never assemble the five steps by hand to get a citation in** — that is the ordering
+hazard this entry retired, and the flag is the whole reason it no longer forces the choice. On a
+`--token` continuation you drop the citation: the claim answers off the standing marker, so the
+ruling is asked for on first entry only.
 
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
 step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the

@@ -29,7 +29,7 @@ import {runClaim} from "./claim-verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
-import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
+import {AUDIENCES, CLASSES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
 import {runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
@@ -208,6 +208,12 @@ const apply = leafCommand(
 				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
 			),
 		),
+		classes: Flag.string("class").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				`the artifact class its lane routes shells off, as a class:<name> label; repeatable, one of ${CLASSES.join(", ")}`,
+			),
+		),
 		blockedBy: Flag.integer("blocked-by").pipe(
 			Flag.atLeast(0),
 			Flag.withDescription(
@@ -225,6 +231,7 @@ const apply = leafCommand(
 		readyFor,
 		home,
 		lane,
+		classes,
 		blockedBy,
 		token,
 		repo,
@@ -238,6 +245,7 @@ const apply = leafCommand(
 				readyFor,
 				home: Option.getOrNull(home),
 				lane: Option.getOrNull(lane),
+				classes,
 				blockedBy,
 				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
@@ -252,7 +260,7 @@ const apply = leafCommand(
 		"Stamp the triaged transition and its blocked_by edges as one reconcile.",
 	),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges, resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>`, where the last column is the edge set THIS RUN read back, as `#a,#b` — always empty without --blocked-by, whatever the graph holds, because the dependency endpoint is read only when the flag is there. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable), 21 (a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes, so pass that issue's number; no edge written). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges, resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Repeatable --class stamps the class:<name> labels a lane seeds its `context.<task>.classes` from, so a rendered-surface issue routes to build:ui on its first pass; the vocabulary is closed in code (CLASSES) and an off-set spelling refuses before any label is written. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>\\t<classes>`, where the blocked-by column is the edge set THIS RUN read back, as `#a,#b` — always empty without --blocked-by, whatever the graph holds, because the dependency endpoint is read only when the flag is there. --type epic --ready-for agent stamps NO audience label: that flip belongs to `check-epic-plan`, which writes it when the epic's plan floor comes back clean, so the ready-for column prints `none` (--json reports readyFor null) and a stamp an earlier gate run left is reconciled away. --ready-for human is unaffected on every type. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value — including an off-set --class — or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable), 21 (a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes, so pass that issue's number; no edge written). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311 --class ui",
 	),
 );
 
@@ -306,7 +314,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
+		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read, or the comment list stayed shorter than the count the issue declares for itself — never \"won\"). Example: fabrika triage claim 4312",
 	),
 );
 

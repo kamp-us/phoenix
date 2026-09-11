@@ -62,10 +62,11 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * Refused, proven: the artifact is not the PR's current tree.
  *
- * One meaning binds the two triggers — the live head moved past `--sha` at post time, or the
- * preview's deployed head is not the live head at render time — because *the pixels or the marker
- * would bind a tree that is not the PR*, and the caller's move is identical either way: re-render,
- * re-review at the live head.
+ * One meaning binds the three triggers — the live head moved past `--sha` at post time, the
+ * preview's deployed head is not the live head at render time, or a route's `--verified-at`
+ * hand-verification predates a `ui`-class change in the range to `--sha` — because *the pixels or
+ * the marker would bind a tree that is not the PR*, and the caller's move is identical every time:
+ * re-render, re-run, re-review at the live head.
  */
 export const STALE_TREE = 12;
 /** Proven: at least one surface threw an uncaught page error — the render is red. */

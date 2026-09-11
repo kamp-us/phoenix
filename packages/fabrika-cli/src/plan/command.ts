@@ -23,6 +23,7 @@ import {runApprove} from "./approve-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runFlip} from "./flip-verb.ts";
 import {runRead} from "./read-verb.ts";
+import {runRestage} from "./restage-verb.ts";
 import {runVerdict} from "./verdict-verb.ts";
 
 const repoFlag = Flag.string("repo").pipe(
@@ -72,9 +73,9 @@ const check = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("The deterministic floor over the fourteen hard defect types."),
+	Command.withShortDescription("The deterministic floor over the fifteen hard defect types."),
 	Command.withDescription(
-		'The deterministic floor over the fourteen hard defect types — the whole pass/fail decision. BOTH arms exit 0 and the discriminator is the "answer" state word (clean | defective); a defective floor is this verb\'s answer, never its refusal, and the guard against acting on one lives at `plan flip`\'s own re-gate. "skipped" names a class that could not be derived (today only MISSING_CONTAINMENT, and only when the cycle-doc probe failed) — it never makes the floor clean by omission. Exits 4 (the ledger grammar refused), 7 (zero scope), 10 (the issue is not a type:epic), 11 (a read the floor depends on failed — a child, a referenced issue, a dependent\'s blocked_by list, or the control-plane roster — UNKNOWN, never "not approved" and never "no edge"), 25 (the plan is not approved as it now stands: no standing marker, or one binding a digest the plan has moved off — refused BEFORE the floor is derived, so an unapproved AND defective plan refuses on this). Example: fabrika plan check 9420',
+		'The deterministic floor over the fifteen hard defect types — the whole pass/fail decision. BOTH arms exit 0 and the discriminator is the "answer" state word (clean | defective); a defective floor is this verb\'s answer, never its refusal, and the guard against acting on one lives at `plan flip`\'s own re-gate. "skipped" names a class that could not be derived (today only MISSING_CONTAINMENT, and only when the cycle-doc probe failed) — it never makes the floor clean by omission. Exits 4 (the ledger grammar refused), 7 (zero scope), 10 (the issue is not a type:epic), 11 (a read the floor depends on failed — a child, a referenced issue, a dependent\'s blocked_by list, the epic\'s own blocked_by list or one of its blockers, or the control-plane roster — UNKNOWN, never "not approved" and never "no edge"), 25 (the plan is not approved as it now stands: no standing marker, or one binding a digest the plan has moved off — refused BEFORE the floor is derived, so an unapproved AND defective plan refuses on this). Example: fabrika plan check 9420',
 	),
 );
 
@@ -176,6 +177,21 @@ const approval = leafCommand(
 	),
 );
 
+const restage = leafCommand(
+	"restage",
+	{number: epicArg, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(yield* runRestage({number, token, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Reconcile a minted epic's Dependencies region against its children.",
+	),
+	Command.withDescription(
+		'Reconcile an already-planned epic\'s machine-owned "## Dependencies" region against the observed state of its native sub-issue links, so a post-mint child close no longer needs a hand edit to the epic body. One rule: a ref the links prove closed for any reason other than `completed` is dropped, because `lane emit` boots exactly those in `frozen` and trips the phase at startup; a `completed` close is KEPT, since its region boots `landed` and the children planned behind it still need the sequencing. A phase line that loses every member disappears, and so does a `requires:` line whose subject was dropped or whose needs all were. A ref the link list does not name — a cross-epic prerequisite, a ledger-local C<int> — is left exactly as written, because it is not observed here; `lane emit`\'s own Foreign arm is what reports it. Nothing outside the region is touched, and it is idempotent by REFS rather than by bytes: a region naming only live issues prints {"answer":"unchanged","epic":n,"dropped":[],"kept":[…],"written":false} and issues no PATCH, so a re-run neither reformats the block nor moves the body digest a standing approval binds. A write prints {"answer":"restaged","epic":n,"dropped":[…],"kept":[…],"written":true,"verified":true} after the whole body reads back as composed. Exits 4 (the ## Dependencies block is unparseable — nothing written), 7 (the epic is proven absent or closed, it has zero sub-issue children, or its body carries no ## Dependencies region at all — plan it first), 8 (the PATCH was issued and could not be confirmed — the body is UNKNOWN), 9 (the body was written and does not read back as composed, or the composed region does not parse back to the edges it was composed from), 10 (the issue is not a type:epic), 11 (the epic or its sub-issue list could not be read — nothing written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 26 (the body carries more than one "## Dependencies" heading, or its only one sits inside the preserved brief envelope — the region has no single meaning and nothing was written), 27 (every issue the topology names closed without landing, so restaging would leave no phase — re-plan the epic instead). Example: fabrika plan restage 9420 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
 export const planCommand = Command.make("plan").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -185,6 +201,7 @@ export const planCommand = Command.make("plan").pipe(
 		verdict,
 		approve,
 		approval,
+		restage,
 	]),
 	Command.withShortDescription("Gate an epic's plan before its children build."),
 	Command.withDescription(

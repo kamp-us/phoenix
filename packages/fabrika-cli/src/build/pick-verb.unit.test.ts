@@ -499,7 +499,7 @@ describe("runPick — the blocked_by graph", () => {
 			expect(out.code).toBe(0);
 			expect(pool(out).map((row) => row.number)).toEqual([CHILD]);
 			expect(excluded(out)).toEqual({});
-			expect(out.stderr.join("\n")).toContain(`adds a commit naming #${BLOCKER}`);
+			expect(out.stderr.join("\n")).toContain(`adds a commit that lands #${BLOCKER}`);
 		});
 
 		it("still excludes an open edge the branch does not carry — discharge only ever admits", async () => {

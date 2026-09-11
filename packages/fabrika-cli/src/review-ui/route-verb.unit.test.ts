@@ -5,6 +5,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {COMPARE_FILE_CAP} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readVerdict} from "../wire/verdict-marker.ts";
 import {
@@ -58,6 +59,7 @@ const options = {
 	pr: 6326,
 	sha: HEAD,
 	clause: CLAUSE,
+	verifiedAt: null as string | null,
 	uiPrefixes: ["apps/site/src/", "apps/desk/src/"],
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
@@ -170,6 +172,109 @@ describe("review-ui route", () => {
 			stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "  \n"}),
 		});
 		expect(outcome.code).toBe(EMPTY_STDIN);
+	});
+
+	// The hand-verification stands for the record's head exactly when no ui-class file changed in
+	// between, so the range decides the evidence rather than a gate's eye.
+	describe("--verified-at", () => {
+		const VERIFIED = "8efd315a1f2e3d4c5b6a7988776655443322110f";
+		const COMPARE = new RegExp(`^GET \\S+/repos/o/r/compare/${VERIFIED}\\.\\.\\.${HEAD}$`);
+		const compare = (...names: ReadonlyArray<string>): HttpReply =>
+			served({status: "ahead", files: names.map((filename) => ({filename}))});
+
+		const withRange = (reply: HttpReply): ReadonlyArray<Scripted> => [
+			[PULL, pull()],
+			[FILES, PROSE_UI],
+			[COMPARE, reply],
+			[USER, served({login: "reviewer"})],
+			[COMMENTS, {status: 200, body: "[]"}],
+			[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+			[READBACK, served({body: composed()})],
+		];
+
+		it("posts over a range that raises nothing, and records which head backs it", async () => {
+			const {outcome} = await run(
+				withRange(compare("packages/fabrika-cli/src/wire/registry.ts", "docs/notes.md")),
+				{verifiedAt: VERIFIED},
+			);
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "routed", verifiedAt: VERIFIED});
+		});
+
+		it("posts over the empty range where the hand-verification ran at --sha itself", async () => {
+			const SAME = new RegExp(`^GET \\S+/repos/o/r/compare/${HEAD}\\.\\.\\.${HEAD}$`);
+			const {outcome} = await run(
+				[
+					[PULL, pull()],
+					[FILES, PROSE_UI],
+					[SAME, served({status: "identical", total_commits: 0, files: []})],
+					[USER, served({login: "reviewer"})],
+					[COMMENTS, {status: 200, body: "[]"}],
+					[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+					[READBACK, served({body: composed()})],
+				],
+				{verifiedAt: HEAD},
+			);
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({verifiedAt: HEAD});
+		});
+
+		it("refuses on 12 when the range raises the ui class, naming the files that spent it", async () => {
+			const {outcome} = await run(
+				withRange(compare("apps/site/src/page/usage.tsx", "docs/notes.md")),
+				{verifiedAt: VERIFIED},
+			);
+			expect(outcome.code).toBe(STALE_TREE);
+			expect(outcome.stderr.join("\n")).toContain("apps/site/src/page/usage.tsx");
+			expect(outcome.stderr.join("\n")).toContain("is spent");
+		});
+
+		it("posts nothing when the range refuses — the record is never written first", async () => {
+			const {requests} = await run(withRange(compare("apps/site/src/page/usage.tsx")), {
+				verifiedAt: VERIFIED,
+			});
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+		});
+
+		it("refuses on 11 rather than clearing the evidence against a capped comparison", async () => {
+			const capped = compare(
+				...Array.from({length: COMPARE_FILE_CAP}, (_, at) => `docs/f${at}.md`),
+			);
+			const {outcome} = await run(withRange(capped), {verifiedAt: VERIFIED});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.join("\n")).toContain("ceiling");
+		});
+
+		it("refuses on 11 when the two heads have diverged — the merge-base list is not the range", async () => {
+			const diverged = served({
+				status: "diverged",
+				files: [{filename: "docs/notes.md"}],
+			});
+			const {outcome, requests} = await run(withRange(diverged), {verifiedAt: VERIFIED});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.join("\n")).toContain("not an ancestor");
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+		});
+
+		it("refuses on 11 when the comparison cannot be read at all", async () => {
+			const {outcome} = await run(withRange({status: 502, body: '{"message":"Bad gateway"}'}), {
+				verifiedAt: VERIFIED,
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		});
+
+		it("refuses an off-vocabulary --verified-at on 10, before any read", async () => {
+			const {outcome, requests} = await run(happy(), {verifiedAt: "not-a-sha"});
+			expect(outcome.code).toBe(OFF_VOCABULARY);
+			expect(requests).toEqual([]);
+		});
+
+		it("reads no range at all when it is omitted", async () => {
+			const {outcome, requests} = await run(happy());
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout).verifiedAt).toBeNull();
+			expect(requests.some((request) => request.includes("/compare/"))).toBe(false);
+		});
 	});
 
 	it("refuses on 9 when the read-back is not the record that was sent", async () => {

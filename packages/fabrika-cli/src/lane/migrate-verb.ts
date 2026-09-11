@@ -14,23 +14,34 @@
  * `--check` is the same sweep with the write withheld — what a driver runs to find out whether a
  * lane it is about to drive is stale, and what a release runs before merging a machine change.
  *
+ * A lane key narrows which entries are swept and nothing else. The whole-root sweep is still what
+ * runs unaddressed — it is the release-time shape — but a driver holding one lane is sanctioned to
+ * write that lane's document and no other, and before the key existed the only write this verb
+ * could perform reached every lane in the root, other drivers' live ones included. Narrowing is a
+ * filter over the swept name set: each lane was already judged on its own, so a narrowed run reaches
+ * exactly the same verdict for the lane it names as the sweep would have.
+ *
  * Staleness is not the only way a lane can be wrong, and it was the only one this sweep could see:
  * a coder-template lane booted on an epic grafts cleanly and reads `current`. So each
  * issue-keyed lane is also judged against the board's answer for its issue ([`shape.ts`](shape.ts)),
- * and a proven mismatch is its own verdict ahead of every migration one. The reader is passed in, so
- * a caller that hands none still gets the wholly offline sweep.
+ * and a proven mismatch is its own verdict ahead of every migration one. A lane booted for an epic's
+ * CHILD is the second such verdict and a different fault: its template is right, so it grafted
+ * cleanly and read `current`, and the wrongness is that the directory exists at all beside the
+ * parent's. That one is reported and never acted on — retiring a ledger is an operator's act — so a
+ * `duplicate` row leaves the exit code where it was. The reader is passed in, so a caller that hands
+ * none still gets the wholly offline sweep.
  *
- * The judgement never widens what this verb writes: a mismatched lane is skipped, and the read can
- * only turn a write into a skip. That is what keeps this verb's guarantee intact — it
+ * The judgement never widens what this verb writes: a mismatched or duplicate lane is skipped, and
+ * the read can only turn a write into a skip. That is what keeps this verb's guarantee intact — it
  * writes only where the swap is provably inert.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import {exists, readDir, readFile, writeFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {LANE_UNREADABLE, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
+import {LANE_ABSENT, LANE_UNREADABLE, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
-import {CHORE_PREFIX} from "./key.ts";
+import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {type Drift, graftContext, judgeMigration, sameMachine} from "./migrate.ts";
 import {judgeShape, originOf} from "./shape.ts";
@@ -56,6 +67,13 @@ export interface MigrateOptions<R = never> {
 	readonly roots: ReadonlyArray<MigrateRoot>;
 	/** Judge and report, write nothing. */
 	readonly check: boolean;
+	/**
+	 * The one lane to judge, as {@link keyOf} renders it, or `null` for the whole-root sweep.
+	 *
+	 * Matched against the key a caller would type rather than the bare directory name, so a chore
+	 * root's entry is addressed `chore:<name>` here exactly as it is at every other lane verb.
+	 */
+	readonly lane: string | null;
 	/** The board reader the shape judgement needs, or `null` for the wholly offline sweep. */
 	readonly expectations: ExpectationReader<R> | null;
 }
@@ -66,6 +84,7 @@ type Verdict =
 	| "stale"
 	| "generated"
 	| "mismatched"
+	| "duplicate"
 	| "unsafe"
 	| "unreadable";
 
@@ -75,6 +94,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"stale",
 	"generated",
 	"mismatched",
+	"duplicate",
 	"unsafe",
 	"unreadable",
 ];
@@ -85,10 +105,15 @@ const VERDICTS: ReadonlyArray<Verdict> = [
  * `unknown` is a seat rather than an absent field, for the reason every read in this protocol keeps
  * it: a sub-issue list that did not load says nothing about whether the machine fits, and reading it
  * as `matches` is the silence this verb exists to break.
+ *
+ * `duplicate` is the same silence one level over: a lane booted for an epic's child read `matches`
+ * and grafted cleanly, so every sweep called a stray ledger healthy. It is not `mismatched` because
+ * there is no template to swap — the lane is a directory to retire, and this verb only names it.
  */
 type LaneShape =
 	| {readonly state: "matches"}
 	| {readonly state: "mismatched"; readonly reason: string}
+	| {readonly state: "duplicate"; readonly parent: number | null; readonly reason: string}
 	| {readonly state: "unknown"; readonly reason: string};
 
 interface LaneRow {
@@ -108,14 +133,8 @@ const keyOf = (root: string, name: string): string =>
 	// repository, so a relocated or derived root still keys its chores correctly.
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
-/**
- * The issue this lane drives, or `null` when it drives none — a chore lane, or a directory whose name
- * is not a number and so names nothing on the board to judge against.
- */
-const issueOf = (root: string, name: string): number | null => {
-	if (root.endsWith(DEFAULT_CHORES_ROOT) || !/^\d+$/.test(name)) return null;
-	return Number(name);
-};
+/** The issue this lane drives, resolved through the one parse in `key.ts`; `null` when it drives none. */
+const issueOf = (root: string, name: string): number | null => rawKeyIssue(keyOf(root, name));
 
 const shapeOf = <R>(
 	issue: number,
@@ -131,8 +150,9 @@ const shapeOf = <R>(
 		const read = yield* expectations(issue);
 		if (read._tag === "Unknown") return {state: "unknown", reason: read.reason};
 		const judged = judgeShape(issue, originOf(id), read.expectation);
-		return judged._tag === "Matches"
-			? {state: "matches"}
+		if (judged._tag === "Matches") return {state: "matches"};
+		return judged._tag === "Duplicate"
+			? {state: "duplicate", parent: judged.parent, reason: judged.reason}
 			: {state: "mismatched", reason: judged.reason};
 	});
 
@@ -176,6 +196,12 @@ const migrateLane = <R>(
 		// lane to bring up to a template, whatever the graft says.
 		if (shape?.state === "mismatched") {
 			return withShape({key, root, verdict: "mismatched", reason: shape.reason});
+		}
+		// Ahead of the graft for the opposite reason a mismatch is: this lane's template is right and
+		// migrating it would be inert, but writing to a ledger an operator is being told to retire
+		// hands them a directory this run just touched.
+		if (shape?.state === "duplicate") {
+			return withShape({key, root, verdict: "duplicate", reason: shape.reason});
 		}
 
 		const grafts = templateTexts.map((text) => graftContext(text, onDisk.success));
@@ -271,6 +297,9 @@ export const runMigrate = <R = never>(
 			}
 			let found = 0;
 			for (const name of [...names.success].sort()) {
+				// The filter sits ahead of `migrateLane`, so a narrowed run does not read, judge or
+				// write any other entry — a lane belonging to another driver is never opened at all.
+				if (options.lane !== null && keyOf(root, name) !== options.lane) continue;
 				const row = yield* migrateLane(
 					root,
 					name,
@@ -285,14 +314,28 @@ export const runMigrate = <R = never>(
 			scanned.push({root, present: true, lanes: found});
 		}
 
+		// A key that matched nothing is a proven absence, never a clean sweep of zero: the caller
+		// named a lane, and answering `{summary: all zero}` at exit 0 would read as "nothing to do"
+		// for a lane that was never judged at all.
+		if (options.lane !== null && lanes.length === 0) {
+			return refuse(
+				LANE_ABSENT,
+				`${VERB}: no lane keyed ${options.lane} under ${options.roots.map((swept) => swept.root).join(", ")} — nothing was judged and nothing was written. A chore lane is addressed \`chore:<name>\`; drop the key to sweep the whole root.`,
+			);
+		}
+
 		const summary = Object.fromEntries(
 			VERDICTS.map((verdict) => [verdict, lanes.filter((row) => row.verdict === verdict).length]),
 		);
 		const unsafe = lanes.filter((row) => row.verdict === "unsafe");
 		const mismatched = lanes.filter((row) => row.verdict === "mismatched");
+		const duplicate = lanes.filter((row) => row.verdict === "duplicate");
 		const acted = lanes.filter((row) => row.verdict === (options.check ? "stale" : "migrated"));
+		// A duplicate reaches the operator on stderr as well as in its row, because a refusal over some
+		// OTHER lane empties stdout by contract and would take every duplicate finding with it.
 		const stderr = [
-			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.check ? " — check only, nothing written" : ""}.`,
+			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.lane === null ? "" : ` — narrowed to lane ${options.lane}`}${options.check ? " — check only, nothing written" : ""}.`,
+			...duplicate.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "duplicate"}`),
 			...mismatched.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "mismatched"}`),
 			...unsafe.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "unsafe"}`),
 		];
@@ -319,7 +362,7 @@ export const runMigrate = <R = never>(
 				options.check
 					? `${acted.length} other lane(s) are stale and safe to migrate.`
 					: `${acted.length} other lane(s) were migrated: ${acted.map((row) => row.key).join(", ") || "none"}.`
-			} A lane whose issue is closed and whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log; any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
+			} A lane whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log; any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
 			stderr,
 		);
 	});

@@ -2,7 +2,14 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
+import {
+	COMMENTS,
+	claimPage,
+	declaring,
+	EXPIRED,
+	guardedShell,
+	LIVE,
+} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
@@ -671,6 +678,8 @@ describe("runKill", () => {
 	it("refuses when the read-back itself fails — the writes landed but the close is unproven", async () => {
 		const {out} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
+			// the guard's reconciled comment read takes its denominator off a second issue read
+			[firstCallOnly(ISSUE), declaring()],
 			[ISSUE, UNREADABLE],
 			[LABELS, labelSet],
 			[REASON_COMMENT, comment],

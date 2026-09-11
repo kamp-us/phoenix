@@ -129,3 +129,50 @@ describe("the shared load refusals", () => {
 		expect(new Set([LANE_ABSENT, LANE_UNREADABLE, MALFORMED_RECORD]).size).toBe(3);
 	});
 });
+
+describe("lane status over a deferred task", () => {
+	const AT = "2026-08-16T00:00:00.000Z";
+	const LATER = "2026-08-17T00:00:00.000Z";
+	const REASON = "founder deferred it to a follow-up cycle";
+
+	/** A log whose deferred task is already gone from the machine on disk — the amended state. */
+	const deferredLane = () =>
+		freshLane({
+			[LOG]:
+				`${JSON.stringify({task: "issue_9", event: "ISSUE_9.BLOCKED", at: AT, cause: "spawn-dead"})}\n` +
+				`${JSON.stringify({
+					task: "epic_42",
+					event: "EPIC_42.AMENDED",
+					at: LATER,
+					tasks: ["issue"],
+					defers: [{task: "issue_9", through: AT, reason: REASON}],
+				})}\n`,
+		});
+
+	it("names the deferred task and its reason, so deferred does not read as completed", async () => {
+		const out = await run(deferredLane(), runStatus);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).deferred).toEqual([
+			{task: "issue_9", through: AT, reason: REASON, at: LATER},
+		]);
+		expect(out.stderr.join("\n")).toContain("deferred, not completed");
+	});
+
+	it("keeps the deferred task out of stateValue and context — the machine no longer holds it", async () => {
+		const out = await run(deferredLane(), runStatus);
+		const status = JSON.parse(out.stdout);
+
+		expect(status.stateValue).toEqual({pipeline: {issue: "queued"}});
+		expect(Object.keys(status.context)).not.toContain("issue_9");
+	});
+
+	it("still prints the deferred task's own recorded events verbatim in the history", async () => {
+		const out = await run(deferredLane(), runHistory);
+
+		expect(out.code).toBe(0);
+		const entries = JSON.parse(out.stdout);
+		expect(entries[0]).toMatchObject({task: "issue_9", event: "ISSUE_9.BLOCKED"});
+		expect(entries[1].defers).toEqual([{task: "issue_9", through: AT, reason: REASON}]);
+	});
+});

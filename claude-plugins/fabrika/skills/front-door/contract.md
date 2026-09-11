@@ -1110,7 +1110,7 @@ a tenth is a change to this table, not a new rule.
 | `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `claude-md-section` | `--path`, default `CLAUDE.md` at the repo root | **none** — the canonical operator-first "work flows through fabrika" section, fixed below, appended when its marker heading `## Work flows through fabrika` is absent — the append-if-absent arm of the merge rule | the re-read contains both the heading and the whole of the pre-existing text, each through `normalizeForReadback` |
-| `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
+| `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, `ready-for:` + every imported `AUDIENCES` member, and `class:` + every imported `CLASSES` member (`class:code`, `class:doc`, `class:skill`, `class:ui`) — twenty today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
@@ -1118,8 +1118,11 @@ a tenth is a change to this table, not a new rule.
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
-`PRIORITIES`, `TYPES` and `AUDIENCES` for the rest — so a seventh `TYPES` member widens what this
-verb creates with no second edit anywhere. v1 restated two statuses and `PRIORITIES` and stopped, and
+`PRIORITIES`, `TYPES` and `AUDIENCES` for the rest, and `CLASSES` for the four `class:*` labels
+`triage apply --class` stamps — so a seventh `TYPES` member widens what this
+verb creates with no second edit anywhere. The class row is the one that does not come off the
+board: its set is closed in code, because a class is what a diff partitions to and no repo declares
+that. v1 restated two statuses and `PRIORITIES` and stopped, and
 the eleven it omitted are each a label some verb writes; since a verb finds its label absent and
 refuses rather than letting the API mint it, a repo that ran the whole documented bootstrap
 could not `triage apply`, `triage park`, `plan flip` or `ship release`. In a repo bootstrapped

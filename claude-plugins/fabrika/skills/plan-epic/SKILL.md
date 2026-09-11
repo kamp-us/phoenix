@@ -87,7 +87,15 @@ Work wherever you were spawned; where that is, is the operator's call, not this 
 carries the claim's nonce, and this skill cuts no branch.
 
 Done when the claim answers `won`. **Read these codes off `build claim`, whose numbers above `11`
-are its own group's:** `15` is a proven loss (`BACKED-OFF`); `7` is a proven-absent or closed epic
+are its own group's:** `15` is a proven loss, and `BACKED-OFF` unless one arm opens it — where the
+winning marker's session is provably gone, the refusal prints the succession, and
+`fabrika build adopt $epic_number --session <its session id> --reason "<why>"` then
+`fabrika build release $epic_number --token <the token adopt prints>` clears the stranded claim, after
+which the `--purpose plan` claim above wins normally. **Provably gone is read, never inferred from
+silence**: `fabrika build claims stale` lists every claim standing past a horizon and calls no session
+dead, so the adopt is your judgment, attested on the board with your reason on it — post one you
+would defend, and `BACKED-OFF` otherwise. The route is withheld when the winner is a sibling lane of
+your own session, because `build adopt` refuses your own session. `7` is a proven-absent or closed epic
 (`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
 report the axis, and do not route around it with an override. Exits `21` and `16` are not reachable
 at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
@@ -278,6 +286,14 @@ exit `20`, so `ledger child` refuses it at mint instead of publishing an issue n
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
+**A `type:decision` child is always held.** `--type type:decision --ready-for agent` is refused on
+exit `10` before anything is read: a build claim admits a decision only against a ruling comment
+recorded on **that** issue, and a child you just minted carries none — so the pair publishes a child
+every builder refuses, which parks the whole epic lane.
+Naming the epic's own ruling comment does not open it either; the citation binds to the claimed
+issue. Mint the child `--ready-for human` with `--assignee`, and once the ruling is recorded on the
+child a control-plane human flips it with `fabrika decision rule <n> --cites <child-comment-url>`.
+
 **Choosing that assignee is yours when the work belongs to the team, and not yours when it does
 not.** Pick from the repository's contributors and say in the child body why — a wrong pick is one
 re-assignment. But where the epic says the owner sits *outside* the roster you can see (a legal
@@ -334,6 +350,21 @@ the line exactly like a sibling's number — the block keeps it, and step 8's `l
 the graph. There is no raw `gh api` write for a cross-epic edge, and an edge the block does not name
 is an edge the epic body does not show.
 
+**Read the epic's own blockers first, and put every open one on every child's line.** Nothing else
+carries that edge down: the epic takes its `gate` claim while its blockers are open, `plan flip`
+makes every child pickable, and each child's build claim reads that child's edges alone — so a
+blocker recorded only at epic level fences the epic and nobody else, and every child is buildable
+against a contract that has not landed. The ref goes in the same shape as any other prerequisite:
+
+```bash
+fabrika build eligible $epic_number
+```
+
+`eligible` means there is nothing to carry; `16` names every open blocker, and those are the refs.
+
+A blocker that is itself a child of this epic is not carried down — that edge is your own sequencing.
+The gate reds `DROPPED_EPIC_BLOCKER` on each child you dropped one from.
+
 The verb proves each out-of-epic target before it stages anything, so those refusals are about the
 target, not the shape: `24` says it is proven absent or is a pull-request number — the corpus names
 a blocking pull request by the issue its merge closes — and `11` says it could not be read at all.
@@ -372,7 +403,8 @@ fabrika ledger edges $epic_number --token <claim-token>
 
 It reads the epic's own block, writes every edge it requires, and proves each one by re-reading the
 graph. Done when it answers `reconciled` with `verified: true`. It is idempotent and reconciles
-rather than replaces, so re-running it writes nothing and an edge no ledger authored is left alone.
+rather than replaces, so re-running it writes nothing, re-reads nothing, and an edge no ledger
+authored is left alone.
 
 `9` means an edge was POSTed and does not read back, and `8` means the graph could not be re-read
 after a POST — both leave the graph UNKNOWN and need a human eye; say the epic body **is** written,
@@ -468,7 +500,9 @@ and every row below that seats one says so.
   id you aimed at is a `decision`, which is the founder's, so the answer you were about to record is
   not yours to record and the question stands open. Do not re-aim it at another verb — `grill rule`
   is the founder's too.
-- `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
+- `BACKED-OFF` — `15` at the claim: held by another lane, and no succession open to it. Nothing
+  read, written, or released. A `15` you adopted past is not this row — that lane went on and ends
+  wherever its run does.
 - `STOPPED` — everything the run cannot carry and no row above claims. Two kinds land here, and the
   `10` you cannot repair has always been the second: what leaves the run **UNKNOWN** — `3`, `11`, an
   unrepairable `4`/`5`/`6`/`25`, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after

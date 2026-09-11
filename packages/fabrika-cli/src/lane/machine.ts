@@ -2,25 +2,34 @@
  * The lane compiler — one `workflow.json` machine document in, one flat tea Transitions machine
  * per task out, everything a nested state library carried reduced to data.
  *
- * Structural recognitions replace every name-driven mechanism, and **two guard spellings are read**:
- * a `guard`/`actions` string is otherwise inert data.
+ * Structural recognitions replace every name-driven mechanism, and **four guard spellings are
+ * read**: a `guard`/`actions` string is otherwise inert data.
  *
  *   - An **array on an event** means guarded: `[taken-when-the-guard-holds, else-fallthrough]`, and
  *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`) — except
- *     under the two routing spellings below, whose fallthrough is the ordinary path and carries no
- *     error. The first arm's own spelling picks the guard, and only three kinds exist.
+ *     under the three routing spellings below, whose fallthrough is the ordinary path and carries no
+ *     error. The first arm's own spelling picks the guard, and only five kinds exist.
+ *     {@link LAP_GUARD} is the one that may repeat and the one that comes first: zero or more
+ *     `lap:<cause>` arms may precede the budget pair on a {@link MACHINERY_EVENT}, each naming the
+ *     target that lap's own cause folds to. It routes and nothing else — the lap is still spent, and
+ *     a cause no arm names still loops on the budget pair — which is what lets one `LAP` cell send a
+ *     ship-cell conflict to `build` while the machinery that only moved a head still self-targets.
  *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
  *     nothing: it picks which shell serves the round, and picking is not repairing.
  *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
  *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
- *     than folding to a terminal over an issue the board still calls buildable. Every
+ *     than folding to a terminal over an issue the board still calls buildable.
+ *     {@link DIAGNOSIS_GUARD} reads whether the `DONE` this event reports was proven off a diagnosis
+ *     comment instead of a pull request, and spends nothing either: an investigation opens no PR, so
+ *     the review its `DONE` used to reach could never be walked. Every
  *     other spelling is the budget guard, one inline counter comparison in the compiled cell, and
  *     **which counter it spends is the event's own polarity**: `FAIL` is a repair round and spends
  *     `retries`, {@link MACHINERY_EVENT} is the pipeline's own machinery failing and spends `laps`,
  *     every other event is a wait and spends `waits`. A queue dwell must not eat the
  *     budget a later repair draws on, and neither must a child collision at integrate; reading that
- *     off the event keeps it structural — beyond the two routing spellings, no guard name is
- *     consulted.
+ *     off the event keeps it structural — no guard NAME is consulted beyond the four routing
+ *     spellings, and a fifth spelled with their namespace is refused at compile rather than read as
+ *     the budget guard, which is what closes the set.
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -42,6 +51,7 @@ import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
 import {budgetWith} from "../cap-clearance.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
+import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 
 /**
@@ -109,6 +119,20 @@ export const CORRECTED_EVENT = "CORRECTED";
 export const CANCELLED_EVENT = "CANCELLED";
 
 export const LANDED_EVENT = "LANDED";
+
+/**
+ * The twelfth event, and the second that reaches no machine: a topology amendment, appended by
+ * `lane amend` to say that the lane's machine was re-derived from the epic's current
+ * `## Dependencies` block at this point in the log.
+ *
+ * Like {@link CORRECTED_EVENT} it is a fact about the lane rather than about a task, so no state
+ * holds a cell for it and the fold drops it before any message is dispatched. That is what keeps
+ * the log append-only across a topology change: the machine on disk is replaced, no recorded line
+ * is rewritten, and this line is where a reader finds out why the lines above it were folded by a
+ * machine whose task set differs. Its `tasks` payload is the set the amendment left behind, which
+ * is the whole audit of the change.
+ */
+export const AMENDED_EVENT = "AMENDED";
 
 /**
  * The finals a board-proven terminal lands in — the compiler's own states, never a document's.
@@ -190,6 +214,23 @@ export interface LaneMsg {
 	 * the second merge's answer and not the first's.
 	 */
 	readonly partial?: boolean;
+	/**
+	 * Whether the `DONE` this event reports was proven off a diagnosis comment rather than a pull
+	 * request — the `done:diagnosis` guard's whole input, relayed off `lane prove`'s no-PR arm.
+	 *
+	 * Not sticky and folded into no state field, for {@link LaneMsg.partial}'s reason: it is a fact
+	 * about *this* terminal. A lane that answered an investigation and then went round again on a
+	 * PR-bearing build must read the second terminal's answer and not the first's.
+	 */
+	readonly diagnosis?: boolean;
+	/**
+	 * The machinery cause the lap carried — the `lap:<cause>` guard's whole input, read straight off
+	 * the recorded line's own `cause` field rather than derived here.
+	 *
+	 * Not sticky, for {@link LaneMsg.partial}'s reason: it is a fact about *this* lap. A lane that
+	 * lapped on a conflicted base and lapped again on an ejection must read the second lap's cause.
+	 */
+	readonly cause?: string;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -219,6 +260,18 @@ export interface CompiledTask {
 	 */
 	readonly lapStates: ReadonlySet<string>;
 	/**
+	 * Per lap-guarded state, the causes its `lap:<cause>` arms route — empty for a state whose lap
+	 * cell is the plain budget pair.
+	 *
+	 * Carried because a lane's document is copied in at `lane open` and never re-copied, so a lane on
+	 * disk can hold a lap cell that predates a cause. Without this a machinery token whose whole point
+	 * is that it folds *somewhere else* would be accepted by the old cell and looped back into the
+	 * state it came from, spending the lap budget on a stage that will refuse identically every time.
+	 * {@link ROUTED_MACHINERY_CAUSES} in `report.ts` names which causes may not be swallowed that way,
+	 * and `applyEvent` refuses one this map does not carry.
+	 */
+	readonly lapRoutes: ReadonlyMap<string, ReadonlySet<string>>;
+	/**
 	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — the epic tail's
 	 * `ship:queued` `WIP` to `human:queue-stall`, and a child's `integrate` `WIP` to
 	 * `human:replay-stall`.
@@ -240,6 +293,16 @@ export interface CompiledTask {
 	 * falls out of the compilation rather than being restated as a special case.
 	 */
 	readonly partialStates: ReadonlyMap<string, ReadonlySet<string>>;
+	/**
+	 * The finals a {@link DIAGNOSIS_GUARD}-guarded arm targets — where a `DONE` proven off a
+	 * diagnosis comment lands.
+	 *
+	 * Carried so {@link deriveStatus} can name such a terminal instead of collapsing it into the
+	 * workflow's `complete`, which is what makes an investigation's finish readable as itself rather
+	 * than as the shipped one. Empty on every document declaring no such arm, so their status is
+	 * byte for byte what it always was.
+	 */
+	readonly diagnosisFinals: ReadonlySet<string>;
 	/**
 	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours.
 	 * Carried so a refusal can name the repair — re-record each as a `CLEARED` event — rather than
@@ -296,6 +359,70 @@ export const PARTIAL_GUARD = "merge:partial";
 const partialGuarded = (arm: unknown): boolean => isRecord(arm) && arm.guard === PARTIAL_GUARD;
 
 /**
+ * The third: the arm a `DONE` proven off a diagnosis comment takes ({@link LaneMsg.diagnosis}).
+ *
+ * An investigation opens no pull request, so the `review` its `DONE` used to fold into asked for an
+ * artifact that structurally could not exist — `lane brief` refused at 20 and the lane's only move
+ * left was a park that read as a fault. This arm carries such a `DONE` to a terminal of its own
+ * instead, and reads the prover's answer rather than the shell's word: `SHIPPED-PR` and
+ * `BUILT-NO-PR` map to the same `DONE` event, and only the no-PR arm of `lane prove` sets this.
+ *
+ * Namespaced for {@link PARTIAL_GUARD}'s reason: a bare word falls through to the budget guard,
+ * where a typo compiles, matches nothing and folds the lane down the very arm this diverts it from.
+ */
+export const DIAGNOSIS_GUARD = "done:diagnosis";
+
+const diagnosisGuarded = (arm: unknown): boolean => isRecord(arm) && arm.guard === DIAGNOSIS_GUARD;
+
+/**
+ * The fourth routing spelling: `lap:<cause>` takes the arm when the recorded lap carried that cause.
+ *
+ * It is the only one that may repeat, because it partitions a set rather than answering a yes/no —
+ * one `LAP` cell serves every machinery cause reaching that state, and they do not all fold the same
+ * way. Namespaced for {@link PARTIAL_GUARD}'s reason, and legal only on a {@link MACHINERY_EVENT}:
+ * a cause is a property a lap carries and no other event has one.
+ */
+const LAP_GUARD = /^lap:([a-z][a-z0-9-]*)$/;
+
+const lapGuardOf = (arm: unknown): string | undefined => {
+	if (!isRecord(arm) || typeof arm.guard !== "string") return undefined;
+	return LAP_GUARD.exec(arm.guard)?.[1];
+};
+
+/** A lap's leading `lap:<cause>` arms, in declaration order — the routes before the budget pair. */
+const lapRoutesOf = (
+	transition: ReadonlyArray<unknown>,
+): ReadonlyArray<{readonly cause: string; readonly target: string | undefined}> => {
+	const routes: Array<{cause: string; target: string | undefined}> = [];
+	for (const arm of transition) {
+		const cause = lapGuardOf(arm);
+		if (cause === undefined) break;
+		routes.push({
+			cause,
+			target: isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
+		});
+	}
+	return routes;
+};
+
+/** The four routing spellings, for the refusal below to name — every other guard is the budget. */
+const ROUTING_GUARDS = ["class:<name>", PARTIAL_GUARD, DIAGNOSIS_GUARD, "lap:<cause>"] as const;
+
+/**
+ * A guard spelled like a routing one and recognised as none of them.
+ *
+ * The namespace is what makes the closed set enforceable: a bare word is the budget guard by design
+ * and always was, but a colon spelling is a reach for a routing arm, and reading a typo of one as
+ * the budget guard is exactly the silent fallthrough the namespacing exists to prevent — it
+ * compiles, matches nothing, spends a counter and folds the event down the arm being diverted from.
+ * So it is a defect at compile rather than a lane that half-routes.
+ */
+const routingSpelling = (arm: unknown): string | undefined => {
+	if (!isRecord(arm) || typeof arm.guard !== "string" || !arm.guard.includes(":")) return undefined;
+	return lapGuardOf(arm) === undefined ? arm.guard : undefined;
+};
+
+/**
  * Fold the payloads an event carried into the state before any guard reads them — the classes a
  * `class:<name>` arm routes on, and the waits the event grants.
  *
@@ -341,12 +468,29 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const ctx = isRecord(context) ? context : {};
 	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
 
+	// The read-side backstop on the class seed. A declared entry outside the closed set matches no
+	// `class:<name>` arm, so the lane would route as unclassed with nothing said — the same silent
+	// miss `lane report --class` refuses at exit 38 on the event path. A NON-ARRAY declaration stays
+	// a silence: declaring nothing is not a defect, only declaring a spelling nobody can route is.
+	if (Array.isArray(ctx.classes)) {
+		for (const name of ctx.classes) {
+			if (typeof name === "string" && (SHIP_CLASS_NAMES as ReadonlyArray<string>).includes(name)) {
+				continue;
+			}
+			defects.push(
+				`task "${taskId}": context \`classes\` declares ${JSON.stringify(name)} — outside the class vocabulary (${SHIP_CLASS_NAMES.join("/")})`,
+			);
+		}
+	}
+
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
 	const guardedStates = new Set<string>();
 	const lapStates = new Set<string>();
+	const lapRoutes = new Map<string, ReadonlySet<string>>();
 	const waitParks = new Map<string, Set<string>>();
 	const partialStates = new Map<string, Set<string>>();
+	const diagnosisFinals = new Set<string>();
 	for (const [name, node] of Object.entries(states)) {
 		if (isBoardTerminalState(name)) {
 			defects.push(
@@ -392,17 +536,32 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				continue;
 			}
 			if (Array.isArray(transition)) {
-				const targets = transition.map((arm) =>
-					isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
-				);
-				const [taken, fallthrough] = targets;
-				if (transition.length !== 2 || taken === undefined || fallthrough === undefined) {
+				const routes = lapRoutesOf(transition);
+				if (routes.length > 0 && msg !== MACHINERY_EVENT) {
 					defects.push(
-						`task "${taskId}": guarded "${eventName}" must be a two-arm array of \`{target}\` — [loop-while-budget-remains, else-fallthrough]`,
+						`task "${taskId}": "${eventName}" leads with a "lap:<cause>" arm — a cause is carried by a ${MACHINERY_EVENT} and by no other event, so this arm could never be taken`,
 					);
 					continue;
 				}
-				for (const target of [taken, fallthrough]) {
+				const budgetArms = transition.slice(routes.length);
+				const targets = budgetArms.map((arm) =>
+					isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
+				);
+				const [taken, fallthrough] = targets;
+				if (budgetArms.length !== 2 || taken === undefined || fallthrough === undefined) {
+					defects.push(
+						`task "${taskId}": guarded "${eventName}" must end in a two-arm pair of \`{target}\` — [loop-while-budget-remains, else-fallthrough], optionally preceded by "lap:<cause>" routes`,
+					);
+					continue;
+				}
+				const routeTargets = routes.map((route) => route.target);
+				if (routeTargets.some((target) => target === undefined)) {
+					defects.push(
+						`task "${taskId}": a "lap:<cause>" arm on "${eventName}" carries no \`target\` — a route that names no state routes nowhere`,
+					);
+					continue;
+				}
+				for (const target of [taken, fallthrough, ...(routeTargets as ReadonlyArray<string>)]) {
 					if (states[target] === undefined) {
 						defects.push(`task "${taskId}": "${eventName}" targets unknown state "${target}"`);
 					}
@@ -412,6 +571,18 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
 						const target = c.classes.includes(laneClass) ? taken : fallthrough;
+						return [{...c, type: target, was: c.type}, []];
+					};
+					continue;
+				}
+				if (diagnosisGuarded(transition[0])) {
+					// Recorded before the cell, and off `states` rather than `finals`, because `finals` is
+					// still being filled as the states are walked — a document declaring the arm above the
+					// state it targets would otherwise leave the terminal unnamed.
+					if (nodeType(states[taken]) === "final") diagnosisFinals.add(taken);
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						const target = m.diagnosis === true ? taken : fallthrough;
 						return [{...c, type: target, was: c.type}, []];
 					};
 					continue;
@@ -427,13 +598,22 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					};
 					continue;
 				}
+				const misspelled = routingSpelling(transition[0]);
+				if (misspelled !== undefined) {
+					defects.push(
+						`task "${taskId}": "${eventName}" is guarded on "${misspelled}", which is namespaced like a routing guard and matches none of them (${ROUTING_GUARDS.join("/")}) — it would compile as the budget guard, match nothing and fold this event down the arm the routing exists to divert it from`,
+					);
+					continue;
+				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
 				if (msg === "FAIL") guardedStates.add(stateName);
 				// A lap park pairs with nothing, because there is no lap grant to be short of: a resume
 				// out of one walks back into the state it left and parks again on the next machinery
 				// failure, which is loud. The wait axis's refusal exists because its grant does.
-				else if (msg === MACHINERY_EVENT) lapStates.add(stateName);
-				else {
+				else if (msg === MACHINERY_EVENT) {
+					lapStates.add(stateName);
+					lapRoutes.set(stateName, new Set(routes.map((route) => route.cause)));
+				} else {
 					const parks = waitParks.get(stateName) ?? new Set<string>();
 					parks.add(fallthrough);
 					waitParks.set(stateName, parks);
@@ -446,10 +626,14 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 							: [{...c, type: fallthrough, was: c.type}, []];
 					};
 				} else if (msg === MACHINERY_EVENT) {
+					// The route picks the target and never the budget: a routed lap is still a lap, so a
+					// spent one falls to the same park whichever cause carried it there.
+					const routed = new Map(routes.map((route) => [route.cause, route.target as string]));
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
+						const loop = (m.cause === undefined ? undefined : routed.get(m.cause)) ?? taken;
 						return c.laps < c.maxLaps
-							? [{...c, type: taken, laps: c.laps + 1, was: c.type}, []]
+							? [{...c, type: loop, laps: c.laps + 1, was: c.type}, []]
 							: [{...c, type: fallthrough, was: c.type}, []];
 					};
 				} else {
@@ -533,8 +717,9 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
 		: [];
-	// A document may seed the classes a lane starts under; every later change rides an event, so a
-	// non-array declaration is a silence rather than a defect the compiler could act on.
+	// A document may seed the classes a lane starts under; every later change rides an event. A
+	// non-array declaration is a silence, and an off-set spelling was already a defect above, so
+	// nothing here can be reached by a document that compiled.
 	const classes = Array.isArray(ctx.classes)
 		? ctx.classes.filter((name): name is string => typeof name === "string")
 		: [];
@@ -584,8 +769,10 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			openFinals,
 			guardedStates,
 			lapStates,
+			lapRoutes,
 			waitParks,
 			partialStates,
+			diagnosisFinals,
 			staleGrants,
 			extras,
 		},

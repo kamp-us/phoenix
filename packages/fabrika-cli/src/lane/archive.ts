@@ -1,8 +1,9 @@
 /**
  * The archive judgement — is this lane's log one no sweep can ever judge?
  *
- * Half of what `lane archive` needs before it moves a directory; the other half (the issue reads
- * closed) is a board fact and lives at the verb. This module reads no disk and writes none.
+ * The whole entitlement `lane archive` needs before it moves a directory, the closed-issue gate that
+ * used to stand beside it having been retired. This module reads no disk and writes none; the verb's
+ * remaining board work is retracting the lane claim, not judging the log.
  *
  * The judgement is [`migrate.ts`](migrate.ts)'s, deliberately and by call rather than by
  * re-derivation: the lanes an archive is for are exactly the ones `lane migrate` already refuses as
