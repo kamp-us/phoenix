@@ -147,6 +147,12 @@ export const judge = (
 	};
 };
 
-/** Whole minutes between two instants, floored at zero — a clock that ran backwards is age 0. */
-const ageInMinutes = (epochMs: number, nowEpochMs: number): number =>
+/**
+ * Whole minutes between two instants, floored at zero — a clock that ran backwards is age 0.
+ *
+ * Exported because `build claims stale` measures a claim marker's silence the same way this module
+ * measures a lane's, and two derivations of "how long since" would let the two sweeps disagree about
+ * one stranded lane by a minute at the horizon.
+ */
+export const ageInMinutes = (epochMs: number, nowEpochMs: number): number =>
 	Math.max(0, Math.floor((nowEpochMs - epochMs) / 60_000));
