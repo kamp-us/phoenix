@@ -144,8 +144,10 @@ prevent. Lane 9080 was the live instance
 ([#9094](https://github.com/kamp-us/phoenix/issues/9094)).
 
 The premise was wrong about what a removal costs. `git worktree remove` takes the checkout and never
-the branch, which this record already states elsewhere, so a commit the tree's own lane branch
-reaches stays addressable by name afterwards and is nothing to lose. **The proof now reads: no commit
+the branch — `build retire`'s own description says so ("The removal takes the tree, never the
+branch"), and it is the fact ADR [0324](0324-retire-superseded-lane-branch.md) rests on when it
+retires a superseded lane branch by renaming it rather than deleting it. So a commit the tree's own
+lane branch reaches stays addressable by name afterwards and is nothing to lose. **The proof now reads: no commit
 the tree's HEAD reaches is unreached by every branch, remote-tracking ref and tag of this clone** —
 the commits a removal would strand, which is a detached HEAD's orphans and nothing else. The count is
 one `git rev-list --count HEAD --not --branches --remotes --tags` in the subject's own directory,
