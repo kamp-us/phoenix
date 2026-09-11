@@ -29,7 +29,9 @@
  * retracts the claim and the adopt together. No TTL, no lease, no steal — the successor
  * writes a comment an ACL check reads, exactly like every other authority in this protocol, and the
  * adopt names the inheriting lane by its whole token so succession does not re-widen ownership back
- * to a session.
+ * to a session. **The `15` names that route**, under the same gate `release`'s foreign-claim refusal
+ * names it: a claim lost to another session had no pointer to the one verb that resolves it, so an
+ * agent following its skill to the letter stopped at a stranded lane it could have taken.
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
  * The fence decides what may *start*, so a campaign paused mid-lane must not strand a
@@ -636,13 +638,22 @@ export const runClaim = (
 						`${CLAIM}: could not retract this run's own marker (comment ${posted.value.id}): ${retracted.reason}.`,
 					]
 				: [`${CLAIM}: retracted this run's own marker (comment ${posted.value.id}).`];
+		// The remedy line rides the same gate `build release`'s does: `build adopt` refuses a
+		// --session naming this very session, so pointing a sibling lane of this session at it would
+		// name a route that cannot run.
+		const succession =
+			ownership._tag === "Foreign" && !ownership.sameSession
+				? [
+						`${CLAIM}: if that session is gone, adopt it first: fabrika build adopt ${number} --session ${ownership.marker.session} --reason <why>, then fabrika build release ${number} --token <the token adopt prints>. "fabrika build claims stale" lists every claim standing past a horizon.`,
+					]
+				: [];
 		// Anything holding a winning marker that is not this run's is a loss, whatever resolved it —
 		// `Unclaimed` is the only remaining tag, and it means this run's OWN marker is the unauthorized one.
 		return ownership._tag !== "Unclaimed"
 			? refuse(
 					CLAIM_NOT_MINE,
 					`${CLAIM}: lost to ${ownership.marker.token} (posted ${ownership.marker.createdAt}, authorized).`,
-					[...notes, ...trailer],
+					[...notes, ...trailer, ...succession],
 				)
 			: refuse(
 					CLAIM_NOT_MINE,

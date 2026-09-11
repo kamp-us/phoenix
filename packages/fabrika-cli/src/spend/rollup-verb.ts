@@ -1,16 +1,4 @@
-/**
- * `spend rollup` — one command that answers what fabrika's runs cost, from persisted data.
- *
- * It reads the durable ledger and nothing else: no transcript is re-parsed, no process is spawned,
- * no operator supplies a path to a run. That is what makes it the epic's acceptance test — a number
- * a human or an agent can ask for on demand without slowing a lane.
- *
- * **It cannot gate.** No threshold flag, no budget option, and no exit code that varies with the
- * size of a total. The non-zero codes below are all about whether an answer could be *produced*,
- * never about how big it was.
- *
- * See `spend rollup --help` for results and exit codes.
- */
+/** Summarize native response usage and coverage, retaining separately labelled legacy totals. */
 import {Effect, type FileSystem, Result} from "effect";
 import {type CapAndCount, capAndCount} from "../evidence.ts";
 import {exists, readFile} from "../io/fs.ts";
@@ -21,7 +9,6 @@ import {
 	NOTHING_MEASURED,
 	WINDOW_SELECTED_NO_ROWS,
 } from "./codes.ts";
-import {readSpendLedger} from "./ledger.ts";
 import {
 	type DayTotals,
 	type ResolvedWindow,
@@ -32,6 +19,8 @@ import {
 	type SpendTotals,
 	type StageArmTotals,
 } from "./rollup.ts";
+import {readUsageLedger} from "./usage-ledger.ts";
+import {rollUpUsage, type UsageScope} from "./usage-rollup.ts";
 
 const VERB = "fabrika spend rollup";
 
@@ -73,7 +62,7 @@ const bound = (rollup: Rollup): BoundedRollup => ({
 	byStageArm: topSpenders(rollup.byStageArm),
 });
 
-export interface RollupOptions {
+export interface RollupOptions extends UsageScope {
 	/** Path to the durable spend ledger. */
 	readonly ledger: string;
 	/** Inclusive lower bound, or `null` for unbounded. */
@@ -92,7 +81,12 @@ const totalsFields = (totals: SpendTotals): ReadonlyArray<string> => [
 ];
 
 /**
- * The line format is documented in `spend rollup --help`.
+ * One record per line, first field naming the record's kind — so `grep '^day'` is the breakdown and
+ * the unread counts sit in the same answer as the total they qualify.
+ *
+ * Each breakdown's `…More` count prints even at `0`, so "capped at exactly its length" and "the
+ * remainder line is missing" never look alike, and it prints beside its own rows rather than in a
+ * block of its own so one grep still reads a whole breakdown.
  */
 const render = (rollup: BoundedRollup): string => {
 	const t = rollup.totals;
@@ -168,9 +162,23 @@ export const runRollup = (
 			);
 		}
 
-		const read = readSpendLedger(text.success);
+		const ledger = readUsageLedger(text.success);
+		if (ledger.records.length > 0 && (options.since !== null || options.until !== null))
+			return refuse(
+				FAILED,
+				`${VERB}: version-2 records have no timestamps; use --issue or --run instead of date bounds.`,
+			);
+		const scoped = options.issue != null || options.run != null || options.repo != null;
+		const read = {
+			rows: scoped ? [] : ledger.legacy,
+			skipped: ledger.diagnostics.malformed + ledger.diagnostics.newerVersion,
+			skips: {
+				malformed: ledger.diagnostics.malformed,
+				newerVersion: ledger.diagnostics.newerVersion,
+			},
+		};
 		const skipped = {total: read.skipped, ...read.skips};
-		if (read.rows.length === 0) {
+		if (ledger.legacy.length === 0 && ledger.records.length === 0) {
 			return refuse(
 				NOTHING_MEASURED,
 				`${VERB}: ${path} was read in full and yielded no rows — nothing to sum.`,
@@ -180,7 +188,7 @@ export const runRollup = (
 
 		const rollup = rollUp(read, window);
 		const bounds = `${options.since ?? "the first row"} .. ${options.until ?? "the last row"}`;
-		if (rollup.totals.runs === 0) {
+		if (rollup.totals.runs === 0 && ledger.records.length === 0 && !scoped) {
 			return refuse(
 				WINDOW_SELECTED_NO_ROWS,
 				`${VERB}: ${read.rows.length} row(s) in ${path}, none of them within ${bounds} — an empty window, not an empty ledger.`,
@@ -189,6 +197,26 @@ export const runRollup = (
 		}
 
 		const bounded = bound(rollup);
+		const usage = rollUpUsage(ledger, options);
+		const legacy = {
+			attribution: "unavailable",
+			categories: "historical-four-component",
+			excludedByScope: scoped ? ledger.legacy.length : 0,
+		};
 		const scope = `${VERB}: summed ${rollup.totals.runs} run(s) from ${path} within ${bounds}; ${rollup.totals.measuredRuns} carried a reconstructed spend. ${skippedNote(skipped)}${rollup.undatedRows === 0 ? "" : ` ${rollup.undatedRows} row(s) carry no readable timestamp and this bounded window excluded them.`}`;
-		return answer(options.json ? JSON.stringify(bounded) : render(bounded), [scope]);
+		return answer(
+			options.json
+				? JSON.stringify({...bounded, legacy, usage})
+				: [
+						render(bounded),
+						`legacy\t${JSON.stringify(legacy)}`,
+						...Object.entries(usage).map(
+							([key, value]) => `usage.${key}\t${JSON.stringify(value)}`,
+						),
+					].join("\n"),
+			[
+				scope,
+				`${VERB}: version-2 totals cover ${usage.responses} responses; coverage ${usage.coverage.state}. Legacy totals above have no issue/run attribution.`,
+			],
+		);
 	});

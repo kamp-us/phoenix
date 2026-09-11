@@ -243,6 +243,39 @@ describe("runClaim", () => {
 		expect(
 			shell.requests.some((line) => /DELETE \S+\/repos\/o\/r\/issues\/comments\/9001/.test(line)),
 		).toBe(true);
+		// The refusal used to end here, and an agent reading it had no pointer to the one verb that
+		// resolves a claim whose session never came back.
+		const succession = out.stderr.find((line) => line.includes("fabrika build adopt")) ?? "";
+		expect(succession).toContain("fabrika build adopt 4312 --session s-77aa --reason <why>");
+		expect(succession).toContain("fabrika build release 4312 --token <the token adopt prints>");
+		expect(succession).toContain("fabrika build claims stale");
+	});
+
+	/**
+	 * The same refusal against a SIBLING lane of this session, where the route it would name cannot
+	 * run: `build adopt` refuses a `--session` naming this very session. `build release`'s own
+	 * pointer is gated the same way, so the two refusals stay one sentence.
+	 */
+	it("withholds the adopt pointer when the winner is another lane of this same session", async () => {
+		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim({...options, uuid: SIBLING_UUID, token: null}),
+				Layer.merge(
+					unblocked([
+						[ISSUE, CLAIMABLE],
+						[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
+						[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
+						[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
+						[perm("agent"), WRITES],
+						[DELETE, NO_CONTENT],
+					]).layer,
+					NO_CAMPAIGNS.layer,
+				),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("fabrika build adopt"))).toBe(false);
 	});
 
 	it("never lets marker TEXT confer authority — an unauthorized earlier marker does not win", async () => {

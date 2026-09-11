@@ -208,24 +208,9 @@ count derivation and waiting behavior; the
 
 ## The `spend` group
 
-Measure token spend from a transcript or aggregate recorded runs. Use `spend --help`.
-The measurement definition is
-[ADR 0112](../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md);
-the [transcript reader](../src/spend/token-spend.ts) implements it.
-
-### The spend ledger
-
-Recorded measurements live in the gitignored `.fabrika/spend-ledger.jsonl`. There is no in-repo
-producer today; an operator or another producer supplies the rows.
-The [ledger module](../src/spend/ledger.ts) owns the stored row format and version handling.
-
-```bash
-node packages/fabrika-cli/src/bin.ts spend rollup
-node packages/fabrika-cli/src/bin.ts spend rollup --since 2026-08-01 --until 2026-08-09
-node packages/fabrika-cli/src/bin.ts spend rollup --json
-```
-
-Read `spend rollup --help` for the date-window rules and how the answer reports unread measurements.
+Record and inspect model usage, token counters and coverage. Use `spend --help` and
+[usage recording](./usage-recording.md) for host support, recovery and summary fields.
+Historical spend remains separately identified in the same commands.
 
 ## The `spike` group
 

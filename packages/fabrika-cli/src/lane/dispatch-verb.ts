@@ -5,6 +5,7 @@ import {dependencyReconcilerKey} from "../config/keys/dependency-reconciler.ts";
 import {readKey} from "../config/read-key.ts";
 import {execCapture, execStatus} from "../io/exec.ts";
 import {sessionIdFrom, sessionIdUnset} from "../io/session-id.ts";
+import {collectCodexDispatch} from "../spend/codex-dispatch-collector.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readBrief} from "../wire/lane-brief.ts";
 import type {BriefOptions} from "./brief-verb.ts";
@@ -229,8 +230,29 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 					`${VERB}: dependency reconciliation changed tracked files; retained ${actual}.`,
 				);
 		}
+		const codexHome = options.env.CODEX_HOME ?? path.join(options.env.HOME ?? "", ".codex");
+		const usage = {
+			sessions: path.join(codexHome, "sessions"),
+			ledger: path.join(primary, ".fabrika", "spend-ledger.jsonl"),
+			state: path.join(common.stdout.trim(), "fabrika-codex-usage", "dispatch"),
+			worktree: actual,
+			work: {
+				repo: options.repo,
+				issue: Number(parsed.value.issue.split("/").at(-1)),
+				run: `lane:${options.lane}:${task}`,
+			},
+		};
+		yield* collectCodexDispatch(usage);
 		const child = yield* Effect.scoped(
 			Effect.gen(function* () {
+				yield* Effect.forkScoped(
+					Effect.forever(
+						Effect.gen(function* () {
+							yield* Effect.sleep("5 seconds");
+							yield* collectCodexDispatch(usage);
+						}),
+					),
+				);
 				const handle = yield* ChildProcess.make("codex", ["exec", "--cd", actual, "-"], {
 					cwd: actual,
 					env: {...options.env, FABRIKA_SESSION_ID: identity},
@@ -249,7 +271,7 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 				);
 				return code;
 			}),
-		);
+		).pipe(Effect.ensuring(collectCodexDispatch(usage)));
 		if (child !== 0)
 			return refuse(
 				LANE_UNREADABLE,
