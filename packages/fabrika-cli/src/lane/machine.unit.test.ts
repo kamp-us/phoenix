@@ -362,6 +362,28 @@ describe("the compiler — structural recognition", () => {
 		]);
 	});
 
+	// A `dirty` base is machinery, so it spends a lap rather than one of the repair rounds the
+	// retry budget bounds — and its round is a builder's, because only a builder moves a branch.
+	it("folds a base-conflicted lap at ship to build, spending a lap and no retry", () => {
+		const lane = compiled(coderWorkflow());
+
+		const conflicted = driven(
+			lane,
+			"issue",
+			["WIP", "DONE", "PASS", MACHINERY_EVENT],
+			"base-conflicted",
+		);
+		const drifted = driven(
+			lane,
+			"issue",
+			["WIP", "DONE", "PASS", MACHINERY_EVENT],
+			"head-behind-base",
+		);
+
+		expect(conflicted.state).toMatchObject({type: "build", retries: 0, laps: 1});
+		expect(drifted.state).toMatchObject({type: "ship", retries: 0, laps: 1});
+	});
+
 	it("routes a UI-class lane through build:ui and review:ui, and back to build:ui on a FAIL", () => {
 		const lane = compiled(coderWorkflow());
 
@@ -496,7 +518,29 @@ describe("the compiler — refusals", () => {
 		const workflow = twoPhaseWorkflow();
 		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [{target: "doing"}];
 
-		expect(defectsOf(workflow)).toContain("two-arm array");
+		expect(defectsOf(workflow)).toContain("two-arm pair");
+	});
+
+	it("refuses a lap:<cause> arm on an event that carries no cause", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.FAIL"] = [
+			{target: "doing", guard: "lap:base-conflicted"},
+			{target: "doing", guard: "retriesRemaining", actions: "incrementRetries"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("could never be taken");
+	});
+
+	it("refuses a lap:<cause> arm that names no target", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "checking").on["TASK_A.LAP"] = [
+			{guard: "lap:base-conflicted"},
+			{target: "checking", guard: "lapsRemaining", actions: "incrementLaps"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain("routes nowhere");
 	});
 
 	it("refuses a machine with no parallel phase, and one with no readable onDone pair", () => {

@@ -141,6 +141,10 @@ export const runReport = <R>(
 			resolved.event,
 			at,
 			classed.classes,
+			null,
+			null,
+			null,
+			caused._tag === "Caused" ? caused.cause : null,
 		);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
@@ -216,6 +220,7 @@ export const runReport = <R>(
 					null,
 					proved.partial,
 					proved.diagnosis ? true : null,
+					caused._tag === "Caused" ? caused.cause : null,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);

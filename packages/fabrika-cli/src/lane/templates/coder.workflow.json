@@ -104,6 +104,7 @@
 							"ship": {
 								"on": {
 									"ISSUE.LAP": [
+										{ "target": "build", "guard": "lap:base-conflicted" },
 										{
 											"target": "ship",
 											"guard": "lapsRemaining",
