@@ -3,8 +3,10 @@ import {readGoldenFixture} from "../golden-fixture.ts";
 import {classifyPark, isPark} from "../recipe/parks.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
+import {seedClasses} from "./class-seed.ts";
 import {
 	choreWorkflow,
+	coderTemplateText,
 	coderWorkflow,
 	stateNode,
 	twoPhaseWorkflow,
@@ -46,6 +48,8 @@ type Step =
 	| string
 	| {
 			readonly event: string;
+			/** Overrides the run's `classes`, so a step past the first can carry its own set. */
+			readonly classes?: ReadonlyArray<string>;
 			readonly waitGrant?: number;
 			readonly partial?: boolean;
 			readonly diagnosis?: boolean;
@@ -66,14 +70,16 @@ const drive = (
 	};
 	const reached = events.map((step, index) => {
 		const event = typeof step === "string" ? step : step.event;
-		// Only the first event carries the classes, so these tests also prove they stand afterwards.
+		// Only the first event carries the classes unless a step names its own, so these tests also
+		// prove they stand afterwards.
+		const stepClasses = typeof step === "string" ? undefined : step.classes;
 		const applied = applyEvent(
 			lane,
 			statesOf(),
 			task,
 			event,
 			"2026-08-17T00:00:00.000Z",
-			index === 0 ? classes : null,
+			stepClasses ?? (index === 0 ? classes : null),
 			typeof step === "string" ? null : (step.waitGrant ?? null),
 			typeof step === "string" ? false : (step.partial ?? false),
 			typeof step === "string" ? null : (step.diagnosis ?? null),
@@ -400,6 +406,34 @@ describe("the compiler — structural recognition", () => {
 			"review",
 			"ship",
 			"shipped",
+		]);
+	});
+
+	// The two below pin the routing an investigation read as a surprise: a `ui` class standing over
+	// the task takes the `review` arm into `review:ui` however the head's own diff partitions,
+	// because the class is sticky and an absent `--class` on the `PASS` changes nothing. Neither is a
+	// fix — they fix the leaf so a later narrowing of the sticky rule has to state itself here.
+	it("routes a seeded UI lane's classless PASS into review:ui, with no class on any event line", () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", "PASS"])).toEqual([
+			"build:ui",
+			"review",
+			"review:ui",
+		]);
+	});
+
+	it("lets the PASS's own class set replace the standing one, so a text-only head walks to ship", () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", {event: "PASS", classes: ["code"]}])).toEqual([
+			"build:ui",
+			"review",
+			"ship",
 		]);
 	});
 
