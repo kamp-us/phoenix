@@ -21,7 +21,8 @@ all, run by whichever verb does the appending: `lane report` on the shell's path
 on yours. Neither is a read you run separately.
 **Capability set:** shell in the checkout you were spawned in, repo-scoped token, subagent spawns.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
-template through `lane migrate`, comments on the driven issue, whatever a recipe verb writes on
+template through `lane migrate <lane>`, which is the form that writes that lane and no other,
+comments on the driven issue, whatever a recipe verb writes on
 its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
@@ -763,12 +764,19 @@ and never a longer wait.
 **A lane booted before this cell existed cannot reach it, and will refuse the shipper's ordinary
 `QUEUED` instead.** `lane open` copies the template in at boot and never overwrites it, so a machine
 change reaches new lanes only — while the token map that feeds it is code and reaches every lane at
-once. Bring the lanes on disk up to the committed machine before driving them:
+once. Bring the lane you are about to drive up to the committed machine, and **name it** — the
+sanctioned write is your own lane's document, and an unaddressed run writes every lane in the root,
+including the ones other drivers are mid-drive on:
 
 ```bash
-node <fabrika> lane migrate --check   # judge every lane, write nothing
-node <fabrika> lane migrate           # migrate the ones the swap provably does not move
+node <fabrika> lane migrate <lane> --check   # judge that one lane, write nothing
+node <fabrika> lane migrate <lane>           # migrate it if the swap provably does not move it
 ```
+
+A key matching no lane under the root is exit `7` with nothing judged and nothing written — never a
+sweep of zero reading as clean. The whole-root sweep is still what the bare verb runs, and it stays
+the release-time shape: type it when a machine change has just landed and every lane on disk owes
+the swap, not when you are driving one lane.
 
 It writes only where the lane's own event log folds to the same state through both machines. Exit
 `37` names the lanes it would have moved and leaves them alone — that is a human's call, not a
@@ -1474,7 +1482,7 @@ chore's transcript is posted.
 It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
 so the lane folded past the arm that would have sent it round again. Report the terminal
 as it reads — nothing here is yours to change — and name the two verbs that fix it:
-`fabrika lane migrate` where the lane's machine predates the guard, then
+`fabrika lane migrate <lane>` where that lane's machine predates the guard, then
 `fabrika lane reconcile --check`, which says which lanes are in this state and appends the correcting
 line when re-run without the flag.
 
