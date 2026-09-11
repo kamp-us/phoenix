@@ -60,7 +60,7 @@ answer describes a tree you are not standing in. `lane brief` resolves the same 
 and puts the answer in every spawn prompt's `fabrika:` field, so you never write the path into a
 prompt by hand.
 
-## 1 — Claim the lane, then boot or resume
+## 1 — Read the seats, claim the lane, then boot or resume
 
 The lane you were invoked on is `$lane_key`, and every command below carries it — an issue number,
 or `chore:<name>` for a chore drive, which is how a chore is addressed by name. A blank there
@@ -69,6 +69,32 @@ blank, because the harness hands the preload an empty argument and the key arriv
 brief instead — so on a blank, take the lane your caller named there. Only when no caller named
 one are you actually without a key, and then ask for it before running a verb. Never invent one
 nobody named.
+
+**Read the seats before you claim.** A claim is a marker on the board and a lane somebody has to
+remember to release, so spending one on a pipeline with no room for it costs a whole operator spawn
+to learn what a read answers for free:
+
+```bash
+node <fabrika> lane seats
+```
+
+It writes nothing — no lane directory, no marker, no log line — which is the whole reason it goes
+first. `free`, or `uncapped` on a repo that declares no cap, goes on to the claim below. `full`
+**ends the run `LANE-WAITING` right here**, naming the answer's own `retryAfter` instant as the
+earliest a re-read is admissible: nothing is claimed, nothing exists under `.fabrika/lanes`, and
+there is no lane to park or release. Never claim anyway to "see what happens" — `lane open` behind
+the claim refuses at `51` and leaves you holding a marker for a lane that never booted, which is the
+whole shape this read replaces. Exit `11` is UNKNOWN: the cap or the root did not read, so how full
+the pipeline is went unanswered rather than answering free — end `STOPPED` naming the code.
+
+**The cap counts issue lanes, so a `chore:<name>` drive is never the one turned away.** A chore
+lane lives under a root of its own that nothing counts, and this read is over the issue-lane root.
+Run it anyway on a chore key — it costs one listing and tells you what the pipeline is carrying —
+but a `full` answer there is not your run's to wait on.
+
+**The race is accepted and needs no lock.** Two drivers can both read a free seat and both claim;
+the loser takes `51` out of `lane open` below and ends the same `LANE-WAITING` one step later. So a
+`free` here is not a promise, and a `51` further down is not this read having lied.
 
 **Claim it before you write anything.** Two drivers once ran one epic's children at the same time,
 each folding its own machine-local ledger and each spawning its own builder on the same repair, and
@@ -131,6 +157,13 @@ node <fabrika> lane open $lane_key
 `lane open` places the template the key selects — the coder workflow for an issue number, the chore
 workflow for `chore:<name>` — so a chore drive needs no document written by hand. Its
 already-exists refusal is tolerated as resume, not treated as an error.
+
+**Exit `51` out of `lane open` is the cap, and it is the same wait step 1's read exists to catch
+earlier.** A seat freed between the read and the boot in the wrong direction, or another driver took
+the last one — either way nothing was written and the ending is `LANE-WAITING`, naming a re-read time
+one `lane seats` further on. The difference from the pre-claim ending is that you are holding a
+claim here, so **release it** (step 4's `lane release`) before you end: a marker outliving a lane
+that never booted is the exact wedge the reorder was for.
 
 **Exit `46` out of `lane open` is not a fallback that failed — it says the issue is an epic, so this
 one-task template is the wrong machine for it.** An issue key makes `lane open` read that issue's
@@ -1309,9 +1342,11 @@ Exit `0` is released (or `inert` on a chore key, which was never claimable). `31
 holds no claim — say so and stop; you never retract another driver's marker, including a sibling
 driver of your own session. `8` or `11` leaves
 whether the lane is still held UNKNOWN: name the code in your terminal line rather than reporting a
-release you cannot prove. A `STOPPED` run releases too, and so does a `LANE-WAITING` one — a claim
-outliving the driver that took it is the same lane nobody can pick up, and a lane handed back for a
-later re-read has to be claimable by whoever takes that pass.
+release you cannot prove. A `STOPPED` run releases too, and so does a `LANE-WAITING` one on the wait
+floor — a claim outliving the driver that took it is the same lane nobody can pick up, and a lane
+handed back for a later re-read has to be claimable by whoever takes that pass. The cap-full
+`LANE-WAITING` is the one ending that reaches no release at all: step 1 ended before the claim, so
+there is no marker of yours to retract and no worktree to give back.
 
 
 **A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
@@ -1573,11 +1608,14 @@ Every run ends as exactly one of — each naming what was recorded and what the 
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
 this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
-posted) · **`LANE-WAITING`** (a `ship:queued` re-read the recorder refused on the wait floor with
+posted) · **`LANE-WAITING`** (nothing is wrong and nothing is owed but time — two
+causes reach it. Step 1's `lane seats` answered `full`: the cap has no room, so no claim was taken,
+nothing exists under `.fabrika/lanes`, and the read's own `retryAfter` instant is named in the
+terminal line. Or a `ship:queued` re-read the recorder refused on the wait floor with
 exit `55` — the read happened, the record was refused, the log is byte-identical and the wait
 unspent; the PR and the earliest admissible re-read time named in the terminal line, nothing posted
-and no event recorded. The caller re-dispatches this lane on a later pass, no sooner than the time
-named, and spends no human: nothing is wrong and nothing is owed but time) · **`STOPPED`** (a verb
+and no event recorded. Either way the caller re-dispatches this lane on a later pass, no sooner than
+the time named, and spends no human) · **`STOPPED`** (a verb
 exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
