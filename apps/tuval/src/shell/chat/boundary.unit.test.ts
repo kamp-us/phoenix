@@ -165,16 +165,22 @@ describe("chat window boundary", () => {
 		expect(written.filter(([, tag]) => tag === undefined || !declared.has(tag))).toEqual([]);
 	});
 
-	it("agent runtime imports admit only the pure snapshot predicate and cursor decision", () => {
+	it("agent runtime imports admit only the pure snapshot predicate, cut-reply re-mark and cursor decision", () => {
+		// The third exception is `remarkCutReplies`, and it is the same class as the first two: a total
+		// function over transcript rows, no service and no machine behind it. The window needs it where
+		// the store's rows enter it — a page-back carries the bare copy of a reply the operator cut, and
+		// the session's record is the only thing that knows better (#8985). Addressed at `core/state.ts`
+		// rather than the barrel so this adds nothing to the graph `core/snapshot.ts` already pulls in.
+		const admitted = [
+			'import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";',
+			'import {remarkCutReplies} from "../../ai-agent/core/state.ts";',
+		];
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
 				.filter((line) => !line.includes('"../../ai-agent/history/cursor.ts"'))
 				.filter((line) => !/^import type\b/.test(line))
-				.filter(
-					(line) =>
-						line !== 'import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";',
-				)
+				.filter((line) => !admitted.includes(line))
 				.map((line) => `${name}: ${line.trim()}`),
 		);
 		expect(offenders).toEqual([]);

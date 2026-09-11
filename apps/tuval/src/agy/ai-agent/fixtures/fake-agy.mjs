@@ -22,6 +22,13 @@
  *   ledger already holds, and a fake that did so would hide the defect #8695 was about.
  * - SIGINT emits a well-formed terminal `result` with `status: "ERROR"` and `error: "interrupted"`,
  *   then exits 1. There is no `INTERRUPTED` *status*, because the real binary never emits one either.
+ * - **A reply streams as many `ACTIVE` `agent_response` deltas, not one.** The real binary emits one
+ *   per ~25 ms for the length of the answer (measured at v1.2.1), and the difference is load-bearing
+ *   for a stop: cut before the first delta the mapper has no `responseId` and mints the cut row under
+ *   `<cid>:response`, cut after one it marks the streamed row under `<cid>:<step_index>`. Only the
+ *   second is the shape a desk cut is, so `AGY_FAKE_STREAM_DELTAS` makes a turn stream that many
+ *   deltas `AGY_FAKE_DELTA_MS` apart before its `DONE` — long enough for a test to press Escape
+ *   mid-text. Unset, a turn is the single-delta one every case before #9194 drove.
  * - A prompt beginning `tools:` replays a captured **multi-call** planner step as the binary
  *   serialises one on the live wire: a `tool` step per call, each with its own `step_index` and its
  *   own `tool_info.output` (`CAPTURED_CALLS`).
@@ -89,6 +96,10 @@ const conversationId = flagValue("--conversation") ?? "fake-0000-1111-2222";
 
 /** How long a turn withholds its first byte, so "returned at the send" is observable rather than raced. */
 const TURN_DELAY_MS = Number(process.env.AGY_FAKE_TURN_DELAY_MS ?? "300");
+
+/** How many `ACTIVE` deltas the reply streams before its `DONE`, and how far apart. */
+const STREAM_DELTAS = Number(process.env.AGY_FAKE_STREAM_DELTAS ?? "0");
+const DELTA_MS = Number(process.env.AGY_FAKE_DELTA_MS ?? "25");
 
 write({
 	event: "init",
@@ -205,6 +216,19 @@ const runTurn = async (content) => {
 			text_delta: "you said ",
 		},
 	});
+	for (let delta = 0; delta < STREAM_DELTAS; delta += 1) {
+		await sleep(DELTA_MS);
+		write({
+			event: "step_update",
+			step_update: {
+				conversation_id: conversationId,
+				step_index: index + 1,
+				state: "ACTIVE",
+				step_type: "agent_response",
+				text_delta: `chunk-${delta} `,
+			},
+		});
+	}
 	await sleep(20);
 	write({
 		event: "step_update",

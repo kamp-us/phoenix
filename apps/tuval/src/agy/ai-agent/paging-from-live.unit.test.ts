@@ -20,9 +20,15 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {promptItem, upsertItem} from "../../ai-agent/core/index.ts";
+import {
+	foldEvent,
+	initialState,
+	promptItem,
+	remarkCutReplies,
+	upsertItem,
+} from "../../ai-agent/core/index.ts";
 import {isRefusal, type TranscriptPage} from "../../ai-agent/history/index.ts";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {ItemId, TranscriptItem} from "../../ai-agent/ports/index.ts";
 // `rows.ts` rather than the chat barrel: the barrel re-exports `.tsx`, which the node tsconfig's
 // file list does not carry, so importing it from here is a TS6307 on `pnpm typecheck`.
 import {mergeOlder} from "../../shell/chat/rows.ts";
@@ -418,5 +424,70 @@ describe("paging an agy window back from its own live tail", () => {
 		// holding under this very cursor, and page behind a boundary it has walked past.
 		expect(history.cursorAliases.get("cid:3")).toBe("cid:line:3");
 		expect(texts(served(pageBefore("cid", lines, [], "cid:3")).items)).toEqual(["q1", "a1"]);
+	});
+});
+
+/**
+ * The same seam read by the cut-reply record (#8985/#9046). A reply the operator stopped is a fact
+ * only this process holds — agy's log writes the cut reply as `status: "DONE"` — so the mark has to
+ * be re-applied to the store's rows when the window pages one back in. The record is filled from the
+ * *live* row, and the page answers in stored ids, which is the same two-space split every case above
+ * is about: matching on `id` alone named no row on a real desk and the cut turn paged back in
+ * reading `Worked for …`.
+ *
+ * Both sides are the shipped ones and neither is hand-numbered: the record comes out of `foldEvent`
+ * over the real resumed stream, and the page out of `planPageOverTranscript` over the real log.
+ */
+describe("the cut-reply record across that seam", () => {
+	/** The resumed child's reply, as the window's own live tail holds it. */
+	const liveReply = () => {
+		const reply = liveTail(fixtures.liveJoinResumedStreamLines).at(-1);
+		if (reply?.kind !== "assistant") throw new Error("the resumed capture mints no reply row");
+		return reply;
+	};
+
+	/** The record after the operator stops that reply, as `foldEvent` fills it. */
+	const record = (): ReadonlyArray<ItemId> => {
+		const open = {...initialState("/repo"), phase: "ready" as const, sessionId: JOIN_CID};
+		return foldEvent(
+			open,
+			{kind: "item", item: {...liveReply(), interrupted: true}},
+			{itemLimit: 1},
+		).cutReplies;
+	};
+
+	/** The page row the record's one id reaches, and the assistant rows it must leave alone. */
+	const split = (page: ReadonlyArray<TranscriptItem>) => {
+		const named = page.filter((item) => item.alias !== undefined && record().includes(item.alias));
+		const replies = page.filter((item) => item.kind === "assistant");
+		return {named, others: replies.filter((item) => !named.includes(item))};
+	};
+
+	it("names the live row the stop was observed on", () => {
+		expect(record()).toEqual([liveReply().id]);
+	});
+
+	// Why the id-only match could never fire: the two spaces are disjoint by construction, so the
+	// record's live id is not any page row's `id` — it is one page row's `alias`.
+	it("names an id no page row carries as its own, and exactly one row's alias", () => {
+		const page = served(joinPage(null)).items;
+		expect(page.filter((item) => record().includes(item.id))).toEqual([]);
+		const {named, others} = split(page);
+		expect(named.map((item) => item.kind)).toEqual(["assistant"]);
+		expect(named.map((item) => item.id)).not.toEqual([liveReply().id]);
+		// The negative case below is only a test if the log holds replies that were never cut.
+		expect(others.length).toBeGreaterThan(0);
+	});
+
+	it("marks the paged-in reply and leaves the store's finished replies bare", () => {
+		const page = served(joinPage(null)).items;
+		const {named, others} = split(page);
+		const marked = remarkCutReplies(page, record());
+		const cut = (id: string) => {
+			const row = marked.find((item) => item.id === id);
+			return row?.kind === "assistant" && row.interrupted === true;
+		};
+		expect(named.map((item) => cut(item.id))).toEqual([true]);
+		expect(others.map((item) => cut(item.id))).toEqual(others.map(() => false));
 	});
 });

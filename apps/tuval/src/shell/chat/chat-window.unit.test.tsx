@@ -24,7 +24,7 @@ import {
 } from "../../ai-agent/core/index.ts";
 import {isAiAgentSessionState} from "../../ai-agent/core/snapshot.ts";
 import {phases} from "../../ai-agent/core/state.ts";
-import {ItemId} from "../../ai-agent/ports/index.ts";
+import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {
 	DISPATCHED_KIND,
@@ -880,6 +880,46 @@ describe("paging", () => {
 		});
 		await waitFor(() => expect(view().cursor).toBe("p0"));
 		expect(view().atOldest).toBe(false);
+	});
+
+	/**
+	 * Criterion 8 of #8985: the call site itself, not its two halves. `remarkCutReplies` has its own
+	 * unit cases and `chatRows` is tested over a hand-re-marked array, so deleting the window's own
+	 * call reddened nothing — and the page the window holds is the only copy of a cut reply once the
+	 * checkpoint has paged past it. The page is keyed the way a real agy page is, stored id with the
+	 * live id in `alias`, and the record names the live one (#9046).
+	 */
+	it("re-marks a cut reply the page brings back, reading it off the session's record", async () => {
+		const cid = "8377fd63-b158-49b9-b2c1-2d89ed9135ce";
+		const line = <Item extends TranscriptItem>(item: Item, ordinal: number): Item => ({
+			...item,
+			id: ItemId.make(`${cid}:line:${ordinal}`),
+			alias: ItemId.make(item.id),
+		});
+		const AT = 1_756_000_000_000;
+		const cutTurn = {
+			items: [
+				line(userItem(`${cid}:7`, "write the essay", AT), 7),
+				line(thinkingItem(`${cid}:8`, "weighing it", AT + 100), 8),
+				line(assistantItem(`${cid}:9`, "I was half way thr", AT + 2_000), 9),
+			],
+			hasMore: true,
+		};
+		const state = withTranscript(transcriptOf(4), {
+			cutReplies: [ItemId.make(`${cid}:9`)],
+		});
+		const {scrolls, answerPage} = await openWindow(state);
+		await readerScrollsToTop(scrolls);
+		await act(async () => {
+			await answerPage({
+				...state,
+				lastPage: cutTurn,
+				pageOutcome: {status: "success", page: cutTurn},
+			});
+		});
+
+		expect(await screen.findByText("You stopped after 2.0s")).toBeDefined();
+		expect(screen.queryByText("Worked for 2.0s")).toBeNull();
 	});
 
 	it("drops the head row once the backend says there is nothing older", async () => {

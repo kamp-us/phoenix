@@ -12,7 +12,13 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {Effect, Fiber, Stream} from "effect";
 import {beforeEach, describe, expect, it} from "vitest";
-import {addUsage, emptyUsage, usageTotals} from "../../ai-agent/core/index.ts";
+import {
+	addUsage,
+	emptyUsage,
+	foldEvent,
+	initialState,
+	usageTotals,
+} from "../../ai-agent/core/index.ts";
 import {Mode, type ThinkingLevel} from "../../ai-agent/ports/index.ts";
 import type {AgentEvent} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
@@ -44,11 +50,17 @@ const launches = (): ReadonlyArray<ReadonlyArray<string>> =>
 		.filter((line) => line.trim().length > 0)
 		.map((line) => JSON.parse(line));
 
-const layerFor = (overrides: {readonly model?: string} = {}) =>
+interface Overrides {
+	readonly model?: string;
+	/** Extra fixture env, merged over `AGY_FAKE_LOG` — the fake's stream knobs ride here. */
+	readonly env?: Readonly<Record<string, string>>;
+}
+
+const layerFor = ({env, ...overrides}: Overrides = {}) =>
 	AgyAiAgent.layer({
 		binary: fakeAgy,
 		home,
-		env: {AGY_FAKE_LOG: argvLog},
+		env: {AGY_FAKE_LOG: argvLog, ...env},
 		...overrides,
 	});
 
@@ -61,7 +73,7 @@ const layerFor = (overrides: {readonly model?: string} = {}) =>
  */
 const drive = <A, E>(
 	program: (collected: Array<AgentEvent>) => Effect.Effect<A, E, TuvalAiAgent>,
-	overrides: {readonly model?: string} = {},
+	overrides: Overrides = {},
 ): Promise<A> =>
 	Effect.gen(function* () {
 		const agent = yield* TuvalAiAgent;
@@ -414,6 +426,77 @@ describe("the agy layer over a scripted binary", () => {
 		const composed = launches();
 		expect(composed).toHaveLength(2);
 		expect(composed[1]?.join(" ")).toContain("--conversation=fake-0000-1111-2222");
+	});
+
+	/**
+	 * The same stop, taken after the reply has started streaming — and carried one seam further, into
+	 * the core's own cut-reply register.
+	 *
+	 * Two things this file did not hold before #9194. **The cut lands mid-text**, so `mapper.ts` marks
+	 * the row it has been streaming into (`<cid>:<step_index>`) rather than minting the textless
+	 * `<cid>:response` a pre-stream cut gets — the shape a desk cut always has and the only one the
+	 * page-back join (#9046) can ever be asked about. And **the marked event is folded the way a
+	 * process folds it**: `state.cutReplies` is the record `remarkCutReplies` / `refillTranscript` read
+	 * when a paged-in row has to be re-marked (#8985), it is filled by nothing but this arm of
+	 * `foldEvent`, and the layer's error channel cannot force it — so a layer that stopped marking the
+	 * row would leave every assertion above standing and only this one red.
+	 */
+	it("marks a reply cut mid-stream and records it in the core's cut-reply register", async () => {
+		const collectedEvents = await drive(
+			(collected) =>
+				Effect.gen(function* () {
+					const agent = yield* TuvalAiAgent;
+					yield* agent.start({cwd: "/repo"});
+					yield* until(collected, (events) =>
+						events.some((event) => event.kind === "phase" && event.phase === "ready"),
+					);
+					yield* agent.prompt("something long");
+					// Escape is pressed on a reply that is already on screen: the wait is for the row,
+					// never for a sleep, so the cut is on the streamed id by construction.
+					yield* until(collected, (events) =>
+						events.some(
+							(event) =>
+								event.kind === "item" &&
+								event.item.kind === "assistant" &&
+								event.item.text.length > 0,
+						),
+					);
+					yield* agent.interrupt;
+					yield* until(
+						collected,
+						(events) => launches().length === 2 && readyPhases(events).length === 3,
+					);
+					return [...collected];
+				}),
+			{env: {AGY_FAKE_STREAM_DELTAS: "400", AGY_FAKE_DELTA_MS: "10"}},
+		);
+
+		const marked = collectedEvents.flatMap((event) =>
+			event.kind === "item" && event.item.kind === "assistant" && event.item.interrupted === true
+				? [event.item]
+				: [],
+		);
+		expect(marked).toHaveLength(1);
+		// The streamed row's own id, not the textless mint: `<cid>:<step_index>`, and it still carries
+		// the truncated carry the operator was reading when he pressed Escape.
+		expect(marked[0]?.id).toBe("fake-0000-1111-2222:1");
+		expect(marked[0]?.text).toContain("you said ");
+		expect(
+			collectedEvents.flatMap((event) => (event.kind === "failure" ? [event.failure] : [])),
+		).toEqual([]);
+
+		// The seam the record is read across: folded the way a process folds, `cutReplies` names that
+		// row, and the row in the tail carries the mark.
+		const folded = collectedEvents.reduce(
+			(state, event) => foldEvent(state, event, {itemLimit: 40}),
+			initialState("/repo"),
+		);
+		expect(folded.cutReplies).toEqual(["fake-0000-1111-2222:1"]);
+		expect(
+			folded.transcript.items.flatMap((item) =>
+				item.kind === "assistant" && item.interrupted === true ? [item.id] : [],
+			),
+		).toEqual(["fake-0000-1111-2222:1"]);
 	});
 
 	it("pages history out of agy's own transcript.jsonl", async () => {

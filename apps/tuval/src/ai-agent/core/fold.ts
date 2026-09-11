@@ -29,6 +29,8 @@ import {
 	type AiAgentSessionState,
 	closeOfferedCatalogs,
 	emptyOmission,
+	noteCutReply,
+	remarkCutReplies,
 	settleTurn,
 	type UsageLedger,
 } from "./state.ts";
@@ -100,6 +102,22 @@ const reanchored = (state: AiAgentSessionState, item: TranscriptItem): ItemId | 
 		: state.interrupted;
 };
 
+/**
+ * The cut-reply record after one item folded: a layer's marked reply is named in it from here on.
+ *
+ * Every backend marks the cut reply on the row itself — agy off the terminal `result`'s
+ * `error: "interrupted"` (`../../agy/ai-agent/mapper.ts`), the Claude layer off `aborted`, Pi off an
+ * `aborted` status, Codex off an `interrupted` turn — so this one arm catches all four, and a fifth
+ * needs nothing added here. The record is what survives the tail the row does not (#8985).
+ */
+const cutRepliesAfter = (
+	state: AiAgentSessionState,
+	item: TranscriptItem,
+): AiAgentSessionState["cutReplies"] =>
+	item.kind === "assistant" && item.interrupted === true
+		? noteCutReply(state.cutReplies, item.id)
+		: state.cutReplies;
+
 const addOmission = (carried: WindowOmission, dropped: WindowOmission): WindowOmission => ({
 	items: carried.items + dropped.items,
 	bytes: carried.bytes + dropped.bytes,
@@ -142,7 +160,8 @@ const heldPositions = (
  * produced — so the range is what is substituted, and what the store adds is what sits outside it.
  * Inside the range, our copy is also the one the restore marked `interrupted` (`./state.ts`) and the
  * operator has already read that way; a row that genuinely moved while the transport was down
- * arrives on the event stream and upserts over this (#8374).
+ * arrives on the event stream and upserts over this (#8374). Outside the range there is no held copy
+ * to win, so a cut reply the window dropped is re-marked by the caller instead (`refillTranscript`).
  *
  * A tail with nothing in the store at all is the whole store's junior, so it goes behind it.
  */
@@ -173,13 +192,21 @@ const rebaseOnStore = (
  * The omission is replaced, not added to: it describes the window that was just planned, and the
  * count the stale tail carried was about a window that no longer exists. A refused plan leaves the
  * tail as it was, the same answer `foldItem` gives.
+ *
+ * `cut` is why this takes a fourth operand. `rebaseOnStore` holds the marked copy of a cut reply the
+ * tail still carries, and that reaches held rows alone — a row the window dropped comes back here as
+ * the store's bare copy, which says the model finished a reply the operator stopped. The record
+ * outlives the window (`./state.ts`), so the mark is re-applied to whatever the store returned
+ * (#8985). Pass `state.cutReplies`; an empty record is a no-op, never a silently unmarked row.
  */
 export const refillTranscript = (
 	transcript: TranscriptPayload,
 	history: ReadonlyArray<TranscriptItem>,
 	limits: WindowLimits,
+	cut: ReadonlyArray<ItemId>,
 ): TranscriptPayload => {
-	const planned = planTranscriptWindow(rebaseOnStore(transcript.items, history), limits);
+	const rebased = remarkCutReplies(rebaseOnStore(transcript.items, history), cut);
+	const planned = planTranscriptWindow(rebased, limits);
 	return isRefusal(planned) ? transcript : {items: planned.items, omitted: planned.omitted};
 };
 
@@ -357,6 +384,7 @@ export const foldEvent = (
 			return {
 				...state,
 				interrupted: reanchored(state, event.item),
+				cutReplies: cutRepliesAfter(state, event.item),
 				transcript: foldItem(state.transcript, event.item, limits),
 			};
 		// The phase line is also where a send in flight learns it crossed, and it takes two events
@@ -445,7 +473,8 @@ export const foldEvent = (
 		// the machine's own `settleQueue` admits its head off the `ready`, so nothing an operator
 		// wrote is dropped by the reset.
 		//
-		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker,
+		// Everything cleared belongs to the conversation that ended: its tail, its cut-turn marker and
+		// the record of every reply it cut — ids in a store no page of this conversation will read —
 		// the abort still outstanding over it, its permission cards — which no answer can reach any
 		// more — its subagent rows and the page read off it. The usage ledger stays: the reset does
 		// not un-spend what this session already spent.
@@ -456,6 +485,7 @@ export const foldEvent = (
 				sessionId: event.sessionId,
 				transcript: {items: [], omitted: emptyOmission},
 				interrupted: null,
+				cutReplies: [],
 				interruption: null,
 				permissions: {},
 				subagents: {},
