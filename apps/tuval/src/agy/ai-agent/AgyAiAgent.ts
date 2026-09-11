@@ -568,31 +568,37 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			// not be able to take the first one's claim back: an exit read as one nobody asked for
 			// fails the very queue the relaunch is keeping (#8883).
 			if (!(yield* stop.claim(current.child.handle))) return;
-			const delivered = yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
-				Effect.as(true),
-				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
-				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
-				// backend that said no from a stop still in flight. The memory of the signal goes back
-				// with it: one that was never delivered must not speak for whatever ends this child.
-				Effect.catch((refusal) =>
-					Effect.gen(function* () {
-						yield* stop.release(current.child.handle);
-						const live = yield* Ref.get(turnLive);
-						yield* publish([{kind: "failure", failure: interruptFailureOf(refusal, live)}]);
-						return false;
-					}),
-				),
+			// The guard covers `kill`'s own await, not just what follows it: `kill` resolves on the
+			// exit it asked for, and the cut turn's terminal `result` publishes `ready` ahead of that
+			// exit — so a guard armed after the call leaves a slice where the window is free to send
+			// and `session` still holds the child on its way out (#8925, #8709).
+			const refused = yield* whileRelaunching(
+				Effect.gen(function* () {
+					const refusal = yield* current.child.handle.kill({killSignal: "SIGINT"}).pipe(
+						Effect.as(null),
+						// `interrupt` declares no error channel, so the refusal rides the stream as a tag
+						// the fold routes on its own (ADR 0356) — a log line left the window unable to
+						// tell a backend that said no from a stop still in flight. The memory of the
+						// signal goes back with it: one that was never delivered must not speak for
+						// whatever ends this child.
+						Effect.catch((cause) =>
+							Effect.gen(function* () {
+								yield* stop.release(current.child.handle);
+								return interruptFailureOf(cause, yield* Ref.get(turnLive));
+							}),
+						),
+					);
+					if (refusal !== null) return refusal;
+					yield* Fiber.await(current.child.fiber).pipe(
+						Effect.andThen(Effect.flatMap(Ref.get(settings), respawn)),
+					);
+					return null;
+				}),
 			);
-			if (!delivered) return;
-			// Guarded from here rather than from the teardown inside `respawn`: the cut turn's
-			// terminal `result` has already published `ready`, so the window is free to send from the
-			// instant the signal lands — and between that `result` and the exit the child is on its
-			// way out with nothing left that will settle a send (#8709).
-			yield* whileRelaunching(
-				Fiber.await(current.child.fiber).pipe(
-					Effect.andThen(Effect.flatMap(Ref.get(settings), respawn)),
-				),
-			);
+			// Published after the guard is given back, for the reason `respawn` announces outside its
+			// own: a refusal is the window's cue that its turn is still live and its hand still free,
+			// and a send answering it must not meet the guard of a relaunch that never started.
+			if (refused !== null) yield* publish([{kind: "failure", failure: refused}]);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
 		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (model: ModelRef) {
