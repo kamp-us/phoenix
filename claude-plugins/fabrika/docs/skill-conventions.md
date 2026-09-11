@@ -232,24 +232,33 @@ compaction, while a promoted skill re-attaches its content on every invocation �
 folds N surfaces' identities into one family entry, whose own text then has to keep each surface's
 rules visible.
 
-## 11. GitHub access is REST, never GraphQL
+<a id="11-github-access-is-rest-never-graphql"></a>
+## 11. GitHub access belongs to the CLI transport
 
-**Every GitHub read and write a fabrika skill or verb makes goes through `gh api` REST, and every
-list read paginates.** This section is where that rule lives; a skill contract cites it and does
-not restate it. The forcing constraint is a legacy Projects-classic integration, which breaks
-GraphQL issue and pull-request queries in any org carrying one — ruling out the projects noun, the
-`pr`/`issue` edit verbs, and the explicit GraphQL transport. A repo adopting fabrika records its own
-non-REST carves, if it has any. Pagination rides along as its own rule: an unpaginated list read
-returns a plausible first page instead of an error, so a count read off one page is wrong with
-nothing marking it wrong.
+Skills call the owning guarded Fabrika verb for GitHub work. They do not reproduce its
+authorization, read-back or transport logic. A verb's contract owns its permitted actions;
+this section does not grant a skill another way to perform them.
 
-**Where it is enforced today — stated so nobody assumes coverage it does not have.** The
-`skill-gh-lint` job ([`.github/workflows/skill-gh-lint.yml`](../../../.github/workflows/skill-gh-lint.yml),
-matchers in [`skill-lint.ts`](../../../packages/fabrika-cli/src/guard/skill-lint.ts)) reds on a
-GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope. The
-walk roots at `claude-plugins/` and every plugin dir under it, and reds if any of them contributed
-no scanned file — so **fabrika's own corpus is inside its scope**, and the rule is machine-checked
-rather than held by review.
+The CLI uses one shared HTTP GitHub client and owns credential resolution. A missing
+credential is a refusal; a failed request never retries through a command-line transport.
+Use the installed CLI's setup documentation for credentials.
+
+REST is the default, and issue search stays REST. The supported GraphQL exceptions are:
+
+- review-thread state, replies and resolution;
+- the auto-merge mutation;
+- the relationship between an issue and the pull requests that close it.
+
+These exceptions belong to the CLI transport. They do not authorize raw GraphQL commands
+in a skill. Extending the list requires a decision in the adopting repository. Every list
+read must carry a completeness proof; a caller that needs the full set refuses a capped
+or otherwise incomplete read.
+
+Enforcement covers different boundaries. `fabrika guard no-gh check` checks CLI source
+for a second subprocess transport. The skill lint checks prohibited command invocations
+in the plugin corpus; it does not inspect the HTTP client's queries. Neither check is
+proof that a list consumer handled pagination correctly. Keep those assertions in the
+transport and consumer tests.
 
 <a id="a-skill-that-takes-a-number-declares-it"></a>
 ## 12. A skill that takes a number declares it

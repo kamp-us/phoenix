@@ -2,7 +2,9 @@
  * Captured agy stream lines, verbatim apart from one substitution: the invoking user's home
  * directory reads `/Users/founder`, so no real home path lands in the repo. Everything down to
  * `resultSuccess` is v1.1.27, the version ADR 0362 pins; the usage census and the interrupted
- * `result` at the foot are v1.1.28 and say so where they are declared.
+ * `result` after it are v1.1.28, and the `error_message` pair at the foot is v1.2.0. Each says so
+ * where it is declared, because a later-version capture is named as such rather than folded into the
+ * pin (ADR 0362).
  *
  * Every line below came off a live run of
  * `agy --input-format=stream-json --output-format=stream-json --print='' --model=gemini-3.8-flash-low
@@ -91,3 +93,29 @@ export const censusResumedResult =
  */
 export const resultInterrupted =
 	'{"event":"result","result":{"conversation_id":"9cb073ff-0a81-4b21-b81b-1a2e1c78969c","status":"ERROR","response":"","error":"interrupted","duration_seconds":5.99386,"num_turns":1,"usage":{"input_tokens":16793,"output_tokens":1105,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":17898}}}';
+
+/**
+ * The `error_message` step and the terminal `result` of the turn it cut, both verbatim from **agy
+ * v1.2.0** — a release past the `1.1.27` pin, named here rather than written back onto it (ADR 0362).
+ * This is the step [#8896](https://github.com/kamp-us/phoenix/issues/8896) is about: before the
+ * mapper had an arm for it, it reached the default arm and minted
+ * `agy step 2 of an unrecognised type "error_message" (DONE)` into the operator's transcript.
+ *
+ * Captured on 2026-09-10 by driving the real binary — `agy --input-format=stream-json
+ * --output-format=stream-json --print='' --model=gemini-3.8-flash-low --sandbox --add-dir=<scratch>` —
+ * with a prompt asking for a verbatim passage of a copyrighted novel, which trips agy's own
+ * recitation filter mid-reply. Eleven other drives (four `SIGINT` stops, six concurrent long
+ * generations, a counting prompt) produced no `error_message` at all: the trigger is the filter, not
+ * the stop, which is why "suppress it on the interrupt path" would have been the wrong fix.
+ *
+ * **Two readings the pair settles.** The step carries no `text_delta` — the field is absent, not
+ * empty — so at this release there is no message on the live stream to render; and the message itself
+ * rides the terminal `result.error`, on a `result` whose `status` is `ERROR` and whose `error` is not
+ * `interrupted`, so the mapper's failure arm surfaces it. The turn *continued* after the step: the
+ * long `response` below is the retry agy produced, which is why `num_turns` is still `1`.
+ */
+export const errorMessageStep =
+	'{"event":"step_update","step_update":{"conversation_id":"65495e68-8a9c-47bd-956a-104b61cf1df7","step_index":2,"state":"DONE","step_type":"error_message","duration_seconds":0}}';
+
+export const resultContentFiltered =
+	'{"event":"result","result":{"conversation_id":"65495e68-8a9c-47bd-956a-104b61cf1df7","status":"ERROR","response":"I cannot reproduce the verbatim text of George Orwell\'s *1984*, as it remains under copyright protection in several jurisdictions, but I can provide a summary or discuss the themes, characters, and plot of the opening chapter.\\n\\n### Chapter 1 Summary\\n\\nIn the opening chapter of *1984*, Winston Smith returns to his dreary apartment building, Victory Mansions, amidst a harsh and gritty London setting in Oceania. The narrative immediately introduces the pervasive surveillance and psychological dominance of the totalitarian regime: telescreens broadcast continuous propaganda while monitoring residents\' every sound and movement, and ominous posters of Big Brother remind the populace that they are constantly watched. \\n\\nWinston navigates his cramped flat, positioning himself in an alcove hidden from the telescreen\'s direct view. There, he commits a forbidden act by opening a newly purchased blank diary and writing down his thoughts, an offense that carries severe penalties under the Thought Police. As he contemplates his discontent, he reflects on the state-mandated Two Minutes Hate, his conflicting emotions toward an enigmatic young woman from the Fiction Department, and his intuitive suspicion that an Inner Party official named O\'Brien might share his silent rebellion against the Party.\\n\\n***\\n\\nWould you like a summary or analysis of the next chapter, or an exploration of the themes and world-building introduced here?\\nI cannot reproduce the text of *1984* verbatim. However, I can provide a high-level summary and analysis of the opening chapter.\\n\\n### Overview of Chapter 1\\n\\nThe opening of the novel establishes the dystopian reality of Oceania and introduces the protagonist, Winston Smith. Living under the total control of the Party, citizens endure constant surveillance via two-way telescreens, pervasive propaganda, and the looming presence of the Thought Police. \\n\\nDisillusioned and seeking an outlet for his private thoughts, Winston retreats to a rare blind spot in his flat to commit a forbidden act of defiance: beginning a personal journal. Through his reflections, the chapter outlines key elements of the totalitarian regime—such as the institutionalized hysteria of the Two Minutes Hate—and introduces figures who provoke Winston\'s suspicion, fear, and cautious curiosity.\\n\\n***\\n\\nWould you like a summary of the next chapter, or would you prefer an analysis of the novel\'s major themes and motifs?\\n","error":"Your previous response was blocked by content safety filters: The generated content was filtered because it may contain material that resembles existing copyrighted works. Try rephrasing the prompt. If you think this was an error, [send feedback](https://ai.google.dev/gemini-api/docs/troubleshooting).\\nPlease provide a response that complies with content policies, or briefly explain to the user why you cannot help with this request\\nRetries remaining: 3","duration_seconds":5.591085,"num_turns":1,"usage":{"input_tokens":22341,"output_tokens":468,"thinking_tokens":0,"cache_read_tokens":11722,"total_tokens":22809}}}';

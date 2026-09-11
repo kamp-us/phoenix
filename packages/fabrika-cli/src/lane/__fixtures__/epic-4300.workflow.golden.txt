@@ -318,13 +318,19 @@
 					"epic_4300": {
 						"initial": "review",
 						"states": {
+							"build": {
+								"on": {
+									"EPIC_4300.DONE": "review",
+									"EPIC_4300.BLOCKED": "blocked"
+								}
+							},
 							"review": {
 								"on": {
 									"EPIC_4300.PASS": "ship",
 									"EPIC_4300.BLOCKED": "blocked",
 									"EPIC_4300.FAIL": [
 										{
-											"target": "review",
+											"target": "build",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},

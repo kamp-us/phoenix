@@ -100,6 +100,22 @@ export const LABEL_ABSENT = PLAN_LABEL_ABSENT;
 export const NO_GATE_COVERAGE = 20;
 
 /**
+ * Refused: the PR's base moved under it and the merge now **conflicts** — a definite
+ * `mergeable_state: dirty`, nothing was armed.
+ *
+ * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, because the two route the lane
+ * to different budgets. Every other definite not-mergeable read is a fact about the head, so it is
+ * the repair round the retry budget exists to bound; a conflicted base is the pipeline's own
+ * machinery, so it spends a machinery lap instead. A shipper that had to tell the two apart by
+ * grepping the refusal's prose would be parsing a message to pick a budget.
+ *
+ * A re-review is still owed — a dirty base moves the merge-base blob every verdict's content digest
+ * covers (`../review/content-binding.ts`), so every verdict on the PR is void. This code changes
+ * what the round *costs*, never whether it happens.
+ */
+export const BASE_CONFLICTED = 21;
+
+/**
  * The unallocated codes. `4` is `report file`'s body-section seat and `14`/`15` are `review`'s ACL
  * and append-only seats; no verb here performs any of the three. Excluded from the alignment
  * check's allocations — reading a gap as an allocation reports a collision on a seat nobody sits in.

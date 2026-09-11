@@ -478,7 +478,7 @@ fabrika pattern anchor worker-queue-retry [--dir <path>] [--manifest <path>] [--
 |---|---|---|---|---|
 | `<slug>` | positional string | yes | — | the doc's basename without `.md` |
 | `--dir` | string | no | `.patterns` | the directory the doc lives in |
-| `--manifest` | string | no | `pnpm-workspace.yaml` | the workspace manifest whose `catalog:` map holds the live pins |
+| `--manifest` | string | no | `pnpm-workspace.yaml` | the workspace manifest whose default and named catalog maps hold the live pins |
 | `--base` | string | no | `origin/main` | the base ref to fetch and read both the doc and the manifest from |
 | `--json` | boolean | no | `false` | emit the result as one JSON object instead of the line grammar |
 
@@ -507,16 +507,16 @@ fabrika pattern anchor worker-queue-retry [--dir <path>] [--manifest <path>] [--
    yields `@nkzw/fate` and `1.3.1`, where a first-`@` split would yield an empty package name. A token
    with no `@`, or whose split yields an empty half, is reported `malformed` and counted, never
    guessed at.
-3. **Resolve the pin.** Look `<package>` up as a key of the manifest's top-level `catalog:` map, read
-   as a block map of scalar pins. A key that is absent is `unpinned`.
+3. **Resolve the pin.** Read the manifest as strict YAML. Look up each declared package across
+   the default `catalog:` and every named map under `catalogs:`. Block and flow maps are
+   supported; package names and pins must be non-empty strings. An absent package is `unpinned`.
+   Equal pins across maps count as one. Conflicting pins for a declared package refuse at exit
+   `11`, naming the package and versions. A conflict for an unrelated package does not prevent
+   an answer. Declarations have no consumer scope, so the reader never chooses one conflicting pin.
 
-   **A catalog that is there and could not be read is exit `11`, never `unpinned`.** Three shapes are
-   outside what this reader comprehends — a flow map (`catalog: {…}`), a nested sub-map under a key,
-   and a named-catalog `catalogs:` block — and each of them parses as YAML, so none can be told apart
-   from a real read by parse success alone. Answering anyway produced two confident wrong answers:
-   the flow map and `catalogs:` both read as *no catalog at all* (`unpinned` for every declaration),
-   and the sub-map pinned its key to the empty string, which compares unequal to every declared
-   version and reported `moved` against a pin nobody wrote. All three refuse instead.
+   Unreadable YAML or invalid catalog structure is exit `11`, even for an unanchored document.
+   Nested version objects, non-string pins and duplicate YAML keys cannot establish a version.
+   A readable manifest with named catalogs and no dependency declarations answers `unanchored`.
 4. **Compare.** `<version>` against the pinned value, **byte for byte**, with no semver
    interpretation. A doc's anchor records the version its author actually read; accepting a range
    would silently bless a version nobody checked, which is the whole failure the line exists to catch.
@@ -585,8 +585,8 @@ With `--json`, one object with keys `outcome`, `declared`, `moved`, `unpinned`, 
 | `pattern anchor: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 1 | usage error |
 
 **A manifest that reads but whose catalog this verb could not read is UNKNOWN too** (exit `11`), for
-the same reason — including the three comprehensible-YAML shapes in step 3. A manifest that carries
-**no `catalog:` key at all** is the degrade path instead: every declaration reports `unpinned` at exit
+the same reason, including invalid catalog structures in step 3. A manifest that carries
+**neither `catalog:` nor `catalogs:`** is the degrade path instead: every declaration reports `unpinned` at exit
 `0` with the absence named on stderr, because a repo that pins nothing centrally is a fact about that
 repo rather than a failed read. The two are not interchangeable: the degrade line names an absence,
 so it is never printed for a manifest that does carry a catalog.
@@ -598,7 +598,7 @@ at all. Fusing them is the same defect the `7`/`11` split exists to prevent — 
 surface's degrade path: every declaration reports `unpinned` at exit `0`, with the absence named on
 stderr.
 
-**Scope** — every anchor declaration in the subject doc, resolved against the `catalog:` map of
+**Scope** — every anchor declaration in the subject doc, resolved against the default and named catalog maps of
 `--manifest` at the fetched `--base`. The scope line goes to stderr naming the base sha, the manifest
 path and the four counts.
 
@@ -636,9 +636,8 @@ $ fabrika pattern anchor worker-queue-retry --json --dir packages/fabrika-cli/te
   because that choice belongs to the open anchor-model decision and is unruled.
 - The anchor model is an open control-plane decision. Matching the existing prose line is the
   conservative floor: it is falsifiable today and it commits nothing.
-- The byte-for-byte comparison is deliberate. Every dependency in this repo is pinned to one exact
-  version through the workspace catalog, so a range comparison would have nothing to buy and a real
-  failure mode to hide.
+- The anchor records the exact dependency version its author read. Byte-for-byte comparison
+  prevents accepting a different version whose source was never checked.
 
 ---
 

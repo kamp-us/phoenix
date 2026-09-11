@@ -1,6 +1,6 @@
 /**
- * Whether the directory a relative lanes root resolves against is a repo at all — the fact, its
- * refusal, and the guard every rooted `lane` verb runs through.
+ * Whether a lanes root stands where its ledger really lives — the two facts that can be wrong, their
+ * refusals, and the guard every rooted `lane` verb runs through.
  *
  * A lanes root is a path (`.fabrika/lanes`, `.fabrika/chores`), so a relative one is joined onto
  * whatever cwd the process happens to hold. When that cwd drifts off the repo — a session scratchpad,
@@ -9,14 +9,20 @@
  * ledger". A drifted-cwd boot then writes a second ledger over a live lane. "Not a repo" is a
  * different fact from "no lane here", and only the second may mean boot.
  *
- * An **absolute** root resolves against nothing, so no drift is expressible and no probe is owed —
- * `lane brief` hands a shell its driver's root absolute for exactly that reason.
+ * An **absolute** root expresses no cwd drift, but it owes a probe of its own: it can still point at
+ * a *linked worktree's* copy of a lanes root. `.fabrika` is gitignored, so no worktree inherits one
+ * from its branch — but anything that writes a lanes root under a worktree makes a second ledger for
+ * the same lane, and folding it answers from a frozen moment instead of failing. That is what lane
+ * 8810 did: a shell folded a worktree copy, read a `tripped` lane whose task was `frozen`, and
+ * refused a terminal the live ledger would have taken. So every root, absolute or relative, is
+ * proven to sit in the working tree that OWNS it, and one inside a linked worktree is refused on
+ * {@link ROOT_NOT_OWNED} rather than read.
  */
 import {Effect, type FileSystem, Option, Path, Result} from "effect";
 import {repositoryOf} from "../delegate/repository.ts";
-import {exists} from "../io/fs.ts";
+import {exists, realPath} from "../io/fs.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {LANE_UNREADABLE, NOT_A_REPO} from "./codes.ts";
+import {LANE_UNREADABLE, NOT_A_REPO, ROOT_NOT_OWNED} from "./codes.ts";
 
 /** What marks a directory as a repo checkout: fabrika's own state, or git's (a file in a worktree). */
 export const REPO_MARKERS = [".fabrika", ".git"] as const;
@@ -24,21 +30,21 @@ export const REPO_MARKERS = [".fabrika", ".git"] as const;
 export type Ground =
 	| {readonly _tag: "Grounded"}
 	| {readonly _tag: "NotARepo"; readonly cwd: string; readonly roots: ReadonlyArray<string>}
+	| {
+			readonly _tag: "ForeignWorktree";
+			readonly root: string;
+			readonly workingTree: string;
+			readonly owner: string;
+	  }
 	| {readonly _tag: "Unprobeable"; readonly path: string; readonly reason: string};
 
-/**
- * Prove the ground under every root a verb is about to resolve. A probe that could not be performed
- * is UNKNOWN, never a repo: an unproven ground may not license a boot any more than a drifted one.
- */
-export const proveGround = (
-	roots: ReadonlyArray<string>,
+/** Whether the cwd a relative root would be joined onto is a repo checkout at all. */
+const proveCwd = (
+	relative: ReadonlyArray<string>,
 	cwd: string,
 ): Effect.Effect<Ground, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const relative = roots.filter((root) => !path.isAbsolute(root));
-		if (relative.length === 0) return {_tag: "Grounded"} as const;
-
 		for (const marker of REPO_MARKERS) {
 			const at = path.join(cwd, marker);
 			const probe = yield* Effect.result(exists(at));
@@ -51,22 +57,79 @@ export const proveGround = (
 	});
 
 /**
+ * Whether one resolved root stands in the working tree that owns it. A root under no working tree at
+ * all is grounded — a relocated lanes root belongs to nobody and duplicates nothing.
+ */
+const proveOwnership = (
+	root: string,
+	cwd: string,
+): Effect.Effect<Ground, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const at = path.resolve(cwd, root);
+		const owner = yield* deriveRepoRoot(at);
+		if (owner._tag === "Unestablished") {
+			return {_tag: "Unprobeable", path: at, reason: owner.reason} as const;
+		}
+		if (owner._tag === "NotARepo") return {_tag: "Grounded"} as const;
+		return owner.workingTree === owner.repoRoot
+			? ({_tag: "Grounded"} as const)
+			: ({
+					_tag: "ForeignWorktree",
+					root: at,
+					workingTree: owner.workingTree,
+					owner: owner.repoRoot,
+				} as const);
+	});
+
+/**
+ * Prove the ground under every root a verb is about to resolve — both facts, in the order whose
+ * refusal is the more basic. A probe that could not be performed is UNKNOWN, never a repo: an
+ * unproven ground may not license a boot any more than a drifted one.
+ */
+export const proveGround = (
+	roots: ReadonlyArray<string>,
+	cwd: string,
+): Effect.Effect<Ground, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const relative = roots.filter((root) => !path.isAbsolute(root));
+		if (relative.length > 0) {
+			const grounded = yield* proveCwd(relative, cwd);
+			if (grounded._tag !== "Grounded") return grounded;
+		}
+		for (const root of roots) {
+			const owned = yield* proveOwnership(root, cwd);
+			if (owned._tag !== "Grounded") return owned;
+		}
+		return {_tag: "Grounded"} as const;
+	});
+
+/**
  * Seat a ground that is not a repo, saying which fact it is: the cwd is wrong, NOT that this repo
  * holds no such lane. A caller reading `7` boots; a caller reading this one moves.
  */
 export const groundRefusal = (
 	verb: string,
 	ground: Exclude<Ground, {_tag: "Grounded"}>,
-): VerbOutcome =>
-	ground._tag === "Unprobeable"
-		? refuse(
-				LANE_UNREADABLE,
-				`${verb}: cannot establish whether ${ground.path} is there: ${ground.reason} — whether this is a repo is UNKNOWN, never a lane's absence.`,
-			)
-		: refuse(
-				NOT_A_REPO,
-				`${verb}: ${ground.cwd} is not a repo — it holds neither ${REPO_MARKERS.join(" nor ")}, so ${ground.roots.join(", ")} resolves somewhere nobody meant. This is NOT "no lane here": run from the repo root, or pass --root as an absolute path.`,
-			);
+): VerbOutcome => {
+	if (ground._tag === "Unprobeable") {
+		return refuse(
+			LANE_UNREADABLE,
+			`${verb}: cannot establish whether ${ground.path} is there: ${ground.reason} — whether this is a repo is UNKNOWN, never a lane's absence.`,
+		);
+	}
+	if (ground._tag === "ForeignWorktree") {
+		return refuse(
+			ROOT_NOT_OWNED,
+			`${verb}: ${ground.root} is inside the linked worktree ${ground.workingTree}, whose owning repository is ${ground.owner} — a worktree's own lanes root is a second copy of that repository's ledger, frozen at whatever moment it was written. This is NOT "no lane here" and it is not a ledger to fold: drop --root so it derives off ${ground.owner}, or pass one under ${ground.owner}.`,
+		);
+	}
+	return refuse(
+		NOT_A_REPO,
+		`${verb}: ${ground.cwd} is not a repo — it holds neither ${REPO_MARKERS.join(" nor ")}, so ${ground.roots.join(", ")} resolves somewhere nobody meant. This is NOT "no lane here": run from the repo root, or pass --root as an absolute path.`,
+	);
+};
 
 /**
  * The default lanes root resolved against the repository the cwd belongs to — never against the
@@ -77,11 +140,19 @@ export const groundRefusal = (
  * UNKNOWN — never a cwd-relative fallback, which would reintroduce the drift bug quietly.
  */
 export type RepoGround =
-	| {readonly _tag: "Derived"; readonly repoRoot: string}
+	| {readonly _tag: "Derived"; readonly repoRoot: string; readonly workingTree: string}
 	| {readonly _tag: "NotARepo"; readonly cwd: string}
 	| {readonly _tag: "Unestablished"; readonly cwd: string; readonly reason: string};
 
-/** Walk up from the cwd to the nearest `.git` entry, then read its repository's common dir. */
+/**
+ * Walk up from the cwd to the nearest `.git` entry, then read its repository's common dir. The
+ * entry's own directory rides along as `workingTree`: a linked worktree and its primary checkout
+ * derive one `repoRoot`, so that pair is the only thing that can tell them apart.
+ *
+ * Both come back real-path resolved, because `repoRoot` is derived through `repositoryOf`'s own
+ * `realPath` and a raw walked path would differ from it on any symlinked ancestor — macOS's
+ * `/var` → `/private/var` alone makes every temp checkout compare unequal to itself.
+ */
 export const deriveRepoRoot = (
 	cwd: string,
 ): Effect.Effect<RepoGround, never, FileSystem.FileSystem | Path.Path> =>
@@ -102,13 +173,21 @@ export const deriveRepoRoot = (
 		if (Result.isFailure(common)) {
 			return {_tag: "Unestablished", cwd, reason: common.failure.reason} as const;
 		}
-		return common.success === undefined
-			? ({
-					_tag: "Unestablished",
-					cwd,
-					reason: `${path.join(current, ".git")} does not name a readable repository`,
-				} as const)
-			: ({_tag: "Derived", repoRoot: path.dirname(common.success)} as const);
+		if (common.success === undefined) {
+			return {
+				_tag: "Unestablished",
+				cwd,
+				reason: `${path.join(current, ".git")} does not name a readable repository`,
+			} as const;
+		}
+		const tree = yield* Effect.result(realPath(current));
+		return Result.isFailure(tree)
+			? ({_tag: "Unestablished", cwd, reason: tree.failure.reason} as const)
+			: ({
+					_tag: "Derived",
+					repoRoot: path.dirname(common.success),
+					workingTree: tree.success,
+				} as const);
 	});
 
 /** Seat a derivation that did not reach a repository — each fact on its own code. */
@@ -135,6 +214,10 @@ export const repoGroundRefusal = (
  * same root its own way is how one lane key comes to name two directories: `recipe unpark` defaulted
  * to a bare cwd-relative leaf and proved every worktree-driven lane absent. The verb label
  * arrives whole, so a caller outside `lane` names itself.
+ *
+ * An explicit root is proven through {@link proveGround} here rather than only at {@link onGround},
+ * because `recipe unpark` reaches this verb and that guard both — a root it took on trust is a root
+ * nothing checked.
  */
 export const resolveRootOrRefuse = (
 	verb: string,
@@ -142,15 +225,17 @@ export const resolveRootOrRefuse = (
 	leaf: string,
 	cwd: string,
 ): Effect.Effect<string | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
-	Option.isSome(root)
-		? Effect.succeed(root.value)
-		: Effect.gen(function* () {
-				const path = yield* Path.Path;
-				const ground = yield* deriveRepoRoot(cwd);
-				return ground._tag === "Derived"
-					? path.join(ground.repoRoot, leaf)
-					: repoGroundRefusal(verb, ground);
-			});
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		if (Option.isSome(root)) {
+			const ground = yield* proveGround([root.value], cwd);
+			return ground._tag === "Grounded" ? root.value : groundRefusal(verb, ground);
+		}
+		const ground = yield* deriveRepoRoot(cwd);
+		return ground._tag === "Derived"
+			? path.join(ground.repoRoot, leaf)
+			: repoGroundRefusal(verb, ground);
+	});
 
 /**
  * Run a rooted verb on ground it proved. The group-level guard ahead of every read and every boot,
@@ -167,4 +252,33 @@ export const onGround = <R>(
 		return ground._tag === "Grounded"
 			? yield* run()
 			: groundRefusal(`fabrika lane ${verb}`, ground);
+	});
+
+/**
+ * The directory whose `.fabrika.jsonc` governs a rooted verb's run: the repository that OWNS the
+ * cwd, never the cwd itself.
+ *
+ * A linked worktree derives the PRIMARY checkout's lanes root ({@link deriveRepoRoot}), so a config
+ * read left on the cwd straddles two repositories in one call — the worktree's tracked file against
+ * seats counted in the primary's ledger. That is how a worktree-spawned driver was refused at
+ * exit 51 against a cap governing nothing it had counted: the worktree's tracked
+ * `laneConcurrencyCap` read 2 while the checkout holding the seats declared 10.
+ *
+ * Narrow to the keys that decide over shared state, on purpose. `.fabrika.jsonc` is tracked, so a
+ * worktree's copy is its branch's copy, and a verb judging the branch it stands on — every `guard`,
+ * `triage`'s vocabulary, `campaign`'s authors — is right to read it there. Only a key weighed
+ * against the shared ledger owes the owning repository's value.
+ *
+ * A cwd in no repository at all keeps reading at itself, which is `repoConfigSource`'s own fallback
+ * and changes nothing: there is no owning checkout to prefer, and no file either way. A cwd whose
+ * repository cannot be READ is UNKNOWN and refuses, never a cwd-relative fallback.
+ */
+export const configRootOrRefuse = (
+	verb: string,
+	cwd: string,
+): Effect.Effect<string | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const ground = yield* deriveRepoRoot(cwd);
+		if (ground._tag === "Derived") return ground.repoRoot;
+		return ground._tag === "NotARepo" ? cwd : repoGroundRefusal(verb, ground);
 	});

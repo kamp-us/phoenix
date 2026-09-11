@@ -13,10 +13,10 @@
  * other way: it asserts the run reached no verdict, so a still-binding `FAIL` refuses it and every
  * unreadable half lets it through (`proveParkUncontradicted`).
  *
- * **It writes nothing.** The proof sits beside `lane transition` rather than inside it so the
- * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is its
- * two callers, which each run it first and record only on its exit 0 — `operate` step 3 for the
- * operator's own append, and `lane report` for a shell recording its own terminal token.
+ * **It writes nothing**, and it is not optional. Both appending verbs run this read themselves and
+ * refuse on its codes with the log byte-identical — `lane report` for a shell recording its own
+ * terminal token, `lane transition` for the driver's own records. It stays a verb of its own so a
+ * caller can ask what the proof says without recording anything.
  *
  * Every refusal names what it looked for, and the failing readings stay on their own codes because
  * their remedies are opposite: nothing there, not finished yet, says the other thing, several
@@ -147,6 +147,15 @@ export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
 	readonly partial: boolean | null;
 	readonly landed: ReadonlyArray<number>;
+	/**
+	 * Whether this `DONE` was proven off a diagnosis comment rather than a pull request — the
+	 * `done:diagnosis` guard's whole input, and the one thing that tells an investigation's terminal
+	 * from a `SHIPPED-PR` or a `BUILT-NO-PR`, all three of which report the same `DONE` event.
+	 *
+	 * It is the prover's answer rather than the shell's word, which is the point: it is set on the
+	 * no-PR arm alone, so nothing a spawn reports can route a lane past its review.
+	 */
+	readonly diagnosis: boolean;
 }
 
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
@@ -154,6 +163,7 @@ type ProofAnswer = VerbOutcome & {
 	readonly deferred?: ReadonlyArray<string>;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	readonly diagnosis?: boolean;
 };
 
 const seat = (proof: Exclude<Proof, {_tag: "Proven"}>, diagnostics: ReadonlyArray<string>) => {
@@ -178,6 +188,7 @@ export const runProve = (
 		deferred: outcome.deferred ?? [],
 		partial: outcome.partial ?? null,
 		landed: outcome.landed ?? [],
+		diagnosis: outcome.diagnosis ?? false,
 	}));
 
 /**
@@ -519,6 +530,10 @@ const traceOpenPull = (
  * The no-PR arm: `build`'s `SUCCESS-NO-PR`, which is a legal `DONE` and must not read as an unproven
  * one. It is not taken on the spawn's word either — the two artifacts are the `type:investigation`
  * label and a diagnosis comment written after the task entered build.
+ *
+ * It is the only arm that answers `diagnosis: true`, which is what the machine's `done:diagnosis`
+ * guard routes an investigation's terminal on — so the routing rests on the same two artifacts the
+ * proof does, and a `SHIPPED-PR` or a `BUILT-NO-PR` reporting the identical `DONE` reaches it never.
  */
 const proveNoPull = (
 	repo: string,
@@ -528,7 +543,7 @@ const proveNoPull = (
 	entries: ReadonlyArray<{readonly task: string; readonly at: string}>,
 	diagnostics: ReadonlyArray<string>,
 	unlinked: string,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const found = yield* getIssue(repo, issue);
 		if (found._tag === "Unknown") return unreadable(`issue #${issue}`, found.reason);
@@ -557,20 +572,23 @@ const proveNoPull = (
 				looked,
 			);
 		}
-		return answer(
-			JSON.stringify(
-				{
-					proof: "proven",
-					event,
-					task: taskId,
-					issue,
-					evidence: {kind: "diagnosis", commentId: diagnosis.commentId},
-				},
-				null,
-				2,
+		return {
+			...answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {kind: "diagnosis", commentId: diagnosis.commentId},
+					},
+					null,
+					2,
+				),
+				looked,
 			),
-			looked,
-		);
+			diagnosis: true,
+		};
 	});
 
 /**

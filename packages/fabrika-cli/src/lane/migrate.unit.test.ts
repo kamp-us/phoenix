@@ -263,8 +263,8 @@ describe("lane migrate", () => {
 		const epics: ExpectationReader<never> = (issue) =>
 			Effect.succeed(
 				issue === 42
-					? {_tag: "Read", expectation: {_tag: "Epic", children: 4}}
-					: {_tag: "Read", expectation: {_tag: "Single"}},
+					? {_tag: "Read", expectation: {_tag: "Epic", children: 4}, classes: []}
+					: {_tag: "Read", expectation: {_tag: "Single"}, classes: []},
 			);
 
 		const {outcome, written} = await sweep(
@@ -279,6 +279,52 @@ describe("lane migrate", () => {
 		expect(written.size).toBe(0);
 		expect(outcome.stderr.join("\n")).toContain("4 sub-issue link(s)");
 		expect(outcome.stderr.join("\n")).toContain("fabrika lane emit <n>");
+	});
+
+	const childOf =
+		(parent: number): ExpectationReader<never> =>
+		(issue) =>
+			Effect.succeed(
+				issue === 42
+					? {_tag: "Read", expectation: {_tag: "Child", parent}, classes: []}
+					: {_tag: "Read", expectation: {_tag: "Single"}, classes: []},
+			);
+
+	it("names a lane booted over an epic's child a duplicate without moving the exit code", async () => {
+		const {outcome, written} = await sweep(
+			{
+				[`${ROOT}/42/workflow.json`]: migratedText(),
+				[`${ROOT}/43/workflow.json`]: migratedText(),
+			},
+			{check: true, expectations: childOf(4304)},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(written.size).toBe(0);
+		const {lanes, summary} = JSON.parse(outcome.stdout);
+		expect(lanes[0]).toMatchObject({
+			key: "42",
+			verdict: "duplicate",
+			shape: {state: "duplicate", parent: 4304},
+		});
+		expect(lanes[1]).toMatchObject({key: "43", verdict: "current"});
+		expect(summary.duplicate).toBe(1);
+		expect(outcome.stderr.join("\n")).toContain("lane 4304");
+	});
+
+	it("does not migrate a stale duplicate — the row comes back ahead of the graft", async () => {
+		const {outcome, written} = await sweep(
+			{
+				[`${ROOT}/42/workflow.json`]: preWaitCellTemplate(),
+				[`${ROOT}/42/events.jsonl`]: logText("WIP", "DONE", "PASS"),
+				[`${ROOT}/43/workflow.json`]: migratedText(),
+			},
+			{expectations: childOf(4304)},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect([...written.keys()]).not.toContain(`${ROOT}/42/workflow.json`);
+		expect(JSON.parse(outcome.stdout).lanes[0]).toMatchObject({key: "42", verdict: "duplicate"});
 	});
 
 	it("carries an unknown shape onto the row it lands on rather than reading it as a match", async () => {
@@ -305,7 +351,7 @@ describe("lane migrate", () => {
 		const asked: number[] = [];
 		const expectations: ExpectationReader<never> = (issue) => {
 			asked.push(issue);
-			return Effect.succeed({_tag: "Read", expectation: {_tag: "Single"}});
+			return Effect.succeed({_tag: "Read", expectation: {_tag: "Single"}, classes: []});
 		};
 
 		const {outcome} = await sweep(

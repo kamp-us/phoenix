@@ -3,7 +3,9 @@
 Compiled, tested text. `fabrika build check` runs the commands this repo declares under
 `.fabrika.jsonc`'s `codeValidators` in this tree — typically a typecheck and a lint, whatever the
 repo named. A repo that declares none refuses UNKNOWN rather than running someone else's script
-names.
+names. On top of those it sweeps every shipped local-tree guard — the same on any surface, so a
+prose-only diff gets them too — naming each one in the green's `ran` or, where a guard refused, in
+its `skipped`.
 
 - **Match the surrounding code's idiom** — comment density, naming, bracket style. A diff that
   reads as a different author is a defect before it is a style choice.

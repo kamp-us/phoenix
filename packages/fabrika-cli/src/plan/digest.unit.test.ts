@@ -19,6 +19,7 @@ const scope = (overrides: Partial<LedgerScope> = {}): LedgerScope => ({
 	epic: 4300,
 	children: [child()],
 	epicStories: [1, 2],
+	epicCriteria: [],
 	cycleDoc: "present",
 	topology: {phases: [{phase: 1, members: ["#4301"]}], edges: []},
 	dependenciesAbsent: false,
@@ -51,6 +52,27 @@ describe("the digest is flip-neutral (the invariant the whole gate rests on)", (
 			children: [child({labels: ["p0", "status:planned", "type:feature"]})],
 		});
 		expect(scopeDigest(relabelled)).not.toBe(scopeDigest(scope()));
+	});
+});
+
+describe("the epic's own acceptance criteria bind the digest", () => {
+	it("does not move for an epic carrying none — an old plan's approval stays current", () => {
+		const epicLine = serializeScope(scope()).split("\n").at(-1) ?? "";
+		expect(epicLine.startsWith("epic=4300|")).toBe(true);
+		expect(epicLine.includes("|ac=")).toBe(false);
+	});
+
+	it("moves when a criterion is reworded — the texts are serialized, not their count", () => {
+		const one = scope({epicCriteria: ["the tail wires every child"]});
+		const reworded = scope({epicCriteria: ["the tail wires every child, in order"]});
+		expect(scopeDigest(reworded)).not.toBe(scopeDigest(one));
+	});
+
+	it("moves when a criterion is added, and again when it is removed", () => {
+		const bare = scope();
+		const one = scope({epicCriteria: ["the tail wires every child"]});
+		expect(scopeDigest(one)).not.toBe(scopeDigest(bare));
+		expect(scopeDigest(scope({epicCriteria: ["a", "b"]}))).not.toBe(scopeDigest(one));
 	});
 });
 

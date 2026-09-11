@@ -11,7 +11,9 @@
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
 import {applyCell, foldMsgs, NoCellError} from "@demlik/tea";
+import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {
+	AMENDED_EVENT,
 	BOARD_TERMINALS,
 	bareEvent,
 	CLEARED_EVENT,
@@ -22,9 +24,11 @@ import {
 	isOperatorEvent,
 	LANDED_EVENT,
 	type LaneMsg,
+	MACHINERY_EVENT,
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
+import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -46,10 +50,20 @@ import {
  * PR, one naming none fell through a nominator that could not see the subject, and no timestamp on
  * the line distinguishes them.
  *
+ * `diagnosis` is the third payload of that kind and rides a `DONE` out of build: it says the
+ * terminal was proven off a diagnosis comment rather than a pull request, which is what the
+ * `done:diagnosis` guard routes on. Only `true` routes, so an absent field folds exactly as it
+ * always did, and every line written before the field existed still reaches `review`.
+ *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
  * epic child hands to its epic's tail. Without it a deferred `PASS` and a whole-set one are
  * the same line, and nothing in the ledger says a rendered verdict is still owed anywhere.
+ *
+ * `tasks` is the sixth and rides one line only, an {@link AMENDED_EVENT}: the task set the
+ * re-derived machine holds. It is the whole audit of a topology amendment — the log is append-only,
+ * so the machine that folded the lines above this one is gone, and this field is what says which
+ * task set replaced which.
  *
  * `corrects` is the fifth and rides one line only, a {@link CORRECTED_EVENT}: the `at` of the
  * earlier entry of this same task whose `partial` payload this line supersedes. It is the
@@ -78,7 +92,20 @@ export interface LogEntry {
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	readonly diagnosis?: boolean;
 	readonly corrects?: string;
+	/** The task set an {@link AMENDED_EVENT} left the lane's machine holding. */
+	readonly tasks?: ReadonlyArray<string>;
+	/**
+	 * The tasks this {@link AMENDED_EVENT} **defers** — the seventh payload, and the only one that
+	 * changes how the lines above it are read.
+	 *
+	 * `deferred` above is a different word for a different thing (the review namespaces a `PASS` was
+	 * short), so this one is spelled for the act rather than the state. Each row names the task
+	 * leaving the plan, the `at` bounding the history the deferral covers, and the reason — see
+	 * [`deferral.ts`](deferral.ts) for what makes a row resolvable.
+	 */
+	readonly defers?: ReadonlyArray<Deferral>;
 	/**
 	 * The board outcome a board-proven terminal stands on — the sixth kind, and evidence rather than
 	 * a payload the fold reads.
@@ -109,6 +136,30 @@ export interface LogEntry {
 	 */
 	readonly assertedBy?: string;
 }
+
+/**
+ * Whether a `defers` payload is the shape {@link resolveDeferrals} can judge at all.
+ *
+ * Every field is load-bearing and none has a defaulting reading: a row with no `through` bounds
+ * nothing, and one with no `reason` records that a plan changed without recording why — the same
+ * silent-no-op class a roundless `CLEARED` is, and a parse defect for the same reason. A duplicate
+ * task inside one payload is caught here rather than at the resolve, because the two rows may agree
+ * and still say one plan change twice.
+ */
+const isDeferralList = (value: unknown): value is ReadonlyArray<Deferral> => {
+	if (!Array.isArray(value) || value.length === 0) return false;
+	const tasks = new Set<string>();
+	for (const row of value) {
+		if (typeof row !== "object" || row === null) return false;
+		const {task, through, reason} = row as {task?: unknown; through?: unknown; reason?: unknown};
+		if (typeof task !== "string" || task === "") return false;
+		if (typeof through !== "string" || through === "") return false;
+		if (typeof reason !== "string" || reason.trim() === "") return false;
+		if (tasks.has(task)) return false;
+		tasks.add(task);
+	}
+	return true;
+};
 
 export type ParseLogResult =
 	| {readonly _tag: "Parsed"; readonly entries: ReadonlyArray<LogEntry>}
@@ -142,7 +193,10 @@ export const parseLog = (text: string): ParseLogResult => {
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
+			diagnosis?: unknown;
 			corrects?: unknown;
+			tasks?: unknown;
+			defers?: unknown;
 			outcome?: unknown;
 			sha?: unknown;
 			assertedBy?: unknown;
@@ -234,6 +288,12 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		// Only `true` routes, exactly as `partial` does: a `false` says this DONE stood on a pull
+		// request, which is the absent field's own reading, so both fold identically.
+		if (record.diagnosis !== undefined && typeof record.diagnosis !== "boolean") {
+			defects.push(`line ${index + 1} carries a non-boolean \`diagnosis\` field`);
+			continue;
+		}
 		// A correction that names no target line, or names one with nothing to put on it, supersedes
 		// nothing and would fold as a silent no-op — the same failure mode a roundless `CLEARED` has,
 		// and the reason both are defects here rather than events.
@@ -245,6 +305,47 @@ export const parseLog = (text: string): ParseLogResult => {
 		if (corrected && (typeof record.corrects !== "string" || typeof record.partial !== "boolean")) {
 			defects.push(
 				`line ${index + 1} is a ${CORRECTED_EVENT} event that does not carry both a \`corrects\` timestamp and a \`partial\``,
+			);
+			continue;
+		}
+		// An amendment naming no task set records that the machine changed and not what it changed to,
+		// which leaves the one thing this line exists to carry unreadable — the same silent-no-op class
+		// a roundless `CLEARED` is, and a defect here for the same reason.
+		const amended = bareEvent(record.event) === AMENDED_EVENT;
+		if (
+			record.tasks !== undefined &&
+			!(
+				Array.isArray(record.tasks) &&
+				record.tasks.length > 0 &&
+				record.tasks.every((name) => typeof name === "string" && name !== "")
+			)
+		) {
+			defects.push(
+				`line ${index + 1} carries a \`tasks\` field that is not a non-empty list of task ids`,
+			);
+			continue;
+		}
+		if (amended && record.tasks === undefined) {
+			defects.push(
+				`line ${index + 1} is an ${AMENDED_EVENT} event carrying no \`tasks\` — the task set the re-derived machine holds`,
+			);
+			continue;
+		}
+		if (record.defers !== undefined && !isDeferralList(record.defers)) {
+			defects.push(
+				`line ${index + 1} carries a \`defers\` field that is not a non-empty list of {task, through, reason} rows`,
+			);
+			continue;
+		}
+		if (!amended && record.defers !== undefined) {
+			defects.push(
+				`line ${index + 1} carries \`defers\` on a "${bareEvent(record.event)}" event — only an ${AMENDED_EVENT} defers a task out of the plan`,
+			);
+			continue;
+		}
+		if (!amended && record.tasks !== undefined) {
+			defects.push(
+				`line ${index + 1} carries \`tasks\` on a "${bareEvent(record.event)}" event — only an ${AMENDED_EVENT} names a re-derived task set`,
 			);
 			continue;
 		}
@@ -321,7 +422,10 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
+			...(record.diagnosis === undefined ? {} : {diagnosis: record.diagnosis as boolean}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
+			...(record.tasks === undefined ? {} : {tasks: record.tasks as ReadonlyArray<string>}),
+			...(record.defers === undefined ? {} : {defers: record.defers as ReadonlyArray<Deferral>}),
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
@@ -401,10 +505,33 @@ const stateIn = (states: Readonly<Record<string, TaskState>>, taskId: string): T
  * {@link applyCorrections} runs first, so a correction line never reaches the machine: it is
  * resolved into the entry it names and dropped, and a correction that cannot be resolved is a
  * defect on the same channel as an unreplayable log.
+ *
+ * An {@link AMENDED_EVENT} reaches no machine either, and is exempt from the task check above it:
+ * it is a fact about the lane rather than about a task, so the id it carries names the lane's own
+ * subject and nothing dispatches on it. Judging it against the task set would make the one line
+ * recording a topology change the line that refuses to replay through the topology it recorded.
+ *
+ * A **deferred** task is the one other exemption, and it is narrow by construction: only the tasks
+ * an amendment's `defers` payload names, and only over the history that payload bounds. Everything
+ * else about a deferred task is refused rather than ignored — an unresolvable payload, and any line
+ * the bound does not cover, are defects on this same channel. `pending` carries the deferrals of an
+ * amendment not yet appended, which is the only way {@link judgeAmendment} can fold a log through
+ * the machine the amendment would write before writing it.
  */
-export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): FoldResult => {
+export const foldLog = (
+	lane: CompiledLane,
+	entries: ReadonlyArray<LogEntry>,
+	pending: ReadonlyArray<string> = [],
+): FoldResult => {
+	const resolvedDeferrals = resolveDeferrals(entries);
+	if (resolvedDeferrals._tag === "Undecidable") {
+		return {_tag: "Unreplayable", defects: resolvedDeferrals.defects};
+	}
+	const deferred = new Set([...deferredTasks(resolvedDeferrals.deferrals), ...pending]);
 	const defects: string[] = [];
 	for (const entry of entries) {
+		if (bareEvent(entry.event) === AMENDED_EVENT) continue;
+		if (deferred.has(entry.task)) continue;
 		if (lane.tasks[entry.task] === undefined) {
 			defects.push(`log names task "${entry.task}", which is not in this lane's machine`);
 		}
@@ -417,13 +544,15 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 	const states: Record<string, TaskState> = {};
 	for (const [taskId, task] of Object.entries(lane.tasks)) {
 		const msgs = resolved.entries
-			.filter((entry) => entry.task === taskId)
+			.filter((entry) => entry.task === taskId && bareEvent(entry.event) !== AMENDED_EVENT)
 			.map((entry) => ({
 				type: bareEvent(entry.event),
 				...(entry.round === undefined ? {} : {round: entry.round}),
 				...(entry.classes === undefined ? {} : {classes: entry.classes}),
 				...(entry.waitGrant === undefined ? {} : {waitGrant: entry.waitGrant}),
 				...(entry.partial === undefined ? {} : {partial: entry.partial}),
+				...(entry.diagnosis === undefined ? {} : {diagnosis: entry.diagnosis}),
+				...(entry.cause === undefined ? {} : {cause: entry.cause}),
 			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
@@ -453,7 +582,8 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
  * no task and clears no park, so a grant landing on a parked lane must leave that park's cause
  * standing. A `CORRECTED` is skipped for the same reason — it amends an older line's
  * routing payload and parks nothing, so letting it stand as the latest entry would silently clear
- * the cause a repaired lane is still waiting under.
+ * the cause a repaired lane is still waiting under. An `AMENDED` is skipped for the third time on the
+ * same reasoning: it re-derives the machine and parks nothing.
  */
 export const standingCauses = (
 	entries: ReadonlyArray<LogEntry>,
@@ -479,7 +609,7 @@ const standingField = (
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
 		const bare = bareEvent(entry.event);
-		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT) continue;
+		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT || bare === AMENDED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
 	const standing: Record<string, string> = {};
@@ -550,6 +680,16 @@ export const deriveStatus = (
 		);
 		if (settled !== undefined) {
 			return {stateValue: stateIn(states, settled).type, status: "done", context};
+		}
+		// Read for the same reason and never folded into `complete`: an investigation's `DONE` is
+		// proven off a diagnosis comment rather than a merge, so answering `complete` here would name
+		// a shipped lane's terminal over a lane that shipped nothing. Empty on every machine
+		// declaring no `done:diagnosis` arm, which is every one but the coder workflow's `build`.
+		const diagnosed = phase.tasks.find((taskId) =>
+			taskIn(lane, taskId).diagnosisFinals.has(stateIn(states, taskId).type),
+		);
+		if (diagnosed !== undefined) {
+			return {stateValue: stateIn(states, diagnosed).type, status: "done", context};
 		}
 		if (phase.tasks.some((taskId) => errors.includes(taskId))) {
 			return {stateValue: lane.terminals.tripped, status: "done", context};
@@ -673,6 +813,8 @@ export const applyEvent = (
 	classes: ReadonlyArray<string> | null = null,
 	waitGrant: number | null = null,
 	partial: boolean | null = null,
+	diagnosis: boolean | null = null,
+	cause: string | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		if (event === CLEARED_EVENT) {
@@ -683,6 +825,11 @@ export const applyEvent = (
 		if (isBoardTerminalEvent(event)) {
 			return refuseEvent(
 				`"${event}" is not an operator event — a board-proven terminal is proven from the board's closed issue and is appended by \`lane settle\`, never transitioned`,
+			);
+		}
+		if (event === AMENDED_EVENT) {
+			return refuseEvent(
+				`"${event}" is not an operator event — a topology amendment re-derives the lane's machine and is appended by \`lane amend\`, never transitioned`,
 			);
 		}
 		return refuseEvent(
@@ -716,6 +863,16 @@ export const applyEvent = (
 	}
 	const task = taskIn(lane, taskId);
 	const from = stateIn(states, taskId);
+	// A lane keeps its own copy of `workflow.json` from `lane open`, so a cell can predate a cause.
+	// An unrouted lap loops the stage, which is right for every cause but one — see
+	// `ROUTED_MACHINERY_CAUSES`.
+	if (event === MACHINERY_EVENT && cause !== null && ROUTED_MACHINERY_CAUSES.has(cause)) {
+		if (!(task.lapRoutes.get(from.type)?.has(cause) ?? false)) {
+			return refuseEvent(
+				`task "${taskId}" is in "${from.type}", whose machinery cell holds no arm for cause "${cause}" — this lane's machine was written before that cause existed and would loop the stage instead of folding it, so nothing was recorded`,
+			);
+		}
+	}
 	let next: TaskState;
 	try {
 		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
@@ -723,6 +880,8 @@ export const applyEvent = (
 			...(classes === null ? {} : {classes}),
 			...(waitGrant === null ? {} : {waitGrant}),
 			...(partial === null ? {} : {partial}),
+			...(diagnosis === null ? {} : {diagnosis}),
+			...(cause === null ? {} : {cause}),
 		});
 	} catch (error) {
 		if (error instanceof NoCellError) {
@@ -766,6 +925,7 @@ export const applyEvent = (
 		...(classes === null ? {} : {classes}),
 		...(waitGrant === null ? {} : {waitGrant}),
 		...(partial === null ? {} : {partial}),
+		...(diagnosis === null ? {} : {diagnosis}),
 	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};

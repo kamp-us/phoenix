@@ -50,3 +50,21 @@ export const APPROVAL_UNAUTHORIZED = 24;
  * round, which no `plan` verb produces.
  */
 export const PLAN_UNAPPROVED = 25;
+/**
+ * Proven: the epic body carries a `## Dependencies` heading that is not a machine-owned region —
+ * more than one of them, or one sitting inside the preserved brief envelope.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}, because the two are opposite facts about a body: `7`
+ * says there is no region to reconcile and the epic needs planning, this says there are bytes that
+ * *look* like one and no way to tell which are the plan. Rewriting on a guess is how a body gets
+ * destroyed, so the guess is refused instead.
+ */
+export const REGION_UNRESOLVABLE = 26;
+/**
+ * Proven: every issue the topology names closed without landing, so reconciling would leave no phase.
+ *
+ * Not an answer and not {@link REGION_UNRESOLVABLE} — the region parsed and its meaning was single.
+ * The epic simply has no plan left, which a re-plan fixes and a rewrite cannot: writing the empty
+ * block would erase the record of what was planned while leaving the epic just as unbuildable.
+ */
+export const TOPOLOGY_EMPTIED = 27;

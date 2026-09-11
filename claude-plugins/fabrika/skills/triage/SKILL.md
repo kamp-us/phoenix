@@ -204,7 +204,13 @@ the wire format's, not this skill's
 ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)):
 `enrich` runs that reader over the body it composed and refuses a drifted block on exit `15` before
 writing anything, naming the defect the reader found — so write the criteria and let the verb answer.
-A rewrite carrying **no** criteria block is still accepted, where none is warranted. The stdin
+A rewrite carrying **no** criteria block is still accepted, where none is warranted — **except over an
+issue already labelled `ready-for:agent`**, where it refuses on `16` and writes nothing. That label
+promises a builder can pick the issue up cold and the block is what the promise is made of, so a
+criteria-less rewrite there leaves the stamp standing on no contract and the next lane backs off. The
+refusal names both ways out: author the block and re-send, or drop the audience label first with
+`fabrika triage apply <n> --ready-for human`. `--epic` is exempt, since an epic's criteria arrive per
+child from the plan ledger. The stdin
 grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
 (`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
 
@@ -238,6 +244,15 @@ fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
 lane-exempt issue is banned outright.
+
+**Repeatable `--class <name>` says which shells the lane runs, and `ui` is the one that changes a
+route.** Pass `--class ui` when the deliverable is a rendered surface, so the lane boots into
+`build:ui` — and, on a single-issue lane, `review:ui` too. This stamp is the *only* producer of that
+routing before a head has graded a diff: `lane open` and `lane emit` read the `class:<name>` label
+and seed the lane document from it, and without it a rendered ticket builds its first round in a
+shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
+vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
+any label is written. Most tickets need no `--class`: text is what the plain shells already serve.
 
 **Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
 route to them, and where an ordering belongs. Pass one per issue this one waits on
@@ -282,11 +297,18 @@ cold, and the block is what the promise is made of. Author one back in step 6 an
 drift is `triage repair-criteria`'s. `--type epic` is exempt because an epic's criteria arrive per
 child from the plan ledger, and `--ready-for human` is never asked for one.
 
+**`--type epic --ready-for agent` writes no audience label, and that is not a failure.** On an epic
+`ready-for:agent` is `check-epic-plan`'s statement that the plan floor came back clean, so the gate
+is its only writer: the verb stamps the type, the priority, `status:triaged` and the home, prints
+`none` in the ready-for column with a stderr line naming the gate, and leaves the epic
+un-pickable until it is gated. Stamp it anyway — that is the correct triaged shape for an epic, and
+`--ready-for human` is what parks one for a person instead.
+
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
-Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home,
-and every `--blocked-by` edge you asked for.
+Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on
+an epic sent to `agent`), a home, and every `--blocked-by` edge you asked for.
 
 ## 8 — The two outcomes that are not "triaged"
 

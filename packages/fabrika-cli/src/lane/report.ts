@@ -66,6 +66,7 @@ export const SHELL_VOCABULARIES = {
 	machinery: {
 		"REPLAY-COLLIDED": "LAP",
 		"BASE-DRIFTED": "LAP",
+		"BASE-CONFLICTED": "LAP",
 		"QUEUE-EJECTED": "LAP",
 		"SEAT-DIRTY": "LAP",
 		// A shell the provider killed is machinery by the same test as the four above: nothing about
@@ -382,6 +383,28 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * `ship enqueue`'s pre-arm read answered a definite `mergeable_state: dirty` — the base moved
+	 * under the branch and the merge now conflicts. Nothing about the artifact was judged, so the
+	 * round it owes is not one the repair budget is bounding.
+	 *
+	 * Distinct from `head-behind-base`, which is a head merely *behind* its base: that one merges
+	 * clean and only needs moving. This one has a hunk two sides both edited, so it needs a builder.
+	 * The re-review is owed with it — a dirty base moves the merge-base blob every verdict's content
+	 * digest covers (`../review/content-binding.ts`), so every verdict on the PR is void — which is
+	 * why this cause routes the lap to `build` rather than back to `ship`.
+	 *
+	 * No remedy: rebasing a conflicted branch is a judgment about content, and a verb that "removed"
+	 * this cause would be making it.
+	 *
+	 * Route `driver`: a base that moved is machinery, and no product call is in it.
+	 */
+	"base-conflicted": {
+		meaning:
+			"the PR's base moved under it and the merge conflicts, so the head owes a rebase and the re-review that comes with it",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The merge queue ejected the PR before it merged — a sibling's red, a base that moved under the
 	 * batch, a queue timeout. The head is where the shipper left it and the verdicts still stand.
 	 *
@@ -392,6 +415,25 @@ export const PARK_CAUSES = {
 	 */
 	"queue-ejected": {
 		meaning: "the merge queue ejected this PR before it merged, and no verdict against it changed",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * `ship checks` read the head's CI as red, so the shipper routed to `heal-ci` instead of
+	 * enqueuing. Nothing about the artifact was judged: the head is where the shipper left it and
+	 * every verdict against it still stands.
+	 *
+	 * It is the park class whose cause most often goes away with nobody acting — a flake gets re-run,
+	 * an unrelated fix lands — and that is what its `KNOWN_PARKS` row buys: the clearance re-reads the
+	 * same rollup at the live head rather than spending a person on a condition a verb can read again.
+	 *
+	 * No remedy: turning a red head green is repair work, and a verb that "removed" this cause would
+	 * be doing the `heal-ci` skill's job rather than observing it.
+	 *
+	 * Route `driver`: a red CI is machinery, and no product call is in it.
+	 */
+	"head-ci-red": {
+		meaning: "the head's CI is red, so the shipper routed to heal-ci rather than enqueue",
 		route: "driver",
 		remedy: null,
 	},
@@ -455,10 +497,29 @@ export type ParkCause = keyof typeof PARK_CAUSES;
 export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"REPLAY-COLLIDED": "replay-conflict",
 	"BASE-DRIFTED": "head-behind-base",
+	"BASE-CONFLICTED": "base-conflicted",
 	"QUEUE-EJECTED": "queue-ejected",
 	"SEAT-DIRTY": "worktree-holds-branch",
 	"SHELL-DEAD": "spawn-dead",
 };
+
+/**
+ * The machinery causes a lap cell must **route**, rather than loop on — the set `applyEvent` refuses
+ * a lap for when the lane's own machine holds no `lap:<cause>` arm naming it.
+ *
+ * A lane keeps its own copy of `workflow.json`, written at `lane open` and never rewritten, so a
+ * lane on disk can hold a lap cell that predates a cause. Every other machinery cause survives that
+ * gracefully: an ejection or a dirty seat wants the stage run again, which is exactly what an
+ * unrouted lap cell does. `base-conflicted` does not — its whole point is that the round belongs to
+ * a different stage, so an old cell would fold it back into `ship`, where the next enqueue read
+ * refuses identically, until sixteen laps have gone and the lane parks having done nothing. Refusing
+ * it with the log untouched is what leaves the shipper a fallback to take.
+ *
+ * The epic tail's `ship:queued` cell carries no routes for the same reason it needs none:
+ * `base-conflicted` is `ship enqueue`'s `21`, which fires only from the `ship` stage, and a PR that
+ * leaves the queue reports `QUEUE-EJECTED` instead.
+ */
+export const ROUTED_MACHINERY_CAUSES: ReadonlySet<string> = new Set<ParkCause>(["base-conflicted"]);
 
 /** The cause a machinery terminal carries on its own, or `null` for every other token. */
 export const machineryCause = (token: string): ParkCause | null =>

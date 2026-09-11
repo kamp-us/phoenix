@@ -17,6 +17,48 @@ export const issueRefsIn = (message: string): ReadonlyArray<number> =>
 		match[1] === undefined ? [] : [Number.parseInt(match[1], 10)],
 	);
 
+/** The subject's trailing `(#<n>)` — the shape the `build` skill's message convention writes. */
+const TRAILING_REF = /\(#(\d+)\)\s*$/;
+
+/**
+ * A ref a closing or association keyword introduces, and the anchor is the whole guard: the keyword
+ * must open its own line, so `does not close #<n>` is prose and `Closes #<n>` is a trailer.
+ */
+const TRAILER_REF = /^[ \t]*(?:closes?|closed|fix(?:e[sd])?|resolve[sd]?|part of)[ \t]+#(\d+)\b/gim;
+
+/** The child number inside a merged ref — `build/<n>-…` direct, `replay/build-<n>-…-onto-<sha>`. */
+const MERGED_BRANCH_REF = /(?:^|[/-])build[/-](\d+)-/g;
+
+const QUOTED_REF = /'([^']*)'/g;
+
+/**
+ * Every `#<n>` a message claims to have *landed* — a strict subset of {@link issueRefsIn}.
+ *
+ * Three shapes are recognised, and each is one the pipeline actually writes onto an assembly branch:
+ * a subject's trailing `(#<n>)`, a line-anchored `Closes`/`Fixes`/`Resolves`/`Part of` trailer, and
+ * the ref inside the `Merge branch '<ref>' into <branch>` subject `lane integrate` produces. Nothing
+ * else counts, so an incidental or negating mention names no landing — which is the whole point:
+ * `issueRefsIn` matches a bare `#<n>` anywhere, and reading that as evidence let
+ * `refactor(tracer): rework the helper; does not touch #<n>` discharge that number's dependency edge.
+ *
+ * It sits beside `issueRefsIn` rather than narrowing it, because `lane prove` and
+ * {@link foreignRefsIn} want the loose read: prove asks whether a range mentions its child at all,
+ * and the foreign-ref refusal must red on every number a message names, landing or not.
+ */
+export const landingRefsIn = (message: string): ReadonlyArray<number> => {
+	const subject = subjectOf(message);
+	const refs: number[] = [];
+	const trailing = TRAILING_REF.exec(subject);
+	if (trailing?.[1] !== undefined) refs.push(Number.parseInt(trailing[1], 10));
+	for (const trailer of message.matchAll(TRAILER_REF))
+		if (trailer[1] !== undefined) refs.push(Number.parseInt(trailer[1], 10));
+	if (/^Merge branch(?:es)? /.test(subject))
+		for (const quoted of subject.matchAll(QUOTED_REF))
+			for (const merged of (quoted[1] ?? "").matchAll(MERGED_BRANCH_REF))
+				if (merged[1] !== undefined) refs.push(Number.parseInt(merged[1], 10));
+	return refs;
+};
+
 /** The numbers a message names that `permitted` does not hold — empty is the clean message. */
 export const foreignRefsIn = (
 	message: string,

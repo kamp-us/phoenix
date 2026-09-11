@@ -15,7 +15,12 @@
  * `merge:partial` arm. It rides at both polarities — a closing merge records `partial: false` — so
  * the line says the closure was read rather than leaving a later sweep to read it again. `landed`
  * is that read's evidence and rides beside it: the merged PRs the closure judged, so a recorded
- * `false` says which reader wrote it and not only which way it fell.
+ * `false` says which reader wrote it and not only which way it fell. `diagnosis` is the third and
+ * rides a `DONE` out of build: it says this terminal was proven off a diagnosis comment rather than
+ * a pull request, which is what the machine's `done:diagnosis` arm carries an investigation to its
+ * own terminal on instead of the review it opened nothing for. It rides at `true` only, because the
+ * three builder terminals that reach this verb all report one `DONE` and only the prover can tell
+ * them apart.
  *
  * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
  * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
@@ -35,7 +40,7 @@ import {Effect, FileSystem, Path, Result} from "effect";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
-import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import {
 	APPEND_UNKNOWN,
@@ -50,6 +55,7 @@ import {
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import {parkCauseRefusal} from "./park-cause-rule.ts";
+import {gateOnProof} from "./proof-gate.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
@@ -62,7 +68,6 @@ import {
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
-const PROVE_VERB = "fabrika lane prove";
 
 export interface ReportOptions extends LaneRef {
 	/** The shell's terminal token, exactly as its skill's vocabulary spells it; case-folded here. */
@@ -136,6 +141,10 @@ export const runReport = <R>(
 			resolved.event,
 			at,
 			classed.classes,
+			null,
+			null,
+			null,
+			caused._tag === "Caused" ? caused.cause : null,
 		);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
@@ -144,28 +153,28 @@ export const runReport = <R>(
 		// The proof runs BEFORE the lock: it is read-only over the artifacts, never over the lane's
 		// bytes, so holding writers up behind a slow board read buys nothing. What the lock
 		// covers is the authoritative second pass below, where a fresh fold decides and appends.
-		const proved = yield* prove({
-			root: options.root,
-			lane: options.lane,
-			event: resolved.event,
-			task: task.taskId,
-			// The same classes the append carries, so the proof asks about the arm this event actually
-			// takes rather than the one the lane stood on before it.
-			classes: classed.classes,
-			// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
-			// not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
-			pr: options.pr,
-			repo: options.repo,
-			cwd: options.cwd,
-			env: options.env,
-		});
-		if (proved.code !== ANSWER) {
-			return refuse(
-				proved.code,
-				`${VERB}: refused (log unappended): the ${resolved.event} behind token ${resolved.token} is not proven — the reasons above are ${PROVE_VERB}'s and so are their remedies.`,
-				proved.stderr,
-			);
-		}
+		const gated = yield* gateOnProof(
+			VERB,
+			prove,
+			{
+				root: options.root,
+				lane: options.lane,
+				event: resolved.event,
+				task: task.taskId,
+				// The same classes the append carries, so the proof asks about the arm this event actually
+				// takes rather than the one the lane stood on before it.
+				classes: classed.classes,
+				// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
+				// not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
+				pr: options.pr,
+				repo: options.repo,
+				cwd: options.cwd,
+				env: options.env,
+			},
+			`the ${resolved.event} behind token ${resolved.token}`,
+		);
+		if (gated._tag === "Refused") return gated.outcome;
+		const proved = gated.proof;
 
 		// Authoritative pass, inside the write lock: a fresh load → fold → validate → append against
 		// the bytes as they exist under the lock, so a shell recording its terminal cannot validate
@@ -210,6 +219,8 @@ export const runReport = <R>(
 					classed.classes,
 					null,
 					proved.partial,
+					proved.diagnosis ? true : null,
+					caused._tag === "Caused" ? caused.cause : null,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);
@@ -243,6 +254,7 @@ export const runReport = <R>(
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 							...(proved.partial === null ? {} : {partial: proved.partial}),
+							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 						},
 						null,

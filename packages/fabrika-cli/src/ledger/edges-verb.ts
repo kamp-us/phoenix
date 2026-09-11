@@ -14,6 +14,11 @@
  * an edge nobody's plan names is left alone. A `blocked_by` list may carry edges no ledger authored —
  * a human's, another epic's — and deleting one because this block does not name it would silently
  * unblock work on the strength of a document that was never the carrier.
+ *
+ * **The confirming re-read only runs when something was POSTed.** On the idempotent path the first
+ * read already proved every required edge present, so re-reading can only convert a transient GitHub
+ * blip into `WRITE_UNKNOWN` over zero writes — a code whose whole meaning is "edges were POSTed and
+ * cannot be confirmed".
  */
 
 import {Effect} from "effect";
@@ -79,6 +84,16 @@ const readGraph = (
 		return {_tag: "Graph" as const, edges};
 	});
 
+const reconciled = (epic: number, required: number, written: number): string =>
+	JSON.stringify({
+		answer: "reconciled",
+		epic,
+		required,
+		already: required - written,
+		written,
+		verified: true,
+	});
+
 const missingFrom = (
 	graph: ReadonlyMap<number, ReadonlySet<number>>,
 	required: ReadonlyArray<RequiredEdge>,
@@ -122,6 +137,12 @@ export const runEdges = (
 		);
 		if (before._tag === "Refused") return before.outcome;
 		const missing = missingFrom(before.edges, required);
+
+		// Nothing to POST means nothing to confirm — `before` already proved every required edge on
+		// the graph, so a second read here can only turn a healthy graph into an UNKNOWN nobody owes.
+		if (missing.length === 0) {
+			return answer(reconciled(epic.number, required.length, 0), [...notes, scanned]);
+		}
 
 		const prerequisites = [...new Set(missing.map((edge) => edge.prerequisite))].sort(
 			(a, b) => a - b,
@@ -185,15 +206,5 @@ export const runEdges = (
 			);
 		}
 
-		return answer(
-			JSON.stringify({
-				answer: "reconciled",
-				epic: epic.number,
-				required: required.length,
-				already: required.length - missing.length,
-				written: missing.length,
-				verified: true,
-			}),
-			[...notes, scanned],
-		);
+		return answer(reconciled(epic.number, required.length, missing.length), [...notes, scanned]);
 	});

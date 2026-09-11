@@ -28,7 +28,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
-| `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with provenance tag | the fences and the diff-guarded append are mechanical; whether a finding is in-scope is judgment |
+| `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with a provenance tag naming the PR or, on an epic child, the range | the fences and the diff-guarded append are mechanical; whether a finding is in-scope is judgment |
 | `review scratch` | the per-lane directory this reviewer's staged files go under, allocated fail-closed | deriving a namespace no second lane resolves to, and refusing when it cannot be derived, is mechanical; what to stage there is judgment |
 
 ### Considered and deliberately not derived
@@ -127,7 +127,7 @@ prose copies are not the authority.
 | `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files or zero declared check runs, or a required block is proven absent or malformed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | — | — | ✓ | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | — | — | ✓ | ✓ |
-| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier, a `--sha` that is not a head SHA | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
+| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier, a `--sha` that is not a head SHA, or flags that name no review subject or two | ✓ | ✓ | — | — | — | ✓ | ✓ | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
@@ -594,6 +594,17 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 | `--cadence-seconds` | integer | no | `30` | `--wait` only: sleep between polls |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
+
+**A `--wait` call must be invoked with a caller-side timeout above `--budget-seconds`.** The budget
+bounds the verb, not the process around it: a shell timeout below the budget kills the CLI mid-poll,
+no `settle` token is printed, and the caller has an `UNKNOWN` instead of an answer. In an agent shell
+that deadline is the Bash tool's `timeout`, whose ceiling is `600000` ms unless the environment sets
+`BASH_MAX_TIMEOUT_MS` above it — a larger request is silently clamped to the ceiling rather than
+refused, so no deadline past it can be asked for. That leaves the `600` default budget with no
+headroom on either side: pair `timeout: 600000` with `--budget-seconds 480` instead, which keeps the
+deadline strictly above the budget with room for the `gh` reads. A practical pairing, not a
+guaranteed CLI maximum, and a budget raised past the ceiling needs `BASH_MAX_TIMEOUT_MS` raised
+with it.
 
 **Output** — machine channel. Under `--wait`, a first line
 `settle\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`; without it that
@@ -1274,16 +1285,24 @@ $ echo $?
 
 ```
 fabrika review append-criterion 4287 --pr 4321 --round 1 [--repo <owner/name>] [--json]
+fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1 [--repo <owner/name>] [--json]
 ```
 
 The criterion text arrives on **stdin** — one checkbox row's text, without the leading `- [ ]`.
+
+**The subject is a PR or a range, never both.** An epic child has no pull request mid-run, so
+`--base`/`--tip` name what the round was judged over, exactly as they do for `review post`.
+All four fences run identically on either form; the only thing that differs is what the provenance
+tag names.
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| *(positional)* | integer | yes | — | the linked issue receiving the criterion |
-| `--pr` | integer | yes | — | the PR whose review round produced the finding — half the provenance tag |
+| *(positional)* | integer | yes | — | the linked issue receiving the criterion — on the range form, the epic child |
+| `--pr` | integer | yes, unless `--base`/`--tip` | — | the PR whose review round produced the finding — half the provenance tag |
+| `--base` | string | yes, unless `--pr` | — | with `--tip`: the range `<base>..<tip>` the round was judged over, standing in for `--pr`; never combined with `--pr` |
+| `--tip` | string | with `--base` | — | the range's tip revision — the other half of `--base` |
 | `--round` | integer | yes | — | this review round's number; at or past the freeze (`src/retry-budget.ts`'s `CAP_ROUND`) the verb escalates instead of appending |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -1302,7 +1321,9 @@ With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"
    below `write`, or any ACL lookup failure, refuses — authority comes from the ACL check, never
    from the text being plausible.
 2. **Append-only**: the new body is the old body plus exactly one row (`- [ ] <text>
-   <!-- ac:review pr:#<pr> round:<round> -->`) under the existing conforming heading; a diff
+   <!-- ac:review pr:#<pr> round:<round> -->`, or `<!-- ac:review range:<base>..<tip> round:<round> -->`
+   on the range form — the range spelled as `range-verdict-marker.ts` spells it, so one range reads
+   the same in a criterion row and in the verdicts `lane prove` folds) under the existing conforming heading; a diff
    guard refuses any write that would drop or mutate a prior byte. The row lands after the last
    criterion's **last physical line**, taken from the parser's own span — a criterion that wraps
    spans several lines and its text appears on none of them, so matching text against lines found
@@ -1324,6 +1345,7 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `7` | the issue is proven absent (404) or closed; or its body carries no conforming acceptance-criteria block to append under (the wire read's `Absent`/`Malformed`, distinguished on stderr) |
 | `8` | the body PATCH, or on the frozen path the escalation comment, failed — UNKNOWN; the message names which |
 | `9` | the write landed but the read-back does not show exactly the old rows plus this one |
+| `10` | the flags name no subject, or two — no `--pr` and no range, `--pr` beside a range, a lone `--base`/`--tip`, or an end that is not a revision |
 | `11` | the issue body, the ACL, or the block could not be read — nothing was written |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed, fail-closed — an authorization denial, never mistakable for an absent target |
 | `15` | refused: the composed write is not provably the old body plus one row — the append-only fence. Its three causes carry three different messages: no row to append under, a line the diff guard says would move (named), or a composed body the format re-reads as something other than the prior rows plus this one |
@@ -1335,6 +1357,10 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `review append-criterion: no criterion on stdin.` | 3 | refusal |
 | `review append-criterion: the criterion carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `review append-criterion: the criterion is a bare "@" path reference — the text never arrived. Send it on stdin.` | 6 | refusal |
+| `review append-criterion: name the subject the round was judged over — --pr on a pull request, --base/--tip on an epic child's range.` | 10 | refusal |
+| `review append-criterion: --pr does not combine with --base/--tip — a round is judged over one subject, and the tag names it.` | 10 | refusal |
+| `review append-criterion: --base and --tip come together — a range has two ends.` | 10 | refusal |
+| `review append-criterion: --<base\|tip> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `review append-criterion: issue #<n> not found in <repo>.` | 7 | refusal |
 | `review append-criterion: issue #<n> is closed — an appended row there enters no cycle; file the finding instead.` | 7 | refusal |
 | `review append-criterion: #<n> carries no conforming acceptance-criteria block (<absent|malformed>: <wire reason>) — nothing to append under.` | 7 | refusal |
@@ -1361,6 +1387,11 @@ appended	4287	3
 ```
 $ printf 'anything' | fabrika review append-criterion 4287 --pr 4321 --round 4
 escalated-frozen	4287	4
+```
+
+```
+$ printf 'a regression test covers the widened union' | fabrika review append-criterion 6095 --base 9f2c1ab --tip 03135b9 --round 1
+appended	6095	7
 ```
 
 **Grounding**

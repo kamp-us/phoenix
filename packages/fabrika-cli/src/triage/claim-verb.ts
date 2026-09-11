@@ -13,8 +13,11 @@
  * Everything a marker set could fail to say is a refusal instead. An unreadable comment list, a
  * shape that is not a list of comments, a marker whose ordering key will not parse — none of them
  * resolve to "no competing claim", which is the fail-open shape this verb exists to design out (see
- * `claim.ts`). The resolution itself is pure and lives there; this module is the IO and the exit
- * codes.
+ * `claim.ts`). A comment list that the issue's own declared count proves short is one of those
+ * refusals too, which is why both reads here go through `listCommentsReconciled` rather than
+ * `listComments`: the rule is only as good as the set it is handed, and a stale set once answered
+ * `won` for a lane that had already lost. The resolution itself is pure and lives in
+ * `claim.ts`; this module is the IO and the exit codes.
  *
  * The `Attempt`/`Existence` results the IO returns are **values, not the `E` channel**: a 404 and a
  * 502 are outcomes this verb maps onto its own codes, not exceptions (effect-smol `LLMS.md`
@@ -23,7 +26,13 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, deleteComment, getIssue, listComments, resolveRepo} from "../io/issues.ts";
+import {
+	createComment,
+	deleteComment,
+	getIssue,
+	listCommentsReconciled,
+	resolveRepo,
+} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type AskedLane,
@@ -111,7 +120,7 @@ export const runClaim = (
 			return refuse(ZERO_SCOPE, `${VERB}: issue #${issue} is closed — nothing to triage.`);
 		}
 
-		const before = yield* listComments(repo, issue);
+		const before = yield* listCommentsReconciled(repo, issue);
 		if (before._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -126,7 +135,7 @@ export const runClaim = (
 		// marker under another nonce, and posting its own is exactly what the race needs.
 		const alreadyHeld = myMarker(
 			resolveClaim({
-				markers: markersOf(before.value),
+				markers: markersOf(before.value.comments),
 				caller,
 				now,
 				ttlMinutes: DEFAULT_TTL_MINUTES,
@@ -145,7 +154,7 @@ export const runClaim = (
 			postedId = posted.value.id;
 		}
 
-		const after = alreadyHeld === null ? yield* listComments(repo, issue) : before;
+		const after = alreadyHeld === null ? yield* listCommentsReconciled(repo, issue) : before;
 		if (after._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -157,9 +166,9 @@ export const runClaim = (
 						],
 			);
 		}
-		const scope = scannedLine(VERB, repo, after.value.length, "comment");
+		const scope = scannedLine(VERB, repo, after.value.comments.length, "comment");
 		const resolution = resolveClaim({
-			markers: markersOf(after.value),
+			markers: markersOf(after.value.comments),
 			caller,
 			now,
 			ttlMinutes: DEFAULT_TTL_MINUTES,

@@ -11,6 +11,12 @@
  * predicate. Here the composed body *contains foreign content by design* — the preserved original —
  * and that content is redacted, not refused, because refusing it would strand the enrichment on
  * somebody else's leak while preserving it unredacted would re-commit that leak to a public issue.
+ *
+ * **A criteria-less body is a fact, except over `ready-for:agent`.** That label is the promise a
+ * builder can pick the issue up cold, and the criteria block is what the promise is made of — so
+ * this verb reads the target's live labels and refuses on {@link CRITERIA_REQUIRED} rather than
+ * leaving the stamp standing over no contract, the same seat `triage apply` and `decision rule`
+ * refuse the audience on.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -21,9 +27,11 @@ import {normalizeForReadback} from "../report/compose.ts";
 import {renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
+import {READY_FOR_AGENT} from "./audience.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
 import {pullRequestReferences} from "./blocked-by.ts";
 import {
+	CRITERIA_REQUIRED,
 	MALFORMED_CRITERIA,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -156,6 +164,23 @@ export const runEnrich = (
 			return refuse(
 				MALFORMED_CRITERIA,
 				`triage enrich: ${surface.noun} composes an acceptance-criteria block the wire reader rejects — ${criteria.reason} (${criteria.evidence}). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.`,
+			);
+		}
+
+		// `Absent` is allowed above because an issue with no criteria block is a fact. It stops
+		// being a fact the moment the target already carries `ready-for:agent`: that label is the
+		// promise a builder can pick the issue up cold, and this write would leave it standing over no
+		// contract. The epic surface is exempt for the reason `apply` exempts `--type epic` — an epic's
+		// criteria arrive per child from the plan ledger.
+		if (
+			!options.epic &&
+			criteria._tag !== "Found" &&
+			target.value.labels.includes(READY_FOR_AGENT)
+		) {
+			return refuse(
+				CRITERIA_REQUIRED,
+				`triage enrich: #${issue} carries ${READY_FOR_AGENT} and ${surface.noun} composes no acceptance-criteria block the wire reader answers Found on — ${criteria.reason}. That label promises a builder can pick the issue up cold, and the block is what the promise is made of. Either author a "### Acceptance criteria" block into ${surface.noun} and re-send, or drop the audience label first with \`fabrika triage apply ${issue} --ready-for human\`. Nothing was written.`,
+				diagnostics,
 			);
 		}
 

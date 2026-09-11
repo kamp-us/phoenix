@@ -345,16 +345,25 @@ It records the `LAP` event and spends the lap counter, never the repair budget. 
 not called a retry**: a retry is a repair round an artifact owes because a reviewer judged it and
 found it wrong, and keeping the two words apart is the point of having two counters.
 
+### The local-tree guard
+
+A shipped fabrika guard a builder can run offline: argument-free, reading only the checked-out tree,
+needing no PR number, no board read and no auth. That predicate is the whole definition, and each
+guard answers it beside its own registration in
+[`packages/fabrika-cli/src/guard/command.ts`](../packages/fabrika-cli/src/guard/command.ts) — read
+membership there, never off a list kept anywhere else. A member runs under its own leaf, which is
+not always `check`: the decisions-index guard's is `validate`.
+
+`fabrika build check` runs every member on every surface and names each in its answer — the ruling is
+ADR [0381](../.decisions/0381-local-tree-guards-run-in-build-check.md). **A member that refuses is
+skipped, not passed**: a zero-scope or UNKNOWN exit is named as `skipped: <name> (<reason>)` on the
+local run, and the CI gate — which fails closed on the same exit under ADR
+[0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) — still owns the verdict.
+
 ### Diátaxis-lite README shape
 
-The canonical section order every `packages/*/README.md` follows — explanation (*what it is* /
-*why it exists*, citing the forcing ADR) → how-to (runnable recipes) → reference (dry,
-look-it-up, last or linked out) → a short testing tail — with two hard rules: no tutorial at
-package scale (a walkthrough moves to its own linked surface), and scope/non-goals live in the
-explanation half. A small package may satisfy it in three short sections; the order is canonical,
-the length is not. The [`diataxis`](../claude-plugins/fabrika/skills/diataxis/SKILL.md) skill is
-the single-mode classifier over any page. Pinned by
-[package-readme-shape.md](../.patterns/package-readme-shape.md).
+The name for the package README's navigation order. Its section and page-splitting
+rules belong in [package-readme-shape.md](../.patterns/package-readme-shape.md).
 
 ### The three senses of "phoenix"
 
@@ -383,14 +392,6 @@ independently; the product simply comes home to **kamp.us**. Rebirth named in En
 (*phoenix*), completed in Turkish (*anka*), landing on the repo's Turkish-for-brand /
 English-for-technical rule (§3). `anka` is a **framework name**, not user-facing product
 copy, so it lives here in sense (3) rather than as a §3 Turkish-surface brand-noun row.
-
-### Diátaxis-lite README shape
-
-The canonical section order every `packages/*/README.md` follows — explanation (`What it is` /
-`Why it exists`) → how-to → reference tail → testing — scaled down to a three-section minimum
-for small packages. No tutorial at package scale: walkthroughs live on their own linked
-surface. The pattern doc is [`.patterns/package-readme-shape.md`](../.patterns/package-readme-shape.md);
-the `diataxis` skill is the single-mode classifier over any docs page, READMEs included.
 
 ### Milestone
 

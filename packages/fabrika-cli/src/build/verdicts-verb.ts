@@ -1,14 +1,25 @@
 /**
- * `build verdicts` — the paginated, current-head, per-gate verdict fold on a PR.
+ * `build verdicts` — the paginated, per-gate verdict fold on a PR, at its live head.
  *
  * Three properties the repair loop rests on:
  *
  * - **A stale marker is visible AS stale, never dropped.** "The FAIL is old" and "there is no FAIL"
  *   are different facts, and folding them is how a FAIL'd PR reads as unreviewed.
+ *
+ * - **Staleness is the content question**, decided by `bindToContent` off the head digest
+ *   `../review/head-content.ts` resolves — the same derivation `ship gate` reads. This verb tells a
+ *   builder "your verdicts are void, re-review"; the gate decides whether the PR may merge, and the
+ *   two answering one marker differently spent a lane a repair round nobody had found a defect in.
  * - **Native reviews are their own row kind**, never coerced into markers. Whether a
  *   `CHANGES_REQUESTED` with no marker drives a repair is still undecided; this verb reports the
  *   state honestly and pre-rules nothing.
  * - An unreadable page cannot prove there are no verdicts. See ./command.ts help for the answer.
+ *
+ * - **Mergeability is folded beside the rows**, because a PR conflicting against its base is repair
+ *   work no gate emits a FAIL for: without the field, an all-PASS fold over a conflicting PR is the
+ *   proven-no-work answer the Repair section routes on, and the lane leaves the PR stranded.
+ *   The platform's uncomputed read stays `unknown` all the way out — folded as clean it rebuilds the
+ *   bug behind a field that looks like it fixed it.
  *
  * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
  *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
@@ -23,11 +34,13 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {capNote, capReached} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
+import type {PullMergeability} from "../io/pulls.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {headContentFor} from "../review/head-content.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
-import {bindToHead, read as readMarker} from "../wire/verdict-marker.ts";
+import {bindToContent, read as readMarker, type VerdictMarker} from "../wire/verdict-marker.ts";
 import {clearancesOn, grantedFrom} from "./clearances.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {contentOf, gate} from "./content-gate.ts";
@@ -38,6 +51,17 @@ import {countRounds, roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
+
+/** The machine line the fold's mergeability gets, one per value — the fact is never left unsaid. */
+const mergeabilityNote = (pr: number, baseRef: string, state: PullMergeability): string => {
+	if (state === "conflicting") {
+		return `${VERB}: PR #${pr} is CONFLICTING against ${baseRef} — a base conflict is repair work no gate emits a FAIL for, so this fold is not a clean answer.`;
+	}
+	if (state === "unknown") {
+		return `${VERB}: PR #${pr}'s mergeability is UNKNOWN — GitHub had not computed it yet, and that is never "merges cleanly".`;
+	}
+	return `${VERB}: PR #${pr} merges cleanly into ${baseRef}.`;
+};
 
 /** The provenance tag on a reviewer-appended criterion: `<!-- ac:review pr:#<pr> round:<n> -->`. */
 const PROVENANCE_RE = /<!--\s*ac:review\s+pr:#(\d+)\s+round:(\d+)\s*-->/;
@@ -106,22 +130,40 @@ export const runVerdicts = (
 
 		// Latest marker per gate namespace. The round count is `roundsOn`'s, so this verb and `build
 		// clear` cannot disagree about how many rounds the PR has been through.
-		const latest = new Map<string, Row>();
+		const latest = new Map<string, {readonly marker: VerdictMarker; readonly commentId: number}>();
+		const bodies = new Map<number, string>();
 		for (const comment of listed.value) {
 			const parsed = readMarker(comment.body);
 			if (parsed._tag !== "Found") continue;
-			const marker = parsed.value;
-			latest.set(marker.namespace, {
-				gate: marker.namespace,
-				polarity: marker.polarity,
-				sha: marker.sha,
-				current: bindToHead(marker, head)._tag === "Current",
-				commentId: comment.id,
-				kind: "marker",
-				body: contentOf(gate("comment-body", `comment ${comment.id}`, comment.body)),
-			});
+			latest.set(parsed.value.namespace, {marker: parsed.value, commentId: comment.id});
+			bodies.set(
+				comment.id,
+				contentOf(gate("comment-body", `comment ${comment.id}`, comment.body)),
+			);
 		}
-		const rows: Row[] = [...latest.values()];
+
+		// One derivation with `ship gate` (`../review/head-content.ts`), so the repair loop and the
+		// merge gate cannot answer one marker's staleness differently.
+		const headContent = yield* headContentFor(
+			VERB,
+			repo,
+			pr,
+			target.pull,
+			null,
+			[...latest.values()].map(({marker}) => marker),
+			head,
+		);
+		const rows: Row[] = [...latest.values()].map(({marker, commentId}) => ({
+			gate: marker.namespace,
+			polarity: marker.polarity,
+			sha: marker.sha,
+			// A digest this checkout could not derive is `Unbindable`, and `Unbindable` is not-current
+			// exactly as `Stale` is: a failed derivation must never launder a stale verdict.
+			current: bindToContent(marker, head, headContent.digest)._tag === "Current",
+			commentId,
+			kind: "marker" as const,
+			body: bodies.get(commentId) ?? "",
+		}));
 		for (const review of reviews.value) {
 			if (review.state === "COMMENTED" || review.state === "PENDING") continue;
 			rows.push({
@@ -155,6 +197,7 @@ export const runVerdicts = (
 		return answer(
 			JSON.stringify({
 				head,
+				mergeability: target.pull.mergeability,
 				rows,
 				rounds,
 				capReached: capReached(rounds, granted),
@@ -163,7 +206,9 @@ export const runVerdicts = (
 			}),
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
+				mergeabilityNote(pr, target.pull.baseRef, target.pull.mergeability),
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
+				...headContent.diagnostics,
 			],
 		);
 	});

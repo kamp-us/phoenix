@@ -9,10 +9,16 @@
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
  *
+ * Only check-epic-plan stamps an epic ready for an agent. Reporting the requested audience
+ * instead of the reconciled stamp would recreate the read-back fallback this verb forbids.
+ *
  * `--blocked-by` reads, writes and read-back live in `./blocked-by.ts`.
  * **Its output column reports this run, not the graph**: the dependency
  * endpoint is read only when the flag is present, so a flagless run prints it empty whatever the
  * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close.
+ *
+ * `--class` supplies the seed read by `../lane/class-seed.ts`. Unlike the other facets,
+ * its vocabulary is closed in code rather than declared on the board.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -31,7 +37,11 @@ import {
 import {guardConfig} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {
+	audienceKeep,
+	CLASSES,
 	decodeMember,
+	EPIC_TYPE,
+	EPIC_TYPE_LABEL,
 	planReconcile,
 	renderShape,
 	shapeViolations,
@@ -47,6 +57,14 @@ export interface ApplyOptions {
 	readonly readyFor: string;
 	readonly home: number | null;
 	readonly lane: string | null;
+	/**
+	 * Repeatable `--class`: the artifact classes this issue's lane routes its shells off.
+	 *
+	 * The producer for the lane document's `context.<task>.classes` seed — `lane open` and `lane emit`
+	 * read the label this stamps, so a rendered-surface issue reaches `build:ui` on its first pass
+	 * instead of after a `review-ui` FAIL has raised the class off a diff.
+	 */
+	readonly classes: ReadonlyArray<string>;
 	/** Repeatable `--blocked-by`: the issues this one waits on, written as native graph edges. */
 	readonly blockedBy: ReadonlyArray<number>;
 	readonly repo: string | null;
@@ -71,10 +89,13 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
  * `review criteria` refuse exactly what it refuses, so stamping over a body it will not answer
  * `Found` on only defers the refusal to a lane that cannot repair it.
  *
- * **`--type epic` is exempt**, and that is the load-bearing carve-out: an epic's criteria arrive per
- * child from the plan ledger rather than in its own body, so a blanket refusal would make a triaged
- * epic unstampable. `--ready-for human` is exempt on every type — the promise the block backs is the
- * one made to an agent.
+ * **`--type epic` is exempt by its own test here**, and that is the load-bearing carve-out: an
+ * epic's criteria are written by `plan-epic` beside the ledger, so at triage time it carries no
+ * block and a blanket refusal would make a triaged epic untriagable. Under `--ready-for agent` the
+ * epic is separately left unstamped by `audienceKeep` in `./facets.ts` — a sibling rule keyed on
+ * the same type, not this exemption's cause and not its consequence, so changing either leaves the
+ * other where it stands. `--ready-for human` is exempt on every type — the promise the block backs
+ * is the one made to an agent.
  */
 const criteriaRefusal = (
 	issue: number,
@@ -82,7 +103,7 @@ const criteriaRefusal = (
 	readyFor: string,
 	body: string,
 ): VerbOutcome | null => {
-	if (readyFor !== "agent" || type === "epic") return null;
+	if (readyFor !== "agent" || type === EPIC_TYPE) return null;
 	const criteria = readCriteria(body);
 	if (criteria._tag === "Found") return null;
 	return refuse(
@@ -162,6 +183,21 @@ export const runApply = (
 			}
 		}
 
+		// The class set is closed in code rather than declared on the board, so the refusal enumerates
+		// `CLASSES` and not a resolved list: a spelling outside it matches no `class:<name>` arm and
+		// routes as unclassed, which is the silent misroute this decode exists to make loud.
+		const classes: string[] = [];
+		for (const raw of options.classes) {
+			const decoded = decodeMember(CLASSES, raw);
+			if (decoded === null) {
+				return refuse(
+					OFF_VOCABULARY,
+					`triage apply: --class must be one of ${CLASSES.join(", ")} — got "${raw}". Nothing was written.`,
+				);
+			}
+			if (!classes.includes(decoded)) classes.push(decoded);
+		}
+
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {
 			return refuse(
@@ -207,7 +243,15 @@ export const runApply = (
 
 		// Only the labels THIS invocation writes, not the whole vocabulary: checking all six types
 		// would refuse a good `--type bug` in a repo that merely lacks `type:investigation`.
-		const facets = triagedFacets({type, priority, readyFor, lane}, resolved);
+		const facets = triagedFacets({type, priority, readyFor, lane, classes}, resolved);
+		// What LANDED, never what was asked: an epic asked for the agent audience is stamped by
+		// `check-epic-plan` and by nothing here, so both channels report the absence.
+		const stampedAudience = audienceKeep(type, readyFor).length === 0 ? null : readyFor;
+		if (stampedAudience === null) {
+			diagnostics.push(
+				`triage apply: no ready-for label was stamped on #${issue} — the agent audience on a ${EPIC_TYPE_LABEL} is \`check-epic-plan\`'s flip alone, written when that epic's plan floor comes back clean.`,
+			);
+		}
 		const willWrite = facets.flatMap((facet) => facet.keep);
 		const missing = willWrite.find((label) => !vocabulary.value.includes(label));
 		if (missing !== undefined) {
@@ -247,7 +291,9 @@ export const runApply = (
 			);
 		}
 
-		const expected = `expected exactly one type, one priority, ${resolved.board.statuses.triaged}, one ready-for, and ${
+		const expected = `expected exactly one type, one priority, ${resolved.board.statuses.triaged}, ${
+			stampedAudience === null ? "no ready-for" : "one ready-for"
+		}, ${classes.length === 0 ? "no class" : `class ${classes.join(", ")}`}, and ${
 			home === null ? "no milestone" : `milestone ${home}`
 		}`;
 		const back = yield* getIssue(repo, issue);
@@ -285,7 +331,8 @@ export const runApply = (
 						number: issue,
 						type,
 						priority,
-						readyFor,
+						readyFor: stampedAudience,
+						classes,
 						home: home === null ? lane : home,
 						removed: plan.removed,
 						blockedBy: landed.value,
@@ -294,7 +341,7 @@ export const runApply = (
 					diagnostics,
 				)
 			: answer(
-					`triaged\t${issue}\t${type}\t${priority}\t${readyFor}\t${homeColumn}\t${edgeColumn}`,
+					`triaged\t${issue}\t${type}\t${priority}\t${stampedAudience ?? "none"}\t${homeColumn}\t${edgeColumn}\t${classes.join(",")}`,
 					diagnostics,
 				);
 	});

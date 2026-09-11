@@ -12,9 +12,17 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {EPIC_RULES, EPIC_TAIL_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
-import {runBrief} from "./brief-verb.ts";
 import {
+	EPIC_RULES,
+	EPIC_TAIL_REPAIR_RULES,
+	EPIC_TAIL_RULES,
+	RULES,
+	read as readBrief,
+} from "../wire/lane-brief.ts";
+import {runBrief} from "./brief-verb.ts";
+import {seedClasses} from "./class-seed.ts";
+import {
+	BRIEFED_VERB_ABSENT,
 	ISSUE_UNRESOLVED,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
@@ -179,9 +187,12 @@ const locating = (
  * a brief arm keyed to a shape the emitter does not produce would pass its own test and refuse the
  * live lane.
  */
-const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
+const epicLane = (
+	events: ReadonlyArray<readonly [string, string]>,
+	childClasses: ReadonlyArray<string> = [],
+) => {
 	const emitted = emitMachine(EPIC, "## Dependencies\n\n- phase 1: #5828\n", [
-		{number: 5828, state: "open", stateReason: null},
+		{number: 5828, state: "open", stateReason: null, classes: childClasses},
 	]);
 	if (emitted._tag !== "Emitted") throw new Error(`the epic fixture did not emit: ${emitted._tag}`);
 	return fakeFs({
@@ -276,6 +287,36 @@ describe("lane brief", () => {
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
 			value: {state: "build:ui", shell: "ui-builder", ground: {_tag: "Pull", pr: null}},
+		});
+	});
+
+	/**
+	 * The seed's whole point: the class stands at the FIRST `WIP`, off the document, with no event
+	 * carrying it. Before a producer existed this lane built in the plain `builder` and reached
+	 * `build:ui` only after a `review-ui` FAIL had raised the class off a diff.
+	 */
+	it("briefs ui-builder off the SEEDED document, on a first WIP that names no class", async () => {
+		const seed = seedClasses(coderTemplateText(), ["ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`the seed fixture did not seed: ${seed._tag}`);
+		const fs = fakeFs({
+			files: {
+				[`${ROOT}/5751/workflow.json`]: seed.text,
+				[`${ROOT}/5751/events.jsonl`]: `${JSON.stringify({
+					task: "issue",
+					event: "ISSUE.WIP",
+					at: "2026-08-17T00:00:00Z",
+				})}\n`,
+			},
+		});
+		const out = await run(fs, [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "build:ui", shell: "ui-builder"},
 		});
 	});
 
@@ -569,6 +610,24 @@ describe("lane brief on an epic lane", () => {
 		return {out, calls: seams.calls, requests: seams.requests};
 	};
 
+	/** The epic half of the same proof: the class is on the emitted child, not on any event. */
+	it("briefs a `class:ui` child's FIRST WIP to ui-builder, off the emitted document", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]], ["ui"]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {task: "issue_5828", state: "build:ui", shell: "ui-builder"},
+		});
+	});
+
 	it("briefs a child's build on the epic branch, resolving no PR at all", async () => {
 		const {out, calls, requests} = await runEpic(
 			epicLane([["issue_5828", "WIP"]]),
@@ -715,6 +774,38 @@ describe("lane brief on an epic lane", () => {
 		expect(out.stdout).not.toContain(EPIC_RULES);
 	});
 
+	// `lane brief` used to fall through to a `Pull` ground for any build state, so the builder sent
+	// to repair the assembly was told no branch at all.
+	it("briefs the tail's repair on the assembly branch as well as the run's one PR", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+				["issue_5828", "DONE"],
+				["epic_5800", "FAIL"],
+			]),
+			[[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)], ...linked(EPIC, [5890, PR_URL])],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {
+				task: "epic_5800",
+				state: "build",
+				shell: "builder",
+				issue: EPIC_URL,
+				ground: {_tag: "TailRepair", pr: PR_URL, epic: EPIC_URL, branch: "epic/5800"},
+			},
+		});
+		expect(out.stdout).toContain("branch: epic/5800");
+		// The repair round's own rules: whose shell moves the branch, and merge over rebase.
+		expect(out.stdout).toContain(EPIC_TAIL_REPAIR_RULES);
+		expect(out.stdout).not.toContain(EPIC_TAIL_RULES);
+	});
+
 	it("keeps the tail's zero-PR refusal — a run with no PR is a real ambiguity", async () => {
 		const {out} = await runEpic(
 			epicLane([
@@ -763,5 +854,73 @@ describe("lane brief on an epic lane", () => {
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
+	});
+
+	/**
+	 * A checkout of fabrika's own repo, where the entrypoint is repo-relative and therefore resolves
+	 * inside the shell's worktree — the one shape whose tree the assembly branch decides.
+	 */
+	const IN_TREE = {
+		_tag: "Entrypoint",
+		entrypoint: "packages/fabrika-cli/src/bin.ts",
+	} as EntrypointRead;
+	const EPIC_TREE = "0d4f2a6c8e1b3d5f7a9c2e4b6d8f0a2c4e6b8d0f";
+	const LS_TREE = /^git ls-tree --full-tree --name-only /;
+	const REPORT_MODULE = "packages/fabrika-cli/src/lane/report-verb.ts";
+
+	const readingBranch = (holds: boolean): ReadonlyArray<Scripted> => [
+		[REV("epic/5800"), okOut(`${EPIC_TREE}\n`)],
+		[LS_TREE, okOut(holds ? `${REPORT_MODULE}\n` : "")],
+	];
+
+	it("refuses a child build when the assembly branch does not carry a lane verb the brief names", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				...readingBranch(false),
+			],
+			{task: "issue_5828", entrypoint: IN_TREE},
+		);
+
+		expect(out.code).toBe(BRIEFED_VERB_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("`lane report`");
+		// The refusal carries the remedy, so the driver is not left to infer why the brief stopped.
+		expect(out.stderr.join("\n")).toContain("fabrika lane refresh 5800");
+	});
+
+	it("briefs a child build unchanged when the branch carries every lane verb the brief names", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				...readingBranch(true),
+			],
+			{task: "issue_5828", entrypoint: IN_TREE},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {ground: {_tag: "Epic", epic: EPIC_URL, branch: "epic/5800"}},
+		});
+		expect(out.stdout).toContain("fabrika: packages/fabrika-cli/src/bin.ts");
+	});
+
+	it("leaves the branch unread for an installed entrypoint it cannot carry", async () => {
+		const {out, calls} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
 });
