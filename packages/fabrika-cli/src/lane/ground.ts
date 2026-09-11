@@ -253,3 +253,32 @@ export const onGround = <R>(
 			? yield* run()
 			: groundRefusal(`fabrika lane ${verb}`, ground);
 	});
+
+/**
+ * The directory whose `.fabrika.jsonc` governs a rooted verb's run: the repository that OWNS the
+ * cwd, never the cwd itself.
+ *
+ * A linked worktree derives the PRIMARY checkout's lanes root ({@link deriveRepoRoot}), so a config
+ * read left on the cwd straddles two repositories in one call — the worktree's tracked file against
+ * seats counted in the primary's ledger. That is how a worktree-spawned driver was refused at
+ * exit 51 against a cap governing nothing it had counted: the worktree's tracked
+ * `laneConcurrencyCap` read 2 while the checkout holding the seats declared 10.
+ *
+ * Narrow to the keys that decide over shared state, on purpose. `.fabrika.jsonc` is tracked, so a
+ * worktree's copy is its branch's copy, and a verb judging the branch it stands on — every `guard`,
+ * `triage`'s vocabulary, `campaign`'s authors — is right to read it there. Only a key weighed
+ * against the shared ledger owes the owning repository's value.
+ *
+ * A cwd in no repository at all keeps reading at itself, which is `repoConfigSource`'s own fallback
+ * and changes nothing: there is no owning checkout to prefer, and no file either way. A cwd whose
+ * repository cannot be READ is UNKNOWN and refuses, never a cwd-relative fallback.
+ */
+export const configRootOrRefuse = (
+	verb: string,
+	cwd: string,
+): Effect.Effect<string | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const ground = yield* deriveRepoRoot(cwd);
+		if (ground._tag === "Derived") return ground.repoRoot;
+		return ground._tag === "NotARepo" ? cwd : repoGroundRefusal(verb, ground);
+	});

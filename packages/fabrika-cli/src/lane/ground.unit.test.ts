@@ -4,10 +4,12 @@
  */
 import {Effect, Path} from "effect";
 import {describe, expect, it} from "vitest";
+import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
+import {readKey} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO, ROOT_NOT_OWNED} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
-import {deriveRepoRoot, onGround} from "./ground.ts";
+import {configRootOrRefuse, deriveRepoRoot, onGround} from "./ground.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
 
@@ -228,5 +230,72 @@ describe("a lanes root that stands in a working tree which does not own it", () 
 		const out = await statusAt(fs, "/elsewhere/lanes", WORKTREE_CWD);
 
 		expect(out.code).toBe(0);
+	});
+});
+
+/**
+ * The straddle: the lanes root derived off the owning repository while the cap was read off the cwd,
+ * so a worktree-spawned driver was capped by a file governing no seat it had counted.
+ */
+describe("the config root a seat-counting verb reads its cap from", () => {
+	const PRIMARY = "/primary";
+	const WORKTREE = "/wt";
+	const WORKTREE_CWD = `${WORKTREE}/packages/fabrika-cli`;
+
+	/** Both checkouts carry a tracked `.fabrika.jsonc`, and they declare different caps. */
+	const bothConfigs = () =>
+		fakeFs({
+			directories: [`${PRIMARY}/.git`],
+			dirs: {
+				[PRIMARY]: [".git", ".fabrika"],
+				[`${PRIMARY}/.git/worktrees/wt`]: [],
+			},
+			files: {
+				[`${WORKTREE}/.git`]: "gitdir: /primary/.git/worktrees/wt",
+				[`${PRIMARY}/.git/worktrees/wt/commondir`]: "../..",
+				[`${PRIMARY}/.fabrika.jsonc`]: '{"laneConcurrencyCap": 10}',
+				[`${WORKTREE}/.fabrika.jsonc`]: '{"laneConcurrencyCap": 2}',
+			},
+		});
+
+	const capFrom = (fs: ReturnType<typeof fakeFs>, cwd: string) =>
+		Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const root = yield* configRootOrRefuse("fabrika lane open", cwd);
+					return typeof root === "string" ? yield* readKey(root, laneConcurrencyCapKey) : root;
+				}),
+				fs.layer,
+			),
+		);
+
+	it("resolves a worktree cwd to the primary checkout's file, not the worktree's own", async () => {
+		const fs = bothConfigs();
+		const root = await Effect.runPromise(
+			Effect.provide(configRootOrRefuse("fabrika lane open", WORKTREE), fs.layer),
+		);
+
+		expect(root).toBe(PRIMARY);
+		expect(await capFrom(fs, WORKTREE)).toMatchObject({_tag: "Value", value: 10});
+	});
+
+	it("resolves the same way from a subdirectory of the worktree", async () => {
+		expect(await capFrom(bothConfigs(), WORKTREE_CWD)).toMatchObject({_tag: "Value", value: 10});
+	});
+
+	it("reads that same value from the primary checkout — the unchanged path", async () => {
+		expect(await capFrom(bothConfigs(), PRIMARY)).toMatchObject({_tag: "Value", value: 10});
+	});
+
+	it("keeps reading at a cwd that belongs to no repository — there is no owner to prefer", async () => {
+		const fs = fakeFs({files: {"/loose/.fabrika.jsonc": '{"laneConcurrencyCap": 3}'}});
+
+		expect(await capFrom(fs, "/loose")).toMatchObject({_tag: "Value", value: 3});
+	});
+
+	it("refuses a cwd whose repository cannot be read rather than falling back to it", async () => {
+		const fs = fakeFs({files: {}, unprobeable: [`${PRIMARY}/.git`]});
+
+		expect(await capFrom(fs, PRIMARY)).toMatchObject({code: LANE_UNREADABLE});
 	});
 });
