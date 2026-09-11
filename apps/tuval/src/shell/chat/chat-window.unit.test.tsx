@@ -938,6 +938,33 @@ describe("paging", () => {
 		expect(screen.queryByRole("button", {name: "Load earlier messages"})).toBeNull();
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
 	});
+
+	// The slot of a window that had walked to the beginning of history before the desk stopped. The
+	// rows that walk produced are this window's React state and are gone, so a restored `atOldest`
+	// suppressed the one affordance that could fetch them and stranded the whole transcript before
+	// the live tail (#9047).
+	it("offers the head row to a window restored from a slot that says it reached the oldest page", async () => {
+		const {process, view, answerPage} = await openWindow(
+			withTranscript(transcriptOf(4)),
+			{pageLimit: 25},
+			{...initialChatView, pinned: false, scroll: 4213, cursor: "i0", atOldest: true},
+		);
+		const older = await screen.findByRole("button", {name: "Load earlier messages"});
+
+		await act(async () => {
+			fireEvent.click(older);
+		});
+		await waitFor(() => expect(process.inbox()).toEqual([{type: "page", before: "i0", limit: 25}]));
+		await act(async () => {
+			await answerPage(
+				withTranscript(transcriptOf(4), {lastPage: page, pageOutcome: {status: "success", page}}),
+			);
+		});
+		await waitFor(() => expect(view().cursor).toBe("p0"));
+		// The slot's own walk is re-derived from the rows this window now holds, not carried over.
+		expect(view().atOldest).toBe(false);
+		expect(await screen.findByText("older prompt")).toBeDefined();
+	});
 });
 
 describe("a fold closing under the reader", () => {

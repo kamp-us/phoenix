@@ -61,6 +61,17 @@ const capturedMultiCall = (): ReadonlyArray<TranscriptItem> => {
 	return items;
 };
 
+/** The same capture with the first call's outcome removed — the leading-gap shape (#8912). */
+const capturedLeadingGap = (): ReadonlyArray<TranscriptItem> => {
+	const items = transcriptItems(
+		fixtures.multiCallConversationId,
+		transcriptLines(fixtures.multiCallLeadingGapLines.join("\n")),
+		transcriptLines(fixtures.multiCallLeadingGapFullLines.join("\n")),
+	);
+	expect(isTranscriptItems(items)).toBe(true);
+	return items;
+};
+
 const homes: Array<string> = [];
 
 /** A disposable `$HOME` with agy's own directory shape under it. */
@@ -185,7 +196,7 @@ describe("the agy transcript reader", () => {
 	 * is the evidence, because its first outcome sits *before* its call line in the file, which is
 	 * what makes the pairing a `step_index` question rather than an adjacency one.
 	 */
-	it("pairs each call of a captured two-call batch with its own outcome, by position", () => {
+	it("pairs each call of a captured two-call batch with its own outcome, by step distance", () => {
 		const items = capturedMultiCall();
 		expect(kinds(items)).toEqual(["user", "tool", "tool", "assistant"]);
 		const [first, second] = items.slice(1, 3) as ReadonlyArray<ToolItem>;
@@ -219,6 +230,79 @@ describe("the agy transcript reader", () => {
 		expect([first?.status, second?.status]).toEqual(["ok", "running"]);
 		expect(first?.result.text).toContain("1: alpha");
 		expect(second?.result.text).toBe("");
+	});
+
+	/**
+	 * #8912: the run was walked by position, so the run's first member became call 0's whatever step
+	 * it carried. A batch whose *first* call has no outcome therefore handed call 0 its neighbour's
+	 * output, rendered as a settled `ok` — the leading-gap shape, over the real capture with exactly
+	 * one line removed. Step distance is what leaves the empty slot empty.
+	 */
+	it("leaves the gapped call of a captured batch resultless rather than pulling its neighbour up", () => {
+		const items = capturedLeadingGap();
+		expect(kinds(items)).toEqual(["user", "tool", "tool", "assistant"]);
+		const [first, second] = items.slice(1, 3) as ReadonlyArray<ToolItem>;
+		expect(first?.input).toMatchObject({AbsolutePath: '"/Users/founder/agyprobe/one.txt"'});
+		expect([first?.status, second?.status]).toEqual(["running", "ok"]);
+		expect(first?.result.text).toBe("");
+		expect(second?.result.text).toContain("two.txt");
+		expect(second?.result.text).toContain("1: bir");
+		expect(second?.result.text).not.toContain("one.txt");
+	});
+
+	/**
+	 * The batch's reach is its `N` slots and no further. Before #8912 the walk took consecutive
+	 * `GENERIC` lines until it held `N` of them, so a loose outcome belonging to no call was swallowed
+	 * by whichever short batch preceded it — the pre-#8873 behaviour this restores.
+	 */
+	it("leaves a GENERIC past the batch's slot span to its own row rather than swallowing it", () => {
+		const loose = JSON.stringify({
+			step_index: 5,
+			source: "MODEL",
+			type: "GENERIC",
+			status: "DONE",
+			created_at: "2026-09-09T22:22:10Z",
+			content: "an outcome no call on this line asked for",
+		});
+		const items = itemsOf([
+			fixtures.multiCallLines[2] ?? "",
+			fixtures.multiCallLines[1] ?? "",
+			loose,
+		]);
+		expect(kinds(items)).toEqual(["tool", "tool", "system"]);
+		const [first, second] = items.slice(0, 2) as ReadonlyArray<ToolItem>;
+		expect([first?.status, second?.status]).toEqual(["ok", "running"]);
+		expect(second?.result.text).toBe("");
+		expect(texts(items)[2]).toContain("an outcome no call on this line asked for");
+	});
+
+	/**
+	 * `step_index` is neither unique nor monotonic (the module note's census: it decreases at 5 of
+	 * 7,670 steps and repeats a value), so the pairing cannot be a lookup keyed on `S + 1 + k`. Here a
+	 * `GENERIC` repeats the call line's own step: its distance falls below the span, which ends nothing
+	 * — both real outcomes still land in their own slots.
+	 */
+	it("keeps pairing across a GENERIC repeating the call line's own step_index", () => {
+		const repeated = JSON.stringify({
+			step_index: 1,
+			source: "MODEL",
+			type: "GENERIC",
+			status: "DONE",
+			created_at: "2026-09-09T22:21:27Z",
+			content: "a line carrying the planner's own step number",
+		});
+		const items = itemsOf([
+			fixtures.multiCallLines[2] ?? "",
+			repeated,
+			fixtures.multiCallLines[1] ?? "",
+			fixtures.multiCallLines[3] ?? "",
+		]);
+		expect(kinds(items)).toEqual(["tool", "tool", "system"]);
+		const [first, second] = items.slice(0, 2) as ReadonlyArray<ToolItem>;
+		expect([first?.status, second?.status]).toEqual(["ok", "ok"]);
+		expect(first?.result.text).toContain("1: alpha");
+		expect(second?.result.text).toContain("1: bir");
+		expect(texts(items)[2]).toContain("a line carrying the planner's own step number");
 	});
 
 	it("keeps a one-call batch's outcome on its row, where the attribution is unambiguous", () => {
@@ -323,6 +407,56 @@ describe("the agy transcript reader", () => {
 		expect(transcriptLogDir("/Users/founder", CID)).toBe(
 			`/Users/founder/.gemini/antigravity-cli/brain/${CID}/.system_generated/logs`,
 		);
+	});
+});
+
+/**
+ * The frame agy stores the operator's turn in, and the reason it comes off (#8961).
+ *
+ * The cases run over the v1.2.0 capture rather than a restated line: the wrapper is agy's, it ships
+ * no schema, and the blocks it adds are exactly what a reconstruction would smooth over — the first
+ * turn's line carries a `<USER_SETTINGS_CHANGE>` block the other two do not.
+ */
+describe("the operator's own turn, out of agy's <USER_REQUEST> frame", () => {
+	const capturedPrompts = (): ReadonlyArray<string> =>
+		transcriptItems(
+			fixtures.liveJoinConversationId,
+			transcriptLines(fixtures.liveJoinLines.join("\n")),
+			transcriptLines(fixtures.liveJoinFullLines.join("\n")),
+		)
+			.filter((item) => item.kind === "user")
+			.map((item) => item.text);
+
+	it("mints the bare prompt for every turn the capture holds, settings-change block and all", () => {
+		expect(capturedPrompts()).toEqual([
+			"In ONE single planner step, issue TWO parallel view_file tool calls: the first on one.txt and the second on two.txt. Then reply with ONLY the two line counts as bare digits separated by a comma. Write no file names, no paths, no links, no URLs in your reply.",
+			"Now reply with only the word DONE and run no tools. No paths, no links.",
+			"Reply with only the word AGAIN and run no tools. No paths, no links.",
+		]);
+	});
+
+	it("leaves no block of agy's framing in the row, which is what the operator would read", () => {
+		for (const prompt of capturedPrompts()) {
+			expect(prompt).not.toContain("USER_REQUEST");
+			expect(prompt).not.toContain("ADDITIONAL_METADATA");
+			expect(prompt).not.toContain("USER_SETTINGS_CHANGE");
+		}
+	});
+
+	it("passes a line carrying no wrapper through unchanged, since the block set is not closed", () => {
+		const bare =
+			'{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-09-03T04:17:43Z","content":"list the files in this workspace"}';
+		expect(texts(itemsOf([bare]))).toEqual(["list the files in this workspace"]);
+	});
+
+	it("serves a clipped turn framed rather than half-unwrapped, marked as the clip it is", () => {
+		// The close tag is in the part agy cut, so there is no body to read: the frame stands, and the
+		// mark says why. Half a wrapper rendered as the prompt would read as the prompt.
+		const clipped =
+			'{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-09-03T04:17:43Z","content":"<USER_REQUEST>\\nlist the files in this","truncated_fields":["content"]}';
+		expect(texts(itemsOf([clipped]))).toEqual([
+			`<USER_REQUEST>\nlist the files in this${CLIPPED_MARK}`,
+		]);
 	});
 });
 

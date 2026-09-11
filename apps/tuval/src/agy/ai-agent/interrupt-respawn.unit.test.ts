@@ -65,12 +65,15 @@ const signalled = (child: StubChild): Effect.Effect<void> =>
 		}),
 	);
 
-/** The refusal a failed call carries, as the two fields a test asserts on. */
-const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?: string} =>
+/** The refusal a failed call carries, as the fields a test asserts on. */
+const causeError = (
+	exit: Exit.Exit<unknown, unknown>,
+): {_tag?: string; reason?: string; detail?: string} =>
 	Exit.isFailure(exit)
 		? ((Option.getOrUndefined(Cause.findErrorOption(exit.cause)) ?? {}) as {
 				_tag?: string;
 				reason?: string;
+				detail?: string;
 			})
 		: {};
 
@@ -163,18 +166,13 @@ describe("an agy turn the operator stops", () => {
 	);
 
 	/**
-	 * Where the window is, and what is in it.
-	 *
-	 * Driven to the one instant the issue's own flow lands in: the terminal `result` has published
-	 * `ready`, so the operator's hand is free, and the relaunch is past its teardown and waiting on the
-	 * new child's `init`. `session` holds the torn-down child there — its stdin queue is shut down, and
-	 * an offer onto a queue that is not `Open` answers `false` rather than failing, so a send admitted
-	 * here would be dropped with its key burned and nothing left to settle it (#8709). Returns the
-	 * stopped child, the relaunching one, and the stop still in flight.
+	 * The earlier half of the window: the cut turn's terminal `result` has published `ready`, so the
+	 * operator's hand is free, and the child has *not* exited yet — which is where `kill` is still
+	 * awaiting, `session` still holds the dying child and its stdin queue is still `Open`, so a send
+	 * admitted here crosses onto a process nothing is coming back from (#8925).
 	 */
-	const inTheRelaunchWindow = (children: {
+	const atTheStopsReady = (children: {
 		readonly child: (index: number) => Effect.Effect<StubChild>;
-		readonly launches: Effect.Effect<ReadonlyArray<ReadonlyArray<string>>>;
 	}) =>
 		Effect.gen(function* () {
 			const agent = yield* TuvalAiAgent;
@@ -189,10 +187,59 @@ describe("an agy turn the operator stops", () => {
 			yield* first.say(userInput);
 			yield* first.say(resultInterrupted);
 			yield* collectTo(events, "the stop's ready", isReady);
-			yield* first.exit(1);
-			const second = yield* children.child(1);
-			return {agent, events, stopping, first, second};
+			return {agent, events, stopping, first};
 		});
+
+	/**
+	 * Where the window is, and what is in it.
+	 *
+	 * Driven one step past `atTheStopsReady`, to the instant the issue's own flow lands in: the child
+	 * has exited and the relaunch is past its teardown and waiting on the new child's `init`.
+	 * `session` holds the torn-down child there — its stdin queue is shut down, and an offer onto a
+	 * queue that is not `Open` answers `false` rather than failing, so a send admitted here would be
+	 * dropped with its key burned and nothing left to settle it (#8709). Returns the stopped child,
+	 * the relaunching one, and the stop still in flight.
+	 */
+	const inTheRelaunchWindow = (children: {
+		readonly child: (index: number) => Effect.Effect<StubChild>;
+		readonly launches: Effect.Effect<ReadonlyArray<ReadonlyArray<string>>>;
+	}) =>
+		Effect.gen(function* () {
+			const at = yield* atTheStopsReady(children);
+			yield* at.first.exit(1);
+			const second = yield* children.child(1);
+			return {...at, second};
+		});
+
+	it.live("refuses a send that arrives at the stop's ready, before the child has exited", () =>
+		Effect.gen(function* () {
+			const children = yield* agyChildrenStub;
+
+			yield* Effect.gen(function* () {
+				const {agent, first, stopping} = yield* atTheStopsReady(children);
+
+				const refused = causeError(yield* Effect.exit(agent.prompt("resent text", "resend-key")));
+				assert.strictEqual(
+					refused._tag,
+					"tuval/ai-agent/PromptError",
+					"the send at the stop's ready was admitted",
+				);
+				assert.strictEqual(refused.reason, "no-session");
+				// `relaunchInFlight`'s own words rather than `noSession`'s, which share a `reason`:
+				// `session` is non-null here, so the guard is the only thing that can have refused this.
+				assert.include(refused.detail ?? "", "being relaunched");
+				assert.deepStrictEqual(
+					(yield* first.written).filter((line) => line.includes("resent text")),
+					[],
+					"the refused send was written to the dying child's stdin",
+				);
+
+				yield* first.exit(1);
+				yield* Effect.flatMap(children.child(1), (child) => child.say(init));
+				yield* Fiber.join(stopping);
+			}).pipe(Effect.provide(agyLayerOver(children)), Effect.scoped);
+		}),
+	);
 
 	it.live("refuses a send that arrives inside the relaunch, and writes it to no stdin", () =>
 		Effect.gen(function* () {

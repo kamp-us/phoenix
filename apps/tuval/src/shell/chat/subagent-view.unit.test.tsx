@@ -160,11 +160,8 @@ const scrollTo = async (scroller: HTMLElement, offset: number) => {
 	});
 };
 
-const atOldest = (over: Partial<ChatView> = {}): ChatView => ({
-	...initialChatView,
-	atOldest: true,
-	...over,
-});
+/** An opening view slot carrying the fields a case needs, over the window's own defaults. */
+const viewSlot = (over: Partial<ChatView>): ChatView => ({...initialChatView, ...over});
 
 afterEach(() => {
 	vi.useRealTimers();
@@ -172,7 +169,7 @@ afterEach(() => {
 
 describe("swapping the view slot to a subagent", () => {
 	it("swaps the transcript in place, opening no window and minting no picker entry (Q7)", async () => {
-		const {rendered, process} = await openOne(agentSession(reviewer(), builder()), {}, atOldest());
+		const {rendered, process} = await openOne(agentSession(reviewer(), builder()));
 		const root = rendered.container;
 		expect(dom(root).text()).toContain("the agent's own call");
 
@@ -188,7 +185,7 @@ describe("swapping the view slot to a subagent", () => {
 	});
 
 	it("keeps the list as the navigator, marking the row that is showing (Q8)", async () => {
-		const {rendered} = await openOne(agentSession(reviewer(), builder()), {}, atOldest());
+		const {rendered} = await openOne(agentSession(reviewer(), builder()));
 		const root = rendered.container;
 		expect(dom(root).current()).toBeNull();
 
@@ -210,7 +207,7 @@ describe("swapping the view slot to a subagent", () => {
 	});
 
 	it("names the region a screen reader lands in after the swap", async () => {
-		const {rendered} = await openOne(agentSession(reviewer()), {}, atOldest());
+		const {rendered} = await openOne(agentSession(reviewer()));
 		expect(within(rendered.container).getByRole("log", {name: "Transcript"})).toBeTruthy();
 
 		await pick(rendered.container, "reviewer");
@@ -222,7 +219,7 @@ describe("swapping the view slot to a subagent", () => {
 	});
 
 	it("reads the worker's rows at depth zero rather than as rows nested under a head", async () => {
-		const {rendered} = await openOne(agentSession(reviewer()), {}, atOldest());
+		const {rendered} = await openOne(agentSession(reviewer()));
 		await pick(rendered.container, "reviewer");
 		expect(dom(rendered.container).rowKinds()).toEqual(["user", "assistant"]);
 		expect(rendered.container.querySelector('[data-nested="true"]')).toBeNull();
@@ -235,7 +232,7 @@ describe("the way back to the agent's own transcript", () => {
 		const {rendered, scrolls} = await openOne(
 			agentSession(reviewer()),
 			{},
-			atOldest({pinned: false, scroll: 640}),
+			viewSlot({pinned: false, scroll: 640}),
 		);
 		const root = rendered.container;
 		// First paint puts main back on its saved offset, which is the position the back action owes.
@@ -255,7 +252,7 @@ describe("the way back to the agent's own transcript", () => {
 		const {rendered, view} = await openOne(
 			agentSession(reviewer()),
 			{},
-			atOldest({pinned: false, scroll: 640}),
+			viewSlot({pinned: false, scroll: 640}),
 		);
 		await pick(rendered.container, "reviewer");
 
@@ -276,7 +273,7 @@ describe("the way back to the agent's own transcript", () => {
 		const {rendered, view} = await openOne(
 			agentSession(reviewer()),
 			{scrollCommitMs: 150},
-			atOldest({pinned: false, scroll: 10}),
+			viewSlot({pinned: false, scroll: 10}),
 		);
 		const scroller = rendered.container.querySelector(".tuval-chat-transcript") as HTMLElement;
 		// The first event is the window hearing the scroll its own first paint asked for; the second is
@@ -319,7 +316,7 @@ describe("Codex native slots in the existing navigator", () => {
 		);
 		native.item("child", {type: "agentMessage", id: "reply", text: "Native"}, 2, true);
 		const state = () => agentSession(...native.slots.values());
-		const {rendered, process} = await openOne(state(), {}, atOldest());
+		const {rendered, process} = await openOne(state());
 		await pick(rendered.container, "agent");
 		expect(dom(rendered.container).text()).toContain("Native");
 		native.hydrate("child", {
@@ -378,7 +375,7 @@ describe("a subagent that finishes while its view is open (Q9)", () => {
 	};
 
 	it("keeps the view open on its rows, and neither blanks nor snaps to main", async () => {
-		const {rendered, process} = await openOne(agentSession(reviewer()), {}, atOldest());
+		const {rendered, process} = await openOne(agentSession(reviewer()));
 		const root = rendered.container;
 		await pick(root, "reviewer");
 
@@ -393,7 +390,7 @@ describe("a subagent that finishes while its view is open (Q9)", () => {
 	});
 
 	it("shows the terminal result and the way back", async () => {
-		const {rendered, process} = await openOne(agentSession(reviewer()), {}, atOldest());
+		const {rendered, process} = await openOne(agentSession(reviewer()));
 		const root = rendered.container;
 		await pick(root, "reviewer");
 		expect(dom(root).end()).toContain("still running");
@@ -408,8 +405,8 @@ describe("a subagent that finishes while its view is open (Q9)", () => {
 
 	it("drops the row from the running list at that same moment, and marks the one being read", async () => {
 		const process = await openProcess(agentSession(reviewer(), builder()));
-		const inside = await openWindow(process, "w1", {}, atOldest());
-		const onMain = await openWindow(process, "w2", {}, atOldest());
+		const inside = await openWindow(process, "w1");
+		const onMain = await openWindow(process, "w2");
 		await pick(inside.rendered.container, "reviewer");
 
 		await finish(process);
@@ -433,8 +430,8 @@ describe("a subagent that finishes while its view is open (Q9)", () => {
 describe("two windows over one process", () => {
 	it("sit on two different subagents at once, and closing one does not move the other", async () => {
 		const process = await openProcess(agentSession(reviewer(), builder()));
-		const first = await openWindow(process, "w1", {}, atOldest());
-		const second = await openWindow(process, "w2", {}, atOldest());
+		const first = await openWindow(process, "w1");
+		const second = await openWindow(process, "w2");
 
 		await pick(first.rendered.container, "reviewer");
 		await pick(second.rendered.container, "builder");
@@ -458,7 +455,7 @@ describe("with the flag off", () => {
 		const {rendered} = await openOne(
 			agentSession(reviewer()),
 			{subagentList: false},
-			atOldest({
+			viewSlot({
 				viewing: {id: "agent", from: {pinned: true, scroll: 0}},
 				unfolded: ["agent"],
 			}),
@@ -498,7 +495,7 @@ describe("a notice naming a worker", () => {
 		root.querySelector<HTMLButtonElement>(".tuval-chat-session-link");
 
 	it("offers the worker's rows from the line, and swaps the view onto them", async () => {
-		const {rendered, view} = await openOne(withNotice(reviewer("finished")), {}, atOldest());
+		const {rendered, view} = await openOne(withNotice(reviewer("finished")));
 		const root = rendered.container;
 		const control = link(root);
 		expect(control?.tagName).toBe("BUTTON");
@@ -533,10 +530,8 @@ describe("a notice naming a worker", () => {
  * rows there, which is the agent's transcript drawn under the worker's label.
  */
 describe("a view open on a slot the session no longer holds", () => {
-	const ghost = (): ChatView => ({
-		...atOldest(),
-		viewing: {id: "agent", from: {pinned: false, scroll: 0}},
-	});
+	const ghost = (): ChatView =>
+		viewSlot({viewing: {id: "agent", from: {pinned: false, scroll: 0}}});
 
 	it("draws its own empty state instead of the agent's own rows", async () => {
 		const {rendered} = await openOne(agentSession(), {}, ghost());
@@ -562,7 +557,7 @@ describe("naming the worker a view is open on", () => {
 		subagentSlot("agent", {type: null, items: reviewerItems, lastLine: "wrote 4 rows"});
 
 	const openOnFirstRow = async (slot: SubagentSlot) => {
-		const opened = await openOne(agentSession(slot), {}, atOldest());
+		const opened = await openOne(agentSession(slot));
 		await act(async () => {
 			dom(opened.rendered.container).picks()[0]?.click();
 		});
@@ -590,7 +585,7 @@ describe("naming the worker a view is open on", () => {
 	});
 
 	it("draws no name field in the navigator row for that worker", async () => {
-		const {rendered} = await openOne(agentSession(nameless()), {}, atOldest());
+		const {rendered} = await openOne(agentSession(nameless()));
 		const root = rendered.container;
 
 		expect(typeField(root)).toBeNull();
