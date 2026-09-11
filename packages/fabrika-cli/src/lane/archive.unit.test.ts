@@ -4,7 +4,8 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {judgeArchive} from "./archive.ts";
-import {type ClosureState, runArchive} from "./archive-verb.ts";
+import type {ClosureState} from "./archive-move.ts";
+import {runArchive} from "./archive-verb.ts";
 import {
 	APPEND_UNKNOWN,
 	ISSUE_LIVE,
