@@ -326,6 +326,56 @@ describe("the agy transcript reader", () => {
 	});
 });
 
+/**
+ * The frame agy stores the operator's turn in, and the reason it comes off (#8961).
+ *
+ * The cases run over the v1.2.0 capture rather than a restated line: the wrapper is agy's, it ships
+ * no schema, and the blocks it adds are exactly what a reconstruction would smooth over — the first
+ * turn's line carries a `<USER_SETTINGS_CHANGE>` block the other two do not.
+ */
+describe("the operator's own turn, out of agy's <USER_REQUEST> frame", () => {
+	const capturedPrompts = (): ReadonlyArray<string> =>
+		transcriptItems(
+			fixtures.liveJoinConversationId,
+			transcriptLines(fixtures.liveJoinLines.join("\n")),
+			transcriptLines(fixtures.liveJoinFullLines.join("\n")),
+		)
+			.filter((item) => item.kind === "user")
+			.map((item) => item.text);
+
+	it("mints the bare prompt for every turn the capture holds, settings-change block and all", () => {
+		expect(capturedPrompts()).toEqual([
+			"In ONE single planner step, issue TWO parallel view_file tool calls: the first on one.txt and the second on two.txt. Then reply with ONLY the two line counts as bare digits separated by a comma. Write no file names, no paths, no links, no URLs in your reply.",
+			"Now reply with only the word DONE and run no tools. No paths, no links.",
+			"Reply with only the word AGAIN and run no tools. No paths, no links.",
+		]);
+	});
+
+	it("leaves no block of agy's framing in the row, which is what the operator would read", () => {
+		for (const prompt of capturedPrompts()) {
+			expect(prompt).not.toContain("USER_REQUEST");
+			expect(prompt).not.toContain("ADDITIONAL_METADATA");
+			expect(prompt).not.toContain("USER_SETTINGS_CHANGE");
+		}
+	});
+
+	it("passes a line carrying no wrapper through unchanged, since the block set is not closed", () => {
+		const bare =
+			'{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-09-03T04:17:43Z","content":"list the files in this workspace"}';
+		expect(texts(itemsOf([bare]))).toEqual(["list the files in this workspace"]);
+	});
+
+	it("serves a clipped turn framed rather than half-unwrapped, marked as the clip it is", () => {
+		// The close tag is in the part agy cut, so there is no body to read: the frame stands, and the
+		// mark says why. Half a wrapper rendered as the prompt would read as the prompt.
+		const clipped =
+			'{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-09-03T04:17:43Z","content":"<USER_REQUEST>\\nlist the files in this","truncated_fields":["content"]}';
+		expect(texts(itemsOf([clipped]))).toEqual([
+			`<USER_REQUEST>\nlist the files in this${CLIPPED_MARK}`,
+		]);
+	});
+});
+
 describe("the agy transcript page", () => {
 	const conversation = [
 		fixtures.userInput,
