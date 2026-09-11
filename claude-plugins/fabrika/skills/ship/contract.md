@@ -1612,13 +1612,32 @@ other**: `mergeable` is computed lazily by GitHub, so a `null` / `unknown` read 
 read the indefinite value as green would be worse than no gate — a read that could not produce a
 definite answer must never resolve to one. A read that *fails* is likewise `11`, never a pass.
 
-**A definite `mergeable: false` refuses `16`, and does not arm.** The premise this overturns
+**A definite `mergeable: false` refuses, and does not arm.** The premise this overturns
 is that a definite `dirty` is an answer the arm may proceed on and leave to the platform's own error
 discrimination on `8`. The platform issues no such error: it accepts the arm and parks the intent,
 so the lane learns at `ship reconcile` what the read three lines earlier already proved, having spent
 an enqueue round and one of its two retries to get there — measured on a live lane. The
 refusal costs nothing a re-read cannot recover and is the same line `ship merge` draws on the same
 shared read.
+
+**That refusal splits by cause, on two codes.** `mergeable_state: dirty` is GitHub's word for a
+merge that conflicts, so it is a fact about the **base** — it moved under the branch — and it
+refuses `21`. Every other definite not-mergeable value is a fact about the head and keeps `16`. The
+split is a code and not a state string because the caller picks a lane budget off it: `21` is
+reported as `BASE-CONFLICTED`, which spends a machinery lap, and `16` as `ROUTED-REPAIR`, which
+spends a repair round. A shipper that had to grep the refusal's prose to tell them apart would be
+parsing a message to pick a budget.
+
+**Neither code licenses this verb to move a branch, and `21` least of all.** The reading to refuse
+here is that a clean rebase would leave the PR's verdicts standing, so `ship` could replay and
+re-enqueue with no re-review owed. It would not: a verdict binds a content digest taken over the
+three-dot diff from merge base to head, and every record in it names the **merge-base** blob as well
+as the head's —
+[`content-binding.ts`](../../../../packages/fabrika-cli/src/review/content-binding.ts) says in its
+own words that the binding *dies on base movement that reaches* a reviewed path, and a `dirty` state
+*is* base movement reaching one. So every verdict on the PR is void, the re-review is genuinely
+owed, the round is a builder's, and `21` changes what that round **costs**, never whether it
+happens.
 
 After the arm,
 the verb reads the PR back: `auto_merge: null` **post-enqueue is expected** (the queue
@@ -1633,7 +1652,8 @@ response, quoted verbatim on `8`.
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
 | `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
-| `16` | the PR is **provably not mergeable** — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
+| `16` | the PR is **provably not mergeable** for a reason other than a conflicted base — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
+| `21` | the base moved under the branch and the merge **conflicts** — a definite `mergeable_state: dirty`; nothing was armed. Report it as `BASE-CONFLICTED`, which spends a machinery lap instead of a repair round; the re-review is still owed |
 
 **Errors**
 
@@ -1645,6 +1665,7 @@ response, quoted verbatim on `8`.
 | `ship enqueue: cannot read #<n>'s mergeability: <reason> — nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was armed.` | 16 | refusal |
+| `ship enqueue: #<n>'s base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.` | 21 | refusal |
 | `ship enqueue: mergeable_state is <state> (mergeable: true) — a definite read; arming.` | 0 | notice |
 | `ship enqueue: the confirming timeline read never reached a terminal page — the entry is unproven, so this answers settling.` | 0 | notice |
 | `ship enqueue: the live head is <live>, gates ran at <sha> — refusing to arm a tree nobody verified.` | 12 | refusal |
@@ -1673,7 +1694,12 @@ enqueued	03135b91	queued
 - **The pre-arm mergeability precondition and its live probe**: the arm is not
   refused by the platform on a conflicted PR, so the gate is load-bearing rather than redundant.
 - **The measured cost of arming on a definite `dirty` anyway**: a parked intent, an
-  enqueue round, and one of a lane's two retries. The `16` refusal is that evidence applied.
+  enqueue round, and one of a lane's two retries. The refusal is that evidence applied.
+- **The measured cost of *charging* a definite `dirty` a repair round**: measured on a live lane,
+  two of three retries went to two conflicts in twelve minutes each, with no defect in the diff
+  either round.
+  `21` and its `BASE-CONFLICTED` terminal are that evidence applied — the round still happens, and
+  the budget that bounds how often a builder may fail a review is not what pays for it.
 
 ---
 

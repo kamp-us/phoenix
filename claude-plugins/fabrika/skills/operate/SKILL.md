@@ -929,8 +929,10 @@ this order:
   the ticket is terminal, or an adopt marker names the holding lane's session as gone, or **no claim
   marker holds that lane at all** — which is the state the release above just created, so the two
   steps compose in this order. That last arm is the
-  one that reads the tree, having no board statement to lean on: it retires a tree carrying nothing
-  and refuses `33` naming the uncommitted paths or the commits past `origin/main` that block it. **Run it from wherever
+  one that reads the tree, having no board statement to lean on: it retires a tree whose removal
+  would strand nothing and refuses `33` naming the uncommitted paths, or the commits no branch,
+  remote-tracking ref or tag reaches, that block it. Commits on the tree's own lane branch do not
+  block it — the removal leaves the branch behind. **Run it from wherever
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
@@ -1107,27 +1109,31 @@ they always did.
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
-five map to the machine's `LAP` event, and each names exactly one park cause:
+six map to the machine's `LAP` event, and each names exactly one park cause:
 
 | Token | The observed failure | The cause it carries |
 | --- | --- | --- |
 | `REPLAY-COLLIDED` | a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision owes a judgment about content — `lane integrate` exit `42`'s replay arm | `replay-conflict` |
 | `BASE-DRIFTED` | the PR's head is behind its base and must move before an approval is solicited | `head-behind-base` |
+| `BASE-CONFLICTED` | the PR's base moved under it and the merge now conflicts — `ship enqueue`'s pre-arm read at exit `21`. The head owes a rebase and the re-review that comes with it, so this is the one lap out of `ship` that folds the task to `build` | `base-conflicted` |
 | `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
 | `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
 | `SHELL-DEAD` | the shell driving this lane's stage was killed by its provider before it recorded a terminal | `spawn-dead` |
 
-Three of the five are yours because no shell observes them — the two `integrate` rows and the dead
-spawn. The other two have a shell in front of them, and where its own terminal already recorded the
-failure you record nothing second: `ship` reports `QUEUE-EJECTED` itself, and reports a base drift
-as `AWAITING-CP-APPROVAL --cause head-behind-base`, which is `BASE-DRIFTED`'s pre-lap form.
+Three of the six are yours because no shell observes them — the two `integrate` rows and the dead
+spawn. The other three have a shell in front of them, and where its own terminal already recorded
+the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-CONFLICTED` itself,
+and reports a base drift as `AWAITING-CP-APPROVAL --cause head-behind-base`, which is
+`BASE-DRIFTED`'s pre-lap form.
 
 **One is recorded *instead of* the stage's own `FAIL`, never beside it.** A `FAIL` is a verdict
 against the work and spends the task's repair budget; a lap says the machinery spent a round and
 spends `laps`, a counter of its own. Recording both charges the ticket for the pipeline's failure
-anyway, which is the whole thing this group exists to stop. The lap arm sends the task back to the
-stage that has to run again — `integrate`'s to `review`, a single-issue lane's `build` to `build` —
-so a lap is another pass, not a park. When the laps run out it parks on `human:machinery-stall`
+anyway, which is the whole thing this group exists to stop. The lap arm sends the task to the stage
+that has to run again — `integrate`'s to `review`, a single-issue lane's `build` to `build`, and a
+`ship` cell's back to `ship` unless the lap's own cause routes it elsewhere, which `base-conflicted`
+does because a rebase is a builder's act — so a lap is another pass, not a park. When the laps run
+out it parks on `human:machinery-stall`
 instead: a plain state with an `UNBLOCKED` door, not the repair budget's own `human:budget-spent`
 final, because nothing about the artifact was ever wrong.
 

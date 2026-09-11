@@ -169,6 +169,9 @@ export const runTransition = <R>(
 			at,
 			classed.classes,
 			granted.grant,
+			null,
+			null,
+			caused._tag === "Caused" ? caused.cause : null,
 		);
 		if (applied._tag === "Refused") {
 			return refuse(
@@ -226,6 +229,7 @@ export const runTransition = <R>(
 					granted.grant,
 					proved.partial,
 					proved.diagnosis ? true : null,
+					caused._tag === "Caused" ? caused.cause : null,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(

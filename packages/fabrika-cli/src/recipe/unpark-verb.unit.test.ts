@@ -82,7 +82,7 @@ const PRUNE = /^git worktree prune$/;
 const REMOVE = /^git worktree remove /;
 const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
-const REVLIST = /^git rev-list --count /;
+const REVLIST = /^git -C \S+ rev-list --count HEAD --not --branches --remotes --tags$/;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
 const REMOTES = /^git remote$/;
@@ -430,8 +430,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
 				[STATUS, okOut("")],
-				// Unbuilt commits on the branch: no board license covers this tree, and the
-				// unclaimed-lane arm refuses one carrying work, so the park still holds.
+				// Commits no ref of this clone reaches: no board license covers this tree, and the
+				// unclaimed-lane arm refuses one whose removal would strand work, so the park holds.
 				[REVLIST, okOut("2\n")],
 			],
 			[

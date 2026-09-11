@@ -91,17 +91,28 @@ const UI_CLASS = "ui";
 const UI_GUARD = `class:${UI_CLASS}`;
 
 /**
- * The machinery arm, whose two targets are the whole of the lap axis in a document: go round again
- * while laps remain, else park on `human:machinery-stall`.
+ * The machinery arm: go round again while laps remain, else park on `human:machinery-stall`, with
+ * any `lap:<cause>` routes ahead of the pair for the causes that do not fold back where the rest do.
  *
  * The park is a plain state with an `UNBLOCKED` door rather than a final, because a spent lap is not
  * a verdict against the work — nothing about the artifact is wrong, the pipeline failed to carry it
  * — so freezing the task would tell a reader the opposite of what happened.
  */
-const lapArm = (target: string): ReadonlyArray<Record<string, unknown>> => [
+const lapArm = (
+	target: string,
+	routes: Readonly<Record<string, string>> = {},
+): ReadonlyArray<Record<string, unknown>> => [
+	...Object.entries(routes).map(([cause, to]) => ({target: to, guard: `lap:${cause}`})),
 	{target, guard: "lapsRemaining", actions: "incrementLaps"},
 	{target: "human:machinery-stall"},
 ];
+
+/**
+ * `ship enqueue` read a definite `mergeable_state: dirty`, so the tail's head owes a rebase and the
+ * re-review that comes with it — a builder's round, not a re-dispatch of the shipper that just
+ * refused. Every other lap reaching `ship` self-targets, exactly as it did before this route existed.
+ */
+const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "build"};
 
 /**
  * One child's region — the local loop, namespaced to the child's task id.
@@ -254,7 +265,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
-				...(machinery ? {[`${ns}.LAP`]: lapArm("ship")} : {}),
+				...(machinery ? {[`${ns}.LAP`]: lapArm("ship", SHIP_LAP_ROUTES)} : {}),
 			},
 		},
 		"ship:queued": {
