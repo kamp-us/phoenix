@@ -122,18 +122,30 @@ const liveStepId = (conversationId: string, stepIndex: number): string =>
 const liveResponseId = (conversationId: string): string => `${conversationId}:response`;
 
 /**
- * The id this reader minted for the same row before `line:` was added to it (#8968) — the one
- * `cid:<ordinal>` shape, derived from the current id by deleting the segment rather than by
- * restating how each row kind numbers itself, so a tool row's `cid:line:<ord>:<idx>` comes back as
- * `cid:<ord>:<idx>` with no second rule to keep in step.
+ * The id this reader minted for a **tool** row before `line:` was added to it (#8968) — the
+ * two-segment `cid:<ordinal>:<index>` shape, derived from the current id by deleting the segment
+ * rather than by restating how a tool row numbers itself.
  *
  * A cursor in the old shape is what a desk checkpointed before #8968 can hand back, and the row it
  * named is still on disk under a new id, so resolving it is a page where refusing it is a dead
  * history (#8900, criterion 11).
+ *
+ * **Only that shape**, and the tail is the whole reason (#8900, criterion 12). A non-tool row's
+ * pre-#8968 id was `cid:<ordinal>` — the live tail's own key shape — so registering it would put the
+ * two id spaces back in one namespace, which is what `line:` exists to prevent. Both directions then
+ * end in a silently wrong boundary: a live `cid:<n>` the projection minted no row for (an in-flight
+ * call, whose `GENERIC` is not yet on disk) would resolve onto whatever line sits at ordinal `n`
+ * instead of refusing, and a legacy cursor meaning *ordinal* `n` would page from whichever row the
+ * walk already keyed `cid:<n>`, since `step_index` is neither unique nor monotonic and equals the
+ * ordinal only on a log written in step order. `cid:<ord>:<idx>` is unshadowable by construction:
+ * `mapper.ts` mints `cid:<step>` and `cid:response`, never a second segment. So a bare single-segment
+ * legacy id is not registered at all, and where no live key claims it the cursor keeps refusing.
  */
-const legacyStoredId = (conversationId: string, stored: string): string => {
+const legacyToolStoredId = (conversationId: string, stored: string): string | undefined => {
 	const prefix = `${conversationId}:line:`;
-	return stored.startsWith(prefix) ? `${conversationId}:${stored.slice(prefix.length)}` : stored;
+	if (!stored.startsWith(prefix)) return undefined;
+	const rest = stored.slice(prefix.length);
+	return /^\d+:\d+$/.test(rest) ? `${conversationId}:${rest}` : undefined;
 };
 
 /** A line and where in the file it sat: the ordinal is the item's stable identity and its tiebreak. */
@@ -310,9 +322,12 @@ export interface TranscriptProjection {
  *   kept as a *fallback* onto the batch's first row rather than as the identity.
  * - **A reply also answers to `` `${conversation_id}:response` ``**, the id `resultEvents` mints for a
  *   turn no `agent_response` delta carried.
- * - **Every row also answers to the id this reader minted for it before #8968** (`legacyStoredId`), so
- *   a cursor out of a desk checkpointed under that shape pages instead of refusing. Not measured
- *   against agy — it is this repo's own history, read off the shape the module carried at `7ec91481`.
+ * - **A tool row also answers to the id this reader minted for it before #8968**
+ *   (`legacyToolStoredId`), so a cursor out of a desk checkpointed under that shape pages instead of
+ *   refusing. Only the two-segment `cid:<ord>:<idx>` shape, never the bare `cid:<ord>` a non-tool row
+ *   carried: that one is the live tail's own key shape, and registering it would re-overlap the two
+ *   spaces `line:` exists to keep disjoint. Not measured against agy — it is this repo's own history,
+ *   read off the shape the module carried at `7ec91481`.
  *
  * A step entry is first-occurrence-wins, which is Claude's precedent (`claude/history/items.ts`) and
  * the tie-break `step_index` needs: it is neither unique nor monotonic (the census in the module
@@ -452,17 +467,13 @@ export const transcriptProjection = (
 		push(here, systemItem(id, timestamp, marked(unrecognisedText(line), clipped.has("content"))));
 	});
 
-	/**
-	 * The pre-#8968 shape of every stored id, registered only where the live namespace claimed no
-	 * such key — which is why it runs after the walk rather than inside it.
-	 *
-	 * The two old shapes overlapped: this reader keyed a row `cid:<ordinal>` while the tail keys one
-	 * `cid:<step_index>`, so a legacy key that won would move a *live* cursor's boundary onto the row
-	 * at the same number — the silently wrong page `line:` was added to make impossible. Going last
-	 * and never overwriting leaves it able to turn a refusal into a page and unable to change any
-	 * resolution that already stands.
-	 */
-	for (const {item} of placed) resolvesTo(legacyStoredId(conversationId, item.id), item.id);
+	// The pre-#8968 shape of a tool row's stored id, and nothing else — `legacyToolStoredId` holds why
+	// the bare single-segment shape stays out of this map. Last rather than inside the walk so a key the
+	// live namespace did claim keeps the live meaning.
+	for (const {item} of placed) {
+		const legacy = legacyToolStoredId(conversationId, item.id);
+		if (legacy !== undefined) resolvesTo(legacy, item.id);
+	}
 
 	// The fold already walks this order, but a batch's rows are all pushed from their call line's
 	// `step_index`, so this is what keeps them together rather than interleaved with their outcomes'.
