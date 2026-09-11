@@ -39,6 +39,14 @@ Never invent one nobody named.
 fabrika ship scope $pr_number
 ```
 
+**This verb is also where you find out whether you got the worktree your spawn asked for.** On exit
+`33` you are standing in the driver's own checkout: stop there, report the code, and say the shipper
+needs respawning with `isolation: worktree` — never re-run from the same tree. That checkout's branch
+is one another seat moves mid-drive, which silently changes which build of these verbs a driver
+executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
+the verb and writes nothing, so **read-only, no local git, ever** still holds for you: you run no git
+yourself. Exit `11` here means the read failed and nothing is proven — also a stop.
+
 Already `merged` is an idempotent success — report it and end. `draft`/`closed` is a refusal.
 The verb prints the head SHA, the class set with its **required namespaces** (your gate checklist —
 all of them), the control-plane state, and the linked issue: `code`/`skill` classes require

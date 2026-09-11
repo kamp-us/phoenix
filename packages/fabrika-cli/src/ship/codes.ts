@@ -4,8 +4,9 @@
  *
  * **Every seat this group shares is imported, never re-typed as a numeral.** `3`, `5`, `6`, `7`,
  * `8`, `9`, `10` and `11` come from `../exit-codes.ts` and `../triage/codes.ts`; `12` and `13`
- * come from `../review/codes.ts` and `23` from `../plan/codes.ts`, whose meanings this group holds
- * unchanged. A restated numeral is a second source that can drift silently; an import cannot.
+ * come from `../review/codes.ts`, `23` from `../plan/codes.ts` and `33` from `../lane/codes.ts`,
+ * whose meanings this group holds unchanged. A restated numeral is a second source that can drift
+ * silently; an import cannot.
  *
  * `16` and `17` are this group's own proven refusals, and they sit above `review`'s private band on
  * purpose — `14`/`15` are `review`'s ACL and append-only seats, meanings no verb here performs, so a
@@ -23,6 +24,7 @@ import {
 	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
 	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
 } from "../exit-codes.ts";
+import {PRIMARY_CHECKOUT as LANE_PRIMARY_CHECKOUT} from "../lane/codes.ts";
 import {LABEL_ABSENT as PLAN_LABEL_ABSENT} from "../plan/codes.ts";
 import {
 	INCOMPLETE_SCAN as REVIEW_INCOMPLETE_SCAN,
@@ -133,6 +135,19 @@ export const NO_GATE_COVERAGE = 20;
  * what the round *costs*, never whether it happens.
  */
 export const BASE_CONFLICTED = 21;
+
+/**
+ * Refused: the verb is standing in the repository's **main working tree** — the driver's own
+ * checkout rather than a worktree of the shipper's own.
+ *
+ * `lane`'s seat, imported, under this group's stated rule — *import a code when two groups prove the
+ * same fact*. The fact is one fact read one way: `standingInLinkedWorktree` in `../lane/assembly.ts`,
+ * git's `--git-dir` / `--git-common-dir` pair. `lane push` spends it on an assembly write aimed at
+ * the shared checkout; `ship scope` spends it on a shipper that never got the worktree its spawn
+ * asked for. `lane`'s documented reading — *the branch is in the wrong tree* — is the shipper's
+ * failure exactly, so a numeral minted here would be a second source for one fact.
+ */
+export const PRIMARY_CHECKOUT = LANE_PRIMARY_CHECKOUT;
 
 /**
  * The unallocated codes. `4` is `report file`'s body-section seat and `14`/`15` are `review`'s ACL

@@ -8,7 +8,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, PRIMARY_CHECKOUT, ZERO_SCOPE} from "./codes.ts";
 import {
 	branchRules,
 	CODEOWNERS,
@@ -38,6 +38,18 @@ const BAD_GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
 
+const REV_PARSE = /^git rev-parse/;
+
+/**
+ * `--git-dir` and `--git-common-dir` as git answers them in a linked worktree — two different
+ * paths. Appended last in {@link run}, so a test that wants the other two answers scripts its own
+ * row and wins the first-match lookup.
+ */
+const LINKED_WORKTREE: Scripted = [
+	REV_PARSE,
+	{ok: true, stdout: "/repo/.git/worktrees/ship-4321\n/repo/.git\n", reason: ""},
+];
+
 const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
@@ -47,7 +59,7 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...extra]).layer, config),
+			Layer.merge(fakeSeams([...script, ...extra, LINKED_WORKTREE]).layer, config),
 		),
 	);
 
@@ -275,5 +287,50 @@ describe("runScope", () => {
 		const out = await run([[PULL, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("ship scope: PR #4321 not found in o/r.");
+	});
+
+	describe("the checkout this run stands in", () => {
+		it("refuses the main working tree on 33, before the PR is read", async () => {
+			const seams = fakeSeams([
+				[REV_PARSE, {ok: true, stdout: "/repo/.git\n/repo/.git\n", reason: ""}],
+				[PULL, served(pull())],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runScope(options), Layer.merge(seams.layer, unconfigured)),
+			);
+			expect(out.code).toBe(PRIMARY_CHECKOUT);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toBe(
+				"ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.",
+			);
+			expect(seams.requests).toEqual([]);
+		});
+
+		it("passes a linked worktree through to the normal scope answer", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
+					[OWNERS, raw(CODEOWNERS)],
+					[RULES, served(branchRules("pull_request"))],
+				],
+				{},
+				[[REPO, repositoryServed()]],
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:4287`);
+		});
+
+		it("refuses an unreadable worktree fact on 11 with nothing proven", async () => {
+			const out = await run([
+				[REV_PARSE, {ok: false, stdout: "", reason: "fatal: not a git repository"}],
+				[PULL, served(pull())],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toBe(
+				"ship scope: cannot tell whether this tree is a linked worktree: fatal: not a git repository — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.",
+			);
+		});
 	});
 });
