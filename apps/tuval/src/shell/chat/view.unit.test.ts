@@ -26,11 +26,25 @@ describe("asChatView", () => {
 			scroll: 420,
 			draft: "hello",
 			outgoing: [{key: "k1", text: "unsent"}],
-			cursor: "i7",
-			atOldest: true,
+			cursor: null,
+			atOldest: false,
 			expanded: ["t1", "t2"],
 			unfolded: ["t3"],
 			viewing: null,
+		});
+	});
+
+	// The rows a walk produced are the window's own React state and are rebuilt empty at every mount,
+	// so a restored walk names rows the window does not hold — and `atOldest` is what suppresses the
+	// affordance that could fetch them (#9047).
+	it("answers a fresh walk however far back the slot says this window had paged", () => {
+		expect(asChatView({cursor: "i7", atOldest: true})).toEqual(initialChatView);
+		expect(asChatView({cursor: "i7", atOldest: false}).cursor).toBeNull();
+		expect(asChatView({scroll: 420, draft: "kept", atOldest: true})).toEqual({
+			...initialChatView,
+			pinned: true,
+			scroll: 420,
+			draft: "kept",
 		});
 	});
 
@@ -61,7 +75,7 @@ describe("asChatView", () => {
 			scroll: 12,
 			draft: "",
 			outgoing: [],
-			cursor: "i1",
+			cursor: null,
 			atOldest: false,
 			expanded: [],
 			unfolded: [],
