@@ -63,6 +63,7 @@ const scope = leafCommand(
 				json,
 				cwd: process.cwd(),
 				env: process.env,
+				caller: "shipper",
 			}),
 		);
 	}),

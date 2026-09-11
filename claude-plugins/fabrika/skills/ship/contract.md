@@ -301,10 +301,16 @@ verbs the driver goes on executing. The refusal names the remedy — respawn the
 `isolation: worktree`. The fact is git's own `--git-dir` / `--git-common-dir` pair, read through
 `lane`'s `standingInLinkedWorktree` (`packages/fabrika-cli/src/lane/assembly.ts`) rather than
 re-derived here; a read that fails is `11` with nothing proven, never a pass. `ship scope` is the
-seat because every run carries it and nothing downstream proceeds without it, so one read covers the
-group. `ship disarm --site preflight` runs earlier and deliberately does not carry it: clearing a
-stale merge intent is safe from any tree, and refusing there would cost the run the one act that
-protects it.
+seat because every shipper run carries it and nothing downstream proceeds without it, so one read
+covers the group. Two callers are exempt, and both are exempt for the same reason — neither is the
+dispatched shipper whose worktree this proves. `ship disarm --site preflight` runs earlier:
+clearing a stale merge intent is safe from any tree, and refusing there would cost the run the one
+act that protects it. `recipe unpark` calls this verb **in process** for the head, state and
+namespace set behind its red-CI row, and a driver runs that verb from its own checkout on purpose —
+it pushes nothing, stands on no lane branch, and telling it to respawn a shipper it never dispatched
+would name the wrong actor for a park it can clear. The seat is stated at each call site rather than
+inferred (`caller: "shipper" | "relay"` in `packages/fabrika-cli/src/ship/scope-verb.ts`), so a
+future in-process caller picks an answer instead of inheriting one.
 
 **A `merged` PR is an answer, not a refusal** — the skill reports idempotent success and ends.
 `draft` and `closed` are likewise answers here; this verb reports state, the skill acts on it.
@@ -397,7 +403,7 @@ downstream verb consumes, and that verb guards itself.
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
 | `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
-| `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read |
+| `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
 **Errors**
 
@@ -412,8 +418,8 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: cannot tell whether this tree is a linked worktree: <reason> — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.` | 11 | refusal |
 | `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
 
-**Scope** — one `git rev-parse --git-dir --git-common-dir` in the checkout the verb runs in, then
-one PR's metadata and changed-file list, paginated and count-checked, plus one boundary read from
+**Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
+the verb runs in, then one PR's metadata and changed-file list, paginated and count-checked, plus one boundary read from
 the PR's base ref and one `governedRoots` read from that same checkout. The worktree read is first
 and writes nothing; a boundary read that failed refuses `11` on the spot and reads no config. The
 partition is total over what was read.

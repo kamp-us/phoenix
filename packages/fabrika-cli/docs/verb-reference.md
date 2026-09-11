@@ -1073,8 +1073,9 @@ on, nothing mutated · `17` the nudge's close landed and its reopen is unconfirm
 left closed · `18` a governance-root diff has no head-bound `governance` PASS · `19` the repository
 permits no merge method at all · `23` a label this run would POST is absent from the taxonomy ·
 `33` the verb is standing in the repository's main working tree — `lane push`'s seat, imported,
-because both prove one fact off one `git rev-parse --git-dir --git-common-dir`. `4` is a deliberate
-gap.
+because both prove one fact off one `git rev-parse --git-dir --git-common-dir`; it binds a shipper's
+own `ship scope` run, not `recipe unpark`'s in-process call to the same derivation. `4` is a
+deliberate gap.
 
 - **The §CP boundary is derived from `.github/CODEOWNERS` itself**, read at the base branch, so this
   group and the merge gate read one artifact and cannot disagree. A *trivial* boundary — no

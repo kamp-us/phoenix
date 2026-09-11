@@ -4,9 +4,26 @@
  * One module, because every verb in the group reads the same PR shape — a per-test literal is how
  * two tests come to disagree about what the platform returns.
  */
-import type {HttpReply} from "../fakes.test-support.ts";
+import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+
+/**
+ * `git rev-parse --git-dir --git-common-dir` as git answers it in a linked worktree — two different
+ * paths, which is the whole fact `standingInLinkedWorktree` reads.
+ *
+ * Shared rather than re-typed per file because `ship scope`'s own tests and the `review`/`ship`
+ * agreement test both run a `shipper`-seated scope read, and an unscripted command falls back to a
+ * failure — so a file that forgets this row does not fail on the fact it is testing, it refuses `11`
+ * before reaching it.
+ *
+ * Script it **last**, so a test wanting git's other two answers puts its own row first and wins the
+ * first-match lookup.
+ */
+export const LINKED_WORKTREE: Scripted = [
+	/^git rev-parse/,
+	{ok: true, stdout: "/repo/.git/worktrees/ship-4321\n/repo/.git\n", reason: ""},
+];
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OTHER_HEAD = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
