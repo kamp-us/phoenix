@@ -9,6 +9,13 @@
  * including `expanded`, which is why the same tool call can be open in one window and closed in the
  * other, and including `viewing`, which is what lets two windows sit on two different subagents.
  *
+ * Two of those seven do not survive a mount. The pages a window walked back to are the window's own
+ * React state, rebuilt empty every time it is mounted, so `cursor` and `atOldest` are read back as a
+ * fresh window's however the slot wrote them. Restored, they described rows the window did not hold,
+ * and `atOldest` is precisely what suppresses the affordance that could fetch them — so a window
+ * that had paged to the beginning of history came back holding the live tail and no route to the
+ * rest of the transcript (#9047).
+ *
  * `expanded` and `unfolded` are two facts, not one: opening a call's input panel and revealing the
  * subagent rows it heads are different asks, and one control doing both is what left the revealed
  * rows unannounced to assistive tech (#8027).
@@ -54,9 +61,16 @@ export type ChatView = {
 	 * refuses is still the operator's to take back (#8005).
 	 */
 	readonly outgoing: ReadonlyArray<OutgoingSend>;
-	/** The oldest item id this window has walked back to, or `null` while it holds only the live tail. */
+	/**
+	 * The oldest item id this window has walked back to, or `null` while it holds only the live tail.
+	 * Per-mount: the read-back answers `null` whatever the slot holds, because the pages it names are
+	 * not checkpointed beside it.
+	 */
 	readonly cursor: string | null;
-	/** The backend answered that there is nothing older; the transcript is at the beginning of history. */
+	/**
+	 * The backend answered that there is nothing older; the transcript is at the beginning of history.
+	 * Per-mount for the same reason as `cursor`, and the one that made restoring it a bug.
+	 */
 	readonly atOldest: boolean;
 	/** The ids of the rows this window has disclosed — a tool call's detail, a thinking row's text. */
 	readonly expanded: ReadonlyArray<string>;
@@ -117,8 +131,11 @@ export const asChatView = (value: ViewState | undefined): ChatView => {
 		scroll: typeof value.scroll === "number" && Number.isFinite(value.scroll) ? value.scroll : 0,
 		draft: typeof value.draft === "string" ? value.draft : "",
 		outgoing: asOutgoing(value.outgoing),
-		cursor: typeof value.cursor === "string" ? value.cursor : null,
-		atOldest: value.atOldest === true,
+		// Not read off the slot at all: the pages these two describe are the window's own React state,
+		// rebuilt empty on every mount, and a restored walk over no rows suppresses the affordance
+		// that could refill it (#9047).
+		cursor: initialChatView.cursor,
+		atOldest: initialChatView.atOldest,
 		expanded: Array.isArray(value.expanded)
 			? value.expanded.filter((id): id is string => typeof id === "string")
 			: [],
