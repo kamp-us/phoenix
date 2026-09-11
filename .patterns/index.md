@@ -157,6 +157,7 @@ For operational packages, workflow steps, hooks and Fabrika. Read the owning pac
 | [fabrika-hook-records.md](./fabrika-hook-records.md) | Node tooling / CI | Asking why a fabrika hook is (or is not) declared here, or what guarantee a retired v1 hook took with it |
 | [fabrika-verb-shape.md](./fabrika-verb-shape.md) | Node tooling / CI | Adding or changing a fabrika verb, or writing a test that substitutes its services |
 | [pi-project-package-install.md](./pi-project-package-install.md) | Node tooling / CI | Editing `.pi/settings.json`, or diagnosing a pi child that failed during its project-package refresh |
+| [serialized-usage-ledger.md](./serialized-usage-ledger.md) | Usage-ledger identity comparison, serialized appends, sync, read-back and recovery | Changing the spend recorder or adding a host recording callback |
 
 ## Tuval
 

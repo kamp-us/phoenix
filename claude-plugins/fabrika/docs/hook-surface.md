@@ -15,7 +15,7 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-Two hooks are declared **on this surface** today. An adopting repo may declare a third on its own, in
+The plugin declares the envelope check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
 guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. Both
@@ -25,9 +25,9 @@ two rules; what differs is which events each may carry.
 
 `fabrika hook check` on `SessionStart` is this surface's proof — it reads the envelope the harness writes to a hook's stdin and answers whether it is one fabrika can act on ([`../../../packages/fabrika-cli/src/hook/check-verb.ts`](../../../packages/fabrika-cli/src/hook/check-verb.ts)).
 
-`fabrika hook pre-bash` on `PreToolUse`/`Bash` is the second, and the only fabrika hook that **decides** anything: it denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
+`fabrika hook pre-bash` on `PreToolUse`/`Bash` is the only fabrika hook that **decides** anything: it denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
 
-There was a third: `fabrika hook spawn` on `PreToolUse`, a model-allowlist guard. It is **retired** — verb and declaration both deleted — because which model a subagent runs on is a per-run human choice, and a hook that second-guesses it only blocks the choice the human already made.
+The former `fabrika hook spawn` on `PreToolUse` was a model-allowlist guard. It is **retired** — verb and declaration both deleted — because which model a subagent runs on is a per-run human choice, and a hook that second-guesses it only blocks the choice the human already made.
 
 A declared hook nobody ever runs is a false green, so the proof does not stop at the declaration. The test **runs the argv it reads out of the committed `hooks.json`** — never a literal in the test — against **captured** `SessionStart` and `PreToolUse` envelopes, with the two subagent-spawn captures pinned by shape, all committed at [`../../../packages/fabrika-cli/src/hook/__fixtures__/`](../../../packages/fabrika-cli/src/hook/__fixtures__/) with their capture method, date and harness version beside them in `PROVENANCE.md`. Capture the real runtime artifact before coding against it: a hand-authored envelope encodes what its author assumed, and the assertions then pin the assumption rather than the payload. Two properties are what make that a proof rather than a schema asserted against itself: the argv comes from the declaration, so a green test cannot be exercising a verb the surface does not name; and the fixtures are what Claude Code 2.1.226 really sent, so the shape assertions pin keys a doc-assumed envelope would have missed — `PreToolUse` carries `prompt_id`, `permission_mode` and `effort`, and the hand-authored spawn-guard envelope that preceded these captures knew about none of them.
 
@@ -36,7 +36,7 @@ The one thing this cannot do is notice the **harness** changing. No gate here ex
 <a id="the-events-fabrika-does-not-declare"></a>
 ### The events fabrika does not declare, and why
 
-Five events were considered for this surface and all five were refused. Each entry below says what the event carries, why a fabrika verb cannot act on it, and — for the three non-worktree ones — what a payload would have had to carry instead, so a later reader can tell whether a newer build has fixed it.
+Five events were considered for task control and all five were refused for that purpose. `SubagentStop` is now declared for usage collection only; it still supplies no task verdict. Each entry below says what the event carries, why a fabrika verb cannot act on it, and — for the three non-worktree ones — what a payload would have had to carry instead, so a later reader can tell whether a newer build has fixed it.
 
 Everything here is read out of the **installed Claude Code executable, build 2.1.233**, by two methods, named per claim so neither is mistaken for the other:
 
@@ -153,7 +153,7 @@ It carries `agent_id` and `agent_type`, so the subagent is identified. What no f
 
 **What a verb would have needed:** an outcome field — a status, or the subagent's terminal token carried as data rather than embedded in its last message.
 
-Until then the artifact is the only place an outcome can be read — the PR, the posted verdict, the claim marker — and fabrika's verbs already read it there, which is why nothing is lost by leaving this event undeclared.
+Until then the artifact is the only place an outcome can be read — the PR, the posted verdict, the claim marker — and fabrika's verbs already read it there, so the usage collector never derives a task outcome from this event.
 
 <a id="the-harness-exit-code-contract"></a>
 ### The harness exit-code contract — exit `2` blocks, and only on `PreToolUse`
