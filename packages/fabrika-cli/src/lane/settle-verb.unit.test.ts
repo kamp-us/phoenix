@@ -154,7 +154,7 @@ const settle = (fs: ReturnType<typeof fakeFs>, over: SettleOverrides = {}) =>
 			runSettle({
 				root: ROOT,
 				lane: LANE,
-				issue: ISSUE,
+				issue: {_tag: "Issue", number: ISSUE},
 				task: over.task ?? null,
 				token: over.token ?? null,
 				landedBy: over.landedBy ?? null,
@@ -564,7 +564,7 @@ describe("lane settle — what never reaches a terminal", () => {
 				runSettle({
 					root: DEFAULT_CHORES_ROOT,
 					lane: "park-sweep",
-					issue: null,
+					issue: {_tag: "Chore"},
 					task: null,
 					token: null,
 					landedBy: null,
@@ -579,6 +579,37 @@ describe("lane settle — what never reaches a terminal", () => {
 		);
 
 		expect(out.code).toBe(ISSUE_UNRESOLVED);
+		expect(out.stderr.join("\n")).toContain("is a chore lane");
+	});
+
+	// A directory name with no leading board number is an issue-kind key that names no issue by
+	// accident, not a chore lane; naming it one sends the reader after a `chore:` prefix not there.
+	it("refuses an unnumbered issue-key on its directory name, never as a chore lane", async () => {
+		const fs = laneFs();
+
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runSettle({
+					root: ROOT,
+					lane: LANE,
+					issue: {_tag: "Unnumbered"},
+					task: null,
+					token: null,
+					landedBy: null,
+					closure: closes("closed", "not_planned"),
+					pulls: noPulls,
+					claims: unclaimed,
+					sha: readsSha,
+					asserted: forbiddenPull,
+				}),
+				fs.layer,
+			),
+		);
+
+		expect(out.code).toBe(ISSUE_UNRESOLVED);
+		expect(out.stderr.join("\n")).toContain("carries no leading issue number");
+		expect(out.stderr.join("\n")).toContain("this is not a chore lane");
+		expect(fs.written.has(LOG)).toBe(false);
 	});
 
 	it("refuses a task that is not in the machine", async () => {

@@ -1,6 +1,14 @@
 /** The lane key — which kind an argument names, where it lands, and the names it refuses. */
 import {describe, expect, it} from "vitest";
-import {CHORE_NAME_LIMIT, keyIssue, laneRef, parseKey, rawKeyIssue, templateFile} from "./key.ts";
+import {
+	CHORE_NAME_LIMIT,
+	keyIssue,
+	laneRef,
+	parseKey,
+	rawKeyIssue,
+	resolveKeyIssue,
+	templateFile,
+} from "./key.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
 const key = (raw: string) => {
@@ -88,5 +96,26 @@ describe("the issue a lane key drives", () => {
 	it("resolves a malformed key to no issue rather than throwing", () => {
 		expect(rawKeyIssue("")).toBeNull();
 		expect(rawKeyIssue("chore:Park Sweep")).toBeNull();
+	});
+
+	it("names no issue for a zero key, which is not a board number", () => {
+		expect(rawKeyIssue("0")).toBeNull();
+		expect(rawKeyIssue("0.frozen-deadlock-1788645453")).toBeNull();
+	});
+});
+
+describe("which of the two ways a key names no issue", () => {
+	it("resolves a numbered key to the issue itself", () => {
+		expect(resolveKeyIssue(key("8012"))).toEqual({_tag: "Issue", number: 8012});
+		expect(resolveKeyIssue(key("8012.frozen-deadlock-20260905T194736"))).toEqual({
+			_tag: "Issue",
+			number: 8012,
+		});
+	});
+
+	it("separates a chore lane, which names none by construction, from one that names none by accident", () => {
+		expect(resolveKeyIssue(key("chore:park-sweep"))).toEqual({_tag: "Chore"});
+		expect(resolveKeyIssue(key("frozen-deadlock"))).toEqual({_tag: "Unnumbered"});
+		expect(resolveKeyIssue(key("8012abc"))).toEqual({_tag: "Unnumbered"});
 	});
 });

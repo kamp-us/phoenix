@@ -144,7 +144,7 @@ const OPTIONS = {
 	ref: {root: ROOT, lane: "6037"},
 	archivedRoot: ARCHIVED,
 	templatePaths: [TEMPLATE],
-	issue: 6037,
+	issue: {_tag: "Issue", number: 6037} as const,
 	closed,
 };
 
@@ -305,9 +305,22 @@ describe("lane archive", () => {
 
 	it("refuses a chore key, whose lane can never satisfy the closed-issue gate", async () => {
 		const fs = brokenLane();
-		const out = await run(fs, runArchive({...OPTIONS, issue: null}));
+		const out = await run(fs, runArchive({...OPTIONS, issue: {_tag: "Chore"}}));
 
 		expect(out.code).toBe(ISSUE_UNRESOLVED);
+		expect(out.stderr.join("\n")).toContain("is a chore lane");
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The two ways a key names no issue are different facts, and the refusal that used to call both
+	// "a chore lane" sent a quarantined directory's reader looking for a `chore:` prefix not there.
+	it("refuses an unnumbered issue-key on the directory name, never as a chore lane", async () => {
+		const fs = brokenLane();
+		const out = await run(fs, runArchive({...OPTIONS, issue: {_tag: "Unnumbered"}}));
+
+		expect(out.code).toBe(ISSUE_UNRESOLVED);
+		expect(out.stderr.join("\n")).toContain("carries no leading issue number");
+		expect(out.stderr.join("\n")).toContain("this is not a chore lane");
 		expect(fs.written.size).toBe(0);
 	});
 
