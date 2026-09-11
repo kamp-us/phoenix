@@ -14,15 +14,13 @@
  * The archived root is a SIBLING of the swept one, so no sweep learns a skip rule — `reconcile` and
  * `migrate` read the roots they are handed, and the archived one is not among them.
  *
- * The order of the two gates is a cost decision: the replay judgement is local and free, the closure
- * read is one request, so a replaying lane is refused before the board is ever asked.
+ * The gates themselves are [`archive-move.ts`](archive-move.ts)'s, shared with the sweep
+ * ([`archive-sweep-verb.ts`](archive-sweep-verb.ts)); this module is the single-lane wording and
+ * exit code over them.
  */
-import {Effect, type FileSystem, Path, Result} from "effect";
-import type {ChildProcessSpawner} from "effect/unstable/process";
-import {exists, readFile, rename} from "../io/fs.ts";
-import {getIssue, resolveRepo} from "../io/issues.ts";
+import {Effect, type FileSystem, type Path} from "effect";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {judgeArchive} from "./archive.ts";
+import {type ArchiveMove, type ArchiveOutcome, archiveLane} from "./archive-move.ts";
 import {
 	APPEND_UNKNOWN,
 	ISSUE_LIVE,
@@ -32,181 +30,97 @@ import {
 	LOG_REPLAYS,
 	MARKER_READBACK,
 } from "./codes.ts";
-import type {KeyIssue} from "./key.ts";
 import {loadRefusal} from "./refusals.ts";
-import {type LaneRef, loadLane} from "./store.ts";
+import type {LaneRef} from "./store.ts";
 
 const VERB = "fabrika lane archive";
 
-/** Whether the issue this lane drives is closed on the board. A read that failed is `Unknown`. */
-export type ClosureState =
-	| {readonly _tag: "Closed"; readonly reason: string | null}
-	| {readonly _tag: "Open"}
-	| {readonly _tag: "Unknown"; readonly reason: string};
+export type ArchiveOptions<R = never> = ArchiveMove<R>;
 
-export type ClosedReader<R> = (issue: number) => Effect.Effect<ClosureState, never, R>;
-
-/**
- * The board-backed reader: one `getIssue`, and its `state` is the whole answer.
- *
- * A reader the caller passes rather than a seam this verb reaches through on its own, the shape
- * `lane open` and `lane migrate` established — so every refusal above is testable without a network,
- * and an unreadable board is `Unknown`, never an open issue and never a closed one.
- */
-export const closedReader = (
-	repo: string | null,
-	env: Readonly<Record<string, string | undefined>>,
-): ClosedReader<ChildProcessSpawner.ChildProcessSpawner> => {
-	let resolved: string | null = null;
-	return (issue) =>
-		Effect.gen(function* () {
-			if (resolved === null) {
-				const attempt = yield* resolveRepo(repo, env);
-				if (attempt._tag === "Failure") {
-					return {
-						_tag: "Unknown" as const,
-						reason: "no target repo resolves — set CLAUDE_PIPELINE_REPO, or pass --repo owner/name",
-					};
-				}
-				resolved = attempt.value;
-			}
-			const record = yield* getIssue(resolved, issue);
-			if (record._tag !== "Present") {
-				return {
-					_tag: "Unknown" as const,
-					reason:
-						record._tag === "Absent"
-							? `#${issue} is not present on ${resolved}`
-							: `cannot read #${issue}: ${record.reason}`,
-				};
-			}
-			return record.value.state === "closed"
-				? {_tag: "Closed" as const, reason: record.value.stateReason}
-				: {_tag: "Open" as const};
-		});
+/** One lane's proven outcome, worded and seated. Exhaustive: a new arm reds the compiler here. */
+const verdictOf = (ref: LaneRef, archivedRoot: string, outcome: ArchiveOutcome): VerbOutcome => {
+	switch (outcome._tag) {
+		case "NoIssue":
+			return refuse(
+				ISSUE_UNRESOLVED,
+				outcome.kind === "Chore"
+					? `${VERB}: "${ref.lane}" is a chore lane, and an archive turns on an issue reading closed — a lane with no issue can never satisfy it, so there is nothing here to prove. Nothing was moved.`
+					: `${VERB}: "${ref.lane}" carries no leading issue number, so there is no issue for the closed-issue gate to read — this is not a chore lane, so what is wrong is the directory name. A quarantined lane is named "<issue>.<suffix>" precisely so it keeps naming its issue. Nothing was moved.`,
+			);
+		case "Unloadable":
+			return loadRefusal(VERB, outcome.loaded);
+		case "WorkflowUnreadable":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot re-read ${outcome.path}: ${outcome.reason} — whether this lane replays is UNKNOWN. Nothing was moved.`,
+			);
+		case "TemplateUnreadable":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read the committed template at ${outcome.path}: ${outcome.reason} — nothing was moved.`,
+			);
+		case "Unjudgeable":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot judge whether ${outcome.logPath} replays: ${outcome.reason} — refusing to move over UNKNOWN.`,
+			);
+		case "Replays":
+			return refuse(
+				LOG_REPLAYS,
+				`${VERB}: ${outcome.logPath} replays through every machine that exists for this lane, so every sweep can judge it — this is not a lane to move out of their scope. Nothing was moved.`,
+			);
+		case "ClosureUnknown":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot establish whether #${outcome.issue} is closed: ${outcome.reason} — refusing to move over UNKNOWN.`,
+			);
+		case "IssueOpen":
+			return refuse(
+				ISSUE_LIVE,
+				`${VERB}: #${outcome.issue} is open, so this lane is live work — an archived lane is beyond every sweep, and a live one belongs where the sweeps can see it. Drive the lane, or close the issue first. Nothing was moved.`,
+			);
+		case "Unprobeable":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot establish whether ${outcome.destination} is already there: ${outcome.reason} — refusing to move over UNKNOWN.`,
+			);
+		case "Occupied":
+			return refuse(
+				LANE_EXISTS,
+				`${VERB}: ${outcome.destination} already holds an archived lane — a move onto it would bury a record this verb exists to keep. Nothing was moved.`,
+			);
+		case "Unmoved":
+			return refuse(
+				APPEND_UNKNOWN,
+				`${VERB}: the move of ${outcome.from} to ${outcome.to} did not land: ${outcome.reason} — the lane is NOT archived.`,
+			);
+		case "Unverified":
+			return refuse(
+				MARKER_READBACK,
+				`${VERB}: the move of ${outcome.from} reported success and ${outcome.to}/workflow.json does not read back — where this lane's record now is needs a human eye before anything else touches it.`,
+			);
+		case "Archived":
+			return answer(
+				JSON.stringify({
+					answer: "archived",
+					lane: ref.lane,
+					issue: outcome.issue,
+					from: outcome.from,
+					to: outcome.to,
+					through: outcome.through,
+					defects: outcome.defects,
+				}),
+				[
+					`${VERB}: moved ${outcome.from} to ${outcome.to}; #${outcome.issue} is closed${outcome.closedReason === null ? "" : ` (${outcome.closedReason})`} and the log does not replay through the ${outcome.through === "current" ? "lane's own machine" : "committed template"}.`,
+					`${VERB}: read it back with \`fabrika lane history ${ref.lane} --root ${archivedRoot}\`.`,
+				],
+			);
+	}
 };
-
-export interface ArchiveOptions<R = never> {
-	readonly ref: LaneRef;
-	/** Where the lane moves to — the archived root, which no sweep is handed. */
-	readonly archivedRoot: string;
-	/** The committed templates this root's lanes may have booted from; the lane's `id` picks. */
-	readonly templatePaths: ReadonlyArray<string>;
-	/** The issue this lane drives, or which of the two ways its key names none. */
-	readonly issue: KeyIssue;
-	readonly closed: ClosedReader<R>;
-}
 
 export const runArchive = <R = never>(
 	options: ArchiveOptions<R>,
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const path = yield* Path.Path;
-		const {ref} = options;
-		if (options.issue._tag !== "Issue") {
-			return refuse(
-				ISSUE_UNRESOLVED,
-				options.issue._tag === "Chore"
-					? `${VERB}: "${ref.lane}" is a chore lane, and an archive turns on an issue reading closed — a lane with no issue can never satisfy it, so there is nothing here to prove. Nothing was moved.`
-					: `${VERB}: "${ref.lane}" carries no leading issue number, so there is no issue for the closed-issue gate to read — this is not a chore lane, so what is wrong is the directory name. A quarantined lane is named "<issue>.<suffix>" precisely so it keeps naming its issue. Nothing was moved.`,
-			);
-		}
-		const issue = options.issue.number;
-
-		const loaded = yield* loadLane(ref);
-		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
-
-		const workflowPath = path.join(loaded.dir, "workflow.json");
-		const laneText = yield* Effect.result(readFile(workflowPath));
-		if (Result.isFailure(laneText)) {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: cannot re-read ${workflowPath}: ${laneText.failure.reason} — whether this lane replays is UNKNOWN. Nothing was moved.`,
-			);
-		}
-		const templateTexts: string[] = [];
-		for (const templatePath of options.templatePaths) {
-			const template = yield* Effect.result(readFile(templatePath));
-			if (Result.isFailure(template)) {
-				return refuse(
-					LANE_UNREADABLE,
-					`${VERB}: cannot read the committed template at ${templatePath}: ${template.failure.reason} — nothing was moved.`,
-				);
-			}
-			templateTexts.push(template.success);
-		}
-
-		const judged = judgeArchive(templateTexts, laneText.success, loaded.lane, loaded.entries);
-		if (judged._tag === "Unjudgeable") {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: cannot judge whether ${loaded.logPath} replays: ${judged.reason} — refusing to move over UNKNOWN.`,
-			);
-		}
-		if (judged._tag === "Replays") {
-			return refuse(
-				LOG_REPLAYS,
-				`${VERB}: ${loaded.logPath} replays through every machine that exists for this lane, so every sweep can judge it — this is not a lane to move out of their scope. Nothing was moved.`,
-			);
-		}
-
-		const closure = yield* options.closed(issue);
-		if (closure._tag === "Unknown") {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: cannot establish whether #${issue} is closed: ${closure.reason} — refusing to move over UNKNOWN.`,
-			);
-		}
-		if (closure._tag === "Open") {
-			return refuse(
-				ISSUE_LIVE,
-				`${VERB}: #${issue} is open, so this lane is live work — an archived lane is beyond every sweep, and a live one belongs where the sweeps can see it. Drive the lane, or close the issue first. Nothing was moved.`,
-			);
-		}
-
-		const destination = path.join(options.archivedRoot, ref.lane);
-		const occupied = yield* Effect.result(exists(destination));
-		if (Result.isFailure(occupied)) {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: cannot establish whether ${destination} is already there: ${occupied.failure.reason} — refusing to move over UNKNOWN.`,
-			);
-		}
-		if (occupied.success) {
-			return refuse(
-				LANE_EXISTS,
-				`${VERB}: ${destination} already holds an archived lane — a move onto it would bury a record this verb exists to keep. Nothing was moved.`,
-			);
-		}
-
-		const moved = yield* Effect.result(rename(loaded.dir, destination));
-		if (Result.isFailure(moved)) {
-			return refuse(
-				APPEND_UNKNOWN,
-				`${VERB}: the move of ${loaded.dir} to ${destination} did not land: ${moved.failure.reason} — the lane is NOT archived.`,
-			);
-		}
-		const landed = yield* Effect.result(exists(path.join(destination, "workflow.json")));
-		if (Result.isFailure(landed) || !landed.success) {
-			return refuse(
-				MARKER_READBACK,
-				`${VERB}: the move of ${loaded.dir} reported success and ${destination}/workflow.json does not read back — where this lane's record now is needs a human eye before anything else touches it.`,
-			);
-		}
-
-		return answer(
-			JSON.stringify({
-				answer: "archived",
-				lane: ref.lane,
-				issue,
-				from: loaded.dir,
-				to: destination,
-				through: judged.through,
-				defects: judged.defects,
-			}),
-			[
-				`${VERB}: moved ${loaded.dir} to ${destination}; #${issue} is closed${closure.reason === null ? "" : ` (${closure.reason})`} and the log does not replay through the ${judged.through === "current" ? "lane's own machine" : "committed template"}.`,
-				`${VERB}: read it back with \`fabrika lane history ${ref.lane} --root ${options.archivedRoot}\`.`,
-			],
-		);
-	});
+	Effect.map(archiveLane(options), (outcome) =>
+		verdictOf(options.ref, options.archivedRoot, outcome),
+	);

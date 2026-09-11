@@ -21,9 +21,11 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
-import {refuse, type VerbOutcome} from "../verb.ts";
+import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {claimOwnership, runAmend} from "./amend-verb.ts";
-import {closedReader, runArchive} from "./archive-verb.ts";
+import {closedReader} from "./archive-move.ts";
+import {runArchiveSweep} from "./archive-sweep-verb.ts";
+import {runArchive} from "./archive-verb.ts";
 import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
@@ -1117,7 +1119,12 @@ const migrate = leafCommand(
 const archive = leafCommand(
 	"archive",
 	{
-		lane: laneArgument,
+		lane: Argument.optional(laneArgument),
+		sweep: Flag.boolean("sweep").pipe(
+			Flag.withDescription(
+				"walk the lanes root and archive EVERY lane both gates already clear, reporting one row per lane examined. Takes no lane argument — a key and this flag together name two different jobs",
+			),
+		),
 		root: rootFlag,
 		archivedRoot: Flag.string("archived-root").pipe(
 			Flag.optional,
@@ -1132,13 +1139,34 @@ const archive = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, root, archivedRoot: archived, repo}) {
-		const parsed = parseKey(lane);
-		if (parsed._tag === "Malformed") {
+	Effect.fn(function* ({lane, sweep, root, archivedRoot: archived, repo}) {
+		if (sweep && Option.isSome(lane)) {
+			yield* emit(
+				refuse(
+					FAILED,
+					`fabrika lane archive: --sweep walks the whole lanes root and "${lane.value}" names one lane — the two are different jobs, so nothing was moved. Drop one.`,
+				),
+			);
+			return;
+		}
+		if (!sweep && Option.isNone(lane)) {
+			yield* emit(
+				refuse(
+					FAILED,
+					"fabrika lane archive: name the lane to archive, or pass --sweep to walk the lanes root. Nothing was moved.",
+				),
+			);
+			return;
+		}
+		const parsed = Option.isSome(lane) ? parseKey(lane.value) : null;
+		if (parsed !== null && parsed._tag === "Malformed") {
 			yield* emit(keyRefusal(parsed));
 			return;
 		}
 		const path = yield* Path.Path;
+		// A relocated root holds whatever was opened into it, so both templates are candidates and the
+		// lane's own machine id picks — never the root's position.
+		const templatePaths = [templatePath("Issue"), templatePath("Chore")];
 		let source: string;
 		let destination: string;
 		if (Option.isSome(root) && Option.isSome(archived)) {
@@ -1150,8 +1178,25 @@ const archive = leafCommand(
 				yield* emit(repoGroundRefusal("fabrika lane archive", ground));
 				return;
 			}
-			source = Option.getOrElse(root, () => path.join(ground.repoRoot, defaultRoot(parsed.key)));
+			// The sweep addresses the lanes root itself, so it has no key to take a default from — a
+			// chore lane drives no issue and can never clear the closed-issue gate.
+			source = Option.getOrElse(root, () =>
+				path.join(ground.repoRoot, parsed === null ? DEFAULT_LANES_ROOT : defaultRoot(parsed.key)),
+			);
 			destination = Option.getOrElse(archived, () => path.join(ground.repoRoot, archivedRoot()));
+		}
+		if (parsed === null) {
+			yield* emit(
+				yield* onGround("archive", [source, destination], process.cwd(), () =>
+					runArchiveSweep({
+						root: source,
+						archivedRoot: destination,
+						templatePaths,
+						closed: closedReader(Option.getOrNull(repo), process.env),
+					}),
+				),
+			);
+			return;
 		}
 		const ref = laneRef(parsed.key, source);
 		yield* emit(
@@ -1159,9 +1204,7 @@ const archive = leafCommand(
 				runArchive({
 					ref,
 					archivedRoot: destination,
-					// A relocated root holds whatever was opened into it, so both templates are
-					// candidates and the lane's own machine id picks — never the root's position.
-					templatePaths: [templatePath("Issue"), templatePath("Chore")],
+					templatePaths,
 					issue: resolveKeyIssue(parsed.key),
 					closed: closedReader(Option.getOrNull(repo), process.env),
 				}),
@@ -1169,9 +1212,11 @@ const archive = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Move one lane whose log will never replay out of the swept root."),
+	Command.withShortDescription(
+		"Move lanes whose logs never replay out of the swept root — one or all.",
+	),
 	Command.withDescription(
-		'Move one lane directory from the lanes root to the archived root, so the sweeps stop reporting a lane they can never judge. `lane reconcile` reads such a lane "unreadable" and `lane migrate` "unsafe" on every run, forever: the fault is an event the machine has no cell for, and neither verb may rewrite an append-only log to fix it — sealing writes a line for something that did not happen and widening `frozen` lets a lane at its retry cap ship with no unblock. So the record moves aside instead, and nothing in it is touched. BOTH gates hold or nothing moves: the lane\'s issue must read closed on the board, AND the log must fail to replay under the same judgement `lane migrate` makes — through the lane\'s own machine or through the committed template, and through the lane\'s own machine alone when that machine was generated by `lane emit` and binds no template. Anything else is refused with the directory where it was, so a genuinely broken lane still shows up on every sweep. The replay judgement runs first because it is local and free, so a replaying lane costs no board read. The archived root is a SIBLING of the lanes root, never a directory under it, which is why no sweep needs a skip rule: `reconcile` and `migrate` read the roots they are handed and are never handed this one. The record stays readable — `fabrika lane history <lane> --root <archived-root>` and `fabrika lane brief` read an archived lane when pointed at it. stdout is {answer:"archived", lane, issue, from, to, through, defects}, where `through` is "current" or "candidate" — which machine refused the log — and `defects` names why. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the move did not land — the lane is NOT archived), 9 (the move reported success and the destination does not read back), 11 (the lane, a committed template, the destination probe or the board could not be read, or a committed template that is this lane\'s own could not be built into a candidate — UNKNOWN, never a move; a GENERATED machine binds no template and is not that case, so its own fold is the whole judgement), 14 (the archived root already holds a lane by this key — a move onto it would bury a record), 19 (the key names no issue, so the closed-issue gate can never be satisfied — the refusal says which of the two: a chore lane, which is not archivable at all, or an issue-kind directory name carrying no leading issue number), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default roots), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 49 (the lane\'s issue is open — drive the lane, or close it first), 50 (the log replays, so every sweep can judge it and there is nothing to move out of scope). Example: fabrika lane archive 6037',
+		'Move one lane directory from the lanes root to the archived root, so the sweeps stop reporting a lane they can never judge. `lane reconcile` reads such a lane "unreadable" and `lane migrate` "unsafe" on every run, forever: the fault is an event the machine has no cell for, and neither verb may rewrite an append-only log to fix it — sealing writes a line for something that did not happen and widening `frozen` lets a lane at its retry cap ship with no unblock. So the record moves aside instead, and nothing in it is touched. BOTH gates hold or nothing moves: the lane\'s issue must read closed on the board, AND the log must fail to replay under the same judgement `lane migrate` makes — through the lane\'s own machine or through the committed template, and through the lane\'s own machine alone when that machine was generated by `lane emit` and binds no template. Anything else is refused with the directory where it was, so a genuinely broken lane still shows up on every sweep. The replay judgement runs first because it is local and free, so a replaying lane costs no board read. The archived root is a SIBLING of the lanes root, never a directory under it, which is why no sweep needs a skip rule: `reconcile` and `migrate` read the roots they are handed and are never handed this one. The record stays readable — `fabrika lane history <lane> --root <archived-root>` and `fabrika lane brief` read an archived lane when pointed at it. stdout is {answer:"archived", lane, issue, from, to, through, defects}, where `through` is "current" or "candidate" — which machine refused the log — and `defects` names why. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the move did not land — the lane is NOT archived), 9 (the move reported success and the destination does not read back), 11 (the lane, a committed template, the destination probe or the board could not be read, or a committed template that is this lane\'s own could not be built into a candidate — UNKNOWN, never a move; a GENERATED machine binds no template and is not that case, so its own fold is the whole judgement), 14 (the archived root already holds a lane by this key — a move onto it would bury a record), 19 (the key names no issue, so the closed-issue gate can never be satisfied — the refusal says which of the two: a chore lane, which is not archivable at all, or an issue-kind directory name carrying no leading issue number), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default roots), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 49 (the lane\'s issue is open — drive the lane, or close it first), 50 (the log replays, so every sweep can judge it and there is nothing to move out of scope). `--sweep` is the same two gates over EVERY lane in the root, and takes no lane argument: it walks the lanes root, archives each lane that clears both, and prints one row per lane it examined — archived, or skipped with the reason (replays / issue open / unjudgeable / key names no issue / unreadable / the archived root already holds it / the move did not land). A lane whose move landed and whose destination does not read back is a THIRD outcome, "moved-unverified" and never a skip: that directory is no longer where it was, so a row calling it skipped would state the one thing now known to be false. A lane whose judgement is UNKNOWN is never archived, and a directory name that resolves to no issue number is skipped and named rather than fatal, so one unaddressable key costs no other lane its sweep. Its stdout is {answer:"swept", root, present, archivedRoot, examined, archived, lanes}. It exits 0 on every skip — a skip is a row, not a failure — and non-zero only where the lane set is UNKNOWN (11) or a move that cleared both gates did not land (8) or does not read back (9); the rows reach stderr either way, so a partly-applied sweep is always enumerable. Examples: fabrika lane archive 6037 · fabrika lane archive --sweep',
 	),
 );
 
