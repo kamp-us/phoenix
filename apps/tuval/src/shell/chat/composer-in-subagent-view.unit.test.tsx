@@ -28,7 +28,7 @@ import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, call, userItem, withTranscript} from "./chat.testing.ts";
 import {subagentViewPlaceholder, tuvalDesignMessages} from "./copy.ts";
-import {type ChatView, initialChatView} from "./view.ts";
+import {initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -48,8 +48,7 @@ const open = async () => {
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), session()),
 	);
-	const opened: ChatView = {...initialChatView, atOldest: true};
-	const bound = await Effect.runPromise(process.window(WindowId.make("w1"), opened));
+	const bound = await Effect.runPromise(process.window(WindowId.make("w1"), initialChatView));
 	const rendered = render(
 		chatWindow({scrollCommitMs: 0, scrollToFn: () => {}, subagentList: true}).render(
 			bound,
