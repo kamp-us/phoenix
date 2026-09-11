@@ -214,6 +214,7 @@ describe("lane archive", () => {
 			runMigrate({
 				roots: [{root: ROOT, templatePaths: [TEMPLATE]}],
 				check: true,
+				lane: null,
 				expectations: null,
 			});
 		const reconcile = () =>

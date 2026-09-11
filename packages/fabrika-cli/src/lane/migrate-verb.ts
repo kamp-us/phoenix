@@ -14,6 +14,13 @@
  * `--check` is the same sweep with the write withheld — what a driver runs to find out whether a
  * lane it is about to drive is stale, and what a release runs before merging a machine change.
  *
+ * A lane key narrows which entries are swept and nothing else. The whole-root sweep is still what
+ * runs unaddressed — it is the release-time shape — but a driver holding one lane is sanctioned to
+ * write that lane's document and no other, and before the key existed the only write this verb
+ * could perform reached every lane in the root, other drivers' live ones included. Narrowing is a
+ * filter over the swept name set: each lane was already judged on its own, so a narrowed run reaches
+ * exactly the same verdict for the lane it names as the sweep would have.
+ *
  * Staleness is not the only way a lane can be wrong, and it was the only one this sweep could see:
  * a coder-template lane booted on an epic grafts cleanly and reads `current`. So each
  * issue-keyed lane is also judged against the board's answer for its issue ([`shape.ts`](shape.ts)),
@@ -32,7 +39,7 @@ import {Effect, type FileSystem, Path, Result} from "effect";
 import {exists, readDir, readFile, writeFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {LANE_UNREADABLE, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
+import {LANE_ABSENT, LANE_UNREADABLE, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {compileText} from "./machine.ts";
@@ -60,6 +67,13 @@ export interface MigrateOptions<R = never> {
 	readonly roots: ReadonlyArray<MigrateRoot>;
 	/** Judge and report, write nothing. */
 	readonly check: boolean;
+	/**
+	 * The one lane to judge, as {@link keyOf} renders it, or `null` for the whole-root sweep.
+	 *
+	 * Matched against the key a caller would type rather than the bare directory name, so a chore
+	 * root's entry is addressed `chore:<name>` here exactly as it is at every other lane verb.
+	 */
+	readonly lane: string | null;
 	/** The board reader the shape judgement needs, or `null` for the wholly offline sweep. */
 	readonly expectations: ExpectationReader<R> | null;
 }
@@ -283,6 +297,9 @@ export const runMigrate = <R = never>(
 			}
 			let found = 0;
 			for (const name of [...names.success].sort()) {
+				// The filter sits ahead of `migrateLane`, so a narrowed run does not read, judge or
+				// write any other entry — a lane belonging to another driver is never opened at all.
+				if (options.lane !== null && keyOf(root, name) !== options.lane) continue;
 				const row = yield* migrateLane(
 					root,
 					name,
@@ -297,6 +314,16 @@ export const runMigrate = <R = never>(
 			scanned.push({root, present: true, lanes: found});
 		}
 
+		// A key that matched nothing is a proven absence, never a clean sweep of zero: the caller
+		// named a lane, and answering `{summary: all zero}` at exit 0 would read as "nothing to do"
+		// for a lane that was never judged at all.
+		if (options.lane !== null && lanes.length === 0) {
+			return refuse(
+				LANE_ABSENT,
+				`${VERB}: no lane keyed ${options.lane} under ${options.roots.map((swept) => swept.root).join(", ")} — nothing was judged and nothing was written. A chore lane is addressed \`chore:<name>\`; drop the key to sweep the whole root.`,
+			);
+		}
+
 		const summary = Object.fromEntries(
 			VERDICTS.map((verdict) => [verdict, lanes.filter((row) => row.verdict === verdict).length]),
 		);
@@ -307,7 +334,7 @@ export const runMigrate = <R = never>(
 		// A duplicate reaches the operator on stderr as well as in its row, because a refusal over some
 		// OTHER lane empties stdout by contract and would take every duplicate finding with it.
 		const stderr = [
-			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.check ? " — check only, nothing written" : ""}.`,
+			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.lane === null ? "" : ` — narrowed to lane ${options.lane}`}${options.check ? " — check only, nothing written" : ""}.`,
 			...duplicate.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "duplicate"}`),
 			...mismatched.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "mismatched"}`),
 			...unsafe.map((row) => `${VERB}: ${row.key}: ${row.reason ?? "unsafe"}`),
