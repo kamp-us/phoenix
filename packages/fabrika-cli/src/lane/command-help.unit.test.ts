@@ -36,6 +36,7 @@ const ROOTED_VERBS = [
 	"push",
 	"brief",
 	"stale",
+	"seats",
 	"migrate",
 	"view",
 ] as const;
