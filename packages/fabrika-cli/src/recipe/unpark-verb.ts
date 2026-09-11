@@ -983,7 +983,18 @@ const clearCiGreen = (
 		if (nominated._tag === "Refused") return no(nominated.outcome);
 		const pr = nominated.pr;
 
-		const scoped = yield* runScope({pr, repo, json: true, cwd: options.cwd, env: options.env});
+		// `relay`, not `shipper`: `ship scope`'s main-working-tree refusal proves a shipper got the
+		// worktree its spawn asked for, and this caller is not that spawn. A driver runs `recipe
+		// unpark` from its own checkout on purpose, writes to no tree here, and stands on no lane
+		// branch — binding it would refuse the verb in the one tree it is meant to run in.
+		const scoped = yield* runScope({
+			pr,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+			caller: "relay",
+		});
 		if (scoped.code !== 0) {
 			return unknown(`#${pr}'s scope`, `fabrika ship scope refused at exit ${scoped.code}`);
 		}

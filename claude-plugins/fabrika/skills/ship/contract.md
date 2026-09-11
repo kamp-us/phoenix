@@ -221,6 +221,7 @@ authority.
 | `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
 | `19` | refused: the repository permits **no merge method at all** — squash, merge-commit and rebase are all disabled, so nothing can land directly. Its own seat rather than a fold into `16`, because the two route opposite ways: `16` sends the run to `ship enqueue`, `19` ends it at a human with repository-settings access | `merge` |
 | `23` | refused: a label this run would POST is absent from the repository's taxonomy — `plan flip`'s seat, imported, because both verbs prove one fact over one board's labels | `release` |
+| `33` | refused: the verb is standing in the repository's **main working tree** — the driver's own checkout, not a worktree of the shipper's own. `lane push`'s seat, imported, because both prove one fact off one read (`standingInLinkedWorktree`, git's `--git-dir`/`--git-common-dir` pair) and `lane` already documents it as *the branch is in the wrong tree* | `scope` |
 | `127` | the verb never ran (unresolved binary) | all |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every
@@ -292,6 +293,24 @@ fabrika ship scope 4321 [--repo <owner/name>] [--json]
 `landing\t<queue|direct|none|unknown>\t<squash|merge|rebase|->` and `files\t<scanned>`.
 
 With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":"fixes"|"part-of"|"none","number":<n|null>},"classes":[{name,files}…],"namespaces":[…],"cp":…,"landing":{"path":…,"method":…},"scanned":<n>}`.
+
+**Before any of that, this verb proves the checkout it runs in is not the repository's main working
+tree**, and refuses `33` when it is: a shipper reads from a worktree of its own, never from the
+driver's checkout, whose branch another seat can move mid-drive and so change which build of these
+verbs the driver goes on executing. The refusal names the remedy — respawn the shipper with
+`isolation: worktree`. The fact is git's own `--git-dir` / `--git-common-dir` pair, read through
+`lane`'s `standingInLinkedWorktree` (`packages/fabrika-cli/src/lane/assembly.ts`) rather than
+re-derived here; a read that fails is `11` with nothing proven, never a pass. `ship scope` is the
+seat because every shipper run carries it and nothing downstream proceeds without it, so one read
+covers the group. Two callers are exempt, and both are exempt for the same reason — neither is the
+dispatched shipper whose worktree this proves. `ship disarm --site preflight` runs earlier:
+clearing a stale merge intent is safe from any tree, and refusing there would cost the run the one
+act that protects it. `recipe unpark` calls this verb **in process** for the head, state and
+namespace set behind its red-CI row, and a driver runs that verb from its own checkout on purpose —
+it pushes nothing, stands on no lane branch, and telling it to respawn a shipper it never dispatched
+would name the wrong actor for a park it can clear. The seat is stated at each call site rather than
+inferred (`caller: "shipper" | "relay"` in `packages/fabrika-cli/src/ship/scope-verb.ts`), so a
+future in-process caller picks an answer instead of inheriting one.
 
 **A `merged` PR is an answer, not a refusal** — the skill reports idempotent success and ends.
 `draft` and `closed` are likewise answers here; this verb reports state, the skill acts on it.
@@ -382,8 +401,9 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
-| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
+| `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
 **Errors**
 
@@ -395,11 +415,14 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
 | `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
+| `ship scope: cannot tell whether this tree is a linked worktree: <reason> — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.` | 11 | refusal |
+| `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
 
-**Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
-boundary read from the PR's base ref and one `governedRoots` read from the checkout the verb runs
-in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
-over what was read.
+**Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
+the verb runs in, then one PR's metadata and changed-file list, paginated and count-checked, plus one boundary read from
+the PR's base ref and one `governedRoots` read from that same checkout. The worktree read is first
+and writes nothing; a boundary read that failed refuses `11` on the spot and reads no config. The
+partition is total over what was read.
 
 **Examples**
 
@@ -427,11 +450,22 @@ $ echo $?
 7
 ```
 
+```
+$ fabrika ship scope 4321
+ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.
+$ echo $?
+33
+```
+
 **Grounding**
 
 - **One derivation, printed once.** A class set hand-copied into a second script dropped a class on
   a live PR; the vacuous-conjunction refusal is executable here, not five comment lines.
 - **A failed file read is `11`.** It once answered "no §CP, no classes present" in one stroke.
+- **The spawn flag is a request, not a fact.** A shipper dispatched `isolation: worktree` ran in the
+  driver's checkout; that checkout's branch then moved under a mid-drive operator, and the driver
+  went on executing a different build of these verbs with no signal. One read, in the seat every run
+  already carries.
 - **The boundary is read from the PR's base ref**, and a trivial or empty boundary is a hold — a
   PR must not be able to reclassify itself, and "matches everything" is not "owned by everyone".
 - **The class-map deadlock family.** Every changed file maps to a class, every class to a namespace

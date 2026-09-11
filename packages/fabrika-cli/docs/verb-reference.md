@@ -1051,7 +1051,7 @@ record it. Contract:
 
 | Verb | Answers |
 |---|---|
-| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the three-state §CP classification |
+| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the three-state §CP classification — refusing `33` before any of it when the checkout it runs in is the repository's main working tree, so a shipper that never got the worktree its spawn asked for stops instead of reading a driver's checkout whose branch moves mid-drive |
 | `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only |
 | `ship gate` | the verdict conjunction over every required namespace |
 | `ship floor` | whether a governance-root diff carries its head-bound `governance` verdict |
@@ -1071,8 +1071,11 @@ record it. Contract:
 read completed and its scope is provably incomplete · `16` proven not in the state this write acts
 on, nothing mutated · `17` the nudge's close landed and its reopen is unconfirmed — the PR may be
 left closed · `18` a governance-root diff has no head-bound `governance` PASS · `19` the repository
-permits no merge method at all · `23` a label this run would POST is absent from the taxonomy.
-`4` is a deliberate gap.
+permits no merge method at all · `23` a label this run would POST is absent from the taxonomy ·
+`33` the verb is standing in the repository's main working tree — `lane push`'s seat, imported,
+because both prove one fact off one `git rev-parse --git-dir --git-common-dir`; it binds a shipper's
+own `ship scope` run, not `recipe unpark`'s in-process call to the same derivation. `4` is a
+deliberate gap.
 
 - **The §CP boundary is derived from `.github/CODEOWNERS` itself**, read at the base branch, so this
   group and the merge gate read one artifact and cannot disagree. A *trivial* boundary — no
