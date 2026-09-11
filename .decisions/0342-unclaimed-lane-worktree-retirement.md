@@ -133,3 +133,26 @@ remove nothing that carries anything.
 ## Records
 
 no vocabulary impact
+
+## Amendment 2026-09-10 — the second proof counts what the removal strands, not what the branch carries
+
+§2's second proof — "its branch carries no commit `origin/main` does not" — left the deadlock in
+place one step further along. The refusal for a dirty tree tells the operator to commit the work;
+committing it onto the tree's own lane branch then tripped the commit clause, so the only state that
+satisfied the verb was one where the work had been discarded — the outcome the proof exists to
+prevent. Lane 9080 was the live instance
+([#9094](https://github.com/kamp-us/phoenix/issues/9094)).
+
+The premise was wrong about what a removal costs. `git worktree remove` takes the checkout and never
+the branch, which this record already states elsewhere, so a commit the tree's own lane branch
+reaches stays addressable by name afterwards and is nothing to lose. **The proof now reads: no commit
+the tree's HEAD reaches is unreached by every branch, remote-tracking ref and tag of this clone** —
+the commits a removal would strand, which is a detached HEAD's orphans and nothing else. The count is
+one `git rev-list --count HEAD --not --branches --remotes --tags` in the subject's own directory,
+because HEAD is the one ref a worktree owns privately.
+
+The rest of the record stands, and this narrows rather than weakens it: the license is still the
+board read, the tree read can still only withhold it, an unreadable count is still `11`, and the
+refusal still names each count. The Consequences bullet about an epic child's branch is withdrawn
+with the premise it rested on — those commits are not the child's only copy, the branch is, and the
+epic driver folds it from there.

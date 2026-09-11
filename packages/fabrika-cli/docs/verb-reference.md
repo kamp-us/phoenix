@@ -176,9 +176,15 @@ The one place `retire` borrows that polarity is ADR
 **nobody** holds — no authorized claim marker on the number carries the branch's lane nonce, because
 the claim was released, which is the state `build release` leaves behind and the state that used to
 deadlock. With no board statement to lean on, that arm reads the tree the way a reap does: it goes
-only on proof it carries nothing — clean, and its branch level with `origin/main` — and anything
-short of both is `33` with the blocking count named. A branch a live claim still carries holds before
-the tree is read at all.
+only on proof its removal would strand nothing — clean, and every commit its HEAD reaches named by
+some branch, remote-tracking ref or tag — and anything short of both is `33` with the blocking count
+named. A branch a live claim still carries holds before the tree is read at all.
+
+**What it counts is what the removal destroys, not what the branch is ahead by**
+([#9094](https://github.com/kamp-us/phoenix/issues/9094)). A removal takes the checkout and leaves
+the branch, so a commit on the tree's own lane branch survives by name. Counting those held every
+salvaged tree forever: the dirty clause says to commit the work, and committing it then tripped the
+commit clause, leaving discarding the work as the only state that satisfied the verb.
 
 `build retire-branch` is the recovery ADR [0324](../../../.decisions/0324-retire-superseded-lane-branch.md)
 rules for a clone already in the two-branch state, where `lane prove` refuses because two branches
