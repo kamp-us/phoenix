@@ -77,7 +77,7 @@ describe("the claim a stop takes on one child", () => {
 			const child = handle(1);
 
 			yield* stop.claim(child);
-			yield* stop.release;
+			yield* stop.release(child);
 
 			assert.isFalse(yield* stop.heldBy(child), "a refused signal went on speaking for the child");
 			assert.isTrue(
@@ -100,6 +100,29 @@ describe("the claim a stop takes on one child", () => {
 			assert.isFalse(
 				yield* stop.heldBy(first),
 				"the stopped child still held the claim after the relaunch took it",
+			);
+		}),
+	);
+
+	it.effect("releases its own child only, leaving a later claim standing", () =>
+		Effect.gen(function* () {
+			const stop = yield* makeStopClaim;
+			const first = handle(1);
+			const second = handle(2);
+
+			yield* stop.claim(first);
+			yield* stop.claim(second);
+			yield* stop.release(first);
+
+			assert.isTrue(
+				yield* stop.heldBy(second),
+				"a release named to the stopped child took the relaunched child's claim with it",
+			);
+
+			yield* stop.release(second);
+			assert.isFalse(
+				yield* stop.heldBy(second),
+				"the release named to the child that held the stop left it in flight",
 			);
 		}),
 	);
