@@ -21,7 +21,7 @@
  * lane parked. Taking the maximum is the same number whenever the grants are the contiguous run from
  * `CAP_ROUND` up, and the right one when they are not.
  *
- * A round below {@link CAP_ROUND} is never counted. Nothing can be cleared before the budget is
+ * A round below the relevant declared cap is never counted. Nothing can be cleared before the budget is
  * spent, so such a marker is either hand-written or from a drifted writer, and counting it would
  * silently widen the cap by a round nobody granted.
  */
@@ -29,8 +29,8 @@
 import {CAP_ROUND, RETRY_BUDGET} from "./retry-budget.ts";
 
 /** The recorded rounds that are grants at all: whole numbers at or past the declared cap. */
-const honoured = (cleared: ReadonlyArray<number>): ReadonlyArray<number> =>
-	cleared.filter((round) => Number.isInteger(round) && round >= CAP_ROUND);
+const honoured = (cleared: ReadonlyArray<number>, declaredCap: number): ReadonlyArray<number> =>
+	cleared.filter((round) => Number.isInteger(round) && round >= declaredCap);
 
 /**
  * How many distinct rounds a set of recorded clearances names — what a scope line reports.
@@ -39,17 +39,20 @@ const honoured = (cleared: ReadonlyArray<number>): ReadonlyArray<number> =>
  * double-posted grant — a re-run, a reconciled write — can never read as two.
  */
 export const grantedRounds = (cleared: ReadonlyArray<number>): number =>
-	new Set(honoured(cleared)).size;
+	new Set(honoured(cleared, CAP_ROUND)).size;
 
 /** The highest round a clearance names, or `null` when nothing was cleared. */
-export const highestCleared = (cleared: ReadonlyArray<number>): number | null => {
-	const rounds = honoured(cleared);
+export const highestCleared = (
+	cleared: ReadonlyArray<number>,
+	declaredCap: number = CAP_ROUND,
+): number | null => {
+	const rounds = honoured(cleared, declaredCap);
 	return rounds.length === 0 ? null : Math.max(...rounds);
 };
 
 /** The freeze round for a declared cap, given what has been cleared — the derivation both readers take. */
 export const capWith = (declaredCap: number, cleared: ReadonlyArray<number>): number => {
-	const highest = highestCleared(cleared);
+	const highest = highestCleared(cleared, declaredCap);
 	return highest === null ? declaredCap : Math.max(declaredCap, highest + 1);
 };
 

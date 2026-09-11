@@ -2,11 +2,38 @@ import {describe, expect, it} from "vitest";
 import {
 	budgetWith,
 	capReached,
+	capWith,
 	effectiveBudget,
 	effectiveCap,
 	grantedRounds,
 } from "./cap-clearance.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "./retry-budget.ts";
+
+describe("clearances against the declared cap", () => {
+	it("honours a legacy lane's round below the current PR cap exactly once", () => {
+		expect(CAP_ROUND).toBe(4);
+		expect(budgetWith(2, [3])).toBe(3);
+		expect(budgetWith(2, [3, 3])).toBe(3);
+		expect(budgetWith(2, [3, 4])).toBe(4);
+		expect(effectiveCap([3])).toBe(CAP_ROUND);
+	});
+
+	it.each([
+		0,
+		-1,
+		2,
+		2.5,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+	])("ignores invalid or premature round %s on a legacy lane", (round) =>
+		expect(budgetWith(2, [round])).toBe(2));
+
+	it("filters against a higher declared cap and keeps valid higher grants", () => {
+		expect(capWith(6, [4, 5])).toBe(6);
+		expect(capWith(6, [6, 6])).toBe(7);
+		expect(budgetWith(5, [7])).toBe(7);
+	});
+});
 
 describe("grantedRounds", () => {
 	it("counts distinct rounds, so a double-posted grant reads as one and not two", () => {
