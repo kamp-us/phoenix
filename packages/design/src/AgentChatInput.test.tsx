@@ -265,8 +265,53 @@ function ComposedComposer() {
 	);
 }
 
-const GENERATED_IDS =
-	/\s(id|for|aria-controls|aria-activedescendant|aria-labelledby|aria-describedby|data-uid|data-controls)="[^"]*"/g;
+const GENERATED_ID_ATTRIBUTES = [
+	"id",
+	"for",
+	"aria-controls",
+	"aria-activedescendant",
+	"aria-labelledby",
+	"aria-describedby",
+	"data-uid",
+	"data-controls",
+] as const;
+
+/**
+ * Bookkeeping Manti writes on a later tick than the one that makes the part findable: the layer
+ * stack's `--layer-index` / `--nested-layer-count` / `pointer-events` on the dialog parts, the
+ * backdrop's `aria-hidden` pair, and the collapsible's measured `--height` / `--width` and its
+ * `data-state`. Which tick they land on is not the composed-versus-plain difference this file
+ * asserts, so pinning them compares when a tree settled rather than what it renders (#8899).
+ * Inline `style` is dropped whole on these parts: everything the design system paints reaches
+ * them through a class, so the attribute carries nothing but that bookkeeping.
+ */
+const SETTLING_ATTRIBUTES = [
+	{selector: '[data-scope="dialog"]', attributes: ["style"]},
+	{
+		selector: '[data-scope="dialog"][data-part="backdrop"]',
+		attributes: ["data-aria-hidden", "aria-hidden"],
+	},
+	{
+		selector: '[data-scope="collapsible"][data-part="content"]',
+		attributes: ["style", "data-state"],
+	},
+] as const;
+
+function stableMarkup(element: Element): string {
+	const clone = element.cloneNode(true) as Element;
+	for (const node of [clone, ...clone.querySelectorAll("*")]) {
+		for (const name of GENERATED_ID_ATTRIBUTES) {
+			if (node.hasAttribute(name)) node.setAttribute(name, "*");
+		}
+	}
+	for (const {selector, attributes} of SETTLING_ATTRIBUTES) {
+		const matched = clone.matches(selector) ? [clone] : [];
+		for (const node of [...matched, ...clone.querySelectorAll(selector)]) {
+			for (const name of attributes) node.removeAttribute(name);
+		}
+	}
+	return clone.outerHTML;
+}
 
 /**
  * The composer paints before its catalog resolves, and the model and thinking labels are the last
@@ -306,7 +351,8 @@ async function driveComposerParts(push: (event: PiEvent) => void): Promise<void>
  * label the whole composer is named off — and the overlay `ExtensionDialog` raises, which
  * Manti portals to `document.body` and so lands beside the render container rather than inside it.
  * Two renders never draw the same generated ids — React's `useId` and Manti's own `data-uid` both
- * count up per render — so every id-carrying attribute is blanked.
+ * count up per render — so every id-carrying attribute is blanked, and so is the settling
+ * bookkeeping `SETTLING_ATTRIBUTES` names.
  */
 function composerMarkup(container: HTMLElement): string {
 	const frame = container.querySelector("section.kp-agent-chat");
@@ -314,10 +360,7 @@ function composerMarkup(container: HTMLElement): string {
 	const portaled = Array.from(document.body.children).filter(
 		(child) => child !== container && child.getAttribute("data-scope") === "dialog",
 	);
-	return [frame, ...portaled]
-		.map((element) => element.outerHTML)
-		.join("\n")
-		.replace(GENERATED_IDS, ' $1="*"');
+	return [frame, ...portaled].map(stableMarkup).join("\n");
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -666,7 +709,31 @@ describe("AgentChatInput", () => {
 			);
 			await settleComposer();
 			await driveComposerParts(push);
-			await waitFor(() => expect(composerMarkup(composed.container)).toBe(expected));
+			// Both sides are read at the same point of the same drive protocol. A `waitFor` here read
+			// only the composed tree, so it retried against a snapshot the plain render had already
+			// frozen — the asymmetry, not the wait's length, is what went red (#8899).
+			expect(composerMarkup(composed.container)).toBe(expected);
+		});
+
+		// jsdom never got far enough to write these locally — all three sightings were CI — so the
+		// normalization the parity assertion leans on is proven here rather than by that assertion.
+		it("reads a tree whose layer bookkeeping has landed as the same tree as one whose has not", () => {
+			const settled = document.createElement("div");
+			settled.innerHTML =
+				'<div data-scope="dialog" data-part="positioner" style="--layer-index: 0; --nested-layer-count: 0;">' +
+				'<div data-scope="dialog" data-part="backdrop" data-aria-hidden="" aria-hidden="true"></div>' +
+				'<div data-scope="dialog" data-part="content" style="--layer-index: 0; pointer-events: auto;">' +
+				'<div data-scope="collapsible" data-part="content" data-state="open" style="--height: 12px; --width: 30px;">Pi Read kullanıyor.</div>' +
+				"</div></div>";
+			const settling = document.createElement("div");
+			settling.innerHTML =
+				'<div data-scope="dialog" data-part="positioner">' +
+				'<div data-scope="dialog" data-part="backdrop"></div>' +
+				'<div data-scope="dialog" data-part="content">' +
+				'<div data-scope="collapsible" data-part="content">Pi Read kullanıyor.</div>' +
+				"</div></div>";
+
+			expect(stableMarkup(settled)).toBe(stableMarkup(settling));
 		});
 	});
 

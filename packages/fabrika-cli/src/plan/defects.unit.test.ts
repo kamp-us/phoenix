@@ -33,6 +33,8 @@ const scope = (overrides: Partial<LedgerScope> = {}): LedgerScope => ({
 interface Graph {
 	readonly required?: ReadonlyArray<RequiredEdge>;
 	readonly observed?: Readonly<Record<number, ReadonlyArray<number>>>;
+	/** The epic's own open blockers, as the verb's `readBlockedness` hands them over. */
+	readonly epicBlockers?: ReadonlyArray<number>;
 }
 
 const floorOf = (
@@ -50,6 +52,7 @@ const floorOf = (
 				new Set(blockers),
 			]),
 		),
+		epicBlockers: graph.epicBlockers ?? [],
 		vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
 	});
 
@@ -65,7 +68,7 @@ describe("a clean plan", () => {
 	});
 });
 
-describe("each of the fourteen types fires on its own condition", () => {
+describe("each of the fifteen types fires on its own condition", () => {
 	it("MISSING_DEPS_SECTION", () => {
 		expect(types({dependenciesAbsent: true})).toContain("MISSING_DEPS_SECTION");
 	});
@@ -101,6 +104,21 @@ describe("each of the fourteen types fires on its own condition", () => {
 	});
 
 	/**
+	 * The shape `ledger topology` now stages: a child requiring an issue another epic owns. The floor
+	 * grades it on the probe and the graph alone — accepted when the target exists and the edge is
+	 * carried, `UNENFORCED_DEP` when it is not, `DANGLING_DEP` only on a proven 404.
+	 */
+	it("grades a cross-epic requires: reference on the probe and the graph, never on ownership", () => {
+		const external = {
+			topology: {phases: [{phase: 1, members: ["#4301"]}], edges: [["#4301", "#7511"] as const]},
+		};
+		const required = [{dependent: 4301, prerequisite: 7511}];
+		expect(types(external, [], {required, observed: {4301: [7511]}})).toEqual([]);
+		expect(types(external, [], {required})).toContain("UNENFORCED_DEP");
+		expect(types(external, [7511], {required})).toContain("DANGLING_DEP");
+	});
+
+	/**
 	 * The pre-fix state, in one assertion: a phase-2 child requiring an open phase-1 decision, with the
 	 * dependency in prose and nothing on the graph. Before `UNENFORCED_DEP` this floor read `clean`,
 	 * `plan flip` made the child pickable, and `build claim` admitted it on
@@ -133,6 +151,43 @@ describe("each of the fourteen types fires on its own condition", () => {
 		};
 		const required: ReadonlyArray<RequiredEdge> = [{dependent: 4301, prerequisite: 9999}];
 		expect(types(dangling, [9999], {required})).not.toContain("UNENFORCED_DEP");
+	});
+
+	/**
+	 * The carry-down: the epic takes a `gate` claim with an outside blocker still open, `plan flip`
+	 * makes both children pickable, and each child's build claim reads that child's edges alone. A plan
+	 * that carries the ref fences them; one that drops it hands them a contract that has not landed.
+	 */
+	it("DROPPED_EPIC_BLOCKER for each child whose refs omit an open blocker of the epic", () => {
+		const two = {children: [child({number: 4301}), child({number: 4302})]};
+		const dropped = floorOf(two, [], {epicBlockers: [7496]});
+		const rows = dropped.defects.filter((row) => row.type === "DROPPED_EPIC_BLOCKER");
+		expect(rows.map((row) => row.refs)).toEqual([
+			[4301, 7496],
+			[4302, 7496],
+		]);
+		expect(rows[0]?.detail).toBe("#4301 does not require #7496, an open blocker of #4300");
+
+		const carried: ReadonlyArray<RequiredEdge> = [
+			{dependent: 4301, prerequisite: 7496},
+			{dependent: 4302, prerequisite: 7496},
+		];
+		expect(types(two, [], {epicBlockers: [7496], required: carried})).not.toContain(
+			"DROPPED_EPIC_BLOCKER",
+		);
+	});
+
+	/** A blocker inside the epic is the plan's own sequencing — carrying it down would demand a cycle. */
+	it("DROPPED_EPIC_BLOCKER never asks a child to require the epic or a sibling", () => {
+		const two = {children: [child({number: 4301}), child({number: 4302})]};
+		expect(types(two, [], {epicBlockers: [4300, 4302]})).not.toContain("DROPPED_EPIC_BLOCKER");
+	});
+
+	/** With no block to read every child drops every blocker; `MISSING_DEPS_SECTION` says the one thing. */
+	it("DROPPED_EPIC_BLOCKER is suppressed on an absent ## Dependencies section", () => {
+		expect(types({dependenciesAbsent: true}, [], {epicBlockers: [7496]})).not.toContain(
+			"DROPPED_EPIC_BLOCKER",
+		);
 	});
 
 	it("ORPHAN_CHILD", () => {

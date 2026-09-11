@@ -328,6 +328,29 @@ export const emit = (disclosure: DeviationsDisclosure): string => {
 	return `${heading}\n\n${body}\n`;
 };
 
+/**
+ * The standing entries a replacement disclosure drops — empty when it carries all of them.
+ *
+ * A round rewrites the whole section, so what an author naturally writes is that round's own
+ * entries, and the standing ones — still true of the range the next reviewer grades — go with the
+ * rewrite. An entry is keyed by its **Said**: what the spec asked is what makes it the same
+ * deviation across rounds, where `Did`, `Why` and `Disposition` are the fields a later round
+ * revises. Retiring an entry is therefore restating it with a `Disposition` that says the change was
+ * reverted or corrected, never deleting the bullet.
+ */
+export const droppedEntries = (
+	standing: DeviationsDisclosure,
+	replacement: DeviationsDisclosure,
+): ReadonlyArray<DeviationEntry> => {
+	if (standing._tag === "NoneDeclared") return [];
+	const carried = new Set(
+		replacement._tag === "NoneDeclared"
+			? []
+			: replacement.entries.map((entry) => normalize(entry.said)),
+	);
+	return standing.entries.filter((entry) => !carried.has(normalize(entry.said)));
+};
+
 export type DeviationsFields =
 	| {readonly _tag: "Fields"; readonly disclosure: DeviationsDisclosure}
 	| {readonly _tag: "Unusable"; readonly reason: string};

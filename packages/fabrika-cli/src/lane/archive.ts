@@ -1,8 +1,9 @@
 /**
  * The archive judgement — is this lane's log one no sweep can ever judge?
  *
- * Half of what `lane archive` needs before it moves a directory; the other half (the issue reads
- * closed) is a board fact and lives at the verb. This module reads no disk and writes none.
+ * The whole entitlement `lane archive` needs before it moves a directory, the closed-issue gate that
+ * used to stand beside it having been retired. This module reads no disk and writes none; the verb's
+ * remaining board work is retracting the lane claim, not judging the log.
  *
  * The judgement is [`migrate.ts`](migrate.ts)'s, deliberately and by call rather than by
  * re-derivation: the lanes an archive is for are exactly the ones `lane migrate` already refuses as
@@ -11,8 +12,9 @@
  *
  * The lane's own machine is folded first, and that ordering is the one thing this adds. A generated
  * epic machine has no committed template to be a candidate ({@link graftContext} answers `Foreign`),
- * so asking for a candidate first would leave every emitted lane unjudgeable — including one whose
- * log genuinely does not replay through the only machine it has.
+ * so that one fold is the whole judgement: a log it folds `Replays`, because no second machine
+ * exists to be unknown about, and one it refuses is `Unreplayable` through `current`. Asking for a
+ * candidate first would answer neither.
  */
 import {foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
@@ -25,9 +27,9 @@ export type ArchiveVerdict =
 			readonly through: "current" | "candidate";
 			readonly defects: ReadonlyArray<string>;
 	  }
-	/** The log replays through every machine that can be built for it — nothing to archive. */
+	/** The log replays through every machine that exists for the lane — nothing to archive. */
 	| {readonly _tag: "Replays"}
-	/** No candidate could be built, so replayability through the template is UNKNOWN, never proven. */
+	/** A candidate was offered and could not be built, so its verdict is UNKNOWN, never proven. */
 	| {readonly _tag: "Unjudgeable"; readonly reason: string};
 
 /**
@@ -50,14 +52,10 @@ export const judgeArchive = (
 	if (ungraftable !== undefined) return {_tag: "Unjudgeable", reason: ungraftable.reason};
 	const graft = grafts.find((candidate) => candidate._tag === "Grafted");
 	if (graft === undefined) {
-		const foreign = grafts.find((candidate) => candidate._tag === "Foreign");
-		return {
-			_tag: "Unjudgeable",
-			reason:
-				foreign === undefined
-					? "no committed template was offered for this root"
-					: `machine "${foreign.id}" was generated, not booted, so it has no committed template to be judged against`,
-		};
+		// A `Foreign` answer is a proven fact, not a gap: this machine was generated, so the fold
+		// above ran the only machine the lane has and there is no second one to be unknown about.
+		if (grafts.some((candidate) => candidate._tag === "Foreign")) return {_tag: "Replays"};
+		return {_tag: "Unjudgeable", reason: "no committed template was offered for this root"};
 	}
 	const candidate = compileText(graft.text);
 	if (candidate._tag === "Malformed") {

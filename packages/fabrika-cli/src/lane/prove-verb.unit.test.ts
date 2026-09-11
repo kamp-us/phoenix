@@ -207,6 +207,9 @@ describe("lane prove — the two events that carry a claim", () => {
 			issue: 5747,
 			evidence: {kind: "open-pull", pr: 4318},
 		});
+		// A `SHIPPED-PR` stands on a pull request, so it takes the `done:diagnosis` fallthrough and
+		// still folds to `review`.
+		expect(out.diagnosis).toBe(false);
 	});
 
 	it("proves a review PASS when every derived namespace passes at the live head", async () => {
@@ -882,6 +885,9 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 			proof: "proven",
 			evidence: {kind: "diagnosis", commentId: 900},
 		});
+		// The routing fact `lane report` relays onto the line, and the machine's `done:diagnosis` arm
+		// reads: this arm is the only one that answers it, so nothing a shell reports can set it.
+		expect(out.diagnosis).toBe(true);
 	});
 
 	it("refuses a no-PR DONE whose only comment predates the build", async () => {
@@ -1072,6 +1078,9 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 				naming: 1,
 			},
 		});
+		// A `BUILT-NO-PR` opens no PR either, and this is where it parts from an investigation: its
+		// proof is the range, so the diagnosis arm never runs and the child still folds to `review`.
+		expect(out.diagnosis).toBe(false);
 		expect(seams.requests).toEqual([]);
 	});
 
@@ -1500,6 +1509,26 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 			evidence: {kind: "head-verdicts", pr: 4318, head: HEAD},
 		});
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
+	});
+
+	/**
+	 * Where the ui-bearing child's deferral lands. The child hands `review-ui` on rather than
+	 * dropping it, so the tail — whose one PR carries those same rendered files — must still refuse
+	 * without it, at a head a preview exists for.
+	 */
+	it("still owes review-ui on the tail's own rendered head, so the child's deferral moved the gate", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "apps/site/src/routes/page.tsx"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await runEpic(epicLaneAt("tail"), seams, "PASS", "epic_4300");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
 	});
 });
 

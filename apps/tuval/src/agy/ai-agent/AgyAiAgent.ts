@@ -583,7 +583,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 						// whatever ends this child.
 						Effect.catch((cause) =>
 							Effect.gen(function* () {
-								yield* stop.release;
+								yield* stop.release(current.child.handle);
 								return interruptFailureOf(cause, yield* Ref.get(turnLive));
 							}),
 						),

@@ -39,6 +39,14 @@ Never invent one nobody named.
 fabrika ship scope $pr_number
 ```
 
+**This verb is also where you find out whether you got the worktree your spawn asked for.** On exit
+`33` you are standing in the driver's own checkout: stop there, report the code, and say the shipper
+needs respawning with `isolation: worktree` — never re-run from the same tree. That checkout's branch
+is one another seat moves mid-drive, which silently changes which build of these verbs a driver
+executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
+the verb and writes nothing, so **read-only, no local git, ever** still holds for you: you run no git
+yourself. Exit `11` here means the read failed and nothing is proven — also a stop.
+
 Already `merged` is an idempotent success — report it and end. `draft`/`closed` is a refusal.
 The verb prints the head SHA, the class set with its **required namespaces** (your gate checklist —
 all of them), the control-plane state, and the linked issue: `code`/`skill` classes require
@@ -142,7 +150,14 @@ fabrika ship checks $pr_number --sha 03135b91 --wait
 ```
 
 Terminals: `green` → continue. `red` → disarm, note, route the failing gating runs the notes channel
-names to `heal-ci`, stop.
+names to `heal-ci`, stop. **Name the cause when you record that terminal**, so the park is one a
+recipe can clear rather than one that spends a person: a red head is the park class whose cause most
+often goes away with nobody acting, and `recipe unpark` clears it by re-reading this same rollup.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-HEAL-CI --cause head-ci-red --pr <pr-url>
+```
+
 `wedged` → disarm, note naming the stranded check; **the cancel-and-rerun lever belongs to a
 human** — you diagnose, you never pull it. `no-runs` → one bounded nudge:
 `fabrika ship nudge $pr_number --sha 03135b91` re-derives the dropped-trigger state itself and refuses
@@ -228,11 +243,35 @@ fabrika ship reconcile $pr_number
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
 queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite and
-mergeable** `mergeable_state` before it arms: `11` if the value stays indefinite, `16` if the read
-definitely says not mergeable. GitHub happily arms a conflicted PR and parks the intent, so neither
-an unknown read nor a proven conflict is green. Neither refusal is a stall and nothing was armed —
-on `11` say mergeability is unknown, on `16` route to repair; the PR needs a rebase before any of
-this runs again. `reconcile`'s terminals are
+mergeable** `mergeable_state` before it arms: `11` if the value stays indefinite, `16` or `21` if the
+read definitely says not mergeable. GitHub happily arms a conflicted PR and parks the intent, so
+neither an unknown read nor a proven conflict is green. No refusal here is a stall and nothing was
+armed — on `11` say mergeability is unknown.
+
+**The definite refusal splits by cause, and the two route the same way and charge differently.** On
+`16` — not mergeable for a reason about the head — route to repair and report `ROUTED-REPAIR`, which
+spends a repair round. On `21` — `mergeable_state: dirty`, the base moved under the branch — route
+to repair exactly the same way and report **`BASE-CONFLICTED`**, which records the machine's own lap
+and carries the `base-conflicted` cause off the routed table, so the retry budget is untouched.
+Nothing about the artifact was judged; a base that moved says nothing about the diff. Either way the
+PR needs a rebase before any of this runs again, and **you never rebase it** — this skill moves no
+branch.
+
+**Do not read `21` as "no re-review is owed".** A verdict binds a content digest taken over the
+three-dot diff from merge base to head, and every record in it names the merge-base blob as well as
+the head's — read
+[`content-binding.ts`](../../../../packages/fabrika-cli/src/review/content-binding.ts), which says in
+its own words that the binding *dies on base movement that reaches* a reviewed path. A `dirty` state
+*is* base movement reaching one, so every verdict on the PR is void. The rebase gets a full
+re-review; `21` changes what the round costs, never whether it happens.
+
+**`coder.workflow.json` is copied into the lane at `lane open`, so the arm this token needs reaches
+only lanes opened after it landed.** An older lane's `ship` cell answers a lap by re-dispatching the
+shipper, which against a conflicted head refuses identically every round, so `lane report` refuses
+`BASE-CONFLICTED` there at exit `12` with the log untouched rather than let it loop. Fall back to
+`ROUTED-REPAIR`, which every lane's machine answers. That is the same pre-lap fallback
+`QUEUE-EJECTED`/`EJECTED` already carries, and the fallback spends a retry — which is the old
+behaviour, not a new failure. `reconcile`'s terminals are
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
 routing is to repair and the *charge* is not: see the ejection row below for which token records it,
@@ -283,6 +322,12 @@ budget** — report it as `QUEUE-EJECTED`, which records the machine's own lap a
 `queue-ejected` cause off the routed table. `EJECTED` is the pre-lap token, and it spends a retry;
 where the lap axis is off, the lane's machine holds no lap cell and `QUEUE-EJECTED` is refused on
 exit `12` with the log untouched, which is the one case that token is right) ·
+**BASE-CONFLICTED — routed to repair** (a `dirty` base at `ship enqueue`'s pre-arm read is
+**machinery** on the same test an ejection is: main moved under the branch and nothing about this
+artifact was judged, so it **spends no repair budget** — report it as `BASE-CONFLICTED`, which
+records the machine's own lap, carries the `base-conflicted` cause, and folds the lane to `build`
+rather than back to `ship`. The re-review is owed with the rebase; only the charge changes.
+`ROUTED-REPAIR` is the pre-lap fallback here, on the same exit `12` an old lane's machine gives) ·
 **UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
 terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and
 a flat "routed" parks the lane on an approval nobody is waiting on. A refusal is not a back-off:
@@ -296,7 +341,8 @@ branded reference, no steering prose; the receiver re-fetches from the PR itself
 step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
 per terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
 `ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `QUEUE-EJECTED` falling back to
-`EJECTED` on exit `12`, `UNKNOWN`), mapped to a
+`EJECTED` on exit `12`, `BASE-CONFLICTED` falling back to `ROUTED-REPAIR` on the same `12`,
+`UNKNOWN`), mapped to a
 lane event in its code, with the PR as the event's evidence. The routing token names the arm
 your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
 reviewer's token and means something else. `<fabrika>` is that same section's `fabrika:` entrypoint,

@@ -3,6 +3,10 @@
  * {@link CONCURRENT_WRITE} — distinguishable from an ordinary machine refusal — with the log left
  * byte-identical, while the uncontended path behaves exactly as it did before the lock existed.
  *
+ * The stale-lock half is here too, and it is the one with three answers rather than two: a lock aged
+ * past the horizon is stolen, a younger one is not, and an explicit budget refuses before either
+ * question is asked. Only the middle of those was ever covered.
+ *
  * Contention here is scripted (`mkdirExisting`), not raced: the point is the *deterministic* half
  * of the guarantee. The probabilistic half — that two live processes actually collide often enough
  * for the guard to matter — lives in [`append-race.cli.test.ts`](append-race.cli.test.ts), which
@@ -13,7 +17,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {acquireLedgerLock} from "./append-lock.ts";
 import {CONCURRENT_WRITE, EVENT_REFUSED, LANE_ABSENT} from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -30,17 +34,23 @@ const freshLane = (extra: Parameters<typeof fakeFs>[0] = {}) =>
 const run = (fs: ReturnType<typeof fakeFs>) =>
 	Effect.runPromise(
 		Effect.provide(
-			runTransition({
-				root: ROOT,
-				lane: "42",
-				event: "WIP",
-				task: null,
-				cause: null,
-				parkCause: parkCauseRead(),
-				classes: [],
-				waitGrant: null,
-				rationale: null,
-			}),
+			runTransition(
+				{
+					root: ROOT,
+					lane: "42",
+					event: "WIP",
+					task: null,
+					cause: null,
+					parkCause: parkCauseRead(),
+					classes: [],
+					waitGrant: null,
+					rationale: null,
+					repo: "o/r",
+					cwd: "/checkout",
+					env: {},
+				},
+				fakeProver().prove,
+			),
 			fs.layer,
 		),
 	);
@@ -144,6 +154,62 @@ describe("lane append lock", {timeout: 10_000}, () => {
 		expect(absent.code).toBe(LANE_ABSENT);
 		expect(held.code).toBe(CONCURRENT_WRITE);
 		expect(held.stderr.join(" ")).toContain("another writer holds");
+	});
+
+	it("a lock aged past the stale horizon is stolen by a waiting writer, not refused", async () => {
+		// The crashed holder: the sidecar is there, its mtime is a minute old, and nothing will ever
+		// release it. Before the fix the waiter reached a `stale` verdict, never removed the
+		// directory, and polled to its deadline against a lock nobody held.
+		const fs = freshLane({
+			mkdirExisting: [LOCK],
+			mtimes: {[LOCK]: new Date(Date.now() - 60_000)},
+		});
+
+		const attempt = await Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const filesystem = yield* FileSystem.FileSystem;
+					return yield* acquireLedgerLock(filesystem, LOCK, 5_000);
+				}),
+				fs.layer,
+			),
+		);
+
+		expect(attempt).toBe("acquired");
+	});
+
+	it("a lock younger than the stale horizon is still held at deadline, so live contention refuses", async () => {
+		const fs = freshLane({
+			mkdirExisting: [LOCK],
+			mtimes: {[LOCK]: new Date(Date.now() - 200)},
+		});
+
+		const attempt = await Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const filesystem = yield* FileSystem.FileSystem;
+					return yield* acquireLedgerLock(filesystem, LOCK, 200);
+				}),
+				fs.layer,
+			),
+		);
+
+		// A live writer's lock is not this waiter's to take: stealing it is the silent double-append
+		// the whole lock exists to prevent.
+		expect(attempt).toBe("held");
+	});
+
+	it("a small FABRIKA_LANE_LOCK_BUDGET_MS refuses fast instead of waiting out the derived default", async () => {
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
+		const fs = freshLane({mkdirExisting: [LOCK], mtimes: {[LOCK]: new Date()}});
+		const started = Date.now();
+
+		const out = await run(fs);
+
+		expect(out.code).toBe(CONCURRENT_WRITE);
+		// The override is the whole point of the knob: the default budget now outlasts the stale
+		// horizon, and a test or interactive shell must not inherit that wait.
+		expect(Date.now() - started).toBeLessThan(2_000);
 	});
 
 	it("the uncontended path appends exactly as before the lock existed", async () => {

@@ -3,10 +3,11 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, refuse} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
+	EVENT_REFUSED,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
 	PARK_UNCAUSED,
@@ -16,9 +17,8 @@ import {
 	TOKEN_UNRECOGNISED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
-import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
-import type {ProveOptions} from "./prove-verb.ts";
 import {PARK_CAUSE_TOKENS, SHELL_VOCABULARIES} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 
@@ -37,28 +37,6 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 	// takes the class-guarded arm into the rendered gate's own cell.
 	"review:ui": logLine("WIP", ["ui"]) + logLine("DONE") + logLine("PASS"),
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
-};
-
-/**
- * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
- * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
- * at exit 0 for an event that claims no artifact.
- */
-const fakeProver = (
-	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
-	deferred: ReadonlyArray<string> = [],
-	partial: boolean | null = null,
-	landed: ReadonlyArray<number> = [],
-) => {
-	const asked: ProveOptions[] = [];
-	return {
-		asked,
-		prove: (options: ProveOptions) =>
-			Effect.sync(() => {
-				asked.push(options);
-				return {...outcome, deferred, partial, landed};
-			}),
-	};
 };
 
 const run = (
@@ -435,6 +413,51 @@ describe("lane report — the deferral a proven PASS discloses", () => {
 });
 
 /**
+ * An investigation's `SUCCESS-NO-PR` used to drive its lane into `review`, whose brief needs an open
+ * PR the lane never opened — so `lane brief` refused at 20 and the only move left was a park that
+ * read as a fault. All three builder terminals report one `DONE`, so the prover's answer is the
+ * whole difference, and these are the three lines that say which way each one routes.
+ */
+describe("lane report — the diagnosis a finished investigation discloses", () => {
+	it("records the prover's diagnosis and lands the lane in `diagnosed`, never in `review`", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver(
+			answer(JSON.stringify({proof: "proven", evidence: {kind: "diagnosis", commentId: 900}})),
+			[],
+			null,
+			[],
+			true,
+		);
+
+		const out = await run(fs, "SUCCESS-NO-PR", {comment: "https://x/#issuecomment-900", prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", diagnosis: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({current: "diagnosed", diagnosis: true});
+	});
+
+	it("leaves a `SHIPPED-PR` on the route it always took, carrying no `diagnosis` at all", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "SHIPPED-PR", {pr: "https://x/pull/1"});
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "diagnosis")).toBe(false);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+	});
+
+	it("leaves an epic child's `BUILT-NO-PR` folding to `review` too", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "BUILT-NO-PR");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "diagnosis")).toBe(false);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
+	});
+});
+
+/**
  * A merged `Part of #N` PR used to drive its lane to `complete` exactly as a closing merge
  * did, because nothing between the nominator and the ledger carried the difference.
  */
@@ -557,6 +580,54 @@ describe("lane report — a machinery terminal lands its own cause", () => {
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "assembly-conflict"});
+	});
+
+	// A conflicted base is the one machinery cause at `ship` whose round is a builder's: the head owes
+	// a rebase, and the re-review that comes with it. Every other lap out of `ship` still
+	// re-dispatches the shipper, which is what the `lap:<cause>` arm buys over one flat target.
+	it("routes a BASE-CONFLICTED lap to build and leaves BASE-DRIFTED where it lands today", async () => {
+		const conflicted = laneAt(LOG_AT.ship);
+		const drifted = laneAt(LOG_AT.ship);
+
+		const toBuild = await run(conflicted, "BASE-CONFLICTED");
+		const toShip = await run(drifted, "BASE-DRIFTED");
+
+		expect(toBuild.code).toBe(0);
+		expect(JSON.parse(toBuild.stdout)).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "base-conflicted",
+			current: {pipeline: {issue: "build"}},
+		});
+		expect(toShip.code).toBe(0);
+		expect(JSON.parse(toShip.stdout)).toMatchObject({
+			cause: "head-behind-base",
+			current: {pipeline: {issue: "ship"}},
+		});
+	});
+
+	// The lane's `workflow.json` is copied in at `lane open`, so a lane opened before the route
+	// existed holds a `ship` lap cell that would swallow this cause and loop the shipper. Refusing it
+	// with the log untouched is what leaves the shipper its `ROUTED-REPAIR` fallback.
+	it("refuses BASE-CONFLICTED at 12 on a lane whose machine predates the route", async () => {
+		interface Region {
+			readonly states: Record<string, Region & {on?: Record<string, unknown>}>;
+		}
+		const stale = JSON.parse(coderTemplateText()) as {machine: Region};
+		const shipCell = stale.machine.states.pipeline?.states.issue?.states.ship?.on;
+		if (shipCell === undefined) throw new Error("the coder template holds no ship cell");
+		// Drop the leading `lap:base-conflicted` route, leaving the plain budget pair every lane
+		// carried before it.
+		shipCell["ISSUE.LAP"] = (shipCell["ISSUE.LAP"] as ReadonlyArray<unknown>).slice(1);
+		const fs = fakeFs({
+			files: {[WORKFLOW]: JSON.stringify(stale), [LOG]: LOG_AT.ship},
+		});
+
+		const out = await run(fs, "BASE-CONFLICTED");
+
+		expect(out.code).toBe(EVENT_REFUSED);
+		expect(out.stderr.join("\n")).toContain("log unappended");
+		expect(out.stderr.join("\n")).toContain('no arm for cause "base-conflicted"');
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("tells an integrate-sourced failure from a review-sourced one on the recorded line", async () => {

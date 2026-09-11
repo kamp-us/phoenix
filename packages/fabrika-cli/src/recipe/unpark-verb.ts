@@ -10,7 +10,9 @@
  *      refuses here**, before any read that could write and long before the append, which is what
  *      makes the novel exit a proven no-op rather than a claim about one.
  *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s own
- *      discharge table, never a second reading of §CP in this file. A driver-routed park with no
+ *      discharge table, never a second reading of §CP in this file; `ship checks`, `ship scope` and
+ *      `ship gate` for the red-CI row, which is the shipper's own floor taken again rather than a
+ *      rival reading of it. A driver-routed park with no
  *      recipe has no such read, and clears on the driver's rationale instead.
  *   4. `lane transition … UNBLOCKED` records the clear, carrying that rationale where there is one.
  *   5. `lane status` is folded **again**, and the answer is emitted only once that re-fold shows the
@@ -26,6 +28,7 @@
  * Respawning whatever the lane parked out of is the operator's, not this verb's.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {WORKTREE_HELD} from "../build/codes.ts";
 import {reclaimDeadClaim} from "../build/dead-claim.ts";
@@ -40,15 +43,20 @@ import type {Read} from "../config/read-key.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
 import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
+import type {PullScope} from "../io/pulls.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
+import {runProve} from "../lane/prove-verb.ts";
 import {routeForCause} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {BASE_REF} from "../ledger/ground.ts";
+import {runChecks} from "../ship/checks-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
+import {runGate} from "../ship/gate-verb.ts";
 import {runReconcile} from "../ship/reconcile-verb.ts";
+import {runScope} from "../ship/scope-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	NOT_PARKED,
@@ -115,7 +123,11 @@ type Clearance =
 	  }
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
-type Deps = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner;
+type Deps =
+	| FileSystem.FileSystem
+	| Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| HttpClient.HttpClient;
 
 export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, never, Deps> =>
 	Effect.gen(function* () {
@@ -178,16 +190,22 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 					};
 		if (clearance._tag === "Refused") return clearance.outcome;
 
-		const recorded = yield* runTransition({
-			...ref,
-			event: "UNBLOCKED",
-			task,
-			cause: null,
-			parkCause: options.parkCause,
-			classes: [],
-			waitGrant: clearance.waitGrant,
-			rationale,
-		});
+		const recorded = yield* runTransition(
+			{
+				...ref,
+				event: "UNBLOCKED",
+				task,
+				cause: null,
+				parkCause: options.parkCause,
+				classes: [],
+				waitGrant: clearance.waitGrant,
+				rationale,
+				repo: options.repo,
+				cwd: options.cwd,
+				env: options.env,
+			},
+			runProve,
+		);
 		if (recorded.code !== 0) {
 			return relayRefusal(VERB, "fabrika lane transition", recorded, laneExit(recorded.code));
 		}
@@ -272,6 +290,8 @@ const clear = (
 			return clearSpawnClear(options, task, recipe);
 		case "queue-moved":
 			return clearQueueMoved(options, task, recipe);
+		case "ci-green":
+			return clearCiGreen(options, task, recipe);
 	}
 };
 
@@ -304,40 +324,10 @@ const clearCpApproval = (
 		if (resolved._tag === "Refused") return no(resolved.outcome);
 		const repo = resolved.repo;
 
-		// The lane's PR through the shared nominator (`../lane/nominate.ts`): a §CP park sits on the same
-		// PR `lane brief` dispatched a shipper against, and a `Part of #N` PR that this verb could not
-		// see is a park no recipe could ever clear.
-		const nominated = yield* nominatePulls(repo, issue);
-		if (nominated._tag === "Unreadable") {
-			return no(
-				refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — the park's cause is UNKNOWN, never cleared.`,
-				),
-			);
-		}
-		const traced = tracePulls(issue, nominated.pulls);
-		if (traced._tag === "None") {
-			return no(
-				refuse(
-					TARGET_ABSENT,
-					`${VERB}: ${traced.why} across ${nominationScope(issue)}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no subject to read.`,
-				),
-			);
-		}
-		if (traced._tag === "Many") {
-			return no(
-				refuse(
-					PARK_NOVEL,
-					`${VERB}: ${traced.prs.length} open PRs link #${issue} (${traced.prs
-						.map((candidate) => `#${candidate}`)
-						.join(
-							", ",
-						)}) — which one the park hangs on is not this verb's to guess; route this to a human.`,
-				),
-			);
-		}
-		const pr = traced.pr;
+		// A §CP park sits on the same PR `lane brief` dispatched a shipper against.
+		const nominated = yield* soleParkedPull(repo, issue, recipe, "the park");
+		if (nominated._tag === "Refused") return no(nominated.outcome);
+		const pr = nominated.pr;
 
 		const target = yield* openPull(
 			VERB,
@@ -823,37 +813,9 @@ const clearQueueMoved = (
 		if (resolved._tag === "Refused") return no(resolved.outcome);
 		const repo = resolved.repo;
 
-		const nominated = yield* nominatePulls(repo, issue, SCOPE);
-		if (nominated._tag === "Unreadable") {
-			return no(
-				refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — whether the queue moved is UNKNOWN, never cleared.`,
-				),
-			);
-		}
-		const traced = tracePulls(issue, nominated.pulls, SCOPE);
-		if (traced._tag === "None") {
-			return no(
-				refuse(
-					TARGET_ABSENT,
-					`${VERB}: ${traced.why} across ${nominationScope(issue, SCOPE)}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no subject to read.`,
-				),
-			);
-		}
-		if (traced._tag === "Many") {
-			return no(
-				refuse(
-					PARK_NOVEL,
-					`${VERB}: ${traced.prs.length} PRs link #${issue} (${traced.prs
-						.map((candidate) => `#${candidate}`)
-						.join(
-							", ",
-						)}) — which one the stall hangs on is not this verb's to guess; route this to a human.`,
-				),
-			);
-		}
-		const pr = traced.pr;
+		const nominated = yield* soleParkedPull(repo, issue, recipe, "the stall", SCOPE);
+		if (nominated._tag === "Refused") return no(nominated.outcome);
+		const pr = nominated.pr;
 		const scope = scannedLine(VERB, 1, "pull request", `#${pr}`);
 
 		const watched = yield* runReconcile({
@@ -907,4 +869,230 @@ const clearQueueMoved = (
 					),
 				);
 		}
+	});
+
+/** The one live PR a park hangs on, or the refusal that resolution owes. */
+type ParkedPull =
+	| {readonly _tag: "Found"; readonly pr: number}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * The single pull request a park hangs on, through the shared nominator (`../lane/nominate.ts`).
+ *
+ * Three rows turn on it, and each spelling the resolution out itself is three places the nomination
+ * scope and the several-candidates refusal can come apart. `hangsOn` is the only wording that
+ * differs — what the park is said to hang on, in the noun its own row uses.
+ *
+ * A `Part of #N` PR this verb could not see is a park no recipe could ever clear, which is why the
+ * body-search half is in scope and not the closing edge alone. Several candidates stays a refusal:
+ * which one a park hangs on is not this verb's to guess.
+ */
+const soleParkedPull = (
+	repo: string,
+	issue: number,
+	recipe: ParkRecipe,
+	hangsOn: string,
+	scope: PullScope = "open",
+): Effect.Effect<ParkedPull, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): ParkedPull => ({_tag: "Refused", outcome});
+
+		const nominated = yield* nominatePulls(repo, issue, scope);
+		if (nominated._tag === "Unreadable") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — the park's cause is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		const traced = tracePulls(issue, nominated.pulls, scope);
+		if (traced._tag === "None") {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: ${traced.why} across ${nominationScope(issue, scope)}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no subject to read.`,
+				),
+			);
+		}
+		if (traced._tag === "Many") {
+			return no(
+				refuse(
+					PARK_NOVEL,
+					`${VERB}: ${traced.prs.length} PRs link #${issue} (${traced.prs
+						.map((candidate) => `#${candidate}`)
+						.join(
+							", ",
+						)}) — which one ${hangsOn} hangs on is not this verb's to guess; route this to a human.`,
+				),
+			);
+		}
+		return {_tag: "Found", pr: traced.pr};
+	});
+
+/**
+ * Read whether the red-CI park's cause is gone: the shipper's own step-4 rollup, taken again at the
+ * live head, with the floor that step stood on still under it.
+ *
+ * The rollup is `ship checks`'s answer relayed and never a second reading of the check list here, at
+ * one poll because a recipe pass is a snapshot — waiting is what the shipper's `--wait` already did.
+ * Only `green` clears. `red` and `pending` are the park standing correctly, and so is every other
+ * rollup word, because none of them is the one this repo merges on.
+ *
+ * Three reads and not one, because the cause is what parked the lane and not what the lane needs to
+ * leave it. A clear says the shipper can be dispatched again, so it re-proves what that shipper had
+ * already passed at the moment CI reddened: the PR is still open and not a draft, and every namespace
+ * its diff derives still holds a binding verdict at the live head. `ship scope` and `ship gate` own
+ * those two questions, so both are relayed rather than re-derived — a second reading of the required
+ * set here could resume a lane gated on less than its diff earns.
+ *
+ * The gate is asked with no `--cp`: a control-plane approval is discharged by `ship cp-approval` on
+ * the shipper's own run, and asserting one from here would be granting it. A §CP PR whose advisory
+ * carrier is what would satisfy the gate therefore holds, which is the park standing correctly — the
+ * null-cause §CP row is where that question belongs.
+ */
+const clearCiGreen = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		const unknown = (what: string, reason: string): Clearance =>
+			no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${what}: ${reason} — whether the head is green is UNKNOWN, never cleared.`,
+				),
+			);
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the park's PR cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+		const repo = resolved.repo;
+
+		const nominated = yield* soleParkedPull(repo, issue, recipe, "the red head");
+		if (nominated._tag === "Refused") return no(nominated.outcome);
+		const pr = nominated.pr;
+
+		// `relay`, not `shipper`: `ship scope`'s main-working-tree refusal proves a shipper got the
+		// worktree its spawn asked for, and this caller is not that spawn. A driver runs `recipe
+		// unpark` from its own checkout on purpose, writes to no tree here, and stands on no lane
+		// branch — binding it would refuse the verb in the one tree it is meant to run in.
+		const scoped = yield* runScope({
+			pr,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+			caller: "relay",
+		});
+		if (scoped.code !== 0) {
+			return unknown(`#${pr}'s scope`, `fabrika ship scope refused at exit ${scoped.code}`);
+		}
+		const shape = parseJson(scoped.stdout);
+		if (
+			!isRecord(shape) ||
+			typeof shape.head !== "string" ||
+			typeof shape.state !== "string" ||
+			!Array.isArray(shape.namespaces)
+		) {
+			return unknown(
+				`#${pr}'s scope`,
+				"fabrika ship scope exited 0 and named no head, state or namespace set",
+			);
+		}
+		const head = shape.head;
+		const namespaces = shape.namespaces.filter((name): name is string => typeof name === "string");
+		const scanned = scannedLine(VERB, 1, "pull request", `#${pr} at ${head}`);
+		// `draft` is one of the four words `ship scope`'s lifecycle field carries, beside `merged` and
+		// `closed`, so the not-a-draft half of the row's condition is this one comparison.
+		if (shape.state !== "open") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${pr} reads "${shape.state}", so there is no open head to resume against; nothing was written.`,
+					[scanned],
+				),
+			);
+		}
+
+		const checked = yield* runChecks({
+			pr,
+			sha: head,
+			wait: false,
+			budgetSeconds: 0,
+			cadenceSeconds: 0,
+			wedgeDwellSeconds: 0,
+			repo,
+			json: true,
+			env: options.env,
+			cwd: options.cwd,
+		});
+		if (checked.code !== 0) {
+			return unknown(
+				`#${pr}'s CI at ${head}`,
+				`fabrika ship checks refused at exit ${checked.code}`,
+			);
+		}
+		const rolled = parseJson(checked.stdout);
+		if (!isRecord(rolled) || typeof rolled.rollup !== "string") {
+			return unknown(`#${pr}'s CI at ${head}`, "fabrika ship checks exited 0 and named no rollup");
+		}
+		if (rolled.rollup !== "green") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s CI at ${head} rolls up "${rolled.rollup}"; nothing was written.`,
+					[scanned],
+				),
+			);
+		}
+
+		const gated = yield* runGate({
+			pr,
+			sha: head,
+			require: namespaces,
+			cp: false,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+		});
+		if (gated.code !== 0) {
+			return unknown(
+				`#${pr}'s verdicts at ${head}`,
+				`fabrika ship gate refused at exit ${gated.code}`,
+			);
+		}
+		const conjunction = parseJson(gated.stdout);
+		if (!isRecord(conjunction) || typeof conjunction.outcome !== "string") {
+			return unknown(
+				`#${pr}'s verdicts at ${head}`,
+				"fabrika ship gate exited 0 and named no outcome",
+			);
+		}
+		if (conjunction.outcome !== "satisfied") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s conjunction over ${namespaces.join(", ")} at ${head} reads "${conjunction.outcome}"; nothing was written.`,
+					[scanned],
+				),
+			);
+		}
+
+		return {
+			_tag: "Cleared",
+			mechanism: `ci-green:#${pr} at ${head}, ${namespaces.join(",")} bound`,
+			waitGrant: null,
+		};
 	});

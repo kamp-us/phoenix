@@ -94,8 +94,15 @@ const usageOf = (
 ): ReadonlyArray<Extract<AgentEvent, {kind: "usage"}>> =>
 	events.filter((event) => event.kind === "usage");
 
-const turnEnded = (events: ReadonlyArray<AgentEvent>): boolean =>
-	events.filter((event) => event.kind === "phase" && event.phase === "ready").length >= 2;
+const readyPhases = (
+	events: ReadonlyArray<AgentEvent>,
+): ReadonlyArray<Extract<AgentEvent, {kind: "phase"}>> =>
+	events.filter(
+		(event): event is Extract<AgentEvent, {kind: "phase"}> =>
+			event.kind === "phase" && event.phase === "ready",
+	);
+
+const turnEnded = (events: ReadonlyArray<AgentEvent>): boolean => readyPhases(events).length >= 2;
 
 describe("the agy layer over a scripted binary", () => {
 	it("starts sandboxed and scoped to the workspace, and takes its id from init", async () => {
@@ -369,6 +376,15 @@ describe("the agy layer over a scripted binary", () => {
 				);
 				yield* agent.prompt("something long");
 				yield* agent.interrupt;
+				// `interrupt` awaits the relaunch, so both launches are recorded by the time it
+				// resolves — but `announce(reopened)`'s four events reach `collected` through `drive`'s
+				// forked pump, and its `ready` is the third this case sees: the opening, the cut turn's
+				// terminal `result`, then the reopened session. Snapshotting without this wait reads a
+				// log whose tail is still being appended (#8926).
+				yield* until(
+					collected,
+					(events) => launches().length === 2 && readyPhases(events).length === 3,
+				);
 				return [...collected];
 			}),
 		);
@@ -389,6 +405,10 @@ describe("the agy layer over a scripted binary", () => {
 		);
 		expect(phases).not.toContain("gone");
 		expect(phases.at(-1)).toBe("ready");
+		// The same condition the wait above is keyed on, asserted here too: `until` falls through its
+		// 20-second arm with `Effect.void` rather than failing, so without this a drain that never
+		// completed would surface as some unrelated expectation instead of as the missing relaunch.
+		expect(readyPhases(collectedEvents)).toHaveLength(3);
 		// Two launches, and the second reopens what the first opened: the relaunch is the `respawn`
 		// the three switches take, not a fresh session.
 		const composed = launches();

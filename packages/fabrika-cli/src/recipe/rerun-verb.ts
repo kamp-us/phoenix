@@ -84,6 +84,13 @@ export const runRerun = (
 		for (const comment of listed.value) {
 			const parsed = readMarker(comment.body);
 			if (parsed._tag !== "Found" || parsed.value.namespace !== NAMESPACE) continue;
+			// Head-bound where `build verdicts` and `ship gate` are content-bound, and the forcing
+			// constraint is this verb's inputs: a content binding is judged against the head's own
+			// digest, which is read out of a checkout serving this repository (`../review/head.ts`),
+			// and this verb resolves nothing from git — it is HTTP end to end and runs from a recipe
+			// loop that is given no such checkout. With no digest, `bindToContent` answers `Unbindable`
+			// on every moved head, which is the refusal below with a worse reason. Moving it means
+			// giving this verb the checkout binding first.
 			const bound = bindToHead(parsed.value, head);
 			if (latest !== null && comment.updatedAt < latest.at) continue;
 			latest = {

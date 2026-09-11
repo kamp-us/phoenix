@@ -15,7 +15,18 @@ import type {ExecResult} from "../io/exec.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
-import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
+import {
+	CODEOWNERS,
+	checkRuns,
+	comments,
+	ENV,
+	files,
+	HEAD,
+	OTHER_HEAD,
+	pull,
+	runsTotal,
+	workflows,
+} from "../ship/fixtures.test-support.ts";
 import {ADDED} from "../ship/queue.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
@@ -43,9 +54,11 @@ import {
 	laneTemplate,
 	nominatedPulls,
 	PARKED_AT_CP,
+	PARKED_AT_CP_ON,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
+	PARKED_ON_CI_RED,
 	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
@@ -69,13 +82,19 @@ const PRUNE = /^git worktree prune$/;
 const REMOVE = /^git worktree remove /;
 const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
-const REVLIST = /^git rev-list --count /;
+const REVLIST = /^git -C \S+ rev-list --count HEAD --not --branches --remotes --tags$/;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
 const REMOTES = /^git remote$/;
 const FETCH = /^git fetch --quiet origin main$/;
 const RESOLVE = /^git rev-parse --verify/;
 const SHOW = /^git show \S+:ROADMAP\.md$/;
+const COMMIT = /^GET \S+\/repos\/o\/r\/commits\/[0-9a-f]+$/;
+const CHECK_RUNS = /\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
+const WORKFLOWS = /\/repos\/o\/r\/actions\/workflows/;
+const RUNS_AT_HEAD = /\/repos\/o\/r\/actions\/runs\?head_sha=/;
+const PR_COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4321\/comments\?/;
+const ACL = /^GET \S+\/repos\/o\/r\/collaborators\/[^/]+\/permission$/;
 
 /** The checkout the clearance reads `.fabrika.jsonc` off — unconfigured, so `ROADMAP.md` is default. */
 const CWD = "/repo";
@@ -227,6 +246,160 @@ describe("recipe unpark — the known recipe clears", () => {
 	});
 });
 
+/** A head-bound verdict marker with no content binding — the shape `ship gate` reads as a marker. */
+const marker = (namespace: string, polarity: string, sha: string): string =>
+	`${namespace}: ${polarity} @ ${sha} — the clause`;
+
+/** The permission endpoint's own shape: a record, never a bare word. */
+const permission = (level: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({permission: level}),
+});
+
+/**
+ * The red-CI park's target half: the closing PR, its shape, its diff, and the §CP boundary.
+ *
+ * The diff is one code file and one doc file, so `ship scope` derives `review-code` and `review-doc`
+ * and the gate below has two namespaces to conjoin rather than a vacuous one.
+ */
+const RED_TARGET: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(4321))],
+	[PULL, reply(pull({comments: 2}))],
+	[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+	[OWNERS, {status: 200, body: CODEOWNERS}],
+];
+
+/** One gating check at the head, with the run and the workflow that gives it gate coverage. */
+const ciAt = (status: string, conclusion: string | null): ReadonlyArray<Scripted> => [
+	[COMMIT, {status: 200, body: JSON.stringify({sha: HEAD})}],
+	[CHECK_RUNS, reply(checkRuns(1, [{name: "ci", status, conclusion}]))],
+	[WORKFLOWS, reply(workflows({path: ".github/workflows/ci.yml"}))],
+	[RUNS_AT_HEAD, reply(runsTotal(1, [{id: 1, path: ".github/workflows/ci.yml"}]))],
+];
+
+const GREEN_CI = ciAt("completed", "success");
+
+/** Both derived namespaces holding an authorized PASS at `sha`. */
+const boundAt = (sha: string): ReadonlyArray<Scripted> => [
+	[
+		PR_COMMENTS,
+		reply(
+			comments(
+				{id: 1, body: marker("review-code", "PASS", sha)},
+				{id: 2, body: marker("review-doc", "PASS", sha)},
+			),
+		),
+	],
+	[REVIEWS, reviewPage()],
+	[ACL, permission("write")],
+];
+
+describe("recipe unpark — a red-CI park clears once the head reads green again", () => {
+	it("clears when CI is green, the PR is open, and both derived namespaces are bound at the head", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...GREEN_CI], [...boundAt(HEAD)]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			clearance: "ci-green",
+			mechanism: `ci-green:#4321 at ${HEAD}, review-code,review-doc bound`,
+			current: "ship",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS while a gating check at the head is still red", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...ciAt("completed", "failure")], [...boundAt(HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "red"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS while a check at the head has not concluded — pending is not green", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...ciAt("in_progress", null)], [...boundAt(HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "pending"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The head going green is not the whole floor: a verdict left behind at an earlier head means the
+	// resumed shipper has nothing in force to enqueue on.
+	it("is PARK_HOLDS when a derived namespace is bound to another head", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...GREEN_CI], [...boundAt(OTHER_HEAD)]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "blocked"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a green head whose PR is no longer open", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2, draft: true}))],
+				[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				...GREEN_CI,
+			],
+			[...boundAt(HEAD)],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "draft"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PRECONDITION_UNKNOWN when the CI read itself fails — never a clear on an unread head", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				...RED_TARGET,
+				[COMMIT, {status: 200, body: JSON.stringify({sha: HEAD})}],
+				[CHECK_RUNS, httpError(502)],
+				[WORKFLOWS, reply(workflows({path: ".github/workflows/ci.yml"}))],
+				[RUNS_AT_HEAD, reply(runsTotal(1, [{id: 1, path: ".github/workflows/ci.yml"}]))],
+			],
+			[...boundAt(HEAD)],
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so a park
+	// carrying neither cause must still reach the §CP discharge it always did.
+	it("leaves the null-cause §CP row unshadowed — a causeless park still reads the approval", async () => {
+		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).clearance).toBe("cp-approval");
+	});
+
+	it("is Novel for the same leaf carrying a cause no row on it names", async () => {
+		const fs = lane(PARKED_AT_CP_ON("campaign-paused"));
+
+		const out = await run(fs, [], []);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
 describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 	it("clears the worktree-holds-branch park once no working tree holds the branch", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
@@ -257,8 +430,8 @@ describe("recipe unpark — a BLOCKED park clears on its cause", () => {
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
 				[STATUS, okOut("")],
-				// Unbuilt commits on the branch: no board license covers this tree, and the
-				// unclaimed-lane arm refuses one carrying work, so the park still holds.
+				// Commits no ref of this clone reaches: no board license covers this tree, and the
+				// unclaimed-lane arm refuses one whose removal would strand work, so the park holds.
 				[REVLIST, okOut("2\n")],
 			],
 			[

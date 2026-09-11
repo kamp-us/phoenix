@@ -1,0 +1,16 @@
+{
+	"session_id": "…",
+	"transcript_path": "…",
+	"cwd": "…",
+	"prompt_id": "…",
+	"permission_mode": "auto",
+	"agent_id": "aa2a9583f18c0b8fe",
+	"agent_type": "general-purpose",
+	"effort": { "level": "medium" },
+	"hook_event_name": "SubagentStop",
+	"stop_hook_active": false,
+	"agent_transcript_path": "…",
+	"last_assistant_message": "PONG",
+	"background_tasks": [],
+	"session_crons": []
+}

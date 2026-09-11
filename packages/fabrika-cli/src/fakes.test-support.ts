@@ -38,10 +38,15 @@ const denied = (method: string, path: string) =>
 		}),
 	);
 
-/** Only `type` is read by anything under test; the rest of `File.Info` is filler the shape demands. */
-const info = (type: "File" | "Directory"): FileSystem.File.Info => ({
+/**
+ * `type` and `mtime` are what anything under test reads; the rest is filler the shape demands.
+ *
+ * An unset `mtime` is `Option.none()` rather than a default instant, because a platform that does
+ * not report one is a real case and reads UNKNOWN — a default would hide it.
+ */
+const info = (type: "File" | "Directory", mtime?: Date): FileSystem.File.Info => ({
 	type,
-	mtime: Option.none(),
+	mtime: mtime === undefined ? Option.none() : Option.some(mtime),
 	atime: Option.none(),
 	birthtime: Option.none(),
 	dev: 0,
@@ -72,6 +77,16 @@ export interface FakeFsOptions {
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
 	readonly unprobeable?: ReadonlyArray<string>;
+	/**
+	 * Paths whose `stat` fails `PermissionDenied` — there, and unreadable.
+	 *
+	 * Apart from {@link FakeFsOptions.unprobeable}, which answers `NotFound`, because a caller that
+	 * reads absence off the error tag needs the two to be different answers: one proves the path is
+	 * gone and the other proves nothing at all.
+	 */
+	readonly unstatable?: ReadonlyArray<string>;
+	/** Path → the modification time `stat` reports. An unlisted path reports none at all. */
+	readonly mtimes?: Readonly<Record<string, Date>>;
 	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
 	readonly real?: Readonly<Record<string, string>>;
 	/**
@@ -91,6 +106,11 @@ export interface FakeFsOptions {
 	/**
 	 * Directory paths whose creation fails `AlreadyExists` even when nothing is there — modeling a
 	 * lock another writer holds, so the losing side of an append race is testable on demand.
+	 *
+	 * A held lock is *removable*: once something removes the path, creating it succeeds again, and it
+	 * `stat`s as a directory meanwhile (give it an age through {@link FakeFsOptions.mtimes}). A fake
+	 * that failed forever could not tell a steal that lands from one that changes nothing — which is
+	 * the whole difference between a stale lock a waiter recovers from and one that bricks the lane.
 	 */
 	readonly mkdirExisting?: ReadonlyArray<string>;
 	/**
@@ -112,7 +132,8 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const dirs: Record<string, ReadonlyArray<string> | null> = {...options.dirs};
 	const files: Record<string, string | null> = {...options.files};
 	const written = new Map<string, string>();
-	const directories = new Set(options.directories ?? []);
+	const directories = new Set([...(options.directories ?? []), ...(options.mkdirExisting ?? [])]);
+	const held = new Set(options.mkdirExisting ?? []);
 	const decoder = new TextDecoder();
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
@@ -136,10 +157,14 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
 						),
 			stat: (path: string) => {
+				if (options.unstatable?.includes(path) === true) return denied("stat", path);
 				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
-				if (directories.has(path) || dirs[path] != null) return Effect.succeed(info("Directory"));
+				const mtime = options.mtimes?.[path];
+				if (directories.has(path) || dirs[path] != null) {
+					return Effect.succeed(info("Directory", mtime));
+				}
 				return Object.hasOwn(files, path) && files[path] !== null
-					? Effect.succeed(info("File"))
+					? Effect.succeed(info("File", mtime))
 					: notFound("stat", path);
 			},
 			makeDirectory: (path: string) => {
@@ -147,7 +172,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				if (options.mkdirMissingParent?.includes(path) === true) {
 					return notFound("makeDirectory", path);
 				}
-				if (options.mkdirExisting?.includes(path) === true) {
+				if (held.has(path)) {
 					return Effect.fail(
 						PlatformError.systemError({
 							_tag: "AlreadyExists",
@@ -209,6 +234,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				if (options.unremovable?.includes(path) === true) return denied("remove", path);
 				if (options.survivesRemoval?.includes(path) === true) return Effect.void;
 				directories.delete(path);
+				held.delete(path);
 				for (const key of Object.keys(files)) {
 					if (key === path || key.startsWith(`${path}/`)) delete files[key];
 				}

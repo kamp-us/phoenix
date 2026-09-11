@@ -32,6 +32,7 @@ import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
+import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
@@ -190,8 +191,7 @@ export const claimOf = (
 export const issueOf = (taskId: string, lane: string): number | null => {
 	const region = /^(?:issue|epic)_(\d+)$/.exec(taskId);
 	if (region?.[1] !== undefined) return Number.parseInt(region[1], 10);
-	const key = lane.trim();
-	return /^\d+$/.test(key) ? Number.parseInt(key, 10) : null;
+	return rawKeyIssue(lane.trim());
 };
 
 /** One local branch, with the commits it adds over its own fork point already read off the tree. */
@@ -318,17 +318,26 @@ export interface PullFact {
 	 */
 	readonly merged: boolean;
 	/**
-	 * **Every** issue the body links, through the closing keywords or `Part of` — never the search
-	 * term. Plural because an epic tail links one issue per landed child plus the epic itself, and a
-	 * scalar field there can only ever report one of them.
+	 * The issues the body links through its *winning* reference kind — never the search term. Plural
+	 * because an epic tail links one issue per landed child, and a scalar field there can only ever
+	 * report one of them. Narrower than {@link PullFact.referencedIssues} on one body shape alone:
+	 * one carrying both kinds, where this holds the closing numbers and drops the `Part of` ones.
 	 */
 	readonly linkedIssues: ReadonlyArray<number>;
 	/**
 	 * Which kind of reference {@link linkedIssues} came off — a closing keyword, or the explicit
-	 * non-closing `Part of #N`. Only the closing kind discharges the issue on merge, so it is the one
-	 * fact that tells a ship's `DONE` whether the lane it folds is finished.
+	 * non-closing `Part of #N`. Only the closing kind discharges an issue on merge, so the pair
+	 * answers that per issue: closing kind *and* membership in {@link linkedIssues}. Read alone it
+	 * is a body-wide fact, and an epic tail's body closes its children while sparing its epic.
 	 */
 	readonly linkKind: IssueRefs["kind"];
+	/**
+	 * **Every** issue the body names, closing references and `Part of` together — the set that says
+	 * what a PR is *about*, which is the nomination question rather than the closure one. An epic
+	 * tail is about its epic through a `Part of` its closing children push out of
+	 * {@link linkedIssues}, so tracing on that field left a finished epic run with no PR at all.
+	 */
+	readonly referencedIssues: ReadonlyArray<number>;
 }
 
 export type PullTrace =
@@ -355,7 +364,7 @@ export const tracePulls = (
 	const counts = (fact: PullFact): boolean =>
 		fact.open || (scope === "open-or-merged" && fact.merged);
 	const live = facts.filter(counts);
-	const matched = live.filter((fact) => fact.linkedIssues.includes(issue));
+	const matched = live.filter((fact) => fact.referencedIssues.includes(issue));
 	const first = matched[0];
 	const noun = scope === "open" ? "open PR" : "open or merged PR";
 	if (first === undefined) {
@@ -392,16 +401,22 @@ export type Closure =
 	| {readonly _tag: "Partial"; readonly prs: ReadonlyArray<number>};
 
 /**
- * The merged pull requests whose body links this issue — the evidence every closure judgement rests
- * on, named once so a second reader cannot drift from what {@link traceClosure} counts as landed.
+ * The merged pull requests whose body names this issue at all — the evidence every closure judgement
+ * rests on, named once so a second reader cannot drift from what {@link traceClosure} counts as
+ * landed. Membership is the wide set on purpose: a merge that named the issue and did not close it
+ * is the `Partial` these reads exist to catch, and the narrow set cannot see it on an epic tail.
  */
 export const landedFor = (issue: number, facts: ReadonlyArray<PullFact>): ReadonlyArray<PullFact> =>
-	facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+	facts.filter((fact) => fact.merged && fact.referencedIssues.includes(issue));
+
+/** Whether this merge discharges *this* issue — {@link PullFact.linkKind} alone is body-wide. */
+const closesIssue = (issue: number, fact: PullFact): boolean =>
+	fact.linkKind === "fixes" && fact.linkedIssues.includes(issue);
 
 export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Closure => {
 	const landed = landedFor(issue, facts);
 	if (landed.length === 0) return {_tag: "Closes", why: `no merged PR's body links #${issue}`};
-	const closing = landed.filter((fact) => fact.linkKind === "fixes");
+	const closing = landed.filter((fact) => closesIssue(issue, fact));
 	return closing.length > 0
 		? {
 				_tag: "Closes",

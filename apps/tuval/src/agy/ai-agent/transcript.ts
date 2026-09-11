@@ -23,8 +23,11 @@
  *   exactly as many `GENERIC` lines as they carry calls, and on all 21 of those whose calls name
  *   distinct file paths the k-th `GENERIC` echoes the k-th call's path — 21 of 21 identity, no
  *   permutation. A capture driven against v1.1.28 for this issue reproduces it in the small:
- *   `fixtures/multi-call-transcript.jsonl`. Attribution is therefore by **position**, and there is
- *   no batch-level outcome to render.
+ *   `fixtures/multi-call-transcript.jsonl`. Attribution is therefore by each `GENERIC`'s **step
+ *   distance** from the call line — the outcome at step `S + 1 + k` is call `k`'s — and there is no
+ *   batch-level outcome to render. Distance rather than position in the run, because the run is not
+ *   dense: a batch missing one call's outcome leaves that slot empty, and pairing by position would
+ *   shift every later outcome onto the call before it (#8912).
  * - **`step_index` orders the file; the file's own order does not.** The results of a batch routinely
  *   land *before* their own call line on disk — in the v1.1.28 capture the planner line sits at file
  *   position 2 while its first call's result sits at position 1 — so pairing by file adjacency pairs
@@ -203,15 +206,16 @@ interface CallOutcome {
 /**
  * One `PLANNER_RESPONSE`'s calls → their rows, each carrying its own outcome.
  *
- * agy writes one `GENERIC` per call in call order (see the module note), so the k-th outcome is the
- * k-th call's and position is the pairing. A call agy has written no outcome for keeps `running`
- * with an empty result rather than borrowing a neighbour's.
+ * `outcomes` is a slot per call, not the run of lines agy wrote: the caller has already decided which
+ * call each `GENERIC` belongs to by its step distance, so slot `k` is call `k`'s or nothing at all. A
+ * call agy has written no outcome for keeps `running` with an empty result rather than borrowing a
+ * neighbour's.
  */
 const toolItemsOf = (
 	id: string,
 	timestamp: number,
 	calls: ReadonlyArray<AgyToolCall>,
-	outcomes: ReadonlyArray<CallOutcome>,
+	outcomes: ReadonlyArray<CallOutcome | undefined>,
 	callsClipped: boolean,
 ): ReadonlyArray<TranscriptItem> =>
 	calls.map((call, index) => {
@@ -354,21 +358,31 @@ export const transcriptProjection = (
 				push(here, assistantItem(id, timestamp, marked(content, clipped.has("content"))));
 			}
 			if (calls === undefined || calls.length === 0) return;
-			// One `GENERIC` per call, taken in step order and consumed here so none also renders as a
-			// row of its own. The run stops at the first line that is not one: a batch agy is still
-			// working through has written fewer than it will.
-			const outcomes: Array<CallOutcome> = [];
-			for (let step = position + 1; step < order.length && outcomes.length < calls.length; step++) {
+			// Each `GENERIC` is claimed by the call its *step distance* names — the one at `S + 1 + k` fills
+			// slot `k` — and consumed so none also renders as a row of its own. Three guards and why each is
+			// the shape it is (#8912): a distance past the batch's `N` slots ends the walk, because `order`
+			// is sorted by `step_index` and distance is therefore non-decreasing from here; a distance
+			// *below* them is skipped and ends nothing, because `step_index` repeats (the module note), and
+			// that same non-uniqueness is why this stays a walk rather than a lookup keyed on `S + 1 + k`; a
+			// slot already filled keeps its first claimant, as every other step key in this fold does.
+			const outcomes: Array<CallOutcome | undefined> = Array.from(
+				{length: calls.length},
+				() => undefined,
+			);
+			for (let step = position + 1; step < order.length; step++) {
 				const entry = order[step];
 				if (entry === undefined) break;
 				if (entry.line.source !== "MODEL" || entry.line.type !== "GENERIC") break;
+				const slot = entry.line.step_index - line.step_index - 1;
+				if (slot >= calls.length) break;
+				if (slot < 0 || outcomes[slot] !== undefined) continue;
 				const read = restore(entry.line, counterpartOf(full, byStep, entry.ordinal, entry.line));
-				outcomes.push({
+				outcomes[slot] = {
 					text: read.line.content ?? "",
 					status: read.line.status,
 					clipped: read.clipped.has("content"),
 					stepIndex: read.line.step_index,
-				});
+				};
 				consumed.add(entry.ordinal);
 			}
 			const tools = toolItemsOf(id, timestamp, calls, outcomes, clipped.has("tool_calls"));

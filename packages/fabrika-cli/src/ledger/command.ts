@@ -8,6 +8,12 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
+ * Seven leaves author a plan run. `retopology`, `digest` and `defer` are the three that read no run
+ * directory at all — each belongs to the descope route, which is found on epics whose run was long
+ * since cleared: `retopology` repairs the block, `digest` prints the input that repair takes, and
+ * `defer` unlinks the child. Sourcing any of them from `ledger open` would put the staged run back
+ * in a route built not to need one.
+ *
  * **`--ready-for` is optional at the parser and refused in the verb body.** A parser-required flag's
  * absence is exit `1`, indistinguishable from a typo; an absent audience is a decision nobody made,
  * which must be provable as `10`. `--body-digest`, `--child` and `--title` stay
@@ -21,9 +27,12 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
+import {runDefer} from "./defer-verb.ts";
+import {runDigest} from "./digest-verb.ts";
 import {runDraft} from "./draft-verb.ts";
 import {runEdges} from "./edges-verb.ts";
 import {runOpen} from "./open-verb.ts";
+import {runRetopology} from "./retopology-verb.ts";
 import {runSupersede} from "./supersede-verb.ts";
 import {runTopology} from "./topology-verb.ts";
 import {runWrite} from "./write-verb.ts";
@@ -47,7 +56,7 @@ const tokenFlag = Flag.string("token").pipe(
 
 const bodyDigestFlag = Flag.string("body-digest").pipe(
 	Flag.withDescription(
-		"the 12-lowercase-hex body digest `ledger open` printed; the verb recomputes it from the live body and refuses on 21 if the epic moved",
+		"the 12-lowercase-hex body digest `ledger open` printed, or `ledger digest` for a route that stages no run; the verb recomputes it from the live body and refuses on 21 if the epic moved",
 	),
 );
 
@@ -106,7 +115,7 @@ const child = leafCommand(
 		),
 		type: Flag.string("type").pipe(
 			Flag.withDescription(
-				"the child's type label: type:bug | type:feature | type:chore | type:decision | type:investigation",
+				"the child's type label: type:bug | type:feature | type:chore | type:decision | type:investigation. type:decision is REFUSED on 10 with --ready-for agent — a fresh decision carries no ruling comment of its own to cite",
 			),
 		),
 		priority: Flag.string("priority").pipe(
@@ -174,7 +183,7 @@ const child = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mint one child issue with every birth attribute at once."),
 	Command.withDescription(
-		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a child of an asked type whose **Containment:** is off the vocabulary `.fabrika.jsonc`\'s containmentVocabulary resolves to, while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed, or the config exists and its containmentVocabulary does not decode — NOTHING was created), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 9420 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --token build:s-9f2e:c1a4d6f8-… < child.md',
+		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a child of an asked type whose **Containment:** is off the vocabulary `.fabrika.jsonc`\'s containmentVocabulary resolves to, while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; --type type:decision with --ready-for agent, which advertises a child the first builder refuses on its type axis — mint it --ready-for human with --assignee, record the ruling on the child, then flip it with `fabrika decision rule <n> --cites <child-comment-url>`; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed, or the config exists and its containmentVocabulary does not decode — NOTHING was created), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 9420 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --token build:s-9f2e:c1a4d6f8-… < child.md',
 	),
 );
 
@@ -196,7 +205,7 @@ const topology = leafCommand(
 ).pipe(
 	Command.withShortDescription("Validate the declared topology and render its Dependencies block."),
 	Command.withDescription(
-		'Validate the topology declared on STDIN — one "#<ref> phase <n> [requires #<a>, #<b>]" line per child, order-indifferent — against the run manifest, render the "## Dependencies" block, and parse it back through the shipped reader before staging it. Prints {"answer":"staged","epic":n,"document":"topology","phases":n,"children":n,"edges":{"rows":[["#<child>","#<prerequisite>"]],"more":0},"bytes":n} — the edges are a cap-and-count: the first 5 pairs plus how many followed. It cannot see a shared-file conflict — whether two children in one phase write the same module is the skill\'s judgment. Exits 3 (stdin held nothing), 4 (a line does not parse), 7 (the epic is proven absent or closed, or the run manifest holds zero children), 10 (not a type:epic, or a phase is not a positive integer), 11 (a read failed — nothing was staged), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a cycle, a reference to a non-child, a manifest child placed nowhere, or a rendered block that does not parse back to the declared edges). Example: fabrika ledger topology 9420 --token build:s-9f2e:c1a4d6f8-… < topo.txt',
+		'Validate the topology declared on STDIN — one "#<ref> phase <n> [requires #<a>, #<b>]" line per child, order-indifferent — against the run manifest, render the "## Dependencies" block, and parse it back through the shipped reader before staging it. Every phase member and every requires: SUBJECT is a manifest child placed exactly once; a PREREQUISITE may name an issue outside this epic, and each such target is proven to be a real issue at the boundary before anything is staged — except the epic\'s own number, which is 24 before any read, because an epic closes only once its children close, so that edge could never clear. Prints {"answer":"staged","epic":n,"document":"topology","phases":n,"children":n,"edges":{"rows":[["#<child>","#<prerequisite>"]],"more":0},"external":n,"bytes":n} — the edges are a cap-and-count: the first 5 pairs plus how many followed, and external counts the prerequisites that resolved outside the manifest. It cannot see a shared-file conflict — whether two children in one phase write the same module is the skill\'s judgment. Exits 3 (stdin held nothing), 4 (a line does not parse), 7 (the epic is proven absent or closed, or the run manifest holds zero children), 10 (not a type:epic, or a phase is not a positive integer), 11 (a read failed, an external prerequisite included — nothing was staged), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a cycle, a subject that is not a child, a prerequisite naming the epic itself, a manifest child placed nowhere, a rendered block that does not parse back to the declared edges, or an external prerequisite proven absent or resolving to a pull request). Example: fabrika ledger topology 9420 --token build:s-9f2e:c1a4d6f8-… < topo.txt',
 	),
 );
 
@@ -219,6 +228,82 @@ const write = leafCommand(
 	Command.withShortDescription("Splice the staged plan and topology into the epic body."),
 	Command.withDescription(
 		'Splice the staged plan and topology into the epic body in one PATCH, then re-read and compare the WHOLE normalized body. The plan region is resolved through the verb-written enrichment marker, never by position, and is never cut to end-of-file. mode is carried from `ledger open`, never re-derived. Prints {"answer":"written","epic":n,"mode":"…","bodyDigest":"…","newDigest":"…","planBytes":n,"topologyBytes":n,"verified":true}. Exits 7 (the epic is proven absent or closed), 8 (the PATCH was issued and could not be confirmed — UNKNOWN), 9 (written and it does not read back as composed), 10 (not a type:epic, or --body-digest is not 12 lowercase hex), 11 (a read failed — NOTHING was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 21 (the epic body moved since open), 22 (the plan region is unresolvable), 25 (plan.md or topology.md was never staged in this run). Example: fabrika ledger write 9420 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
+const digest = leafCommand(
+	"digest",
+	{number: epicArg, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(
+			yield* runDigest({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Print an epic's body digest, staging nothing."),
+	Command.withDescription(
+		'Print the 12-lowercase-hex digest of an epic\'s live body — the value --body-digest takes — without allocating a run directory, seeding a manifest or probing the base. It is the source for `ledger retopology`, whose whole claim is that it needs no staged plan run: `ledger open` prints the same value and is the right source inside a plan run, but it stages one, so the repair route reads it here instead. It writes NOTHING: no directory, no file, no issue. Prints {"answer":"digest","epic":n,"bodyDigest":"…"}. Exits 7 (the epic is proven absent or closed), 10 (not a type:epic), 11 (the epic or its claim could not be read — the digest is UNKNOWN), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger digest 5817 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
+const retopology = leafCommand(
+	"retopology",
+	{number: epicArg, bodyDigest: bodyDigestFlag, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, bodyDigest, token, repo}) {
+		yield* emit(
+			yield* runRetopology({
+				number,
+				bodyDigest,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Rewrite an epic's Dependencies block from its live child links."),
+	Command.withDescription(
+		'Rewrite the epic body\'s "## Dependencies" block so it names exactly the live sub-issues — the repair a founder descope owes, which without it wedges `lane emit` at 16 forever. Every ref the block names and the live child list does not leaves its phase and every requires list naming it; every surviving child keeps its declared phase and its requires edges; a phase left with no members is elided. It needs NO staged plan run — it reads no run.json, no manifest and no staged document, because a cleared run is the state a descoped epic is found in — and it closes, unlinks and comments on NOTHING: a descoped child is left open and unlinked, and retiring one stays `ledger supersede`\'s job. The block is rendered through the same renderer `ledger topology` stages with and parsed back through the shipped reader before the PATCH, and every byte outside the block — the "## Plan (plan-epic)" block, the preserved brief envelope, any amendment below a thematic break — is left where it is. Idempotent: a body whose block already names exactly the live children answers "unchanged" with no PATCH issued. Prints {"answer":"rewritten"|"unchanged","epic":n,"children":n,"phases":n,"dropped":{"count":n,"rows":["#n"]},"bodyDigest":"…","newDigest":"…","verified":true}. Exits 4 (a topology line does not parse), 7 (the epic is proven absent or closed, it carries no readable "## Dependencies" block, or it has no sub-issue links), 8 (the PATCH was issued and could not be confirmed — UNKNOWN), 9 (written and it does not read back as composed), 10 (not a type:epic, or --body-digest is not 12 lowercase hex), 11 (the epic, its children or its claim could not be read — NOTHING was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 21 (the epic body moved since the digest was taken), 22 (the "## Dependencies" region has no single meaning — a duplicated heading, or one resolving inside the preserved brief envelope), 24 (the rewritten topology is invalid: a duplicate placement, an unplaced requires subject, a live child the block places in no phase, a cycle, or a rendered block that does not parse back to what was rendered). Example: fabrika ledger retopology 5817 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
+const defer = leafCommand(
+	"defer",
+	{
+		number: epicArg,
+		child: Flag.integer("child").pipe(
+			Flag.withDescription("the child leaving this epic's plan, and staying open"),
+		),
+		reason: Flag.string("reason").pipe(
+			Flag.withDescription("why the plan changed; posted verbatim as the journal comment"),
+		),
+		token: tokenFlag,
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, child: childNumber, reason, token, repo}) {
+		yield* emit(
+			yield* runDefer({
+				number,
+				child: childNumber,
+				reason,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Take a child out of an epic's plan and leave its issue open."),
+	Command.withDescription(
+		'Take a child out of a running epic\'s plan and leave its issue OPEN as the follow-up: comment, unlink — in that order, so the reason survives a failed unlink — then re-read and prove the child is still open and no longer a sub-issue. This is the board half of an authorized deferral; `fabrika lane amend <epic> --defer <task> --defer-reason "<why>"` is the ledger half, and neither does the other\'s work. It NEVER calls the close endpoint: a superseded child is work the plan abandoned and closes not_planned (`ledger supersede`), a deferred child is work the founder still wants out of THIS epic\'s scope, and closing it would delete the follow-up. It reads no staged plan run, because a descoped epic is found with its run cleared. Prints {"answer":"deferred","epic":n,"child":n,"comment":id,"unlinked":true,"state":"open"}. Exits 5 (the reason carries a machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed, or the child is proven absent or already closed — a deferral keeps an OPEN follow-up and there is none), 8 (a leg was attempted and its outcome could not be proven — the child is UNKNOWN), 9 (the legs landed and the child does not read back open and unlinked), 10 (not a type:epic; --child is not a sub-issue of it; or --reason says nothing), 11 (a precondition read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger defer 8892 --child 8951 --reason "deferred to a follow-up cycle by founder ruling" --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -270,7 +355,7 @@ const edges = leafCommand(
 ).pipe(
 	Command.withShortDescription("Write the epic's declared dependencies into the blocked_by graph."),
 	Command.withDescription(
-		'Read the epic\'s own ## Dependencies block and write every edge it requires into GitHub\'s native blocked_by graph, then prove each one by re-reading the graph. That graph is the ONE carrier of blockedness and both build gates read only it. Reconcile, never replace: an edge already present is "already", an edge no ledger authored is left alone. It reads the epic body, not this run\'s staged topology, so an epic planned by an earlier run reconciles the same way — and it is idempotent, so a re-run over a reconciled epic writes nothing. Prints {"answer":"reconciled","epic":n,"required":k,"already":k,"written":k,"verified":true}. Exits 4 (the ## Dependencies block is unparseable), 7 (the epic is proven absent or closed, or declares no topology — zero scope), 8 (edges were POSTed and the graph could not be re-read — UNKNOWN), 9 (the graph does not read back carrying every required edge), 10 (not a type:epic), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a prerequisite the block names is proven absent, so no edge can point at it). Example: fabrika ledger edges 9420 --token build:s-9f2e:c1a4d6f8-…',
+		'Read the epic\'s own ## Dependencies block and write every edge it requires into GitHub\'s native blocked_by graph, then prove each one by re-reading the graph. That graph is the ONE carrier of blockedness and both build gates read only it. Reconcile, never replace: an edge already present is "already", an edge no ledger authored is left alone. A prerequisite outside this epic writes like any other — the pair is derived, POSTed on the target\'s internal id, and proven by the same re-read. It reads the epic body, not this run\'s staged topology, so an epic planned by an earlier run reconciles the same way — and it is idempotent, so a re-run over a reconciled epic writes nothing and issues no confirming read. Prints {"answer":"reconciled","epic":n,"required":k,"already":k,"written":k,"verified":true}. Exits 4 (the ## Dependencies block is unparseable), 7 (the epic is proven absent or closed, or declares no topology — zero scope), 8 (edges were POSTed and the graph could not be re-read — UNKNOWN; unreachable when zero were POSTed), 9 (the graph does not read back carrying every required edge), 10 (not a type:epic), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a prerequisite the block names is proven absent, so no edge can point at it). Example: fabrika ledger edges 9420 --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -283,10 +368,13 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		topology,
 		write,
 		edges,
+		defer,
 		supersede,
+		retopology,
+		digest,
 	]),
 	Command.withShortDescription("Author an epic's plan and its children."),
 	Command.withDescription(
-		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body",
+		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body — plus the two verbs that need no run: `retopology`, which rewrites a descoped epic's Dependencies block from its live child links, and `digest`, which prints the body digest that repair requires",
 	),
 );

@@ -33,7 +33,7 @@ makes the implementer guess.
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes this repo declares AND carries the labels for, with every `active` campaign's milestone marked `running: p0/p1 or blocker` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
-| `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
+| `triage apply` | apply the whole triaged transition — type, priority, audience, class, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
 | `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts) are mechanical; the verdict is judgment |
 
@@ -159,7 +159,7 @@ or the search index could not be read.
 | `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
 | `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — |
-| `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
+| `16` | refused: the `ready-for:agent` audience over a body whose acceptance-criteria block the wire reader does not answer `Found` on — stamped by `--ready-for agent`, or composed by `enrich` over a target already carrying the label; the `epic` surface is exempt at both doors | — | — | — | — | — | ✓ | ✓ | — | — | — |
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
@@ -434,6 +434,22 @@ rather than posting an unattributable marker.
 the TTL, and the **earliest surviving marker wins**. `won` requires a positive proof that the
 winner is this session; every unresolvable state answers `lost`, never `won`.
 
+**The comment list the resolution runs over is reconciled before it is resolved.** The rule above is
+only as good as the set it is handed, and on 2026-09-05 the set was wrong: a claim read one comment,
+did not see a marker that had been live for three minutes, and printed `won` for a lane that had
+already lost. GitHub documents no read-after-write guarantee for the REST API and no
+cache-bypass directive — its best-practices page offers only `etag`/`last-modified` conditional
+requests, whose answer is "unchanged since the value *you* saved", which says nothing about a write
+another lane made ([GitHub, "Best practices for using the REST
+API"](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api?apiVersion=2022-11-28)).
+So consistency is proven rather than requested: the list is read first, the issue's own `comments`
+count second, and a list shorter than that later count provably missed something. A shortfall is
+re-read on a short backoff, and one that survives every attempt is exit `11` carrying
+`received <k> of <m> declared comment(s)` — never a shorter list resolved anyway. A list *longer*
+than the count is not fenced: a comment deleted between the two reads produces it, and extra markers
+can only make the resolution more cautious. Bounds are `FABRIKA_COMMENT_SCAN_ATTEMPTS` (default 3)
+and `FABRIKA_COMMENT_SCAN_DELAY_MS` (default 500).
+
 **The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
 `park` and `kill` each re-read the markers on their target immediately before their first write, and
 refuse on `17` when a live one names another claimant — the check reuses this verb's own reader and
@@ -443,7 +459,11 @@ the lane, and a same-session marker under a different nonce is somebody else's. 
 no `--token` cannot say which lane it is, so it is priced fail-closed on exactly that: it passes
 while its session's live markers all name one lane, and refuses on `17` once two lanes of its
 session hold live markers. Holding **no** marker still passes: an unclaimed issue is the ordinary
-first-triage case, and demanding one would refuse every existing caller. The same re-read refuses a
+first-triage case, and demanding one would refuse every existing caller. **That re-read is the same
+reconciled read `claim` resolves over**, so a comment list the issue's own count proves short refuses
+this gate on `11` rather than passing it as "nobody else holds it" — a stale list hides a live
+competitor on both sides of the claim, and fixing only the claim would have left the exit-`17` gate
+reading the same wrong set. The same re-read refuses a
 closed target on `7`, and a comment read that fails is `11`. A `--token` that will not parse as
 `triage:<session-id>:<uuid>`, or that carries a session other than the one running, is a usage error
 on `1` on all five — the same two lines `claim` itself prints, verbatim, since it is the same
@@ -596,12 +616,14 @@ structural shapes.
 | Code | Trigger |
 |---|---|
 | `10` | `--slug` carries a path separator, or is not a kebab-case leaf |
-| `11` | the issue's comment list could not be read, or its markers could not be ordered — the claim is UNKNOWN |
+| `11` | the issue's comment list could not be read or reconciled, or its markers could not be ordered — the claim is UNKNOWN |
 | `19` | proven: this lane holds no live claim on the issue |
 
 `1` additionally covers the two identity refusals and the allocation failure, as the errors table
-below states. `7`, `8` and `9` are unreachable: this verb writes nothing to GitHub and reads no issue
-record, so it has no write to fail and no read-back to mismatch.
+below states. `7`, `8` and `9` are unreachable: this verb writes nothing to GitHub, so it has no
+write to fail and no read-back to mismatch. It does read the issue record — that is where the
+reconciled comment read takes the count it divides by — but an absent or unreadable one is folded
+into the comment read's own refusal on `11`, never seated on `7` here.
 
 **Errors**
 
@@ -1342,9 +1364,11 @@ to bold text.**
 `pitch-guard`'s, at the `status:triaged` seam `triage apply` trips; this spec computes no second
 verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
 This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
-machine-local path (`5`), a bare `@` reference (`6`), and an acceptance-criteria block the wire
-reader rejects (`15`, below) — and `--epic` **adds no exit code of its own**: reaching those same
-refusals is the removal of a restriction, not a new outcome.
+machine-local path (`5`), a bare `@` reference (`6`), an acceptance-criteria block the wire
+reader rejects (`15`, below), and a missing one over a target already stamped `ready-for:agent`
+(`16`, below) — and `--epic` **adds no exit code of its own**: reaching those same
+refusals is the removal of a restriction, not a new outcome, and `16` is one it does not reach at
+all.
 
 **The re-enrich detector is the marker this verb writes — one rule, mode-independent**, settled by a
 founder ruling. A body counts as already-enriched **when, and only when, it carries a marker line
@@ -1501,8 +1525,21 @@ carry the weight:
   foreign content, and a legacy `##` heading buried in it would otherwise refuse every
   re-enrichment of that issue forever.
 
-`Absent` is **not** a refusal. An epic pitch, a decision, a parked ticket may legitimately carry no
-criteria block; a verb that demanded one would be a different verb.
+`Absent` is **not** a refusal on its own. An epic pitch, a decision, a parked ticket may legitimately
+carry no criteria block; a verb that demanded one would be a different verb.
+
+**Over a target already carrying `ready-for:agent`, `Absent` is a broken promise and `16` is the
+refusal.** That label says a builder can pick the issue up cold, and the criteria block is what the
+promise is made of — so a rewrite composing none over a stamped issue leaves the label standing on no
+contract, and nothing re-reads it until `build claim` refuses a lane that has already been spawned.
+One issue shipped exactly that and cost a claim and a back-off. The check runs on the same authored
+region the reader above scans, against the **live** labels the verb already fetched, and writes
+nothing. The two escapes are on the refusal line: author the block into the rewrite and re-send, or
+drop the audience label first with `fabrika triage apply <n> --ready-for human`. **`--epic` is
+exempt**, for the reason `triage apply` exempts `--type epic`: an epic's criteria arrive per child
+from the plan ledger, so demanding a block on an epic body would make every epic un-enrichable. An
+issue carrying no `ready-for:agent` label is untouched by this — a criteria-less rewrite there is
+still accepted, exactly as it was.
 
 ### A stated ordering must be an edge, and `20` is the refusal
 
@@ -1557,6 +1594,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, its `blocked_by` edges, or a number a stated ordering names could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
+| `16` | the issue's live labels carry `ready-for:agent` and the composed body's **authored region** carries no acceptance-criteria block the wire reader answers `Found` on — never with `--epic` |
 | `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
 
 **Errors**
@@ -1579,6 +1617,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `triage enrich: PATCH failed: <reason> — UNKNOWN whether the body changed; re-read #<n> before retrying.` | 8 | refusal |
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
 | `triage enrich: the rewrite composes an acceptance-criteria block the wire reader rejects — <reader's reason> (<evidence>). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.` | 15 | refusal |
+| `triage enrich: #<n> carries ready-for:agent and the rewrite composes no acceptance-criteria block the wire reader answers Found on — <reader's reason>. That label promises a builder can pick the issue up cold, and the block is what the promise is made of. Either author a "### Acceptance criteria" block into the rewrite and re-send, or drop the audience label first with `fabrika triage apply <n> --ready-for human`. Nothing was written.` | 16 | refusal |
 
 **Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
 issue proven absent is `7`; a body that could not be read is `11`; a body that *was* read and is
@@ -1620,6 +1659,17 @@ $ echo $?
 20
 ```
 
+```
+$ fabrika triage enrich 9 < enriched.md
+triage enrich: #9 carries ready-for:agent and the rewrite composes no acceptance-criteria block the
+wire reader answers Found on — no heading in the body reaches for "### Acceptance criteria". That
+label promises a builder can pick the issue up cold, and the block is what the promise is made of.
+Either author a "### Acceptance criteria" block into the rewrite and re-send, or drop the audience
+label first with `fabrika triage apply 9 --ready-for human`. Nothing was written.
+$ echo $?
+16
+```
+
 **Grounding**
 
 - A verbatim re-emit once re-committed a machine-local path into a public issue. Fidelity loses to
@@ -1654,6 +1704,7 @@ fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47
 fabrika triage apply 7 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
 fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
 fabrika triage apply 5 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 4
+fabrika triage apply 7 --type feature --priority p2 --ready-for agent --home 47 --class ui
 ```
 
 **Inputs**
@@ -1666,6 +1717,7 @@ fabrika triage apply 5 --type bug --priority p1 --ready-for agent --home 47 --bl
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
 | `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
+| `--class` | enum | no | none | the artifact class its lane routes shells off, stamped as `class:<name>`; **repeatable**, one of `code`, `doc`, `skill`, `ui` |
 | `--blocked-by` | integer | no | none | an issue this one waits on, written as a native `blocked_by` edge; **repeatable**, idempotent, and never a pull request (`21`) |
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
@@ -1723,16 +1775,39 @@ branch, a build, a push, a PR and a CI run are spent — one adopting repo burne
 sequence on a stamped issue whose block was absent.
 
 **`--type epic` is exempt, and the exemption is load-bearing.** A triaged epic carries a `## Pitch`
-and gets its criteria later, per child, from the plan ledger — live epics sit at
-`type:epic status:triaged ready-for:agent` over a body with no block — so a blanket refusal would
-make an epic unstampable. `--ready-for human` is unaffected on every type: the promise the block
-backs is the one made to an agent.
+and gets its criteria later, per child, from the plan ledger, so a blanket refusal would make an epic
+unstampable. The exemption is its own test on the type and stands on that alone: under
+`--ready-for agent` the epic is separately left unstamped (below), a sibling rule keyed on the same
+type rather than this door's cause or its consequence. `--ready-for human` is unaffected on every
+type: the promise the block backs is the one made to an agent.
+
+**`--type epic --ready-for agent` stamps no audience label at all.** `check-epic-plan` documents
+itself as the only owner of `ready-for:agent` on an epic — it writes the label when that epic's plan
+floor comes back clean — and triage writing it too made the label mean "triaged" rather than
+"gated", so an ungated or defectively planned epic read pickable to anything filtering on it — one
+live epic reached its gate already carrying the stamp, and only a floor that happened to come back
+clean kept that run from being a real one. The audience facet's keep set is empty here: no label is
+written, and the read-back asserts the epic carries **no** `ready-for:` at all. It still *owns*
+`ready-for:*`, so a stamp an earlier gate run left is reconciled away rather than preserved —
+re-classifying an epic sends it back through the gate, which is the same ownership rule read the
+other way. The exemption belongs to the epic and the agent audience together: `--ready-for human`
+still stamps on every type, because parking an epic for a person is triage's own claim and one the
+gate never makes.
 
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
-`<ready-for>`, `<home>`, `<blocked-by>` — where `<home>` is the milestone number or the lane label,
-and `<blocked-by>` is the edge set **this run read back**, rendered `#a,#b`. With `--json`, an object
-with those keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as numbers)
-and `readBack`, an object of `{labels, milestone}` observed after the write.
+`<ready-for>`, `<home>`, `<blocked-by>`, `<classes>` — where `<home>` is the milestone number or the
+lane label, `<blocked-by>` is the edge set **this run read back**, rendered `#a,#b`, and `<classes>`
+is the class set this run stamped, rendered `a,b` and empty when none was asked for. With `--json`,
+an object with those keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as
+numbers), `classes` (the stamped stems) and `readBack`, an object of `{labels, milestone}` observed
+after the write.
+
+**`<ready-for>` reports the stamp, not the flag.** On the one run that writes no audience label —
+`--type epic --ready-for agent` — the column is the literal `none` and `--json` carries
+`"readyFor": null`, with a stderr line naming `check-epic-plan` as the flip's owner. Printing the
+asked-for `agent` there is exactly the `landed ?? requested` fallback this verb's read-back exists to
+refuse. `none` is off the `--ready-for` vocabulary (`human`, `agent`), so it can never be read as a
+value that landed.
 
 **The column is always present, and on a run passing no `--blocked-by` it is always empty** —
 whatever the live graph holds. This verb reads the dependency endpoint only when the flag is there,
@@ -1746,10 +1821,46 @@ it never looked at.
 
 **The transition is one envelope, and the read-back proves the end state positively.** The verb
 re-reads the issue's labels and milestone and asserts the positive shape required — exactly one
-`type:`, exactly one `p*`, `status:triaged` present, exactly one `ready-for:`, `status:needs-triage`
-absent, and the home: with `--home`, the milestone number equals the flag; **with `--lane`, the
-milestone is `null`**. It does **not** assert on the absence of an imagined failure, and it never
-reports the requested classification as the landed one.
+`type:`, exactly one `p*`, `status:triaged` present, exactly one `ready-for:` (**none** on
+`--type epic --ready-for agent`), `status:needs-triage` absent, and the home: with `--home`, the
+milestone number equals the flag; **with `--lane`, the milestone is `null`**. It does **not** assert on the
+absence of an imagined failure, and it never reports the requested classification as the landed one.
+
+### `--class` — the producer of the lane's build/review routing
+
+The lane machine reads `context.<task>.classes` and routes its `class:<name>`-guarded arms off it —
+`build:ui` instead of `build`, `review:ui` instead of `review`. Until this flag **nothing in the tree
+wrote that field**: the committed coder template shipped `"classes": []`, `lane open` copied it
+byte-identically, and every class a lane ever carried arrived on an event a head had already raised
+off a diff. So half of the wiring the ui-lane decision record added was unreachable on the ordinary
+path — a rendered-surface lane's *first* build ran in the plain `builder`, which has none of the
+design law loaded, and reached `build:ui` only after a `review-ui` FAIL.
+
+The direction is a founder ruling: **triage writes the class, and the lane reads it at open.** The
+plan-ledger alternative was not taken.
+
+**The vocabulary is closed in code, not declared on the board.** It is `SHIP_CLASS_NAMES` — the same
+partition `review scope` and `ship scope` derive a diff's classes from — so a repo cannot declare a
+class no gate can ever raise. That is the one asymmetry against the other five facets, whose values
+come off `boardVocabulary`. An off-set spelling refuses on **`10`** with the known set printed,
+before any label is written, because a `class:UI` label matches no `class:<name>` arm: the lane
+routes as unclassed and says nothing, which is the same silent miss `lane report --class` refuses at
+its own exit `38`.
+
+**The facet owns `class:*` whatever a run keeps**, so re-triaging without `--class` strips the class
+the issue was carrying. A facet that only added would leave two classes standing and route on
+whichever was read first — the delete this engine exists to make deliberate.
+
+**Both boot verbs read the label, and both refuse an off-set spelling before placement** — `lane
+open` on the issue's own labels, `lane emit` on every live child's, each at its own exit `38` with
+nothing written. The compiler refuses an off-set spelling too, but on *read*, so it is the backstop
+rather than the guard: a document that compiles `Malformed` is refused by every later fold of that
+lane, which bricks it rather than stopping the boot.
+
+**What a `ui` class buys differs by path.** A single-issue lane gets the
+template's own pair, `build:ui` and `review:ui`. An emitted epic child gets `build:ui` and **no**
+`review:ui`: a child opens no pull request, so a rendered-review cell it entered could produce
+nothing, and its rendered review is the epic tail's by construction.
 
 ### The owned facets — what `apply` may remove
 
@@ -1762,8 +1873,9 @@ in the keep set. So the ownership rule is stated here rather than left for an im
 | type | `^type:` | `type:<--type>` |
 | priority | `^p\d+$` | `<--priority>` |
 | status | `^status:(needs-triage\|triaged\|needs-info)$` | `status:triaged` |
-| audience | `^ready-for:` | `ready-for:<--ready-for>` |
+| audience | `^ready-for:` | `ready-for:<--ready-for>`, or **none** with `--type epic --ready-for agent` |
 | lane | the two lane labels `triage homes` lists | `<--lane>`, or none when `--home` was given |
+| class | `^class:` | `class:<--class>` for each, or **none** when the flag was not passed |
 | **milestone** | the issue's milestone, whatever it is | `--home`'s number, or **none** when `--lane` was given |
 
 **Every label matching an owned pattern and not in the keep set is removed; every label matching no
@@ -1786,8 +1898,8 @@ implementer adding a facet must re-check that containment.
 
 Before any write, the verb asserts that **the labels this invocation will actually write** exist in
 the repository: `type:<--type>`, `<--priority>`, `status:triaged`, `ready-for:<--ready-for>`, and,
-with `--lane`, the lane label. Five labels, not the whole vocabulary. A missing one **refuses on
-`7`** rather than writing.
+with `--lane`, the lane label, and with `--class`, each class label. Only what this run writes, not
+the whole vocabulary. A missing one **refuses on `7`** rather than writing.
 
 **This is the narrow reading, deliberately.** A single `apply` writes one type, one priority, one
 audience — so checking all six types and all three priorities would refuse a perfectly good
@@ -1853,7 +1965,7 @@ stamp.
 | `triage apply: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
-| `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, one ready-for, and <the milestone / no milestone>.` | 9 | refusal |
+| `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, <one ready-for / no ready-for>, and <the milestone / no milestone>.` | 9 | refusal |
 | `triage apply: #<n> carries no acceptance-criteria block — <the reader's reason>. ready-for:agent promises a builder can pick it up cold; an absent block has nothing to repair mechanically, so author one with \`triage enrich\`. Nothing was written.` | 16 | refusal |
 | `triage apply: #<n>'s acceptance-criteria block is malformed — <the reader's reason> (<its evidence>). Repair a level drift with \`triage repair-criteria <n>\`; anything else needs a hand. Nothing was written.` | 16 | refusal |
 
@@ -1880,6 +1992,18 @@ failure is `11` and never a silent pass.
 ```
 $ fabrika triage apply 7 --type bug --priority p2 --ready-for agent --home 47
 triaged	7	bug	p2	agent	47	
+```
+
+```
+$ fabrika triage apply 9 --type epic --priority p1 --ready-for agent --home 47
+triage apply: no ready-for label was stamped on #9 — the agent audience on a type:epic is
+`check-epic-plan`'s flip alone, written when that epic's plan floor comes back clean.
+triaged	9	epic	p1	none	47	
+```
+
+```
+$ fabrika triage apply 9 --type epic --priority p1 --ready-for agent --home 47 --json
+{"outcome":"triaged","number":9,"type":"epic","priority":"p1","readyFor":null,"home":47,"removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:epic","p1","status:triaged"],"milestone":47}}
 ```
 
 ```

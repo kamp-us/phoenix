@@ -17,6 +17,13 @@
  * is the routing signal, born-assignment is the enforced hold, and neither substitutes for the other. That pair is not merely a convention: the gate's floor reds
  * `HELD_CHILD_UNASSIGNED` over the **whole epic**, so one held-and-unassigned child blocks every
  * sibling.
+ *
+ * **A `type:decision` child is never born `ready-for:agent`.** A build claim admits a decision only
+ * against a ruling comment recorded on that same decision issue, and a child a second old carries
+ * none — so the pair publishes a child every builder refuses on its type axis, which parks the epic
+ * lane. The refusal sits with the other pre-write input checks; the supported route is
+ * `ready-for:human` with an assignee, then `fabrika decision rule <n> --cites <child-comment-url>`
+ * once the ruling is recorded on the child.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -54,11 +61,14 @@ import {appendChild, loadManifest, loadRun, maskedLeakRefusal, rewriteChild} fro
 
 const VERB = "ledger child";
 
+/** The one type whose audience is constrained: see the cross-field refusal in {@link runChild}. */
+export const DECISION = "type:decision";
+
 export const TYPES: ReadonlyArray<string> = [
 	"type:bug",
 	"type:feature",
 	"type:chore",
-	"type:decision",
+	DECISION,
 	"type:investigation",
 ];
 
@@ -127,6 +137,12 @@ export const runChild = (
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --type ${options.type} is off the closed set (${TYPES.join(", ")}).`,
+			);
+		}
+		if (options.type === DECISION && options.readyFor === "agent") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --type ${DECISION} with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.`,
 			);
 		}
 		if (!PRIORITIES.includes(options.priority)) {

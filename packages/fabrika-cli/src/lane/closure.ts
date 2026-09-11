@@ -72,6 +72,7 @@ export const closureReader = (
 					merged: pull.value.merged,
 					linkedIssues: refs.numbers,
 					linkKind: refs.kind,
+					referencedIssues: refs.referenced,
 				},
 			]);
 		});

@@ -17,10 +17,16 @@
  * of the session is asking, and a same-session marker under a different nonce is somebody else's —
  * the identity `triage claim` already resolves on and the `build` namespace resolves ownership
  * against, now read on this side of the claim too.
+ *
+ * **The marker read is reconciled, not merely made.** A comment list short of the count the issue
+ * declares hides a live competitor, and hiding one here reads as "nobody else holds it" — the same
+ * stale read that once made `triage claim` answer `won` for a losing lane. Both sides of the
+ * claim therefore go through `listCommentsReconciled`, so a read that cannot be proven whole refuses
+ * on `11` instead of passing this gate.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {type IssueRecord, listComments} from "../io/issues.ts";
+import {type IssueRecord, listCommentsReconciled} from "../io/issues.ts";
 import {sessionIdFrom} from "../io/session-id.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -163,7 +169,7 @@ export const guardTarget = (
 		const asked = askCaller(verb, options.env, options.token);
 		if (!("_tag" in asked)) return asked.refusal;
 
-		const comments = yield* listComments(repo, issue);
+		const comments = yield* listCommentsReconciled(repo, issue);
 		if (comments._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -173,7 +179,7 @@ export const guardTarget = (
 
 		const caller = asked.value;
 		const scanned = foreignMarkers({
-			markers: markersOf(comments.value),
+			markers: markersOf(comments.value.comments),
 			caller,
 			now: (options.now ?? (() => new Date()))().getTime(),
 			ttlMinutes: DEFAULT_TTL_MINUTES,
