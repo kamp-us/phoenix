@@ -183,6 +183,32 @@ const restore = (line: AgyTranscriptLine, full: AgyTranscriptLine | undefined): 
 
 const marked = (text: string, clipped: boolean): string => (clipped ? text + CLIPPED_MARK : text);
 
+/**
+ * agy's framing of the operator's turn, and where the operator's own words sit inside it.
+ *
+ * A `USER_EXPLICIT`/`USER_INPUT` line's `content` is never the prompt as typed: it is a
+ * `<USER_REQUEST>` block carrying the prompt, followed by an `<ADDITIONAL_METADATA>` block, and on
+ * a turn that changed a setting a `<USER_SETTINGS_CHANGE>` one too. The blocks after the request
+ * are dropped by construction — only the request's own body is read.
+ */
+const USER_REQUEST = /^<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
+
+/**
+ * The operator's turn as he typed it, out of the frame agy stored it in.
+ *
+ * Two things turn on unwrapping it (#8961). The row reads as his own words rather than as agy's
+ * wire framing of them; and its text becomes the text the core's still-`local` echo carries, which
+ * is the only join available to a backend whose live tail mints no `user` row at all — agy's
+ * `user_input` step carries no `text_delta`, so `claimsLocal` (`shell/chat/rows.ts`) joining on
+ * text is what keeps a paged turn from rendering a second time above the echo.
+ *
+ * Only agy's own two padding newlines are taken off the body, never a general trim: what the
+ * operator typed inside the block is his, whitespace included, and the join is against that exact
+ * text. A line carrying no `<USER_REQUEST>` block passes through unchanged — the set of blocks agy
+ * may write is not closed, so the absence of the one this reads is the only thing judged here.
+ */
+const promptText = (content: string): string => USER_REQUEST.exec(content)?.[1] ?? content;
+
 /** An item and the two numbers that order it: `step_index` first, file position to break the tie. */
 interface Placed {
 	readonly item: TranscriptItem;
@@ -347,7 +373,7 @@ export const transcriptProjection = (
 
 		if (line.source === "USER_EXPLICIT" && line.type === "USER_INPUT") {
 			join(ownLiveId, id);
-			push(here, userItem(id, timestamp, marked(content, clipped.has("content"))));
+			push(here, userItem(id, timestamp, marked(promptText(content), clipped.has("content"))));
 			return;
 		}
 
