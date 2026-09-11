@@ -29,6 +29,9 @@
  * **Where the route rests on a hand-verification instead of a render, this verb also judges whether
  * that evidence is still current.** `--verified-at` names the head the hand-verification ran at, and
  * the evidence stands exactly when no file in the range to `--sha` raises the `ui` class — the same `isUiSurface` over the same prefixes, never a second predicate.
+ * Two shapes leave that range unread rather than clear: a comparison at GitHub's file ceiling, and
+ * one whose two heads have diverged, where the platform answers from their merge base instead. Both
+ * are UNKNOWN.
  * Left off, the range is never read and the route behaves as it always did: a prose-only diff under
  * a declared prefix rests on the body alone and has no head to compare against.
  */
@@ -193,6 +196,18 @@ export const runRoute = (
 			const compared = yield* compareFiles(repo, verified, inspected);
 			if (compared._tag === "Failure") {
 				return unreadable(`the range ${range}`, pr, compared.reason);
+			}
+			// A three-dot compare answers from the merge base, so its file list is the range asked
+			// for only where the hand-verification's head is an ancestor of --sha. A repair's
+			// force-push leaves that head resolvable but diverged, and the served list then hides
+			// every ui-class file changed on the abandoned side — the one shape where re-verifying
+			// matters most. Unread, never cleared.
+			if (compared.value.status !== "identical" && compared.value.status !== "ahead") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${verified} is ${compared.value.status} of ${inspected}, not an ancestor — the comparison answers from their merge base, so ${range} was never read. Re-run the hand-verification at ${inspected}.`,
+					diagnostics,
+				);
 			}
 			const spent = compared.value.files.filter((file) => isUiSurface(file, options.uiPrefixes));
 			diagnostics.push(

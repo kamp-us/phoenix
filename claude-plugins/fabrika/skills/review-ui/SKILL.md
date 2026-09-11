@@ -68,7 +68,7 @@ at** — `--verified-at <head>`, and the verb reads the range to `--sha` for you
 to no preview is the case: there is no address to render, so a builder's desk run stands in for the
 render, and that evidence stands for the record's head only while no `ui`-class file changed in
 between. Exit `12` naming the files means the run is spent and a fresh one at `--sha` is owed before
-the route can post; exit `11` naming the ceiling means the range is unread, never clear. Omit the
+the route can post; exit `11` naming the ceiling, or naming the two heads as diverged, means the range is unread, never clear. Omit the
 flag where there is no hand-verification, and never derive the range by hand — a condition you check
 by eye is one the next gate checks differently.
 

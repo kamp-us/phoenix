@@ -274,13 +274,16 @@ describe("compareFiles", () => {
 		const {result, http} = await run(
 			served(200, {status: "ahead", files: [{filename: "a.ts"}, {filename: "b.md"}]}),
 		);
-		expect(result).toEqual({_tag: "Ok", value: {files: ["a.ts", "b.md"], capped: false}});
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: {files: ["a.ts", "b.md"], status: "ahead", capped: false},
+		});
 		expect(http.calls[0]).toMatch(COMPARE);
 	});
 
 	it("reads an identical comparison as a proven empty range, not as a missing list", async () => {
 		const {result} = await run(served(200, {status: "identical", total_commits: 0, files: []}));
-		expect(result).toEqual({_tag: "Ok", value: {files: [], capped: false}});
+		expect(result).toEqual({_tag: "Ok", value: {files: [], status: "identical", capped: false}});
 	});
 
 	it("flags the platform's own ceiling rather than answering over unknown scope", async () => {
@@ -296,6 +299,16 @@ describe("compareFiles", () => {
 
 	it("refuses an entry that is not a changed file rather than shortening the range", async () => {
 		const {result} = await run(served(200, {files: [{sha: "abc"}]}));
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("carries the platform's own status, so a caller can tell a branch range from a merge-base one", async () => {
+		const {result} = await run(served(200, {status: "diverged", files: [{filename: "a.ts"}]}));
+		expect(result._tag === "Ok" && result.value.status).toBe("diverged");
+	});
+
+	it("refuses a 200 declaring no status — which range the files describe is then unknown", async () => {
+		const {result} = await run(served(200, {files: [{filename: "a.ts"}]}));
 		expect(result._tag).toBe("Failure");
 	});
 

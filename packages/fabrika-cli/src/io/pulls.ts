@@ -166,9 +166,30 @@ export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyA
  */
 export const COMPARE_FILE_CAP = 300;
 
-/** A comparison's changed paths, beside the one fact that says whether it holds all of them. */
+/**
+ * How the two commits stand to each other, in the platform's own vocabulary
+ * ([REST, "Compare two
+ * commits"](https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#compare-two-commits)).
+ *
+ * `identical` and `ahead` are the two where `base` is an ancestor of `head`, and so the two where
+ * the served symmetric difference is also the branch range `base..head`.
+ */
+export type CompareStatus = "identical" | "ahead" | "behind" | "diverged";
+
+const COMPARE_STATUSES: ReadonlyArray<string> = ["identical", "ahead", "behind", "diverged"];
+
+/** A comparison's changed paths, beside the two facts that say what the list is a list of. */
 export interface CompareRead {
 	readonly files: ReadonlyArray<string>;
+	/**
+	 * Which range the served `files` actually describe.
+	 *
+	 * A caller asking for `base..head` gets that set only on `identical` or `ahead`; on `behind` or
+	 * `diverged` the same 200 carries the difference from the merge base instead, which can only be
+	 * a *subset* of what changed since `base`. Carrying the status is what lets that caller refuse
+	 * rather than read the narrower list as the wider one.
+	 */
+	readonly status: CompareStatus;
 	/**
 	 * True when the list reached {@link COMPARE_FILE_CAP}.
 	 *
@@ -181,11 +202,13 @@ export interface CompareRead {
 }
 
 /**
- * Every path that changed between two commits, with its completeness proof.
+ * Every path that changed between two commits, with its completeness proof and its range proof.
  *
  * The platform serves a three-dot comparison — `base...head` is the symmetric difference from the
- * merge base, not `git log base..head`. Where `base` is an ancestor of `head`, which is the shape a
- * branch's own history always has, the two ranges are the same set.
+ * merge base, not `git log base..head`. The two coincide only where `base` is an ancestor of
+ * `head`, which a branch is *not* guaranteed to be: a force-push leaves the abandoned head
+ * resolvable and diverged from the new one. So {@link CompareRead.status} rides beside the files,
+ * and a caller that meant `base..head` reads it before reading them.
  */
 export const compareFiles = (
 	repo: string,
@@ -206,7 +229,13 @@ export const compareFiles = (
 						}
 						files.push(value.filename);
 					}
-					return ok({files, capped: files.length >= COMPARE_FILE_CAP});
+					if (typeof body.status !== "string" || !COMPARE_STATUSES.includes(body.status)) {
+						return fail(
+							"GitHub answered 200 but its comparison declares no status, so which range its file list describes is unknown",
+						);
+					}
+					const status = body.status as CompareStatus;
+					return ok({files, status, capped: files.length >= COMPARE_FILE_CAP});
 				}),
 			),
 		),

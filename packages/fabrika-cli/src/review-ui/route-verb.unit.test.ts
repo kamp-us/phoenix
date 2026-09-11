@@ -245,6 +245,17 @@ describe("review-ui route", () => {
 			expect(outcome.stderr.join("\n")).toContain("ceiling");
 		});
 
+		it("refuses on 11 when the two heads have diverged — the merge-base list is not the range", async () => {
+			const diverged = served({
+				status: "diverged",
+				files: [{filename: "docs/notes.md"}],
+			});
+			const {outcome, requests} = await run(withRange(diverged), {verifiedAt: VERIFIED});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.join("\n")).toContain("not an ancestor");
+			expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+		});
+
 		it("refuses on 11 when the comparison cannot be read at all", async () => {
 			const {outcome} = await run(withRange({status: 502, body: '{"message":"Bad gateway"}'}), {
 				verifiedAt: VERIFIED,

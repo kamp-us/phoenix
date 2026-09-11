@@ -753,7 +753,7 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head whose diff was read, 7–40 lowercase hex |
 | `--clause` | string | yes | — | the one-line why, carried on the record's first line; blank is refused |
-| `--verified-at` | string | no | none | the head a hand-verification standing in for the render ran at, 7–40 lowercase hex; the range to `--sha` is then read and a `ui`-class file in it refuses the route |
+| `--verified-at` | string | no | none | the head a hand-verification standing in for the render ran at, 7–40 lowercase hex; the range to `--sha` is then read and a `ui`-class file in it refuses the route, as does a range the platform could not read whole or at all |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | which files changed and why none of them renders anything |
 
@@ -782,7 +782,9 @@ this namespace, so there is nothing to route; the predicate is `review/classes.t
 second copy. With `--verified-at`, compare that head to `--sha` and refuse on `12` when any file in
 the range raises the `ui` class — the hand-verification is then spent and a fresh one is owed at
 `--sha`; a comparison that came back at GitHub's 300-file ceiling is `11`, because the compare
-declares no total and a capped list can only ever hide a `ui`-class file. Compose the record's first
+declares no total and a capped list can only ever hide a `ui`-class file, and so is one whose two
+heads have diverged, because the platform's three-dot compare then answers from their merge base and
+the range was never read at all. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
 mismatch, `8` on an unproven write).
@@ -813,7 +815,7 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `8` | the create/edit failed — UNKNOWN whether the record landed |
 | `9` | the record landed but does not read back as sent |
 | `10` | `--sha` or `--verified-at` is not a head SHA, or `--clause` is blank |
-| `11` | a precondition read failed, the changed-file list came back truncated, or the `--verified-at` comparison came back at the 300-file ceiling — nothing was posted |
+| `11` | a precondition read failed, the changed-file list came back truncated, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
 
 **Errors**
@@ -833,6 +835,7 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: --verified-at "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `review-ui route: received <m> of <n> changed files — refusing to derive the ui class from a truncated read.` | 11 | refusal |
 | `review-ui route: the comparison over <verified>..<sha> came back at GitHub's 300-file ceiling — refusing to clear the hand-verification against a capped read.` | 11 | refusal |
+| `review-ui route: <verified> is <status> of <sha>, not an ancestor — the comparison answers from their merge base, so <verified>..<sha> was never read. Re-run the hand-verification at <sha>.` | 11 | refusal |
 | `review-ui route: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
 | `review-ui route: the live head is <live>, not <sha> — the diff you read is gone; re-read at <live>.` | 12 | refusal |
 | `review-ui route: <files> raise the ui class in <verified>..<sha> — the hand-verification at <verified> is spent; re-run it at <sha>.` | 12 | refusal |
@@ -867,6 +870,11 @@ review-ui route: scanned 2 files changed in 8efd315a..fb01065b; 2 raise the ui c
 review-ui route: apps/<app>/src/window/usage.tsx, apps/<app>/src/page/reply-row.tsx raise the ui
 class in 8efd315a..fb01065b — the hand-verification at 8efd315a is spent; re-run it at fb01065b.
 # exit 12
+
+$ fabrika review-ui route 4471 --sha 9c40aa71 --verified-at 8efd315a --clause "…" < why.md
+review-ui route: 8efd315a is diverged of 9c40aa71, not an ancestor — the comparison answers from
+their merge base, so 8efd315a..9c40aa71 was never read. Re-run the hand-verification at 9c40aa71.
+# exit 11
 ```
 
 **Grounding**
