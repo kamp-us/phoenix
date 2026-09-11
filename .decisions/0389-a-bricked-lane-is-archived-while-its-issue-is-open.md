@@ -11,6 +11,16 @@ tags: [fabrika, lane, pipeline]
 **What this decides:** `lane archive` no longer requires the lane's issue to read closed, and it
 retracts the issue's live `lane-claim` marker as part of the move.
 
+This record **amends ADR [0215](0215-claim-identity-continuity-proof.md) §5 and ADR
+[0325](0325-lane-namespace-claim-succession.md) in part.** 0215 §5 bans "a second retraction verb"
+and 0325 carried that ban into the `lane` namespace unchanged; §2 below makes `lane archive` delete a
+`lane-claim` comment, which is a second one. The Reconciliation section says so plainly rather than
+arguing the crossing away, and pretending otherwise would leave the corpus lying about its own code.
+So: **the second-retraction-verb ban is narrowed to exactly the population below — `lane archive`
+spending a token its caller already presents, over markers carrying that token and no others — and
+stands everywhere else.** Nothing else 0215 §5 or 0325 bans moves: no second keyspace, no lease, no
+TTL, no repair-specific claim mechanism, and no way to acquire or infer ownership.
+
 ## Context
 
 A lane whose `events.jsonl` carries an event its machine has no update cell for is unreadable by
