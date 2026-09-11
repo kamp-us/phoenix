@@ -8,8 +8,11 @@
  *
  * Every lane is judged on its own and a refusal is a ROW, never the end of the sweep — the single
  * fatal answer is a root that could not be listed, because an unreadable root makes the lane set
- * UNKNOWN rather than empty. The gates are {@link archiveLane}'s, unchanged and unduplicated, so a
- * lane this sweep moves is exactly a lane `lane archive <key>` would have moved.
+ * UNKNOWN rather than empty. The gates are {@link archiveLane}'s, and they stay BOTH gates: the
+ * closed-issue one was retired from the named single-lane route only, on the argument that an
+ * operator naming one bricked lane by hand has already judged it. Nothing has ruled the same for an
+ * unattended walk of the whole root, and this sweep retracts no claim, so a lane it moves is a
+ * strictly narrower set than `lane archive <key>` would move.
  *
  * A key that resolves to no issue is skipped and NAMED rather than fatal: the quarantine convention
  * puts `<issue>.<suffix>` directories in the root, and a root holding one unaddressable name must

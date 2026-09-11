@@ -1,15 +1,15 @@
-/** The archive judgement, and the verb whose two gates decide whether a lane directory moves. */
+/** The archive judgement, and the verb whose replay gate and claim retraction decide a move. */
 import {Effect, type FileSystem, type Path} from "effect";
 import {describe, expect, it} from "vitest";
+import type {Claimant} from "../build/claim.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {judgeArchive} from "./archive.ts";
-import type {ClosureState} from "./archive-move.ts";
-import {runArchive} from "./archive-verb.ts";
+import {type ClaimRetractor, type ClaimsReader, runArchive} from "./archive-verb.ts";
+import type {ClaimHoldReader} from "./claim-hold.ts";
 import {
 	APPEND_UNKNOWN,
-	ISSUE_LIVE,
-	ISSUE_UNRESOLVED,
+	CLAIM_NOT_MINE,
 	LANE_ABSENT,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
@@ -17,6 +17,7 @@ import {
 	MARKER_READBACK,
 	MIGRATION_UNSAFE,
 } from "./codes.ts";
+import {seatsIn} from "./concurrency.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import type {LogEntry} from "./fold.ts";
 import {runHistory} from "./history-verb.ts";
@@ -138,15 +139,53 @@ describe("judgeArchive", () => {
 	});
 });
 
-const closes = (state: ClosureState) => () => Effect.succeed(state);
-const closed = closes({_tag: "Closed", reason: "completed"});
+const TOKEN = "lane:session-a:nonce-a";
+
+/** One `lane-claim` marker as `readClaimants` hands it over. */
+const claimant = (
+	commentId: number,
+	token: string,
+	overrides: Partial<{authorized: boolean; session: string}> = {},
+): Claimant => ({
+	commentId,
+	author: "usirin",
+	createdAt: "2026-09-10T00:00:00.000Z",
+	token,
+	session: overrides.session ?? token.split(":")[1] ?? token,
+	authorized: overrides.authorized ?? true,
+});
+
+const holds =
+	(...claimants: ReadonlyArray<Claimant>): ClaimsReader<never> =>
+	() =>
+		Effect.succeed({
+			_tag: "Read" as const,
+			claimants,
+			adopts: [],
+			holder: claimants.find((one) => one.authorized) ?? null,
+		});
+
+const unclaimed: ClaimsReader<never> = holds();
+
+/** Records what the verb retracted, in order, so a test can prove the sweep and its ordering. */
+const recorder = (failOn: number | null = null) => {
+	const deleted: number[] = [];
+	const retract: ClaimRetractor<never> = (_issue, commentId) => {
+		if (commentId === failOn) return Effect.succeed({_tag: "Failed" as const, reason: "403"});
+		deleted.push(commentId);
+		return Effect.succeed({_tag: "Retracted" as const});
+	};
+	return {deleted, retract};
+};
 
 const OPTIONS = {
 	ref: {root: ROOT, lane: "6037"},
 	archivedRoot: ARCHIVED,
 	templatePaths: [TEMPLATE],
-	issue: {_tag: "Issue", number: 6037} as const,
-	closed,
+	issue: 6037,
+	token: null,
+	claims: unclaimed,
+	retract: recorder().retract,
 };
 
 /** A lane on disk whose `ISSUE.PASS` from `queued` no machine has a cell for — the log that will never replay. */
@@ -171,7 +210,7 @@ const run = (
 ) => Effect.runPromise(Effect.provide(eff, fs.layer));
 
 describe("lane archive", () => {
-	it("moves the lane to the archived root with both gates held, and touches no log", async () => {
+	it("moves the lane to the archived root on the replay gate alone, and touches no log", async () => {
 		const fs = brokenLane();
 		const out = await run(fs, runArchive(OPTIONS));
 
@@ -183,6 +222,7 @@ describe("lane archive", () => {
 			from: DIR,
 			to: MOVED,
 			through: "current",
+			retracted: [],
 		});
 		// The bytes reached the destination unchanged, and nothing was written to the log in place.
 		expect(fs.written.get(`${MOVED}/events.jsonl`)).toBe(logText("PASS"));
@@ -239,16 +279,47 @@ describe("lane archive", () => {
 		expect(JSON.parse(reconcileAfter.stdout).lanes).toEqual([]);
 	});
 
-	it("refuses an open issue, leaving the directory where it was", async () => {
-		const fs = brokenLane();
-		const out = await run(fs, runArchive({...OPTIONS, closed: closes({_tag: "Open"})}));
+	it("moves a lane whose issue is still open — the arm the closed-issue gate used to shut", async () => {
+		// The tail of lane 8810: a granted round walked, spent again, and a DONE appended into the
+		// park that FAIL left. Its epic was open, which is what left the lane with no route at all.
+		const bricked = [
+			{task: "issue", event: "ISSUE.FAIL", at: "2026-09-10T06:15:00.000Z"},
+			{task: "issue", event: "ISSUE.CLEARED", at: "2026-09-10T06:20:51.000Z", round: 3},
+			{task: "issue", event: "ISSUE.UNBLOCKED", at: "2026-09-10T06:20:57.198Z"},
+			{task: "issue", event: "ISSUE.FAIL", at: "2026-09-10T06:28:50.863Z"},
+			{task: "issue", event: "ISSUE.DONE", at: "2026-09-10T06:35:12.051Z"},
+		];
+		const text = `${bricked.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+		const fs = fakeFs({
+			files: {
+				[TEMPLATE]: coderTemplateText(),
+				[`${DIR}/workflow.json`]: coderTemplateText(),
+				[`${DIR}/events.jsonl`]: text,
+			},
+			dirs: {[ROOT]: ["6037"], [ARCHIVED]: []},
+			directories: [ROOT, ARCHIVED, DIR],
+		});
+		const out = await run(fs, runArchive(OPTIONS));
 
-		expect(out.code).toBe(ISSUE_LIVE);
-		expect(out.stdout).toBe("");
-		expect(fs.written.size).toBe(0);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "archived", to: MOVED});
+		expect(fs.written.get(`${MOVED}/events.jsonl`)).toBe(text);
 	});
 
-	it("refuses a log that replays, before the board is ever asked", async () => {
+	it("frees the lane's laneConcurrencyCap seat, which a bricked ledger held as unaccountable", async () => {
+		const fs = brokenLane();
+		const held: ClaimHoldReader<never> = () =>
+			Effect.succeed({_tag: "Claimed" as const, token: TOKEN});
+
+		const before = await Effect.runPromise(Effect.provide(seatsIn(ROOT, held), fs.layer));
+		await run(fs, runArchive({...OPTIONS, claims: holds(claimant(11, TOKEN)), token: TOKEN}));
+		const after = await Effect.runPromise(Effect.provide(seatsIn(ROOT, held), fs.layer));
+
+		expect(before).toMatchObject({seats: [{lane: "6037", held: "unaccountable"}]});
+		expect(after).toMatchObject({seats: []});
+	});
+
+	it("refuses a log that replays, before the claim thread is ever asked", async () => {
 		let asked = 0;
 		const fs = fakeFs({
 			files: {
@@ -263,9 +334,9 @@ describe("lane archive", () => {
 			fs,
 			runArchive({
 				...OPTIONS,
-				closed: () => {
+				claims: () => {
 					asked += 1;
-					return Effect.succeed({_tag: "Closed", reason: null} as const);
+					return Effect.succeed({_tag: "Read", claimants: [], adopts: [], holder: null} as const);
 				},
 			}),
 		);
@@ -294,36 +365,126 @@ describe("lane archive", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	it("refuses an UNKNOWN board read rather than moving over it", async () => {
+	it("refuses an UNKNOWN claim read rather than moving over it", async () => {
 		const fs = brokenLane();
 		const out = await run(
 			fs,
-			runArchive({...OPTIONS, closed: closes({_tag: "Unknown", reason: "rate limited"})}),
+			runArchive({
+				...OPTIONS,
+				claims: () => Effect.succeed({_tag: "Unknown", reason: "rate limited"} as const),
+			}),
 		);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(fs.written.size).toBe(0);
 	});
 
-	it("refuses a chore key, whose lane can never satisfy the closed-issue gate", async () => {
+	it("archives a chore key, which names no issue and so carries no claim thread", async () => {
 		const fs = brokenLane();
-		const out = await run(fs, runArchive({...OPTIONS, issue: {_tag: "Chore"}}));
+		let asked = 0;
+		const out = await run(
+			fs,
+			runArchive({
+				...OPTIONS,
+				issue: null,
+				claims: () => {
+					asked += 1;
+					return Effect.succeed({_tag: "Read", claimants: [], adopts: [], holder: null} as const);
+				},
+			}),
+		);
 
-		expect(out.code).toBe(ISSUE_UNRESOLVED);
-		expect(out.stderr.join("\n")).toContain("is a chore lane");
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({issue: null, retracted: []});
+		expect(asked).toBe(0);
+	});
+
+	it("retracts every marker carrying the holder's token, and the adopt that authorized it", async () => {
+		const fs = brokenLane();
+		const {deleted, retract} = recorder();
+		const claims: ClaimsReader<never> = () =>
+			Effect.succeed({
+				_tag: "Read" as const,
+				claimants: [
+					claimant(11, TOKEN),
+					claimant(12, TOKEN),
+					claimant(13, "lane:session-b:nonce-b"),
+				],
+				adopts: [
+					{
+						commentId: 14,
+						author: "usirin",
+						createdAt: "2026-09-10T00:00:00.000Z",
+						adopted: "session-a",
+						token: TOKEN,
+						reason: "seat gone",
+						authorized: true,
+					},
+					{
+						commentId: 15,
+						author: "usirin",
+						createdAt: "2026-09-10T00:00:00.000Z",
+						adopted: "session-z",
+						token: "lane:session-z:nonce-z",
+						reason: "another lane",
+						authorized: true,
+					},
+				],
+				holder: claimant(11, TOKEN),
+			});
+		const out = await run(fs, runArchive({...OPTIONS, claims, retract, token: TOKEN}));
+
+		expect(out.code).toBe(0);
+		// A sibling driver's marker (13) and another session's adopt (15) are untouched.
+		expect(deleted).toEqual([11, 12, 14]);
+		expect(JSON.parse(out.stdout).retracted).toEqual([11, 12, 14]);
+	});
+
+	it("refuses a live claim this caller did not name, leaving the directory and the marker", async () => {
+		const fs = brokenLane();
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...OPTIONS, claims: holds(claimant(11, TOKEN)), retract, token: null}),
+		);
+
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("fabrika lane adopt 6037 --session session-a");
+		expect(out.stderr.join("\n")).toContain("fabrika lane release 6037 --token");
+	});
+
+	it("refuses a retraction that failed, and never moves over the UNKNOWN it leaves", async () => {
+		const fs = brokenLane();
+		const {deleted, retract} = recorder(12);
+		const claims = holds(claimant(11, TOKEN), claimant(12, TOKEN));
+		const out = await run(fs, runArchive({...OPTIONS, claims, retract, token: TOKEN}));
+
+		expect(out.code).toBe(APPEND_UNKNOWN);
+		expect(deleted).toEqual([11]);
 		expect(fs.written.size).toBe(0);
 	});
 
-	// The two ways a key names no issue are different facts, and the refusal that used to call both
-	// "a chore lane" sent a quarantined directory's reader looking for a `chore:` prefix not there.
-	it("refuses an unnumbered issue-key on the directory name, never as a chore lane", async () => {
-		const fs = brokenLane();
-		const out = await run(fs, runArchive({...OPTIONS, issue: {_tag: "Unnumbered"}}));
+	it("retracts before it moves, so a failed move never strands a claim on a lane that is gone", async () => {
+		const fs = fakeFs({
+			files: {
+				[TEMPLATE]: coderTemplateText(),
+				[`${DIR}/workflow.json`]: coderTemplateText(),
+				[`${DIR}/events.jsonl`]: logText("PASS"),
+			},
+			dirs: {[ROOT]: ["6037"], [ARCHIVED]: []},
+			directories: [ROOT, ARCHIVED, DIR],
+			unrenamable: [DIR],
+		});
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...OPTIONS, claims: holds(claimant(11, TOKEN)), retract, token: TOKEN}),
+		);
 
-		expect(out.code).toBe(ISSUE_UNRESOLVED);
-		expect(out.stderr.join("\n")).toContain("carries no leading issue number");
-		expect(out.stderr.join("\n")).toContain("this is not a chore lane");
-		expect(fs.written.size).toBe(0);
+		expect(out.code).toBe(APPEND_UNKNOWN);
+		expect(deleted).toEqual([11]);
 	});
 
 	it("refuses a lane that is not there", async () => {

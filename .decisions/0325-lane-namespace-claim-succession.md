@@ -1,7 +1,7 @@
 ---
 id: 0325
 title: A killed operator seat's lane claim passes to its successor by a board-attested lane adopt
-status: accepted
+status: amended-in-part by [0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md)
 date: 2026-08-21
 tags: [fabrika, pipeline-hardening]
 ---
