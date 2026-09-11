@@ -3,6 +3,8 @@ import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import {fakeHttp, fakeShell, type HttpReply, linkNext, once} from "../fakes.test-support.ts";
 import {
+	COMPARE_FILE_CAP,
+	compareFiles,
 	getPullDiff,
 	getPullRequest,
 	listPullFiles,
@@ -256,6 +258,63 @@ describe("listPullFiles", () => {
 		const {layer} = wired([[/files/, served(200, [{sha: "abc"}])]]);
 		const result = await Effect.runPromise(Effect.provide(listPullFiles("o/r", 4318), layer));
 		expect(result._tag).toBe("Failure");
+	});
+});
+
+describe("compareFiles", () => {
+	const COMPARE = /compare\/aaa\.\.\.bbb$/;
+	const run = (reply: HttpReply) => {
+		const {http, layer} = wired([[/compare/, reply]]);
+		return Effect.runPromise(Effect.provide(compareFiles("o/r", "aaa", "bbb"), layer)).then(
+			(result) => ({result, http}),
+		);
+	};
+
+	it("asks the three-dot comparison and hands back its paths", async () => {
+		const {result, http} = await run(
+			served(200, {status: "ahead", files: [{filename: "a.ts"}, {filename: "b.md"}]}),
+		);
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: {files: ["a.ts", "b.md"], status: "ahead", capped: false},
+		});
+		expect(http.calls[0]).toMatch(COMPARE);
+	});
+
+	it("reads an identical comparison as a proven empty range, not as a missing list", async () => {
+		const {result} = await run(served(200, {status: "identical", total_commits: 0, files: []}));
+		expect(result).toEqual({_tag: "Ok", value: {files: [], status: "identical", capped: false}});
+	});
+
+	it("flags the platform's own ceiling rather than answering over unknown scope", async () => {
+		const files = Array.from({length: COMPARE_FILE_CAP}, (_, at) => ({filename: `f${at}.ts`}));
+		const {result} = await run(served(200, {status: "ahead", files}));
+		expect(result._tag === "Ok" && result.value.capped).toBe(true);
+	});
+
+	it("refuses a 200 carrying no file list — an absent list is not an empty range", async () => {
+		const {result} = await run(served(200, {status: "ahead", total_commits: 3}));
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses an entry that is not a changed file rather than shortening the range", async () => {
+		const {result} = await run(served(200, {files: [{sha: "abc"}]}));
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("carries the platform's own status, so a caller can tell a branch range from a merge-base one", async () => {
+		const {result} = await run(served(200, {status: "diverged", files: [{filename: "a.ts"}]}));
+		expect(result._tag === "Ok" && result.value.status).toBe("diverged");
+	});
+
+	it("refuses a 200 declaring no status — which range the files describe is then unknown", async () => {
+		const {result} = await run(served(200, {files: [{filename: "a.ts"}]}));
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses a comparison GitHub did not serve, naming its own message", async () => {
+		const {result} = await run(served(404, {message: "Not Found"}));
+		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404: Not Found"});
 	});
 });
 
