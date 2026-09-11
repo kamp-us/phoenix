@@ -38,10 +38,11 @@ type Link = {
 	readonly number: number;
 	readonly state: "open" | "closed";
 	readonly stateReason: null | string;
+	readonly classes: ReadonlyArray<string>;
 };
 
 const open = (...numbers: ReadonlyArray<number>): ReadonlyArray<Link> =>
-	numbers.map((number) => ({number, state: "open" as const, stateReason: null}));
+	numbers.map((number) => ({number, state: "open" as const, stateReason: null, classes: []}));
 
 const machineText = (body: string, links: ReadonlyArray<Link>): string => {
 	const emitted = emitMachine(EPIC, body, links);
@@ -179,8 +180,8 @@ describe("lane amend", () => {
 		// `landed` — a final holding no `WIP` cell, which the recorded log can no longer reach.
 		const {out, fs} = await run(
 			board(BOOTED, [
-				{number: 4301, state: "open", stateReason: null},
-				{number: 4302, state: "closed", stateReason: "completed"},
+				{number: 4301, state: "open", stateReason: null, classes: []},
+				{number: 4302, state: "closed", stateReason: "completed", classes: []},
 			]),
 			log,
 		);

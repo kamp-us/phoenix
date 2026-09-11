@@ -28,7 +28,6 @@ import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
-import {claimTarget} from "./claim.ts";
 import {claimHoldReader} from "./claim-hold.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {runClear} from "./clear-verb.ts";
@@ -40,7 +39,15 @@ import {expectationReader} from "./expectation.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal, resolveRootOrRefuse} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
-import {archivedRoot, defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
+import {
+	archivedRoot,
+	defaultRoot,
+	keyIssue,
+	type LaneKey,
+	laneRef,
+	parseKey,
+	templateFile,
+} from "./key.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
@@ -67,7 +74,7 @@ import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
-		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane",
+		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane. A directory name carrying a dot-separated suffix after the number (`8012.frozen-deadlock-<stamp>`) still names issue 8012, so a quarantined lane is addressable by every verb here",
 	),
 );
 
@@ -484,7 +491,7 @@ const open = leafCommand(
 				runOpen({
 					...ref,
 					templatePath: templatePath(key._tag),
-					issue: key._tag === "Issue" ? Number(key.lane) : null,
+					issue: keyIssue(key),
 					expectation: expectationReader(Option.getOrNull(repo), process.env),
 					priorLane: priorLaneReader(Option.getOrNull(repo), process.env),
 					cap,
@@ -1131,7 +1138,6 @@ const archive = leafCommand(
 			destination = Option.getOrElse(archived, () => path.join(ground.repoRoot, archivedRoot()));
 		}
 		const ref = laneRef(parsed.key, source);
-		const target = claimTarget(parsed.key);
 		const seams = boardClaimSeams(Option.getOrNull(repo), process.env);
 		yield* emit(
 			yield* onGround("archive", [ref.root, destination], process.cwd(), () =>
@@ -1141,7 +1147,7 @@ const archive = leafCommand(
 					// A relocated root holds whatever was opened into it, so both templates are
 					// candidates and the lane's own machine id picks — never the root's position.
 					templatePaths: [templatePath("Issue"), templatePath("Chore")],
-					issue: target._tag === "Number" ? target.number : null,
+					issue: keyIssue(parsed.key),
 					token: Option.getOrNull(token),
 					claims: seams.claims,
 					retract: seams.retract,
@@ -1190,7 +1196,7 @@ const settle = leafCommand(
 			yield* onKey("settle", lane, root, (key, ref) =>
 				runSettle({
 					...ref,
-					issue: key._tag === "Issue" ? Number(key.lane) : null,
+					issue: keyIssue(key),
 					task: Option.getOrNull(task),
 					token: Option.getOrNull(token),
 					landedBy: Option.getOrNull(landedBy),

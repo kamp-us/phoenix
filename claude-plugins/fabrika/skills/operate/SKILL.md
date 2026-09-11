@@ -1015,9 +1015,10 @@ ride the event line the way `--cause` does. So a lane whose work is a rendered s
 `PASS` out of `review` routes to `review:ui` without you naming it again. **Relay it, never derive
 it**: the class is the lane's own fact, not your reading of the diff. At `WIP` there is
 no head to scope and no `ui` label to read, so the class you relay is the one the machine already
-carries — `lane status` prints the task's `classes` when any stand, seeded from the lane document
-the plan wrote and carried forward by every event since. No `classes` key means unclassed: record
-the bare `WIP`. Once
+carries — `lane status` prints the task's `classes` when any stand, seeded into the lane document by
+the boot verb off the issue's `class:<name>` label (`triage apply --class` is what stamps it) and
+carried forward by every event since. No `classes` key means unclassed: record the bare `WIP`, which
+is now the honest answer for an unclassed ticket rather than the answer every ticket got. Once
 a head exists, `ship scope` / `review scope` name the classes it raises — one derivation, printed by
 both, so they cannot disagree — and those are what you relay from then on. A spelling
 outside the closed set is refused at exit `38`, never routed.

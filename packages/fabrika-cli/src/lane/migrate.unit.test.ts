@@ -263,8 +263,8 @@ describe("lane migrate", () => {
 		const epics: ExpectationReader<never> = (issue) =>
 			Effect.succeed(
 				issue === 42
-					? {_tag: "Read", expectation: {_tag: "Epic", children: 4}}
-					: {_tag: "Read", expectation: {_tag: "Single"}},
+					? {_tag: "Read", expectation: {_tag: "Epic", children: 4}, classes: []}
+					: {_tag: "Read", expectation: {_tag: "Single"}, classes: []},
 			);
 
 		const {outcome, written} = await sweep(
@@ -286,8 +286,8 @@ describe("lane migrate", () => {
 		(issue) =>
 			Effect.succeed(
 				issue === 42
-					? {_tag: "Read", expectation: {_tag: "Child", parent}}
-					: {_tag: "Read", expectation: {_tag: "Single"}},
+					? {_tag: "Read", expectation: {_tag: "Child", parent}, classes: []}
+					: {_tag: "Read", expectation: {_tag: "Single"}, classes: []},
 			);
 
 	it("names a lane booted over an epic's child a duplicate without moving the exit code", async () => {
@@ -351,7 +351,7 @@ describe("lane migrate", () => {
 		const asked: number[] = [];
 		const expectations: ExpectationReader<never> = (issue) => {
 			asked.push(issue);
-			return Effect.succeed({_tag: "Read", expectation: {_tag: "Single"}});
+			return Effect.succeed({_tag: "Read", expectation: {_tag: "Single"}, classes: []});
 		};
 
 		const {outcome} = await sweep(

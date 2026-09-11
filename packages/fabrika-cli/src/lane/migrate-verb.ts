@@ -34,7 +34,7 @@ import {isRecord, parseJson} from "../io/json.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
-import {CHORE_PREFIX} from "./key.ts";
+import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {type Drift, graftContext, judgeMigration, sameMachine} from "./migrate.ts";
 import {judgeShape, originOf} from "./shape.ts";
@@ -119,14 +119,8 @@ const keyOf = (root: string, name: string): string =>
 	// repository, so a relocated or derived root still keys its chores correctly.
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
-/**
- * The issue this lane drives, or `null` when it drives none — a chore lane, or a directory whose name
- * is not a number and so names nothing on the board to judge against.
- */
-const issueOf = (root: string, name: string): number | null => {
-	if (root.endsWith(DEFAULT_CHORES_ROOT) || !/^\d+$/.test(name)) return null;
-	return Number(name);
-};
+/** The issue this lane drives, resolved through the one parse in `key.ts`; `null` when it drives none. */
+const issueOf = (root: string, name: string): number | null => rawKeyIssue(keyOf(root, name));
 
 const shapeOf = <R>(
 	issue: number,
