@@ -19,6 +19,7 @@
 import {
 	audienceLabel,
 	type BoardVocabulary,
+	classLabel,
 	type FacetName,
 	type ResolvedBoard,
 	triageStatuses,
@@ -26,6 +27,7 @@ import {
 } from "../config/board.ts";
 import {type FacetVocabulary, ownsLabel} from "../config/containment.ts";
 import {DEFAULT_STATUS_NAMES} from "../labels.ts";
+import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 
 /**
  * The two standing lanes, taking their values from the contract's `triage homes` table — the one
@@ -56,7 +58,16 @@ export const TYPES: ReadonlyArray<string> = [
 	"epic",
 ];
 
-export {audienceLabel, typeLabel};
+export {audienceLabel, classLabel, typeLabel};
+
+/**
+ * The `--class` vocabulary: the artifact classes a lane routes its shells off, as bare stems.
+ *
+ * Closed where {@link TYPES} is open, and read straight off `../review/classes.ts` rather than
+ * re-typed here. A class the diff partition cannot raise is a class `review scope` and `ship scope`
+ * would never agree with, so widening this set means widening that partition.
+ */
+export const CLASSES: ReadonlyArray<string> = SHIP_CLASS_NAMES;
 
 /**
  * The type whose deliverable is a ledger of children rather than one pull request — as a bare
@@ -134,6 +145,7 @@ export const FACET_VOCABULARY: ReadonlyArray<FacetVocabulary> = [
 		values: AUDIENCES.map(audienceLabel),
 	},
 	{name: "lane", owns: {_tag: "Set", labels: STANDING_LANES}, values: [...STANDING_LANES]},
+	{name: "class", owns: {_tag: "Pattern", source: "^class:"}, values: CLASSES.map(classLabel)},
 ];
 
 /**
@@ -152,7 +164,7 @@ export const DEFAULT_BOARD: ResolvedBoard = {
  * One facet's `owns` predicate off a resolved table.
  *
  * An absent name answers "owns nothing" rather than throwing: a facet with no delete authority
- * preserves labels instead of stripping them, and `../config/board.ts` is what fills all five seats
+ * preserves labels instead of stripping them, and `../config/board.ts` is what fills all six seats
  * on every composed table — a throw here would be a second, worse enforcement of that same rule.
  */
 const ownsIn = (
@@ -183,7 +195,7 @@ export const audienceKeep = (type: string, readyFor: string): ReadonlyArray<stri
  *
  * The containment invariant, stated where a future editor adding a facet will read it: **the set of
  * values an input can produce must be a subset of what its facet owns.** `PRIORITIES` ⊂ `/^p\d+$/`,
- * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself. Widening a pattern past
+ * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself, `CLASSES` ⊂ `class:*`. Widening a pattern past
  * its input — which is what v1 did — is what makes a correct value look superseded.
  * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
  * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.
@@ -194,6 +206,8 @@ export const triagedFacets = (
 		readonly priority: string;
 		readonly readyFor: string;
 		readonly lane: string | null;
+		/** The artifact classes this run stamps — empty is a triage that names none. */
+		readonly classes: ReadonlyArray<string>;
 	},
 	resolved: ResolvedBoard = DEFAULT_BOARD,
 ): ReadonlyArray<Facet> => [
@@ -214,12 +228,17 @@ export const triagedFacets = (
 		owns: ownsIn(resolved.facets, "lane"),
 		keep: input.lane === null ? [] : [input.lane],
 	},
+	{
+		name: "class",
+		owns: ownsIn(resolved.facets, "class"),
+		keep: input.classes.map(classLabel),
+	},
 ];
 
 /**
- * The facet table for a park: the same five facets, every keep set empty but the status.
+ * The facet table for a park: the same six facets, every keep set empty but the status.
  *
- * A parked issue carries no type, no priority, no audience, no lane and no home — and a re-park, or a
+ * A parked issue carries no type, no priority, no audience, no lane, no class and no home — and a re-park, or a
  * park after an earlier `apply`, arrives already priced. Asserting the end state over only the two
  * labels the verb wrote would certify an issue reading both `status:triaged` and `status:needs-info`,
  * which corrupts every queue read downstream.
@@ -234,16 +253,17 @@ export const parkedFacets = (resolved: ResolvedBoard = DEFAULT_BOARD): ReadonlyA
 	},
 	{name: "audience", owns: ownsIn(resolved.facets, "audience"), keep: []},
 	{name: "lane", owns: ownsIn(resolved.facets, "lane"), keep: []},
+	{name: "class", owns: ownsIn(resolved.facets, "class"), keep: []},
 ];
 
 /**
  * The facet table for a kill: the status facet alone, keeping nothing.
  *
  * **One facet, deliberately.** A killed issue keeps its classification as history — the type,
- * priority, audience and lane it was read under are what make a closed issue legible to whoever
- * finds it later — so this table names none of them, and `planReconcile` therefore counts every one
- * of their labels as `preserved` rather than owned. Inheriting `parkedFacets` here would strip all
- * five and leave a closed issue with no record of what it was.
+ * priority, audience, lane and class it was read under are what make a closed issue legible to
+ * whoever finds it later — so this table names none of them, and `planReconcile` therefore counts
+ * every one of their labels as `preserved` rather than owned. Inheriting `parkedFacets` here would
+ * strip all six and leave a closed issue with no record of what it was.
  *
  * What must go is the status: `status:needs-triage` on a closed issue makes every unfiltered count
  * over that label over-report the queue, and a kill after an earlier `apply` leaves `status:triaged`

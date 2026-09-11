@@ -78,6 +78,8 @@ export const pullPayload = (overrides: Record<string, unknown> = {}): Record<str
 	changed_files: 3,
 	comments: 0,
 	merged: false,
+	mergeable: true,
+	mergeable_state: "clean",
 	...overrides,
 });
 

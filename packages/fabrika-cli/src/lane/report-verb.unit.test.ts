@@ -7,6 +7,7 @@ import {answer, refuse} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
+	EVENT_REFUSED,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
 	PARK_UNCAUSED,
@@ -579,6 +580,54 @@ describe("lane report — a machinery terminal lands its own cause", () => {
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "assembly-conflict"});
+	});
+
+	// A conflicted base is the one machinery cause at `ship` whose round is a builder's: the head owes
+	// a rebase, and the re-review that comes with it. Every other lap out of `ship` still
+	// re-dispatches the shipper, which is what the `lap:<cause>` arm buys over one flat target.
+	it("routes a BASE-CONFLICTED lap to build and leaves BASE-DRIFTED where it lands today", async () => {
+		const conflicted = laneAt(LOG_AT.ship);
+		const drifted = laneAt(LOG_AT.ship);
+
+		const toBuild = await run(conflicted, "BASE-CONFLICTED");
+		const toShip = await run(drifted, "BASE-DRIFTED");
+
+		expect(toBuild.code).toBe(0);
+		expect(JSON.parse(toBuild.stdout)).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "base-conflicted",
+			current: {pipeline: {issue: "build"}},
+		});
+		expect(toShip.code).toBe(0);
+		expect(JSON.parse(toShip.stdout)).toMatchObject({
+			cause: "head-behind-base",
+			current: {pipeline: {issue: "ship"}},
+		});
+	});
+
+	// The lane's `workflow.json` is copied in at `lane open`, so a lane opened before the route
+	// existed holds a `ship` lap cell that would swallow this cause and loop the shipper. Refusing it
+	// with the log untouched is what leaves the shipper its `ROUTED-REPAIR` fallback.
+	it("refuses BASE-CONFLICTED at 12 on a lane whose machine predates the route", async () => {
+		interface Region {
+			readonly states: Record<string, Region & {on?: Record<string, unknown>}>;
+		}
+		const stale = JSON.parse(coderTemplateText()) as {machine: Region};
+		const shipCell = stale.machine.states.pipeline?.states.issue?.states.ship?.on;
+		if (shipCell === undefined) throw new Error("the coder template holds no ship cell");
+		// Drop the leading `lap:base-conflicted` route, leaving the plain budget pair every lane
+		// carried before it.
+		shipCell["ISSUE.LAP"] = (shipCell["ISSUE.LAP"] as ReadonlyArray<unknown>).slice(1);
+		const fs = fakeFs({
+			files: {[WORKFLOW]: JSON.stringify(stale), [LOG]: LOG_AT.ship},
+		});
+
+		const out = await run(fs, "BASE-CONFLICTED");
+
+		expect(out.code).toBe(EVENT_REFUSED);
+		expect(out.stderr.join("\n")).toContain("log unappended");
+		expect(out.stderr.join("\n")).toContain('no arm for cause "base-conflicted"');
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("tells an integrate-sourced failure from a review-sourced one on the recorded line", async () => {

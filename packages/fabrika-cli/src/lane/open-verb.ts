@@ -1,5 +1,10 @@
 /**
- * `lane open` — boot one single-issue lane from the committed coder template, byte-identically.
+ * `lane open` — boot one single-issue lane from the committed coder template.
+ *
+ * **Byte-identical when no class stands, and seeded when one does.** The names ride the expectation
+ * read's own payload ([`expectation.ts`](expectation.ts)), and [`class-seed.ts`](class-seed.ts)
+ * writes them into the bytes placed and carries the why. An off-set spelling refuses on
+ * {@link CLASS_UNRECOGNISED} before placement.
  *
  * The boot an operator used to do by hand as `mkdir -p && cp`, as a verb
  * that refuses instead of overwriting: an existing lane dir is a loud {@link LANE_EXISTS}, because
@@ -49,7 +54,15 @@ import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {type ChildMembership, childMembership} from "./child-membership.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
-import {LANE_EXISTS, LANE_IS_CHILD, LANE_UNREADABLE, PRIOR_LANE, SHAPE_MISMATCH} from "./codes.ts";
+import {renderClasses, seedClasses} from "./class-seed.ts";
+import {
+	CLASS_UNRECOGNISED,
+	LANE_EXISTS,
+	LANE_IS_CHILD,
+	LANE_UNREADABLE,
+	PRIOR_LANE,
+	SHAPE_MISMATCH,
+} from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
@@ -120,6 +133,7 @@ export const runOpen = <R = never>(
 			);
 		}
 		const {issue, expectation} = options;
+		let classes: ReadonlyArray<string> = [];
 		if (issue !== null && expectation !== null) {
 			const read = yield* expectation(issue);
 			if (read._tag === "Unknown") {
@@ -141,6 +155,22 @@ export const runOpen = <R = never>(
 				const membership = yield* childMembership(options.root, read.expectation.parent, issue);
 				return refuse(LANE_IS_CHILD, childRefusal(issue, membership));
 			}
+			classes = read.classes;
+		}
+		// Before placement, so a bad seed never lands: a document carrying an off-set spelling compiles
+		// `Malformed`, which refuses every later fold of the lane rather than this one boot.
+		const seed = seedClasses(template.success, classes);
+		if (seed._tag === "OffSet") {
+			return refuse(
+				CLASS_UNRECOGNISED,
+				`${VERB}: #${issue} carries ${renderClasses(seed.names)}, which no \`class:<name>\` arm matches — a lane seeded with it routes as unclassed, so the rendered-visual shells it asked for are never dispatched. Respell the label, then boot. Nothing was written.`,
+			);
+		}
+		if (seed._tag === "Unseedable") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot seed ${renderClasses(classes)} into ${options.templatePath}: ${seed.reason} — nothing was booted.`,
+			);
 		}
 		if (issue !== null && options.priorLane !== null) {
 			// Only over an absent directory: a lane already there is the resume `lane open`'s own
@@ -169,7 +199,7 @@ export const runOpen = <R = never>(
 			const capped = yield* capRefusal(VERB, options.cap, options.root, options.claimed);
 			if (capped !== null) return capped;
 		}
-		const placed = yield* placeMachine(options, template.success);
+		const placed = yield* placeMachine(options, seed.text);
 		if (placed._tag === "Exists") {
 			return refuse(
 				LANE_EXISTS,
@@ -182,8 +212,13 @@ export const runOpen = <R = never>(
 				answer: "opened",
 				lane: options.lane,
 				workflow: placed.workflow,
-				bytes: new TextEncoder().encode(template.success).length,
+				classes: seed._tag === "Seeded" ? seed.classes : [],
+				bytes: new TextEncoder().encode(seed.text).length,
 			}),
-			[`${VERB}: booted ${placed.dir} from ${options.templatePath}.`],
+			[
+				seed._tag === "Seeded"
+					? `${VERB}: booted ${placed.dir} from ${options.templatePath}, seeded ${renderClasses(seed.classes)}.`
+					: `${VERB}: booted ${placed.dir} from ${options.templatePath}.`,
+			],
 		);
 	});

@@ -81,9 +81,10 @@ describe("the closed park-cause set --cause advertises", () => {
 		expect(flagHelp(leafNamed("transition"))).toContain(token);
 	});
 
-	it("offers the two spent-budget parks, the machinery ejection, the red head and the rendered gate's three beside the six that predate them", () => {
+	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head and the rendered gate's three beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"assembly-conflict",
+			"base-conflicted",
 			"campaign-paused",
 			"head-behind-base",
 			"head-ci-red",

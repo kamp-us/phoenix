@@ -296,24 +296,37 @@ export const worktreeDirtyPaths = (path: string): Shell<Attempt<number>> =>
 	});
 
 /**
- * How many commits `branch` carries that `base` does not — `0` is a branch that added nothing.
+ * How many commits the worktree at `path` reaches that no ref of this clone does — `0` is a tree
+ * whose every commit stays addressable after the checkout goes.
  *
- * It asks *this* tree, not the one holding the branch: refs are shared across every worktree of a
- * clone, so the branch tip and the base are the same objects from anywhere in it, and a reader that
- * needed the other directory would answer UNKNOWN exactly when that directory is the problem.
+ * It asks that directory, because HEAD is the one ref a worktree owns privately: counted from
+ * anywhere else it would answer about the reader's own checkout. Everything a removal leaves behind
+ * is the exclusion set — every branch, remote-tracking ref and tag — so a commit sitting on the
+ * tree's own lane branch is not counted: `git worktree remove` takes the checkout and never the
+ * branch.
  *
- * A stale local `base` can only inflate the count, which errs toward "this branch carries work" —
- * the direction a caller deciding whether a tree is disposable wants to be wrong in. Nothing here
- * fetches: a cleanup verb that reached the network would fail on the offline path it exists for.
+ * A ref this clone has not fetched can only inflate the count, which errs toward "this tree carries
+ * work" — the direction a caller deciding whether a tree is disposable wants to be wrong in. Nothing
+ * here fetches: a cleanup verb that reached the network would fail on the offline path it exists for.
  */
-export const commitsPastBase = (branch: string, base: string): Shell<Attempt<number>> =>
+export const commitsNoRefReaches = (path: string): Shell<Attempt<number>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["rev-list", "--count", `${base}..${branch}`]);
+		const r = yield* execCapture("git", [
+			"-C",
+			path,
+			"rev-list",
+			"--count",
+			"HEAD",
+			"--not",
+			"--branches",
+			"--remotes",
+			"--tags",
+		]);
 		if (!r.ok) return fail(r.reason);
 		const count = Number.parseInt(r.stdout.trim(), 10);
 		return Number.isInteger(count) && count >= 0
 			? ok(count)
-			: fail(`git counted no commits between ${base} and ${branch}: "${r.stdout.trim()}"`);
+			: fail(`git counted no commits for ${path}'s HEAD: "${r.stdout.trim()}"`);
 	});
 
 /**

@@ -32,12 +32,12 @@ const shell = (overrides: Script = []) =>
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[
-			/^git ls-tree --name-only \w+ -- \.patterns\/worker-queue-retry\.md$/,
+			/^git ls-tree --full-tree --name-only \w+ -- \.patterns\/worker-queue-retry\.md$/,
 			okOut(".patterns/worker-queue-retry.md\n"),
 		],
-		[/^git ls-tree --name-only \w+:$/, okOut(TOP_LEVEL)],
+		[/^git ls-tree --full-tree --name-only \w+:$/, okOut(TOP_LEVEL)],
 		[
-			/^git ls-tree --name-only \w+ --/,
+			/^git ls-tree --full-tree --name-only \w+ --/,
 			okOut("packages/fabrika-cli/src/bin.ts\nservices/api/router.ts\n"),
 		],
 		[/^git show \w+:/, okOut(DOC)],
@@ -78,8 +78,11 @@ describe("runDrift", () => {
 	// one by resolution alone.
 	it("names every unresolved candidate on stderr rather than reporting it as drift", async () => {
 		const out = await run([
-			[/^git ls-tree --name-only \w+ -- packages/, okOut("")],
-			[/^git ls-tree --name-only \w+ -- \.patterns/, okOut(".patterns/worker-queue-retry.md\n")],
+			[/^git ls-tree --full-tree --name-only \w+ -- packages/, okOut("")],
+			[
+				/^git ls-tree --full-tree --name-only \w+ -- \.patterns/,
+				okOut(".patterns/worker-queue-retry.md\n"),
+			],
 		]);
 		expect(out.stdout.split("\t")[1]).toBe("unanchored");
 		expect(out.stderr.join("\n")).toContain("never treated as findings");
@@ -97,7 +100,7 @@ describe("runDrift", () => {
 			[
 				[/^git show \w+:/, okOut(UNANCHORED_DOC)],
 				[
-					/^git ls-tree --name-only \w+ -- \S/,
+					/^git ls-tree --full-tree --name-only \w+ -- \S/,
 					okOut(`${FIXTURES}/unanchored-doc/worker-queue-retry.md\n`),
 				],
 			],
@@ -112,7 +115,7 @@ describe("runDrift", () => {
 			[
 				[/^git show \w+:/, okOut(UNANCHORED_DOC)],
 				[
-					/^git ls-tree --name-only \w+ -- \S/,
+					/^git ls-tree --full-tree --name-only \w+ -- \S/,
 					okOut(`${FIXTURES}/unanchored-doc/worker-queue-retry.md\n`),
 				],
 			],
@@ -125,7 +128,9 @@ describe("runDrift", () => {
 
 	// The contract's third worked example.
 	it("refuses a slug with no doc in the working tree and none at the base", async () => {
-		const out = await run([[/^git ls-tree --name-only \w+ --/, okOut("")]], {slug: "no-such-doc"});
+		const out = await run([[/^git ls-tree --full-tree --name-only \w+ --/, okOut("")]], {
+			slug: "no-such-doc",
+		});
 		expect(out.code).toBe(DOC_ABSENT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
@@ -137,7 +142,7 @@ describe("runDrift", () => {
 	// same token on the same tree state, because the skill runs the two back to back.
 	it("answers `unborn` for a doc present in the working tree and absent at the base", async () => {
 		const out = await run(
-			[[/^git ls-tree --name-only \w+ --/, okOut("")]],
+			[[/^git ls-tree --full-tree --name-only \w+ --/, okOut("")]],
 			{},
 			{
 				".patterns/worker-queue-retry.md": "# New\n",
