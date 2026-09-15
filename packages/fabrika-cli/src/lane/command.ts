@@ -64,6 +64,7 @@ import {priorLaneReader} from "./prior-lane.ts";
 import {proveDispatched, runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
+import {runRecover} from "./recover-verb.ts";
 import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
@@ -1398,6 +1399,57 @@ const reconcile = leafCommand(
 	),
 );
 
+const recover = leafCommand(
+	"recover",
+	{
+		root: rootFlag,
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("judge every lane and report what would be appended, appending nothing"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the proof reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({root, check, repo}) {
+		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
+		let roots: ReadonlyArray<string>;
+		if (Option.isSome(root)) {
+			roots = [root.value];
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane recover", ground));
+				return;
+			}
+			roots = [
+				`${ground.repoRoot}/${DEFAULT_LANES_ROOT}`,
+				`${ground.repoRoot}/${DEFAULT_CHORES_ROOT}`,
+			];
+		}
+		yield* emit(
+			yield* onGround("recover", roots, process.cwd(), () =>
+				runRecover({
+					roots,
+					check,
+					prove: runProve,
+					parkCause,
+					repo: Option.getOrNull(repo),
+					cwd: process.cwd(),
+					env: process.env,
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Which lanes their own artifact already proves an event for."),
+	Command.withDescription(
+		'Sweep every lane on disk and record the event its own artifact already proves but its ledger never learned. A shell posts its SHA-bound verdict on the artifact and then records the event; killed between the two, it leaves the verdict standing and the ledger silent, and the lane sits non-terminal until a driver happens to run `lane prove` by hand — one lane sat in review for 448 minutes carrying a proven PASS on its PR. Each non-terminal lane\'s active tasks are read off the fold, and a task standing in a leaf that OWES a provable event is asked about: DONE out of build, PASS out of review, PASS out of review:ui — exactly the arms `lane prove`\'s claim table answers with a positive claim. Everything else is left alone, the BLOCKED a reviewer\'s park claims included: that claim is negative ("the run reached no verdict"), proven by the absence of a contradiction rather than by an artifact anyone posted, so an unattended sweep standing on it would park every lane whose reviewer is still running. It introduces NO proof path and NO second way onto a log: the bar is `lane prove`\'s read, unchanged, and the append is `lane transition`\'s whole path — the same machine validation, the same proof gate and the same ledger lock — so what moves is only who runs them. It records on the literal `proven` and on nothing else; `not-required`, `uncontradicted` and every refusal code leave the lane byte-identical and land as their own row, so an unreadable board is a row to re-run rather than a lane moved on a read nobody made. Budget a recoverable lane at TWO board reads — this sweep asks what the proof says, and `lane transition` asks again under its own gate before appending, which is that gate declining to take this sweep\'s word for it — and every other judged task at one. --check pays the first read alone and appends nothing. Each row carries one verdict: "recovered" (proven and appended, with the from/to stateValue the append moved the lane between), "recoverable" (proven, --check withheld the append), "unproven" (the proof did not answer proven — the row carries its `proof` label and `proofCode`, so a not-required is told from an unreadable board without re-reading anything), "refused" (the artifact proves the event and the append path refused it — this lane\'s own machine, or its config), "current" (the lane is non-terminal and no active task stands in a leaf that owes a provable event), "terminal" (the fold is done, so nothing is owed and no board read is spent), "unreadable" (the lane record or its log could not be read, or the log does not replay — a row, since nothing here caused it and nothing here can fix it) or "unappended" (this run tried to append and could not). stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault. Exits 8 (at least one append this run tried did not land, so whether that lane is still missing its event is UNKNOWN — those lanes are named on stderr and so are the ones that were recovered), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never empty), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane recover --check · fabrika lane recover',
+	),
+);
+
 const view = leafCommand(
 	"view",
 	{
@@ -1470,6 +1522,7 @@ export const laneCommand = Command.make("lane").pipe(
 		seats,
 		migrate,
 		reconcile,
+		recover,
 		archive,
 		settle,
 		claim,

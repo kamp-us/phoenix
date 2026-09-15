@@ -1610,6 +1610,38 @@ out on stderr: `lane adopt`, then `lane release` under the token it prints, then
 lane-claim passage). Read the exit code and follow it; never hand-compose a `--token` release off a
 comment body.
 
+**A stale row is not always a lane to re-spawn — read whether its artifact already carries the
+answer first.** A shell posts its SHA-bound verdict and then records the event, so one killed
+between the two leaves the verdict on the PR and the ledger three events short. Re-spawning that
+reviewer pays a second full review for a verdict already posted. One sweep says which lanes are in
+that state:
+
+```bash
+node <fabrika> lane recover --check
+```
+
+Every `recoverable` row names the task, the event, and the `from` → `to` the append would move the
+lane between. Dropping `--check` records them:
+
+```bash
+node <fabrika> lane recover
+```
+
+**It records on a proven artifact and on nothing else.** The bar is `lane prove`'s own read and the
+append is `lane transition`'s whole path, so nothing here is a judgement of yours and nothing here
+is a new way onto a ledger. It asks only about the events that claim a readable artifact — a `DONE`
+out of `build`, a `PASS` out of either review cell — and every other answer is a row that changed
+nothing: `unproven` (which carries `not-required` and every refusal code alike, told apart by the
+row's own `proof` and `proofCode`), `refused`, `current`, `terminal`, `unreadable`. **A reviewer's
+`BLOCKED` is not in this sweep**, and deliberately: that park claims the run reached *no* verdict,
+which is proven by nothing being there to contradict it, so a sweep recording it would park every
+lane whose reviewer is still working. A park stays a thing you or a human decide.
+
+Run it before you act on a `stale` list, and treat the two as one pass: `lane recover` clears the
+lanes whose answer is already on the board, and what is still stale after it is the list to
+re-spawn. A row at `unappended` and an exit `8` mean whether that lane is still missing its event is
+UNKNOWN — name it and re-run, never read it as swept.
+
 ## Terminal vocabulary
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:

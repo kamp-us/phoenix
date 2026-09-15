@@ -7,7 +7,7 @@ import type {DriverRouted, ParkCauseSurface, Uncaused} from "../config/keys/park
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
-import type {ProveOptions} from "./prove-verb.ts";
+import {type ProveOptions, proofLabelOf} from "./prove-verb.ts";
 
 /**
  * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
@@ -31,7 +31,17 @@ export const fakeProver = (
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return {...outcome, deferred, partial, landed, diagnosis, routed};
+				// The label is read off the outcome by the prover's own reader, so a fixture cannot
+				// answer a label its stdout does not carry.
+				return {
+					...outcome,
+					deferred,
+					partial,
+					landed,
+					diagnosis,
+					routed,
+					proof: proofLabelOf(outcome),
+				};
 			}),
 	};
 };
@@ -61,6 +71,7 @@ export const fakeProverByEvent = (
 					landed: facts.landed ?? [],
 					diagnosis: facts.diagnosis ?? false,
 					routed: facts.routed ?? [],
+					proof: proofLabelOf(facts.outcome),
 				};
 			}),
 	};

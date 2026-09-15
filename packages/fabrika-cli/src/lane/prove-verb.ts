@@ -26,12 +26,19 @@
  * Both verdict arms answer with the namespaces they subtracted from this cell's bar
  * ({@link ProofOutcome}), because the caller records that on the event line: which cell still owes
  * the rendered verdict is not re-derivable from a bare `PASS`.
+ *
+ * The outcome also names which of the three answers it gave ({@link ProofLabel}), because an exit of
+ * `0` here is two different facts: `proven` is the artifact saying so, and `not-required` is nothing
+ * having been claimed. A caller that may act only on the first — `lane recover`, which records the
+ * event a killed shell owed — would otherwise have to re-parse this verb's own stdout to tell them
+ * apart, so the label is derived here, once, in the module that writes those bytes.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
@@ -40,7 +47,7 @@ import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
 import {classify} from "../ship/codeowners.ts";
 import {ROUTABLE} from "../ship/gate-verb.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -171,7 +178,41 @@ export interface ProofOutcome extends VerbOutcome {
 	 * no-PR arm alone, so nothing a spawn reports can route a lane past its review.
 	 */
 	readonly diagnosis: boolean;
+	/**
+	 * Which of the three answers this verb gave, as a value rather than as bytes a caller re-parses —
+	 * `null` on every refusal, where the code is the answer and stdout is empty by construction.
+	 *
+	 * An exit of `0` is two different facts here and a caller acting on the proof has to tell them
+	 * apart: `proven` says the artifact says so, `not-required` says nothing was claimed and the
+	 * event may simply be recorded, and `uncontradicted` says a negative claim met no contradiction.
+	 * `lane recover` records only on the first, so collapsing them would have it append a `DONE` out
+	 * of a cell that asserts nothing. The label is derived here, in the module that writes that
+	 * stdout, so no other module has to know the shape of this verb's answer.
+	 */
+	readonly proof: ProofLabel | null;
 }
+
+/** The three shapes this verb's stdout takes at exit 0. */
+export type ProofLabel = "proven" | "not-required" | "uncontradicted";
+
+const LABELS: ReadonlyArray<ProofLabel> = ["proven", "not-required", "uncontradicted"];
+
+/**
+ * The label off this verb's own answer.
+ *
+ * `null` on a refusal and on any answer whose shape this reader does not recognise — never a guess.
+ * A caller that may only act on `proven` then reads an unrecognised answer as "not that", which is
+ * the conservative arm: the worst an unreadable label costs is a lane left where it was.
+ */
+export const proofLabelOf = (outcome: VerbOutcome): ProofLabel | null => {
+	if (outcome.code !== ANSWER) return null;
+	const parsed = parseJson(outcome.stdout);
+	if (!isRecord(parsed)) return null;
+	const raw = parsed.proof;
+	return typeof raw === "string" && (LABELS as ReadonlyArray<string>).includes(raw)
+		? (raw as ProofLabel)
+		: null;
+};
 
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
 type ProofAnswer = VerbOutcome & {
@@ -206,6 +247,7 @@ export const runProve = (
 		partial: outcome.partial ?? null,
 		landed: outcome.landed ?? [],
 		diagnosis: outcome.diagnosis ?? false,
+		proof: proofLabelOf(outcome),
 	}));
 
 /**
