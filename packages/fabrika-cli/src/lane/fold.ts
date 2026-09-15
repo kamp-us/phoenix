@@ -869,6 +869,15 @@ export type ApplyResult =
 			readonly entry: LogEntry;
 			readonly previous: LaneStatus;
 			readonly current: LaneStatus;
+			/**
+			 * The task states this event lands on — the record {@link current} was derived from.
+			 *
+			 * Carried out so a caller applying a second event to the same lane can stand on the states
+			 * this one produced rather than on the pre-event ones. Without it the only way back to them
+			 * is replaying the whole log, and the caller that skips that replay silently previews every
+			 * later region out of a state an earlier event already left.
+			 */
+			readonly states: Readonly<Record<string, TaskState>>;
 	  }
 	| {
 			readonly _tag: "Refused";
@@ -1023,8 +1032,9 @@ export const applyEvent = (
 		...(partial === null ? {} : {partial}),
 		...(diagnosis === null ? {} : {diagnosis}),
 	};
-	const current = deriveStatus(lane, {...states, [taskId]: next});
-	return {_tag: "Applied", entry, previous, current};
+	const applied = {...states, [taskId]: next};
+	const current = deriveStatus(lane, applied);
+	return {_tag: "Applied", entry, previous, current, states: applied};
 };
 
 export type SettlementResult =

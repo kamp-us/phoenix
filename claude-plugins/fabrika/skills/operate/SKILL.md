@@ -1623,6 +1623,51 @@ out on stderr: `lane adopt`, then `lane release` under the token it prints, then
 lane-claim passage). Read the exit code and follow it; never hand-compose a `--token` release off a
 comment body.
 
+**A stale row is not always a lane to re-spawn — read whether its artifact already carries the
+answer first.** A shell posts its SHA-bound verdict and then records the event, so one killed
+between the two leaves the verdict on the PR and the ledger three events short. Re-spawning that
+reviewer pays a second full review for a verdict already posted. One sweep says which lanes are in
+that state:
+
+```bash
+node <fabrika> lane recover --check
+```
+
+Every `recoverable` row names the task, the event, and the `from` → `to` the append would move the
+lane between. Dropping `--check` records them:
+
+```bash
+node <fabrika> lane recover
+```
+
+A `recovered` row's `to` is the append's own answer rather than that prediction, so it is the state
+the lane is in even when another writer landed while the sweep was reading. Read it as the lane's
+current fold; the `--check` row above is a prediction and stays one.
+
+**It records on a proven artifact and on nothing else.** The bar is `lane prove`'s own read and the
+append is `lane transition`'s whole path, so nothing here is a judgement of yours and nothing here
+is a new way onto a ledger. It asks about one event — a `PASS` out of either review cell — and every
+other answer is a row that changed nothing: `unproven` (which carries `not-required` and every
+refusal code alike, told apart by the row's own `proof` and `proofCode`), `refused`, `contended`,
+`current`, `terminal`, `unreadable`.
+
+**Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from
+folding a lane out from under one of your own spawns. A reviewer's `BLOCKED` claims the run reached
+*no* verdict, which is proven by nothing being there to contradict it, so recording it would park
+every lane whose reviewer is still working. A builder's `DONE` proves on one open PR linking the
+issue, which a builder in a repair round has for the whole round, so recording it would send the
+lane to `review` while that builder is still pushing. A park stays a thing you or a human decide,
+and so does calling a build finished: a lane in `build` is `stale`'s to report and a shell's to
+finish, never this sweep's to move.
+
+Run it before you act on a `stale` list, and treat the two as one pass: `lane recover` clears the
+lanes whose answer is already on the board, and what is still stale after it is the list to
+re-spawn. Two rows leave work behind. A row at `unappended` and an exit `8` mean whether that lane
+is still missing its event is UNKNOWN — name it and re-run, never read it as swept. A row at
+`contended` means another writer held that lane's ledger lock for the whole budget, so nothing was
+validated and the same event is still the right one: re-run the sweep once the holder clears, and
+never read it as a lane that was judged and left.
+
 ## Terminal vocabulary
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
