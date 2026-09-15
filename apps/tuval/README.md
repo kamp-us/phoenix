@@ -206,15 +206,16 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 con
 `@kampus/tuval` stays `"private": true` — whether it publishes to npm is a distribution
 commitment, and #8943 leaves it to the founder. What it now declares is an `exports` map, so a
 package that resolves this one through the workspace (or a `git:` checkout) has a specifier to
-write instead of a relative path into `src/`. Three doors, and they are the whole surface:
+write instead of a relative path into `src/`. Four doors, and they are the whole surface:
 
 | Subpath | What it carries |
 |---|---|
 | `@kampus/tuval/authoring` | `defineProgram`, `port`, `programArgs`, `Program`, the effect constructors (`spawn`, `send`, `ask`, `reply`, `emit`, `stop`), `testProgram`, and the types an authored `update` annotates itself with. `src/authoring/index.ts` says at length what is on it and what is deliberately not. |
 | `@kampus/tuval/ai-agent/ports` | The AI-agent port vocabulary — `PromptPayloadSchema`, `TurnResultSchema` and the rest of `src/ai-agent/ports/index.ts`. It stays its own door because its `boundary.unit.test.ts` holds it closed over `effect` plus the kernel's program row, and folding it into the authoring door would make one surface owe two stabilities. |
+| `@kampus/tuval/window` | The window half — `windowRenderer` and `WindowHost` for a `kind: module` window, and the `AuthoredWindow` / `WindowView` types the `window` field on an authored record is written against. Its own door because its closure is browser-safe and `./authoring`'s is not. |
 | `@kampus/tuval/sessions` | The shipped session rows a *config* fills a shaped arg with — `claudeSession`, `codexSession`, and the `WorkspaceId` / `ClientId` constructors a row's `scope` is built from. |
 
-A program written against those three looks like this — the same shape `src/authoring/example/pr-review.ts`
+A kernel-side program looks like this — the same shape `src/authoring/example/pr-review.ts`
 has in-tree, with the specifiers an outside consumer writes:
 
 ```ts
@@ -229,11 +230,19 @@ import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
 ```
 
 The kernel is not on any of them: the compilers (`compilePorts`, `compileCommands`, `fillArgs`,
-`FIELD_COMPILERS`, …) stay reachable only by relative path from inside `src/`. There is no window
-door yet — `src/authoring/view.ts` is the browser-side half and this package's kernel chain reaches
-`node:crypto`, which is #8946; that door opens when the chain it names is cut.
-`src/authoring/public-surface.unit.test.ts` is the proof: it reaches the API through the specifiers
-above and nothing else, writes a program, and fills its shaped arg with a shipped row.
+`FIELD_COMPILERS`, `compileWindow`, …) stay reachable only by relative path from inside `src/`.
+
+`./authoring` and `./window` are two doors rather than one because only one of them is
+browser-safe: the kernel-side barrel reaches `src/process/Processes.ts` and
+`src/commands/core/process.ts`, both `node:crypto` importers, while `./window`'s whole value-import
+closure is five modules and reaches no `node:` builtin and no package but `effect`.
+`src/authoring/window-closure.unit.test.ts` walks both at every run, so the day an import changes
+that, a test says so rather than a browser does. (#8946 is a different chain: a window module
+importing its *own program's* file, which reaches the kernel through `define-program.ts`. Nothing
+on `./window` makes that import safe.)
+
+`src/authoring/public-surface.unit.test.ts` is the other proof: it reaches the API through the
+specifiers above and nothing else, writes a program, and fills its shaped arg with a shipped row.
 
 ## Spells
 

@@ -100,6 +100,7 @@ describe("the exports map opens only doors that exist", () => {
 		};
 		expect(Object.keys(manifest.exports)).toEqual([
 			"./authoring",
+			"./window",
 			"./ai-agent/ports",
 			"./sessions",
 			"./package.json",

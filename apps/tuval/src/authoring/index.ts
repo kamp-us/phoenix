@@ -20,10 +20,12 @@
  * would ship a door you cannot write a typed program behind. Being type-only, they add no module
  * to the runtime graph this barrel pulls.
  *
- * **The window half is deliberately absent.** `./view.ts` is the browser-side surface, and this
- * barrel is kernel-side: it reaches `../process/Processes.ts` and through it `node:crypto`, so a
- * flat barrel carrying both would drag the kernel chain into every page-side import — the failure
- * #8946 reports. The window door is that issue's to open, once the chain it names is cut.
+ * **The window half is its own door, `@kampus/tuval/window` (`./window.ts`).** Not because
+ * `./view.ts` is unsafe — its value-import closure reaches no `node:` builtin, and
+ * `window-closure.unit.test.ts` pins that — but because *this* barrel is not: it reaches
+ * `../process/Processes.ts` and `../commands/core/process.ts`, both `node:crypto` importers, so a
+ * flat barrel carrying both halves would drag the kernel chain into every page-side import. Two
+ * doors is what keeps the browser-side one clean, and the same test walks both to say so.
  *
  * The payload vocabulary a shaped arg is declared over is not here either: it is its own module
  * with its own boundary test (`../ai-agent/ports/index.ts`, `@kampus/tuval/ai-agent/ports`), held
