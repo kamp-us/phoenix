@@ -71,6 +71,27 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 		}),
 	);
 
+/**
+ * The same pull request as the **issues** endpoint serves it — a PR is an issue there.
+ *
+ * `listCommentsReconciled` divides its comment list by this payload's own `comments` field, never
+ * the pulls payload's, so a test that says something about comment completeness scripts this read
+ * rather than {@link pull}'s. Omitting the count omits the field, which reads back as `0` and
+ * fences nothing: no list is short of zero.
+ */
+export const pullAsIssue = (shape: {comments?: number} = {}): ExecResult =>
+	okOut(
+		JSON.stringify({
+			number: 4321,
+			title: "t",
+			body: "b",
+			state: "open",
+			labels: [],
+			html_url: "https://example.test/issues/4321",
+			...(shape.comments === undefined ? {} : {comments: shape.comments}),
+		}),
+	);
+
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
 
