@@ -125,6 +125,7 @@ describe("the feature flags", () => {
 				windowTitles: false,
 				processBoard: false,
 				prReviewExample: false,
+				cron: false,
 			});
 		}),
 	);
@@ -143,6 +144,7 @@ describe("the feature flags", () => {
 				windowTitles: false,
 				processBoard: false,
 				prReviewExample: false,
+				cron: false,
 			});
 			const project = yield* layered(fixture("two-rows"), fixture("features-off"));
 			assert.deepStrictEqual(project.features, {
@@ -153,6 +155,7 @@ describe("the feature flags", () => {
 				windowTitles: false,
 				processBoard: false,
 				prReviewExample: false,
+				cron: false,
 			});
 			const overGlobalOn = yield* layered(fixture("features-on"), fixture("features-off"));
 			assert.deepStrictEqual(overGlobalOn.features, {
@@ -163,6 +166,7 @@ describe("the feature flags", () => {
 				windowTitles: false,
 				processBoard: false,
 				prReviewExample: false,
+				cron: false,
 			});
 		}),
 	);
@@ -234,6 +238,7 @@ describe("loadLayeredConfig", () => {
 						windowTitles: false,
 						processBoard: false,
 						prReviewExample: false,
+						cron: false,
 					},
 					moduleRenderers: [],
 					graph: {
@@ -264,6 +269,7 @@ describe("loadLayeredConfig", () => {
 					windowTitles: false,
 					processBoard: false,
 					prReviewExample: false,
+					cron: false,
 				},
 				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
@@ -280,6 +286,7 @@ describe("loadLayeredConfig", () => {
 					windowTitles: false,
 					processBoard: false,
 					prReviewExample: false,
+					cron: false,
 				},
 				moduleRenderers: [],
 				graph: {nodes: []},
@@ -296,6 +303,7 @@ describe("loadLayeredConfig", () => {
 					windowTitles: false,
 					processBoard: false,
 					prReviewExample: false,
+					cron: false,
 				},
 				moduleRenderers: [],
 				graph: {nodes: []},

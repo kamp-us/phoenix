@@ -33,12 +33,14 @@ if (sessionListSpells === undefined) {
 		"the session-list row declares spells; the box's spell count is derived from them",
 	);
 }
-const BOX_SPELLS = CORE_SPELLS + shellSpells.length + sessionListSpells.length;
+/** The scheduler declares one: `cron run`, the on-demand path (#8716's authoring `commands`). */
+const CRON_SPELLS = 1;
+const BOX_SPELLS = CORE_SPELLS + shellSpells.length + sessionListSpells.length + CRON_SPELLS;
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
 const bin = fileURLToPath(new URL("./bin.ts", import.meta.url));
-/** The config the box ships — the shell plus the two demo rows — read as a global layer over a throwaway project. */
+/** The config the box ships — the shell, the two demo rows and the scheduler — read as a global layer over a throwaway project. */
 const boxConfig = fileURLToPath(new URL("../.tuval/tuval.config.ts", import.meta.url));
 
 interface Run {
@@ -234,7 +236,7 @@ describe("boot", () => {
 	);
 
 	it(
-		"boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart",
+		"boots the box config: the shell, the two demo processes and cron, the table on the terminal, and all four back after a restart",
 		async () => {
 			const project = freshProject();
 			const args = ["--config", boxConfig, "--project", project];
@@ -242,7 +244,7 @@ describe("boot", () => {
 			expect(first.stderr).toBe("");
 			expect(first.status).toBe(0);
 			expect(first.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 4 process(es) live, 0 restored from ${projectDir(project)}\n`,
 			);
 			expect(first.stdout).toContain(
 				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -252,6 +254,13 @@ describe("boot", () => {
 			);
 			expect(first.stdout).toContain(
 				"tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0\n",
+			);
+			// The scheduler is headless and planned. Two of its three ports are the kernel's own derived
+			// lines, which is what a board tile reads it through; the third is the `run` in-port
+			// `:cron run` sends to, and it being here is the whole of what makes that command
+			// addressable at all.
+			expect(first.stdout).toContain(
+				"tuval: process cron program=cron parent=- ports=run:in(cron/run),title@1:out(tuval/title/v1),status@1:out(tuval/status/v1) state=running@0\n",
 			);
 			expect(first.stdout).toContain("tuval: running — Ctrl-C stops and checkpoints\n");
 			// The stop line says the interrupt landed, not that teardown is over: `bin.ts` prints it
@@ -268,7 +277,7 @@ describe("boot", () => {
 			const second = await runUntilRunning(args);
 			expect(second.status).toBe(0);
 			expect(second.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 9 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 4 process(es) live, 4 restored from ${projectDir(project)}\n`,
 			);
 			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 		},
