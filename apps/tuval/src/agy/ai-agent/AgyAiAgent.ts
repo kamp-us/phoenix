@@ -9,12 +9,13 @@
  * own. `start` is the handler's call, not the layer's, so restore is "rebuild the layer, then
  * `start({cwd, resume: conversationId})`".
  *
- * **Three of the eleven members are respawns, because agy has no mid-session switch.** It refuses one
+ * **Two of the eleven members are respawns, because agy has no mid-session switch.** It refuses one
  * verbatim — `/model is answered by the CLI itself and is unavailable with --input-format
- * stream-json; run it as its own --print invocation` — and `/effort` behaves the same. So
- * `setModel`, `setMode` and `setThinkingLevel` each take the child down and launch a new one with
- * `--conversation=<id>`, which returns the same conversation id and carries its context. The event
- * queue is *not* replaced across a respawn: a model switch must not end the window's subscription.
+ * stream-json; run it as its own --print invocation`. So `setModel` and `setMode` each take the child
+ * down and launch a new one with `--conversation=<id>`, which returns the same conversation id and
+ * carries its context. The event queue is *not* replaced across a respawn: a model switch must not
+ * end the window's subscription. `setThinkingLevel` is not among them: this row has no effort axis at
+ * all, so it refuses every level and launches nothing — see there.
  *
  * **`interrupt` ends the child, and then relaunches it.** SIGINT makes agy exit 1 after a
  * well-formed terminal `result` reading `status: "ERROR"` / `error: "interrupted"` — measured at
@@ -23,8 +24,8 @@
  * the cut reply off it; the layer's own memory of *which child* it signalled is still what
  * `refusals.ts`'s `processGone` spends, because a child that dies with no terminal result at all says
  * nothing either way. That memory is also what keeps the exit watch off the event queue for a stop,
- * because the fourth respawn is this one: `interrupt` relaunches on the same conversation id the way
- * the three switches do, so a stop lands the window back on `ready` with a live child instead of on a
+ * because the third respawn is this one: `interrupt` relaunches on the same conversation id the way
+ * the two switches do, so a stop lands the window back on `ready` with a live child instead of on a
  * session nothing but a fresh window could replace (#8709). The `ready` that stop ends on is
  * published off the terminal `result`, which is *before* the relaunch finishes — so the relaunch is
  * also the one span in which `prompt` refuses: see `relaunchOver`.
@@ -79,7 +80,6 @@ import {
 import {withTurnResult} from "../../ai-agent/turn-result.ts";
 import {
 	AGY_BINARY,
-	AGY_EFFORTS,
 	AGY_MODELS,
 	AGY_MODES,
 	type AgyAiAgentOptions,
@@ -136,7 +136,6 @@ interface Session {
 	readonly cwd: string;
 	readonly model: string | null;
 	readonly mode: AgyMode | null;
-	readonly effort: ThinkingLevel | null;
 	readonly child: Child;
 }
 
@@ -144,14 +143,10 @@ interface Session {
 interface Settings {
 	readonly model: string | null;
 	readonly mode: AgyMode | null;
-	readonly effort: ThinkingLevel | null;
 }
 
 const isAgyMode = (value: string): value is AgyMode =>
 	(AGY_MODES as ReadonlyArray<string>).includes(value);
-
-const isAgyEffort = (level: ThinkingLevel): boolean =>
-	(AGY_EFFORTS as ReadonlyArray<ThinkingLevel>).includes(level);
 
 const advertisedModes: ReadonlyArray<Mode> = AGY_MODES.map((mode) => Mode.make(mode));
 
@@ -199,7 +194,6 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		const settings = yield* Ref.make<Settings>({
 			model: options.model ?? null,
 			mode: options.mode ?? null,
-			effort: options.effort ?? null,
 		});
 
 		const queue = yield* Effect.acquireRelease(
@@ -357,7 +351,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		/**
 		 * Launch, wait for `init`, and hand back the session it opened.
 		 *
-		 * Shared by `start` and by the three respawning switches, which differ only in whether the
+		 * Shared by `start` and by the two respawning switches, which differ only in whether the
 		 * event queue is replaced — a fresh `start` replaces it; a switch must not, or the window's
 		 * subscription would die with the model it was watching.
 		 */
@@ -372,7 +366,6 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 					...(resume === undefined ? {} : {resume}),
 					...(next.model === null ? {} : {model: next.model}),
 					...(next.mode === null ? {} : {mode: next.mode}),
-					...(next.effort === null ? {} : {effort: next.effort}),
 				});
 				const scope = yield* Scope.make();
 				const stdin = yield* Queue.unbounded<Uint8Array>();
@@ -406,7 +399,6 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 					cwd,
 					model: next.model,
 					mode: next.mode,
-					effort: next.effort,
 					child,
 				};
 			}).pipe(
@@ -416,7 +408,13 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 				),
 			);
 
-		/** The three catalogs plus the phase, in the order a window folds them. */
+		/**
+		 * The three catalogs plus the phase, in the order a window folds them.
+		 *
+		 * The thinking catalog is the resolved-empty offer, on the open and on every respawn alike:
+		 * agy owns no effort axis, so there is nothing to be current and nothing to offer, and the
+		 * composer reads that pair as `none offered` with the control disabled (#8425).
+		 */
 		const announce = (next: Session): Effect.Effect<void> =>
 			publish([
 				{
@@ -425,7 +423,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 					available: advertisedModes,
 				},
 				{kind: "model", current: refOf(offered, next.model), available: offered},
-				{kind: "thinking", current: next.effort, available: AGY_EFFORTS},
+				{kind: "thinking", current: null, available: []},
 				{kind: "phase", phase: "ready"},
 			]);
 
@@ -620,25 +618,26 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 		});
 
 		/**
-		 * The tenth member, and a real control rather than a refusal.
+		 * The tenth member, and a refusal for every level there is.
 		 *
-		 * The brief mapped this to `ThinkingUnsupported` outright; the spike author corrected that
-		 * with the measurement
-		 * (<https://github.com/kamp-us/phoenix/issues/8182#issuecomment-5556810108>), and the
-		 * measurement re-runs true: agy carries `--effort`, and
-		 * `agy --print='/effort' --output-format=json` answers `["low","medium","high"]` for zero
-		 * tokens. So the three it offers are switched the way the model and the mode are — by
-		 * respawn — and only the four levels `ThinkingLevel` carries that agy has no counterpart for
-		 * are refused, which is the contract #8062 set for every backend: offer what the backend
-		 * really supports, never map a missing level onto a neighbour.
+		 * agy has no effort axis to switch: it bakes reasoning effort into the model id, so
+		 * `--effort` is accepted only when it repeats the suffix already in `--model` and refused
+		 * outright for a model carrying none. `agy --print='/effort'` still answers
+		 * `["low","medium","high"]` — that is the v1.1.27 read this member was first built on — but at
+		 * v1.2.3 the flag's own acceptance no longer matches that answer, so a level that was offered
+		 * here could only take the child down and fail to relaunch (#9254). Refused rather than mapped
+		 * onto the model catalog's suffixes, which the founder ruled reads structure out of a naming
+		 * convention agy does not declare; the levels a window can reach instead are the `(High)` /
+		 * `(Medium)` / `(Low)` rows of `AGY_MODELS`, through `setModel`.
+		 *
+		 * `available` is empty rather than a shorter list, which is the contract #8062 set for every
+		 * backend read to its end: offer what the backend really supports, and nothing is what this
+		 * one supports.
 		 */
 		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
 			level: ThinkingLevel,
 		) {
-			if (!isAgyEffort(level)) {
-				return yield* new ThinkingUnsupported({level, available: [...AGY_EFFORTS]});
-			}
-			yield* respawn({...(yield* Ref.get(settings)), effort: level});
+			return yield* new ThinkingUnsupported({level, available: []});
 		});
 
 		/**

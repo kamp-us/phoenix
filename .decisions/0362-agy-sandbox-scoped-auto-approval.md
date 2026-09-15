@@ -86,11 +86,31 @@ This is about the *terminal event*, and it is a different proposition from the o
 
 **`AGY_VERSION` stays at `1.1.27`.** The constant names the release the whole `wire.ts` module was captured from, and one step type read on one later machine is not a re-census — moving it would restate the v1.1.27 capture as a v1.2.0 one, which is the laundering this record's own rule forbids. It moves when the module is captured again, and `src/agy/ai-agent/launch.unit.test.ts` moves with it.
 
+## A later-version reading: `--effort` at v1.2.3
+
+**This section is scoped to v1.2.3 and changes nothing above.** Per the grounding rule below, a measurement against a later version is named as such rather than written back onto the pin, so every v1.1.27 claim — the sandbox census, the four easy-to-mistake behaviours, the `step_type` set — stands exactly as it reads.
+
+**v1.2.3 bakes reasoning effort into the model id, so `--effort` is no longer an independent axis.** The flag is accepted only when it repeats the suffix already in `--model`, and refused outright for a model whose id carries none. Both refusals are verbatim as measured:
+
+```
+$ agy --model gemini-3.1-pro-high --effort low --print='reply ok'
+error: invalid model selection (--model "gemini-3.1-pro-high" --effort "low"): --model gemini-3.1-pro-high conflicts with --effort=low
+
+$ agy --model claude-sonnet-4-6 --effort high --print='reply ok'
+error: invalid model selection (--model "claude-sonnet-4-6" --effort "high"): --effort is not supported for model "claude-sonnet-4-6"
+```
+
+**`agy --print='/effort' --output-format=json` still answers `{"adjustable":true,"current":"high","available":["low","medium","high"]}`.** That is the v1.1.27 read the adapter's three-level catalog was built from, and it is the reason the drift was invisible: the CLI's own report of the axis outlived the flag's acceptance of it. A catalog read off that answer offers three levels of which at most one can launch, and on a Claude-family row none can.
+
+**So the adapter drops the axis rather than deriving one.** The agy row publishes the resolved-empty thinking offer — `{current: null, available: []}`, which the composer already reads as `none offered` with the control disabled — refuses every `ThinkingLevel` with an empty `available`, and composes `--effort` on no launch path ([#9254](https://github.com/kamp-us/phoenix/issues/9254)). The family-grouping alternative, parsing the id suffix and composing a model id from a level, was considered and ruled out by the founder: it reads structure out of a naming convention agy does not declare, and the `(High)` / `(Medium)` / `(Low)` rows of the model catalog already give a window every level agy can actually be launched at.
+
+**`AGY_VERSION` stays at `1.1.27`.** The constant names the release the whole `wire.ts` module was captured from, and this change re-captures no wire shape — it removes a launch flag and a catalog, neither of which is a wire reading.
+
 ## Grounding
 
 Per [CLAUDE.md](../CLAUDE.md)'s rule that a decision-driving claim about a dependency's behaviour is verified against the authoritative source rather than asserted, every behavioural claim above traces to one of two things: a live run of `agy` v1.1.27 on macOS during the spike recorded on [#8162](https://github.com/kamp-us/phoenix/issues/8162), or a `strings` extraction from that binary (the `INTERRUPTED` status is the one claim from the latter). Where a claim contradicts the vendor's documentation, the measurement wins and the contradiction is named as such.
 
-Two claims were re-measured after a hand-verification run of the adapter contradicted them, and both corrections above carry their own evidence: the `SIGINT` terminal event (a scratch desk against v1.1.27, plus a direct probe against v1.1.28) and the `result.usage` census (a three-turn stream-json session against v1.1.28, the third turn on a resumed child). A measurement against a *later* version is named as such rather than written back onto the pinned one; where the two agree, as they do on the interrupt string, the agreement is the point. The `error_message` section is that rule applied again, one minor further on: twelve drives of a v1.2.0 binary, the captured lines committed verbatim as `src/agy/ai-agent/fixtures.ts`'s `errorMessageStep` / `resultContentFiltered`, and the v1.1.27 census left standing.
+Two claims were re-measured after a hand-verification run of the adapter contradicted them, and both corrections above carry their own evidence: the `SIGINT` terminal event (a scratch desk against v1.1.27, plus a direct probe against v1.1.28) and the `result.usage` census (a three-turn stream-json session against v1.1.28, the third turn on a resumed child). A measurement against a *later* version is named as such rather than written back onto the pinned one; where the two agree, as they do on the interrupt string, the agreement is the point. The `error_message` section is that rule applied again, one minor further on: twelve drives of a v1.2.0 binary, the captured lines committed verbatim as `src/agy/ai-agent/fixtures.ts`'s `errorMessageStep` / `resultContentFiltered`, and the v1.1.27 census left standing. The `--effort` section is the same rule two minors further on: a five-row `--model` / `--effort` matrix driven against a v1.2.3 binary, its two refusal strings quoted as printed, and the v1.1.27 `/effort` answer recorded beside them rather than replaced by them.
 
 Every vendor path in this record is written relative to `$HOME` and resolved at runtime. No absolute machine-local path appears, so the document stays true on a machine other than the one the spike ran on.
 
