@@ -12,7 +12,7 @@
  * written down, so nothing machine-local lands in the repo (ADR 0362).
  */
 
-import type {ModelRef, ThinkingLevel} from "../ai-agent/ports/index.ts";
+import type {ModelRef} from "../ai-agent/ports/index.ts";
 
 /**
  * The supported floor, and the release every shape under `src/agy/` was captured from. Re-exported
@@ -34,6 +34,9 @@ export const AGY_SETTINGS_FILE = `${AGY_CONFIG_DIR}/settings.json`;
  * The flags this backend launches with, Go-style: one token, `--flag=value`, never `--flag value`.
  * `--print` **requires** an argument, so a session launch passes it empty and feeds every turn over
  * stdin instead.
+ *
+ * `--effort` is absent because agy bakes reasoning effort into the model id — see `ai-agent/launch.ts`
+ * for the measurement that struck it (#9254).
  */
 export const AGY_FLAGS = {
 	inputFormat: "--input-format",
@@ -41,7 +44,6 @@ export const AGY_FLAGS = {
 	print: "--print",
 	model: "--model",
 	mode: "--mode",
-	effort: "--effort",
 	sandbox: "--sandbox",
 	addDir: "--add-dir",
 	conversation: "--conversation",
@@ -54,21 +56,6 @@ export const AGY_FLAGS = {
 export const AGY_MODES = ["accept-edits", "plan"] as const;
 
 export type AgyMode = (typeof AGY_MODES)[number];
-
-/**
- * The reasoning efforts `--effort` accepts, and therefore the three levels `setThinkingLevel`
- * offers. Read off the CLI rather than guessed: `agy --print='/effort' --output-format=json`
- * answers `{"adjustable":true,"current":"high","available":["low","medium","high"]}` at v1.1.27,
- * and that call reports `num_turns: 0` with every usage counter zero, so it costs no tokens.
- *
- * `ThinkingLevel`'s other four (`off`, `minimal`, `xhigh`, `max`) have no agy counterpart and are
- * refused rather than mapped onto a neighbour, which is the rule #8062 set for every backend.
- */
-export const AGY_EFFORTS = [
-	"low",
-	"medium",
-	"high",
-] as const satisfies ReadonlyArray<ThinkingLevel>;
 
 /**
  * What `agy models` listed at v1.1.27, id and label as it prints them.
@@ -105,8 +92,6 @@ export interface AgyAiAgentOptions {
 	readonly model?: string;
 	/** The execution mode a session opens in. Absent leaves the CLI's default. */
 	readonly mode?: AgyMode;
-	/** The reasoning effort a session opens on. Absent leaves the CLI's default. */
-	readonly effort?: ThinkingLevel;
 	/** The catalog this layer advertises and checks a switch against. Defaults to `AGY_MODELS`. */
 	readonly models?: ReadonlyArray<ModelRef>;
 	/** Extra environment for the child, merged over the parent's. */

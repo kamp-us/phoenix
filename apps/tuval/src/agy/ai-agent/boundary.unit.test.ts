@@ -130,7 +130,6 @@ describe("the agy AI agent layer's surface", () => {
 		// `export * from "./AgyAiAgent.ts";`, which is the one escape route the module has (#7791).
 		expect(exportedNames(entry)).toEqual([
 			"AGY_BINARY",
-			"AGY_EFFORTS",
 			"AGY_MODELS",
 			"AGY_MODES",
 			"AGY_RETRY_HINT",

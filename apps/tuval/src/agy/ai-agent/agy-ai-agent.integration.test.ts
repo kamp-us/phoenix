@@ -19,7 +19,7 @@ import {
 	initialState,
 	usageTotals,
 } from "../../ai-agent/core/index.ts";
-import {Mode, type ThinkingLevel} from "../../ai-agent/ports/index.ts";
+import {Mode, thinkingLevels} from "../../ai-agent/ports/index.ts";
 import type {AgentEvent} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {AgyAiAgent} from "./index.ts";
@@ -313,31 +313,27 @@ describe("the agy layer over a scripted binary", () => {
 		expect([...refusal.available]).toEqual(["accept-edits", "plan"]);
 	});
 
-	it("respawns on a thinking switch for the three agy offers, and refuses the other four", async () => {
-		const refusals = await drive((collected) =>
+	it("refuses every thinking level and respawns for none of them", async () => {
+		const refusals = await drive(() =>
 			Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
 				yield* agent.start({cwd: "/repo"});
-				yield* agent.setThinkingLevel("high");
-				yield* until(collected, () => launches().length === 2);
-				const outside: ReadonlyArray<ThinkingLevel> = ["off", "minimal", "xhigh", "max"];
 				return yield* Effect.forEach(
-					outside,
+					thinkingLevels,
 					(level) => Effect.flip(agent.setThinkingLevel(level)),
 					{concurrency: 1},
 				);
 			}),
 		);
-		expect(launches()[1]).toContain("--effort=high");
-		// Refused rather than mapped onto a neighbour — the contract #8062 set for every backend.
-		expect(refusals.map((refusal) => refusal._tag)).toEqual([
-			"tuval/ai-agent/ThinkingUnsupported",
-			"tuval/ai-agent/ThinkingUnsupported",
-			"tuval/ai-agent/ThinkingUnsupported",
-			"tuval/ai-agent/ThinkingUnsupported",
-		]);
-		// Only three launches: the accepted one respawned, the four refusals spawned nothing.
-		expect(launches()).toHaveLength(2);
+		// Every level, not a shorter set: agy bakes effort into the model id, so there is no axis to
+		// switch and nothing to offer in its place (#9254).
+		expect(refusals.map((refusal) => refusal._tag)).toEqual(
+			thinkingLevels.map(() => "tuval/ai-agent/ThinkingUnsupported"),
+		);
+		expect(refusals.map((refusal) => [...refusal.available])).toEqual(thinkingLevels.map(() => []));
+		// One launch: the start's own. No refusal took the child down, so none composed `--effort`.
+		expect(launches()).toHaveLength(1);
+		expect(launches().flat().join(" ")).not.toContain("--effort");
 	});
 
 	it("refuses a model outside the offered catalog without respawning", async () => {
