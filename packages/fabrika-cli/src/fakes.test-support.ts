@@ -134,6 +134,21 @@ export interface FakeFsOptions {
 	 * so the interleaving is the test's to state rather than the runtime's to grant.
 	 */
 	readonly duringStat?: Readonly<Record<string, Effect.Effect<void>>>;
+	/**
+	 * Path → an effect run **after** a `readFileString` computes its answer and before the caller
+	 * receives it — {@link FakeFsOptions.duringStat}'s seam for a caller whose verdict is bytes
+	 * rather than a `stat`.
+	 */
+	readonly duringRead?: Readonly<Record<string, Effect.Effect<void>>>;
+	/**
+	 * Source path → an effect run **after** a `rename` lands and before the caller receives it.
+	 *
+	 * The window a move-and-put-back opens is only observable from inside it: the caller has taken
+	 * the entry away and not yet put it back, and what another writer sees at that instant is the
+	 * whole question. Keyed on the source, because that is the path the test knows — a private
+	 * destination carries a uuid nobody outside the caller can name.
+	 */
+	readonly duringRename?: Readonly<Record<string, Effect.Effect<void>>>;
 }
 
 export interface FakeFs {
@@ -151,6 +166,17 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const held = new Set(options.mkdirExisting ?? []);
 	const mtimes: Record<string, Date> = {...options.mtimes};
 	const decoder = new TextDecoder();
+	const parentOf = (of: string): string => {
+		const cut = of.lastIndexOf("/");
+		return cut === -1 ? "" : of.slice(0, cut);
+	};
+	// A directory's mtime is its entry list's, so anything that adds, moves or drops an entry moves
+	// the parent's clock. A fake that froze it would report a directory as untouched for as long as a
+	// test ran, which is the one fact a staleness verdict on a lock directory turns on.
+	const touchParent = (path: string): void => {
+		const parent = parentOf(path);
+		if (parent !== "" && directories.has(parent)) mtimes[parent] = new Date();
+	};
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
 			readDirectory: (path: string) => {
@@ -160,11 +186,19 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					: Effect.succeed([...names]);
 			},
 			readFileString: (path: string) => {
-				if (options.unreadable?.includes(path) === true) return denied("readFileString", path);
-				const text = files[path];
-				return text === undefined || text === null
-					? notFound("readFileString", path)
-					: Effect.succeed(text);
+				const answer = (): Effect.Effect<string, PlatformError.PlatformError> => {
+					if (options.unreadable?.includes(path) === true) return denied("readFileString", path);
+					const text = files[path];
+					return text === undefined || text === null
+						? notFound("readFileString", path)
+						: Effect.succeed(text);
+				};
+				const during = options.duringRead?.[path];
+				// Answer first, deliver after — the same window `duringStat` opens, for a caller that
+				// reads its verdict out of a file.
+				return during === undefined
+					? answer()
+					: Effect.flatMap(answer(), (read) => Effect.as(during, read));
 			},
 			exists: (path: string) =>
 				options.unprobeable?.includes(path) === true
@@ -210,6 +244,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				}
 				directories.add(path);
 				mtimes[path] = new Date();
+				touchParent(path);
 				return Effect.void;
 			},
 			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
@@ -270,7 +305,10 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				if (listed != null) dirs[fromDir] = listed.filter((name) => name !== fromName);
 				const target = dirs[toDir];
 				if (target != null) dirs[toDir] = [...target, toName];
-				return Effect.void;
+				touchParent(path);
+				touchParent(to);
+				const during = options.duringRename?.[path];
+				return during === undefined ? Effect.void : during;
 			},
 			remove: (path: string) => {
 				if (options.unremovable?.includes(path) === true) return denied("remove", path);
@@ -281,6 +319,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				for (const key of Object.keys(files)) {
 					if (key === path || key.startsWith(`${path}/`)) delete files[key];
 				}
+				touchParent(path);
 				return Effect.void;
 			},
 			writeFileString: (
@@ -289,12 +328,26 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				opts?: {readonly flag?: string | undefined},
 			) => {
 				if (options.unwritable?.includes(path) === true) return notFound("writeFileString", path);
+				// An `x` flag is an exclusive create: it fails EEXIST rather than overwriting, which is
+				// what lets one of several writers reaching for the same path leave holding it. A fake
+				// that overwrote instead would green every one of them.
+				if (opts?.flag?.includes("x") === true && files[path] != null) {
+					return Effect.fail(
+						PlatformError.systemError({
+							_tag: "AlreadyExists",
+							module: "FileSystem",
+							method: "writeFileString",
+							pathOrDescriptor: path,
+						}),
+					);
+				}
 				// An append flag appends here too, because a caller that appends and one that overwrites
 				// leave different bytes on disk and a fake that flattened them would hide the difference.
 				const appending = opts?.flag?.startsWith("a") === true;
 				const next = appending ? `${files[path] ?? ""}${data}` : data;
 				files[path] = next;
 				written.set(path, next);
+				touchParent(path);
 				return Effect.void;
 			},
 			writeFile: (path: string, data: Uint8Array) => {
@@ -302,6 +355,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				const text = decoder.decode(data);
 				files[path] = text;
 				written.set(path, text);
+				touchParent(path);
 				return Effect.void;
 			},
 		}),

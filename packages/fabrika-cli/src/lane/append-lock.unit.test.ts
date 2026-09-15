@@ -17,7 +17,7 @@
 import {Effect, FileSystem} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {acquireLedgerLock} from "./append-lock.ts";
+import {acquireLedgerLock, releaseLedgerLock} from "./append-lock.ts";
 import {CONCURRENT_WRITE, EVENT_REFUSED, LANE_ABSENT} from "./codes.ts";
 import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
 import {runTransition} from "./transition-verb.ts";
@@ -26,6 +26,10 @@ const ROOT = ".fabrika/lanes";
 const WORKFLOW = `${ROOT}/42/workflow.json`;
 const LOG = `${ROOT}/42/events.jsonl`;
 const LOCK = `${ROOT}/42/events.lock`;
+const HOLDER = `${LOCK}/holder`;
+
+/** The stamp a holder leaves inside the lock: who, and when it took it. */
+const stamp = (who: string, ageMs: number) => `${who} ${Date.now() - ageMs}`;
 
 const freshLane = (extra: Parameters<typeof fakeFs>[0] = {}) =>
 	fakeFs({
@@ -182,7 +186,7 @@ describe("lane append lock", {timeout: 10_000}, () => {
 
 	it("a second waiter past the same stale horizon does not take the lock the first one just stole", async () => {
 		// Two writers polling one orphaned lock. The loser's staleness verdict is already reached when
-		// the winner's whole steal lands, so a steal that acts on that stale verdict deletes a *live*
+		// the winner's whole steal lands, so a steal that acts on that stale verdict takes a *live*
 		// lock and both writers append — the silent interleaved read-modify-write the lock exists to
 		// refuse. The winner's run is placed inside the loser's `stat` window rather than raced for.
 		const appended: string[] = [];
@@ -209,6 +213,116 @@ describe("lane append lock", {timeout: 10_000}, () => {
 		await Effect.runPromise(Effect.provide(waiter("loser"), fs.layer));
 
 		expect(appended).toEqual(["winner"]);
+	});
+
+	it("a second waiter over a stamped lock loses it to the writer that took the stamp", async () => {
+		// The same pair, one lock older: this one names its holder, so the loser's verdict is the
+		// stamp's bytes rather than a directory age. The winner's whole take-over lands inside the
+		// loser's read window, and the loser has to notice that what it carries off is no longer the
+		// claim it judged.
+		const appended: string[] = [];
+		const seam: Record<string, Effect.Effect<void>> = {};
+		const fs = freshLane({
+			mkdirExisting: [LOCK],
+			files: {[WORKFLOW]: coderTemplateText(), [HOLDER]: stamp("crashed", 60_000)},
+			duringRead: seam,
+		});
+		const waiter = (name: string) =>
+			Effect.gen(function* () {
+				const filesystem = yield* FileSystem.FileSystem;
+				if ((yield* acquireLedgerLock(filesystem, LOCK, 300)) === "acquired") appended.push(name);
+			});
+		let overtaken = false;
+		seam[HOLDER] = Effect.suspend(() => {
+			if (overtaken) return Effect.void;
+			overtaken = true;
+			return Effect.provide(waiter("winner"), fs.layer);
+		});
+
+		await Effect.runPromise(Effect.provide(waiter("loser"), fs.layer));
+
+		expect(appended).toEqual(["winner"]);
+	});
+
+	it("a third writer gets nothing while a stealer is putting a live holder's stamp back", async () => {
+		// One waiter further out than the pair above. The loser reaches a live holder's stamp, carries
+		// it off and has to put it back — and a take-over that carried the *directory* off instead
+		// leaves the lock path vacant for exactly that long, so a third writer's mkdir lands and
+		// appends beside the holder. Here the directory never moves, so the third writer only ever
+		// sees a lock somebody holds.
+		const appended: string[] = [];
+		const attempts: string[] = [];
+		const reads: Record<string, Effect.Effect<void>> = {};
+		const renames: Record<string, Effect.Effect<void>> = {};
+		const fs = freshLane({
+			mkdirExisting: [LOCK],
+			files: {[WORKFLOW]: coderTemplateText(), [HOLDER]: stamp("crashed", 60_000)},
+			duringRead: reads,
+			duringRename: renames,
+		});
+		const waiter = (name: string) =>
+			Effect.gen(function* () {
+				const filesystem = yield* FileSystem.FileSystem;
+				const attempt = yield* acquireLedgerLock(filesystem, LOCK, 300);
+				attempts.push(`${name}:${attempt}`);
+				if (attempt === "acquired") appended.push(name);
+			});
+		let overtaken = false;
+		reads[HOLDER] = Effect.suspend(() => {
+			if (overtaken) return Effect.void;
+			overtaken = true;
+			return Effect.provide(waiter("winner"), fs.layer);
+		});
+		// The winner's own take is the first rename of the stamp; the loser's — the one it must undo —
+		// is the second, and that is the instant the third writer asks.
+		let moves = 0;
+		renames[HOLDER] = Effect.suspend(() => {
+			moves += 1;
+			return moves === 2 ? Effect.provide(waiter("third"), fs.layer) : Effect.void;
+		});
+
+		await Effect.runPromise(Effect.provide(waiter("loser"), fs.layer));
+
+		expect(appended).toEqual(["winner"]);
+		expect(attempts).toContain("third:held");
+	});
+
+	it("a holder that cannot prove the lock is still its own refuses instead of appending", async () => {
+		process.env.FABRIKA_LANE_LOCK_BUDGET_MS = SHORT_LOCK_MS;
+		// The last moment a hand-off can still be answered by refusing: the stamp is unreadable, so
+		// this writer cannot say the lock is the one it took, and a body that appends anyway is the
+		// double-append nobody detects.
+		const fs = freshLane({unreadable: [HOLDER]});
+
+		const out = await run(fs);
+
+		expect(out.code).toBe(CONCURRENT_WRITE);
+		// It got the lock — the stamp is there — and still refused, which is the whole distinction
+		// from the waiter above that never acquired at all.
+		expect(fs.written.has(HOLDER)).toBe(true);
+		expect(fs.written.get(LOG)).toBeUndefined();
+	});
+
+	it("a writer that no longer holds the stamp releases nothing", async () => {
+		// A holder slow enough to be taken over must not clear the lock on its way out: the sidecar is
+		// the new holder's now, and removing it hands a third writer a lock while that holder appends.
+		const fs = freshLane({
+			mkdirExisting: [LOCK],
+			files: {[WORKFLOW]: coderTemplateText(), [HOLDER]: stamp("someone-else", 0)},
+		});
+
+		const standing = await Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const filesystem = yield* FileSystem.FileSystem;
+					yield* releaseLedgerLock(filesystem, LOCK, "a-writer-that-was-overtaken");
+					return yield* filesystem.exists(LOCK);
+				}),
+				fs.layer,
+			),
+		);
+
+		expect(standing).toBe(true);
 	});
 
 	it("a lock younger than the stale horizon is still held at deadline, so live contention refuses", async () => {

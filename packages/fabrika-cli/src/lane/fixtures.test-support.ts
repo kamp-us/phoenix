@@ -7,6 +7,7 @@ import type {DriverRouted, ParkCauseSurface, Uncaused} from "../config/keys/park
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
+import {LOCK_DIR_NAME} from "./append-lock.ts";
 import {type ProveOptions, proofLabelOf} from "./prove-verb.ts";
 
 /**
@@ -96,6 +97,16 @@ export const parkCauseRead = (
 	value: {uncaused, driverRouted},
 	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}`,
 });
+
+/**
+ * The paths a verb wrote that are the lane's — what "nothing was written" means for a refusal.
+ *
+ * A verb that reaches its body has taken the append lock, and taking it stamps a holder inside the
+ * sidecar. That write is the lock's own bookkeeping and is gone again when the lock is released, so
+ * counting it would turn every refusal that got as far as the lock into one that wrote something.
+ */
+export const laneWrites = (written: ReadonlyMap<string, string>): ReadonlyArray<string> =>
+	[...written.keys()].filter((path) => !path.includes(`/${LOCK_DIR_NAME}/`));
 
 export const coderTemplateText = (): string =>
 	readGoldenFixture(import.meta.url, "./templates/coder.workflow.json");
