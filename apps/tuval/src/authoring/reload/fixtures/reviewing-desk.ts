@@ -9,12 +9,18 @@
  * config. `reviewing` is the pull request this generation names, and it is the setting the spread
  * `configChanged` below compares.
  *
- * **Two shapes here are the substrate's gaps, not the example's.** A shaped arg's spawn resolves
- * the arg's own service key straight through the registry, so the reviewer is registered under
- * exactly that key until [#8762](https://github.com/kamp-us/phoenix/issues/8762) lands. And a graph
- * route compiles only between two ports of one `kind`, which `../../port.ts` derives from the
- * declaring program's id — so `desk` and `sink` are plain rows written against `pr-review`'s own
- * kinds, because two authored programs cannot be routed to each other today
+ * **This layer states the fill, because a fill is a config's to state.** The example names its
+ * reviewer by ports alone, so this module is the one that says which program fills that arg
+ * ([#8762](https://github.com/kamp-us/phoenix/issues/8762)): it builds the row off
+ * `prReviewProgram` with a `fill`, rather than through `prReview`, whose own config fills the arg
+ * with a shipped session row and cannot state it through `defineProgram` until
+ * [#8887](https://github.com/kamp-us/phoenix/issues/8887) closes. What it hands is the reviewer's
+ * *authored* port declarations, which is what a shape is checked against.
+ *
+ * **One shape here is still the substrate's gap, not the example's.** A graph route compiles only
+ * between two ports of one `kind`, which `../../port.ts` derives from the declaring program's id —
+ * so `desk` and `sink` are plain rows written against `pr-review`'s own kinds, because two authored
+ * programs cannot be routed to each other today
  * ([#8923](https://github.com/kamp-us/phoenix/issues/8923)).
  */
 
@@ -26,7 +32,7 @@ import {ProcessPorts} from "../../../ports/ProcessPorts.ts";
 import {type AnyProgram, type Program, ProgramId} from "../../../registry/program.ts";
 import {type Answer, type ArrivalEvent, defineProgram} from "../../define-program.ts";
 import {emit} from "../../effect.ts";
-import {prReview} from "../../example/pr-review.ts";
+import {prReviewProgram} from "../../example/pr-review.ts";
 import {port, portKind} from "../../port.ts";
 import {
 	DESK_NODE,
@@ -44,13 +50,22 @@ const declared = JSON.parse(readFileSync(process.env[FIXTURE_VAR] ?? "", "utf8")
 type ReviewerState = {readonly asked: string | null};
 
 /**
+ * The ports the reviewer publishes, named once: the row is compiled from them and the fill below is
+ * checked against them, so the thing registered and the thing checked cannot drift apart.
+ */
+const reviewerPorts = {prompt: port.in(Schema.String), result: port.out(Schema.String)};
+
+/** What this layer hands the example's `reviewer` arg: that program's id, and those declarations. */
+const reviewerFill = {id: REVIEWER_PROGRAM, ports: reviewerPorts};
+
+/**
  * The reviewer the example is handed: it answers on `result`, which the example's `spawn` routes
  * back as its own `result` event. `replay` is the cell a restored reviewer's `resume` reaches, and
  * this generation decides whether it declares one at all.
  */
 const reviewer = defineProgram({
 	id: REVIEWER_PROGRAM,
-	ports: {prompt: port.in(Schema.String), result: port.out(Schema.String)},
+	ports: reviewerPorts,
 	init: (): ReviewerState => ({asked: null}),
 	update: {
 		prompt: (
@@ -70,7 +85,11 @@ type ReviewRow = AnyProgram & {readonly reviewing: number};
 const reviewing = (row: AnyProgram): number => (row as ReviewRow).reviewing;
 
 export const reviewRow: ReviewRow = {
-	...prReview({reviewer: {id: REVIEWER_PROGRAM}}),
+	...defineProgram({
+		...prReviewProgram,
+		label: `pr-review (${REVIEWER_PROGRAM})`,
+		fill: {reviewer: reviewerFill},
+	}),
 	reviewing: declared.reviewing,
 	// The spread half: a re-read config that names another pull request tells the live process so,
 	// as an arrival on the port it already takes. A generation that moved nothing says nothing.
