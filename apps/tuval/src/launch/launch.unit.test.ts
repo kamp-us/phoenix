@@ -1,6 +1,7 @@
 import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Queue, type Scope} from "effect";
+import {SpawnedProcesses} from "../commands/core/process.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {compile} from "../ports/compile.ts";
@@ -83,14 +84,20 @@ const eventually = (check: () => boolean) =>
 		for (let i = 0; i < 200 && !check(); i++) yield* Effect.sleep(5);
 	});
 
+/** `launch` enrols every node it spawns in `SpawnedProcesses` since #8944, so the kernel owes it. */
 const withKernel = <A, E>(
 	rows: ReadonlyArray<AnyProgram>,
-	body: Effect.Effect<A, E, Processes | ProcessTable | Registry | Checkpoints | Scope.Scope>,
+	body: Effect.Effect<
+		A,
+		E,
+		Processes | ProcessTable | Registry | Checkpoints | SpawnedProcesses | Scope.Scope
+	>,
 ) =>
 	body.pipe(
 		Effect.scoped,
 		Effect.provide(
-			Processes.layer.pipe(
+			SpawnedProcesses.layer({readTimeout: "50 millis"}).pipe(
+				Layer.provideMerge(Processes.layer),
 				Layer.provideMerge(Checkpoints.layer(memoryStores())),
 				Layer.provideMerge(Registry.layer(rows)),
 			),

@@ -46,21 +46,27 @@ const KERNEL =
 	"Tuval's kernel is a registry of programs and a table of running processes; a process has typed ports, an in-port you write to and an out-port you read from.";
 
 const SPAWN_DESCRIPTION = `Start a new process of a program the registry knows, as a child of your own process. ${KERNEL} Answers with the new process's id.`;
-const SEND_DESCRIPTION = `Write one payload to a named in-port of a process you spawned. ${KERNEL} The port decides what it takes, and a payload it refuses is an error naming what the port takes. The reply also carries \`evicted\`: how many queued payloads the port discarded unread to make room for this one, which is non-zero only on a port that keeps the latest rather than blocking.`;
-const READ_DESCRIPTION = `Read the current value of a named out-port of a process you spawned. ${KERNEL} A port that has said nothing yet answers empty rather than making you wait.`;
+const SEND_DESCRIPTION = `Write one payload to a named in-port of any live process — one you spawned, or one the desk's config graph planned and launched. ${KERNEL} The port decides what it takes, and a payload it refuses is an error naming what the port takes. The reply also carries \`evicted\`: how many queued payloads the port discarded unread to make room for this one, which is non-zero only on a port that keeps the latest rather than blocking.`;
+const READ_DESCRIPTION = `Read the current value of a named out-port of any live process — one you spawned, or one the desk's config graph planned and launched. ${KERNEL} A port that has said nothing yet answers empty rather than making you wait.`;
 
 const spawnParameters = Type.Object({
 	program: Type.String({description: "The id of a registered program."}),
 });
 const sendParameters = Type.Object({
-	process: Type.String({description: "The id of a process you spawned."}),
+	process: Type.String({
+		description:
+			"The id of any live process: one `spawn` answered with, or a planned one, whose id is its node id in the desk's config graph.",
+	}),
 	port: Type.String({description: "The name of one of that process's in-ports."}),
 	payload: Type.Unknown({
 		description: "The value to write; the port's own kind decides its shape.",
 	}),
 });
 const readParameters = Type.Object({
-	process: Type.String({description: "The id of a process you spawned."}),
+	process: Type.String({
+		description:
+			"The id of any live process: one `spawn` answered with, or a planned one, whose id is its node id in the desk's config graph.",
+	}),
 	port: Type.String({description: "The name of one of that process's out-ports."}),
 });
 

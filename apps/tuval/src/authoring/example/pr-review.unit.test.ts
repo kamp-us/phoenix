@@ -140,6 +140,7 @@ describe("authoring.example.pr-review, driven with testProgram", () => {
 								return {delivered: true, evicted: 0};
 							}),
 						spawn: () => Effect.die("a command cannot reach spawn"),
+						adopt: () => Effect.die("a command cannot reach adopt"),
 						ask: () => Effect.die("a command cannot reach ask"),
 						answer: () => Effect.die("a command cannot reach answer"),
 						read: () => Effect.die("a command cannot reach read"),

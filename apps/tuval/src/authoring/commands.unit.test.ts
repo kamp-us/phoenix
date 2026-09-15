@@ -97,7 +97,7 @@ const call = (spell: AnySpell, args: unknown, from: Scope = scope) =>
 
 const unreachable = (name: string) => () => Effect.die(`a command cannot reach ${name}`);
 
-/** `send` is the only member a command can reach at all, so the other four die rather than pretend. */
+/** `send` is the only member a command can reach at all, so the other five die rather than pretend. */
 const capturingSends = (sent: Array<readonly [string, unknown]>) =>
 	Layer.succeed(
 		SpawnedProcesses,
@@ -108,6 +108,7 @@ const capturingSends = (sent: Array<readonly [string, unknown]>) =>
 					return {delivered: true, evicted: 0};
 				}),
 			spawn: unreachable("spawn"),
+			adopt: unreachable("adopt"),
 			ask: unreachable("ask"),
 			answer: unreachable("answer"),
 			read: unreachable("read"),
@@ -125,6 +126,7 @@ const capturingTargets = (sent: Array<readonly [ProcessId, string, unknown]>) =>
 					return {delivered: true, evicted: 0};
 				}),
 			spawn: unreachable("spawn"),
+			adopt: unreachable("adopt"),
 			ask: unreachable("ask"),
 			answer: unreachable("answer"),
 			read: unreachable("read"),

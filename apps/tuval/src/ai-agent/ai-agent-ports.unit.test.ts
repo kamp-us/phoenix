@@ -14,6 +14,7 @@
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, type Scope} from "effect";
+import {SpawnedProcesses} from "../commands/core/process.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {launch} from "../launch/launch.ts";
@@ -202,7 +203,9 @@ const onGraph = <A, E>(
 	}).pipe(
 		Effect.scoped,
 		Effect.provide(
-			Processes.layer.pipe(
+			// `launch` enrols every node in `SpawnedProcesses` since #8944, so the kernel owes it.
+			SpawnedProcesses.layer({readTimeout: "50 millis"}).pipe(
+				Layer.provideMerge(Processes.layer),
 				Layer.provideMerge(Checkpoints.layer(memoryStores())),
 				Layer.provideMerge(Registry.layer([agentRow(script), windowProgram])),
 			),
