@@ -186,7 +186,7 @@ const dispatch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Dispatch one active lane task to Codex in a verified worktree."),
 	Command.withDescription(
-		"Create a dedicated detached git worktree and run codex exec with a fixed skill preload envelope and the emitted lane brief unchanged. Preserves Codex model and policy configuration. On an epic run's child it first refreshes the assembly branch the worktree is about to be cut from, through `lane refresh` itself and before the brief is emitted, gated by `assemblyRefresh.onDispatch`: under the shipped `off` it fetches, merges and reads nothing, so the dispatch path is byte for byte the one it is today, and `on` merges the trunk in so the child builds and runs its verbs in a tree at least as new as the trunk. A conflict there refuses at 42 with the branch proven back at its pre-merge head and no worktree created — record the park the refusal names (--cause assembly-conflict) rather than dispatching over the unrefreshed branch. Requires a new task terminal and fresh artifact proof; process exit zero alone is not completion. stdout: {harness, task, event, worktree}. Worktrees are retained. Exits 11 (missing input, isolation, process or state failure), 18 (unsupported harness or inactive state), 22 (no unique terminal), plus lane refresh, lane brief and lane prove refusals. Example: fabrika lane dispatch 5673 --harness codex --skills /installed/fabrika/skills --worktree /scratch/lane-5673",
+		"Create a dedicated detached git worktree and run codex exec with a fixed skill preload envelope and the emitted lane brief unchanged. Preserves Codex model and policy configuration. On an epic run's child it first refreshes the assembly branch the worktree is about to be cut from, through `lane refresh` itself and before the brief is emitted, gated by `assemblyRefresh.onDispatch`, read from the `.fabrika.jsonc` of the repository that OWNS the cwd rather than the cwd's own copy — the driver's cwd is routinely a linked worktree, while the worktree spawning further down keeps reading the cwd itself: under the shipped `off` it fetches, merges and reads nothing, so the dispatch path is byte for byte the one it is today, and `on` merges the trunk in so the child builds and runs its verbs in a tree at least as new as the trunk. A conflict there refuses at 42 with the branch proven back at its pre-merge head and no worktree created — record the park the refusal names (--cause assembly-conflict) rather than dispatching over the unrefreshed branch. Requires a new task terminal and fresh artifact proof; process exit zero alone is not completion. stdout: {harness, task, event, worktree}. Worktrees are retained. Exits 11 (missing input, isolation, process or state failure), 18 (unsupported harness or inactive state), 22 (no unique terminal), 39 (no .git entry exists at or above the cwd, so the repository whose declaration gates the pre-dispatch refresh cannot be established; an unreadable repository identity is UNKNOWN at 11), plus lane refresh, lane brief and lane prove refusals. Example: fabrika lane dispatch 5673 --harness codex --skills /installed/fabrika/skills --worktree /scratch/lane-5673",
 	),
 );
 
@@ -278,7 +278,12 @@ const transition = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait, rationale, repo}) {
-		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
+		const configRoot = yield* configRootOrRefuse("fabrika lane transition", process.cwd());
+		if (typeof configRoot !== "string") {
+			yield* emit(configRoot);
+			return;
+		}
+		const parkCause = yield* readKey(configRoot, parkCauseKey);
 		yield* emit(
 			yield* onKey("transition", lane, root, (_key, ref) =>
 				runTransition(
@@ -370,7 +375,12 @@ const report = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, token, root, task, pr, comment, cause, classes, repo}) {
-		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
+		const configRoot = yield* configRootOrRefuse("fabrika lane report", process.cwd());
+		if (typeof configRoot !== "string") {
+			yield* emit(configRoot);
+			return;
+		}
+		const parkCause = yield* readKey(configRoot, parkCauseKey);
 		yield* emit(
 			yield* onKey("report", lane, root, (_key, ref) =>
 				runReport(
@@ -1419,7 +1429,12 @@ const view = leafCommand(
 			yield* emit(resolvedRoot);
 			return;
 		}
-		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
+		const configRoot = yield* configRootOrRefuse("fabrika lane view", process.cwd());
+		if (typeof configRoot !== "string") {
+			yield* emit(configRoot);
+			return;
+		}
+		const parkCause = yield* readKey(configRoot, parkCauseKey);
 		yield* Effect.logInfo(listeningAt(chosen));
 		yield* emit(
 			yield* onGround("view", [resolvedRoot], process.cwd(), () =>

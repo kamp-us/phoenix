@@ -93,7 +93,10 @@ export interface ReportOptions extends LaneRef {
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
 	/**
-	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
+	 * that OWNS the cwd — never the cwd's own copy. The rule is weighed against the shared lane ledger,
+	 * which a linked worktree and its primary checkout derive alike, so the worktree's tracked copy
+	 * would govern a log it does not own.
 	 *
 	 * Passed in rather than read here, the way `lane open` takes its cap: this verb's append path
 	 * stays offline, and the one config read belongs to the adapter that already knows the checkout.
@@ -103,7 +106,11 @@ export interface ReportOptions extends LaneRef {
 	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	/**
+	 * The checkout this run stands in, handed to the proof — not the ledger root, and not where
+	 * `.fabrika.jsonc` is read: {@link parkCause} above is resolved off the repository that OWNS this
+	 * path, so a linked worktree is judged by the primary checkout's declaration.
+	 */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }

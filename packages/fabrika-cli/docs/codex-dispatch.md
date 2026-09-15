@@ -9,12 +9,15 @@ five shell states that `lane brief` emits and no other state or harness.
 
 On an epic run's child the verb first refreshes the assembly branch the worktree will be cut from,
 through `lane refresh`'s own code and before the brief is emitted, gated by
-`assemblyRefresh.onDispatch`. The shipped `off` fetches, merges and reads nothing, so a repo that
+`assemblyRefresh.onDispatch`, read from the `.fabrika.jsonc` of the repository that OWNS the cwd —
+the driver's cwd is routinely a linked worktree, and the arm belongs to the checkout whose lane
+ledger the branch answers to. The shipped `off` fetches, merges and reads nothing, so a repo that
 declared nothing keeps the dispatch path it has today; `on` merges the trunk in, so the child builds
 and runs its verbs in a tree at least as new as the trunk. Exit `42` there is a real conflict: the
 merge is aborted, the branch is proven back at its pre-merge head, and no worktree is created —
 record the park it names (`--cause assembly-conflict`) rather than dispatching over the stale branch.
-A lane the verb cannot read here is left to the reads below, which refuse in their own words.
+A lane the verb cannot read here is left to the reads below, which refuse in their own words; a cwd
+belonging to no readable repository is not, and refuses here at `39`/`11` with nothing spawned.
 
 The verb reads `lane brief`, captures the task's state, validates its role skills, then takes
 a per-task dispatch lock. It creates and verifies a detached worktree at the source commit,
