@@ -50,6 +50,7 @@ import {
 	transcript,
 	transcriptPage,
 } from "./ports/index.ts";
+import {AI_AGENT_INSPECTOR_REF} from "./renderer-ref.ts";
 import {resumeMessages} from "./restore/checkpoint.ts";
 import type {TuvalAiAgent} from "./service/index.ts";
 
@@ -71,7 +72,10 @@ export interface AiAgentProgramOptions<RIn = never> {
 	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 	readonly config: AiAgentProgramConfig;
 	readonly renderer?: RendererRef;
-	/** What this row fills the desk inspector with while one of its windows has focus (#8190). */
+	/**
+	 * What this row fills the desk inspector with while one of its windows has focus (#8190).
+	 * Omitting it takes `AI_AGENT_INSPECTOR_REF`; only a row wanting a different panel says so.
+	 */
 	readonly inspector?: RendererRef;
 	/** Merged over the row's own identity, for a caller that ships this program in its package. */
 	readonly identity?: Partial<DefinitionIdentity>;
@@ -187,7 +191,9 @@ export const aiAgentProgram = <RIn = never>(
 		checkpointWorthy,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
-		...(options.inspector === undefined ? {} : {inspector: options.inspector}),
+		// Defaulted, never spread away: an ai-agent row with no inspector paints an empty desk panel
+		// and nothing in the types or the suite objects, which is how #9214 shipped (#9218).
+		inspector: options.inspector ?? AI_AGENT_INSPECTOR_REF,
 		identity: {
 			package: "@kampus/tuval",
 			program: options.id,
