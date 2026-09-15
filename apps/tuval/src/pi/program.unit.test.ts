@@ -21,6 +21,7 @@ import {
 	isAiAgentSessionState,
 } from "../ai-agent/core/index.ts";
 import {ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
+import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import {checkpointFields} from "../ai-agent/restore/index.ts";
 import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
 import {projectConfig} from "../boot.ts";
@@ -96,6 +97,11 @@ describe("the pi-session program row", () => {
 			},
 		]);
 		assert.deepStrictEqual(declared.renderer, PI_CHAT_WINDOW_REF);
+		assert.deepStrictEqual(
+			declared.inspector,
+			AI_AGENT_INSPECTOR_REF,
+			"a row declaring no inspector leaves the desk with nothing to paint for a Pi session",
+		);
 		assert.isFunction(declared.resume, "a restored Pi session has no way back without a resume");
 	});
 
