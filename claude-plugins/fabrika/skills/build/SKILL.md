@@ -293,8 +293,8 @@ Allocate with the fence above, giving `--slug` the body's own name — `commit-m
 `deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
 them lands on the `notes` slug. Write the body in with bounded `cat >>` appends, then run the verb
 with a literal input redirect in place of the heredoc:
-`fabrika build pr $issue_number < <the path it printed>`. The bytes arrive on stdin exactly as the
-heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
+`fabrika build pr $issue_or_pr_number < <the path it printed>`. The bytes arrive on stdin exactly
+as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
 read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
 body quoting it reds at `5`. `build commit`'s `--message-file` is the same file reached the other
 way and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch

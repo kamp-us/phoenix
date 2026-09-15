@@ -732,7 +732,7 @@ fabrika report scratch --slug body
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--slug` | string | yes | — | the file's leaf name, kebab-case, no path separators |
+| `--slug` | string | yes | — | the file's leaf name: kebab-case, ≤5 words, no path separators |
 
 **Output** — machine. Exactly one absolute path on stdout, newline-terminated:
 `<OS temp root>/fabrika-report/<allocation-id>/<slug>` — the fixed `fabrika-report` segment
@@ -751,17 +751,21 @@ caller stages and redirects using the one literal path a single call printed.
 
 | Code | Trigger |
 |---|---|
-| `29` | `--slug` carries a path separator, or is not kebab-case |
+| `29` | `--slug` carries a path separator, is not kebab-case, or exceeds 5 hyphen-separated words |
 
 `29` rather than the `10` `build scratch` uses for the same refusal: `10` is `CLASSIFIED` in this
 group's shared writing table, and one code meaning two things would break that table's only
 property.
 
+The slug predicate is the one `build branch` and `build scratch` use, so the word cap comes with it
+rather than being this verb's own rule — which is why the refusal names all three bounds it
+enforces instead of the two that are obvious from the flag's name.
+
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `report scratch: --slug "<value>" must be a kebab-case leaf, no path separators.` | 29 | refusal |
+| `report scratch: --slug "<value>" must be a kebab-case leaf with no path separators (lowercase letters, digits, single hyphens, ≤5 words).` | 29 | refusal |
 | `report scratch: cannot create <dir>: <reason>` | 1 | refusal (the universal `1` — the verb failed to run) |
 
 **Scope** — not a judging verb. Creates one directory, prints one path, writes no file content, and

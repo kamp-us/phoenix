@@ -44,7 +44,7 @@ export const runScratch = (
 		if (slug.includes("/") || slug.includes("\\") || !isKebabSlug(slug)) {
 			return refuse(
 				SLUG_MALFORMED,
-				`${VERB}: --slug "${slug}" must be a kebab-case leaf, no path separators.`,
+				`${VERB}: --slug "${slug}" must be a kebab-case leaf with no path separators (lowercase letters, digits, single hyphens, ≤5 words).`,
 			);
 		}
 		const dir = allocationDir(options.tmpRoot, options.allocation);

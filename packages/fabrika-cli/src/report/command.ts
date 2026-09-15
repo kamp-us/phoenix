@@ -160,7 +160,7 @@ const scratch = leafCommand(
 	"scratch",
 	{
 		slug: Flag.string("slug").pipe(
-			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
+			Flag.withDescription("the file's leaf name: kebab-case, ≤5 words, no path separators"),
 		),
 	},
 	Effect.fn(function* ({slug}) {
@@ -169,7 +169,7 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The staging path a body is written into before stdin carries it."),
 	Command.withDescription(
-		"Allocate one staging path for a body this group's writing verbs will read on stdin: <temp root>/fabrika-report/<allocation-id>/<slug>, one absolute path on stdout, the directory created if absent. A reporter holds no claim and no lane, so the key is a FRESH id per call rather than a claim nonce — the path is therefore not re-derivable, and a caller redirects from the literal path this verb printed. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created), 29 (--slug carries a path separator or is not kebab-case). Example: fabrika report scratch --slug body",
+		"Allocate one staging path for a body this group's writing verbs will read on stdin: <temp root>/fabrika-report/<allocation-id>/<slug>, one absolute path on stdout, the directory created if absent. A reporter holds no claim and no lane, so the key is a FRESH id per call rather than a claim nonce — the path is therefore not re-derivable, and a caller redirects from the literal path this verb printed. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created), 29 (--slug carries a path separator, is not kebab-case, or exceeds 5 hyphen-separated words). Example: fabrika report scratch --slug body",
 	),
 );
 

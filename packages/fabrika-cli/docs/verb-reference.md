@@ -958,7 +958,8 @@ File one follow-up observation into the intake queue. Contract:
 | `report scratch` | one staging path a body is written into before a literal stdin redirect carries it, keyed on a fresh id per call |
 
 **Exit codes.** The shared table this group defines, plus `27` the intake queue could not be read ·
-`28` the search index could not be read · `29` `report scratch`'s `--slug` is not a kebab-case leaf.
+`28` the search index could not be read · `29` `report scratch`'s `--slug` is not a kebab-case leaf
+of at most 5 hyphen-separated words.
 
 Seven behaviours are worth knowing:
 
