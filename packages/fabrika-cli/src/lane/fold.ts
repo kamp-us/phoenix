@@ -1013,7 +1013,7 @@ export const applyEvent = (
 		return {
 			_tag: "Refused",
 			kind: "unbudgeted-resume",
-			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the cleared round first — \`build clear\` where a pull request carries the founder's grant, \`lane clear\` where the lane has none and the driver grants the round on its own diagnosis; the two may land in either order.${stale}`,
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the cleared round first — \`lane clear\`, where the driver grants the round on its own diagnosis and the lane's pull request gets the same round in that one act, or \`build clear\` for a founder's bare PR-side grant; the grant and the resume may land in either order.${stale}`,
 		};
 	}
 	if (task.waitParks.get(next.type)?.has(from.type) === true && next.waits >= next.maxWaits) {
@@ -1140,8 +1140,8 @@ export type ClearanceResult =
 /**
  * The entry a recorded clearance appends — the local half of the grant protocol, kept beside
  * {@link applyEvent} because both decide appendability from the same fold. Two verbs reach it, one
- * per seat: `build clear` where the grant is a founder's marker on a pull request, and `lane clear`
- * where the lane has no pull request to carry one.
+ * per seat: `lane clear`, the driver's, which appends this entry and posts the same round's marker
+ * on the lane's pull request when it has one, and `build clear`, the founder's bare PR-side grant.
  *
  * It validates far less than an operator event does, and deliberately: a grant moves no task, so
  * there is no cell to miss, no phase to be outside of, and no terminal to be past. A clearance may

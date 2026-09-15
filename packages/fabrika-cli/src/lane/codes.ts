@@ -633,3 +633,20 @@ export const DEFERRAL_REFUSED = 64;
  * right one.
  */
 export const ROOT_NOT_OWNED = 65;
+
+/**
+ * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside
+ * `.fabrika.jsonc`'s grant-author set at the pull request's base ref, or below `write+` at GitHub's
+ * live ACL. Nothing is posted and the log is unappended.
+ *
+ * The ruling that gave a driver the PR-side seat moved the founder *document* off that grant and
+ * never the ACL: the marker `lane clear` posts is honoured through `../build/clearances.ts`'s same
+ * four clauses, so an account failing one of them posts a marker that grants nothing. Refusing the
+ * whole act is the point — a lane-side round recorded beside a void PR-side marker is exactly the
+ * half-seat the ruling closed.
+ *
+ * Its own seat rather than {@link GRANT_REFUSED}'s: that one says the budget is not spent yet and is
+ * answered by waiting, while this one says this account may not clear it and is answered by
+ * `build clear` from an account that may.
+ */
+export const GRANT_UNAUTHORIZED = 66;

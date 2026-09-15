@@ -326,21 +326,34 @@ const clear = leafCommand(
 		),
 		rationale: Flag.string("rationale").pipe(
 			Flag.withDescription(
-				"why this round is granted — the driver's own recommendation, recorded on the CLEARED line. Required: a grant nobody can review afterwards is not one.",
+				"why this round is granted — the driver's own recommendation, recorded on the CLEARED line AND posted on the lane's pull request as the grant's dated authorization. Required: a grant nobody can review afterwards is not one.",
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name the PR-side half reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
 			),
 		),
 	},
-	Effect.fn(function* ({lane, root, task, rationale}) {
+	Effect.fn(function* ({lane, root, task, rationale, repo}) {
 		yield* emit(
 			yield* onKey("clear", lane, root, (_key, ref) =>
-				runClear({...ref, task: Option.getOrNull(task), rationale}),
+				runClear({
+					...ref,
+					task: Option.getOrNull(task),
+					rationale,
+					repo: Option.getOrNull(repo),
+					env: process.env,
+					now: () => new Date(),
+				}),
 			),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Grant one repair round to a lane with no pull request to clear."),
+	Command.withShortDescription("Grant one repair round on both of a lane's repair budgets."),
 	Command.withDescription(
-		"Grant one repair round on a lane whose budget is spent, by appending the `<TASK>.CLEARED` event that is the only source of a repair budget. This is the driver's seat, for the lanes `build clear` cannot reach: that verb is PR-keyed from its first line, so an epic child and a chore lane — neither of which opens a pull request — parked at their cap with a door nothing could walk. The round is DERIVED, never typed: it is the round the task's own declared cap freezes at given the grants already in its log, so one call buys exactly one round and the next round needs its own call and its own recommendation. stdout is `{answer, lane, task, round, budget, rationale}`, where `answer` is `cleared` on a grant that landed and `held` on one the log already carried — a grant is keyed by its round and set-semantic, so a re-run doubles nothing. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the round is NOT cleared), 11 (the lane could not be read), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 39 (no .git entry at or above the cwd), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 47 (the task still has budget to spend, so there is no round to grant), 53 (--rationale says nothing). It grants a repair round and never a longer wait — waits ride their own resume through `lane transition --grant-wait`. Recording the grant does not move the task: the park's door is still the `UNBLOCKED`, and the two land in either order. Example: fabrika lane clear 8820 --task issue --rationale \"the three FAILs were one finding, now answered\"",
+		"Grant one repair round on a lane whose budget is spent, by appending the `<TASK>.CLEARED` event that is the only source of a repair budget — and, where the task has a pull request, granting that PR's own budget the same round in the same act. This is the driver's seat. It reaches the lanes `build clear` cannot — an epic child and a chore lane open no pull request and parked at their cap with a door nothing could walk — and it reaches the PR-side budget a builder actually reads, which a lane-side grant alone never bought. The round is DERIVED on both sides, never typed: the lane's is the round the task's own declared cap freezes at given the grants already in its log, and the PR's is its FAIL-marker round count, so one call buys exactly one round and the next needs its own call and its own recommendation. The --rationale is posted on the PR as the grant's dated authorization and the `cap-cleared` marker lands beside it, so `build verdicts` honours it through the same four clauses it honours a founder's grant under: the account still has to be in `.fabrika.jsonc`'s grant-author set at the PR's base ref and still has to hold write+ at GitHub's ACL — the ruling moved the founder DOCUMENT off a driver's grant and never the ACL. `build clear` is unchanged and stays the founder's verb for a bare PR-side grant with no lane clear behind it. The PR half runs FIRST, so every refusal below leaves the log byte-identical and a re-run derives the same round; a task with no pull request answers `pr: null` and the lane-side grant proceeds. stdout is `{answer, lane, task, round, budget, rationale, pr}`, where `answer` is `cleared` on a grant that landed and `held` on one the log already carried — a grant is keyed by its round and set-semantic, so a re-run doubles nothing — and `pr` is `null` or `{number, answer, round, cap}` whose own `answer` is `cleared` (posted now), `held` (an honoured grant already stood at that round) or `unspent` (the PR's budget was not spent, so there was no round there to clear). Exits 4 (lane record read in full and not the shape), 5 (the --rationale carries a machine-local path and is headed for a public pull request), 6 (the --rationale IS a bare @ path reference), 7 (no lane there), 8 (the append did not land, or a comment write on the PR did not — the round is NOT cleared), 9 (the marker posted and does not read back), 11 (the lane, the board, or the invoking account's authority could not be read — UNKNOWN, nothing posted), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 20 (several open PRs link the task's issue — which one carries its budget is not this verb's to guess), 21 (the key is not a lane key), 39 (no .git entry at or above the cwd), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 47 (the task still has budget to spend, so there is no round to grant), 53 (--rationale says nothing), 66 (the invoking account is outside the grant-author set at the PR's base ref, or below write — a marker it posted would be void, so the whole grant is refused; `build clear` from an account that may is the route). It grants a repair round and never a longer wait — waits ride their own resume through `lane transition --grant-wait`. Recording the grant does not move the task: the park's door is still the `UNBLOCKED`, and the two land in either order. Example: fabrika lane clear 8820 --task issue --rationale \"the three FAILs were one finding, now answered\"",
 	),
 );
 
