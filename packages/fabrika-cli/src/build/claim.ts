@@ -497,9 +497,16 @@ export const resolveOwnership = (
 				unauthorizedAdopts,
 			};
 		}
+		// The conferral arm of the same rule: the winning marker names another lane, and an authorized
+		// adopt of that lane's session naming this one hands the claim over. It reads the SAME
+		// ordering as the fence above — an adopt older than the winning marker adopted an earlier
+		// claim and confers nothing over this one. Reading it either way round is what let one
+		// succession answer Mine to two lanes over a single marker, and a release under the heir's
+		// token then delete a marker the other lane still held.
 		for (const adopt of adoptMarkersIn(listed.value, grammar)) {
 			if (parsed === null || adopt.adopted !== parsed.session) continue;
 			if (!namesCaller(adopt.token)) continue;
+			if (byAge(adopt, winner) < 0) continue;
 			const permission = yield* authorizationOf(adopt.author);
 			if (permission._tag === "Unknown") {
 				return {

@@ -136,21 +136,45 @@ describe("resolveOwnership — the adopt fence (#7010)", () => {
 		expect(ownership._tag === "Mine" && ownership.adopt?.token).toBe(HEIR_TOKEN);
 	});
 
+	/**
+	 * One authorized adopt that PREDATES the winning marker, so it adopted some earlier claim of the
+	 * gone session and speaks about neither lane's standing on marker 9101. Both readings of the
+	 * ordering rule are asserted against this one thread: read it on the fence alone and the gone
+	 * lane and the heir both answer Mine over a single marker.
+	 */
+	const ADOPT_PREDATES_MARKER: ReadonlyArray<Scripted> = [
+		[
+			COMMENTS,
+			comments(
+				{id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)},
+				{id: 9101, body: marker("s-gone", GONE_UUID), createdAt: "2026-08-10T00:00:00Z"},
+			),
+		],
+		[PERM, WRITE],
+	];
+
 	it("does not fence on an adopt OLDER than the marker it would fence — it adopted some earlier claim", async () => {
 		const {ownership} = await run(
 			resolveOwnership("o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
-			[
-				[
-					COMMENTS,
-					comments(
-						{id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)},
-						{id: 9101, body: marker("s-gone", GONE_UUID), createdAt: "2026-08-10T00:00:00Z"},
-					),
-				],
-				[PERM, WRITE],
-			],
+			ADOPT_PREDATES_MARKER,
 		);
 		expect(ownership._tag).toBe("Mine");
+	});
+
+	it("confers nothing on that same older adopt — the two lanes never both read Mine over one marker", async () => {
+		const gone = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
+			ADOPT_PREDATES_MARKER,
+		);
+		const heir = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			ADOPT_PREDATES_MARKER,
+		);
+		expect(gone.ownership._tag).toBe("Mine");
+		expect(heir.ownership._tag).toBe("Foreign");
+		expect(
+			[gone.ownership, heir.ownership].filter((ownership) => ownership._tag === "Mine"),
+		).toHaveLength(1);
 	});
 
 	it("does not fence on an unauthorized adoption — the succession never legally happened", async () => {

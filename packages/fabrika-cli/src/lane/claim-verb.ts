@@ -37,7 +37,7 @@
  * answered "nothing to retract" while `claim` went on counting the comment and losing to it under a
  * fresh nonce every pass. Deleting the comment by hand was the only way out, which is the one act
  * the lane-succession decision exists to remove. `release` now reads that stranded adopt as this
- * driver's own and retracts it alone, and an adopt fences only a claim marker it postdates.
+ * driver's own and retracts it alone, and an adopt fences and confers only over a claim marker it postdates.
  */
 
 import {Effect} from "effect";

@@ -1037,14 +1037,20 @@ adopt, resolved off the `by <token>` exactly as a win is, so a sibling lane's su
 sweepable than its claim would be; every other lane reads the thread as unclaimed. `confirm` and the
 shared precondition refuse it on `15` and name that release, because an adoption is not a claim.
 
-**An adopt fences only a claim marker it postdates.** The fence that keeps one succession from
-answering `mine` to two lanes reads an adopt over the winning marker's session; a succession adopts a
-claim that already stands, so an adopt older than that marker adopted some earlier claim and says
+**An adopt fences and confers only over a claim marker it postdates.** The fence that keeps one
+succession from answering `mine` to two lanes reads an adopt over the winning marker's session; a
+succession adopts a claim that already stands, so an adopt older than that marker adopted some earlier claim and says
 nothing about this one. Ordering is GitHub's `created_at` with the comment id breaking a same-second
 tie — the same order the marker lists sort in, and not a field a marker's author composes. Without
 the ordering read, one stray adopt naming a session fenced every marker that session would ever post
 on the number, and each fresh claim lost to it under a new nonce, which is the loop that made the
 sanctioned remedy non-terminating.
+
+The same order binds the conferral, which is the other arm of one read: the adopted session's lane
+meets the fence, the adopting lane meets the conferral, and both are answered over the same pair of
+comments. So an adopt older than the winning marker confers that marker no more than it fences it.
+Read on one arm alone, one authorized succession answers `mine` to both lanes over a single marker,
+and `release` under the adopting lane's token then deletes a marker the other lane holds.
 
 The session id arrives from the environment — `FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`,
 else `PI_SUBAGENT_PARENT_SESSION`; named in `--help` with its unset
