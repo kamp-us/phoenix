@@ -109,7 +109,14 @@ const askTheReviewer = (booted: Booted) =>
 		const child = rows.findLast((row) => row.programId === REVIEWER_PROGRAM && !asked.has(row.id));
 		if (child === undefined) return false;
 		const sent = yield* SpawnedProcesses.use((processes) =>
-			processes.send(child.id, "prompt", `review #${child.id}`),
+			// A `PromptPayload`, because that is what the port takes now that the example's shape is
+			// declared over the real agent payloads (#8887): the kernel's `accepts` refuses anything
+			// else at the send, which is where this used to hand it a bare line.
+			processes.send(child.id, "prompt", {
+				text: `review #${child.id}`,
+				key: child.id,
+				timestamp: 0,
+			}),
 		).pipe(
 			Effect.as(true),
 			Effect.catchCause(() => Effect.succeed(false)),

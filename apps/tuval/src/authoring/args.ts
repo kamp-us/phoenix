@@ -19,11 +19,13 @@
  * call built — and answers the id of the program that filled it (#8762). A literal program id
  * resolves to itself, so a shaped arg and a shipped program take one path into the registry.
  *
- * **What the substrate still owes.** A config filling a program-valued arg has to hand something
- * publishing its own port declarations, and a shipped program row publishes payload predicates
- * instead — so the worked example's config cannot yet fill its `reviewer` with the session row it
- * names (#8887). `defineProgram`'s `fill` is typed as a plain record rather than off the
- * declarations its `args` were built from (#8954).
+ * **A fill may be a shipped row, not only an authored one.** `fitsShape` reads a compiled row's
+ * published payload schemas as readily as an author's declarations (`./shape.ts`), so the worked
+ * example's config fills its `reviewer` with the session row it names (#8887).
+ *
+ * **What the substrate still owes.** `defineProgram`'s `fill` is typed as a plain record rather
+ * than off the declarations its `args` were built from (#8954), so the fit is checked at the
+ * definition call and not by the type checker one line earlier.
  */
 
 import {Context, Effect, Layer, Option, Result, Schema} from "effect";

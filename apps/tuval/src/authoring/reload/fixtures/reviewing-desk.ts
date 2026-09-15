@@ -11,11 +11,11 @@
  *
  * **This layer states the fill, because a fill is a config's to state.** The example names its
  * reviewer by ports alone, so this module is the one that says which program fills that arg
- * ([#8762](https://github.com/kamp-us/phoenix/issues/8762)): it builds the row off
- * `prReviewProgram` with a `fill`, rather than through `prReview`, whose own config fills the arg
- * with a shipped session row and cannot state it through `defineProgram` until
- * [#8887](https://github.com/kamp-us/phoenix/issues/8887) closes. What it hands is the reviewer's
- * *authored* port declarations, which is what a shape is checked against.
+ * ([#8762](https://github.com/kamp-us/phoenix/issues/8762)), and it states it through `prReview`
+ * itself — the factory takes a `ShapeSource` and threads it into `defineProgram`'s `fill`, so there
+ * is no longer a second way in ([#8887](https://github.com/kamp-us/phoenix/issues/8887)). What it
+ * hands is the reviewer's compiled row, whose ports publish the payload schemas a shape is checked
+ * against.
  *
  * **One shape here is still the substrate's gap, not the example's.** A graph route compiles only
  * between two ports of one `kind`, which `../../port.ts` derives from the declaring program's id —
@@ -27,12 +27,17 @@
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
 import {Effect, Schema} from "effect";
+import {
+	type PromptPayload,
+	PromptPayloadSchema,
+	TurnResultSchema,
+} from "../../../ai-agent/ports/index.ts";
 import type {TuvalConfigInput} from "../../../config.ts";
 import {ProcessPorts} from "../../../ports/ProcessPorts.ts";
 import {type AnyProgram, type Program, ProgramId} from "../../../registry/program.ts";
 import {type Answer, type ArrivalEvent, defineProgram} from "../../define-program.ts";
 import {emit} from "../../effect.ts";
-import {prReviewProgram} from "../../example/pr-review.ts";
+import {prReview} from "../../example/pr-review.ts";
 import {port, portKind} from "../../port.ts";
 import {
 	DESK_NODE,
@@ -51,18 +56,19 @@ type ReviewerState = {readonly asked: string | null};
 
 /**
  * The ports the reviewer publishes, named once: the row is compiled from them and the fill below is
- * checked against them, so the thing registered and the thing checked cannot drift apart.
+ * checked against them, so the thing registered and the thing checked cannot drift apart. They are
+ * the two payloads `pr-review`'s shape declares — the fit is over these schemas and nothing else,
+ * so a reviewer written against a bare line would be refused at this layer's load (#8887).
  */
-const reviewerPorts = {prompt: port.in(Schema.String), result: port.out(Schema.String)};
-
-/** What this layer hands the example's `reviewer` arg: that program's id, and those declarations. */
-const reviewerFill = {id: REVIEWER_PROGRAM, ports: reviewerPorts};
+const reviewerPorts = {prompt: port.in(PromptPayloadSchema), result: port.out(TurnResultSchema)};
 
 /**
  * The reviewer the example is handed: it answers on `result`, which the example's `spawn` routes
  * back as its own `result` event. `replay` is the cell a restored reviewer's `resume` reaches, and
  * this generation decides whether it declares one at all.
  */
+const turn = (text: string) => ({text, items: [], ok: true});
+
 const reviewer = defineProgram({
 	id: REVIEWER_PROGRAM,
 	ports: reviewerPorts,
@@ -70,9 +76,12 @@ const reviewer = defineProgram({
 	update: {
 		prompt: (
 			_state: ReviewerState,
-			event: ArrivalEvent<"prompt", string>,
-		): Answer<ReviewerState> => [{asked: event.payload}, [emit("result", VERDICT)]],
-		replay: (state: ReviewerState): Answer<ReviewerState> => [state, [emit("result", VERDICT)]],
+			event: ArrivalEvent<"prompt", PromptPayload>,
+		): Answer<ReviewerState> => [{asked: event.payload.text}, [emit("result", turn(VERDICT))]],
+		replay: (state: ReviewerState): Answer<ReviewerState> => [
+			state,
+			[emit("result", turn(VERDICT))],
+		],
 	},
 	// A state with nothing to resume answers with an empty list, which is the row contract; this
 	// generation is what decides whether there is anything to say.
@@ -85,11 +94,10 @@ type ReviewRow = AnyProgram & {readonly reviewing: number};
 const reviewing = (row: AnyProgram): number => (row as ReviewRow).reviewing;
 
 export const reviewRow: ReviewRow = {
-	...defineProgram({
-		...prReviewProgram,
-		label: `pr-review (${REVIEWER_PROGRAM})`,
-		fill: {reviewer: reviewerFill},
-	}),
+	// The compiled row itself, handed to the example's own config factory. That factory takes a
+	// `ShapeSource` now and threads it into `fill`, so this layer no longer has to reach past
+	// `prReview` to `defineProgram` to state one (#8887, #8955).
+	...prReview({reviewer}),
 	reviewing: declared.reviewing,
 	// The spread half: a re-read config that names another pull request tells the live process so,
 	// as an arrival on the port it already takes. A generation that moved nothing says nothing.
