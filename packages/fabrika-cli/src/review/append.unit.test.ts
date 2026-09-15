@@ -8,6 +8,9 @@ import {
 	grewByOne,
 	insertAfterLastCriterion,
 	provenanceTag,
+	readProvenanceTag,
+	sameSubject,
+	withoutProvenanceTag,
 } from "./append.ts";
 
 /** The criteria the registered format reads out of a body — the operand `grewByOne` compares. */
@@ -180,5 +183,55 @@ Some trailing prose.`;
 
 	it("refuses a shorter body outright", () => {
 		expect(appendOnly(BODY, "### Acceptance criteria")._tag).toBe("Violates");
+	});
+});
+
+/**
+ * The reader beside the writer. It is asserted as a ROUND TRIP rather than against typed-out tags:
+ * the only claim worth making is that what `criterionRow` wrote is what this reads back, and a
+ * hand-typed expectation would keep passing the day the writer gains a spelling the reader lacks.
+ */
+describe("readProvenanceTag", () => {
+	const sha = (raw: string) => {
+		const validated = headSha(raw);
+		if (validated === null) throw new Error(`${raw} is not a revision`);
+		return validated;
+	};
+	const BASE_SHA = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
+	const TIP_SHA = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
+	const pull: CriterionProvenance = {_tag: "Pull", pr: 4321};
+	const ranged: CriterionProvenance = {
+		_tag: "Ranged",
+		range: {base: sha(BASE_SHA), tip: sha(TIP_SHA)},
+	};
+
+	it("reads back every subject the writer can emit, with its round", () => {
+		for (const provenance of [pull, ranged]) {
+			const routed = readProvenanceTag(criterionRow("a regression test", provenance, 2));
+			expect(routed?.round).toBe(2);
+			expect(routed === null ? null : sameSubject(routed.provenance, provenance)).toBe(true);
+		}
+	});
+
+	it("tells two subjects of the same kind apart, and two of different kinds", () => {
+		expect(sameSubject(pull, {_tag: "Pull", pr: 9999})).toBe(false);
+		expect(sameSubject(pull, ranged)).toBe(false);
+	});
+
+	// The abbreviation tolerance the upsert key already has: a reviewer that appended under seven hex
+	// and posts under forty judged one range, and a strict compare would read it as two.
+	it("matches an abbreviated range against the full one", () => {
+		const short: CriterionProvenance = {
+			_tag: "Ranged",
+			range: {base: sha(BASE_SHA.slice(0, 7)), tip: sha(TIP_SHA.slice(0, 7))},
+		};
+		expect(sameSubject(short, ranged)).toBe(true);
+	});
+
+	it("answers null on a row carrying no tag, and strips the tag off one that does", () => {
+		expect(readProvenanceTag("- [ ] a criterion nobody routed")).toBeNull();
+		expect(withoutProvenanceTag(`a regression test ${provenanceTag(pull, 1)}`)).toBe(
+			"a regression test",
+		);
 	});
 });

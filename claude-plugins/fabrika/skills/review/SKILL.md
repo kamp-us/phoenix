@@ -281,7 +281,12 @@ pass, then route each finding **binary** — traces to the linked issue's stated
 severity tier. In-scope findings append an acceptance criterion under the verb's fences
 (append-only, ACL-gated fail-closed, frozen at the round the verb declares — hand it `--round` and
 read its answer, never a remembered number); the row enters the *next* cycle's verdict,
-never this one's. Out-of-scope findings go to fabrika's `/report`, non-blocking.
+never this one's. **So appending makes this round's terminal a `FAIL`** — there is no next cycle
+behind a `PASS`: the lane folds to `ship`, the PR merges, the issue auto-closes, and the row you
+just wrote sits unread on a closed issue. `review post --polarity PASS --round <n>` refuses that
+pair on `18` and names the row, so the choice is yours to make deliberately: route the finding and
+fail the round, or leave the contract alone. Out-of-scope findings go to fabrika's `/report`,
+non-blocking.
 
 ```bash
 fabrika review append-criterion 4287 --pr $pr_number --round 1 <<'EOF'
@@ -353,7 +358,7 @@ undisclosed that this gate could see"* — never "no deviations exist".
   governance root derives `governance` exactly as a PR diff does. So post every namespace the range
   derives **and that you may emit** over that range, on the child issue, with `--base`/`--tip` in
   place of `--sha`: yours through
-  `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
+  `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t> --round <n>`, governance's
   through the `governance` skill's own range form (its §5). What binds is content, not a head alone.
   **A re-post over the
   same range appends exactly as the PR path does** — the prior verdict is retired below the fence,
@@ -390,13 +395,15 @@ undisclosed that this gate could see"* — never "no deviations exist".
 ## 7 — Emit: append into one comment per namespace, read back, bound to what you saw
 
 ```bash
-fabrika review post $pr_number --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
+fabrika review post $pr_number --namespace review-code --polarity PASS --sha 03135b91 --round 1 --clause "merge-ready" <<'EOF'
 …the verdict body: per-criterion evidence, findings, deviations table…
 EOF
 ```
 
 `--sha` is the head you actually inspected; the verb re-resolves the live head at post time and
-refuses when it moved — re-review, never re-bind. One invocation per namespace: a stacked second
+refuses when it moved — re-review, never re-bind. `--round` is the round you are on, the same number
+§4 handed `append-criterion`, and a `PASS` is refused without it: it is what lets the verb see
+whether this round routed a finding that a `PASS` would bury (`18`). A `FAIL` owes no round. One invocation per namespace: a stacked second
 marker is un-anchored, resolves its namespace empty, and fail-closes a passing PR. **The verb is the
 only emit path** — a hand-posted marker is how a false PASS ships — and it reads its own comment
 back.

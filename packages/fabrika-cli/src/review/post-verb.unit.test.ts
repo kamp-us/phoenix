@@ -11,6 +11,7 @@ import {
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
+	APPENDED_THIS_ROUND,
 	BARE_AT_PATH,
 	EMPTY_STDIN,
 	LEAKED_PATH,
@@ -29,6 +30,8 @@ import {
 	comments,
 	files,
 	HEAD,
+	issue,
+	LINKED_ISSUE,
 	OLD_HEAD,
 	PATHS_AT,
 	paths,
@@ -54,6 +57,18 @@ const NOT_FOUND = '{"message":"Not Found"}';
 
 /** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */
 const served = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
+
+/** The linked issue the `18` fence reads on every PASS — `pull()`'s body closes it. */
+const ISSUE = new RegExp(`GET .*/repos/o/r/issues/${LINKED_ISSUE}$`);
+
+const ISSUE_BODY_HEAD = "Build the thing.\n\n### Acceptance criteria\n\n- [ ] the first thing\n";
+
+/** That issue with `rows` appended under its acceptance-criteria block, as the platform serves it. */
+const issueWith = (...rows: ReadonlyArray<string>): HttpReply =>
+	served(issue(`${ISSUE_BODY_HEAD}${rows.map((row) => `${row}\n`).join("")}`));
+
+/** The ordinary case: a contract this round routed nothing into. */
+const CLEAN_ISSUE: Scripted = [ISSUE, issueWith()];
 
 /** The body one write carried, as text — the successor to reading it off a `-f body=` argv. */
 const written = (
@@ -114,11 +129,13 @@ const options = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 	now: Effect.succeed(NOW),
 	supersede: false,
+	round: 1 as number | null,
 };
 
 const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, served(pull())],
 	...binding(),
+	CLEAN_ISSUE,
 	[PATHS_AT(), paths("src/cart.ts", "README.md")],
 	[FILES, served(files("skills/deploy/SKILL.md"))],
 	[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -129,6 +146,12 @@ const happy = (): ReadonlyArray<Scripted> => [
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runPost({...options, ...overrides}), fakeSeams(script).layer));
+
+/** {@link happy}, with the linked issue answering `reply` instead of the clean contract. */
+const withIssue = (reply: HttpReply): ReadonlyArray<Scripted> =>
+	happy().map((entry) => (entry[0] === ISSUE ? ([ISSUE, reply] as Scripted) : entry));
+
+const routed = (text: string, tag: string): string => `- [ ] ${text} ${tag}`;
 
 describe("runPost", () => {
 	it("posts the verdict and says whether it created or edited", async () => {
@@ -151,6 +174,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -188,6 +212,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -212,6 +237,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -237,6 +263,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -265,6 +292,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -295,6 +323,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -314,6 +343,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 2}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -356,6 +386,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 2}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -396,6 +427,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -490,6 +522,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), errOut("fatal: bad revision")],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
@@ -502,6 +535,7 @@ describe("runPost", () => {
 		const out = await run([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -518,6 +552,7 @@ describe("runPost", () => {
 		const out = await run([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -534,6 +569,7 @@ describe("runPost", () => {
 		const out = await run([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -550,6 +586,7 @@ describe("runPost", () => {
 		const shell = fakeSeams([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -582,6 +619,7 @@ describe("runPost", () => {
 		const fresh = fakeSeams([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -596,6 +634,7 @@ describe("runPost", () => {
 		const again = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -616,6 +655,7 @@ describe("runPost", () => {
 		const overAdvisory = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -630,6 +670,7 @@ describe("runPost", () => {
 		const overMarker = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -687,6 +728,7 @@ describe("runPost", () => {
 		const out = await run([
 			[PULL, served(pull())],
 			...binding(),
+			CLEAN_ISSUE,
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -778,5 +820,100 @@ describe("runPost recomputes its namespace set at the bound commit", () => {
 		);
 		expect(out.code).toBe(STALE_HEAD);
 		expect(shell.calls.some((call) => call.startsWith("git diff"))).toBe(false);
+	});
+});
+
+/**
+ * The `18` fence. A reviewer that appends a criterion has routed a finding into the NEXT cycle, and
+ * a PASS has no next cycle — the lane folds to ship, the PR merges, the issue closes, and the row
+ * is never read by anything. Observed live: the finding survived only as prose in a human's inbox.
+ */
+describe("runPost refuses a PASS on the round that appended a criterion", () => {
+	const APPENDED = "a regression test covers qty > 1";
+
+	it("refuses on 18, naming the row and the FAIL the round owes, and writes nothing", async () => {
+		const shell = fakeSeams(
+			withIssue(issueWith(routed(APPENDED, `<!-- ac:review pr:#4321 round:1 -->`))),
+		);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(APPENDED_THIS_ROUND);
+		expect(out.stdout).toBe("");
+		const said = out.stderr.at(-1) ?? "";
+		expect(said).toContain(`round 1 appended an acceptance criterion to #${LINKED_ISSUE}`);
+		expect(said).toContain(APPENDED);
+		expect(said).toContain("--polarity FAIL");
+		expect(shell.requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(
+			false,
+		);
+	});
+
+	// The whole discrimination: a row appended on round 1 is SUPPOSED to be standing unmet when
+	// round 2's PASS lands — that is what "binds the next cycle" means.
+	it("passes a later round over a criterion an earlier one appended", async () => {
+		const out = await run(
+			withIssue(issueWith(routed(APPENDED, `<!-- ac:review pr:#4321 round:1 -->`))),
+			{round: 2},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcreated\t");
+	});
+
+	it("passes a round that routed nothing, and one whose row came off another PR", async () => {
+		expect((await run(happy())).code).toBe(0);
+		const foreign = await run(
+			withIssue(issueWith(routed(APPENDED, `<!-- ac:review pr:#9999 round:1 -->`))),
+		);
+		expect(foreign.code).toBe(0);
+	});
+
+	it("refuses a PASS that names no round on 10, before any read", async () => {
+		const shell = fakeSeams(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, round: null}), shell.layer),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("--round is required on a PASS");
+		expect(shell.requests).toHaveLength(0);
+	});
+
+	it("lets a FAIL through with no round — a FAIL has a next cycle to carry the row", async () => {
+		const out = await run(
+			happy().map((entry) =>
+				entry[0] === READBACK
+					? ([
+							READBACK,
+							commentBody(
+								`review-doc: FAIL @ ${HEAD} content:${CONTENT} — guide matches shipped behavior\n\n${BODY}`,
+							),
+						] as Scripted)
+					: entry,
+			),
+			{polarity: "FAIL", round: null},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	// A read that cannot be completed is never "no appended criterion": the row may be sitting there
+	// unseen, and folding that into a pass is the exact loss this fence exists to stop.
+	it("refuses on 11 when the criteria block is malformed, never treating it as no row", async () => {
+		const out = await run(
+			withIssue(served(issue("Build the thing.\n\n### Acceptance criteria\n\nsee the doc.\n"))),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("malformed");
+		expect(out.stderr.at(-1)).toContain("UNKNOWN");
+	});
+
+	it("refuses on 11 when the issue body cannot be read at all", async () => {
+		const out = await run(withIssue({status: 502, body: '{"message":"bad gateway"}'}));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(`cannot read #${LINKED_ISSUE}`);
+	});
+
+	// An absent block is the one negative that is PROVEN: `review append-criterion` refuses an issue
+	// carrying no conforming block, so no row can have been appended under one that is not there.
+	it("passes when the issue carries no acceptance-criteria block at all", async () => {
+		const out = await run(withIssue(served(issue("Build the thing.\n"))));
+		expect(out.code).toBe(0);
 	});
 });
