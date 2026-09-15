@@ -12,9 +12,11 @@
 
 import {Effect, Schema} from "effect";
 import {type AnySpell, defineSpell, type Scope, type SpellPath} from "../commands/spell.ts";
-import type {CapabilityRequest, HostHandlers} from "../registry/program.ts";
+import type {ProcessTable} from "../process/ProcessTable.ts";
+import type {CapabilityRequest, HostHandlers, ProgramId} from "../registry/program.ts";
 import type {AuthoredEvent} from "./define-program.ts";
-import type {EmitEffect, ProgramEffect} from "./effect.ts";
+import type {SendEffect, SendTarget} from "./effect.ts";
+import {type OwnProcessRefused, resolveOwnProcess} from "./own-process.ts";
 
 /**
  * Re-exported because a `run` that reads its scope has to name the type, and an author reaching
@@ -27,15 +29,24 @@ export type {Scope};
 export type CommandArgs<A> = Schema.Codec<A, any, never, unknown>;
 
 /**
- * The effects a command may ask for: every one an `update` cell may, less `emit`.
+ * The one effect a command may ask for: `send`. Not four of the six, and not five — one (ADR 0372
+ * as #8898 and #8858 amended it).
  *
- * `emit` announces on **a running process's** out-port, and a spell call is not a process step. The
- * `Scope` it runs under names a workspace and a client, and the `process` it may carry is the
- * *caller's* — so with none there is no out-port at all, and with one the out-port is somebody
- * else's. Neither case leaves an out-port that is the declaring program's to announce on. Excluding
- * `emit` here makes that a refusal the checker states where the command is written (ADR 0372).
+ * The argument is the same in every case the ruling closed, and it is what a spell call *is*: not a
+ * process step. The `Scope` it runs under (`../commands/spell.ts`) names a workspace and a client,
+ * and the `process` it may carry is the *caller's*. So `emit` has no out-port of the declaring
+ * program's to announce on; `spawn` has no honest process to stamp a child's parent from and `ask`
+ * none to route an answer back to (both read `ProcessSelf`, which `Kernel` does not carry — #8858);
+ * `reply` answers a question this call was never asked; and `stop` ends a process the command was
+ * given no claim on. What is left is the one route that was always honest: put a payload on an
+ * in-port and let the `update` cell that owns it decide.
+ *
+ * The target widens where the verb narrows. `SendTarget` lets a command name a bare port of its own
+ * program, which `./own-process.ts` resolves at the call — so a command sends into its own program
+ * without ever minting a process id, and the explicit `send({process, port}, …)` still works for
+ * the process a command was handed as an argument.
  */
-export type CommandEffect = Exclude<ProgramEffect, EmitEffect>;
+export type CommandEffect = SendEffect<SendTarget>;
 
 /** What a command's `run` answers: the effects it asks for, one or a list. */
 export type CommandAnswer = CommandEffect | ReadonlyArray<CommandEffect>;
@@ -69,36 +80,52 @@ export type CommandTable<C> = {readonly [K in keyof C]: CommandDecl<C[K]>};
 export type CommandArgTypes = Readonly<Record<string, unknown>>;
 
 /**
- * What the compiled `execute` needs to interpret a command's effects: the spine's handlers for the
- * five a command may ask for. There is no `emit` key, so the handler that reads `ProcessPorts` is
- * not reachable from here and a compiled spell never requires that service.
+ * What the compiled `execute` needs to interpret a command's effects: the spine's `send` handler,
+ * and nothing else. Every other handler is unreachable from here, so a compiled spell requires
+ * neither `ProcessPorts` (the `emit` reader) nor `ProcessSelf` (the `spawn`/`ask` reader) — the two
+ * services `Kernel` does not name, and the whole of what #8766, #8858 and #8898 were about.
+ *
+ * Typed over the addressed `SendEffect` rather than over `CommandEffect`: a bare target is resolved
+ * into one before the handler sees it, so the spine's handler stays the one an `update` cell uses.
  */
-export type CommandHandlers<E, R> = HostHandlers<AuthoredEvent, CommandEffect, E, R>;
+export type CommandHandlers<E, R> = HostHandlers<AuthoredEvent, SendEffect, E, R>;
 
 const asList = (answer: CommandAnswer): ReadonlyArray<CommandEffect> =>
 	Array.isArray(answer) ? answer : [answer as CommandEffect];
 
+/** The addressed form of one command `send`: a bare port resolved against the declaring program. */
+const address = (
+	program: ProgramId,
+	effect: CommandEffect,
+	scope: Scope,
+): Effect.Effect<SendEffect, OwnProcessRefused, ProcessTable> =>
+	typeof effect.to === "string"
+		? Effect.map(resolveOwnProcess(program, effect.to, scope), (process) => ({
+				type: "send",
+				to: {process, port: effect.to as string},
+				payload: effect.payload,
+			}))
+		: Effect.succeed(effect as SendEffect);
+
 /**
- * Run a command's effects through the spine's handlers, exactly as an `update` cell's effects are
- * run. The events those handlers answer — a `spawn`'s `spawned`, a `stop`'s `stopped` — are
- * dropped here: a spell call is not a process step and has no inbox to dispatch them into.
+ * Run a command's sends through the spine's handler, exactly as an `update` cell's are run. The
+ * events a handler answers are dropped here: a spell call is not a process step and has no inbox to
+ * dispatch them into.
  */
 const interpret = <E, R>(
+	program: ProgramId,
 	answer: CommandAnswer,
+	scope: Scope,
 	handlers: CommandHandlers<E, R>,
-): Effect.Effect<void, E, R> => {
-	const byType = handlers as {
-		readonly [K in CommandEffect["type"]]: (
-			cmd: CommandEffect,
-		) => Effect.Effect<ReadonlyArray<AuthoredEvent>, E, R>;
-	};
+): Effect.Effect<void, E | OwnProcessRefused, R | ProcessTable> =>
 	// Serial on purpose: a command's effects are asked for in the order they were written, exactly
-	// as an `update` cell's list is.
-	return Effect.forEach(asList(answer), (effect) => byType[effect.type](effect), {
-		concurrency: 1,
-		discard: true,
-	});
-};
+	// as an `update` cell's list is. Each is addressed immediately before it is run rather than all
+	// of them up front, so a refusal stops the list where it was written.
+	Effect.forEach(
+		asList(answer),
+		(effect) => Effect.flatMap(address(program, effect, scope), handlers.send),
+		{concurrency: 1, discard: true},
+	);
 
 /**
  * The declared name is the command's path, dot-separated as a rendered path is (`window.close`).
@@ -121,8 +148,13 @@ const NO_CAPABILITIES: ReadonlyArray<CapabilityRequest> = [];
  * is the registry's to compose from the row's id — two programs declaring one command name
  * therefore collide on nothing. A program declaring none answers `undefined`, which is how the
  * row's optional `spells` stays absent rather than present-and-empty.
+ *
+ * `program` is the row's own id, and it is taken here for the same reason the group is not: a bare
+ * `send("pr", pr)` means *this program's* process, so the compiler is the only place that knows
+ * which program to resolve it against.
  */
 export const compileCommands = <E, R>(
+	program: ProgramId,
 	commands: CommandDecls | undefined,
 	handlers: CommandHandlers<E, R>,
 ): ReadonlyArray<AnySpell> | undefined => {
@@ -135,7 +167,8 @@ export const compileCommands = <E, R>(
 			describe: decl.describe ?? path.join("."),
 			params: decl.args,
 			result: Schema.Void,
-			execute: (args: unknown, scope: Scope) => interpret(decl.run(args, scope), handlers),
+			execute: (args: unknown, scope: Scope) =>
+				interpret(program, decl.run(args, scope), scope, handlers),
 			capabilities: decl.capabilities ?? NO_CAPABILITIES,
 		});
 	});

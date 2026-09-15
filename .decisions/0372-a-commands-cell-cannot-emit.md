@@ -13,6 +13,13 @@ tags: [tuval, authoring, commands, spells, effects, ports]
 `update` cell's alone. An `emit` written in a `commands` cell is a type error where it is written,
 not a missing-service defect at the first call.
 
+**Amended 2026-09-14 (see Consequences):** the rulings on
+[#8898](https://github.com/kamp-us/phoenix/issues/8898) and
+[#8858](https://github.com/kamp-us/phoenix/issues/8858) ran this record's own argument the rest of
+the way. A declared command may ask for `send` and nothing else, and a bare port name in one means
+an in-port of the declaring program's own process. The paragraph above is what was decided on
+2026-09-09 and is kept as written; the list of four other effects is no longer the live rule.
+
 Founder ruling: <https://github.com/kamp-us/phoenix/issues/8766#issuecomment-5612412328> — "Ruled:
 direction 2. A commands cell cannot declare emit; a spell call from a scope with no process has no
 caller to emit from." Same shape as the ruling on #8757: what belongs to a process is stamped by the
@@ -61,16 +68,55 @@ and with one there is an out-port belonging to somebody else.
 
 ## Consequences
 
-- A program that wants to announce does it from an `update` cell. A command that should cause an
-  announcement `send`s into the program's own in-port and lets the cell emit — which is the same
-  route any other caller takes. **That route is not offered yet**: a command's `Scope.process` is the
-  caller's, as this record's Context says, and the authoring layer has no way to name a process of
-  the declaring program. Filed as [#8898](https://github.com/kamp-us/phoenix/issues/8898); until it
-  is settled, the sentence above is where the decision points, not something an author can write.
+> **Amended 2026-09-14 — a command may declare only `send`, and a bare port name means its own
+> program.** The founder ruled #8898 and #8858 together on 2026-09-10 PT
+> (<https://github.com/kamp-us/phoenix/issues/8898#issuecomment-5625301070>,
+> <https://github.com/kamp-us/phoenix/issues/8858#issuecomment-5625302266>), and both rulings ran
+> the argument in the Decision above one effect further. The two bullets this section used to carry
+> as open holes are closed below; the decision itself is unchanged, and `emit` is still refused for
+> exactly the reason stated.
+
+- **`CommandEffect` is `SendEffect<SendTarget>`: `send`, and nothing else.** The same argument that
+  refused `emit` refuses the other four, which is what the rulings say. `spawn` stamps a child's
+  parent off `ProcessSelf` and `ask` routes its answer to the same service; a spell call runs under
+  no process, so neither has an honest `self` — that was #8858's whole question, and `Kernel` in
+  [`apps/tuval/src/boot.ts`](../apps/tuval/src/boot.ts) names `ProcessSelf` no more today than it
+  did then, and must not be widened to. `reply` spends a correlation a request-port arrival carried,
+  and a spell call was asked nothing. `stop` ends a process the call was handed no claim on. The
+  refusal is the checker's at the line that wrote it, and
+  [`apps/tuval/src/authoring/commands.unit.test.ts`](../apps/tuval/src/authoring/commands.unit.test.ts)
+  holds one `@ts-expect-error` case per refused effect.
+- **`COMMAND_HANDLERS` is one key.** It is `{send: sendHandler}`, typed over
+  `CommandEffectServices = Extract<EffectServices, SpawnedProcesses>`. `ProcessPorts` and
+  `ProcessSelf` — the two services `Kernel` does not name — are both unreachable from a compiled
+  spell rather than merely unused by one, so the erasure `executor.ts` describes no longer hides
+  anything the composition root owes. `HANDLERS`/`EffectServices` keep all six for the `update` path.
+- **The recorded route is "send to your own program", and it is now offered.** A command that should
+  cause an announcement `send`s into its own program's in-port and lets the `update` cell that owns
+  it emit. The bare form — `send("pr", pr)` — names a port and no process;
+  [`apps/tuval/src/authoring/own-process.ts`](../apps/tuval/src/authoring/own-process.ts) resolves it
+  at the call, against the declaring program, by the ruled three-case rule: exactly one live process,
+  that one; several with the caller's own `Scope.process` among them, the caller's; anything else, a
+  typed refusal (`NoLiveProcess`, `AmbiguousProcess`) naming the program and the ambiguity, which
+  comes back as a spell reply rather than a silent no-op. The explicit `send({process, port}, …)`
+  form is untouched, for the process a command was handed as an argument.
+- **`ProcessTable` is the read, and `Kernel` already names it.** The question is "which processes of
+  this program are alive", which only the live table answers; `SpawnedProcesses` holds a subset. So
+  the resolution widens what a compiled spell requires by one service the composition root was
+  already providing, and by nothing else.
+- **The worked example is the thing to copy again.**
+  [`apps/tuval/src/authoring/example/pr-review.ts`](../apps/tuval/src/authoring/example/pr-review.ts)
+  declares `run: (pr) => send("pr", pr)` — the shape epic #8716 R16.1 and ticket #8734's criterion 7
+  always specified. Those two live only in closed GitHub issues, so there is nothing in-tree left
+  prescribing the old `send({process, port: "pr"}, …)` route.
+- **One reach remains narrower than the resolution.** `sendHandler` delivers through
+  `SpawnedProcesses`, which holds only the processes it spawned, so a bare send that resolves to a
+  *graph-launched* process of the declaring program is refused `UnknownProcess`. That is the
+  pre-existing gap [#8944](https://github.com/kamp-us/phoenix/issues/8944), not a new one: the same
+  is true of the `process send` spell today. Resolution is deliberately over the true live set
+  anyway — answering "no live process" while one is plainly running would be the dishonest half.
 - `apps/tuval/src/authoring/commands.unit.test.ts` no longer hand-provides a `ProcessPorts`: its
-  effect test drives a `send` through a capturing `SpawnedProcesses`, and a `@ts-expect-error` case
-  holds the refusal in place, so deleting the narrowing turns that test red.
-- The erasure `executor.ts` describes is still erasure. This decision removes one service from what
-  a compiled spell needs; it does not make the remaining ones compile-time. `CommandEffectServices`
-  still names `ProcessSelf`, which `Kernel` does not carry either — the same shape one service over,
-  filed as [#8858](https://github.com/kamp-us/phoenix/issues/8858).
+  effect test drives a `send` through a capturing `SpawnedProcesses`, and the `@ts-expect-error`
+  cases hold the refusals in place, so deleting the narrowing turns that test red.
+  `apps/tuval/src/authoring/own-process.unit.test.ts` drives the resolution on a real kernel, where
+  the payload crosses the in-port's own queue and pump — the reach a stubbed service cannot show.

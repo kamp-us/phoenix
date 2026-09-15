@@ -23,18 +23,16 @@
  * `agy/`. Declaring `Schema.String` here instead would name a shape no shipped agent carries and no
  * shipped row could ever fill.
  *
- * `sendPr` is where the one command lands its payload, and it is the one place the example is not
- * yet the thing to copy: a command's `Scope.process` is *the caller's* — the process behind the
- * window the call came from — never the declaring program's own (ADR 0372). This program declares no
- * `window`, so no window ever shows one of its processes and `scope.process` can never be one. The
- * shape #8716 R16.1 asks for, `send("pr", pr)` against the program's own port, has no compilation
- * path today; #8898 carries that gap.
+ * The one command is `send("pr", pr)`: a bare port name, which means an in-port of *this* program's
+ * own process, looked up against this program's live processes at the call (`../own-process.ts`).
+ * It is the whole of what a command may ask for — `send` and nothing else (ADR 0372) — and it is
+ * the shape #8716 R16.1 asked for, so the example is the thing to copy rather than a documented
+ * gap.
  */
 
 import {Schema} from "effect";
 import {PromptPayloadSchema, TurnResultSchema} from "../../ai-agent/ports/index.ts";
 import {programArgs} from "../args.ts";
-import type {Scope} from "../commands.ts";
 import {type Answer, type ArrivalEvent, defineProgram} from "../define-program.ts";
 import {emit, type Reply, send, spawn} from "../effect.ts";
 import {port} from "../port.ts";
@@ -43,7 +41,6 @@ import {Program, type ShapeSource} from "../shape.ts";
 const agent = Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}});
 const args = programArgs("pr-review", {reviewer: agent});
 type State = {readonly pr: number | null; readonly verdict: string | null};
-const sendPr = (pr: number, {process}: Scope) => (process ? [send({process, port: "pr"}, pr)] : []);
 export const prReviewProgram = {
 	id: "pr-review",
 	ports: {pr: port.in(Schema.Number), verdict: port.out(Schema.String)},
@@ -59,7 +56,7 @@ export const prReviewProgram = {
 			[emit("verdict", e.payload.text)],
 		],
 	},
-	commands: {review: {args: Schema.Number, run: sendPr}},
+	commands: {review: {args: Schema.Number, run: (pr: number) => send("pr", pr)}},
 	title: (s: State) => (s.pr === null ? "pr-review" : `pr-review #${s.pr}`),
 	status: (s: State) => s.verdict ?? "idle",
 };

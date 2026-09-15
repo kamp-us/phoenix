@@ -8,15 +8,18 @@
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {describe, it} from "@effect/vitest";
-import {Effect, Schema} from "effect";
+import {Effect, Layer, Option, Schema, Stream} from "effect";
 import {expect} from "vitest";
 import config from "../../../.tuval/tuval.config.ts";
 import {codexSession} from "../../codex/program.ts";
+import {SpawnedProcesses} from "../../commands/core/process.ts";
 import {buildRegistry, lookupRow} from "../../commands/registry.ts";
 import {ClientId, type Scope, WorkspaceId} from "../../commands/spell.ts";
+import {ProcessTable} from "../../process/ProcessTable.ts";
 import {ProcessId} from "../../process/process.ts";
-import {type AnyProgram, programLabel} from "../../registry/program.ts";
-import {emit, spawn} from "../effect.ts";
+import {noSelfReport} from "../../process/self-report.ts";
+import {type AnyProgram, ProgramId, programLabel} from "../../registry/program.ts";
+import {emit, send, spawn} from "../effect.ts";
 import {port} from "../port.ts";
 import {ShapeMismatch} from "../shape.ts";
 import {testProgram} from "../test-program.ts";
@@ -100,18 +103,68 @@ describe("authoring.example.pr-review, driven with testProgram", () => {
 		expect(run.effects).toContainEqual(emit("verdict", "ship it"));
 	});
 
-	// The scope here is fabricated: a real one carries the *calling* window's process, and this
-	// program declares no window, so `scope.process` is never one of its own (#8898). What the case
-	// pins is that the command composes the send it says it does.
-	it("composes the `review` command's send against the process its scope carries", () => {
-		const process = ProcessId.make("proc-pr-review");
+	// The command names a bare port and no process at all: which process of `pr-review` it lands on
+	// is resolved where the call lands (`../own-process.ts`, #8898), so the scope is beside the
+	// point here and the case below is the one that proves the payload reaches a process.
+	it("composes the `review` command's send at its own program's `pr` port", () => {
+		const run = testProgram(prReviewProgram).call("review", 8690);
+		expect(run.effects).toEqual([send("pr", 8690)]);
+	});
+
+	it("reaches the process: the compiled spell puts the payload on a live `pr-review`'s `pr` port", () => {
+		const sent: Array<readonly [ProcessId, string, unknown]> = [];
+		const live = ProcessId.make("proc-pr-review");
+		const row = prReview({reviewer: codexReviewer});
+		const review = (row.spells ?? []).find((spell) => spell.path.join(".") === "review");
+		if (review === undefined) throw new Error("the example declares no `review` spell");
 		const scope: Scope = {
-			process,
 			workspace: WorkspaceId.make("tuval/test"),
 			client: ClientId.make("tuval/test"),
 		};
-		const run = testProgram(prReviewProgram).call("review", 8690, scope);
-		expect(run.effects).toEqual([{type: "send", to: {process, port: "pr"}, payload: 8690}]);
+		// `AnySpell` erases the spell's requirements, so the two layers below are what discharge them
+		// and the cast is where that obligation is spent — the same one `../../commands/executor.ts`
+		// describes at the composition root.
+		const call = review.execute(8690, scope) as Effect.Effect<
+			void,
+			unknown,
+			SpawnedProcesses | ProcessTable
+		>;
+		Effect.runSync(
+			Effect.provide(call, [
+				Layer.succeed(
+					SpawnedProcesses,
+					SpawnedProcesses.of({
+						send: (process, port, payload) =>
+							Effect.sync(() => {
+								sent.push([process, port, payload]);
+								return {delivered: true, evicted: 0};
+							}),
+						spawn: () => Effect.die("a command cannot reach spawn"),
+						ask: () => Effect.die("a command cannot reach ask"),
+						answer: () => Effect.die("a command cannot reach answer"),
+						read: () => Effect.die("a command cannot reach read"),
+					}),
+				),
+				Layer.succeed(
+					ProcessTable,
+					ProcessTable.of({
+						list: Effect.succeed([
+							{
+								id: live,
+								programId: ProgramId.make("pr-review"),
+								parentId: Option.none(),
+								ports: {},
+								stateSummary: () => ({lifecycle: "running", revision: 0, state: null}),
+								selfReport: () => noSelfReport,
+							},
+						]),
+						get: () => Effect.die("unused"),
+						changes: Stream.empty,
+					}),
+				),
+			]),
+		);
+		expect(sent).toEqual([[live, "pr", 8690]]);
 	});
 });
 
