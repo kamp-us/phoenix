@@ -955,11 +955,12 @@ File one follow-up observation into the intake queue. Contract:
 | `report file` | composes the intake issue from the six sections on stdin, guards it, creates it, and reads back what landed |
 | `report note` | adds a note to an existing issue over the same guarded path, and reads the comment back |
 | `report amend` | appends a dated amendment to an existing issue's **body** over that path, leaving the prior body verbatim above it, and reads the body back |
+| `report scratch` | one staging path a body is written into before a literal stdin redirect carries it, keyed on a fresh id per call |
 
 **Exit codes.** The shared table this group defines, plus `27` the intake queue could not be read ·
-`28` the search index could not be read.
+`28` the search index could not be read · `29` `report scratch`'s `--slug` is not a kebab-case leaf.
 
-Six behaviours are worth knowing:
+Seven behaviours are worth knowing:
 
 - **`dedup` ranks against more tokens than it searches with.** Scoring gets sharper with every token
   and GitHub's AND-joined search gets narrower, so ranking receives up to 12 and the search query
@@ -979,6 +980,10 @@ Six behaviours are worth knowing:
 - **A body is amended, never replaced.** GitHub keeps no issue-body history, so `report amend`
   appends under a separator and a dated heading it composes itself, and its read-back proves both
   halves — the amendment landed *and* the prior body survived.
+- **`scratch` keys on a fresh id, not on a claim.** A reporter files mid-task and holds no lane, so
+  there is no nonce to key a namespace on and a session id alone is the shared-namespace clobber
+  `build scratch` and `triage scratch` exist to prevent. The path is therefore not re-derivable: a
+  caller redirects from the literal path the verb printed.
 
 Intake applies **no type and no priority**, defended mechanically: exit `10` refuses a `--label` or
 a title prefix that resolves to the target repo's own type/priority vocabulary.

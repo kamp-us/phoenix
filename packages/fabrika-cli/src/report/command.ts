@@ -1,5 +1,5 @@
 /**
- * The `report` verb group — `fabrika report <dedup|file|note|amend>`.
+ * The `report` verb group — `fabrika report <dedup|file|note|amend|scratch>`.
  *
  * The adapter and nothing else: it declares the flags (`--help` is the interface, so every flag
  * carries a one-line description), runs the pure verb, and emits its outcome. Every decision lives
@@ -10,8 +10,12 @@
  * and no temp file: a flag that accepts a path turns the body into a string the verb could post
  * verbatim, and a posting call that does not expand `@` then ships the literal path into a public
  * artifact. A shell redirect is fine and expected — the
- * *shell* reads the file, so what reaches the verb is already the bytes.
+ * *shell* reads the file, so what reaches the verb is already the bytes. `scratch` allocates the
+ * file that redirect reads and adds no argument to any writing verb, which is why it is the staged
+ * route's allocator rather than a body flag.
  */
+import {randomUUID} from "node:crypto";
+import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
@@ -22,6 +26,7 @@ import {DEFAULT_LIMIT} from "./dedup.ts";
 import {runDedup} from "./dedup-verb.ts";
 import {runFile} from "./file-verb.ts";
 import {runNote} from "./note-verb.ts";
+import {runScratch} from "./scratch-verb.ts";
 
 const DEFAULT_LABEL = "status:needs-triage";
 
@@ -151,6 +156,23 @@ const note = leafCommand(
 	),
 );
 
+const scratch = leafCommand(
+	"scratch",
+	{
+		slug: Flag.string("slug").pipe(
+			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
+		),
+	},
+	Effect.fn(function* ({slug}) {
+		yield* emit(yield* runScratch({slug, allocation: randomUUID(), tmpRoot: tmpdir()}));
+	}),
+).pipe(
+	Command.withShortDescription("The staging path a body is written into before stdin carries it."),
+	Command.withDescription(
+		"Allocate one staging path for a body this group's writing verbs will read on stdin: <temp root>/fabrika-report/<allocation-id>/<slug>, one absolute path on stdout, the directory created if absent. A reporter holds no claim and no lane, so the key is a FRESH id per call rather than a claim nonce — the path is therefore not re-derivable, and a caller redirects from the literal path this verb printed. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created), 29 (--slug carries a path separator or is not kebab-case). Example: fabrika report scratch --slug body",
+	),
+);
+
 const amend = leafCommand(
 	"amend",
 	{
@@ -182,7 +204,7 @@ const amend = leafCommand(
 );
 
 export const reportCommand = Command.make("report").pipe(
-	Command.withSubcommands([dedup, fileCmd, note, amend]),
+	Command.withSubcommands([dedup, fileCmd, note, amend, scratch]),
 	Command.withShortDescription("File one follow-up observation into the intake queue."),
 	Command.withDescription(
 		"File one follow-up observation into the intake queue: check for a duplicate, then compose and post it over a guarded path that refuses a leak, an empty body, or a hand-applied classification",

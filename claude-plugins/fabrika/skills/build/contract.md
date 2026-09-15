@@ -132,6 +132,15 @@ Every verb obeys these; stated once.
   message contract-wide is prefixed with the invoked verb's name**, stated once here.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No verb prints a partial or
   permissive answer on a non-zero exit.
+- **A body-on-stdin verb is invoked with a heredoc or with a literal input redirect, and the two are
+  one interface.** `commit`, `deviations`, `pr`, `pr-body` and `note` read their body from stdin, so
+  a redirect from the path `build scratch` printed delivers the same bytes a heredoc would, and
+  every guard the verb makes still fires. The redirect is the route
+  [skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed)
+  prescribes when the harness refuses to carry the body inside the command string; the *shell* reads
+  the file, so no verb grows a path-valued body flag for it. `commit --message-file` is the one
+  path-valued argument in the group and predates that route: it takes a leaf of this lane's
+  `build scratch` directory and refuses any other path.
 - **One deviant on the channel rule, carved out here so the shared section stays true:**
   `build push` puts its entire report on stdout, single-stream, so that the last stdout line is
   always the verdict line — the ordering guarantee is the contract (see its block; the predecessor

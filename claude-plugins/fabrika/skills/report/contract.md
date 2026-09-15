@@ -40,6 +40,7 @@ dedup outcomes, and its eval set is what establishes that the differentiation wo
 | `report file` | compose, guard and create the intake issue, then read back what landed | the template, the footer, the leak predicate, the classification refusal, the label and the read-back are all mechanical; what goes in the sections is judgment |
 | `report note` | add a note to an existing issue over the same guarded path | as above, minus composition — the guard and the read-back are the deterministic part |
 | `report amend` | append a dated amendment to an existing issue's **body** over that path | the separator, the dated heading, the guard and the two-halved read-back are mechanical; what the amendment says is judgment |
+| `report scratch` | allocate one staging path a body is written into before a literal stdin redirect carries it | deriving an uncollidable path is mechanical; what goes in the file is judgment |
 
 **Considered and deliberately not derived.** Each is a real proposal someone could make again, so it
 is recorded rather than left to be re-litigated. (The conventions' §7 puts rejections in a plugin-root
@@ -131,6 +132,15 @@ one that was genuinely empty unless the reader distinguishes them, so the read h
 transient read failure is exit `1` (the verb could not run), an empty-but-successfully-read stdin is
 exit `3` (a proven refusal). The read must also terminate rather than hang when the verb is invoked
 on a terminal with nothing piped in.
+
+**The heredoc is one carrier of that stdin, and not the only sanctioned one.** A heredoc puts the
+whole body inside the command string a worktree-isolated shell's verifier grades as one unit, so a
+body the verifier refuses is staged rather than trimmed — the three steps, the measured triggers and
+the one shape a bounded append still refuses are fixed for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed),
+and `report scratch` is the allocator that route names for this group. Staging changes no verb's
+interface: the shell reads the file and the verb still receives only bytes, which is why the route
+adds no `--body-file` and is not an exception to the rule above.
 
 ### The body-surface leak predicate
 
@@ -704,6 +714,75 @@ $ echo $?
 - v1's `tracker create-comment` prints `tracker: commented on #<n> (ref <id>).` — prose on a machine
   channel, the same scar as its create sibling, and the reason this line is tab-separated with a
   bare id.
+
+---
+
+## `report scratch`
+
+Allocates the staging file a body is written into when a heredoc cannot carry it. It writes no
+content and posts nothing.
+
+**Invocation**
+
+```
+fabrika report scratch --slug body
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--slug` | string | yes | — | the file's leaf name, kebab-case, no path separators |
+
+**Output** — machine. Exactly one absolute path on stdout, newline-terminated:
+`<OS temp root>/fabrika-report/<allocation-id>/<slug>` — the fixed `fabrika-report` segment
+namespaces the allocator against everything else in the temp root. The directory is created if
+absent.
+
+**The key is a fresh id per call, and that is what differs from the sibling allocators.**
+`build scratch` and `triage scratch` key their namespace on a claim nonce, which they have because
+their callers hold a lane. A reporter files mid-task and holds no claim, so there is no nonce to key
+on — and a session id alone is the shared-namespace clobber those two verbs exist to prevent, since
+a fan of reporters runs under one session. A fresh id makes a collision unconstructible instead. The
+cost is that the path is **not re-derivable**: a second call answers a different directory, so a
+caller stages and redirects using the one literal path a single call printed.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `29` | `--slug` carries a path separator, or is not kebab-case |
+
+`29` rather than the `10` `build scratch` uses for the same refusal: `10` is `CLASSIFIED` in this
+group's shared writing table, and one code meaning two things would break that table's only
+property.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `report scratch: --slug "<value>" must be a kebab-case leaf, no path separators.` | 29 | refusal |
+| `report scratch: cannot create <dir>: <reason>` | 1 | refusal (the universal `1` — the verb failed to run) |
+
+**Scope** — not a judging verb. Creates one directory, prints one path, writes no file content, and
+reads neither GitHub nor a claim.
+
+**Example**
+
+```
+$ fabrika report scratch --slug body
+/tmp/<redacted>/fabrika-report/<redacted>/body
+```
+
+**Grounding**
+
+- The staged-body route and its measured triggers live in
+  [skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed);
+  this verb is that route's allocator for this group and restates none of it.
+- The printed path is machine-local by definition: it must never appear in a posted artifact, and
+  `report file`, `report note` and `report amend` red on it (`5`).
+- A fixed leaf under the session scratchpad is banned — that directory is shared by every concurrent
+  filing, so a name of your own is a name a sibling writes too.
 
 ---
 

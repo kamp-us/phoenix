@@ -277,6 +277,29 @@ Scratch files go only where this prints:
 fabrika build scratch $issue_or_pr_number --slug notes --token <claim-token>
 ```
 
+<!-- anchor: STAGE-THE-BODY-RATHER-THAN-TRIM-IT --> **That verb is also how a body the harness
+refuses to carry reaches a verb — staged, never trimmed.** Four verbs below take their body on a
+heredoc — `build commit`, `build deviations`, `build pr` and `build note` — and a heredoc puts the
+whole body inside the one command string a worktree-isolated shell's verifier grades. Past a size,
+and on some content below any size, it refuses with a containment message that names neither. Read
+as a containment fault, that refusal costs the lane a round and then the disclosure itself: a
+`## Deviations` section cut to fit a shell reads downstream as a lane that deviated less. **So do
+not cut the body** — stage it. The three steps, the measured triggers and the one shape a bounded
+append still refuses are fixed for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed);
+what a builder needs beyond them is here.
+
+Allocate with the fence above, giving `--slug` the body's own name — `commit-message`,
+`deviations`, `pr-body`, `note` — so one lane's four bodies do not overwrite each other, and none of
+them lands on the `notes` slug. Write the body in with bounded `cat >>` appends, then run the verb
+with a literal input redirect in place of the heredoc:
+`fabrika build pr $issue_number < <the path it printed>`. The bytes arrive on stdin exactly as the
+heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
+read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
+body quoting it reds at `5`. `build commit`'s `--message-file` is the same file reached the other
+way and is equally sanctioned; it refuses any path that is not a leaf of this lane's scratch
+directory.
+
 Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
 exists to refuse. Hand it the surface you named in step 3; it
 refuses a surface the diff contradicts.
@@ -414,7 +437,9 @@ EOF
 ```
 
 The verb is the guard: it refuses leaks, stray closing keywords, a Deviations section the review
-gate would read as malformed, and reads back what landed. Then hand off and release:
+gate would read as malformed, and reads back what landed. When the harness refuses the fence above —
+or the `build deviations` and `build note` fences beside it — the body is staged and redirected
+rather than trimmed, under `build scratch` in step 4. Then hand off and release:
 
 ```bash
 fabrika build note $issue_or_pr_number --token <claim-token> <<'EOF'
