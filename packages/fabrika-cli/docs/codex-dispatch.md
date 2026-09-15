@@ -16,8 +16,11 @@ declared nothing keeps the dispatch path it has today; `on` merges the trunk in,
 and runs its verbs in a tree at least as new as the trunk. Exit `42` there is a real conflict: the
 merge is aborted, the branch is proven back at its pre-merge head, and no worktree is created —
 record the park it names (`--cause assembly-conflict`) rather than dispatching over the stale branch.
-A lane the verb cannot read here is left to the reads below, which refuse in their own words; a cwd
-belonging to no readable repository is not, and refuses here at `39`/`11` with nothing spawned.
+A lane the verb cannot read here is left to the reads below, which refuse in their own words; a
+repository identity this gate cannot read is not, and refuses here at `11` with nothing spawned. A
+cwd belonging to no repository at all refuses nothing here — it reads the shipped arm at itself. The
+verb's other `39` comes from the default lanes root's derivation, ahead of this step and only when
+`--root` is absent.
 
 The verb reads `lane brief`, captures the task's state, validates its role skills, then takes
 a per-task dispatch lock. It creates and verifies a detached worktree at the source commit,

@@ -48,8 +48,10 @@ type PreRefresh =
  *
  * A lane this cannot read is `Skipped`, never refused here — every one of those reads is made again
  * below, and refusing twice in two voices for one fact is how a caller learns to distrust the first.
- * The one refusal that does leave from here is the config root's: no read below re-makes it, and a
- * gate whose arm is UNKNOWN may not fall back to the cwd's own copy of the key.
+ * The one refusal that does leave from here is the config root's `11`: no read below re-makes it, and
+ * a gate whose arm is UNKNOWN may not fall back to the cwd's own copy of the key. A cwd in no
+ * repository is not that case — `configRootOrRefuse` hands it back its own cwd, so the gate reads the
+ * shipped arm rather than refusing.
  */
 const refreshBeforeChild = (
 	options: DispatchOptions,
