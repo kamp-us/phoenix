@@ -23,6 +23,17 @@
  * candidates. The four are the artifact-independent vocabulary, so the range arms allocate no new
  * seat — what a caller must do about "the artifact is not there" does not change with its kind.
  *
+ * **At exit 0 there are three answers, and a driver routes on which one came back.** `proven` says
+ * the artifact is there. `not-required` says the machine walks this event out of this leaf and the
+ * event claims nothing a read could falsify — record it. `not-walkable` says the machine would not
+ * walk it at all: an event name no state of this lane's machine holds a cell for (the ledger's own
+ * namespaced `ISSUE.PASS` is the one a driver reaches for) or a recognised event this leaf owes no
+ * cell (a `PASS` out of a `blocked` park, which walks `UNBLOCKED` alone). The third used to answer
+ * `not-required` too, so a driver who ran the read before the `UNBLOCKED` that reopens the lane got
+ * a green that had checked nothing — and the two readings shared one exit code, with the difference
+ * living only in a stdout field. The walk question is the machine's own ({@link walkOf}), so a lane
+ * whose workflow renames its events or its states answers it off itself.
+ *
  * Both verdict arms answer with the namespaces they subtracted from this cell's bar
  * ({@link ProofOutcome}), because the caller records that on the event line: which cell still owes
  * the rendered verdict is not re-derivable from a bare `PASS`.
@@ -53,7 +64,7 @@ import {
 	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {foldLog, nextLeaf, resolveTask} from "./fold.ts";
+import {foldLog, resolveTask, walkOf} from "./fold.ts";
 import {nominatePulls} from "./nominate.ts";
 import {
 	claimOf,
@@ -233,7 +244,17 @@ const prove = (
 		const leaf = fold.states[taskId]?.type ?? "";
 		const event = options.event.toUpperCase();
 		const role = roleOf(taskId, epicOf(Object.keys(loaded.lane.tasks)));
-		const routing = nextLeaf(loaded.lane, fold.states, taskId, event, options.classes);
+		// Asked before the claim, because a claim derived from a leaf the event cannot leave is a
+		// claim about a world this event will never reach. `not-required` says "the machine walks this
+		// and it owes no artifact"; an unwalkable event owes the caller the other answer.
+		const walk = walkOf(loaded.lane, fold.states, taskId, event, options.classes);
+		if (walk._tag === "Unknown" || walk._tag === "NoCell") {
+			return answer(
+				JSON.stringify({proof: "not-walkable", event, task: taskId, state: leaf}, null, 2),
+				[`${VERB}: ${walk.why} — nothing here proves it, and the machine will refuse it.`],
+			);
+		}
+		const routing = walk._tag === "Walks" ? walk.next : null;
 		const claim = claimOf(event, leaf, role, routing);
 		if (claim._tag === "None") {
 			if (event === "DONE" && role._tag !== "Child" && SHIP_STATES.includes(leaf)) {

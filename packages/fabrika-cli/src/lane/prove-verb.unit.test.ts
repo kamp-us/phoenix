@@ -83,24 +83,32 @@ const UI_CONFIG = {
 };
 
 /**
- * The lane in `build` (one WIP), in `review` (WIP then DONE), or in `review:ui` — which is the same
- * path with `ui` standing from the `WIP`, so the `PASS` out of `review` took the class-guarded arm.
+ * The lane at one of the leaves the reads below are taken from: `queued` (no event yet), `build`
+ * (one WIP), `review` (WIP then DONE), `review:ui` — the same path with `ui` standing from the
+ * `WIP`, so the `PASS` out of `review` took the class-guarded arm — or the `blocked` park.
  */
-const laneAt = (state: "build" | "review" | "review:ui") =>
+const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") =>
 	fakeFs({
 		files: {
 			...UI_CONFIG,
 			[WORKFLOW]: coderTemplateText(),
-			[LOG]:
-				state === "build"
-					? logLine("WIP", "2026-08-16T01:00:00Z")
-					: state === "review"
-						? logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z")
-						: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
-							logLine("DONE", "2026-08-16T02:00:00Z") +
-							logLine("PASS", "2026-08-16T03:00:00Z"),
+			[LOG]: LOGS[state],
 		},
 	});
+
+const WIP_LINE = logLine("WIP", "2026-08-16T01:00:00Z");
+const DONE_LINE = logLine("DONE", "2026-08-16T02:00:00Z");
+
+const LOGS: Readonly<Record<"queued" | "build" | "review" | "review:ui" | "blocked", string>> = {
+	queued: "",
+	build: WIP_LINE,
+	review: WIP_LINE + DONE_LINE,
+	"review:ui":
+		logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
+		DONE_LINE +
+		logLine("PASS", "2026-08-16T03:00:00Z"),
+	blocked: WIP_LINE + logLine("BLOCKED", "2026-08-16T02:00:00Z"),
+};
 
 /**
  * The same lane in `review`, on a machine whose `review` `PASS` targets `ship` outright — no
@@ -877,6 +885,56 @@ describe("lane prove — the §CP advisory carrier", () => {
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(seams.requests.some((line) => CODEOWNERS.test(line))).toBe(false);
+	});
+});
+
+describe("lane prove — the walk question, asked before the claim", () => {
+	it("answers not-walkable for a PASS out of the blocked park, reading nothing", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("blocked"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			proof: "not-walkable",
+			event: "PASS",
+			task: "issue",
+			state: "blocked",
+		});
+		// The park walks UNBLOCKED alone, so the stderr names what the leaf does walk rather than
+		// leaving a driver to read "nothing to prove" as "the PASS checks out".
+		expect(out.stderr.join("\n")).toContain("UNBLOCKED");
+		expect(seams.log).toEqual([]);
+	});
+
+	it("answers not-walkable for the ledger's own namespaced ISSUE.PASS spelling", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("review"), seams, "ISSUE.PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-walkable", event: "ISSUE.PASS"});
+		expect(seams.log).toEqual([]);
+	});
+
+	it("answers not-walkable for an event name outside the machine altogether", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("review"), seams, "BANANA");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-walkable", event: "BANANA"});
+		expect(seams.log).toEqual([]);
+	});
+
+	it("keeps not-required for an event the leaf walks and that owes no artifact", async () => {
+		const seams = fakeSeams([]);
+
+		const out = await run(laneAt("queued"), seams, "WIP");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-required", state: "queued"});
+		expect(seams.log).toEqual([]);
 	});
 });
 

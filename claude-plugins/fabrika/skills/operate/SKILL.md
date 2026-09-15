@@ -1124,16 +1124,29 @@ close its epic, so the merge such an arm would route is one this run cannot prod
 `DONE` folds to `shipped` at both polarities.
 
 `lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
-of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit
-`0` for every other one, so it is run on every event and never skipped as an optimisation. The park
+of `review`, and a reviewer's park out of either review cell — and answers at exit `0` for every
+other one, so it is run on every event and never skipped as an optimisation. The park
 is the one negative claim of the three: it says the run reached no verdict, so a still-binding
 `FAIL` refuses it on `24` and every unreadable half lets it through, because a park nobody can
 record strands the lane in the state only a human could have left. Its refusals each name a
 different next move:
 
+**Exit `0` carries three different answers, and the `proof` field says which — read it, never the
+exit alone.** `proven` is the artifact read and found. `not-required` is the machine walking this
+event out of this leaf with nothing a read could falsify behind it. `not-walkable` is the machine
+refusing the event outright: an event name no state of this lane's machine holds a cell for — the
+ledger's own namespaced `ISSUE.PASS`, which is the spelling you get by copying one out of
+`lane status` or `events.jsonl`, or a typo — or a recognised event this leaf owes no cell, of which
+a `PASS` out of the `blocked` park is the one you will meet. **Record nothing on `not-walkable`**:
+`lane transition` refuses it on `12` anyway, and the event you meant is named on stderr beside what
+the leaf does walk. A `PASS` out of `blocked` means the `UNBLOCKED` is the event to record first,
+and the `PASS` after it is the read that binds.
+
 | Exit | What it read | What you do |
 | --- | --- | --- |
-| `0` | the artifact is there (or the event claims none) | record the event |
+| `0` `proven` | the artifact is there | record the event |
+| `0` `not-required` | the leaf walks this event and it claims no artifact | record the event |
+| `0` `not-walkable` | the machine walks no such event out of this leaf | record **nothing** — record the event the leaf does walk |
 | `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
 | `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park | record the event the artifact supports (`FAIL`) |
