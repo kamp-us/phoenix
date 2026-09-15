@@ -15,8 +15,9 @@
 import type {ModelRef, ThinkingLevel} from "../ai-agent/ports/index.ts";
 
 /**
- * The release every shape under `src/agy/` was captured from. Re-exported rather than restated:
- * the wire reader owns the one pin, and a second literal here is a second thing to update.
+ * The supported floor, and the release every shape under `src/agy/` was captured from. Re-exported
+ * rather than restated: the wire reader owns the one pin, and a second literal here is a second
+ * thing to update. `./preflight.ts` refuses a launch below it.
  */
 export {AGY_VERSION} from "./ai-agent/wire.ts";
 

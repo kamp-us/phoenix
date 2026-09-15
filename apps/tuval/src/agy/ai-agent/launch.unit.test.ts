@@ -10,6 +10,7 @@
 
 import {describe, expect, it} from "vitest";
 import {AGY_EFFORTS, AGY_MODELS, AGY_MODES, AGY_SETTINGS_FILE, AGY_VERSION} from "../config.ts";
+import {agyVersionVerdict} from "../preflight.ts";
 import {commandArgv, promptLine, sessionArgv} from "./launch.ts";
 import {transcriptLogDir} from "./transcript.ts";
 
@@ -103,8 +104,12 @@ describe("the composed turn", () => {
 });
 
 describe("the launch surface's constants", () => {
-	it("pins one agy version for the whole module", () => {
-		expect(AGY_VERSION).toBe("1.1.27");
+	it("names one supported floor for the whole module, in a shape a launch can compare against", () => {
+		// A floor, not the one tolerated release (#9191): the assertion is that this reads as a
+		// release `../preflight.ts` can order a running binary against, not that it reads `1.1.27`.
+		// Pinning the literal is what made the code assert a fact the desk had already left behind.
+		expect(AGY_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(agyVersionVerdict(AGY_VERSION)).toEqual({kind: "supported", version: AGY_VERSION});
 	});
 
 	it("offers the two modes agy's own --help names, and no third", () => {
