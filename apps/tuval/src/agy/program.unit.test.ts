@@ -20,6 +20,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Fiber, Layer, Option, Stream} from "effect";
 import {afterAll, expect} from "vitest";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../ai-agent/core/index.ts";
+import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import {checkpointFields} from "../ai-agent/restore/index.ts";
 import {ScriptedAiAgent, TuvalAiAgent} from "../ai-agent/service/index.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
@@ -83,6 +84,11 @@ describe("the agy-session program row", () => {
 			"agy reaches no kernel tool, so a capability request here would say something false",
 		);
 		assert.deepStrictEqual(declared.renderer, AGY_CHAT_WINDOW_REF);
+		assert.deepStrictEqual(
+			declared.inspector,
+			AI_AGENT_INSPECTOR_REF,
+			"a row declaring no inspector leaves the desk with nothing to paint for an agy session",
+		);
 		assert.isFunction(declared.resume, "a restored agy session has no way back without a resume");
 	});
 
