@@ -2,6 +2,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
+import {appendText} from "../io/fs.ts";
 import {answer, refuse} from "../verb.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE, PROOF_ABSENT} from "./codes.ts";
 import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
@@ -269,6 +270,53 @@ describe("runRecover — the sweep", () => {
 				JSON.stringify({pipeline: {issue: "ship", child: "ship"}}),
 			],
 		]);
+	});
+
+	it("reports where the append landed, not where it predicted, when a writer lands in between", async () => {
+		// The sweep folds outside any lock and `lane transition` re-folds inside it, so the child
+		// region's own PASS landing between the two makes preview and append disagree. The row a driver
+		// acts on carries the append's answer; the preview would name a state the lane is not in, on an
+		// exit-0 sweep.
+		const log = `${REVIEWING_LOG}${line("WIP", at(2), "child")}${line("DONE", at(3), "child")}`;
+		const fs = fakeFs({
+			files: {
+				[`${DEFAULT_LANES_ROOT}/9185/workflow.json`]: twoRegionTemplate(),
+				[`${DEFAULT_LANES_ROOT}/9185/events.jsonl`]: log,
+			},
+			dirs: {[DEFAULT_LANES_ROOT]: ["9185"]},
+			directories: [DEFAULT_LANES_ROOT],
+		});
+		let asks = 0;
+		const {outcome} = await sweep(fs, (options) => {
+			if (options.task !== "issue") return refuse(PROOF_ABSENT, "unproven");
+			asks += 1;
+			// The append's own gate read is the last thing before its lock, so a write here is exactly
+			// the concurrent writer this row exists to survive.
+			if (asks === 2) {
+				Effect.runSync(
+					Effect.provide(
+						appendText(`${DEFAULT_LANES_ROOT}/9185/events.jsonl`, line("PASS", at(4), "child")),
+						fs.layer,
+					),
+				);
+			}
+			return proven();
+		});
+		expect(outcome.code).toBe(0);
+		const [recovered, second] = rows(outcome.stdout);
+		expect(recovered).toMatchObject({
+			task: "issue",
+			verdict: "recovered",
+			from: JSON.stringify({pipeline: {issue: "review", child: "review"}}),
+			to: JSON.stringify({pipeline: {issue: "ship", child: "ship"}}),
+		});
+		// What the offline preview says, and what the row would have reported had it kept it.
+		expect(recovered?.to).not.toBe(JSON.stringify({pipeline: {issue: "ship", child: "review"}}));
+		// The landing rides into the next region's `from`, so one stale read does not compound.
+		expect(second).toMatchObject({
+			task: "child",
+			from: JSON.stringify({pipeline: {issue: "ship", child: "ship"}}),
+		});
 	});
 
 	it("reports a lane that only lost the ledger lock as `contended`, with the re-run on stderr", async () => {

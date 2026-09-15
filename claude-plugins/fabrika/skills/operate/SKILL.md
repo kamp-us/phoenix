@@ -1627,6 +1627,10 @@ lane between. Dropping `--check` records them:
 node <fabrika> lane recover
 ```
 
+A `recovered` row's `to` is the append's own answer rather than that prediction, so it is the state
+the lane is in even when another writer landed while the sweep was reading. Read it as the lane's
+current fold; the `--check` row above is a prediction and stays one.
+
 **It records on a proven artifact and on nothing else.** The bar is `lane prove`'s own read and the
 append is `lane transition`'s whole path, so nothing here is a judgement of yours and nothing here
 is a new way onto a ledger. It asks about one event — a `PASS` out of either review cell — and every

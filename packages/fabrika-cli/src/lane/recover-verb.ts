@@ -34,6 +34,13 @@
  * builder's open PR claims are both out of scope, because a shell that is merely still working
  * satisfies each of them too. `./recover.ts` carries the argument for both arms.
  *
+ * **A `recovered` row reports where the append says the lane landed, not where this sweep predicted
+ * it would.** The prediction is taken off a fold nothing holds a lock over, and `lane transition`
+ * re-reads and re-folds the log inside the ledger lock before it applies anything, so a writer
+ * landing between the two makes them disagree — and the row a driver reads and acts on would name a
+ * state the lane is not in, on an exit-0 sweep. A `--check` row keeps the prediction, which is the
+ * only ground a run that appends nothing has.
+ *
  * Each recoverable lane costs two board reads rather than one: this sweep asks the proof what the
  * answer is, and `lane transition` asks it again under its own gate before it appends. That second
  * read is the gate refusing to take this sweep's word for it, which is the property worth the read —
@@ -44,6 +51,7 @@ import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {exists, readDir} from "../io/fs.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {APPEND_UNKNOWN, CONCURRENT_WRITE, LANE_UNREADABLE} from "./codes.ts";
 import {applyEvent, deriveStatus, foldLog, standingCauses} from "./fold.ts";
@@ -117,7 +125,15 @@ interface LaneRow {
 	 */
 	readonly proof?: string | null;
 	readonly proofCode?: number;
-	/** What the lane folds to now, and what the recovered event would fold it to. */
+	/**
+	 * What the lane folds to now, and where the event lands it.
+	 *
+	 * On a `recovered` row `to` is the append's **own** answer — `lane transition` derives it under
+	 * the ledger lock from a fresh re-read of the log, so it accounts for every writer that landed
+	 * between this sweep's unlocked fold and that lock. Every other row's `to` is the offline
+	 * preview, which is all a move that never happened has: `recoverable` is a `--check` prediction,
+	 * and a `refused` or `contended` row names the landing its event would have had.
+	 */
 	readonly from?: string;
 	readonly to?: string;
 	readonly reason?: string;
@@ -129,6 +145,21 @@ const keyOf = (root: string, name: string): string =>
 const printable = (
 	value: string | Readonly<Record<string, Readonly<Record<string, string>> | string>>,
 ): string => (typeof value === "string" ? value : JSON.stringify(value));
+
+/**
+ * Where `lane transition`'s answer says the lane landed, printed as a row reads it.
+ *
+ * `null` where that answer carries no readable `current` — the one case a recovered row has to fall
+ * back on its preview, and it says so on the row rather than presenting a prediction as the fact.
+ */
+const landedBy = (stdout: string): string | null => {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed)) return null;
+	const current = parsed.current;
+	if (typeof current === "string") return current;
+	if (isRecord(current)) return JSON.stringify(current);
+	return null;
+};
 
 const recoverLane = <R>(
 	root: string,
@@ -158,7 +189,7 @@ const recoverLane = <R>(
 		// in one sweep, so this walks forward with the appends rather than standing at the pre-sweep
 		// fold — a `from` taken once would have the second row leaving a state the first row left.
 		let states = folded.states;
-		let status = deriveStatus(loaded.lane, states, standingCauses(loaded.entries));
+		const status = deriveStatus(loaded.lane, states, standingCauses(loaded.entries));
 		if (status.status === "done") {
 			return [{key, root, verdict: "terminal" as const, from: printable(status.stateValue)}];
 		}
@@ -167,9 +198,14 @@ const recoverLane = <R>(
 			return [{key, root, verdict: "current" as const, from: printable(status.stateValue)}];
 		}
 
+		// Where this run has proven the lane stands, as a printed stateValue. It advances off the
+		// append's own answer once one has landed, so a second region's `from` is the state the first
+		// region's append actually left rather than the one this sweep predicted for it.
+		let from = printable(status.stateValue);
+
 		const rows: LaneRow[] = [];
 		for (const {task, leaf, event} of owed) {
-			const base = {key, root, task, state: leaf, event, from: printable(status.stateValue)};
+			const base = {key, root, task, state: leaf, event, from};
 			const proveOptions: ProveOptions = {
 				root,
 				lane: name,
@@ -199,8 +235,9 @@ const recoverLane = <R>(
 				continue;
 			}
 
-			// The preview is taken offline off the same applier the append runs, so a `--check` row and
-			// the append it predicts cannot disagree about where the lane lands.
+			// The preview is taken offline off the same applier the append runs. It is a prediction
+			// either way: the append re-folds the live log under the lock, so a writer landing in
+			// between makes the two disagree, and a `recovered` row below takes the append's answer.
 			const applied = applyEvent(
 				loaded.lane,
 				states,
@@ -223,17 +260,26 @@ const recoverLane = <R>(
 				});
 				continue;
 			}
-			const to = printable(applied.current.stateValue);
+			const predicted = printable(applied.current.stateValue);
 			// The states this event lands on become the next region's ground. `--check` advances too:
 			// it is predicting the run that appends both rows, so a preview standing still would be a
-			// preview of a run nobody can make.
-			const advance = () => {
+			// preview of a run nobody can make. `landing` is what the next row reports leaving, and it
+			// is the append's answer wherever there is one; `states` stays the offline applier's own,
+			// which is the only machine-state record either mode has — a next region predicted off it
+			// is corrected by that region's own append answer, and validated again under the lock.
+			const advance = (landing: string) => {
 				states = applied.states;
-				status = applied.current;
+				from = landing;
 			};
 			if (options.check) {
-				rows.push({...base, verdict: "recoverable", proof: proof.proof, proofCode: proof.code, to});
-				advance();
+				rows.push({
+					...base,
+					verdict: "recoverable",
+					proof: proof.proof,
+					proofCode: proof.code,
+					to: predicted,
+				});
+				advance(predicted);
 				continue;
 			}
 
@@ -257,8 +303,26 @@ const recoverLane = <R>(
 				options.prove,
 			);
 			if (recorded.code === ANSWER) {
-				rows.push({...base, verdict: "recovered", proof: proof.proof, proofCode: proof.code, to});
-				advance();
+				// The append answered where the lane landed, and that answer is the fact: it comes off
+				// the fresh fold `lane transition` takes inside the ledger lock, so it accounts for any
+				// writer that landed after this sweep's own unlocked fold. Reporting `predicted` here
+				// would name a state the lane is not in, on an exit-0 sweep whose whole output is the
+				// picture a driver acts on — and on a multi-region lane the divergence would ride into
+				// every later row.
+				const landing = landedBy(recorded.stdout);
+				rows.push({
+					...base,
+					verdict: "recovered",
+					proof: proof.proof,
+					proofCode: proof.code,
+					to: landing ?? predicted,
+					...(landing === null
+						? {
+								reason: `the append landed and its answer carried no readable state, so this row's ${predicted} is where this sweep's own fold predicted the lane lands, not where the append says it did — read the lane's fold for the fact`,
+							}
+						: {}),
+				});
+				advance(landing ?? predicted);
 				continue;
 			}
 			const why = recorded.stderr[recorded.stderr.length - 1] ?? "no reason given";
@@ -278,7 +342,7 @@ const recoverLane = <R>(
 				verdict,
 				proof: proof.proof,
 				proofCode: proof.code,
-				to,
+				to: predicted,
 				reason:
 					verdict === "contended"
 						? `another writer held this lane's lock for the whole wait budget, so the ${event} was neither validated nor appended and this lane is still missing it — re-run the sweep: ${why}`
