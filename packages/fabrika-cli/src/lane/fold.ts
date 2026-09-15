@@ -10,7 +10,7 @@
  * `noErrors` gate as a pure derivation, never a machine event. Everything here returns a
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
-import {applyCell, foldMsgs, NoCellError} from "@demlik/tea";
+import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {
 	AMENDED_EVENT,
@@ -746,6 +746,73 @@ export const deriveStatus = (
 };
 
 /**
+ * Whether this task's machine walks this event out of the leaf it stands in — and, where it does
+ * not, which of the three reasons that is.
+ *
+ * `null` from {@link nextLeaf} collapses all three, and a caller that routes on the collapsed answer
+ * cannot tell "I could not read the task" from "the machine has no such event" from "this leaf owes
+ * that event no cell". `lane prove` needs them apart: two of them are a *distinct answer to the
+ * caller's question* (the event is not walkable, so there is nothing here to prove and nothing to
+ * record), and the third is a read that failed.
+ *
+ * Both refusing arms are the machine's own reading rather than a list kept beside it.
+ * {@link Unknown} asks `msgKeysOf` whether any state of this task holds a cell for the name at all,
+ * which is what catches a namespaced `ISSUE.PASS` or a typo; {@link NoCell} asks `acceptsOf` what
+ * *this* leaf walks, which is what catches a `PASS` out of a `blocked` park that walks `UNBLOCKED`
+ * alone. A machine that renames its events or its states answers both off itself.
+ */
+export type Walk =
+	| {readonly _tag: "Walks"; readonly next: string}
+	/** The task or its folded state could not be read — nothing here answers the walk question. */
+	| {readonly _tag: "Unreadable"; readonly why: string}
+	/** No state of this task's machine holds a cell for the name — it is no event of this lane. */
+	| {readonly _tag: "Unknown"; readonly why: string}
+	/** The machine knows the event; the leaf the task stands in holds no cell for it. */
+	| {readonly _tag: "NoCell"; readonly why: string};
+
+const listed = (names: ReadonlyArray<string>): string =>
+	names.length === 0 ? "nothing" : [...names].sort().join("/");
+
+/** The walk question, asked of the compiled cell itself. See {@link Walk}. */
+export const walkOf = (
+	lane: CompiledLane,
+	states: Readonly<Record<string, TaskState>>,
+	taskId: string,
+	event: string,
+	classes: ReadonlyArray<string> | null,
+): Walk => {
+	const task = lane.tasks[taskId];
+	const from = states[taskId];
+	if (task === undefined || from === undefined) {
+		return {
+			_tag: "Unreadable",
+			why: `task "${taskId}" is not in this lane's machine, so nothing here says whether "${event}" is walkable`,
+		};
+	}
+	if (!msgKeysOf(task.machine).includes(event)) {
+		return {
+			_tag: "Unknown",
+			why: `"${event}" is not an event this lane's machine holds a cell for in any state — it walks ${listed(msgKeysOf(task.machine))}`,
+		};
+	}
+	try {
+		const [next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
+			type: event,
+			...(classes === null ? {} : {classes}),
+		});
+		return {_tag: "Walks", next: next.type};
+	} catch (error) {
+		if (error instanceof NoCellError) {
+			return {
+				_tag: "NoCell",
+				why: `"${from.type}" holds no cell for "${event}" — it walks ${listed(acceptsOf(task.machine, from.type))} alone`,
+			};
+		}
+		throw error;
+	}
+};
+
+/**
  * The leaf this task would land in if this event were recorded now, asked of the compiled cell
  * itself — `null` where the machine holds no cell for it.
  *
@@ -755,8 +822,10 @@ export const deriveStatus = (
  * owes, while the same `PASS` on a machine with no such arm — a chore workflow, or a rendered head
  * whose reviewer relayed no class — lands in `ship` and owes the whole set here.
  *
- * It answers the machine's question only. Whether the event is *appendable* stays
- * {@link applyEvent}'s, which asks several more.
+ * It answers the machine's question only, and it answers it for the operator's events alone: the
+ * routing question is only ever asked about an event a caller may record. Whether the event is
+ * *appendable* stays {@link applyEvent}'s, which asks several more; which of the three refusals a
+ * `null` stands for is {@link walkOf}'s.
  */
 export const nextLeaf = (
 	lane: CompiledLane,
@@ -765,19 +834,9 @@ export const nextLeaf = (
 	event: string,
 	classes: ReadonlyArray<string> | null,
 ): string | null => {
-	const task = lane.tasks[taskId];
-	const from = states[taskId];
-	if (task === undefined || from === undefined || !isOperatorEvent(event)) return null;
-	try {
-		const [next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
-			type: event,
-			...(classes === null ? {} : {classes}),
-		});
-		return next.type;
-	} catch (error) {
-		if (error instanceof NoCellError) return null;
-		throw error;
-	}
+	if (!isOperatorEvent(event)) return null;
+	const walk = walkOf(lane, states, taskId, event, classes);
+	return walk._tag === "Walks" ? walk.next : null;
 };
 
 export type TaskResolution =

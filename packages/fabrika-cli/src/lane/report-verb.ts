@@ -40,7 +40,8 @@
  * operator into the shell must not move the bar: between the machine's acceptance and the append
  * this verb runs the same read `lane prove` runs, so a `DONE` and a `PASS` enter the ledger with
  * their artifact behind them or not at all, a reviewer's park enters it only while no `FAIL` at the
- * head says the run reached a verdict, and every other event answers `not-required` without
+ * head says the run reached a verdict, and every other event answers `not-required` — or
+ * `not-walkable`, where this lane's machine walks no such event out of the task's leaf — without
  * a board read. A refusal is returned on the prover's own code, log untouched — the codes and their
  * remedies are `lane prove`'s, unchanged. The prover is a parameter so this verb's unit tier stays
  * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.

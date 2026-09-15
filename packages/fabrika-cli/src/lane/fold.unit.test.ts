@@ -18,6 +18,7 @@ import {
 	resolveTask,
 	standingCauses,
 	standingRationales,
+	walkOf,
 } from "./fold.ts";
 import {
 	CANCELLED_EVENT,
@@ -700,6 +701,46 @@ describe("nextLeaf — the arm an event would take, asked before it is recorded"
 		expect(nextLeaf(compiled, states, "issue", "UNBLOCKED", null)).toBeNull();
 		expect(nextLeaf(compiled, states, "issue", "NOPE", null)).toBeNull();
 		expect(nextLeaf(compiled, states, "task_z", "PASS", null)).toBeNull();
+	});
+});
+
+describe("walkOf — which of the three reasons a null nextLeaf stands for", () => {
+	const at = (steps: ReadonlyArray<readonly [string, string]>) => {
+		const compiled = lane(coderWorkflow());
+		return {compiled, states: statesOf(compiled, drive(compiled, steps))};
+	};
+
+	it("answers the leaf a walkable event lands in", () => {
+		const {compiled, states} = at([
+			["issue", "WIP"],
+			["issue", "DONE"],
+		]);
+
+		expect(walkOf(compiled, states, "issue", "PASS", ["ui"])).toMatchObject({
+			_tag: "Walks",
+			next: "review:ui",
+		});
+	});
+
+	it("separates an event no state of the machine holds a cell for from one this leaf lacks", () => {
+		const {compiled, states} = at([
+			["issue", "WIP"],
+			["issue", "BLOCKED"],
+		]);
+
+		// The ledger's own namespaced spelling and a typo are the same fact: no cell anywhere.
+		expect(walkOf(compiled, states, "issue", "ISSUE.PASS", null)._tag).toBe("Unknown");
+		expect(walkOf(compiled, states, "issue", "BANANA", null)._tag).toBe("Unknown");
+		// `PASS` is an event of this machine; the park is the leaf that owes it no cell.
+		const parked = walkOf(compiled, states, "issue", "PASS", null);
+		expect(parked._tag).toBe("NoCell");
+		expect(parked._tag === "NoCell" ? parked.why : "").toContain("UNBLOCKED");
+	});
+
+	it("keeps an unreadable task apart from both, so a caller never reads it as a refusal", () => {
+		const {compiled, states} = at([["issue", "WIP"]]);
+
+		expect(walkOf(compiled, states, "task_z", "PASS", null)._tag).toBe("Unreadable");
 	});
 });
 
