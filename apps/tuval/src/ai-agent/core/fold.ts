@@ -16,6 +16,8 @@ import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
 import {isRefusal, localEchoes, planTranscriptWindow} from "../history/index.ts";
 import {
 	ItemId,
+	isNamedItem,
+	itemIds,
 	type PendingPermission,
 	type PermissionProgress,
 	type TranscriptItem,
@@ -144,9 +146,13 @@ const heldPositions = (
 	// `local:<key>` id no backend ever sees (#7978), and a layer that echoes no `user` item never
 	// clears it — so an id-only join would read every unechoed prompt as a row the store lacks.
 	const echoes = localEchoes(history, held);
-	const ids = new Set(held.map((item) => item.id));
+	// Every other row joins on identity, and identity is both of a row's ids: a backend keying its
+	// live tail and its history reads in two spaces states the join in `alias` (#8032). On `id`
+	// alone this set met nothing agy's store returned, which left the range empty and sent the whole
+	// tail to the end of the history as a second copy of itself (#9061).
+	const ids = new Set<string>(held.flatMap(itemIds));
 	return new Set(
-		history.flatMap((item, index) => (echoes.has(index) || ids.has(item.id) ? [index] : [])),
+		history.flatMap((item, index) => (echoes.has(index) || isNamedItem(ids, item) ? [index] : [])),
 	);
 };
 

@@ -176,6 +176,25 @@ export const newestBackendItemId = (items: ReadonlyArray<TranscriptItem>): ItemI
  */
 export const isNestedItem = (item: TranscriptItem): boolean => item.parentId !== undefined;
 
+/**
+ * Every string one row is known by: its own id, and the `alias` its backend gave it for the other
+ * id space when it keys its live tail and its history reads differently (#8032).
+ */
+export const itemIds = (item: TranscriptItem): ReadonlyArray<ItemId> =>
+	item.alias === undefined ? [item.id] : [item.id, item.alias];
+
+/**
+ * Whether `named` reaches this row under *either* of its ids — the identity join every reader that
+ * meets a live row and a stored one performs, in one place rather than a copy per seam.
+ *
+ * Hand-rolled per caller it was written as an `id`-only test twice, and both times the join silently
+ * matched nothing on a two-id-space backend: the cut-reply mark named no paged row (#9046) and the
+ * resume's held range recognised no history row, which appended a second copy of the whole tail
+ * (#9061).
+ */
+export const isNamedItem = (named: ReadonlySet<string>, item: TranscriptItem): boolean =>
+	itemIds(item).some((id) => named.has(id));
+
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
 
