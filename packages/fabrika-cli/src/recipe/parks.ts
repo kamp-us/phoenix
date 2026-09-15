@@ -35,7 +35,8 @@ export type Clearance =
 	| "campaign-active"
 	| "spawn-clear"
 	| "queue-moved"
-	| "ci-green";
+	| "ci-green"
+	| "route-satisfied";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -90,7 +91,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: two keyed by their leaf, four by their cause.
+ * The parks with a fixed fix today: two keyed by their leaf, five by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table, relayed rather than
  * re-derived — the §CP cardinality question has exactly one answer in this package, and a second
@@ -123,6 +124,18 @@ export const QUEUE_MOVED_GRANT = 1;
  * for the same reason `campaign-active` does not: a recipe that "removed" this cause would be merging
  * the PR. What it does instead is grant: the recipe is the grantor, so the clear and the wait it buys
  * ride one recorded event and there is no bare `UNBLOCKED` into a spent budget for the fold to refuse.
+ *
+ * `blocked` + `no-rendered-delta` is the row a repaired terminal does not make redundant, and that
+ * is the whole reason it exists. `lane report` now advances the terminal when the proof holds
+ * ([`lane/report.ts`](../lane/report.ts)'s `PROOF_CONDITIONAL_TERMINALS`), so no *new* lane parks on
+ * a complete route — but a lane already sitting on this cause parked before that reading existed,
+ * and nothing in the ledger clears itself. Its clearance is the shipper's own floor minus CI, which
+ * is the exact read the park's meaning is false about: `ship gate`'s conjunction over `ship scope`'s
+ * required set at the live head, with the routed namespace still reading `routed` there. Requiring
+ * that last part is what keeps the clear the inverse of *this* cause rather than a generic
+ * "everything passed" — a park whose route was withdrawn or re-judged is a different park, and it
+ * holds. It names no remedy for `campaign-active`'s reason: dispatching the other gate is the
+ * driver's own act, and a recipe that "removed" this cause would be taking it.
  *
  * `human:cp-approval` + `head-ci-red` is the second row on that leaf, and the cause key is what makes
  * two rows there legal: `ship`'s `BLOCKED` folds to `human:cp-approval` whatever the block was, so a
@@ -185,6 +198,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "spawn-clear",
 		waitingOn:
 			"the dead shell's claim and working tree to be gone so the brief can be dispatched again",
+	}),
+	row({
+		park: "blocked",
+		cause: "no-rendered-delta",
+		clearance: "route-satisfied",
+		waitingOn:
+			"the review this route hands the verdict to — every required namespace answering at the PR's live head",
 	}),
 ];
 

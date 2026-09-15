@@ -72,6 +72,17 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
 	});
 
+	// The lanes stranded before `lane report` learned to advance a satisfied route are still stranded;
+	// nothing in a ledger clears itself. The row is what lets a sweep clear them without a person.
+	it("is Known for a BLOCKED whose cause is the no-rendered-delta shape", () => {
+		const parked = classifyPark("blocked", "no-rendered-delta");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("route-satisfied");
+		// Dispatching the other gate is the driver's own act, so this row names no remedy to run first.
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
 		const parked = classifyPark("blocked", null);
 

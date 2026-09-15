@@ -23,6 +23,7 @@ export const fakeProver = (
 	partial: boolean | null = null,
 	landed: ReadonlyArray<number> = [],
 	diagnosis = false,
+	routed: ReadonlyArray<string> = [],
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -30,10 +31,50 @@ export const fakeProver = (
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return {...outcome, deferred, partial, landed, diagnosis};
+				return {...outcome, deferred, partial, landed, diagnosis, routed};
 			}),
 	};
 };
+
+/**
+ * A prover that answers per event, for the one caller that asks about two.
+ *
+ * `lane report`'s conditional terminal tries the advanced event and falls through to the parked one,
+ * so a fake that answers the same thing twice cannot express the case the fall-through exists for:
+ * a `PASS` the board refuses beside a park it proves.
+ */
+export const fakeProverByEvent = (
+	answers: Readonly<Record<string, ProofFacts>>,
+	fallback: ProofFacts = {outcome: answer(JSON.stringify({proof: "not-required"}))},
+) => {
+	const asked: ProveOptions[] = [];
+	return {
+		asked,
+		prove: (options: ProveOptions) =>
+			Effect.sync(() => {
+				asked.push(options);
+				const facts = answers[options.event.toUpperCase()] ?? fallback;
+				return {
+					...facts.outcome,
+					deferred: facts.deferred ?? [],
+					partial: facts.partial ?? null,
+					landed: facts.landed ?? [],
+					diagnosis: facts.diagnosis ?? false,
+					routed: facts.routed ?? [],
+				};
+			}),
+	};
+};
+
+/** What {@link fakeProverByEvent} answers for one event — every field but the outcome optional. */
+export interface ProofFacts {
+	readonly outcome: VerbOutcome;
+	readonly deferred?: ReadonlyArray<string>;
+	readonly partial?: boolean | null;
+	readonly landed?: ReadonlyArray<number>;
+	readonly diagnosis?: boolean;
+	readonly routed?: ReadonlyArray<string>;
+}
 
 /** A `parkCause` read at any arm, for a verb test that does not open a config file. */
 export const parkCauseRead = (

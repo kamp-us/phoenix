@@ -292,8 +292,152 @@ const clear = (
 			return clearQueueMoved(options, task, recipe);
 		case "ci-green":
 			return clearCiGreen(options, task, recipe);
+		case "route-satisfied":
+			return clearRouteSatisfied(options, task, recipe);
 	}
 };
+
+/**
+ * Read whether the routed-UI park's cause is gone: the review this route handed the verdict to has
+ * finished, and the route itself still stands at the live head.
+ *
+ * The cause says "the verdict is `review`'s to give and not the rendered gate's". That is false the
+ * moment `review` has given every verdict it owes, so the clearance is `ship gate`'s conjunction over
+ * `ship scope`'s required set — both relayed, never re-derived here, for `ci-green`'s reason: a
+ * second reading of the required set could resume a lane gated on less than its diff earns.
+ *
+ * **The routed row is checked as well as the conjunction, and that is what keeps this clear the
+ * inverse of this cause.** `satisfied` alone would also be true of a PR whose rendered gate came back
+ * and passed — a different park, cleared by a different act — and true of one whose route was
+ * withdrawn and re-judged. Requiring at least one required namespace still reading `routed` says the
+ * artifact this park was recorded about is the artifact being read back.
+ *
+ * No `--cp`, for the reason `ci-green` passes none: a control-plane approval is `ship cp-approval`'s
+ * to discharge on the shipper's own run, and asserting one from here would be granting it.
+ */
+const clearRouteSatisfied = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		const unknown = (what: string, reason: string): Clearance =>
+			no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${what}: ${reason} — whether the routed review is finished is UNKNOWN, never cleared.`,
+				),
+			);
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the park's PR cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+		const repo = resolved.repo;
+
+		const nominated = yield* soleParkedPull(repo, issue, recipe, "the routed review");
+		if (nominated._tag === "Refused") return no(nominated.outcome);
+		const pr = nominated.pr;
+
+		const scoped = yield* runScope({
+			pr,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+			caller: "relay",
+		});
+		if (scoped.code !== 0) {
+			return unknown(`#${pr}'s scope`, `fabrika ship scope refused at exit ${scoped.code}`);
+		}
+		const shape = parseJson(scoped.stdout);
+		if (
+			!isRecord(shape) ||
+			typeof shape.head !== "string" ||
+			typeof shape.state !== "string" ||
+			!Array.isArray(shape.namespaces)
+		) {
+			return unknown(
+				`#${pr}'s scope`,
+				"fabrika ship scope exited 0 and named no head, state or namespace set",
+			);
+		}
+		const head = shape.head;
+		const namespaces = shape.namespaces.filter((name): name is string => typeof name === "string");
+		const scanned = scannedLine(VERB, 1, "pull request", `#${pr} at ${head}`);
+		if (shape.state !== "open") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${pr} reads "${shape.state}", so there is no open head to resume against; nothing was written.`,
+					[scanned],
+				),
+			);
+		}
+
+		const gated = yield* runGate({
+			pr,
+			sha: head,
+			require: namespaces,
+			cp: false,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+		});
+		if (gated.code !== 0) {
+			return unknown(
+				`#${pr}'s verdicts at ${head}`,
+				`fabrika ship gate refused at exit ${gated.code}`,
+			);
+		}
+		const conjunction = parseJson(gated.stdout);
+		if (!isRecord(conjunction) || typeof conjunction.outcome !== "string") {
+			return unknown(
+				`#${pr}'s verdicts at ${head}`,
+				"fabrika ship gate exited 0 and named no outcome",
+			);
+		}
+		if (conjunction.outcome !== "satisfied") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s conjunction over ${namespaces.join(", ")} at ${head} reads "${conjunction.outcome}"; nothing was written.`,
+					[scanned],
+				),
+			);
+		}
+		// `ship gate`'s rows name their namespace `name`; read the key it writes, never a plausible one.
+		const routed = (Array.isArray(conjunction.namespaces) ? conjunction.namespaces : [])
+			.filter(
+				(row): row is {readonly name: string} =>
+					isRecord(row) && row.state === "routed" && typeof row.name === "string",
+			)
+			.map((row) => row.name);
+		if (routed.length === 0) {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" names the cause "${recipe.cause}", and no namespace on #${pr} at ${head} reads routed any more — whatever satisfies this gate now, it is not the route this park was recorded about; nothing was written.`,
+					[scanned],
+				),
+			);
+		}
+
+		return {
+			_tag: "Cleared",
+			mechanism: `route-satisfied:#${pr} at ${head}, ${routed.join(",")} routed, ${namespaces.join(",")} bound`,
+			waitGrant: null,
+		};
+	});
 
 /**
  * Read whether the §CP park's clearing condition holds, relaying the verb that owns the question.

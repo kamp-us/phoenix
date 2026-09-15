@@ -295,9 +295,19 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 ```
 
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
-`--cause no-rendered-delta`. No recipe clears any of the three today, so each still routes to a
-human — the cause is what makes that route a gap somebody can write a row for rather than an
-anonymous dead end, and a cause is worth naming before any recipe consumes it. `ESCALATED` carries no cause:
+`--cause no-rendered-delta`. Two of the three still route to a human, and the cause is what makes
+that route a gap somebody can write a row for rather than an anonymous dead end.
+
+**`ROUTED-ELSEWHERE` is the one that may not park at all, and that is the verb's call rather than
+yours.** Your route is a *completed* review of a diff that renders nothing, and `lane prove` has
+always read it as satisfying `review-ui` — so when every other required namespace already holds a
+verdict binding this head, `lane report` records the `PASS` that finish earns and the lane walks to
+`ship`. It proves that before it records it, and it falls back to the park on anything short: an
+absent, stale, unauthorized or unreadable route, a review still outstanding, a standing `FAIL`. So
+report the terminal and the cause exactly as above either way, and read the answer's `current` for
+where the lane went — do not pre-judge which arm you are on, and never record a `review-ui` `PASS`
+to get there. Nothing about this changes what you post: the record stays a route with no polarity.
+`ESCALATED` carries no cause:
 its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
 change and not this gate's to make. The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));

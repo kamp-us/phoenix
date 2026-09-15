@@ -95,6 +95,27 @@ export const PARKED_ON_CAMPAIGN = parkedBlockedOn("campaign-paused");
 /** The spawn-dead park: BLOCKED because the provider killed the shell before a terminal. */
 export const PARKED_ON_SPAWN = parkedBlockedOn("spawn-dead");
 
+/**
+ * queued → build → review → review:ui → blocked, on the routed-UI cause.
+ *
+ * `ui` stands from the `WIP`, so the `PASS` out of `review` takes the class-guarded arm into the
+ * rendered gate's cell — which is where a `ROUTED-ELSEWHERE` is reported from, and the leaf the
+ * history `UNBLOCKED` walks back into.
+ */
+export const PARKED_ON_ROUTED_UI = [
+	{task: "issue", event: "ISSUE.WIP", at: "2026-08-16T00:00:00.000Z", classes: ["ui"]},
+	{task: "issue", event: "ISSUE.DONE", at: "2026-08-16T00:01:00.000Z"},
+	{task: "issue", event: "ISSUE.PASS", at: "2026-08-16T00:02:00.000Z"},
+	{
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:03:00.000Z",
+		cause: "no-rendered-delta",
+	},
+]
+	.map((entry) => `${JSON.stringify(entry)}\n`)
+	.join("");
+
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
 
