@@ -70,7 +70,6 @@ import {
 	type SpawnEffect,
 	type StopEffect,
 	spawned,
-	stopped,
 } from "./effect.ts";
 import {compileTakesKeys, type KEY_EVENT, type KeyEvent} from "./keys.ts";
 import {
@@ -263,10 +262,10 @@ const arrivingPorts = (authored: AnyAuthoredProgram): ReadonlyArray<string> =>
 		.map(([name]) => name);
 
 /**
- * The six effect handlers, written once. Each answers the events its effect produces: `emit` and
- * `send` announce nothing back, `spawn` answers `spawned` and `stop` answers `stopped`. A command
- * reaches exactly one of them — `send`; the other five are an `update` cell's alone (ADR 0372, as
- * the rulings on #8898 and #8858 amended it).
+ * The six effect handlers, written once. Each answers the events its effect produces: `spawn`
+ * answers `spawned`, and `emit`, `send` and `stop` announce nothing back. A command reaches exactly
+ * one of them — `send`; the other five are an `update` cell's alone (ADR 0372, as the rulings on
+ * #8898 and #8858 amended it).
  */
 const emitHandler = (cmd: EmitEffect) =>
 	Effect.gen(function* () {
@@ -328,11 +327,26 @@ const replyHandler = (cmd: ReplyEffect) =>
 		return NO_EVENTS;
 	});
 
+/**
+ * End the named process, and answer nothing (#9227). `stopped` still arrives — it is delivered by
+ * the child's own exit, from the finalizer `SpawnedProcesses.spawn` hung on it
+ * (`../commands/core/process.ts`), which is now the single producer of that event.
+ *
+ * It used to be produced here as well, and two producers meant a child that ended by itself
+ * produced none at all: the answer to the parent's own `stop` was the only `stopped` an author could
+ * ever see, so an unsolicited exit was silently absorbed. Returning it here *and* delivering it would
+ * have made the parent-issued case two events for one child end. One producer, on the edge that
+ * actually happens, makes both of those unwritable rather than guarded against.
+ *
+ * The cost is that the event is no longer this fold's answer: it arrives as a later dispatch. An
+ * author reading `stopped` sees the same event for both endings and cannot tell which asked for it,
+ * which is the point — a `stop` a cell issued has already moved that cell's state.
+ */
 const stopHandler = (cmd: StopEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
 		yield* processes.stop(cmd.process);
-		return [stopped(cmd.process)];
+		return NO_EVENTS;
 	});
 
 /** Everything an authored program's effects can fail with, gathered off the services they run on. */

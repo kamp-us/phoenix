@@ -26,6 +26,12 @@
  * asking process is any process, not only one this service spawned. The three spells below are
  * untouched by either: nothing addressed by a correlation is reachable from a spell's params.
  *
+ * A child's *end* rides the same path (#9227). Its emits reach the spawner because `on` names them;
+ * its end reaches the spawner because it had one — the finalizer in `enrol` below delivers the
+ * authored `stopped` for the child, and it is the only place that event is produced. It sits in
+ * `enrol` rather than in `spawn` because both paths pass through there, so a graph node that
+ * declared a parent is heard from exactly as an ad-hoc child is.
+ *
  * The six errors are declared here rather than in a `commands/core/errors.ts`: `core/` is one
  * directory per core spell list, not one feature, and a shared errors file is a file two parallel
  * children would both write.
@@ -33,6 +39,7 @@
 
 import {randomUUID} from "node:crypto";
 import {Context, type Duration, Effect, Layer, Option, Queue, Ref, Schema, Scope} from "effect";
+import type {Stopped} from "../../authoring/effect.ts";
 import type {OpenError} from "../../durability/Checkpoints.ts";
 import {PayloadRejected, PortNotWired} from "../../ports/errors.ts";
 import {NodeId} from "../../ports/graph.ts";
@@ -294,6 +301,14 @@ export interface Adoption<E> {
 	 * half-wired process, which is the caller's defect rather than a failure a caller could act on.
 	 */
 	readonly inboxes: ReadonlyMap<string, Queue.Queue<unknown>>;
+	/**
+	 * The process that spawned this one, if the caller's plan named one — a graph node's declared
+	 * parent (`src/ports/graph.ts`). It is what the child's end is announced to (#9227), the same
+	 * way an ad-hoc `spawn`'s parent is; a node that declared none is nobody's child and its end is
+	 * announced to nobody. It is passed here rather than read back off the handle because the table
+	 * has to hang that finalizer at enrolment, before the caller's `start` has told anyone anything.
+	 */
+	readonly parent: Option.Option<ProcessId>;
 	/** Where an out-port's payload goes once this table's latch has recorded it — the graph's wiring. */
 	readonly emit: Context.Service.Shape<typeof ProcessPorts>["emit"];
 	/** Start the process on the ports adoption built. The handle it answers with is what is enrolled. */
@@ -321,6 +336,10 @@ export interface SpawnedProcessesOptions {
 const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: SpawnedProcessesOptions) {
 	const registry = yield* Registry;
 	const processes = yield* Processes;
+	// This service's own Scope — the layer's. A child's exit notice (#9227) is forked into it rather
+	// than into the child being finalized or the parent being notified, since both of those are
+	// closing or busy at exactly the moment the notice is owed.
+	const serviceScope = yield* Effect.scope;
 	const live = new Map<ProcessId, Entry>();
 	/** The correlation table an answer is addressed by. One entry per outstanding `ask`. */
 	const pending = new Map<string, Pending>();
@@ -335,11 +354,45 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 
 	/**
 	 * Hold one live process's wiring against its id, and let go when the process stops. Both paths
-	 * end here, so there is one place a process becomes addressable and one place it stops being.
+	 * end here, so there is one place a process becomes addressable, one place it stops being, and
+	 * one place its *end* is announced (#9227). The parent is a parameter rather than something
+	 * `spawn` keeps to itself because an adopted graph node that declared a parent is a child like
+	 * any other: whether a child's end reaches its spawner cannot turn on which path started it.
 	 */
-	const enrol = (id: ProcessId, entry: Entry) =>
+	const enrol = (id: ProcessId, parent: Option.Option<ProcessId>, entry: Entry) =>
 		Effect.gen(function* () {
 			live.set(id, entry);
+			// The child's *end*, routed to its spawner the way its emits are (#9227). `on` covers the
+			// out-ports; this covers the one lifecycle edge no port can carry, so it hangs off the
+			// parent alone — a spawn that named no port still hears its child die.
+			//
+			// This is the only producer of the authored `stopped` event. `stopHandler`
+			// (`../../authoring/define-program.ts`) answers a `stop` with no event at all, so a child
+			// the parent ended and a child that ended by itself leave the table through this one
+			// finalizer: one child end is one `stopped`, with no second path to deduplicate.
+			//
+			// Forked, never awaited, and into this service's Scope rather than the child's or the
+			// parent's. A finalizer here runs on whichever fiber closed the child's Scope, and for a
+			// parent-issued `stop` that fiber is inside the parent's own fold — `deliver` takes that
+			// process's dispatch permit, so awaiting it would be the parent waiting on itself. The
+			// fork also keeps a child's exit off a parent's teardown, where descendants close first
+			// (`../../process/Processes.ts`). `deliver` has no error channel — a parent already gone
+			// answers `false`, a fold that fails on the event is logged where it failed — so the
+			// notice cannot fail the finalizer either way.
+			//
+			// A process `../../durability/restore.ts` brought back gets none of this: restore spawns
+			// through `Processes` directly, with no parent routing and `unwired` ports, so a restored
+			// child's end reaches nobody. That is restore's gap to close, not this seam's.
+			if (Option.isSome(parent)) {
+				// `satisfies`, not an annotation: the authoring event's shape is what is owed, and the
+				// literal's own type is what `deliver` takes (an `interface` gets no index signature).
+				const notice = {type: "stopped", process: id} satisfies Stopped;
+				const spawner = parent.value;
+				yield* Scope.addFinalizer(
+					entry.handle.scope,
+					Effect.asVoid(Effect.forkIn(deliver(processes, spawner, notice), serviceScope)),
+				);
+			}
 			yield* Scope.addFinalizer(
 				entry.handle.scope,
 				Effect.sync(() => {
@@ -410,7 +463,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 					return queue;
 				}),
 			);
-			yield* enrol(id, {handle, inboxes, outboxes});
+			yield* enrol(id, parent, {handle, inboxes, outboxes});
 		}).pipe(Effect.onError(() => handle.stop));
 		return id;
 	});
@@ -426,7 +479,8 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 	 *
 	 * The in-port queues are the caller's and so are their finalizers: `src/ports/wiring.ts` shuts a
 	 * graph queue down with the wiring's scope. What this adds to the process's own scope is the
-	 * pumps and the entry's removal, which is the whole of what it owns.
+	 * pumps, the entry's removal, and — when the adoption names a parent — the child's end notice
+	 * (#9227), which is the whole of what it owns.
 	 */
 	const adopt = <E>(adoption: Adoption<E>): Effect.Effect<ProcessHandle, E> =>
 		Effect.gen(function* () {
@@ -453,7 +507,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 						? Effect.die(`adopted process "${id}" was handed no queue for in-port "${name}"`)
 						: Effect.succeed(queue);
 				});
-				yield* enrol(id, {handle, inboxes, outboxes});
+				yield* enrol(id, adoption.parent, {handle, inboxes, outboxes});
 			}).pipe(Effect.onError(() => handle.stop));
 			return handle;
 		}).pipe(Effect.withSpan("Tuval.SpawnedProcesses.adopt"));
@@ -538,8 +592,9 @@ export class SpawnedProcesses extends Context.Service<
 		) => Effect.Effect<ProcessId, UnknownProgram | UnknownProcess | OpenError | HandlerFailed>;
 		/**
 		 * Enrol a process another spawner starts, so one table answers `send`, `ask` and `read` for a
-		 * graph-launched process and an ad-hoc one alike (#8944). The caller's spawn runs inside, on
-		 * ports this builds, and its failure is the call's failure with nothing enrolled.
+		 * graph-launched process and an ad-hoc one alike (#8944), and so its end reaches the parent
+		 * the adoption names exactly as an ad-hoc child's does (#9227). The caller's spawn runs
+		 * inside, on ports this builds, and its failure is the call's failure with nothing enrolled.
 		 */
 		readonly adopt: <E>(adoption: Adoption<E>) => Effect.Effect<ProcessHandle, E>;
 		/**

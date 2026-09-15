@@ -12,7 +12,9 @@
  * to carry that pump, and a process it launched was therefore invisible to the `process` spells:
  * `send` and `read` answer off the table `adopt` now enrols into, so a planned program's in-port
  * was dead surface from the command line and from any agent. One table, one pump, and a node's
- * out-port latch is opened by the same code that opens an ad-hoc process's.
+ * out-port latch is opened by the same code that opens an ad-hoc process's — and a node that
+ * declared a parent has its end announced to that parent by the same finalizer an ad-hoc child's
+ * end goes through (#9227).
  */
 
 import {Context, Effect, Option, type Queue} from "effect";
@@ -90,6 +92,10 @@ export const launch = Effect.fn("Tuval.launch")(function* (
 			process: id,
 			program: row,
 			inboxes,
+			// The node's declared parent, handed to the table as well as to the spawn: the table is
+			// what tells a parent its child ended (#9227), and a graph node that named one is a child
+			// on exactly the terms an ad-hoc spawn's is. A node that named none is nobody's child.
+			parent,
 			emit: (port, payload) => wiring.emit({node: node.id, port}, payload),
 			start: (ports) =>
 				processes.spawn(node.program, {

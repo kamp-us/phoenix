@@ -18,16 +18,13 @@
  * `claudeSession({…})` now fits `jobShape` on its own — which is what `cron.unit.test.ts` pins,
  * where it used to pin the failure.
  *
- * **An unsolicited child exit does not reach this program, and that is #9227.** The authoring layer
- * produces a `stopped` event in exactly one place — `stopHandler` in `../authoring/define-program.ts`
- * — as the answer to the program's *own* `stop` effect. A child that ends by itself publishes to the
- * `ProcessTable` stream (`../process/Processes.ts`) and its `live` finalizer
- * (`../commands/core/process.ts`) deletes the entry; nothing dispatches a `stopped` into the
- * spawner's inbox. So the `stopped` cell below handles the answer to cron's own `stop`, and its
- * other branch — the job that died before answering — is written for the day #9227 delivers that
- * event and is unreachable until it does. Live today, a job that crashes before `result` leaves
- * `child` set and every later tick dropped until a restart, which `resume` reconciles. Nothing here
- * works around it.
+ * **A job that ends before it answers reaches this program, and that is #9227, landed.** A child's
+ * end is delivered to its spawner by the finalizer on the child's own Scope
+ * (`../commands/core/process.ts`), and it is the only producer of `stopped`: cron's own `stop` in the
+ * `result` cell and a job that crashed halfway both arrive at the one `stopped` cell below, which
+ * tells them apart by whether the process named is still `child`. So a crashed job is written down
+ * as a failed run on the spot instead of leaving `child` set and every later tick dropped until
+ * `resume` reconciles it at the next boot. Nothing here works around anything.
  *
  * **`:cron run` reaches the cron the desk boots, and #8944 is what made that true.** A command may
  * only `send` (ADR 0372 as #8898 amended it), and a bare `send("run")` resolves to the declaring
@@ -206,7 +203,7 @@ export const cronProgram = (options: CronOptions) => {
 			 * stays up holding a transcript, so a cron that cleared `child` only on `stopped` would
 			 * never see one, drop every later tick, and leave the session to be restored on the next
 			 * boot. The run is over when the answer lands, so cron ends it — and clears `child` here
-			 * rather than on the `stopped` this `stop` answers with, so the very next tick may spawn.
+			 * rather than on the `stopped` that `stop` will bring back, so the very next tick may spawn.
 			 */
 			result: (state: CronState, event: Reply<"result", TurnResult>): Answer<CronState> => {
 				const run: CronRun = {
@@ -220,18 +217,15 @@ export const cronProgram = (options: CronOptions) => {
 				];
 			},
 			/**
-			 * The answer to cron's own `stop`. The `result` cell cleared `child` before it issued that
-			 * `stop`, so the process named here is already off state and the cell is a no-op — which is
-			 * the case that runs, every turn.
+			 * The job ended. Every ending arrives here — cron's own `stop` from the `result` cell and a
+			 * job that died halfway — because a child's end has one producer (#9227,
+			 * `../commands/core/process.ts`). What tells them apart is `child`, and nothing else has to:
+			 * the `result` cell clears `child` before it issues its `stop`, so the ordinary end of a turn
+			 * names a process that is already off state and is a no-op here.
 			 *
-			 * The other branch — the named process *is* still `child`, meaning the job ended before it
-			 * answered — is unreachable under today's kernel, and that is #9227: `stopped` is only ever
-			 * the answer to a program's own `stop` effect, so nothing delivers an unsolicited child exit
-			 * here. It is written for the day #9227 lands, when a crashed job becomes a failed run
-			 * instead of a `child` left set until the next restart, and it needs no change to this file
-			 * when it does. `cron.unit.test.ts` feeds the event by hand, so it proves this cell and not
-			 * live behaviour. Cited the way #8944 was in the module header until it landed: the
-			 * honest half, no workaround.
+			 * The named process still being `child` therefore means exactly one thing — the job ended
+			 * before it answered — and that is the run this cell writes down as failed. `child` is
+			 * cleared with it, so the next tick spawns instead of being dropped for ever.
 			 */
 			stopped: (state: CronState, event: Stopped): Answer<CronState> => {
 				if (state.child === null || event.process !== state.child) {
