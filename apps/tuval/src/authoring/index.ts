@@ -2,8 +2,8 @@
  * The authoring API's front door — what `@kampus/tuval/authoring` resolves to (#8943).
  *
  * **What is public here is exactly what a program file needs and nothing else.** The set was read
- * off the two programs in this repo that are written the way a third party writes one — the worked
- * example (`./example/pr-review.ts`) and `../cron/cron.ts` — plus `testProgram`, which is how an
+ * off the one program in this repo written the way a third party writes one — the worked example
+ * (`./example/pr-review.ts`) — plus `testProgram`, which is how an
  * author tests a program outside this repo. Every name below appears in one of those files' import
  * lists or is the declared type of something that does. Nothing else is here on the theory that
  * someone might want it: a name added to this file is a name this package then owes.
@@ -20,8 +20,8 @@
  * what `Spawned`/`Stopped` carry, and it is exported as a *value* because `ProcessId.make` is the
  * only way to name one; `TITLE_PORT` / `STATUS_PORT` are the two generic self-report ports a
  * program emits its derived lines on, which is a string an author would otherwise have to guess.
- * The first outside consumer (`packages/tuval-cron`) found each of these by failing to compile
- * without it.
+ * The first outside consumer (`@cansirin/tuval-cron`, which lives in its own repo) found each of
+ * these by failing to compile without it.
  *
  * **The whole `ArgRefs` chain is public for the same reason, and it is not optional.** The type
  * `programArgs(…)` infers is `ArgRefs<Id, D>`, which reaches `ArgRef`, `ProgramArgRef`,

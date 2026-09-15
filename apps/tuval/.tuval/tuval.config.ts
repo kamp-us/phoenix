@@ -3,12 +3,9 @@
 // is a `Program` (src/registry/program.ts); the eight in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
-// Two more rows sit behind flags in the `features` block below, both default-off, so a desk booted
-// today carries the eight: the worked `pr-review` example (#8734) behind `prReviewExample`, and the
-// scheduler `cron` (#8716's authoring layer, written on it rather than for it) behind `cron`. Flip
-// either line and restart the desk to get that row, its graph node and its spells — for `cron`,
-// a planned process ticking from boot and `:cron run` on demand. `cron` is off by default because
-// its job spends Claude tokens on a timer, and a row that spends tokens is something you opt into.
+// One more row sits behind a flag in the `features` block below, default-off, so a desk booted
+// today carries the eight: the worked `pr-review` example (#8734) behind `prReviewExample`. Flip
+// that line and restart the desk to get the row, its graph node and its spells.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -35,10 +32,8 @@ import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
-import {cron} from "../src/cron/cron.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
-import {NodeId} from "../src/ports/graph.ts";
 import {ProcessId} from "../src/process/process.ts";
 import {wiredShellEffects} from "../src/shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
@@ -71,29 +66,7 @@ const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope}
  * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
  * — a row is this file's to state. ADR 0375 records that.
  */
-const features = {prReviewExample: false, cron: false};
-
-/** The desk's own scheduler. Named here because both its row and its graph node read it. */
-const cronNode = NodeId.make("cron");
-
-/**
- * The first job: a read-only standup off the `gh` CLI. It spends Claude tokens on every wake, which
- * is why the row is off unless you ask for it. Ten minutes between wakes is deliberate for the same
- * reason — a planned node ticks from boot, and a job that spends tokens on a short timer is a desk
- * nobody leaves running. `:cron run` is the on-demand path.
- *
- * The `job` below is the fill this row's arg is registered with (#8762): a `spawn` on the shaped
- * arg reads it back out of the row's own context and starts the Claude session, so a tick is a
- * real run and the tile reports it. The row goes in whole — `claudeSession({…})` fits `jobShape`
- * on its own now that a compiled row publishes its ports' payload schemas (#8887, #8959), so the
- * `sessionAsJob` wrapper that used to stand here is gone.
- */
-const cronJob = cron({
-	everyMs: 10 * 60 * 1000,
-	prompt:
-		"Using the gh CLI, summarize what changed on kamp-us/phoenix in the last 24 hours: merged PRs, new issues, anything labeled ready-for:human. Five lines max, most important first.",
-	job: claudeSession({cwd: projectRoot, scope: claudeSessionScope}),
-});
+const features = {prReviewExample: false};
 
 export default {
 	version: 1,
@@ -120,20 +93,12 @@ export default {
 		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
 		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
 		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
-		// The scheduler (#8716's authoring layer, first program written on it). Off by default because
-		// its job spends tokens; flipped on it is planned below, live at boot, and its tile says what
-		// the last run did.
-		...(features.cron ? [cronJob] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
 		sessionListProgram(),
 	],
 	features,
 	graph: {
-		nodes: [
-			shellGraphNode,
-			...demoGraph.nodes,
-			...(features.cron ? [{id: cronNode, program: cronJob.id, on: []}] : []),
-		],
+		nodes: [shellGraphNode, ...demoGraph.nodes],
 	},
 } satisfies TuvalConfigInput;

@@ -9,8 +9,8 @@
  * there. `tsc` over this file is the other half — the door has to be typed, not just resolvable.
  *
  * It stays small on purpose. What each authored field *does* is pinned next door
- * (`define-program.unit.test.ts`, `../cron/cron.unit.test.ts`); this file pins only that the names
- * arrive, and that the map opens no door onto a module that is not there.
+ * (`define-program.unit.test.ts`, `args.unit.test.ts`, `shape.unit.test.ts`); this file pins only
+ * that the names arrive, and that the map opens no door onto a module that is not there.
  */
 
 import {execFileSync} from "node:child_process";
