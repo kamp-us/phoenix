@@ -54,10 +54,15 @@ describe("authoring.args", () => {
 
 	it("is one key on the compiler's input and one line in its field-compiler record", () => {
 		const source = readFileSync(new URL("./define-program.ts", import.meta.url), "utf8");
-		const record = source.slice(source.indexOf("export const FIELD_COMPILERS"));
-		expect(record.split("\n").filter((line) => line.trimStart().startsWith("args:"))).toHaveLength(
-			1,
-		);
+		// Bounded at both ends: the claim is about the record's own lines, and `defineProgram` builds
+		// a `CompileContext` carrying an `args` of its own further down the same file.
+		const record = source.match(
+			/export const FIELD_COMPILERS = \{\n(?<body>[\s\S]*?)\n\} satisfies FieldCompilers;/,
+		)?.groups?.body;
+		expect(record).toBeTypeOf("string");
+		expect(
+			(record ?? "").split("\n").filter((line) => line.trimStart().startsWith("args:")),
+		).toHaveLength(1);
 	});
 
 	it("builds one Layer at the config call, which a handler reads the arg back through", async () => {
