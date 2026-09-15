@@ -5,6 +5,7 @@
 import {Effect, Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
+import {parkCauseKey} from "../config/keys/park-cause.ts";
 import {readKey} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO, ROOT_NOT_OWNED} from "./codes.ts";
@@ -297,5 +298,76 @@ describe("the config root a seat-counting verb reads its cap from", () => {
 		const fs = fakeFs({files: {}, unprobeable: [`${PRIMARY}/.git`]});
 
 		expect(await capFrom(fs, PRIMARY)).toMatchObject({code: LANE_UNREADABLE});
+	});
+});
+
+/**
+ * The same straddle at the three verbs that record a park. `parkCause` decides which parks reach the
+ * shared ledger, so a worktree's own tracked copy would govern a log it does not own: a cause-less
+ * park the owning repository refuses gets recorded instead, and nothing fails anywhere.
+ */
+describe("the config root a park-recording verb reads its rule from", () => {
+	const PRIMARY = "/primary";
+	const WORKTREE = "/wt";
+	const WORKTREE_CWD = `${WORKTREE}/packages/fabrika-cli`;
+
+	/** Both checkouts carry a tracked `.fabrika.jsonc`, and they declare opposite strictness. */
+	const bothConfigs = () =>
+		fakeFs({
+			directories: [`${PRIMARY}/.git`],
+			dirs: {
+				[PRIMARY]: [".git", ".fabrika"],
+				[`${PRIMARY}/.git/worktrees/wt`]: [],
+			},
+			files: {
+				[`${WORKTREE}/.git`]: "gitdir: /primary/.git/worktrees/wt",
+				[`${PRIMARY}/.git/worktrees/wt/commondir`]: "../..",
+				[`${PRIMARY}/.fabrika.jsonc`]: '{"parkCause": {"uncaused": "refuse"}}',
+				[`${WORKTREE}/.fabrika.jsonc`]: '{"parkCause": {"uncaused": "record"}}',
+			},
+		});
+
+	const ruleFrom = (verb: string, fs: ReturnType<typeof fakeFs>, cwd: string) =>
+		Effect.runPromise(
+			Effect.provide(
+				Effect.gen(function* () {
+					const root = yield* configRootOrRefuse(verb, cwd);
+					return typeof root === "string" ? yield* readKey(root, parkCauseKey) : root;
+				}),
+				fs.layer,
+			),
+		);
+
+	it.each([
+		"fabrika lane transition",
+		"fabrika lane report",
+		"fabrika lane view",
+	])("%s reads the owning checkout's strictness from a worktree cwd, not the worktree's own", async (verb) => {
+		expect(await ruleFrom(verb, bothConfigs(), WORKTREE)).toMatchObject({
+			_tag: "Value",
+			value: {uncaused: "refuse"},
+		});
+	});
+
+	it("resolves the same way from a subdirectory of the worktree", async () => {
+		expect(await ruleFrom("fabrika lane transition", bothConfigs(), WORKTREE_CWD)).toMatchObject({
+			_tag: "Value",
+			value: {uncaused: "refuse"},
+		});
+	});
+
+	it("reads that same value from the primary checkout — the unchanged path", async () => {
+		expect(await ruleFrom("fabrika lane report", bothConfigs(), PRIMARY)).toMatchObject({
+			_tag: "Value",
+			value: {uncaused: "refuse"},
+		});
+	});
+
+	it("refuses a cwd whose repository cannot be read rather than falling back to it", async () => {
+		const fs = fakeFs({files: {}, unprobeable: [`${PRIMARY}/.git`]});
+
+		expect(await ruleFrom("fabrika lane view", fs, PRIMARY)).toMatchObject({
+			code: LANE_UNREADABLE,
+		});
 	});
 });

@@ -74,7 +74,10 @@ export interface TransitionOptions extends LaneRef {
 	 */
 	readonly cause: string | null;
 	/**
-	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
+	 * that OWNS the cwd — never the cwd's own copy. The rule is weighed against the shared lane ledger,
+	 * which a linked worktree and its primary checkout derive alike, so the worktree's tracked copy
+	 * would govern a log it does not own.
 	 *
 	 * This verb records the parks a driver originates, so the rule refusing a cause-less park has to
 	 * reach it too — a rule only the shell's path enforced would leave the driver's own bare
@@ -108,7 +111,11 @@ export interface TransitionOptions extends LaneRef {
 	readonly rationale: string | null;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	/**
+	 * The checkout this run stands in, handed to the proof — not the ledger root, and not where
+	 * `.fabrika.jsonc` is read: {@link parkCause} above is resolved off the repository that OWNS this
+	 * path, so a linked worktree is judged by the primary checkout's declaration.
+	 */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }

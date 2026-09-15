@@ -12,6 +12,7 @@ import type {BriefOptions} from "./brief-verb.ts";
 import {LANE_UNREADABLE, NO_SHELL, PROOF_ABSENT} from "./codes.ts";
 import {CODEX_ROLE_SKILLS, codexPrompt, reportedTerminal} from "./codex-dispatch.ts";
 import {applyEvent, foldLog, resolveTask} from "./fold.ts";
+import {configRootOrRefuse} from "./ground.ts";
 import {bareEvent} from "./machine.ts";
 import {epicOf, roleOf} from "./prove.ts";
 import type {ProveOptions} from "./prove-verb.ts";
@@ -47,6 +48,10 @@ type PreRefresh =
  *
  * A lane this cannot read is `Skipped`, never refused here — every one of those reads is made again
  * below, and refusing twice in two voices for one fact is how a caller learns to distrust the first.
+ * The one refusal that does leave from here is the config root's `11`: no read below re-makes it, and
+ * a gate whose arm is UNKNOWN may not fall back to the cwd's own copy of the key. A cwd in no
+ * repository is not that case — `configRootOrRefuse` hands it back its own cwd, so the gate reads the
+ * shipped arm rather than refusing.
  */
 const refreshBeforeChild = (
 	options: DispatchOptions,
@@ -60,7 +65,12 @@ const refreshBeforeChild = (
 		if (epic === null) return skipped;
 		const resolved = resolveTask(loaded.lane, options.task);
 		if (resolved._tag !== "Task" || roleOf(resolved.taskId, epic)._tag !== "Child") return skipped;
-		const assemblyRefresh = yield* readKey(options.cwd, assemblyRefreshKey);
+		// `options.cwd` drives the worktree spawning below and may be a linked worktree; the arm this
+		// gate reads belongs to the repository that owns it, exactly as `lane refresh --on-review`
+		// reads its own.
+		const configRoot = yield* configRootOrRefuse(VERB, options.cwd);
+		if (typeof configRoot !== "string") return {_tag: "Refused", outcome: configRoot} as const;
+		const assemblyRefresh = yield* readKey(configRoot, assemblyRefreshKey);
 		const outcome = yield* refresh({
 			...options,
 			epic,
