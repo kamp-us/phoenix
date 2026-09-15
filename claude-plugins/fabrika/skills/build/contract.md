@@ -1026,6 +1026,32 @@ which no later verb of this session accepts. Without one it resolves `Foreign` �
 runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
 posted and refuses on `15` too. Adopt, release, then claim.
 
+**An adopt whose claim marker is already gone is still this lane's comment, and `release` retracts
+it.** That state is reached by adopting a claim somebody released first, and it used to be a marker
+no verb could reach: the ownership read answered "unclaimed" the moment no claim marker survived, so
+`release` said there was nothing to retract while the succession comment stayed on the thread.
+The read now names it — an authorized adopt whose `by <token>` names the asking lane, with
+no claim beside it — and `release <n> --token <that token>` deletes that one comment and answers
+`{"answer":"released","number":n,"adopted":"<session>"}`. It reaches **only** the asking lane's own
+adopt, resolved off the `by <token>` exactly as a win is, so a sibling lane's succession is no more
+sweepable than its claim would be; every other lane reads the thread as unclaimed. `confirm` and the
+shared precondition refuse it on `15` and name that release, because an adoption is not a claim.
+
+**An adopt fences and confers only over a claim marker it postdates.** The fence that keeps one
+succession from answering `mine` to two lanes reads an adopt over the winning marker's session; a
+succession adopts a claim that already stands, so an adopt older than that marker adopted some earlier claim and says
+nothing about this one. Ordering is GitHub's `created_at` with the comment id breaking a same-second
+tie — the same order the marker lists sort in, and not a field a marker's author composes. Without
+the ordering read, one stray adopt naming a session fenced every marker that session would ever post
+on the number, and each fresh claim lost to it under a new nonce, which is the loop that made the
+sanctioned remedy non-terminating.
+
+The same order binds the conferral, which is the other arm of one read: the adopted session's lane
+meets the fence, the adopting lane meets the conferral, and both are answered over the same pair of
+comments. So an adopt older than the winning marker confers that marker no more than it fences it.
+Read on one arm alone, one authorized succession answers `mine` to both lanes over a single marker,
+and `release` under the adopting lane's token then deletes a marker the other lane holds.
+
 The session id arrives from the environment — `FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`,
 else `PI_SUBAGENT_PARENT_SESSION`; named in `--help` with its unset
 behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim.
@@ -1161,7 +1187,10 @@ the pieces is what handed a builder an ordering decision it then got wrong.
 | `build confirm: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
 | `build confirm: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
 | `build confirm: no claim exists on #<n> — nothing to confirm; run "fabrika build claim <n>" first.` | 15 | refusal |
+| `<verb>: #<n> carries this lane's adopt marker (comment <id>) and no claim — an adoption is not a claim; run "fabrika build release <n> --token <the adopt's token>" to retract it, then claim.` — `build confirm`'s own, and every mutating verb's shared precondition under its own name | 15 | refusal |
 | `build release: this lane holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
+| `build release: no claim stood on #<n> — retracted this lane's stranded adopt marker (comment <id>) and nothing else.` — beside `{"answer":"released","number":n,"adopted":"<session>"}` at exit 0 | 0 | note |
+| `build release: the adopt marker (comment <id>) was not retracted: <reason> — whether #<n> still reads as adopted is UNKNOWN.` | 8 | refusal |
 | `build release: the retraction failed: <reason> — whether the claim is still held is UNKNOWN; run "fabrika build confirm <n> --token <caller token>".` | 8 | refusal |
 | `build adopt: --session names this very session — "fabrika build release <n>" already covers a claim this session holds; nothing was written.` | 1 | usage error |
 | `build adopt: --reason is empty — a succession is recorded or it is not one.` | 1 | usage error |
