@@ -32,10 +32,11 @@
  *
  * **Two agy behaviours shape this file without being visible in it.** Turns are strictly sequential
  * — stdin lines queue and a second prompt does not preempt a running one — so nothing here
- * serialises sends, because the CLI already does. And the first write to a new path is denied and
- * succeeds on retry as the Seatbelt profile widens; that costs a turn and reads to a model as a
- * settled refusal, which is why `AGY_RETRY_HINT` opens every session as a system row rather than
- * being left to look like a bug.
+ * serialises sends, because the CLI already does. And from v1.2 a `write_file` no `permissions.allow`
+ * rule matches is soft-denied on the first attempt and on every retry in the same conversation, so
+ * the denial is a settings fact rather than a transient one, which is why `AGY_RETRY_HINT` opens
+ * every session as a system row naming the rule rather than leaving the denial to look like a bug a
+ * retry clears.
  */
 
 import {homedir} from "node:os";
@@ -82,6 +83,7 @@ import {
 	AGY_BINARY,
 	AGY_MODELS,
 	AGY_MODES,
+	AGY_SETTINGS_FILE,
 	type AgyAiAgentOptions,
 	type AgyMode,
 } from "../config.ts";
@@ -109,12 +111,14 @@ import {conversationDir, readTranscriptPage} from "./transcript.ts";
 import {decodeLine} from "./wire.ts";
 
 /**
- * The one thing this layer tells the model that agy does not: a denied first write is not a
- * refusal. It opens every session as a system row, because the alternative is a model that reads
- * the Seatbelt profile's first denial as settled and abandons the edit (ADR 0362).
+ * The one thing this layer tells the model that agy does not: what a denied write actually takes.
+ * It opens every session as a system row, because the alternative is a model that spends the rest
+ * of the conversation retrying a write agy denies identically every time (ADR 0362, v1.2.3).
+ *
+ * The name is the pre-1.2 reading's and is kept deliberately: `./index.ts`'s export set is asserted
+ * by name in `./boundary.unit.test.ts`, and a rename buys nothing this sentence does not.
  */
-export const AGY_RETRY_HINT =
-	"agy note: the sandbox profile widens as it runs, so the first write to a path it has not seen is denied and the same write succeeds on a retry. One denial is not a settled refusal — retry once before changing approach.";
+export const AGY_RETRY_HINT = `agy note: a write is denied unless ~/${AGY_SETTINGS_FILE} carries a matching write_file(...) rule under permissions.allow, and retrying does not lift it — the same write is denied again for the whole session. The fix is the allow-rule, e.g. "permissions": {"allow": ["write_file(*)"]}, and a fresh session, because agy reads that file once at launch.`;
 
 /** How long a launch may take to say `init` before it is called a failed start rather than a slow one. */
 const START_TIMEOUT = "60 seconds";
