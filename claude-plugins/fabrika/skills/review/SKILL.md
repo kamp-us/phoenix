@@ -419,10 +419,13 @@ fabrika review scratch $pr_number --slug verdict-code --lane <lane> --sha 03135b
 one lane's four verdicts do not overwrite each other. `<lane>` and `--sha` are the same two the diff
 staging above takes. Then write the body into the path the verb printed, **typing that path out
 literally in every call**, one `cat >> <the path it printed> <<'EOF'` per section of the verdict —
-each append small enough to carry, and each free to hold the tables, quotes and identifiers the
-single-command form refuses. Never capture the path into a shell variable and never redirect through
-one: a variable and a command substitution are each on their own enough for the verifier to refuse
-the line.
+each append small enough to carry, and each free to hold the tables, blockquotes, apostrophes and
+angle brackets the single-command form refuses. **The one shape that still refuses inside an append
+is a brace group holding double quotes** — a JSON object literal; write that line in with a
+single-quoted `printf '%s\n' '…' >> <the path it printed>` instead, and never cut the object to make
+the append pass. Never capture the path into a shell variable and never redirect through one: a
+variable and a command substitution are each on their own enough for the verifier to refuse the
+line.
 
 Then run the fence above with a literal input redirect in place of the heredoc —
 `fabrika review post $pr_number --namespace review-code --polarity FAIL --sha 03135b91 --clause "…"

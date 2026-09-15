@@ -130,9 +130,15 @@ different shape.
    scratchpad is shared by every lane, so a generic leaf there is a name a concurrent lane writes
    too.
 2. **Write in bounded appends** — one `cat >> <the path it printed> <<'EOF'` per section of the
-   body, each small enough to carry, with the path typed out literally in every call. Inside a
-   bounded append the heredoc carries every trigger class above without refusal; what the verifier
-   judges is the size of the whole command.
+   body, each small enough to carry, with the path typed out literally in every call. A bounded
+   append carries almost every trigger class above without refusal, tables, blockquotes,
+   apostrophes and angle brackets included: what the verifier judges is the whole command, and a
+   short one is short whatever is in it.
+   **One class still refuses inside an append — a brace group holding double quotes**, the shape a
+   JSON object literal takes. A bare `{one, two, three}` runs; `{"path": "x"}` is refused at any
+   size. Put a line like that in with a single-quoted `printf` instead — `printf '%s\n' '… {"path":
+   "x"} …' >> <the path it printed>` — which is accepted, and never delete the object to make the
+   append pass.
 3. **Redirect** — run the verb with a literal `< <the path it printed>`. The bytes arrive on stdin
    exactly as the heredoc would have delivered them, so every stdin refusal the verb already makes
    still fires.
