@@ -34,8 +34,18 @@
  * terminal, or a head the reviewer has not yet seen — and none of those is readable offline today.
  * A park is a thing a person or a driver decides, and so is calling a build finished; this records
  * the verdicts a shell already posted and died before writing.
+ *
+ * **The `build` leaf came back on a different question, and {@link buildingBy} is its walk.** The
+ * paragraph above is about *finishing* a build, which stays off limits for the reason it gives. What
+ * the spawn arm asks is whether the builder is **gone** — a lane whose claim has outlived the
+ * builder's own budget with no branch and no PR anywhere is a lane nothing will ever move, and it
+ * holds a seat against the concurrency cap until a person re-reads it by hand. One lane sat that way
+ * for five days. That question turns on live board residue rather than on an offline
+ * proof, so it is the verb's reads and not this module's table; what lives here is which tasks to
+ * ask it about, and the park those reads record ({@link DEAD_SPAWN_EVENT}, {@link DEAD_SPAWN_CAUSE}).
  */
 
+import {isBuildState, shellState} from "../wire/lane-brief.ts";
 import type {LaneStatus} from "./fold.ts";
 import {REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
 
@@ -94,4 +104,37 @@ export const owedBy = (
 		if (event !== null) owed.push({task, leaf, event});
 	}
 	return owed;
+};
+
+/**
+ * The event and the cause the spawn arm records — the `blocked` + `spawn-dead` row's own park.
+ *
+ * Named here rather than spelled at the append so the arm and the recipe that clears it cannot come
+ * to disagree about which park this is: `../recipe/parks.ts` keys its clearance on exactly this pair.
+ */
+export const DEAD_SPAWN_EVENT = "BLOCKED";
+export const DEAD_SPAWN_CAUSE = "spawn-dead";
+
+/**
+ * Every task of a non-terminal lane standing in a leaf a **builder** runs in.
+ *
+ * The second walk of one sweep, and it is deliberately not {@link owedBy}'s: a build leaf owes its
+ * ledger no event at all ({@link OWED_EVENTS} leaves it out, and the module docblock carries why),
+ * so what the spawn arm asks about it is the opposite question — not "did a finished shell already
+ * earn an event nobody recorded", but "is the shell that took this leaf gone, leaving the lane
+ * holding a seat nothing will ever move".
+ *
+ * `build:ui` is in, because a killed rendered-surface builder strands a lane exactly as a text one
+ * does; the membership is read off {@link isBuildState} rather than a list here, so a sixth shell
+ * state cannot join one reading and not the other.
+ *
+ * Empty on a terminal lane for {@link owedBy}'s reason: a done lane holds no seat, and asking the
+ * board about one would spend a read per finished lane on every sweep.
+ */
+export const buildingBy = (status: LaneStatus): ReadonlyArray<TaskLeaf> => {
+	if (status.status === "done") return [];
+	return activeTaskLeaves(status).filter(({leaf}) => {
+		const state = shellState(leaf);
+		return state !== null && isBuildState(state);
+	});
 };

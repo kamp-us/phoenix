@@ -1,14 +1,15 @@
 /** `lane recover` — the lane-9185 shape, what it records, and what it refuses to record. */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ClaimStanding} from "../build/dead-claim.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {appendText} from "../io/fs.ts";
 import {answer, refuse} from "../verb.ts";
-import {APPEND_UNKNOWN, LANE_UNREADABLE, PROOF_ABSENT} from "./codes.ts";
+import {APPEND_UNKNOWN, LANE_UNREADABLE, PROOF_ABSENT, PROOF_AMBIGUOUS} from "./codes.ts";
 import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {proofLabelOf} from "./prove-verb.ts";
-import {runRecover} from "./recover-verb.ts";
+import {type BranchRead, runRecover} from "./recover-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
 const at = (n: number): string => `2026-09-15T18:1${n}:00.000Z`;
@@ -83,6 +84,7 @@ const sweep = (
 			runRecover({
 				roots,
 				check,
+				spawns: null,
 				prove,
 				parkCause: parkCauseRead(),
 				repo: "o/r",
@@ -400,5 +402,184 @@ describe("runRecover — the sweep", () => {
 			scanned: [{root: DEFAULT_LANES_ROOT, present: false, lanes: 0}],
 			lanes: [],
 		});
+	});
+});
+
+/** A build claim standing past the builder's budget, with a token an assertion can name. */
+const dead = (): ClaimStanding => ({
+	_tag: "Dead",
+	token: "build:gone-session:341861f5",
+	ageMinutes: 7200,
+	budgetMinutes: 40,
+	stack: [],
+	scanned: 1,
+});
+
+/** The board saying no PR traces to the issue — the one refusal that means "nothing published". */
+const noPull = () => refuse(PROOF_ABSENT, "fabrika lane prove: unproven — no open PR links #7778");
+
+const spawnSweep = (
+	fs: ReturnType<typeof fakeFs>,
+	claim: ClaimStanding,
+	branches: BranchRead = {_tag: "Read", branches: []},
+	check = false,
+	pull: () => ReturnType<typeof answer> | ReturnType<typeof refuse> = noPull,
+) => {
+	const claimed: number[] = [];
+	const prove = (options: ProveOptions): Effect.Effect<ProofOutcome> =>
+		Effect.sync(() => {
+			// `runTransition` proves the event it appends too, and a `BLOCKED` out of `build` claims
+			// nothing, so only this arm's own `DONE` question is scripted here.
+			const outcome = options.event === "DONE" ? pull() : answer(JSON.stringify({proof: null}));
+			return {
+				...outcome,
+				deferred: [],
+				routed: [],
+				partial: null,
+				landed: [],
+				diagnosis: false,
+				proof: proofLabelOf(outcome),
+			};
+		});
+	return Effect.runPromise(
+		Effect.provide(
+			runRecover({
+				roots: [DEFAULT_LANES_ROOT],
+				check,
+				spawns: {
+					claim: (issue: number) =>
+						Effect.sync(() => {
+							claimed.push(issue);
+							return claim;
+						}),
+					branches: () => Effect.succeed(branches),
+				},
+				prove,
+				parkCause: parkCauseRead(),
+				repo: "o/r",
+				cwd: "/checkout",
+				env: {},
+			}),
+			fs.layer,
+		),
+	).then((outcome) => ({outcome, claimed, fs}));
+};
+
+const building = () => tree([{lane: "7778", log: BUILDING_LOG}]);
+
+const BUILD_FOLD = JSON.stringify({pipeline: {issue: "build"}});
+const BLOCKED_FOLD = JSON.stringify({pipeline: {issue: "blocked"}});
+
+describe("runRecover --spawns — the lane-7778 shape", () => {
+	it("parks the lane a dead builder left with no branch and no PR", async () => {
+		const {outcome, claimed, fs} = await spawnSweep(building(), dead());
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			key: "7778",
+			verdict: "parked",
+			task: "issue",
+			state: "build",
+			event: "BLOCKED",
+			cause: "spawn-dead",
+			from: BUILD_FOLD,
+			to: BLOCKED_FOLD,
+		});
+		expect(claimed).toEqual([7778]);
+		const log = logOf(fs, "7778") ?? "";
+		expect(log).toContain('"ISSUE.BLOCKED"');
+		expect(log).toContain("spawn-dead");
+	});
+
+	it("leaves a live-but-quiet builder alone, ledger untouched", async () => {
+		const {outcome, fs} = await spawnSweep(building(), {
+			_tag: "Alive",
+			token: "build:live-session:9092",
+			ageMinutes: 12,
+			budgetMinutes: 40,
+			scanned: 1,
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working", state: "build"});
+		expect(row?.reason).toContain("may still be working");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("leaves a lane whose branch still carries the dead builder's commits", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), {
+			_tag: "Read",
+			branches: ["build/7778-editor-focus-4f2a"],
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working"});
+		expect(row?.reason).toContain("build/7778-editor-focus-4f2a");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("leaves a lane whose builder published a PR before it went quiet", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, false, () =>
+			answer(JSON.stringify({proof: "proven", event: "DONE", task: "issue"})),
+		);
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working"});
+		expect(row?.reason).toContain("an open PR links #7778");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("never reads an unreadable claim as a dead one", async () => {
+		const {outcome, fs} = await spawnSweep(building(), {
+			_tag: "Unknown",
+			reason: "the comment list could not be read",
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "unreadable"});
+		expect(row?.reason).toContain("never read as dead");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("never reads an unsettled PR question as a dead builder", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, false, () =>
+			refuse(PROOF_AMBIGUOUS, "fabrika lane prove: two open PRs link #7778"),
+		);
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "unreadable"});
+		expect(row?.reason).toContain("Never read as dead");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("reads a lane holding no claim at all as a dispatch, not a park", async () => {
+		const {outcome, fs} = await spawnSweep(building(), {_tag: "Unclaimed", scanned: 0});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working"});
+		expect(row?.reason).toContain("no build claim stands on #7778");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("withholds the append under --check and still names where the park would land", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, true);
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			key: "7778",
+			verdict: "parkable",
+			cause: "spawn-dead",
+			from: BUILD_FOLD,
+			to: BLOCKED_FOLD,
+		});
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("spends no board read on a building lane when the arm is off", async () => {
+		const {outcome, asked, fs} = await sweep(building(), proven);
+		expect(outcome.code).toBe(0);
+		expect(rows(outcome.stdout)[0]).toMatchObject({key: "7778", verdict: "current"});
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "7778")).toBeUndefined();
 	});
 });

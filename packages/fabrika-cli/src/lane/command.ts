@@ -11,6 +11,8 @@ import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {claimReader} from "../build/claimants-verb.ts";
+import {claimStanding} from "../build/dead-claim.ts";
+import {childLaneBranches} from "../build/lane.ts";
 import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
 import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
 import {machineryLapsKey} from "../config/keys/machinery-laps.ts";
@@ -19,6 +21,7 @@ import {readKey} from "../config/read-key.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -71,7 +74,7 @@ import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {runSeats} from "./seats-verb.ts";
 import {boardReaders, runSettle} from "./settle-verb.ts";
-import {DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
+import {BUILD_CLAIM_BUDGET_MINUTES, DISPATCH_BUDGET, SHELL_BUDGETS} from "./shell-budget.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
 import {
@@ -1416,6 +1419,11 @@ const recover = leafCommand(
 		check: Flag.boolean("check").pipe(
 			Flag.withDescription("judge every lane and report what would be appended, appending nothing"),
 		),
+		spawns: Flag.boolean("spawns").pipe(
+			Flag.withDescription(
+				`also park every lane whose builder is provably gone: a build claim standing past the ${SHELL_BUDGETS.build.minutes}-minute build budget with no lane branch in this clone and no open PR, recorded as BLOCKED --cause spawn-dead. It retracts nothing — ending the claim stays the spawn-dead unpark row's act on the same proof. Costs a board read per lane standing in build, which is why it is opt-in`,
+			),
+		),
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -1423,7 +1431,7 @@ const recover = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({root, check, repo}) {
+	Effect.fn(function* ({root, check, spawns, repo}) {
 		const parkCause = yield* readKey(process.cwd(), parkCauseKey);
 		let roots: ReadonlyArray<string>;
 		if (Option.isSome(root)) {
@@ -1439,11 +1447,32 @@ const recover = leafCommand(
 				`${ground.repoRoot}/${DEFAULT_CHORES_ROOT}`,
 			];
 		}
+		// One memoized claim reader for the whole sweep, and one instant every lane's claim is measured
+		// against: a clock read per lane would age two lanes swept seconds apart against two horizons.
+		const claimants = claimReader(Option.getOrNull(repo), process.env);
+		const nowEpochMs = Date.now();
+		const spawnReads = spawns
+			? {
+					claim: (issue: number) =>
+						Effect.gen(function* () {
+							const read = yield* claimants(issue);
+							return claimStanding(issue, read, nowEpochMs, BUILD_CLAIM_BUDGET_MINUTES);
+						}),
+					branches: (issue: number) =>
+						Effect.gen(function* () {
+							const read = yield* localBranches;
+							return read._tag === "Failure"
+								? ({_tag: "Unknown", reason: read.reason} as const)
+								: ({_tag: "Read", branches: childLaneBranches(issue, read.value)} as const);
+						}),
+				}
+			: null;
 		yield* emit(
 			yield* onGround("recover", roots, process.cwd(), () =>
 				runRecover({
 					roots,
 					check,
+					spawns: spawnReads,
 					prove: runProve,
 					parkCause,
 					repo: Option.getOrNull(repo),
@@ -1456,7 +1485,7 @@ const recover = leafCommand(
 ).pipe(
 	Command.withShortDescription("Which lanes their own artifact already proves an event for."),
 	Command.withDescription(
-		'Sweep every lane on disk and record the event its own artifact already proves but its ledger never learned. A shell posts its SHA-bound verdict on the artifact and then records the event; killed between the two, it leaves the verdict standing and the ledger silent, and the lane sits non-terminal until a driver happens to run `lane prove` by hand — one lane sat in review for 448 minutes carrying a proven PASS on its PR. Each non-terminal lane\'s active tasks are read off the fold, and a task standing in a leaf that OWES a provable event is asked about: PASS out of review, PASS out of review:ui — the arms of `lane prove`\'s claim table whose artifact only a FINISHED shell can have produced. Two arms are left out, and for one reason: a shell that is merely still working satisfies each of them. The BLOCKED a reviewer\'s park claims is negative ("the run reached no verdict"), proven by the absence of a contradiction rather than by an artifact anyone posted, so a sweep standing on it would park every lane whose reviewer is still running. The DONE out of build claims OpenPull, which proves on the existence of one open PR linking the issue — a fact about the PR being open, never about the builder being done with it — and a lane in a repair round carries exactly that PR for the whole round, so a sweep standing on it would move the lane to review under the live builder. It introduces NO proof path and NO second way onto a log: the bar is `lane prove`\'s read, unchanged, and the append is `lane transition`\'s whole path — the same machine validation, the same proof gate and the same ledger lock — so what moves is only who runs them. It records on the literal `proven` and on nothing else; `not-required`, `uncontradicted` and every refusal code leave the lane byte-identical and land as their own row, so an unreadable board is a row to re-run rather than a lane moved on a read nobody made. Budget a recoverable lane at TWO board reads — this sweep asks what the proof says, and `lane transition` asks again under its own gate before appending, which is that gate declining to take this sweep\'s word for it — and every other judged task at one. --check pays the first read alone and appends nothing. Each row carries one verdict: "recovered" (proven and appended; its `to` is the append\'s OWN answer, which `lane transition` derives under the ledger lock from a fresh re-read of the log, so a writer that landed after this sweep\'s unlocked fold is accounted for — every other row\'s `to` is the offline preview, which is all a move that never happened has), "recoverable" (proven, --check withheld the append, so its from/to is that preview), "unproven" (the proof did not answer proven — the row carries its `proof` label and `proofCode`, so a not-required is told from an unreadable board without re-reading anything), "refused" (the artifact proves the event and the append path refused it — this lane\'s own machine, or its config — so a re-run buys nothing), "contended" (40: another writer held this lane\'s ledger lock for the whole wait budget, so nothing was validated and nothing appended; the same event is still the right one and the sweep says so on stderr, which is why this is not bucketed with "refused"), "current" (the lane is non-terminal and no active task stands in a leaf that owes a provable event), "terminal" (the fold is done, so nothing is owed and no board read is spent), "unreadable" (the lane record or its log could not be read, or the log does not replay — a row, since nothing here caused it and nothing here can fix it) or "unappended" (this run tried to append and could not). stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault. Every root is LISTED before any lane is appended to, so an unlistable second root refuses a run that has written nothing rather than discarding the rows of a first root it already recovered. Exits 8 (at least one append this run tried did not land, so whether that lane is still missing its event is UNKNOWN — those lanes are named on stderr and so are the ones that were recovered), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never empty, and nothing was appended), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane recover --check · fabrika lane recover',
+		'Sweep every lane on disk and record the event its own artifact already proves but its ledger never learned. A shell posts its SHA-bound verdict on the artifact and then records the event; killed between the two, it leaves the verdict standing and the ledger silent, and the lane sits non-terminal until a driver happens to run `lane prove` by hand — one lane sat in review for 448 minutes carrying a proven PASS on its PR. Each non-terminal lane\'s active tasks are read off the fold, and a task standing in a leaf that OWES a provable event is asked about: PASS out of review, PASS out of review:ui — the arms of `lane prove`\'s claim table whose artifact only a FINISHED shell can have produced. Two arms are left out, and for one reason: a shell that is merely still working satisfies each of them. The BLOCKED a reviewer\'s park claims is negative ("the run reached no verdict"), proven by the absence of a contradiction rather than by an artifact anyone posted, so a sweep standing on it would park every lane whose reviewer is still running. The DONE out of build claims OpenPull, which proves on the existence of one open PR linking the issue — a fact about the PR being open, never about the builder being done with it — and a lane in a repair round carries exactly that PR for the whole round, so a sweep standing on it would move the lane to review under the live builder. It introduces NO proof path and NO second way onto a log: the bar is `lane prove`\'s read, unchanged, and the append is `lane transition`\'s whole path — the same machine validation, the same proof gate and the same ledger lock — so what moves is only who runs them. It records on the literal `proven` and on nothing else; `not-required`, `uncontradicted` and every refusal code leave the lane byte-identical and land as their own row, so an unreadable board is a row to re-run rather than a lane moved on a read nobody made. --spawns adds the SECOND arm, and it parks rather than finishes: a lane standing in build whose build claim has outlived the builder\'s own 40-minute budget, with NO lane branch in this clone and NO open PR, is a lane whose shell is gone and which will never move again — lane 7778 held a seat against the concurrency cap for five days because recording its BLOCKED --cause spawn-dead was a driver\'s act and its driver was gone. That whole conjunction is the predicate, read through the same `../build/dead-claim.ts` budget proof the spawn-dead unpark row reads, and every answer short of it is a "working" row that changed nothing: a claim inside its budget (the live-but-quiet builder), a branch still carrying the dead builder\'s commits, an open PR, or no claim at all. A read that did not settle is "unreadable" and never dead. It RETRACTS NOTHING — the claim is left standing for the spawn-dead unpark row to retract on the same proof, so no claim ends by inference from absence on this path. Its rows are "parked" (appended) and "parkable" (--check withheld it), and it is OFF unless the flag is passed, because it spends a board read per lane standing in build. Budget a recoverable lane at TWO board reads — this sweep asks what the proof says, and `lane transition` asks again under its own gate before appending, which is that gate declining to take this sweep\'s word for it — and every other judged task at one. --check pays the first read alone and appends nothing. Each row carries one verdict: "recovered" (proven and appended; its `to` is the append\'s OWN answer, which `lane transition` derives under the ledger lock from a fresh re-read of the log, so a writer that landed after this sweep\'s unlocked fold is accounted for — every other row\'s `to` is the offline preview, which is all a move that never happened has), "recoverable" (proven, --check withheld the append, so its from/to is that preview), "unproven" (the proof did not answer proven — the row carries its `proof` label and `proofCode`, so a not-required is told from an unreadable board without re-reading anything), "refused" (the artifact proves the event and the append path refused it — this lane\'s own machine, or its config — so a re-run buys nothing), "contended" (40: another writer held this lane\'s ledger lock for the whole wait budget, so nothing was validated and nothing appended; the same event is still the right one and the sweep says so on stderr, which is why this is not bucketed with "refused"), "current" (the lane is non-terminal and no active task stands in a leaf that owes a provable event), "terminal" (the fold is done, so nothing is owed and no board read is spent), "unreadable" (the lane record or its log could not be read, or the log does not replay — a row, since nothing here caused it and nothing here can fix it) or "unappended" (this run tried to append and could not). stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault. Every root is LISTED before any lane is appended to, so an unlistable second root refuses a run that has written nothing rather than discarding the rows of a first root it already recovered. Exits 8 (at least one append this run tried did not land, so whether that lane is still missing its event is UNKNOWN — those lanes are named on stderr and so are the ones that were recovered), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never empty, and nothing was appended), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane recover --check · fabrika lane recover · fabrika lane recover --spawns --check · fabrika lane recover --spawns',
 	),
 );
 
