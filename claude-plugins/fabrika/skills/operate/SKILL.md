@@ -1026,6 +1026,15 @@ guards are the ACL and the marker sitting on the issue with your reason, so stat
 defend, and adopt a seat you have cause to believe is gone rather than one that is merely quiet. If
 that seat turns out to be live, delete the adopt comment — the act reverses.
 
+**Those three lines terminate from every state, so run them and read the answers rather than
+composing a fourth.** The release retracts your adopt whether or not a `lane-claim:` marker stands
+beside it, including on a lane whose claim was already released and on a second adopt you posted by
+mistake — a `released` carrying `adopted` is that retraction, and `lane claim` then wins on the next
+line. The middle line used to answer `no lane claim exists on #N — nothing to retract` while the
+claim went on losing `31` under a new nonce every pass, and the only escape was deleting the comment
+with `gh api -X DELETE`. **That escape is still not yours to take**: a `31` you cannot clear with
+these three is a park, named with its exit code, not a comment to delete by hand.
+
 **Every event is proven first — artifacts over self-reports.** A report is data; what moves the
 machine is the artifact behind it. **The verb does this itself; you never run the proof separately.**
 `lane transition` runs `lane prove`'s read between the machine's acceptance and the append, and

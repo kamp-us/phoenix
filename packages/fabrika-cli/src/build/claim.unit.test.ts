@@ -136,6 +136,23 @@ describe("resolveOwnership — the adopt fence (#7010)", () => {
 		expect(ownership._tag === "Mine" && ownership.adopt?.token).toBe(HEIR_TOKEN);
 	});
 
+	it("does not fence on an adopt OLDER than the marker it would fence — it adopted some earlier claim", async () => {
+		const {ownership} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
+			[
+				[
+					COMMENTS,
+					comments(
+						{id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)},
+						{id: 9101, body: marker("s-gone", GONE_UUID), createdAt: "2026-08-10T00:00:00Z"},
+					),
+				],
+				[PERM, WRITE],
+			],
+		);
+		expect(ownership._tag).toBe("Mine");
+	});
+
 	it("does not fence on an unauthorized adoption — the succession never legally happened", async () => {
 		const {ownership, unauthorizedAdopts} = await run(
 			resolveOwnership("o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
@@ -157,6 +174,54 @@ describe("resolveOwnership — the adopt fence (#7010)", () => {
 		);
 		expect(ownership._tag).toBe("Mine");
 		expect(unauthorizedAdopts.length).toBe(1);
+	});
+});
+
+/**
+ * The succession whose claim marker is already gone. `Unclaimed` swallowed it, so `release` answered
+ * "nothing to retract" while the fence went on counting the comment — the loop this describe covers.
+ */
+describe("resolveOwnership — a stranded adopt", () => {
+	/** The heir's adopt, with the claim it adopted no longer on the thread. */
+	const STRANDED: ReadonlyArray<Scripted> = [
+		[COMMENTS, comments({id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)})],
+		[PERM, WRITE],
+	];
+
+	it("gives the adopting lane AdoptOnly, so release has something to reach", async () => {
+		const {ownership} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			STRANDED,
+		);
+		expect(ownership._tag).toBe("AdoptOnly");
+		expect(ownership._tag === "AdoptOnly" && ownership.adopt.commentId).toBe(9102);
+	});
+
+	it("gives any OTHER lane Unclaimed — a stranded adopt is retractable only by the lane that wrote it", async () => {
+		const {ownership} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-9f2e", NONCE, LANE_TOKEN)),
+			STRANDED,
+		);
+		expect(ownership._tag).toBe("Unclaimed");
+	});
+
+	it("counts an unauthorized stranded adopt and never resolves it — content is not authority", async () => {
+		const {ownership, unauthorizedAdopts} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			[
+				[
+					COMMENTS,
+					comments({
+						id: 9102,
+						body: adoptMarker("s-gone", "s-heir", HEIR_UUID),
+						author: "ghost",
+					}),
+				],
+				[/GET .*\/repos\/o\/r\/collaborators\/ghost\/permission/, served({permission: "read"})],
+			],
+		);
+		expect(ownership._tag).toBe("Unclaimed");
+		expect(unauthorizedAdopts.map((adopt) => adopt.commentId)).toEqual([9102]);
 	});
 });
 
@@ -198,6 +263,22 @@ describe("requireClaim", () => {
 		);
 		expect(held._tag).toBe("Held");
 		expect(held._tag === "Held" && held.adopt?.token).toBe(HEIR_TOKEN);
+	});
+
+	it("refuses a stranded adopt on 15 and names the release that retracts it", async () => {
+		const held = await run(
+			requireClaim("build note", "o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			[
+				[COMMENTS, comments({id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)})],
+				[PERM, WRITE],
+			],
+		);
+		expect(held._tag).toBe("Refused");
+		if (held._tag !== "Refused") return;
+		expect(held.outcome.code).toBe(CLAIM_NOT_MINE);
+		expect(held.outcome.stderr.at(-1)).toContain(
+			`fabrika build release 4312 --token ${HEIR_TOKEN}`,
+		);
 	});
 
 	it("refuses the resumed dead lane on 15 across a succession (#7010)", async () => {

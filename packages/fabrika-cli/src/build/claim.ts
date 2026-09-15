@@ -181,6 +181,20 @@ export const readAdoptMarker = (
 	return reason === "" ? null : {adopted: m[1], token: m[2], reason};
 };
 
+/** What a marker's place on the thread turns on. */
+interface Posted {
+	readonly commentId: number;
+	readonly createdAt: string;
+}
+
+/**
+ * The one total order the marker lists sort on, and the one the adopt fence reads a marker's place
+ * in. `created_at` is GitHub's own field rather than the marker line's timestamp, so a claimant
+ * cannot compose its way to an earlier place; the comment id breaks a same-second tie.
+ */
+const byAge = (a: Posted, b: Posted): number =>
+	a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1;
+
 /** Every adopt marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
 export const adoptMarkersIn = (
 	comments: ReadonlyArray<CommentRecord>,
@@ -198,9 +212,7 @@ export const adoptMarkersIn = (
 			});
 		}
 	}
-	return [...markers].sort((a, b) =>
-		a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1,
-	);
+	return [...markers].sort(byAge);
 };
 
 /** Every claim marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
@@ -220,9 +232,7 @@ export const markersIn = (
 			});
 		}
 	}
-	return [...markers].sort((a, b) =>
-		a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1,
-	);
+	return [...markers].sort(byAge);
 };
 
 /**
@@ -300,10 +310,16 @@ export const requireCallerToken = (
 };
 
 /**
- * Who holds the claim — four outcomes, and no two of them fold.
+ * Who holds the claim — five outcomes, and no two of them fold.
  *
  * `Mine` carries the adopt marker when the claim came through succession rather than directly, so
  * `release` can retract both comments; `adopt` is `null` on the ordinary path.
+ *
+ * `AdoptOnly` is the succession whose claim marker is already gone: this lane's own adopt stands on
+ * the thread with nothing left to adopt. It is not a claim and no mutating verb may read it as one,
+ * but it is this lane's own comment, so `release` is the verb that retracts it. Folding it into
+ * `Unclaimed` is what made the marker unreachable — `release` answered "nothing to retract" while the
+ * adopt fence went on counting it, so the sanctioned succession never terminated.
  */
 export type Ownership =
 	| {readonly _tag: "Mine"; readonly marker: ClaimMarker; readonly adopt: AdoptMarker | null}
@@ -313,6 +329,7 @@ export type Ownership =
 			/** The winner is another lane of the caller's own session — a wrong lane, not a wrong session. */
 			readonly sameSession: boolean;
 	  }
+	| {readonly _tag: "AdoptOnly"; readonly adopt: AdoptMarker}
 	| {readonly _tag: "Unclaimed"}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
@@ -408,10 +425,35 @@ export const resolveOwnership = (
 			break;
 		}
 		if (winner === null) {
+			// No claim marker survives, so there is no claim to confer — but an adopt this lane wrote may
+			// still stand, and only the lane its `by <token>` names may retract it. Answering `Unclaimed`
+			// without this read is what stranded it: nothing could retract it, and the fence below still
+			// counted it, so adopt → release → claim looped forever.
+			const strandedAdopts: AdoptMarker[] = [];
+			for (const adopt of adoptMarkersIn(listed.value, grammar)) {
+				if (!namesCaller(adopt.token)) continue;
+				const permission = yield* authorizationOf(adopt.author);
+				if (permission._tag === "Unknown") {
+					return {
+						ownership: {_tag: "Unknown" as const, reason: permission.reason},
+						unauthorized,
+						unauthorizedAdopts: strandedAdopts,
+					};
+				}
+				if (permission._tag === "Unauthorized") {
+					strandedAdopts.push(adopt);
+					continue;
+				}
+				return {
+					ownership: {_tag: "AdoptOnly" as const, adopt},
+					unauthorized,
+					unauthorizedAdopts: strandedAdopts,
+				};
+			}
 			return {
 				ownership: {_tag: "Unclaimed" as const},
 				unauthorized,
-				unauthorizedAdopts: [],
+				unauthorizedAdopts: strandedAdopts,
 			};
 		}
 		const parsed = parseToken(winner.token, grammar.prefix);
@@ -425,6 +467,12 @@ export const resolveOwnership = (
 			for (const adopt of adoptMarkersIn(listed.value, grammar)) {
 				if (parsed === null || adopt.adopted !== parsed.session) continue;
 				if (namesCaller(adopt.token)) continue;
+				// A succession adopts a claim that already stands, so an adopt older than the winning
+				// marker adopted some earlier claim and says nothing about this one. Without the
+				// ordering read, one stray adopt naming the caller's own session fenced every marker
+				// that session would ever post on the number, and each fresh claim lost to it under a
+				// new nonce.
+				if (byAge(adopt, winner) < 0) continue;
 				const permission = yield* authorizationOf(adopt.author);
 				if (permission._tag === "Unknown") {
 					return {
@@ -630,6 +678,18 @@ export const requireClaim = (
 				outcome: refuse(
 					CLAIM_NOT_MINE,
 					`${verb}: no claim exists on #${number} — nothing to confirm; run "fabrika build claim ${number}" first.`,
+					notes,
+				),
+			};
+		}
+		if (ownership._tag === "AdoptOnly") {
+			return {
+				_tag: "Refused" as const,
+				ownership,
+				notes,
+				outcome: refuse(
+					CLAIM_NOT_MINE,
+					`${verb}: #${number} carries this lane's adopt marker (comment ${ownership.adopt.commentId}) and no claim — an adoption is not a claim; run "fabrika build release ${number} --token ${ownership.adopt.token}" to retract it, then claim.`,
 					notes,
 				),
 			};

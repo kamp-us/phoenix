@@ -31,6 +31,13 @@
  * with the build namespace's own succession: the successor states on the board that a seat is gone
  * and inherits its claim, so `release` then answers `Mine` and retracts the claim and the adopt
  * together. No TTL, no lease, no steal.
+ *
+ * **An adopt marker is never a comment no verb can reach.** The claim it adopts may already be gone —
+ * an operator adopts a released claim, or adopts twice — and `release` then resolved `Unclaimed` and
+ * answered "nothing to retract" while `claim` went on counting the comment and losing to it under a
+ * fresh nonce every pass. Deleting the comment by hand was the only way out, which is the one act
+ * the lane-succession decision exists to remove. `release` now reads that stranded adopt as this
+ * driver's own and retracts it alone, and an adopt fences only a claim marker it postdates.
  */
 
 import {Effect} from "effect";
@@ -164,6 +171,16 @@ export const runLaneClaim = (
 				return refuse(
 					CLAIM_NOT_MINE,
 					`${CLAIM}: #${number} still carries the adopted claim ${prior.ownership.marker.token} — run "fabrika lane release ${options.lane} --token ${prior.ownership.adopt.token}" to retract it and the adopt together, then claim.`,
+				);
+			}
+			if (prior.ownership._tag === "AdoptOnly") {
+				// The driver holds the token `lane adopt` printed and no claim came with it — the claim it
+				// adopted is already gone. Racing a fresh marker here would leave that adopt on the thread
+				// under a nonce nothing later names, so send the driver through the release the succession
+				// owes first. Nothing was written.
+				return refuse(
+					CLAIM_NOT_MINE,
+					`${CLAIM}: #${number} carries this driver's adopt marker (comment ${prior.ownership.adopt.commentId}) and no lane claim — run "fabrika lane release ${options.lane} --token ${prior.ownership.adopt.token}" to retract it, then claim.`,
 				);
 			}
 			if (prior.ownership._tag === "Mine") {
@@ -304,6 +321,31 @@ export const runLaneRelease = (
 				`${RELEASE}: cannot read the lane-claim markers on #${number}: ${ownership.reason} — ownership is UNKNOWN, never "unclaimed".`,
 				notes,
 			);
+		}
+		if (ownership._tag === "AdoptOnly") {
+			// The claim this adopt was written for is gone and the adopt outlives nothing, so the release
+			// that would have taken it with the claim takes it alone. Only this driver's own adopt is
+			// reachable here — `namesCaller` resolved it off the marker's `by <token>` — so a sibling
+			// driver's succession is no more sweepable than its claim would be.
+			const cleared = yield* deleteComment(repo, ownership.adopt.commentId);
+			return cleared._tag === "Failure"
+				? refuse(
+						APPEND_UNKNOWN,
+						`${RELEASE}: the adopt marker (comment ${ownership.adopt.commentId}) was not retracted: ${cleared.reason} — whether #${number} still reads as adopted is UNKNOWN.`,
+						notes,
+					)
+				: answer(
+						JSON.stringify({
+							answer: "released",
+							lane: options.lane,
+							number,
+							adopted: ownership.adopt.adopted,
+						}),
+						[
+							...notes,
+							`${RELEASE}: no lane claim stood on #${number} — retracted this driver's stranded adopt marker (comment ${ownership.adopt.commentId}) and nothing else.`,
+						],
+					);
 		}
 		if (ownership._tag !== "Mine") {
 			return refuse(
