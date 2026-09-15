@@ -22,6 +22,7 @@ export {
 	foldItem,
 	promptItem,
 	promptItemId,
+	refillTranscript,
 	upsertItem,
 	type WindowLimits,
 } from "./fold.ts";

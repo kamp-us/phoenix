@@ -24,8 +24,10 @@ import {
 	foldEvent,
 	initialState,
 	promptItem,
+	refillTranscript,
 	remarkCutReplies,
 	upsertItem,
+	type WindowLimits,
 } from "../../ai-agent/core/index.ts";
 import {isRefusal, type TranscriptPage} from "../../ai-agent/history/index.ts";
 import type {ItemId, TranscriptItem} from "../../ai-agent/ports/index.ts";
@@ -489,5 +491,80 @@ describe("the cut-reply record across that seam", () => {
 		};
 		expect(named.map((item) => cut(item.id))).toEqual([true]);
 		expect(others.map((item) => cut(item.id))).toEqual(others.map(() => false));
+	});
+});
+
+/**
+ * The resume's read of that same seam (#9061), and the third reader to meet it.
+ *
+ * `refillTranscript` rebases the tail this process is holding onto the store's whole history, and
+ * `heldPositions` (`ai-agent/core/fold.ts`) decides which history rows that tail already covers. On
+ * `id` alone it answered "none" for every agy row, and `rebaseOnStore`'s empty-range arm then
+ * appended the tail behind the full history — a second copy of every turn the window was holding.
+ *
+ * Both sides are the shipped ones for the reason every case above gives: the tail is the real stream
+ * folded with the core's `upsertItem`, the history is `transcriptProjection` over the real log, so
+ * the stored rows are keyed `<cid>:line:<n>` against live `<cid>:<n>` rather than hand-collapsed into
+ * one space — which is the whole of what makes this a test.
+ */
+describe("the resume's held-range rebase across that seam", () => {
+	/** The turn agy never echoed: the core records it at the send and the checkpoint carries it. */
+	const echo = promptItem({
+		text: "Reply with only the word AGAIN and run no tools. No paths, no links.",
+		key: "send-again",
+		timestamp: 1_760_000_000_000,
+	});
+
+	/** What the window holds after the restart — the same tail the page/tail stitch is tested on. */
+	const heldTail = (): ReadonlyArray<TranscriptItem> => [
+		...liveTail(fixtures.liveJoinStreamLines),
+		echo,
+		...liveTail(fixtures.liveJoinResumedStreamLines),
+	];
+
+	const history = () => stored(JOIN_CID, fixtures.liveJoinLines, fixtures.liveJoinFullLines);
+
+	/**
+	 * Roomier than either side, let alone the held tail: both whole are 15 rows, so the duplicated
+	 * answer fits under this bound too and no pass below can be bought by `planTranscriptWindow`
+	 * trimming the second copy away.
+	 */
+	const roomy = {itemLimit: 50};
+
+	const refilled = (limits: WindowLimits) =>
+		refillTranscript(
+			{...initialState("/repo").transcript, items: heldTail()},
+			history().items,
+			limits,
+			[],
+		);
+
+	/** Each row under the one id both spaces name it by, so a doubled turn is a repeated entry. */
+	const turnsOf = (items: ReadonlyArray<TranscriptItem>): ReadonlyArray<string> => {
+		const aliases = history().cursorAliases;
+		return items.map((item) => aliases.get(item.id) ?? item.id);
+	};
+
+	it("splices the held tail into the range it covers, rather than behind the whole history", () => {
+		const out = refilled(roomy);
+
+		// The store's one row older than the range, then the tail itself in the order it was held.
+		// `line:5` and `line:8` are inside the range and have no held copy, so the substitution drops
+		// them — `rebaseOnStore`'s standing contract (#8855), and a defect of its own (#9208).
+		expect(ids(out.items)).toEqual([`${JOIN_CID}:line:0`, ...ids(heldTail())]);
+
+		// The `localEchoes` arm is untouched: the unconfirmed prompt still joins on text, so the
+		// store's copy of that turn is the range's rather than a second row (#7978).
+		expect(texts(out.items).filter((text) => text === echo.text)).toEqual([echo.text]);
+	});
+
+	it("holds each turn once under a bound that admits both sides whole, so no trim hides one", () => {
+		const both = heldTail().length + history().items.length;
+		expect(both).toBeLessThan(roomy.itemLimit);
+
+		const out = refilled(roomy);
+		expect(out.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+		const turns = turnsOf(out.items);
+		expect(turns.filter((turn, index) => turns.indexOf(turn) !== index)).toEqual([]);
 	});
 });

@@ -11,18 +11,19 @@
  */
 
 import type {AgentAccount, AgentFailure, Phase} from "../events.ts";
-import type {
-	CommandRef,
-	ItemId,
-	Mode,
-	ModelRef,
-	PendingPermission,
-	SubagentSlot,
-	ThinkingLevel,
-	TranscriptItem,
-	TranscriptPayload,
-	TurnResult,
-	WindowOmission,
+import {
+	type CommandRef,
+	type ItemId,
+	isNamedItem,
+	type Mode,
+	type ModelRef,
+	type PendingPermission,
+	type SubagentSlot,
+	type ThinkingLevel,
+	type TranscriptItem,
+	type TranscriptPayload,
+	type TurnResult,
+	type WindowOmission,
 } from "../ports/index.ts";
 import {promptUnqueued} from "./failures.ts";
 import {type QueuedPrompt, releaseQueued} from "./queue.ts";
@@ -533,10 +534,8 @@ export const remarkCutReplies = (
 ): ReadonlyArray<TranscriptItem> => {
 	if (cut.length === 0) return items;
 	const named = new Set<string>(cut);
-	const isNamed = (item: TranscriptItem): boolean =>
-		named.has(item.id) || (item.alias !== undefined && named.has(item.alias));
 	return items.map((item) =>
-		item.kind === "assistant" && item.interrupted !== true && isNamed(item)
+		item.kind === "assistant" && item.interrupted !== true && isNamedItem(named, item)
 			? {...item, interrupted: true}
 			: item,
 	);
