@@ -265,7 +265,8 @@ const arrivingPorts = (authored: AnyAuthoredProgram): ReadonlyArray<string> =>
 /**
  * The six effect handlers, written once. Each answers the events its effect produces: `emit` and
  * `send` announce nothing back, `spawn` answers `spawned` and `stop` answers `stopped`. A command
- * reaches five of them; `emit` is an `update` cell's alone (ADR 0372).
+ * reaches exactly one of them — `send`; the other five are an `update` cell's alone (ADR 0372, as
+ * the rulings on #8898 and #8858 amended it).
  */
 const emitHandler = (cmd: EmitEffect) =>
 	Effect.gen(function* () {
@@ -361,18 +362,24 @@ const HANDLERS: HostHandlers<AuthoredEvent, ProgramEffect, EffectFailure, Effect
 };
 
 /**
- * What a compiled command needs — `EffectServices` without `ProcessPorts`, because a command may
- * not declare `emit` (ADR 0372) and `emitHandler` is the only reader of that service.
+ * What a compiled command needs: `SpawnedProcesses`, and that is the whole list. A command may
+ * declare only `send` (ADR 0372 as the rulings on #8898 and #8858 amended it), and `sendHandler` is
+ * the only handler it can reach — so the two services `Kernel` (`../boot.ts`) does not name,
+ * `ProcessPorts` (read by `emitHandler`) and `ProcessSelf` (read by `spawnHandler` and
+ * `askHandler`), are unreachable from a spell rather than merely unused by one.
+ *
+ * Written as an `Extract` off `EffectServices` rather than as the bare service, so it stays in
+ * lockstep with the spine's set instead of drifting from it.
  */
-export type CommandEffectServices = Exclude<EffectServices, ProcessPorts>;
+export type CommandEffectServices = Extract<EffectServices, SpawnedProcesses>;
 
-/** The same handlers minus `emit`, so no command's spell can reach a process out-port. */
+/**
+ * The one handler a command reaches. `compileCommands` adds `ProcessTable` to what the compiled
+ * spell requires, because resolving a bare port name to a process of the declaring program is a
+ * read of the live set (`./own-process.ts`); `Kernel` already names that service.
+ */
 const COMMAND_HANDLERS: CommandHandlers<EffectFailure, CommandEffectServices> = {
-	spawn: spawnHandler,
 	send: sendHandler,
-	ask: askHandler,
-	reply: replyHandler,
-	stop: stopHandler,
 };
 
 /**
@@ -460,9 +467,17 @@ const compileReceive = (
 		]),
 	);
 
-/** A command's spell runs the same effects an `update` cell does, so it reads the same filled args. */
+/**
+ * A command's spell runs its one effect on the same filled args an `update` cell's effects read, so
+ * it is bound the same way (#8762) — `send` reads no arg today, and binding the record rather than
+ * the handler that happens to need one keeps the two paths in lockstep.
+ *
+ * The program id goes in beside them: a bare port name in a command resolves against the live
+ * processes of the *declaring* program (`./own-process.ts`), which is a fact of the registration
+ * rather than of the call, so the compile site is the only place that knows it.
+ */
 const compileSpells = (authored: AnyAuthoredProgram, context: CompileContext) =>
-	compileCommands(authored.commands, bindArgs(COMMAND_HANDLERS, context.args));
+	compileCommands(context.id, authored.commands, bindArgs(COMMAND_HANDLERS, context.args));
 
 /**
  * What this registration filled its args with. Refused here, at definition time, where the config

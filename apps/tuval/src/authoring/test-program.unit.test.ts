@@ -8,9 +8,9 @@ import {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 import {fillArgs, programArgs} from "./args.ts";
 import type {Answer, ArrivalEvent} from "./define-program.ts";
 import {
+	type AnyEffect,
 	ask,
 	emit,
-	type ProgramEffect,
 	type Reply,
 	type Spawned,
 	type Stopped,
@@ -83,11 +83,18 @@ const prReview = {
 			state.reviewer === null ? [] : [stop(state.reviewer)],
 		],
 		key: (state: State, event: KeyEvent): Answer<State> => [{...state, pressed: event.key}, []],
+		recheck: (state: State): Answer<State> => [
+			state,
+			[ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})],
+		],
 	},
 	commands: {
 		review: {
 			args: Pr,
-			run: (pr: number) => ask({process: CALLEE, port: "check"}, pr, {reply: "result"}),
+			// A bare port name: an in-port of this program's own process (#8898). It is the only
+			// target shape a command has beside the addressed one, and `send` is the only effect it
+			// may ask for at all — so the `ask` this cell used to write now lives in `recheck` below.
+			run: (pr: number) => send("pr", pr),
 		},
 	},
 	title: (state: State) => `pr-review (${state.queue.length})`,
@@ -156,7 +163,7 @@ describe("authoring.testProgram", () => {
 		});
 
 		it("ask", () => {
-			const run = testProgram(prReview).call("review", 8733);
+			const run = testProgram(prReview).event({type: "recheck"});
 			expect(run.effects).toEqual([ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]);
 		});
 
@@ -195,7 +202,7 @@ describe("authoring.testProgram", () => {
 
 		it("an `ask` reply, arriving as that `ask`'s own `reply` event", () => {
 			const run = testProgram(prReview)
-				.call("review", 8733)
+				.event({type: "recheck"})
 				.event({type: "result", payload: {pr: 8733, ok: false}});
 			expect(run.state.verdicts).toBe(0);
 			expect(run.effects).toContainEqual(emit("verdict", {pr: 8733, ok: false}));
@@ -217,7 +224,7 @@ describe("authoring.testProgram", () => {
 		const start = testProgram(prReview).send("pr", 1);
 		const run = start.call("review", 8733);
 		expect(run.state).toEqual(start.state);
-		expect(run.effects).toEqual([ask({process: CALLEE, port: "check"}, 8733, {reply: "result"})]);
+		expect(run.effects).toEqual([send("pr", 8733)]);
 	});
 
 	it("refuses a command the program does not declare, and args its schema rejects", () => {
@@ -244,7 +251,7 @@ describe("authoring.testProgram", () => {
 	it("infers the state and effect types from the program, never `unknown`", () => {
 		const run = testProgram(prReview).send("pr", 1);
 		expectTypeOf(run.state).toEqualTypeOf<State>();
-		expectTypeOf(run.effects).toEqualTypeOf<ReadonlyArray<ProgramEffect>>();
+		expectTypeOf(run.effects).toEqualTypeOf<ReadonlyArray<AnyEffect>>();
 		expectTypeOf(run.state.queue).toEqualTypeOf<ReadonlyArray<number>>();
 	});
 });

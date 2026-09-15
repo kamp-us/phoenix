@@ -93,8 +93,10 @@ const nodes = (booted: Booted) =>
 	}).pipe(Effect.provideContext(booted.kernel));
 
 /**
- * The half `pr-review` cannot compose for itself yet (#8898): once the example spawned the reviewer,
- * something has to ask it for a verdict. The kernel's own `send` is what an operator would use.
+ * The half `pr-review` does not compose for itself: once the example spawned the reviewer, something
+ * has to ask *the reviewer* for a verdict, and the reviewer declares no command of its own. The
+ * kernel's own `send` is what an operator would use. (The example's own command reaches its own
+ * program's `pr` port since #8898; that is a different port on a different process.)
  *
  * The newest reviewer, not the first: the second boot restores the child of the boot before it, and
  * a restored spawned child holds un-wired ports. The send is retried rather than taken once, because
