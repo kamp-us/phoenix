@@ -35,3 +35,11 @@ export {
 export const QUEUE_UNREADABLE = 27;
 /** The search index could not be read, so the outcome is UNKNOWN. `report dedup` only. */
 export const SEARCH_UNREADABLE = 28;
+/**
+ * `--slug` is not a kebab-case leaf, so no path was allocated. `report scratch` only.
+ *
+ * Seated past `28` rather than on the `10` `build scratch` uses for the same refusal: `10` is
+ * `CLASSIFIED` in this group's shared writing table, and a second meaning on it would break the one
+ * property that table has — a code means the same thing whichever verb produced it.
+ */
+export const SLUG_MALFORMED = 29;
