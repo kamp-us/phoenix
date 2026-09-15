@@ -125,6 +125,8 @@ const {posts} = useRequest({posts: {list: PostView}}, {mode: "stale-while-revali
 
 `stale-while-revalidate` is the paint-now-patch-later mode: combined with a hydrated cache it renders synchronously and refreshes in the background ([fate-hydration.md](./fate-hydration.md#paint-from-snapshot--revalidate)).
 
+**On a paginated list, that revalidation replaces the loaded window.** Its network leg re-issues the request's own page-one args, and fate normalizes a root list answer with `mergeListState(…, {replace: true})` (`@nkzw/fate@1.3.1` `lib/index.mjs`, `fetchListAndNormalize`), which keeps only the ids that answer carried. A reader who paged to 40 rows is back to 20 on the next mount — every route round-trip out of the feed, and every boot from a snapshot that held more than one page. `cache-first` never does this: with page-one coverage in the store it issues no request at all. So a feed that can page past its first page picks its mode against the window it already holds rather than pinning one at the callsite — `apps/web/src/fate/feedRequestMode.ts` (#9266).
+
 Cache-lifetime facts that shape phoenix reads:
 
 - The normalized cache is keyed `__typename:id`; lists and root queries point at those records. **Request args are part of the cache key** — two list requests differing in filter args keep separate list state, while cursor args merge into the same list (the connection-identity rule below). The selected view is part of the key too: `PostCardView` and `PostDetailView` share normalized records, but field coverage is tracked per request.
