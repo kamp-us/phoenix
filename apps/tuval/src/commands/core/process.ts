@@ -5,12 +5,19 @@
  * new spell (founder's walk on #7642, 2026-09-03).
  *
  * `SpawnedProcesses` is the state the spells cannot hold themselves, since a spell's `execute` is
- * a function per call. It retains the `ProcessHandle` of every process it spawns because the
- * process table exposes rows and no dispatch (spike #7597 finding 3b), and it wires that process's
- * ports the way `src/launch/` wires a graph node's: a bounded queue and a pump per in-port, and a
- * `ProcessPorts` that publishes each out-port's payload to a latch a `read` waits on. A process
- * this service did not spawn has no retained handle, so `send` and `read` answer `UnknownProcess`
- * for it — the graph's own processes are `src/launch/`'s to feed.
+ * a function per call. It retains the `ProcessHandle` of every live process because the process
+ * table exposes rows and no dispatch (spike #7597 finding 3b), and it holds that process's port
+ * wiring beside the handle: a pump per in-port, and a `ProcessPorts` that publishes each out-port's
+ * payload to a latch a `read` waits on.
+ *
+ * Two paths put a process in that table and there is one table (#8944). `spawn` below starts an
+ * ad-hoc process and mints its in-port queues, because nothing else owns them. `adopt` takes a
+ * process another spawner started — `src/launch/` spawning a planned graph node — and enrols it on
+ * the queues that spawner already owns, because a graph node's in-port is also a route's target and
+ * one queue has to answer both. Either way the entry is the same `Entry`, so `send`, `ask` and
+ * `read` reach a planned program exactly as they reach an ad-hoc one, and the in-port pump is
+ * written once here rather than once here and once in `src/launch/`. `UnknownProcess` now means
+ * what it says: no live process carries that id.
  *
  * `ask` / `answer` and the `on` record on `spawn` are the answer path (#8756), and they are here
  * because this is where the inboxes and the out-port latches are: an `ask` has to reach the port's
@@ -49,13 +56,17 @@ export class UnknownProgram extends Schema.TaggedError<UnknownProgram>()(
 	}
 }
 
-/** Named as a target or a parent: no process this service spawned and still holds carries the id. */
+/**
+ * Named as a target or a parent: no live process carries the id. Since #8944 that is the whole of
+ * it — a graph-launched process is enrolled by `adopt` and an ad-hoc one by `spawn`, so the answer
+ * no longer turns on which path started the process.
+ */
 export class UnknownProcess extends Schema.TaggedError<UnknownProcess>()(
 	"tuval/commands/UnknownProcess",
 	{process: ProcessId},
 ) {
 	override get message(): string {
-		return `no live process "${this.process}" was spawned through the process spells`;
+		return `no live process "${this.process}"`;
 	}
 }
 
@@ -169,10 +180,10 @@ interface Entry {
 
 /**
  * One in-port's pump: take, translate through the program's own receiver, dispatch, for as long as
- * the process lives. It is `launch`'s pump (`src/launch/launch.ts`) over an ad-hoc process rather
- * than a graph node; that one is private to its module and keyed on a node id, so this is written
- * again rather than reached into. A dispatch the target refuses is the target's failure, reported
- * and not retried.
+ * the process lives — the fiber is forked into the process Scope, so a stop interrupts it before
+ * the actor drains. This is the only pump in the kernel: `src/launch/launch.ts` carried a second,
+ * identical one keyed on a node id until #8944 folded the two paths into `adopt` below. A dispatch
+ * the target refuses is the target's failure, reported and not retried.
  */
 const pump = (handle: ProcessHandle, inbox: Queue.Dequeue<unknown>, receive: Receiver<Message>) =>
 	Effect.forkIn(
@@ -184,6 +195,52 @@ const pump = (handle: ProcessHandle, inbox: Queue.Dequeue<unknown>, receive: Rec
 		),
 		handle.scope,
 	);
+
+/**
+ * A latch per declared out-port. Opened before the process starts, because the `ProcessPorts` its
+ * handlers are sealed to has to publish into these from the very first emit — so both paths build
+ * them up front and hand them to the emit they wrap.
+ */
+const openOutPorts = Effect.fn("Tuval.SpawnedProcesses.openOutPorts")(function* (row: AnyProgram) {
+	const outboxes = new Map<string, OutboundLatch>();
+	for (const [name, port] of Object.entries(row.ports)) {
+		if (port.direction === "out") outboxes.set(name, yield* openLatch);
+	}
+	return outboxes;
+});
+
+/**
+ * The in-port half of one process's wiring, written once for both paths (#8944): an inbox per
+ * declared in-port over whatever queue `queueOf` answers with, and a pump from it into the process.
+ *
+ * The queue is the caller's because its ownership differs and nothing else does. `spawn` mints one
+ * per port at the port's own bound, since an ad-hoc process's in-ports belong to nobody else;
+ * `adopt` hands over the graph's, since a planned node's in-port is also a route's target and one
+ * queue has to serve `Wiring.emit` and `send` alike.
+ */
+const wireInPorts = Effect.fn("Tuval.SpawnedProcesses.wireInPorts")(function* (
+	row: AnyProgram,
+	handle: ProcessHandle,
+	queueOf: (name: string, port: InPort) => Effect.Effect<Queue.Queue<unknown>>,
+) {
+	const inboxes = new Map<string, Inbox>();
+	for (const [name, port] of Object.entries(row.ports)) {
+		if (port.direction !== "in") continue;
+		const receive = row.receive?.[name] as Receiver<Message> | undefined;
+		if (receive === undefined) {
+			// `launch` refuses this at boot with `NoReceiver`; there is no boot to refuse here, and a
+			// caller cannot act on another program's authoring bug — so it dies, as the executor dies
+			// on a spell whose value its own `result` schema refuses.
+			return yield* Effect.die(
+				`program "${row.id}" declares in-port "${name}" but no receiver for it`,
+			);
+		}
+		const queue = yield* queueOf(name, port);
+		yield* pump(handle, queue, receive);
+		inboxes.set(name, {port, queue});
+	}
+	return inboxes as ReadonlyMap<string, Inbox>;
+});
 
 /**
  * The out-port half of an ad-hoc process's wiring: what `src/ports/`'s `Wiring.emit` is to a graph
@@ -220,6 +277,31 @@ export type ChildRoutes = Readonly<Record<string, string | undefined>>;
 
 const NO_ROUTES: ChildRoutes = {};
 
+/**
+ * A process some other spawner starts, offered to this table so it is addressable by id like any
+ * other (#8944). The caller keeps what is genuinely its own — the spawn itself, the in-port queues,
+ * and where an emit goes after the latch — and the table takes over everything a `send` or a `read`
+ * needs. The spawn rides in as `start` rather than happening before the call so a handle cannot
+ * exist unadopted: there is no order of the two that leaves a live, unreachable process behind.
+ */
+export interface Adoption<E> {
+	/** The id the process is spawned at — a graph node's own id, not one minted here. */
+	readonly process: ProcessId;
+	/** The registry row already resolved by the caller; every port declaration is read off it. */
+	readonly program: AnyProgram;
+	/**
+	 * The queue behind each of the row's declared in-ports. A declared in-port missing here is a
+	 * half-wired process, which is the caller's defect rather than a failure a caller could act on.
+	 */
+	readonly inboxes: ReadonlyMap<string, Queue.Queue<unknown>>;
+	/** Where an out-port's payload goes once this table's latch has recorded it — the graph's wiring. */
+	readonly emit: Context.Service.Shape<typeof ProcessPorts>["emit"];
+	/** Start the process on the ports adoption built. The handle it answers with is what is enrolled. */
+	readonly start: (
+		ports: Context.Service.Shape<typeof ProcessPorts>,
+	) => Effect.Effect<ProcessHandle, E>;
+}
+
 /** One outstanding `ask`, held against the correlation the kernel minted for it. */
 interface Pending {
 	/** The process that asked, and the event its answer arrives as. */
@@ -251,6 +333,26 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 				: Effect.succeed(entry);
 		});
 
+	/**
+	 * Hold one live process's wiring against its id, and let go when the process stops. Both paths
+	 * end here, so there is one place a process becomes addressable and one place it stops being.
+	 */
+	const enrol = (id: ProcessId, entry: Entry) =>
+		Effect.gen(function* () {
+			live.set(id, entry);
+			yield* Scope.addFinalizer(
+				entry.handle.scope,
+				Effect.sync(() => {
+					live.delete(id);
+					// A process that stopped answers nothing more, and a correlation nobody will ever
+					// spend is a leak: one sweep per process rather than one finalizer per `ask`.
+					for (const [correlation, held] of pending) {
+						if (held.of === id || held.to === id) pending.delete(correlation);
+					}
+				}),
+			);
+		});
+
 	const spawn = Effect.fn("Tuval.SpawnedProcesses.spawn")(function* (
 		program: ProgramId,
 		parent: Option.Option<ProcessId>,
@@ -263,10 +365,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		// Minted here rather than by `Processes.spawn` — same value, one call earlier — because the
 		// `ProcessPorts` handed to the spawn must already know which process it emits from.
 		const id = ProcessId.make(randomUUID());
-		const outboxes = new Map<string, OutboundLatch>();
-		for (const [name, port] of Object.entries(row.ports)) {
-			if (port.direction === "out") outboxes.set(name, yield* openLatch);
-		}
+		const outboxes = yield* openOutPorts(row);
 		// Routing is resolved per emit rather than wired once, because a route's target is the
 		// spawner's inbox and a spawner can stop while its child runs on: `deliver` answers `false`
 		// then, where a captured handle would have gone stale.
@@ -301,42 +400,63 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		// ports with no entry in `live` for `entryOf` to find. `onError` catches a defect as well as
 		// a failure, which is what the no-receiver die below is (#7761).
 		yield* Effect.gen(function* () {
-			const inboxes = new Map<string, Inbox>();
-			for (const [name, port] of Object.entries(row.ports)) {
-				if (port.direction !== "in") continue;
-				const receive = row.receive?.[name] as Receiver<Message> | undefined;
-				if (receive === undefined) {
-					// `launch` refuses this at boot with `NoReceiver`; there is no boot to refuse here, and a
-					// caller cannot act on another program's authoring bug — so it dies, as the executor dies
-					// on a spell whose value its own `result` schema refuses.
-					return yield* Effect.die(
-						`program "${row.id}" declares in-port "${name}" but no receiver for it`,
-					);
-				}
-				const queue = yield* Queue.make<unknown>({
-					capacity: port.bound.capacity,
-					strategy: port.bound.overflow,
-				});
-				yield* Scope.addFinalizer(handle.scope, Effect.asVoid(Queue.shutdown(queue)));
-				yield* pump(handle, queue, receive);
-				inboxes.set(name, {port, queue});
-			}
-
-			live.set(id, {handle, inboxes, outboxes});
-			yield* Scope.addFinalizer(
-				handle.scope,
-				Effect.sync(() => {
-					live.delete(id);
-					// A process that stopped answers nothing more, and a correlation nobody will ever
-					// spend is a leak: one sweep per process rather than one finalizer per `ask`.
-					for (const [correlation, held] of pending) {
-						if (held.of === id || held.to === id) pending.delete(correlation);
-					}
+			const inboxes = yield* wireInPorts(row, handle, (_name, port) =>
+				Effect.gen(function* () {
+					const queue = yield* Queue.make<unknown>({
+						capacity: port.bound.capacity,
+						strategy: port.bound.overflow,
+					});
+					yield* Scope.addFinalizer(handle.scope, Effect.asVoid(Queue.shutdown(queue)));
+					return queue;
 				}),
 			);
+			yield* enrol(id, {handle, inboxes, outboxes});
 		}).pipe(Effect.onError(() => handle.stop));
 		return id;
 	});
+
+	/**
+	 * The graph's path into the same table (#8944). Latches are opened first, then the caller's spawn
+	 * runs on a `ProcessPorts` that records each emit on its port's latch before handing it to the
+	 * caller's own `emit` — so a `read` answers what the node *said*, which is the node's own truth,
+	 * whatever the routes then did with it (the same rule the ad-hoc `emitter` follows, and the same
+	 * one #8718 settled for the self-report latches). An emit naming no declared out-port, or one the
+	 * port's own `accepts` refuses, records nothing and is left entirely to the caller's `emit` to
+	 * answer for.
+	 *
+	 * The in-port queues are the caller's and so are their finalizers: `src/ports/wiring.ts` shuts a
+	 * graph queue down with the wiring's scope. What this adds to the process's own scope is the
+	 * pumps and the entry's removal, which is the whole of what it owns.
+	 */
+	const adopt = <E>(adoption: Adoption<E>): Effect.Effect<ProcessHandle, E> =>
+		Effect.gen(function* () {
+			const {process: id, program: row} = adoption;
+			const outboxes = yield* openOutPorts(row);
+			const ports = ProcessPorts.of({
+				emit: (port, payload) => {
+					const latch = outboxes.get(port);
+					const declared = row.ports[port];
+					const recorded =
+						latch === undefined || declared === undefined || !declared.accepts(payload)
+							? Effect.void
+							: latch.publish(payload);
+					return Effect.flatMap(recorded, () => adoption.emit(port, payload));
+				},
+			});
+			const handle = yield* adoption.start(ports);
+			// As in `spawn`: the process is running from here on and nothing ties it to this effect, so
+			// a failure below would leave it live with no entry for `entryOf` to find.
+			yield* Effect.gen(function* () {
+				const inboxes = yield* wireInPorts(row, handle, (name) => {
+					const queue = adoption.inboxes.get(name);
+					return queue === undefined
+						? Effect.die(`adopted process "${id}" was handed no queue for in-port "${name}"`)
+						: Effect.succeed(queue);
+				});
+				yield* enrol(id, {handle, inboxes, outboxes});
+			}).pipe(Effect.onError(() => handle.stop));
+			return handle;
+		}).pipe(Effect.withSpan("Tuval.SpawnedProcesses.adopt"));
 
 	const send = Effect.fn("Tuval.SpawnedProcesses.send")(function* (
 		process: ProcessId,
@@ -404,7 +524,7 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		return yield* Effect.timeoutOption(latch.current, options.readTimeout);
 	});
 
-	return SpawnedProcesses.of({spawn, send, ask, answer, read});
+	return SpawnedProcesses.of({spawn, adopt, send, ask, answer, read});
 });
 
 export class SpawnedProcesses extends Context.Service<
@@ -416,6 +536,12 @@ export class SpawnedProcesses extends Context.Service<
 			/** Which of the parent's events each named child out-port arrives as. Needs a parent to route to. */
 			on?: ChildRoutes,
 		) => Effect.Effect<ProcessId, UnknownProgram | UnknownProcess | OpenError | HandlerFailed>;
+		/**
+		 * Enrol a process another spawner starts, so one table answers `send`, `ask` and `read` for a
+		 * graph-launched process and an ad-hoc one alike (#8944). The caller's spawn runs inside, on
+		 * ports this builds, and its failure is the call's failure with nothing enrolled.
+		 */
+		readonly adopt: <E>(adoption: Adoption<E>) => Effect.Effect<ProcessHandle, E>;
 		/**
 		 * `delivered` is `Queue.offer`'s own answer, and it covers less than a reader expects. `false`
 		 * is one of two things: a `dropping` in-port at capacity refusing the payload, or a queue that

@@ -324,6 +324,7 @@ describe("cron's job shape against a real session row", () => {
 									return child;
 								}),
 							send: () => Effect.die("this test sends nothing"),
+							adopt: () => Effect.die("this test adopts nothing"),
 							ask: () => Effect.die("this test asks nothing"),
 							answer: () => Effect.die("this test answers nothing"),
 							read: () => Effect.succeed(Option.none()),

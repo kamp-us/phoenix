@@ -215,6 +215,7 @@ describe("authoring.defineProgram", () => {
 						sent.push([process, portName, payload]);
 						return {delivered: true, evicted: 0};
 					}),
+				adopt: () => Effect.die("this test adopts nothing"),
 				ask: () => Effect.die("this test asks nothing"),
 				answer: () => Effect.die("this test answers nothing"),
 				read: () => Effect.succeed(Option.none()),
@@ -351,6 +352,7 @@ describe("authoring.defineProgram spawning through a program-valued arg", () => 
 									return child;
 								}),
 							send: () => Effect.die("this test sends nothing"),
+							adopt: () => Effect.die("this test adopts nothing"),
 							ask: () => Effect.die("this test asks nothing"),
 							answer: () => Effect.die("this test answers nothing"),
 							read: () => Effect.succeed(Option.none()),
@@ -384,6 +386,7 @@ describe("authoring.defineProgram spawning through a program-valued arg", () => 
 							SpawnedProcesses.of({
 								spawn: () => Effect.die("an unfilled arg names no program to spawn"),
 								send: () => Effect.die("this test sends nothing"),
+								adopt: () => Effect.die("this test adopts nothing"),
 								ask: () => Effect.die("this test asks nothing"),
 								answer: () => Effect.die("this test answers nothing"),
 								read: () => Effect.succeed(Option.none()),

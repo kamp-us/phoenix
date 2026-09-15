@@ -27,16 +27,16 @@
  * other branch — the job that died before answering — is written for the day #9227 delivers that
  * event and is unreachable until it does. Live today, a job that crashes before `result` leaves
  * `child` set and every later tick dropped until a restart, which `resume` reconciles. Nothing here
- * works around it, the same way nothing here works around #8944 below.
+ * works around it.
  *
- * **`:cron run` cannot reach a graph-launched cron, and that is #8944, not a bug of this program.**
- * A command may only `send` (ADR 0372 as #8898 amended it), and a bare `send("run")` resolves to
- * the declaring program's own live process (`../authoring/own-process.ts`) off `ProcessTable` — so
- * the resolution finds the planned cron. Delivery then goes through `SpawnedProcesses.send`
- * (`../commands/core/process.ts`), whose `live` map only holds processes *it* spawned, and a
- * process the boot graph launched is not one of them. The spell therefore refuses with
- * `UnknownProcess` rather than ticking. Nothing here works around it: the port and its cell are the
- * honest half, and the day #8944 lands the spell starts working with no change to this file.
+ * **`:cron run` reaches the cron the desk boots, and #8944 is what made that true.** A command may
+ * only `send` (ADR 0372 as #8898 amended it), and a bare `send("run")` resolves to the declaring
+ * program's own live process (`../authoring/own-process.ts`) off `ProcessTable` — so the resolution
+ * finds the planned cron. Delivery then goes through `SpawnedProcesses.send`
+ * (`../commands/core/process.ts`), whose table held only processes it had spawned itself until
+ * #8944 gave `src/launch/` a way to enrol every graph node in that same table; the spell refused
+ * with `UnknownProcess` before that and ticks now. Nothing in this file changed for it, which is
+ * what writing the honest half rather than a workaround bought.
  */
 
 import type {DepKeyedSub} from "@demlik/tea";
@@ -230,8 +230,8 @@ export const cronProgram = (options: CronOptions) => {
 			 * here. It is written for the day #9227 lands, when a crashed job becomes a failed run
 			 * instead of a `child` left set until the next restart, and it needs no change to this file
 			 * when it does. `cron.unit.test.ts` feeds the event by hand, so it proves this cell and not
-			 * live behaviour. Cited the way #8944 is in the module header: the honest half, no
-			 * workaround.
+			 * live behaviour. Cited the way #8944 was in the module header until it landed: the
+			 * honest half, no workaround.
 			 */
 			stopped: (state: CronState, event: Stopped): Answer<CronState> => {
 				if (state.child === null || event.process !== state.child) {
@@ -291,8 +291,9 @@ export const cronProgram = (options: CronOptions) => {
 			 * that owns it decides — which is how an on-demand run is the same run a tick is, prompt
 			 * and all, instead of a parentless child nobody ever speaks to.
 			 *
-			 * It does not work yet against the cron the desk actually boots, and the header says why:
-			 * #8944, delivery through `SpawnedProcesses`, a graph-launched process it never spawned.
+			 * It works against the cron the desk actually boots, which it did not before #8944:
+			 * `src/launch/` now enrols every graph node in the same `SpawnedProcesses` table the send
+			 * lands through, so the planned cron is addressable by the id its own resolution found.
 			 */
 			run: {
 				args: RunRequest,

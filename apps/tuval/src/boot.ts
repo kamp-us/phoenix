@@ -150,9 +150,17 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	// The kernel reaches a process's handlers on one route only, the `services` argument: a handler
 	// is sealed to its spawn set, so the ambient a spawner is called under can no longer stand in
 	// for a `services` that forgot something (#7972). What each spawner is *called* under is
-	// therefore its own `R` and nothing more — the four services `launch` and `restore` name for
-	// themselves, not the kernel a second time.
-	const spawnerNeeds = Context.pick(Checkpoints, Processes, ProcessTable, Registry)(kernel);
+	// therefore its own `R` and nothing more — the services `launch` and `restore` name for
+	// themselves, not the kernel a second time. `SpawnedProcesses` is among them since #8944:
+	// `launch` enrols every node it spawns there, so one table answers the process spells for a
+	// planned program and an ad-hoc one alike.
+	const spawnerNeeds = Context.pick(
+		Checkpoints,
+		Processes,
+		ProcessTable,
+		Registry,
+		SpawnedProcesses,
+	)(kernel);
 	// The kernel rides into every launched process's handlers: the shell row's Cmds spawn programs
 	// and read the process table, and a program row declares exactly those needs as its `R`.
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(

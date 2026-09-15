@@ -115,6 +115,9 @@ and with one there is an out-port belonging to somebody else.
   pre-existing gap [#8944](https://github.com/kamp-us/phoenix/issues/8944), not a new one: the same
   is true of the `process send` spell today. Resolution is deliberately over the true live set
   anyway — answering "no live process" while one is plainly running would be the dishonest half.
+  *(#8944 has since landed: `src/launch/` enrols every graph node in the same `SpawnedProcesses`
+  table, so the reach now matches the resolution and this consequence no longer holds. The decision
+  above is unchanged — a command may still only `send`.)*
 - `apps/tuval/src/authoring/commands.unit.test.ts` no longer hand-provides a `ProcessPorts`: its
   effect test drives a `send` through a capturing `SpawnedProcesses`, and the `@ts-expect-error`
   cases hold the refusals in place, so deleting the narrowing turns that test red.
