@@ -243,7 +243,7 @@ directory to give it its retries back is not a driver's move.** The ledger is a 
 and `.fabrika/` is gitignored, so the removal destroys the record of the spend and the boot that
 follows mints a full budget nothing granted — laundering, silent and indistinguishable from a first
 boot. A spent budget comes back through a granted round recorded on the board and no other way:
-`build clear` on the lane's pull request, `lane clear` on a lane that has none. `lane open` now
+`lane clear`, which grants the lane's round and its pull request's together. `lane open` now
 refuses the re-boot itself at `63`.
 
 **The two-step remedy is for a lane running the wrong MACHINE, and it is never the answer to a plan
@@ -1458,16 +1458,34 @@ node packages/fabrika-cli/src/bin.ts lane clear <lane> --task <task> --rationale
 node packages/fabrika-cli/src/bin.ts lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
 ```
 
-`lane clear` derives the round — one call, one round — and refuses a blank rationale, because that
-line is the whole audit the weekly machinery review reads. Decide what the task actually needs first:
+**That one call buys both of the lane's repair budgets, which is the thing to know here.** A lane
+with a pull request has two: the one its own machine guards, and the one `build verdicts` folds off
+the PR's FAIL rounds — and only the second stops a builder. `lane clear` grants both in the same
+act, posting your `--rationale` on the PR as the grant's dated authorization with the `cap-cleared`
+marker beside it, so the builder you dispatch next proceeds. You never run `build clear` to finish
+the job: that is the founder's verb for a bare PR-side grant with no lane clear behind it, and
+clearing only the lane half is what used to spend a whole shell on budget nobody could read. The
+decision record ruling both halves sits in the repository's own corpus, cited on the founder ruling
+it rests on; the search is this verb's name.
+
+Read the verb's `pr` field rather than assuming which half it bought: `null` is a task with no pull
+request — an epic child, a chore lane — and `cleared`, `held` or `unspent` is what happened on the
+one it found. Two refusals are the PR half's and both leave the log unappended, so nothing is
+half-granted: exit `20` where two open PRs link the task's issue, and `66` where the account you are
+running as may not clear a round on that PR. Neither is yours to override; `66` is the one park here
+that is genuinely the founder's, and `build clear` from their account is the route.
+
+`lane clear` derives the round — one call, one round on each side — and refuses a blank rationale,
+because that line is the whole audit the weekly machinery review reads. Decide what the task actually
+needs first:
 another round is one answer, and a re-scope or a founder ask is often the better one. It is the one
 you *type*, not the only one that is yours: every driver-routed park is yours too, and those come
 back as exit `23` above, where `recipe unpark --rationale` clears them and the verb records the
 `UNBLOCKED` for you. What is somebody else's is the founder-routed park and the cause-less one —
 exit `12`, the park comment, and no clear from this seat.
 
-A founder-cleared repair round is recorded with `build clear` instead, where the lane has a pull
-request carrying the grant. Either verb appends the same
+A founder's bare PR-side round — one with no lane clear behind it — is recorded with `build clear`
+instead, and that verb is theirs, not yours. Either verb appends the same
 `<TASK>.CLEARED` event to the lane's log
 and moves the task nowhere — the door out is
 still the `UNBLOCKED`, and the two land in either order. That `UNBLOCKED`
@@ -1732,8 +1750,8 @@ routing table forbids. That resume is mechanical from `blocked` and from the `hu
 are not error finals. From an error final carrying a door — `human:budget-spent`, and both `frozen`
 and `human:epic-review` on every lane emitted before it was renamed — it needs a recorded `CLEARED`
 behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the park-clearing paragraph in step 4 above. So its promise
-is "the round is granted, then the resume walks" — by you, through `lane clear`, on a lane with no
-pull request, and by the founder through `build clear` on one that has. A park reported as a
+is "the round is granted, then the resume walks" — by you, through `lane clear`, which grants the
+lane's round and its pull request's in one act. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

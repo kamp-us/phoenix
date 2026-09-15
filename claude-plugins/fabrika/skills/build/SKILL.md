@@ -603,8 +603,9 @@ so `capReached: false` beside a `clearances` row *is* the granted round and you 
 you never do is grant one: `build clear` is the operator's verb, it refuses an account outside the
 repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
 is reached. **Escalate to the driver, not to the founder** — a spent budget is machinery routed to
-the lane's own driver, and the grant is theirs to record on their own diagnosis: `build clear` where
-the lane carries a pull request, `lane clear` where it does not. Your move is the same either way,
+the lane's own driver, and the grant is theirs to record on their own diagnosis: one `lane clear`,
+which grants this PR's round and the lane's in one act, whether or not the lane has a pull request.
+Your move is the same either way,
 and reading a founder into it is what used to park a lane on a person nobody had asked. One grant is
 one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
