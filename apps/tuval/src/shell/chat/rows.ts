@@ -13,8 +13,8 @@
  * The `alias` half is #8032: a backend may key its live tail and its history reads in two id spaces
  * — Pi keys the tail positionally and the page by the stored session entry — so one turn arrives
  * under two strings and a single-id join renders it twice. The backend that holds both spaces says
- * so on the row (`ports/transcript-item.ts`, `alias`), and matching a page row's `alias` against
- * what the tail holds is the whole of the join; nothing here learns which backend has two spaces.
+ * so on the row (`ports/transcript-item.ts`, `alias`), whose `isNamedItem` is the whole of the
+ * join; nothing here learns which backend has two spaces.
  *
  * The text half is #7998: the core records the operator's own turn at send time under a synthetic
  * `local:<key>` id (`ai-agent/core/fold.ts`, `promptItem`), and a layer that emits no `user` item
@@ -29,6 +29,7 @@
 
 import {pageCursor} from "../../ai-agent/history/cursor.ts";
 import type {ItemId, SubagentSlot, SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {isNamedItem, itemIds} from "../../ai-agent/ports/index.ts";
 
 /**
  * What an `item` row may carry. A session notice is deliberately not one: every `SystemItem` lands
@@ -229,12 +230,12 @@ const claimsLocal = (item: TranscriptItem, budget: Map<string, number>): boolean
 /**
  * The `page` items `held` does not already carry, in page order.
  *
- * Two joins. The first is identity, and it reads both of a row's ids — its own and the `alias` its
- * backend gave it for the other id space — so a page copy keyed differently from the tail row for
- * one turn is still one turn. The second is the fold's `echoOf` with both of its guards intact: only a *layer's*
- * item may claim a still-`local` held one, and a `local` item never claims another, so two
- * deliberate sends of the same text stay two turns. The budget is what makes the claim one-to-one —
- * one unconfirmed turn cancels one page copy, never every copy that shares its text.
+ * Two joins. The first is identity and is `isNamedItem`'s, so a page copy keyed differently from
+ * the tail row for one turn is still one turn. The second is the fold's `echoOf` with both of its
+ * guards intact: only a *layer's* item may claim a still-`local` held one, and a `local` item never
+ * claims another, so two deliberate sends of the same text stay two turns. The budget is what makes
+ * the claim one-to-one — one unconfirmed turn cancels one page copy, never every copy that shares
+ * its text.
  *
  * The walk is newest-first because the held `local` item is the operator's *most recent* send of
  * that text: when a page carries several copies, the newest of them is the one that turn's echo
@@ -244,17 +245,13 @@ const unheld = (
 	held: ReadonlyArray<TranscriptItem>,
 	page: ReadonlyArray<TranscriptItem>,
 ): ReadonlyArray<TranscriptItem> => {
-	const known = new Set<string>();
-	for (const item of held) {
-		known.add(item.id);
-		if (item.alias !== undefined) known.add(item.alias);
-	}
+	const known = new Set<string>(held.flatMap(itemIds));
 	const budget = localTextBudget(held);
 	const fresh: Array<TranscriptItem> = [];
 	for (let index = page.length - 1; index >= 0; index -= 1) {
 		const item = page[index];
 		if (item === undefined) continue;
-		const carried = known.has(item.id) || (item.alias !== undefined && known.has(item.alias));
+		const carried = isNamedItem(known, item);
 		if (carried || claimsLocal(item, budget)) continue;
 		fresh.push(item);
 	}
