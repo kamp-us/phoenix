@@ -4,6 +4,13 @@
 	"private": true,
 	"description": "Tuval — a local runnable app (ADR 0345): the program/process kernel and the programs that ship in the box",
 	"type": "module",
+	"exports": {
+		"./authoring": "./src/authoring/index.ts",
+		"./window": "./src/authoring/window.ts",
+		"./ai-agent/ports": "./src/ai-agent/ports/index.ts",
+		"./sessions": "./src/sessions.ts",
+		"./package.json": "./package.json"
+	},
 	"scripts": {
 		"dev": "node src/bin.ts",
 		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.design.json && effect-tsgo diagnostics --project tsconfig.design.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
