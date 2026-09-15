@@ -4,7 +4,7 @@
  * different data source (`savedPosts`).
  */
 import * as React from "react";
-import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
+import {useFateClient, useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
 import {Link, Navigate, useNavigate, useSearchParams} from "react-router";
 import {useSession} from "../auth/client";
 import {Subnav, type SubnavFilter} from "../components/layout/Subnav";
@@ -12,6 +12,7 @@ import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {useSetPanoSubnavContent} from "../components/pano/PanoSubnavLayout";
+import {useFeedRequestMode} from "../fate/feedRequestMode";
 import {Screen} from "../fate/Screen";
 import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
@@ -33,7 +34,8 @@ import {authRedirectPath} from "../lib/returnTo";
 import {countSavedRows, isRowSaved} from "./savedReconcile";
 
 // `prepend: "visible"` overrides fate's default `"edge"` buffering — see `.patterns/fate-live-views.md`.
-const PostConnectionView = {
+// Exported for `PanoFeed.test.tsx`, which reads the feed through the page's own request.
+export const PanoFeedConnectionView = {
 	items: {node: PanoPostCardView},
 	live: {prepend: "visible"},
 } as const;
@@ -121,6 +123,33 @@ export function PanoFeed({host}: {host?: string}) {
 	);
 }
 
+/**
+ * The feed's whole fate wiring: its root request, the request mode latched over that request
+ * (#9266) and the read. Exported so the regression test drives THIS, not a copy of it — a copy
+ * keeps passing while the page pins a mode back at the callsite, which is the change the test
+ * exists to stop.
+ */
+export function usePanoFeedPosts({host, sort}: {host?: string; sort: string}) {
+	const client = useFateClient();
+	const request = {
+		posts: {
+			list: PanoFeedConnectionView,
+			args: {sort, first: PANO_FEED_PAGE_SIZE, ...(host ? {host} : {})},
+		},
+	};
+	// The feed-key separator is U+0000 written as an escape, never as a raw byte: an embedded
+	// control character classifies this file as binary, which blanks its diff for every reviewer
+	// and every gate. No sort value and no hostname can contain it, so no two feeds share a key.
+	const mode = useFeedRequestMode(
+		client,
+		`${sort}\u0000${host ?? ""}`,
+		FEED_SNAPSHOT_ENABLED,
+		() => client.getRequestResult(request).posts.items.length,
+		PANO_FEED_PAGE_SIZE,
+	);
+	return useRequest(request, mode).posts;
+}
+
 function FeedContent({
 	host,
 	sort,
@@ -133,15 +162,7 @@ function FeedContent({
 	chrome: Chrome;
 }) {
 	const {value: muteEnabled} = useFlag(MEMBER_MUTE, false);
-	const {posts} = useRequest(
-		{
-			posts: {
-				list: PostConnectionView,
-				args: {sort, first: PANO_FEED_PAGE_SIZE, ...(host ? {host} : {})},
-			},
-		},
-		FEED_SNAPSHOT_ENABLED ? {mode: "stale-while-revalidate"} : undefined,
-	);
+	const posts = usePanoFeedPosts({host, sort});
 
 	return (
 		<FeedRows
@@ -155,7 +176,7 @@ function FeedContent({
 }
 
 type PostConnection = ReturnType<
-	typeof useRequest<{posts: {list: typeof PostConnectionView}}>
+	typeof useRequest<{posts: {list: typeof PanoFeedConnectionView}}>
 >["posts"];
 
 function FeedRows({
@@ -172,7 +193,7 @@ function FeedRows({
 	muteEnabled: boolean;
 }) {
 	const {locale, t} = useLocale();
-	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
+	const [items, loadNext] = useLiveListView(PanoFeedConnectionView, connection);
 
 	// First-feed-paint instrumentation: latches once per tab, no-op when off. See `feedPerf.ts`.
 	React.useEffect(() => {
