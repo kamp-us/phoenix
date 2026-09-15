@@ -255,10 +255,12 @@ describe("boot", () => {
 			expect(first.stdout).toContain(
 				"tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0\n",
 			);
-			// The scheduler is headless and planned: its two ports are the kernel's own derived lines,
-			// which is what a board tile reads it through.
+			// The scheduler is headless and planned. Two of its three ports are the kernel's own derived
+			// lines, which is what a board tile reads it through; the third is the `run` in-port
+			// `:cron run` sends to, and it being here is the whole of what makes that command
+			// addressable at all.
 			expect(first.stdout).toContain(
-				"tuval: process cron program=cron parent=- ports=title@1:out(tuval/title/v1),status@1:out(tuval/status/v1) state=running@0\n",
+				"tuval: process cron program=cron parent=- ports=run:in(cron/run),title@1:out(tuval/title/v1),status@1:out(tuval/status/v1) state=running@0\n",
 			);
 			expect(first.stdout).toContain("tuval: running — Ctrl-C stops and checkpoints\n");
 			// The stop line says the interrupt landed, not that teardown is over: `bin.ts` prints it

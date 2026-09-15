@@ -3,16 +3,18 @@
  *
  * The cases under "cron's job shape against a real session row" are the ones about something other
  * than cron: they pin the seam between an authored shape and a live session row (`cron.ts`'s
- * header), so the day an AI-agent row is authored through `defineProgram` the wrapper's whole
- * reason to exist shows up as a failing test.
+ * header). They used to pin the *failure* — that no live row could fit the shape, which is why a
+ * `sessionAsJob` wrapper existed. #8887 and #8959 closed that, so they now pin the fit, and the day
+ * a row stops publishing its payload schemas the wrapper's absence shows up as a failing test here
+ * rather than as a config that will not boot.
  */
 
 import {Effect, Option, Result} from "effect";
 import {describe, expect, it} from "vitest";
 import config from "../../.tuval/tuval.config.ts";
+import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "../ai-agent/ports/index.ts";
 import {fillArgs, programArgs} from "../authoring/args.ts";
-
-import {emit, spawn, stop} from "../authoring/effect.ts";
+import {emit, send, spawn, stop} from "../authoring/effect.ts";
 import {Program, type ShapeSource, shapeOf} from "../authoring/shape.ts";
 import {testProgram} from "../authoring/test-program.ts";
 import {claudeSession} from "../claude/program.ts";
@@ -22,17 +24,7 @@ import {ProcessId} from "../process/process.ts";
 import {ProcessSelf} from "../process/self.ts";
 import {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 import type {AnyProgram, PortSchema} from "../registry/program.ts";
-import {
-	type CronState,
-	cron,
-	cronProgram,
-	HISTORY,
-	INTERRUPTED,
-	jobShape,
-	PromptPayload,
-	sessionAsJob,
-	TurnResult,
-} from "./cron.ts";
+import {type CronState, cron, cronProgram, HISTORY, INTERRUPTED, jobShape} from "./cron.ts";
 
 /** Seven in the morning, so a status line reads the way the epic's example spells one. */
 const SEVEN = new Date(2026, 8, 10, 7, 0, 12).getTime();
@@ -200,9 +192,9 @@ describe("cron, restarted mid-run", () => {
 		expect(cronProgram(options).resume(interrupted().state)).toEqual([{type: "restored"}]);
 		expect(cronProgram(options).resume(testProgram(cronProgram(options)).state)).toEqual([]);
 		// The row the kernel dispatches through carries it, not just the authored record.
-		expect(cron({...options, job: sessionAsJob(session())}).resume?.(interrupted().state)).toEqual([
-			{type: "restored"},
-		]);
+		expect(cron({...options, job: session() as ShapeSource}).resume?.(interrupted().state)).toEqual(
+			[{type: "restored"}],
+		);
 	});
 
 	it("records the half-finished run as failed and clears the child, so the tile stops lying", () => {
@@ -244,10 +236,32 @@ describe("cron, restarted mid-run", () => {
 });
 
 describe("cron's `run` command", () => {
-	it("asks for one job, now, and moves no state", () => {
+	it("sends to its own program's `run` port and asks for nothing else", () => {
 		const run = testProgram(cronProgram(options)).call("run", {}, scope);
-		expect(run.effects).toEqual([spawn(jobRef, {on: {result: "result"}})]);
-		expect(run.state.ticks).toBe(0);
+		// A bare port name, which is what makes the call land on *this* program's live process
+		// (`../authoring/own-process.ts`) rather than mint a parentless child of its own.
+		expect(run.effects).toEqual([send("run", {})]);
+		expect(run.state).toEqual({child: null, startedAt: null, runs: [], ticks: 0});
+	});
+
+	it("spawns the job when that payload reaches the port, exactly as a tick does", () => {
+		const run = testProgram(cronProgram(options)).send("run", {});
+		expect(run.effects).toContainEqual(spawn(jobRef, {on: {result: "result"}}));
+	});
+
+	it("leaves `ticks` alone, because an on-demand run is not something the timer did", () => {
+		expect(testProgram(cronProgram(options)).send("run", {}).state.ticks).toBe(0);
+	});
+
+	it("records nothing and keeps its state when a job is already running", () => {
+		const running = testProgram(cronProgram(options))
+			.event({type: "tick"})
+			.event({type: "spawned", process: child, program: "cron-job"});
+		const asked = running.send("run", {});
+		expect(asked.effects.filter((effect) => effect.type === "spawn")).toEqual([]);
+		expect(asked.state).toEqual(running.state);
+		// The tile was already saying so, which is why the cell writes nothing down.
+		expect(running.effects).toContainEqual(emit(STATUS_PORT, "running since 07:00:12"));
 	});
 });
 
@@ -262,25 +276,19 @@ describe("cron's job shape against a real session row", () => {
 	});
 
 	/**
-	 * The blocker this file exists to keep honest. `shapeOf` reads a compiled row now (#8887), but
-	 * only one `defineProgram` built: `compilePort` is what publishes a port's schema beside its
-	 * predicate, and an AI-agent row's ports are hand-written predicates (`../ai-agent/ports/
-	 * ports.ts`). So a live session still reads as `{in: {}, out: {}}`. When an agent row is
-	 * authored through `defineProgram`, this case fails and `sessionAsJob` goes away.
+	 * The case this file exists to keep honest, and it reads the other way round now. A live
+	 * session row used to read as `{in: {}, out: {}}` — hand-written predicates with no schema to
+	 * compare — so a wrapper stood between the config and the arg. #8887 taught `shapeOf` to read a
+	 * compiled row and #8959 gave those rows their schemas, so the row fits on its own. The day one
+	 * of its ports stops publishing a payload schema, this fails.
 	 */
-	it("cannot be fitted by the live row itself, which is why `sessionAsJob` exists", () => {
-		// The cast is the blocker in one line: a compiled row is not a `ShapeSource`, because its
-		// ports carry a predicate where an authoring decl carries a schema.
-		const row: unknown = session();
-		const live = row as ShapeSource;
-		expect(shapeOf(live)).toEqual({
-			_tag: "tuval/authoring/ProgramShape",
-			in: {},
-			out: {},
-		});
+	it("is fitted by the live row itself, which is why no wrapper stands here", () => {
+		const live = session() as ShapeSource;
+		const shape = shapeOf(live);
+		expect(Object.keys(shape.in)).toContain("prompt");
+		expect(Object.keys(shape.out)).toContain("result");
 		const args = programArgs("cron", {job: jobShape});
-		expect(Result.isFailure(fillArgs(args, {job: live}))).toBe(true);
-		expect(Result.isSuccess(fillArgs(args, {job: sessionAsJob(session())}))).toBe(true);
+		expect(Result.isSuccess(fillArgs(args, {job: live}))).toBe(true);
 	});
 
 	/**
@@ -289,7 +297,7 @@ describe("cron's job shape against a real session row", () => {
 	 * arg's own service key and the registry answers `UnknownProgram: tuval/arg/cron/job`.
 	 */
 	it("puts the job on the row's fill, so a spawn on the arg resolves to the session", async () => {
-		const row = cron({...options, job: sessionAsJob(session())});
+		const row = cron({...options, job: session() as ShapeSource});
 		expect(row.args).toEqual({job: "tuval/arg/cron/job"});
 		const handlers = row.handlers as Readonly<
 			Record<
@@ -333,13 +341,12 @@ describe("cron's job shape against a real session row", () => {
 		expect(events).toEqual([{type: "spawned", process: child, program: "claude-session"}]);
 	});
 
-	it("keeps the real row's id on the wrapper, so the label names the session", () => {
-		const row = cron({...options, job: sessionAsJob(session())});
+	it("keeps the real row's id, so the label names the session", () => {
+		const row = cron({...options, job: session() as ShapeSource});
 		expect(row.label).toBe("cron (claude-session)");
-		expect(sessionAsJob(session()).id).toBe(session().id);
-		// The shape is the same one the arg declares; nothing here re-invents it.
+		// The shape is declared over the shipped AI-agent payloads themselves; nothing re-states them.
 		expect(jobShape).toEqual(
-			Program.shape({in: {prompt: PromptPayload}, out: {result: TurnResult}}),
+			Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}}),
 		);
 	});
 });

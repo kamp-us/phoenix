@@ -5,51 +5,62 @@
  * The job arrives as an arg typed by its ports alone (`Program.shape`, #8716 R15.1), so this module
  * names no session and imports no session's package — which program fills it is
  * `.tuval/tuval.config.ts`'s call. Unlike the `pr-review` example, the shape is declared over the
- * *real* AI-agent payloads (`../ai-agent/ports/payloads.ts`): a `prompt` carrying `{text, key,
- * timestamp}` and a `result` carrying `{text, items, ok}`, so a real Claude or Codex session is the
- * kind of thing that fits it. The two schemas below restate those payloads rather than importing
- * them, because `payloads.ts` publishes hand-written predicates and a shape is decided over schemas.
+ * *real* AI-agent payloads: `PromptPayloadSchema` and `TurnResultSchema` out of
+ * `../ai-agent/ports/index.ts`, the interface module, not any agent's implementation — the same
+ * import `authoring/example/pr-review.ts` makes, and what R15.1 asks for rather than what it
+ * forbids. So a real Claude or Codex session is the kind of thing that fits the shape, and a config
+ * hands the arg the shipped row itself.
  *
- * `sessionAsJob` is the seam that costs something, and it is a workaround, not a design. `shapeOf`
- * (`../authoring/shape.ts`) now reads a *compiled* row's ports too (#8887) — but only a row built
- * by `defineProgram`, because `compilePort` is what publishes each port's schema beside the
- * kernel's predicate. `claudeSession` is not authored that way: `../ai-agent/ports/ports.ts` writes
- * its `InPort`/`OutPort` records by hand, predicate only, so `shapeOf` of a live session is still
- * `{in: {}, out: {}}` and no non-empty shape can fit one. Until an AI-agent row is authored through
- * `defineProgram`, a config hands the arg the row's id beside a re-declaration of the two ports it
- * is being asked for. `cron.unit.test.ts` pins both halves: that the wrapper fits, and that the
- * real row's own `accepts` predicates admit exactly these payloads.
+ * There was a `sessionAsJob` wrapper here, and it is gone. It existed because an AI-agent row's
+ * ports were hand-written predicates with no schema beside them, so `shapeOf` (`../authoring/
+ * shape.ts`) read a live session as `{in: {}, out: {}}` and no non-empty shape could fit one.
+ * #8887 taught `shapeOf` to read a compiled row and #8959 gave those rows their payload schemas, so
+ * `claudeSession({…})` now fits `jobShape` on its own — which is what `cron.unit.test.ts` pins,
+ * where it used to pin the failure.
+ *
+ * **`:cron run` cannot reach a graph-launched cron, and that is #8944, not a bug of this program.**
+ * A command may only `send` (ADR 0372 as #8898 amended it), and a bare `send("run")` resolves to
+ * the declaring program's own live process (`../authoring/own-process.ts`) off `ProcessTable` — so
+ * the resolution finds the planned cron. Delivery then goes through `SpawnedProcesses.send`
+ * (`../commands/core/process.ts`), whose `live` map only holds processes *it* spawned, and a
+ * process the boot graph launched is not one of them. The spell therefore refuses with
+ * `UnknownProcess` rather than ticking. Nothing here works around it: the port and its cell are the
+ * honest half, and the day #8944 lands the spell starts working with no change to this file.
  */
 
 import type {DepKeyedSub} from "@demlik/tea";
 import {Schema} from "effect";
+import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "../ai-agent/ports/index.ts";
 import {programArgs} from "../authoring/args.ts";
 import {type Answer, type AuthoredEvent, defineProgram} from "../authoring/define-program.ts";
-import {type Reply, type Spawned, type Stopped, send, spawn, stop} from "../authoring/effect.ts";
+import {
+	type Reply,
+	type SpawnEffect,
+	type Spawned,
+	type Stopped,
+	send,
+	spawn,
+	stop,
+} from "../authoring/effect.ts";
 import {port} from "../authoring/port.ts";
 import {Program, type ShapeSource} from "../authoring/shape.ts";
 import type {ProcessId} from "../process/process.ts";
 import type {AnyProgram} from "../registry/program.ts";
 
-/** One turn of operator text, as `../ai-agent/ports/payloads.ts` `PromptPayload` carries it. */
-export const PromptPayload = Schema.Struct({
-	text: Schema.String,
-	key: Schema.String,
-	timestamp: Schema.Number,
-});
-
-/** One finished turn, as `../ai-agent/ports/payloads.ts` `TurnResult` carries it. */
-export const TurnResult = Schema.Struct({
-	text: Schema.String,
-	items: Schema.Array(Schema.Unknown),
-	ok: Schema.Boolean,
-});
-export type TurnResult = typeof TurnResult.Type;
-
 /** What cron asks of the thing it starts: take a prompt, announce a finished turn. */
-export const jobShape = Program.shape({in: {prompt: PromptPayload}, out: {result: TurnResult}});
+export const jobShape = Program.shape({
+	in: {prompt: PromptPayloadSchema},
+	out: {result: TurnResultSchema},
+});
 
 const args = programArgs("cron", {job: jobShape});
+
+/**
+ * What `:cron run` puts on the `run` in-port. No fields, because "now" is the whole of the request —
+ * the same empty struct the command declares its `args` over, so the command forwards exactly what
+ * it was called with and nothing is invented between the two.
+ */
+export const RunRequest = Schema.Struct({});
 
 /** One finished (or running) run, as the tile reports it. */
 export interface CronRun {
@@ -105,6 +116,17 @@ const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
 const recorded = (runs: ReadonlyArray<CronRun>, run: CronRun): ReadonlyArray<CronRun> =>
 	[run, ...runs].slice(0, HISTORY);
 
+/**
+ * Start the job, or ask for nothing at all because one is already running. This is the whole of what
+ * waking means, written once because two cells wake cron: the timer's `tick`, and the `run` port
+ * `:cron run` writes to. A wake landing mid-run is dropped rather than queued — cron reports one run
+ * at a time, and two live children would give it two `result`s to reconcile against one tile.
+ * Nothing is recorded for the drop, because `status` already reads "running since", which is the
+ * honest answer to "what happened when I asked".
+ */
+const startIfIdle = (state: CronState): ReadonlyArray<SpawnEffect> =>
+	state.child === null ? [spawn(args.job, {on: {result: "result"}})] : [];
+
 /** The timer, as Demlik's dep-keyed Sub. Re-keyed on `everyMs`, so nothing restarts it per tick. */
 const timer = (
 	everyMs: number | null,
@@ -130,16 +152,29 @@ export const cronProgram = (options: CronOptions) => {
 	return {
 		id: "cron",
 		args,
+		/**
+		 * One in-port, and it exists so `:cron run` has somewhere to land. A command may only `send`
+		 * (ADR 0372 as #8898 amended it), so an on-demand run is a payload on a port whose cell
+		 * decides what to do with it — never a dispatched `tick`, which is the timer's alone.
+		 */
+		ports: {run: port.in(RunRequest)},
 		init: (): CronState => ({child: null, startedAt: null, runs: [], ticks: 0}),
 		update: {
-			/**
-			 * Wake. A tick landing while a job is still running is dropped rather than queued: cron
-			 * reports one run at a time, and two live children would give it two `result`s to
-			 * reconcile against one tile.
-			 */
+			/** The timer woke. `ticks` counts what the timer did, so it is moved only here. */
 			tick: (state: CronState, _event: AuthoredEvent): Answer<CronState> => [
 				{...state, ticks: state.ticks + 1},
-				state.child === null ? [spawn(args.job, {on: {result: "result"}})] : [],
+				startIfIdle(state),
+			],
+			/**
+			 * Someone asked for a run, now — `:cron run`'s payload landing on the `run` in-port. The
+			 * same wake the timer's is, and deliberately so: one job if idle, nothing at all if one is
+			 * already up. No state moves either way, because an on-demand run is not a tick and a
+			 * refused one is not a run; the run itself reaches `runs` when its answer does, like any
+			 * other.
+			 */
+			run: (state: CronState, _event: AuthoredEvent): Answer<CronState> => [
+				state,
+				startIfIdle(state),
 			],
 			/** The job started. Record it, stamp the run's clock, and ask it the question. */
 			spawned: (state: CronState, event: Spawned): Answer<CronState> => {
@@ -230,17 +265,20 @@ export const cronProgram = (options: CronOptions) => {
 		resume: (state: CronState) => (state.child === null ? [] : [{type: "restored" as const}]),
 		commands: {
 			/**
-			 * `:cron run` — one job, now. It answers a `spawn` and not a dispatched tick because a
-			 * command is not a process step: its `Scope.process` is the *caller's* (ADR 0372), so
-			 * there is no cron process here to send a tick to, and a command may not `emit` (#8766).
-			 * The cost is stated where it is paid — the `spawned` a command's spawn answers is
-			 * dropped by the spell interpreter, so a run started this way gets no prompt until an
-			 * authored command can reach its own program's inbox.
+			 * `:cron run` — one job, now. A bare `send` and nothing else: a command may ask for no
+			 * other effect (ADR 0372 as #8898 amended it), and the bare port name is what makes this
+			 * honest rather than a second spawner. The call resolves to cron's own live process
+			 * (`../authoring/own-process.ts`), the payload lands on the `run` port above, and the cell
+			 * that owns it decides — which is how an on-demand run is the same run a tick is, prompt
+			 * and all, instead of a parentless child nobody ever speaks to.
+			 *
+			 * It does not work yet against the cron the desk actually boots, and the header says why:
+			 * #8944, delivery through `SpawnedProcesses`, a graph-launched process it never spawned.
 			 */
 			run: {
-				args: Schema.Struct({}),
+				args: RunRequest,
 				describe: "run the job once, now",
-				run: () => spawn(args.job, {on: {result: "result"}}),
+				run: (request: typeof RunRequest.Type) => send("run", request),
 			},
 		},
 		title: (_state: CronState): string => `cron · ${cadence(options.everyMs)}`,
@@ -256,16 +294,6 @@ export const cronProgram = (options: CronOptions) => {
 		subs: timer(options.everyMs),
 	};
 };
-
-/**
- * A live session row, as a shaped arg's fill. It carries the row's own id, so the label and every
- * surface still name the real program, beside the two ports cron asked for re-declared in authoring
- * terms — see the header for why `shapeOf` cannot read them off the row itself.
- */
-export const sessionAsJob = (row: AnyProgram): ShapeSource => ({
-	id: row.id,
-	ports: {prompt: port.in(PromptPayload), result: port.out(TurnResult)},
-});
 
 export interface CronFill extends CronOptions {
 	readonly job: ShapeSource;

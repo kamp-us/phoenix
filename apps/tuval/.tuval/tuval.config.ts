@@ -34,7 +34,7 @@ import {claudeSession} from "../src/claude/program.ts";
 import {codexSession} from "../src/codex/program.ts";
 import {ClientId, type Scope as SpellScope, WorkspaceId} from "../src/commands/spell.ts";
 import type {TuvalConfigInput} from "../src/config.ts";
-import {cron, sessionAsJob} from "../src/cron/cron.ts";
+import {cron} from "../src/cron/cron.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 import {piSessionProgram, projectRootOf} from "../src/pi/program.ts";
 import {NodeId} from "../src/ports/graph.ts";
@@ -82,15 +82,15 @@ const cronNode = NodeId.make("cron");
  *
  * The `job` below is the fill this row's arg is registered with (#8762): a `spawn` on the shaped
  * arg reads it back out of the row's own context and starts the Claude session, so a tick is a
- * real run and the tile reports it. `sessionAsJob` is still the wrapper it goes through — an
- * AI-agent row's ports are hand-written predicates, so `shapeOf` reads nothing off one even now
- * that it reads compiled rows (#8887); `../src/cron/cron.ts`'s header states why.
+ * real run and the tile reports it. The row goes in whole — `claudeSession({…})` fits `jobShape`
+ * on its own now that a compiled row publishes its ports' payload schemas (#8887, #8959), so the
+ * `sessionAsJob` wrapper that used to stand here is gone.
  */
 const cronJob = cron({
 	everyMs: 10 * 60 * 1000,
 	prompt:
 		"Using the gh CLI, summarize what changed on kamp-us/phoenix in the last 24 hours: merged PRs, new issues, anything labeled ready-for:human. Five lines max, most important first.",
-	job: sessionAsJob(claudeSession({cwd: projectRoot, scope: claudeSessionScope})),
+	job: claudeSession({cwd: projectRoot, scope: claudeSessionScope}),
 });
 
 export default {
