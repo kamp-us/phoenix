@@ -4,10 +4,13 @@
  * **The posture.** `agy` prompts for tool permissions on `/dev/tty` only, so a headless launch
  * cannot ask and auto-denies instead (ADR 0362). A machine with `agy` installed but unconfigured
  * therefore starts a session that answers, refuses every tool, and never says why — the desk reads
- * as hung. The posture that makes the sandbox work is one key in one file, so the row reads that
+ * as hung. The posture that makes the sandbox work is two keys in one file, so the row reads that
  * file first and refuses `start` with the fix in the message rather than opening a session that
  * cannot act. The file is `$HOME/.gemini/antigravity-cli/settings.json` (`AGY_SETTINGS_FILE`,
- * `$HOME` resolved at runtime and never written down).
+ * `$HOME` resolved at runtime and never written down). The second key is the write allow-rule: from
+ * v1.2 `agy` soft-denies every `write_file` that no `permissions.allow` rule matches, on the first
+ * attempt and on every retry alike, so a session that passed on `toolPermission` alone could read
+ * and answer but never edit a file — the same failure one key over.
  *
  * **The release.** `AGY_VERSION` is the *floor* this row supports, not the one release it tolerates
  * (founder ruling on #9191, <https://github.com/kamp-us/phoenix/issues/9191#issuecomment-5673883768>).
@@ -35,13 +38,40 @@ import {AGY_BINARY, AGY_SETTINGS_FILE, AGY_VERSION} from "./config.ts";
 const TOOL_PERMISSION_KEY = "toolPermission";
 const TOOL_PERMISSION_VALUE = "proceed-in-sandbox";
 
+/** The block agy reads its allow-rules out of, and the one rule shape that unblocks a write. */
+const PERMISSIONS_KEY = "permissions";
+const ALLOW_KEY = "allow";
+const WRITE_RULE = /^write_file\(.*\)$/;
+
 const remedy = `write {"${TOOL_PERMISSION_KEY}": "${TOOL_PERMISSION_VALUE}"} into ~/${AGY_SETTINGS_FILE}. Headless agy prompts on /dev/tty only, so without it every tool is auto-denied and the session answers without ever acting`;
+
+const writeRemedy = `add {"${PERMISSIONS_KEY}": {"${ALLOW_KEY}": ["write_file(*)"]}} to ~/${AGY_SETTINGS_FILE} and open a fresh session. From v1.2 agy soft-denies every write_file no allow-rule matches — first attempt and every retry — and it reads this file once at launch`;
+
+/**
+ * Whether the parsed settings object carries at least one `write_file(...)` rule agy would read.
+ *
+ * Every departure from that shape is one answer, because they share one remedy: no `permissions`
+ * block, a `permissions` that is not an object, an `allow` that is absent or not an array, and an
+ * `allow` holding only rules for other tools all leave a session that cannot write.
+ */
+const writeRuleAllowed = (parsed: Record<string, unknown>): boolean => {
+	const permissions = parsed[PERMISSIONS_KEY];
+	if (typeof permissions !== "object" || permissions === null || Array.isArray(permissions))
+		return false;
+	const allow = (permissions as Record<string, unknown>)[ALLOW_KEY];
+	if (!Array.isArray(allow)) return false;
+	return allow.some((rule) => typeof rule === "string" && WRITE_RULE.test(rule.trim()));
+};
 
 /**
  * Why this machine cannot run an agy session yet, or `null` when it can.
  *
  * `null` source is "the file is not there or could not be read" — the two are one answer, because
  * the remedy is the same and a caller that told them apart would say the same sentence twice.
+ *
+ * The write allow-rule is required unconditionally rather than gated on the installed release:
+ * `AGY_VERSION` is a floor, this verdict is a pure function of the file's text and reads no version
+ * at all, and the rule is inert on a 1.1.x machine and load-bearing on every 1.2+ one.
  */
 export const sandboxPreconditionDetail = (source: string | null): string | null => {
 	if (source === null) return `~/${AGY_SETTINGS_FILE} is missing or unreadable: ${remedy}`;
@@ -54,9 +84,13 @@ export const sandboxPreconditionDetail = (source: string | null): string | null 
 	}
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
 		return `~/${AGY_SETTINGS_FILE} does not hold a JSON object: ${remedy}`;
-	const held = (parsed as Record<string, unknown>)[TOOL_PERMISSION_KEY];
-	if (held === TOOL_PERMISSION_VALUE) return null;
-	return `~/${AGY_SETTINGS_FILE} sets ${TOOL_PERMISSION_KEY} to ${JSON.stringify(held) ?? "nothing"}: ${remedy}`;
+	const settings = parsed as Record<string, unknown>;
+	const held = settings[TOOL_PERMISSION_KEY];
+	if (held !== TOOL_PERMISSION_VALUE)
+		return `~/${AGY_SETTINGS_FILE} sets ${TOOL_PERMISSION_KEY} to ${JSON.stringify(held) ?? "nothing"}: ${remedy}`;
+	if (!writeRuleAllowed(settings))
+		return `~/${AGY_SETTINGS_FILE} carries no write_file(...) rule under ${PERMISSIONS_KEY}.${ALLOW_KEY}: ${writeRemedy}`;
+	return null;
 };
 
 const sandboxVerdict = (fs: FileSystem.FileSystem, home: string): Effect.Effect<string | null> =>

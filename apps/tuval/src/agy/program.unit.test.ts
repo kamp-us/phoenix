@@ -118,7 +118,8 @@ describe("the agy-session program row", () => {
 });
 
 describe("the launch precondition the row checks before start", () => {
-	const settings = (value: unknown): string => JSON.stringify({toolPermission: value});
+	const settings = (value: unknown): string =>
+		JSON.stringify({toolPermission: value, permissions: {allow: ["write_file(*)"]}});
 
 	it("passes only the one setting that moves init.permission_mode", () => {
 		assert.isNull(sandboxPreconditionDetail(settings("proceed-in-sandbox")));
@@ -147,6 +148,59 @@ describe("the launch precondition the row checks before start", () => {
 		);
 		assert.isTrue(refusals.every((detail) => detail !== null));
 		for (const detail of refusals) assert.include(detail ?? "", "proceed-in-sandbox");
+	});
+});
+
+/**
+ * The second key, measured at v1.2.3: the posture auto-approves reads and sandboxed commands but
+ * soft-denies every `write_file` no `permissions.allow` rule matches, so a file that passes on
+ * `toolPermission` alone opens a session that can answer and never edit (ADR 0362).
+ *
+ * The check is unconditional rather than gated on the installed release, so these are string cases
+ * like their neighbours: no version is read here and none is needed.
+ */
+describe("the write allow-rule the same precondition checks", () => {
+	const withAllow = (permissions: unknown): string =>
+		JSON.stringify({toolPermission: "proceed-in-sandbox", permissions});
+
+	it("refuses a posture-correct file carrying no permissions block, naming the file and the rule", () => {
+		const detail = sandboxPreconditionDetail(
+			JSON.stringify({toolPermission: "proceed-in-sandbox"}),
+		);
+		assert.isNotNull(detail);
+		assert.include(detail ?? "", ".gemini/antigravity-cli/settings.json");
+		assert.include(detail ?? "", "write_file(*)");
+		assert.include(detail ?? "", "permissions.allow");
+	});
+
+	it("passes a file carrying both keys", () => {
+		assert.isNull(sandboxPreconditionDetail(withAllow({allow: ["write_file(*)"]})));
+	});
+
+	it("passes when a write_file rule sits among rules for other tools", () => {
+		assert.isNull(
+			sandboxPreconditionDetail(
+				withAllow({allow: ["run_command(ls)", "write_file(/tmp/x)", "view_file(*)"]}),
+			),
+		);
+	});
+
+	it("refuses an allow that is absent, is not an array, or names only other tools", () => {
+		const sources = [
+			withAllow({deny: ["write_file(*)"]}),
+			withAllow({allow: "write_file(*)"}),
+			withAllow({allow: [{tool: "write_file"}]}),
+			withAllow({allow: ["run_command(*)", "view_file(*)"]}),
+			withAllow({allow: []}),
+			withAllow({allow: ["write_file"]}),
+			withAllow([["write_file(*)"]]),
+			withAllow("write_file(*)"),
+			withAllow(null),
+		];
+		assert.deepStrictEqual(
+			sources.map((source) => sandboxPreconditionDetail(source) === null),
+			[false, false, false, false, false, false, false, false, false],
+		);
 	});
 });
 
@@ -250,7 +304,14 @@ describe("the preflighted layer the row builds when no layer is handed in", () =
 			return yield* Effect.flip(agent.start({cwd: CWD_UNDER_TEST}));
 		}).pipe(Effect.scoped, Effect.provide(preflightedAgyLayer({home, binary})));
 
-	const configured = (): string => homeWith(JSON.stringify({toolPermission: "proceed-in-sandbox"}));
+	/** Both launch keys, because this fixture stands for a machine whose precondition is met. */
+	const configured = (): string =>
+		homeWith(
+			JSON.stringify({
+				toolPermission: "proceed-in-sandbox",
+				permissions: {allow: ["write_file(*)"]},
+			}),
+		);
 
 	/** The announcement proof builds its layer outside the effect, so its home is built with it. */
 	const announcingHome = configured();
