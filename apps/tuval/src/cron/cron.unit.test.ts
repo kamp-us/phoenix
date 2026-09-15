@@ -356,9 +356,13 @@ describe("cron's job shape against a real session row", () => {
 });
 
 describe("cron, registered", () => {
-	it("is in the booted config and planned as a graph node", () => {
-		expect(config.features?.cron).toBe(true);
-		expect(config.programs.map((row) => (row as AnyProgram).id)).toContain("cron");
-		expect(config.graph.nodes.map((node) => node.program)).toContain("cron");
+	// The row's job spends Claude tokens on a timer, so the box config leaves the flag off: a desk
+	// booted out of the box carries no `cron` row and plans no `cron` node. Flipping the line in
+	// `.tuval/tuval.config.ts` is what registers it, and the two gated reads below are the whole of
+	// what that line moves.
+	it("is absent from the booted config, because the flag it is behind is off by default", () => {
+		expect(config.features?.cron).toBe(false);
+		expect(config.programs.map((row) => (row as AnyProgram).id)).not.toContain("cron");
+		expect(config.graph.nodes.map((node) => node.program)).not.toContain("cron");
 	});
 });

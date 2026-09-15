@@ -71,8 +71,8 @@ export interface TuvalFeatures {
 	 * evaluated (#8595). A global `~/.tuval/tuval.config.ts` stating this flag reaches the `Features`
 	 * service and not the row. ADR 0375.
 	 *
-	 * Declared off here and flipped on by this repo's own config, the way a row's flag is: the
-	 * containment the config states is that layer's, not this record's default.
+	 * Declared off here and left off by this repo's own config: the job it ships spends Claude tokens
+	 * on a timer, so the row is one a desk opts into rather than one it boots with.
 	 */
 	readonly cron: boolean;
 }
