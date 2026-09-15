@@ -1230,48 +1230,50 @@ Ranged, the same steps produce their own text — the target is an issue, the su
 | `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; re-read #<n>'s comments before retrying.` | 8 | refusal |
 | `review post: posted, but the read-back does not yield this marker (<wire reason>) — #<n> may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
 | `review post: a standing <PASS\|FAIL> for <ns> over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
+| `review post: round <r> appended <an acceptance criterion\|<k> acceptance criteria> to #<n> from the range <base>..<tip>:` + one `  - "<row>"` line each + `An appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #<n> closes with the row unread. This round owes --polarity FAIL. Nothing was posted.` | 18 | refusal |
+| `review post: cannot read #<n>, which would carry a criterion appended on the range <base>..<tip>'s round <r>: <reason> — whether this PASS strands one is UNKNOWN; nothing was posted.` | 11 | refusal |
 
 **Scope** — one PR: its live head (step 1), the bound commit's file list (step 2), the bodies of the
-issues it names (the `PASS` fence), its comments (steps 5–6), plus the caller's stdin. Steps 1, 2 and 5's reads failing is `11` — nothing written,
-outcome known-unwritten. Ranged, it is one issue and one range instead: the issue's state and
+issues it names (the `PASS` fence), its comments (steps 5–6), plus the caller's stdin. Steps 1, 2
+and 5's reads failing is `11` — nothing written, outcome known-unwritten. Ranged, it is one issue and one range instead: the issue's state and
 comments, and what `<base>...<tip>` changes in this checkout — no PR is resolved, because there is
 none.
 
 **Examples**
 
 ```
-$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 1 --clause "guide matches shipped behavior" < verdict.md
 posted	review-doc	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211
 ```
 
 ```
-$ fabrika review post 4321 --namespace review-skill --polarity PASS --sha 03135b91 --clause "ok" < verdict.md
+$ fabrika review post 4321 --namespace review-skill --polarity PASS --sha 03135b91 --round 1 --clause "ok" < verdict.md
 review post: --namespace review-skill is not derived by #4321's diff (present: review-code, review-doc) — a gate never emits a namespace it did not judge.
 $ echo $?
 10
 ```
 
 ```
-$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "the correction landed" < verdict.md
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 2 --clause "the correction landed" < verdict.md
 review post: a standing FAIL for review-doc at 03135b91 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
 $ echo $?
 17
 ```
 
 ```
-$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "the correction landed" --supersede < verdict.md
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --round 2 --clause "the correction landed" --supersede < verdict.md
 posted	review-doc	PASS	03135b91	2f1a9c4e0b7d	superseded	https://github.com/<owner>/<repo>/pull/4321#issuecomment-5154902211
 ```
 
 Ranged, the fourth field is the range and the comment lands on the child issue:
 
 ```
-$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md
+$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 1 --clause "every criterion met" < verdict.md
 posted	review	PASS	9f2c1ab..03135b9	2f1a9c4e0b7d	created	https://github.com/<owner>/<repo>/issues/5830#issuecomment-5154902211
 ```
 
 ```
-$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "the findings are answered" < verdict.md
+$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --round 2 --clause "the findings are answered" < verdict.md
 review post: a standing FAIL for review over 9f2c1ab..03135b9 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
 $ echo $?
 17

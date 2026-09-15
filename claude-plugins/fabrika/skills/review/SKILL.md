@@ -403,10 +403,10 @@ EOF
 `--sha` is the head you actually inspected; the verb re-resolves the live head at post time and
 refuses when it moved — re-review, never re-bind. `--round` is the round you are on, the same number
 §4 handed `append-criterion`, and a `PASS` is refused without it: it is what lets the verb see
-whether this round routed a finding that a `PASS` would bury (`18`). A `FAIL` owes no round. One invocation per namespace: a stacked second
-marker is un-anchored, resolves its namespace empty, and fail-closes a passing PR. **The verb is the
-only emit path** — a hand-posted marker is how a false PASS ships — and it reads its own comment
-back.
+whether this round routed a finding that a `PASS` would bury (`18`). A `FAIL` owes no round. One
+invocation per namespace: a stacked second marker is un-anchored, resolves its namespace empty, and
+fail-closes a passing PR. **The verb is the only emit path** — a hand-posted marker is how a false
+PASS ships — and it reads its own comment back.
 
 **A re-post appends; it never replaces.** The fresh verdict takes the comment's first line and the
 one it retires survives verbatim below, under a dated `## Superseded verdict` heading — GitHub keeps

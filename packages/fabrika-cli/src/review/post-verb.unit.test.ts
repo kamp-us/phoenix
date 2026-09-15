@@ -917,3 +917,40 @@ describe("runPost refuses a PASS on the round that appended a criterion", () => 
 		expect(out.code).toBe(0);
 	});
 });
+
+/**
+ * The issue set the fence reads is every issue the body names — closing keywords **and** `Part of`.
+ * A `--partial` PR's reviewer appends to the issue the PR is part of, so a closing-only read would
+ * leave exactly that row free to die the way this fence exists to stop.
+ */
+describe("runPost's 18 fence reads the issues a body only names with `Part of`", () => {
+	const PARTIAL = `does a thing\n\nPart of #${LINKED_ISSUE}\n\n## Deviations\n\nNone.\n`;
+
+	const overPartial = (reply: HttpReply): ReadonlyArray<Scripted> =>
+		withIssue(reply).map((entry) =>
+			entry[0] === PULL ? ([PULL, served(pull({body: PARTIAL}))] as Scripted) : entry,
+		);
+
+	it("reads that issue and refuses a row this round appended on it", async () => {
+		const shell = fakeSeams(
+			overPartial(
+				issueWith(
+					routed("a regression test covers qty > 1", "<!-- ac:review pr:#4321 round:1 -->"),
+				),
+			),
+		);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(shell.requests.some((request) => ISSUE.test(request))).toBe(true);
+		expect(out.code).toBe(APPENDED_THIS_ROUND);
+		expect(out.stderr.at(-1)).toContain(`to #${LINKED_ISSUE}`);
+		expect(shell.requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(
+			false,
+		);
+	});
+
+	it("still passes that PR when the round routed nothing into it", async () => {
+		const out = await run(overPartial(issueWith()));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcreated\t");
+	});
+});
