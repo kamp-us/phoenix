@@ -6,8 +6,9 @@
 // The ninth is the worked `pr-review` example (#8734), and it is the only row behind a flag —
 // `prReviewExample` in the `features` block below, default-off, so a desk booted today carries the
 // eight. Flip that line and restart the desk to get the ninth. The tenth is `cron` (#8716's
-// authoring layer, written on it rather than for it), behind `cron` in the same block and
-// default-ON — it is planned in `graph`, so it is one of the processes a fresh boot stands up.
+// authoring layer, written on it rather than for it), behind `cron` in the same block and stated
+// ON by this layer — like every row flag it is declared off in `src/features.ts` and this file is
+// what flips it, and it is planned in `graph`, so it is one of the processes a fresh boot stands up.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
