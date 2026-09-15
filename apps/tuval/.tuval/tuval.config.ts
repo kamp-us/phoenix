@@ -3,12 +3,12 @@
 // is a `Program` (src/registry/program.ts); the eight in the box today are the shell (#7558), the
 // demo counter and log (#7517), the Pi chat session (#7573), the Claude chat session (#7625), the
 // agy chat session (#8184), the codex chat session (#8600) and the AI-agent session list (#8102).
-// The ninth is the worked `pr-review` example (#8734), and it is the only row behind a flag —
-// `prReviewExample` in the `features` block below, default-off, so a desk booted today carries the
-// eight. Flip that line and restart the desk to get the ninth. The tenth is `cron` (#8716's
-// authoring layer, written on it rather than for it), behind `cron` in the same block and stated
-// ON by this layer — like every row flag it is declared off in `src/features.ts` and this file is
-// what flips it, and it is planned in `graph`, so it is one of the processes a fresh boot stands up.
+// Two more rows sit behind flags in the `features` block below, both default-off, so a desk booted
+// today carries the eight: the worked `pr-review` example (#8734) behind `prReviewExample`, and the
+// scheduler `cron` (#8716's authoring layer, written on it rather than for it) behind `cron`. Flip
+// either line and restart the desk to get that row, its graph node and its spells — for `cron`,
+// a planned process ticking from boot and `:cron run` on demand. `cron` is off by default because
+// its job spends Claude tokens on a timer, and a row that spends tokens is something you opt into.
 // The shape is `TuvalConfigInput` (src/config.ts), version 1.
 //
 // The shell is registered here and nowhere else — it is a program row like any other, so dropping
@@ -71,15 +71,16 @@ const codexReviewer = codexSession({cwd: projectRoot, scope: claudeSessionScope}
  * other one: a flag stated in the global `~/.tuval/tuval.config.ts` cannot add or remove a row here
  * — a row is this file's to state. ADR 0375 records that.
  */
-const features = {prReviewExample: false, cron: true};
+const features = {prReviewExample: false, cron: false};
 
 /** The desk's own scheduler. Named here because both its row and its graph node read it. */
 const cronNode = NodeId.make("cron");
 
 /**
- * The first job: a read-only standup off the `gh` CLI. Ten minutes between wakes is deliberate — a
- * planned node ticks from boot, and a job that spends tokens on a short timer is a desk nobody
- * leaves running. `:cron run` is the on-demand path.
+ * The first job: a read-only standup off the `gh` CLI. It spends Claude tokens on every wake, which
+ * is why the row is off unless you ask for it. Ten minutes between wakes is deliberate for the same
+ * reason — a planned node ticks from boot, and a job that spends tokens on a short timer is a desk
+ * nobody leaves running. `:cron run` is the on-demand path.
  *
  * The `job` below is the fill this row's arg is registered with (#8762): a `spawn` on the shaped
  * arg reads it back out of the row's own context and starts the Claude session, so a tick is a
@@ -119,8 +120,9 @@ export default {
 		// The worked authoring example (#8734): thirty lines that spawn a reviewer and announce its
 		// verdict. Default-off, so a desk booted today is the one it was before this row existed.
 		...(features.prReviewExample ? [prReview({reviewer: codexReviewer})] : []),
-		// The scheduler (#8716's authoring layer, first program written on it). Planned below, so it
-		// is live at boot and its tile says what the last run did.
+		// The scheduler (#8716's authoring layer, first program written on it). Off by default because
+		// its job spends tokens; flipped on it is planned below, live at boot, and its tile says what
+		// the last run did.
 		...(features.cron ? [cronJob] : []),
 		// Windowed and, like the four sessions above, unplanned — nothing needs it running until you
 		// want to read it. Open it from the picker, or `window:open ai-agent-sessions`.
