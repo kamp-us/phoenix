@@ -1,3 +1,4 @@
+import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
 import {
 	boundToolResult,
@@ -7,6 +8,7 @@ import {
 	isTranscriptItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type TranscriptItem,
+	TranscriptItemSchema,
 } from "./transcript-item.ts";
 
 /**
@@ -136,6 +138,39 @@ describe("transcript item union", () => {
 	it("refuses a tool result whose omission metadata is missing or negative", () => {
 		expect(isTranscriptItem({...tool, result: {text: "ok"}})).toBe(false);
 		expect(isTranscriptItem({...tool, result: {text: "ok", omitted: {bytes: -1}}})).toBe(false);
+	});
+});
+
+describe("the transcript item schema, beside the predicate it was written from", () => {
+	// The schema exists so a row can publish what its ports carry and a `Program.shape` check can
+	// compare it (#8887). A second, drifting description of the union would be worse than none, so
+	// these two cases hold it to the predicate on both answers.
+	const admits = Schema.is(TranscriptItemSchema);
+
+	it("admits every kind the predicate admits", () => {
+		expect(kinds.map(admits)).toEqual(kinds.map(() => true));
+	});
+
+	it("refuses what the predicate refuses", () => {
+		const refused: ReadonlyArray<unknown> = [
+			{kind: "user", id: id("u1"), timestamp: at},
+			{kind: "nope", id: id("x1"), timestamp: at, text: "hi"},
+			{...tool, status: "pending"},
+			null,
+		];
+		expect(refused.map(admits)).toEqual(refused.map(() => false));
+		expect(refused.map(isTranscriptItem)).toEqual(refused.map(() => false));
+	});
+
+	it("is the shape and not the bound: an over-long tool result is a payload only the predicate refuses", () => {
+		// `isToolResult` also enforces `TOOL_RESULT_BYTE_LIMIT`, which no JSON Schema expresses. The
+		// predicate stays the routing check for exactly this reason.
+		const tooBig = {
+			...tool,
+			result: {text: "x".repeat(TOOL_RESULT_BYTE_LIMIT + 1), omitted: {bytes: 0}},
+		};
+		expect(admits(tooBig)).toBe(true);
+		expect(isTranscriptItem(tooBig)).toBe(false);
 	});
 });
 

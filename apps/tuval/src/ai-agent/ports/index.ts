@@ -35,12 +35,16 @@ export {
 	type PermissionProgress,
 	type PermissionRequest,
 	type PromptPayload,
+	PromptPayloadSchema,
 	type TranscriptPagePayload,
 	type TranscriptPageReply,
 	type TranscriptPageRequest,
 	type TranscriptPayload,
+	TranscriptPayloadSchema,
 	type TurnResult,
+	TurnResultSchema,
 	type WindowOmission,
+	WindowOmissionSchema,
 } from "./payloads.ts";
 export {
 	type AgentPort,

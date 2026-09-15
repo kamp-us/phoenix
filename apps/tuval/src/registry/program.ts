@@ -22,7 +22,26 @@ export type ProgramId = typeof ProgramId.Type;
  */
 export type PortSchema<T = unknown> = InPort<T> | OutPort<T>;
 
-export interface InPort<T = unknown> {
+/**
+ * The schema a port was declared over, as a row may publish it beside the predicate: no service
+ * requirements and an encoded form equal to the decoded one, because the `accepts` the kernel
+ * routes on is `Schema.is` of exactly this (`../authoring/port.ts`).
+ */
+export type PortPayloadSchema = Schema.Codec<any, any, never, unknown>;
+
+/**
+ * The payload schema `accepts` was built from, published so a `Program.shape` check can read this
+ * row structurally (#8887) — a predicate cannot be compared with another predicate. Nothing in
+ * the kernel routes on it; the predicate does. Optional because a hand-written row
+ * (`../ai-agent/ports/ports.ts`) has a predicate and no schema behind it, and such a row cannot
+ * fill a shaped arg until its ports are authored (#8887). On a compiled `port.request` this is
+ * the input schema — the one that arrives on the port.
+ */
+interface PublishedSchema {
+	readonly schema?: PortPayloadSchema;
+}
+
+export interface InPort<T = unknown> extends PublishedSchema {
 	readonly kind: string;
 	readonly direction: "in";
 	readonly accepts: (payload: unknown) => payload is T;
@@ -37,7 +56,7 @@ export interface InPort<T = unknown> {
 	readonly answers?: (payload: unknown) => boolean;
 }
 
-export interface OutPort<T = unknown> {
+export interface OutPort<T = unknown> extends PublishedSchema {
 	readonly kind: string;
 	readonly direction: "out";
 	readonly accepts: (payload: unknown) => payload is T;
