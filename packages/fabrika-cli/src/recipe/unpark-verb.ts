@@ -83,13 +83,22 @@ export interface UnparkOptions {
 	/** The task the park sits on; `null` resolves only on a single-task active phase. */
 	readonly task: string | null;
 	readonly repo: string | null;
-	/** The checkout whose `.fabrika.jsonc` declares where the campaigns table lives. */
+	/**
+	 * The checkout whose `.fabrika.jsonc` declares where the campaigns table lives.
+	 *
+	 * Not where {@link parkCause} is read: that one is resolved off the repository that OWNS this
+	 * path, because it is weighed against the shared lane ledger rather than against the branch this
+	 * run stands on.
+	 */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The instant a stranded claim's age is measured against, ISO — the adapter's clock. */
 	readonly now: string;
 	/**
-	 * The repo's declared `parkCause`, read off `.fabrika.jsonc` by the adapter.
+	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
+	 * that OWNS the cwd — never the cwd's own copy. The lanes root this verb clears against is
+	 * derived off that same repository, so a linked worktree's tracked copy would decide which parks
+	 * are cleared on a ledger it does not own.
 	 *
 	 * Its `driverRouted` half is this verb's own axis, and its `uncaused` half rides along to the
 	 * `lane transition` below — which never reaches that rule, since the event it records is always

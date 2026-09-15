@@ -7,10 +7,11 @@
  * touched. `driverRouted` says whether `recipe unpark` may clear a park whose cause routes `driver`
  * on the driver's own recorded rationale, or refuses it the way it always did.
  *
- * The three verbs that record a park — `lane transition`, `lane report` and `lane view` — resolve it
- * out of the repository that OWNS the cwd ([`configRootOrRefuse`](../../lane/ground.ts)), because
- * the rule is weighed against that repository's one shared lane ledger: a linked worktree's tracked
- * copy would decide which parks reach a log it does not own.
+ * The three verbs that record a park — `lane transition`, `lane report` and `lane view` — and the
+ * one that clears it, `recipe unpark`, resolve it out of the repository that OWNS the cwd
+ * ([`configRootOrRefuse`](../../lane/ground.ts)), because the rule is weighed against that
+ * repository's one shared lane ledger: a linked worktree's tracked copy would decide which parks
+ * reach, or leave, a log it does not own.
  *
  * **`uncaused` ships as `record`.** A cause-less park is a bug — it folds to a `Novel` park no
  * recipe keys on, so it costs a human `UNBLOCKED` to say a thing the recorder already knew. But
