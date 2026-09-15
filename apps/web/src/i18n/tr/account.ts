@@ -96,6 +96,7 @@ export const account = {
 	"profile.page.loading": "yükleniyor…",
 	"profile.page.error": "profil yüklenemedi: {code}",
 	"profile.header.statsError": "istatistikler yüklenemedi",
+	"profile.header.statsLoading": "istatistikler yükleniyor…",
 	"profile.standing.yazar": "yazar",
 	"profile.standing.caylak": "çaylak",
 	"profile.stat.definitions": "tanım",
