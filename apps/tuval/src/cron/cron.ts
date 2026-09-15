@@ -92,6 +92,12 @@ const cadence = (everyMs: number | null): string =>
 			? `every ${everyMs / 1000}s`
 			: `every ${everyMs}ms`;
 
+/**
+ * What a run a restart cut short is written down as. A restart is not an answer, so the run it
+ * interrupted is a failed one, and the summary says which failure it was.
+ */
+export const INTERRUPTED = "interrupted by restart";
+
 /** The first line of the job's answer, which is the whole of what a one-line tile can hold. */
 const firstLine = (text: string): string => (text.split("\n")[0] ?? "").trim();
 
@@ -184,7 +190,44 @@ export const cronProgram = (options: CronOptions) => {
 				};
 				return [{...state, child: null, startedAt: null, runs: recorded(state.runs, run)}, []];
 			},
+			/**
+			 * Cron came back from a checkpoint holding a `child`, which means a restart cut a run in
+			 * half. The run is over — whether or not the OS still has that process — so it is written
+			 * down as failed and `child` is cleared, and the next tick spawns instead of being dropped
+			 * for ever against a job that will never answer (#9220's neighbour).
+			 *
+			 * **A restored child cannot answer, even when it is live.** `../durability/restore.ts`
+			 * spawns a checkpointed process through `Processes.spawn` directly: no `on` record, which
+			 * is where the spawner's routing lives (`../commands/core/process.ts`), and a
+			 * `ProcessPorts` that is `unwired`. So a restored session's `result` fails `PortNotWired`
+			 * at its own emit and reaches no cron. Waiting on it is waiting on nothing.
+			 *
+			 * **And cron may not reap it.** `stop`/`send`/`ask` all fail `ProcessNotFound` on a process
+			 * that is not live, an authored effect's failure propagates out of `dispatch`
+			 * (`../host/actor.ts` `runInterpret`), and `../durability/resume.ts` catches none — so a
+			 * blind `stop` here would fail *boot* in exactly the case this cell exists for: a child the
+			 * manifest did not bring back, which is every child whose own checkpoint its row refused
+			 * (`../ai-agent/program.ts` `restorable`) and every child at all once #9220 lands. Nothing
+			 * in the authoring vocabulary reads the process table, so cron records the run and leaves
+			 * the orphan to the kernel that restored it.
+			 */
+			restored: (state: CronState, _event: AuthoredEvent): Answer<CronState> => {
+				if (state.child === null) return [state, []];
+				const run: CronRun = {
+					startedAt: state.startedAt ?? now(),
+					ok: false,
+					summary: INTERRUPTED,
+				};
+				return [{...state, child: null, startedAt: null, runs: recorded(state.runs, run)}, []];
+			},
 		},
+		/**
+		 * The one door a restarted cron has back into the world (`../authoring/resume.ts`): a restored
+		 * process starts on its loaded state with no Cmds, so without this the half-finished run above
+		 * is never reconciled. A checkpoint with no `child` has nothing to reconcile and is sent
+		 * nothing.
+		 */
+		resume: (state: CronState) => (state.child === null ? [] : [{type: "restored" as const}]),
 		commands: {
 			/**
 			 * `:cron run` — one job, now. It answers a `spawn` and not a dispatched tick because a

@@ -11,6 +11,7 @@ import {Effect, Option, Result} from "effect";
 import {describe, expect, it} from "vitest";
 import config from "../../.tuval/tuval.config.ts";
 import {fillArgs, programArgs} from "../authoring/args.ts";
+
 import {emit, spawn, stop} from "../authoring/effect.ts";
 import {Program, type ShapeSource, shapeOf} from "../authoring/shape.ts";
 import {testProgram} from "../authoring/test-program.ts";
@@ -22,9 +23,11 @@ import {ProcessSelf} from "../process/self.ts";
 import {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
 import type {AnyProgram, PortSchema} from "../registry/program.ts";
 import {
+	type CronState,
 	cron,
 	cronProgram,
 	HISTORY,
+	INTERRUPTED,
 	jobShape,
 	PromptPayload,
 	sessionAsJob,
@@ -180,6 +183,66 @@ describe("cron, reporting", () => {
 	});
 });
 
+describe("cron, restarted mid-run", () => {
+	/** The checkpoint a Ctrl-C mid-run leaves behind: a `child` set, and no answer coming for it. */
+	const interrupted = () =>
+		testProgram(cronProgram(options))
+			.event({type: "tick"})
+			.event({type: "spawned", process: child, program: "cron-job"});
+
+	/** That checkpoint, brought back: the row's own resume events, applied to it. */
+	const restarted = () =>
+		cronProgram(options)
+			.resume(interrupted().state)
+			.reduce((run, event) => run.event(event), interrupted());
+
+	it("asks to reconcile when it comes back holding a child, and asks nothing when it does not", () => {
+		expect(cronProgram(options).resume(interrupted().state)).toEqual([{type: "restored"}]);
+		expect(cronProgram(options).resume(testProgram(cronProgram(options)).state)).toEqual([]);
+		// The row the kernel dispatches through carries it, not just the authored record.
+		expect(cron({...options, job: sessionAsJob(session())}).resume?.(interrupted().state)).toEqual([
+			{type: "restored"},
+		]);
+	});
+
+	it("records the half-finished run as failed and clears the child, so the tile stops lying", () => {
+		const run = restarted();
+		expect(run.state.runs).toEqual([{startedAt: SEVEN, ok: false, summary: INTERRUPTED}]);
+		expect(run.state.child).toBeNull();
+		expect(run.state.startedAt).toBeNull();
+		expect(run.effects).toContainEqual(emit(STATUS_PORT, "last run 07:00 · failed"));
+	});
+
+	it("spawns on the very next tick, which is the drop-every-tick wedge a restart used to cause", () => {
+		const run = restarted().event({type: "tick"});
+		expect(run.effects).toContainEqual(spawn(jobRef, {on: {result: "result"}}));
+	});
+
+	/**
+	 * A restored child that *is* live takes the same branch, deliberately. `durability/restore.ts`
+	 * spawns a checkpointed process with no `on` record and an `unwired` `ProcessPorts`, so a
+	 * restored session's `result` reaches no cron however long cron waits; and a `stop` of a child
+	 * the manifest did not bring back fails `ProcessNotFound` out of the resume dispatch, which
+	 * nothing catches. So cron reaps nothing and asks for nothing it cannot know is safe.
+	 */
+	it("asks for no stop and no send, because it cannot know whether the child came back", () => {
+		const asked = restarted().effects.map((effect) => effect.type);
+		expect(asked).not.toContain("stop");
+		expect(asked).not.toContain("send");
+	});
+
+	it("takes a late answer from the old child as its own run, never as the interrupted one", () => {
+		const run = restarted().event({type: "result", payload: turn("late", true)});
+		expect(run.state.runs.map((entry) => entry.summary)).toEqual(["late", INTERRUPTED]);
+		expect(run.effects.filter((effect) => effect.type === "stop")).toEqual([]);
+	});
+
+	it("reconciles once: the state a restore left behind has nothing left to resume", () => {
+		const reconciled: CronState = restarted().state;
+		expect(cronProgram(options).resume(reconciled)).toEqual([]);
+	});
+});
+
 describe("cron's `run` command", () => {
 	it("asks for one job, now, and moves no state", () => {
 		const run = testProgram(cronProgram(options)).call("run", {}, scope);
@@ -229,7 +292,12 @@ describe("cron's job shape against a real session row", () => {
 		const row = cron({...options, job: sessionAsJob(session())});
 		expect(row.args).toEqual({job: "tuval/arg/cron/job"});
 		const handlers = row.handlers as Readonly<
-			Record<string, (cmd: unknown) => Effect.Effect<ReadonlyArray<unknown>, unknown, any>>
+			Record<
+				string,
+				(
+					cmd: unknown,
+				) => Effect.Effect<ReadonlyArray<unknown>, unknown, SpawnedProcesses | ProcessSelf>
+			>
 		>;
 		const asked: Array<string> = [];
 		const child = ProcessId.make("proc-session");
