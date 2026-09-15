@@ -27,8 +27,12 @@
  *
  * **It records on the literal `proven` and on nothing else.** `not-required` and every refusal code
  * leave the lane exactly where it was and land as their own row, so an unreadable board is a row to
- * re-run rather than a lane moved on a read nobody made. The `BLOCKED` a reviewer's park claims is
- * out of scope by the same reasoning, and `./recover.ts` carries why.
+ * re-run rather than a lane moved on a read nobody made.
+ *
+ * **And it asks only about the events a finished shell alone can have earned.** A `PASS` out of
+ * either review cell is the whole owed set; the `BLOCKED` a reviewer's park claims and the `DONE` a
+ * builder's open PR claims are both out of scope, because a shell that is merely still working
+ * satisfies each of them too. `./recover.ts` carries the argument for both arms.
  *
  * Each recoverable lane costs two board reads rather than one: this sweep asks the proof what the
  * answer is, and `lane transition` asks it again under its own gate before it appends. That second
@@ -41,7 +45,7 @@ import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {exists, readDir} from "../io/fs.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
-import {APPEND_UNKNOWN, LANE_UNREADABLE} from "./codes.ts";
+import {APPEND_UNKNOWN, CONCURRENT_WRITE, LANE_UNREADABLE} from "./codes.ts";
 import {applyEvent, deriveStatus, foldLog, standingCauses} from "./fold.ts";
 import {CHORE_PREFIX} from "./key.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
@@ -63,7 +67,7 @@ export interface RecoverOptions<R = never> {
 	/**
 	 * The repo's `parkCause`, passed through to the append untouched.
 	 *
-	 * Inert here by construction — this sweep records a `DONE` or a `PASS` and never a park — but it
+	 * Inert here by construction — this sweep records a `PASS` and never a park — but it
 	 * rides along so the append is byte-for-byte the path a driver's own `lane transition` takes,
 	 * rather than a second path that happens to agree today.
 	 */
@@ -78,6 +82,7 @@ type Verdict =
 	| "recovered"
 	| "recoverable"
 	| "unproven"
+	| "contended"
 	| "refused"
 	| "current"
 	| "terminal"
@@ -88,6 +93,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"recovered",
 	"recoverable",
 	"unproven",
+	"contended",
 	"refused",
 	"current",
 	"terminal",
@@ -148,7 +154,11 @@ const recoverLane = <R>(
 			return unreadable(`${loaded.logPath} does not replay: ${folded.defects.join("; ")}`);
 		}
 
-		const status = deriveStatus(loaded.lane, folded.states, standingCauses(loaded.entries));
+		// The states every later row is judged against. A lane with two recoverable regions folds twice
+		// in one sweep, so this walks forward with the appends rather than standing at the pre-sweep
+		// fold — a `from` taken once would have the second row leaving a state the first row left.
+		let states = folded.states;
+		let status = deriveStatus(loaded.lane, states, standingCauses(loaded.entries));
 		if (status.status === "done") {
 			return [{key, root, verdict: "terminal" as const, from: printable(status.stateValue)}];
 		}
@@ -193,7 +203,7 @@ const recoverLane = <R>(
 			// the append it predicts cannot disagree about where the lane lands.
 			const applied = applyEvent(
 				loaded.lane,
-				folded.states,
+				states,
 				task,
 				event,
 				new Date(0).toISOString(),
@@ -214,8 +224,16 @@ const recoverLane = <R>(
 				continue;
 			}
 			const to = printable(applied.current.stateValue);
+			// The states this event lands on become the next region's ground. `--check` advances too:
+			// it is predicting the run that appends both rows, so a preview standing still would be a
+			// preview of a run nobody can make.
+			const advance = () => {
+				states = applied.states;
+				status = applied.current;
+			};
 			if (options.check) {
 				rows.push({...base, verdict: "recoverable", proof: proof.proof, proofCode: proof.code, to});
+				advance();
 				continue;
 			}
 
@@ -240,16 +258,31 @@ const recoverLane = <R>(
 			);
 			if (recorded.code === ANSWER) {
 				rows.push({...base, verdict: "recovered", proof: proof.proof, proofCode: proof.code, to});
+				advance();
 				continue;
 			}
 			const why = recorded.stderr[recorded.stderr.length - 1] ?? "no reason given";
+			// A lost lock is not a settled no. `refused` says this lane's own machine or config turned
+			// the event down, so a re-run buys nothing; `CONCURRENT_WRITE` says another writer held the
+			// lock for the whole wait budget, so nothing was validated and this same event is still the
+			// right one. Bucketed together, a lane that only lost a race read as decided on an exit-0
+			// sweep and nothing ever retried it.
+			const verdict: Verdict =
+				recorded.code === APPEND_UNKNOWN
+					? "unappended"
+					: recorded.code === CONCURRENT_WRITE
+						? "contended"
+						: "refused";
 			rows.push({
 				...base,
-				verdict: recorded.code === APPEND_UNKNOWN ? "unappended" : "refused",
+				verdict,
 				proof: proof.proof,
 				proofCode: proof.code,
 				to,
-				reason: `the append refused at ${recorded.code}: ${why}`,
+				reason:
+					verdict === "contended"
+						? `another writer held this lane's lock for the whole wait budget, so the ${event} was neither validated nor appended and this lane is still missing it — re-run the sweep: ${why}`
+						: `the append refused at ${recorded.code}: ${why}`,
 			});
 		}
 		return rows;
@@ -259,35 +292,48 @@ export const runRecover = <R = never>(
 	options: RecoverOptions<R>,
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const lanes: LaneRow[] = [];
-		const scanned: Array<{root: string; present: boolean; lanes: number}> = [];
+		// Every root is listed before any lane is appended to, so an unreadable second root refuses a
+		// run that has written nothing. Listing lazily used to refuse from inside the sweep, after the
+		// first root's appends had landed: exit 11, empty stdout, and not one of the lanes it had just
+		// moved named anywhere.
+		const listings: Array<{root: string; names: ReadonlyArray<string>} | {root: string}> = [];
 		for (const root of options.roots) {
 			const probe = yield* Effect.result(exists(root));
 			if (Result.isFailure(probe)) {
 				return refuse(
 					LANE_UNREADABLE,
-					`${VERB}: cannot establish whether ${root} is there: ${probe.failure.reason} — the lane set is UNKNOWN, never empty.`,
+					`${VERB}: cannot establish whether ${root} is there: ${probe.failure.reason} — the lane set is UNKNOWN, never empty. Nothing was appended.`,
 				);
 			}
 			if (!probe.success) {
-				scanned.push({root, present: false, lanes: 0});
+				listings.push({root});
 				continue;
 			}
 			const names = yield* Effect.result(readDir(root));
 			if (Result.isFailure(names)) {
 				return refuse(
 					LANE_UNREADABLE,
-					`${VERB}: cannot list ${root}: ${names.failure.reason} — the lane set is UNKNOWN, never empty.`,
+					`${VERB}: cannot list ${root}: ${names.failure.reason} — the lane set is UNKNOWN, never empty. Nothing was appended.`,
 				);
 			}
+			listings.push({root, names: [...names.success].sort()});
+		}
+
+		const lanes: LaneRow[] = [];
+		const scanned: Array<{root: string; present: boolean; lanes: number}> = [];
+		for (const listing of listings) {
+			if (!("names" in listing)) {
+				scanned.push({root: listing.root, present: false, lanes: 0});
+				continue;
+			}
 			let found = 0;
-			for (const name of [...names.success].sort()) {
-				const rows = yield* recoverLane(root, name, options);
+			for (const name of listing.names) {
+				const rows = yield* recoverLane(listing.root, name, options);
 				if (rows.length === 0) continue;
 				found += 1;
 				lanes.push(...rows);
 			}
-			scanned.push({root, present: true, lanes: found});
+			scanned.push({root: listing.root, present: true, lanes: found});
 		}
 
 		const summary = Object.fromEntries(
@@ -295,15 +341,24 @@ export const runRecover = <R = never>(
 		);
 		const named = (verdict: Verdict) => lanes.filter((row) => row.verdict === verdict);
 		const unappended = named("unappended");
+		const contended = named("contended");
 		const stderr = [
 			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.check ? " — check only, nothing appended" : ""}.`,
 			...[...named("recovered"), ...named("recoverable")].map(
 				(row) =>
 					`${VERB}: ${row.key}: ${row.event} on ${row.task} ${options.check ? "is proven and would move" : "was proven and moved"} the lane ${row.from} → ${row.to}.`,
 			),
-			...[...named("refused"), ...named("unreadable"), ...unappended].map(
+			...[...named("refused"), ...contended, ...named("unreadable"), ...unappended].map(
 				(row) => `${VERB}: ${row.key}: ${row.reason ?? row.verdict}`,
 			),
+			// A contended lane is the one exit-0 row with work left in it: its event is still the right
+			// one and only the lock stood in the way, so the run says so in its own line rather than
+			// leaving a reader to tell it from a refusal by the code on the row.
+			...(contended.length === 0
+				? []
+				: [
+						`${VERB}: ${contended.length} lane(s) only lost the ledger lock, so their event is still unrecorded and still valid: ${contended.map((row) => row.key).join(", ")}. Re-run this sweep once the holder clears.`,
+					]),
 		];
 		// An append this run tried and could not land is the one row that may not sit on stdout beside
 		// the ones that did: whether that lane is still missing its event is UNKNOWN, and a green sweep

@@ -11,28 +11,42 @@
  * This module answers the two offline questions that sweep needs, so both are testable without a
  * network: which event a leaf owes, and which of a lane's tasks are standing in a leaf that owes one.
  *
- * **The owed set is `./prove.ts`'s own, minus its one negative claim.** `claimOf` already says which
- * event out of which leaf asserts a checkable artifact, and {@link OWED_EVENTS} is exactly the arms
- * whose claim is positive: a `DONE` out of `build`, a `PASS` out of `review`, a `PASS` out of
- * `review:ui`. A `BLOCKED` out of either review cell is the arm left out, and deliberately — it
- * claims `ParkUncontradicted`, which asserts that the reviewer's run reached **no** verdict, and a
- * negative like that is proven by the absence of a contradiction rather than by an artifact somebody
- * posted. An unattended sweep standing on it would park every lane whose reviewer is still running,
- * on the evidence that it has not finished yet. A park is a thing a person or a driver decides; this
- * records the events a shell already earned and died before writing.
+ * **The owed set is `./prove.ts`'s own, minus every arm a live shell also satisfies.** `claimOf` says
+ * which event out of which leaf asserts a checkable artifact, and {@link OWED_EVENTS} is the arms
+ * whose artifact a *finished* shell alone can produce: a `PASS` out of `review`, a `PASS` out of
+ * `review:ui`. Two of `claimOf`'s arms are left out, and for one reason — each is satisfied by a
+ * shell that is merely still working, so an unattended sweep standing on it would fold a lane out
+ * from under a live one.
+ *
+ * - A `BLOCKED` out of either review cell claims `ParkUncontradicted`, which asserts that the
+ *   reviewer's run reached **no** verdict. A negative like that is proven by the absence of a
+ *   contradiction rather than by an artifact somebody posted, so the sweep would park every lane
+ *   whose reviewer has simply not finished yet.
+ * - A `DONE` out of `build` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
+ *   existence of one open PR whose body links the issue — a fact about the PR being *open*, never
+ *   about the builder being *done* with it. A lane in a repair round carries exactly that PR for the
+ *   whole round, so the sweep would move it to `review` while the builder is still pushing. The
+ *   damage is bounded — the reviewer at head FAILs the unrepaired PR and the lane comes back — but
+ *   it costs a review round and leaves the builder's own `lane report DONE` refusing against a lane
+ *   that already moved, which is the park this sweep exists to prevent, not to cause.
+ *
+ * Reopening the `build` arm needs a claim the open PR alone does not carry — the builder's own
+ * terminal, or a head the reviewer has not yet seen — and none of those is readable offline today.
+ * A park is a thing a person or a driver decides, and so is calling a build finished; this records
+ * the verdicts a shell already posted and died before writing.
  */
 
 import type {LaneStatus} from "./fold.ts";
-import {BUILD_STATE, REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
+import {REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
 
 /**
  * The event each leaf owes its ledger, keyed by the leaf a killed shell would have left the task in.
  *
  * Derived from the state names `./prove.ts` exports rather than spelled out again, so a machine that
- * renames a cell moves both readings at once or neither.
+ * renames a cell moves both readings at once or neither. `BUILD_STATE` is absent on purpose and the
+ * module docblock carries why: its `DONE` proves on an open PR, which a live builder has too.
  */
 export const OWED_EVENTS: Readonly<Record<string, string>> = {
-	[BUILD_STATE]: "DONE",
 	[REVIEW_STATE]: "PASS",
 	[REVIEW_UI_STATE]: "PASS",
 };
