@@ -997,7 +997,7 @@ back. Contract:
 | `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed\|governance-stale>` |
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
-| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head |
+| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head. A `PASS` also names its `--round`, and is refused when that round appended an acceptance criterion the `PASS` would bury |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences, its provenance tag naming the `--pr` or, with `--base`/`--tip`, the range an epic child's round was judged over |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
@@ -1005,7 +1005,9 @@ back. Contract:
 the read completed and its scope is provably incomplete · `14` the invoking token is below `write`,
 or the ACL lookup failed (ADR 0055) · `15` the write is not provably the prior rows plus one — the
 append-only fence · `17` a standing verdict of the opposite polarity at this head, or over this
-range, would be retired and `--supersede` was not passed. `4` is a deliberate gap.
+range, would be retired and `--supersede` was not passed · `18` a `PASS` is the terminal of the round
+that appended an acceptance criterion tagged for that same subject and round — the row binds the next
+cycle and a `PASS` has none, so the round owes a `FAIL`. `4` is a deliberate gap.
 
 - **A check that cannot see what it is looking for does not return a plausible value.** An
   unreadable response, a provably short read and a non-conforming payload each resolve to their own

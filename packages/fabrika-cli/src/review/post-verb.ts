@@ -27,6 +27,14 @@
  * With `--base`/`--tip` the verb runs the range-scoped path instead (`./range-post.ts`): the
  * positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and the same
  * namespace rule is asked of the range's own changed paths.
+ *
+ * **A `PASS` carries one obligation the six steps do not: `--round`, and the `18` fence under it.**
+ * A reviewer that routes an in-scope finding appends it as an acceptance criterion, and that row
+ * binds the *next* cycle — so a `PASS` on the round that appended it is the one terminal it cannot
+ * survive: the lane folds to `ship`, the PR merges, the issue auto-closes, and the finding is gone
+ * with an artifact behind it that reads as correct. `./appended-this-round.ts` is that read, and it
+ * runs on both subjects — a PR here, a child's range on the ranged arm — because a child's reviewer
+ * routes findings the same way.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -47,9 +55,12 @@ import {
 	clause as toClause,
 } from "../wire/verdict-marker.ts";
 import {emitAdvisory, readAdvisory, reviewedHeadLine} from "./advisory.ts";
+import {type CriterionProvenance, provenanceSubject} from "./append.ts";
+import {type AppendedRead, appendedThisRound} from "./appended-this-round.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
-import {namespacesOf, partition} from "./classes.ts";
+import {issueRefsOf, namespacesOf, partition} from "./classes.ts";
 import {
+	APPENDED_THIS_ROUND,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -96,6 +107,16 @@ export interface PostOptions {
 	readonly now: Effect.Effect<number>;
 	/** The explicit acknowledgement that this verdict retires one of the opposite polarity. */
 	readonly supersede: boolean;
+	/**
+	 * Which review round this verdict is the terminal of — required on a `PASS`, ignored on a `FAIL`.
+	 *
+	 * It is the reviewer's own number, the same one `review append-criterion --round` was handed, and
+	 * it is an operand rather than something this verb derives because the two have to be the *same*
+	 * number for the `18` fence to mean anything: a round counted here from the PR's verdict history
+	 * and a round written into a row by the caller are two claims that can disagree, and the
+	 * disagreement would read as a clean pass.
+	 */
+	readonly round: number | null;
 }
 
 interface Posted {
@@ -221,6 +242,37 @@ const unreadableMessage = (what: string, pr: number, reason: string): string =>
 const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 	refuse(PRECONDITION_UNKNOWN, unreadableMessage(what, pr, reason));
 
+/**
+ * The `18` fence, and the `11` it fails closed to — the refusal this round's own append earns.
+ *
+ * `null` lets the post through. Every other answer is a refusal, because the two states this read
+ * can be in that are not "no row" are "a row is there" and "whether a row is there is unknown", and
+ * only the first has a polarity to fix. Nothing is written on either.
+ */
+const appendedRefusal = (
+	read: AppendedRead,
+	provenance: CriterionProvenance,
+	round: number,
+	diagnostics: ReadonlyArray<string>,
+): VerbOutcome | null => {
+	if (read._tag === "None") return null;
+	if (read._tag === "Unreadable") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`${VERB}: cannot read #${read.issue}, which would carry a criterion appended on ${provenanceSubject(provenance)}'s round ${round}: ${read.reason} — whether this PASS strands one is UNKNOWN; nothing was posted.`,
+			diagnostics,
+		);
+	}
+	const quoted = read.rows.map((row) => `  - "${row}"`).join("\n");
+	const what =
+		read.rows.length === 1 ? "an acceptance criterion" : `${read.rows.length} acceptance criteria`;
+	return refuse(
+		APPENDED_THIS_ROUND,
+		`${VERB}: round ${round} appended ${what} to #${read.issue} from ${provenanceSubject(provenance)}:\n${quoted}\nAn appended row binds the NEXT cycle, and a PASS has none — the lane folds to ship, the PR merges, and #${read.issue} closes with the row unread. This round owes --polarity FAIL. Nothing was posted.`,
+		diagnostics,
+	);
+};
+
 export const runPost = (
 	options: PostOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -248,6 +300,18 @@ export const runPost = (
 				OFF_VOCABULARY,
 				`${VERB}: --carrier advisory is a PASS path only — post the FAIL marker instead.`,
 			);
+		}
+		// A PASS is the terminal an appended row cannot survive, so it is the one polarity that has to
+		// say which round it ends. A FAIL routes into a next cycle either way and owes no number.
+		if (polarity === "PASS" && options.round === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --round is required on a PASS — a PASS ends the cycle, and the round is what says whether this one appended a criterion that would die with it.`,
+			);
+		}
+		if (options.round !== null) {
+			const badRound = badNumber(VERB, "a review round", options.round);
+			if (badRound !== null) return badRound;
 		}
 		const clause = toClause(options.clause);
 		if (clause === null) {
@@ -301,6 +365,15 @@ export const runPost = (
 					OFF_VOCABULARY,
 					`${VERB}: --${flag} "${raw}" is not a revision — expected 7–40 hex characters.`,
 				);
+			}
+			// The epic-child arm of the same fence. A child's reviewer routes its findings with
+			// `--base`/`--tip` too, so a `pr:#`-only read here would leave exactly one subject able to
+			// pair an append with a PASS — and a child's PASS folds the range into the epic's tail.
+			if (polarity === "PASS" && options.round !== null) {
+				const routed: CriterionProvenance = {_tag: "Ranged", range: {base, tip}};
+				const appended = yield* appendedThisRound(repo, [pr], routed, options.round);
+				const refusal = appendedRefusal(appended, routed, options.round, []);
+				if (refusal !== null) return refusal;
 			}
 			return yield* runRangePost(
 				{
@@ -384,6 +457,19 @@ export const runPost = (
 				`${VERB}: --namespace ${namespace} is not derived by #${pr}'s diff (present: ${derived.join(", ")}) — a gate never emits a namespace it did not judge.`,
 				diagnostics,
 			);
+		}
+
+		// The `18` fence, ahead of every byte this verb composes: whether this PASS is legal at all is
+		// a question about the round, not about the comment, and the answer costs a write nothing.
+		// The issue set is every issue the body names — closing keywords AND `Part of`, because a
+		// `--partial` PR's reviewer appends to the issue it is part of, and a closing-only read would
+		// let that row die exactly the way this refusal exists to stop.
+		if (polarity === "PASS" && options.round !== null) {
+			const routed: CriterionProvenance = {_tag: "Pull", pr};
+			const linked = issueRefsOf(target.pull.body).referenced;
+			const appended = yield* appendedThisRound(repo, linked, routed, options.round);
+			const refusal = appendedRefusal(appended, routed, options.round, diagnostics);
+			if (refusal !== null) return refusal;
 		}
 
 		// Step 3 — compose through the wire format, or through the advisory shape.
