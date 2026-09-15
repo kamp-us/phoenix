@@ -1,192 +1,77 @@
 /**
- * Regression for #9266 — the pano feed forgot its loaded pages on back navigation.
+ * The mode decision and its latch, in isolation (#9266).
  *
- * The probe below is `PanoFeed`'s `FeedContent` reduced to its fate wiring: the same root
- * `posts(sort, first: PANO_FEED_PAGE_SIZE)` request, the same `useFeedRequestMode` choice
- * over it, and the same `useLiveListView` read. Rendering the page itself would drag in the
- * router, the session and the flag client without exercising one more line of the path
- * under test.
- *
- * Unmounting and re-rendering IS the navigation: `/pano` and `/pano/:id` are sibling routes
- * (`App.tsx`), so opening a post unmounts the feed and returning mounts a fresh one against
- * the same client — the three return routes in the report (the "akışa dön" button, browser
- * back, its keyboard shortcut) are one and the same remount.
- *
- * `snapshotEnabled: true` is the production build configuration (`VITE_FEED_SNAPSHOT=on`,
- * `.github/workflows/deploy.yml`), and it is the arm that used to reset the feed.
+ * The end-to-end guarantee — load a second page, leave, come back, still 40 rows — is asserted
+ * against the page's own wiring in `pages/PanoFeed.test.tsx`, because a copy of that wiring
+ * here would keep passing while the page pinned a mode back at the callsite.
  */
-import {clientRoot, createClient} from "@nkzw/fate";
-import {act, render, screen} from "@testing-library/react";
-import * as React from "react";
-import {FateClient, useLiveListView, useRequest, view} from "react-fate";
+import {renderHook} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
-import {PANO_FEED_PAGE_SIZE} from "../lib/panoNav";
 import {feedRequestMode, REVALIDATE_FEED, useFeedRequestMode} from "./feedRequestMode";
 
-type Post = {__typename: "Post"; id: string; title: string};
-
-const PostView = view<Post>()({id: true, title: true});
-const PostConnectionView = {items: {node: PostView}} as const;
-
-const CORPUS = Array.from({length: 60}, (_, index) => ({
-	id: `post_${index}`,
-	title: `title ${index}`,
-}));
-
-/** Forward-only, exactly like every phoenix list (`worker/features/fate/connection.ts`). */
-function page(first: number, after: string | undefined) {
-	const start = after ? CORPUS.findIndex((post) => post.id === after) + 1 : 0;
-	const rows = CORPUS.slice(start, start + first);
-	return {
-		items: rows.map((node) => ({cursor: node.id, node})),
-		pagination: {
-			hasNext: start + first < CORPUS.length,
-			hasPrevious: false,
-			nextCursor: rows.at(-1)?.id,
-		},
-	};
-}
-
-const FEED_REQUEST = {
-	posts: {list: PostConnectionView, args: {sort: "hot", first: PANO_FEED_PAGE_SIZE}},
-};
-
-function makeClient() {
-	const fetched: Array<Record<string, unknown>> = [];
-	const client = createClient({
-		hydrationScope: "test",
-		roots: {posts: clientRoot<Post, "Post">("Post")},
-		types: [{type: "Post"}],
-		transport: {
-			fetchById: async () => [],
-			fetchList: async (
-				_procedure: string,
-				_select: Iterable<string>,
-				args?: Record<string, unknown>,
-			) => {
-				fetched.push({...args});
-				const after = args?.after;
-				return page(
-					Number(args?.first ?? PANO_FEED_PAGE_SIZE),
-					typeof after === "string" ? after : undefined,
-				);
-			},
-			// The app's anonymous client grafts the same no-ops on (`fate/client.ts`).
-			subscribeById: () => () => undefined,
-			subscribeConnection: () => () => undefined,
-		},
-	});
-	return {client, fetched};
-}
-
-type TestClient = ReturnType<typeof makeClient>["client"];
-
-/**
- * What `FeedContent` reads off the generated client as `…posts.items.length`. The roots here
- * are declared in this file rather than generated, so the result type resolves to `never` and
- * the shape has to be named locally.
- */
-function cachedRows(client: TestClient): number {
-	const result: unknown = client.getRequestResult(FEED_REQUEST);
-	return (result as {posts?: {items?: ReadonlyArray<unknown>}}).posts?.items?.length ?? 0;
-}
-
-let loadNextPage: (() => Promise<void>) | null = null;
-
-function Feed({client, snapshotEnabled}: {client: TestClient; snapshotEnabled: boolean}) {
-	const mode = useFeedRequestMode(
-		"hot",
-		snapshotEnabled,
-		() => cachedRows(client),
-		PANO_FEED_PAGE_SIZE,
-	);
-	const {posts} = useRequest(FEED_REQUEST, mode);
-	return <Rows connection={posts} />;
-}
-
-type FeedConnection = ReturnType<typeof useRequest<typeof FEED_REQUEST>>["posts"];
-
-function Rows({connection}: {connection: FeedConnection}) {
-	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
-	loadNextPage = loadNext;
-	return <output data-testid="rows">{items.length}</output>;
-}
-
-async function settle() {
-	for (let tick = 0; tick < 5; tick += 1) {
-		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 10));
-		});
-	}
-}
-
-async function openFeed(client: TestClient, snapshotEnabled: boolean) {
-	let mounted!: ReturnType<typeof render>;
-	await act(async () => {
-		mounted = render(
-			<FateClient client={client}>
-				<React.Suspense fallback={<output data-testid="rows">…</output>}>
-					<Feed client={client} snapshotEnabled={snapshotEnabled} />
-				</React.Suspense>
-			</FateClient>,
-		);
-	});
-	await settle();
-	return mounted;
-}
-
-const rowCount = () => screen.getByTestId("rows").textContent;
-
-describe("pano feed window survives leaving and returning (#9266)", () => {
-	for (const snapshotEnabled of [true, false]) {
-		it(`keeps every loaded page across a remount with snapshots ${snapshotEnabled ? "on" : "off"}`, async () => {
-			const {client} = makeClient();
-
-			const feed = await openFeed(client, snapshotEnabled);
-			expect(rowCount()).toBe("20");
-
-			await act(async () => {
-				await loadNextPage?.();
-			});
-			expect(rowCount()).toBe("40");
-
-			feed.unmount();
-			await settle();
-
-			await openFeed(client, snapshotEnabled);
-			expect(rowCount()).toBe("40");
-		});
-	}
-
-	it("still revalidates the first page when the first page is the whole window", async () => {
-		const {client, fetched} = makeClient();
-
-		const feed = await openFeed(client, true);
-		expect(rowCount()).toBe("20");
-		expect(fetched).toHaveLength(1);
-
-		feed.unmount();
-		await settle();
-
-		await openFeed(client, true);
-		expect(rowCount()).toBe("20");
-		expect(fetched).toHaveLength(2);
-	});
-});
-
 describe("feedRequestMode", () => {
-	it("revalidates while the cached window is at most one page", () => {
-		expect(feedRequestMode(true, 0, 20)).toBe(REVALIDATE_FEED);
-		expect(feedRequestMode(true, 20, 20)).toBe(REVALIDATE_FEED);
+	it("always revalidates the first time this tab opens the feed", () => {
+		expect(feedRequestMode(true, 0, 20, false)).toBe(REVALIDATE_FEED);
+		// A window this wide came from a persisted snapshot, not from this tab. It has no age
+		// bound, so refresh it rather than paint it.
+		expect(feedRequestMode(true, 40, 20, false)).toBe(REVALIDATE_FEED);
 	});
 
-	it("reads from cache once the reader has paged past the first page", () => {
-		expect(feedRequestMode(true, 21, 20)).toBeUndefined();
-		expect(feedRequestMode(true, 40, 20)).toBeUndefined();
+	it("revalidates while the cached window is at most one page", () => {
+		expect(feedRequestMode(true, 0, 20, true)).toBe(REVALIDATE_FEED);
+		expect(feedRequestMode(true, 20, 20, true)).toBe(REVALIDATE_FEED);
+	});
+
+	it("reads from cache once this tab has paged past the first page", () => {
+		expect(feedRequestMode(true, 21, 20, true)).toBeUndefined();
+		expect(feedRequestMode(true, 40, 20, true)).toBeUndefined();
 	});
 
 	it("never revalidates with no snapshot to refresh", () => {
-		expect(feedRequestMode(false, 0, 20)).toBeUndefined();
-		expect(feedRequestMode(false, 40, 20)).toBeUndefined();
+		expect(feedRequestMode(false, 0, 20, false)).toBeUndefined();
+		expect(feedRequestMode(false, 40, 20, true)).toBeUndefined();
+	});
+});
+
+describe("useFeedRequestMode", () => {
+	it("holds its decision while the reader pages, so a mounted feed never re-issues", () => {
+		const client = {};
+		let cached = 0;
+		const {result, rerender} = renderHook(() =>
+			useFeedRequestMode(client, "hot", true, () => cached, 20),
+		);
+		expect(result.current).toBe(REVALIDATE_FEED);
+
+		// "daha fazla" lands: recomputing here would flip the mounted feed to cache-first, mount a
+		// second request handle and flash a skeleton over rows that are already painted.
+		cached = 40;
+		rerender();
+		expect(result.current).toBe(REVALIDATE_FEED);
+	});
+
+	it("reads from cache on the next mount, once this tab has revalidated the feed", () => {
+		const client = {};
+		let cached = 0;
+		const first = renderHook(() => useFeedRequestMode(client, "hot", true, () => cached, 20));
+		expect(first.result.current).toBe(REVALIDATE_FEED);
+		first.unmount();
+
+		cached = 40;
+		const second = renderHook(() => useFeedRequestMode(client, "hot", true, () => cached, 20));
+		expect(second.result.current).toBeUndefined();
+	});
+
+	it("keeps each feed's history to itself, and each client's to itself", () => {
+		const client = {};
+		renderHook(() => useFeedRequestMode(client, "hot", true, () => 0, 20)).unmount();
+
+		// A different feed on the same client, and the same feed on a different client, are both
+		// first mounts — a snapshot-wide window is refreshed rather than painted.
+		expect(
+			renderHook(() => useFeedRequestMode(client, "new", true, () => 40, 20)).result.current,
+		).toBe(REVALIDATE_FEED);
+		expect(renderHook(() => useFeedRequestMode({}, "hot", true, () => 40, 20)).result.current).toBe(
+			REVALIDATE_FEED,
+		);
 	});
 });
