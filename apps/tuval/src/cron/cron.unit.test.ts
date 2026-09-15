@@ -148,7 +148,10 @@ describe("cron, reporting", () => {
 		expect(run.effects).toEqual([]);
 	});
 
-	it("records a failed run when the job dies before it answers, and clears the child", () => {
+	// The cell, not live behaviour: nothing in the kernel delivers an unsolicited child exit into a
+	// spawner's inbox (#9227), so this event is fed by hand and the branch it drives is unreachable
+	// until that lands. Pinned so the day it does, the cell it will route into is already known good.
+	it("cell, unreachable until #9227: a hand-fed `stopped` for the live child records a failed run", () => {
 		const run = testProgram(cronProgram(options))
 			.event({type: "tick"})
 			.event({type: "spawned", process: child, program: "cron-job"})
