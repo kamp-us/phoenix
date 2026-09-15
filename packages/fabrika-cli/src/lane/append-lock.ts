@@ -33,6 +33,7 @@
  * `FABRIKA_LANE_LOCK_BUDGET_MS` still overrides the budget on purpose — a caller asking to refuse
  * fast is asking not to reach the horizon at all.
  */
+import {randomUUID} from "node:crypto";
 import {Effect, type FileSystem, Option, type Path, Result} from "effect";
 import {CONCURRENT_WRITE} from "./codes.ts";
 import {WORKFLOW_FILE} from "./store.ts";
@@ -114,12 +115,25 @@ const removeLock = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect<v
 /**
  * Take a lock whose holder is presumed dead, answering whether a retry is now worth making.
  *
- * **The removal is the steal.** Reading the mtime only reaches a verdict; the sidecar is still
- * there, so a re-`mkdir` that followed a bare verdict would fail `AlreadyExists` against the very
- * directory being stolen and the waiter would poll to its deadline against a lock nobody holds.
- * A `stat` that fails or reports no mtime is UNKNOWN, and UNKNOWN never steals.
+ * **The removal is the steal, and it is bound to the directory the verdict was reached on.** Reading
+ * the mtime only reaches a verdict; the sidecar is still there, so a re-`mkdir` that followed a bare
+ * verdict would fail `AlreadyExists` against the very directory being stolen and the waiter would
+ * poll to its deadline against a lock nobody holds. A `stat` that fails or reports no mtime is
+ * UNKNOWN, and UNKNOWN never steals.
  *
- * Losing the re-`mkdir` to another waiter is not a failure of this function: the caller reads
+ * **What the steal guarantees against a lock that became live between the read and the removal: it
+ * does not remove it.** Two waiters can reach the same stale verdict on one orphaned lock, and an
+ * unconditional `fs.remove(lockDir)` honours whichever directory happens to be sitting at that path
+ * — including the fresh one the other waiter created microseconds earlier, which leaves both
+ * writers holding a lock and both bodies appending to one log. So the take is a `rename` onto
+ * a private name rather than a remove: `rename` is atomic, so of two waiters racing to move one
+ * directory exactly one succeeds, and the loser's `NotFound` is its answer. What lands under the
+ * private name is then checked against the mtime the verdict was reached on — a directory created
+ * since carries a different one, and it is renamed straight back and left to its holder.
+ * (`rename` moves the inode, so the mtime travels with it: POSIX updates the parents' times and the
+ * moved entry's `ctime`, never its `mtime`.)
+ *
+ * Losing the re-`mkdir` to another waiter is still not a failure of this function: the caller reads
  * `held` and keeps polling, which is the right answer once someone else holds it.
  */
 const stealIfStale = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect<boolean, never> =>
@@ -128,9 +142,22 @@ const stealIfStale = (fs: FileSystem.FileSystem, lockDir: string): Effect.Effect
 		if (Result.isFailure(probed)) return false;
 		const mtime = probed.success.mtime;
 		if (Option.isNone(mtime)) return false;
-		if (Date.now() - mtime.value.getTime() <= STALE_LOCK_MS) return false;
-		yield* removeLock(fs, lockDir);
-		return true;
+		const observed = mtime.value.getTime();
+		if (Date.now() - observed <= STALE_LOCK_MS) return false;
+		// Private to this attempt, so two waiters never contend for the name they move the lock onto.
+		const taken = `${lockDir}.stolen-${randomUUID()}`;
+		const moved = yield* Effect.result(fs.rename(lockDir, taken));
+		if (Result.isFailure(moved)) return false;
+		const held = yield* Effect.result(fs.stat(taken));
+		const heldMtime = Result.isSuccess(held) ? held.success.mtime : Option.none<Date>();
+		if (Option.isSome(heldMtime) && heldMtime.value.getTime() === observed) {
+			yield* removeLock(fs, taken);
+			return true;
+		}
+		// Not the directory the verdict was reached on, or no mtime to judge it by. Put it back under
+		// its own name and keep waiting — UNKNOWN never steals, and a live holder is not ours to end.
+		yield* Effect.ignore(fs.rename(taken, lockDir));
+		return false;
 	});
 
 /**

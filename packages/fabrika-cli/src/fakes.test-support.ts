@@ -85,7 +85,14 @@ export interface FakeFsOptions {
 	 * gone and the other proves nothing at all.
 	 */
 	readonly unstatable?: ReadonlyArray<string>;
-	/** Path → the modification time `stat` reports. An unlisted path reports none at all. */
+	/**
+	 * Path → the modification time `stat` reports. An unlisted path reports none at all, until
+	 * something creates it here: a directory this fake makes carries the instant it was made, and a
+	 * rename carries that instant along with it.
+	 *
+	 * A fake that froze the seeded value instead would report an aged mtime for a directory created
+	 * seconds ago, which is the one fact a stale-lock steal turns on.
+	 */
 	readonly mtimes?: Readonly<Record<string, Date>>;
 	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
 	readonly real?: Readonly<Record<string, string>>;
@@ -119,6 +126,14 @@ export interface FakeFsOptions {
 	 * opposite answers: one says a holder exists, the other that the containing directory does not.
 	 */
 	readonly mkdirMissingParent?: ReadonlyArray<string>;
+	/**
+	 * Path → an effect run **after** a `stat` computes its answer and before the caller receives it.
+	 *
+	 * The seam a check-then-act race is testable at. Forking two fibers only *hopes* the scheduler
+	 * interleaves them inside the window under test; this puts the other writer's whole run there,
+	 * so the interleaving is the test's to state rather than the runtime's to grant.
+	 */
+	readonly duringStat?: Readonly<Record<string, Effect.Effect<void>>>;
 }
 
 export interface FakeFs {
@@ -134,6 +149,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const written = new Map<string, string>();
 	const directories = new Set([...(options.directories ?? []), ...(options.mkdirExisting ?? [])]);
 	const held = new Set(options.mkdirExisting ?? []);
+	const mtimes: Record<string, Date> = {...options.mtimes};
 	const decoder = new TextDecoder();
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
@@ -157,22 +173,32 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
 						),
 			stat: (path: string) => {
-				if (options.unstatable?.includes(path) === true) return denied("stat", path);
-				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
-				const mtime = options.mtimes?.[path];
-				if (directories.has(path) || dirs[path] != null) {
-					return Effect.succeed(info("Directory", mtime));
-				}
-				return Object.hasOwn(files, path) && files[path] !== null
-					? Effect.succeed(info("File", mtime))
-					: notFound("stat", path);
+				const answer = (): Effect.Effect<FileSystem.File.Info, PlatformError.PlatformError> => {
+					if (options.unstatable?.includes(path) === true) return denied("stat", path);
+					if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
+					const mtime = mtimes[path];
+					if (directories.has(path) || dirs[path] != null) {
+						return Effect.succeed(info("Directory", mtime));
+					}
+					return Object.hasOwn(files, path) && files[path] !== null
+						? Effect.succeed(info("File", mtime))
+						: notFound("stat", path);
+				};
+				const during = options.duringStat?.[path];
+				// The answer is computed first and delivered after: the caller reads the world as it
+				// was when it asked, which is exactly the window a check-then-act race lives in.
+				return during === undefined
+					? answer()
+					: Effect.flatMap(answer(), (read) => Effect.as(during, read));
 			},
-			makeDirectory: (path: string) => {
+			makeDirectory: (path: string, mkdirOptions?: {readonly recursive?: boolean | undefined}) => {
 				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
 				if (options.mkdirMissingParent?.includes(path) === true) {
 					return notFound("makeDirectory", path);
 				}
-				if (held.has(path)) {
+				// A non-recursive mkdir over a directory that is there fails EEXIST on every real
+				// platform, so a fake that let it through would green a second holder of one lock.
+				if (held.has(path) || (directories.has(path) && mkdirOptions?.recursive !== true)) {
 					return Effect.fail(
 						PlatformError.systemError({
 							_tag: "AlreadyExists",
@@ -183,6 +209,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					);
 				}
 				directories.add(path);
+				mtimes[path] = new Date();
 				return Effect.void;
 			},
 			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
@@ -215,6 +242,21 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					directories.add(next);
 					directories.delete(key);
 				}
+				// A rename moves the inode, so what a lock *is* travels with it: the holder another
+				// writer's mkdir collides with, and the mtime a stale verdict was reached on.
+				for (const key of [...held]) {
+					const next = moved(key);
+					if (next === null) continue;
+					held.add(next);
+					held.delete(key);
+				}
+				for (const key of Object.keys(mtimes)) {
+					const next = moved(key);
+					if (next === null) continue;
+					const at = mtimes[key];
+					if (at !== undefined) mtimes[next] = at;
+					delete mtimes[key];
+				}
 				// The parent listings move with it, because a sweep reads `readDirectory` and a fake
 				// that still listed the moved entry under its old parent would green a sweep that
 				// cannot happen — the exact claim an archive rests on.
@@ -235,6 +277,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				if (options.survivesRemoval?.includes(path) === true) return Effect.void;
 				directories.delete(path);
 				held.delete(path);
+				delete mtimes[path];
 				for (const key of Object.keys(files)) {
 					if (key === path || key.startsWith(`${path}/`)) delete files[key];
 				}

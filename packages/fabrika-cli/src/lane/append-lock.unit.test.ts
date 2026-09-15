@@ -3,14 +3,16 @@
  * {@link CONCURRENT_WRITE} — distinguishable from an ordinary machine refusal — with the log left
  * byte-identical, while the uncontended path behaves exactly as it did before the lock existed.
  *
- * The stale-lock half is here too, and it is the one with three answers rather than two: a lock aged
- * past the horizon is stolen, a younger one is not, and an explicit budget refuses before either
- * question is asked. Only the middle of those was ever covered.
+ * The stale-lock half is here too, and it is the one with four answers rather than two: a lock aged
+ * past the horizon is stolen, a younger one is not, a second waiter already past that horizon still
+ * does not get the lock the first one just took, and an explicit budget refuses before any of it is
+ * asked. Only the second of those was ever covered.
  *
- * Contention here is scripted (`mkdirExisting`), not raced: the point is the *deterministic* half
- * of the guarantee. The probabilistic half — that two live processes actually collide often enough
- * for the guard to matter — lives in [`append-race.cli.test.ts`](append-race.cli.test.ts), which
- * races real processes against one ledger.
+ * Contention here is scripted (`mkdirExisting`, `duringStat`), not raced: the point is the
+ * *deterministic* half of the guarantee, down to placing one writer's whole run inside the other's
+ * check-then-act window. The probabilistic half — that two live processes actually collide often
+ * enough for the guard to matter — lives in [`append-race.cli.test.ts`](append-race.cli.test.ts),
+ * which races real processes against one ledger.
  */
 import {Effect, FileSystem} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
@@ -176,6 +178,37 @@ describe("lane append lock", {timeout: 10_000}, () => {
 		);
 
 		expect(attempt).toBe("acquired");
+	});
+
+	it("a second waiter past the same stale horizon does not take the lock the first one just stole", async () => {
+		// Two writers polling one orphaned lock. The loser's staleness verdict is already reached when
+		// the winner's whole steal lands, so a steal that acts on that stale verdict deletes a *live*
+		// lock and both writers append — the silent interleaved read-modify-write the lock exists to
+		// refuse. The winner's run is placed inside the loser's `stat` window rather than raced for.
+		const appended: string[] = [];
+		const seam: Record<string, Effect.Effect<void>> = {};
+		const fs = freshLane({
+			mkdirExisting: [LOCK],
+			mtimes: {[LOCK]: new Date(Date.now() - 60_000)},
+			duringStat: seam,
+		});
+		const waiter = (name: string) =>
+			Effect.gen(function* () {
+				const filesystem = yield* FileSystem.FileSystem;
+				// No release: a holder is mid-body, which is what makes the other one's steal a defect
+				// rather than an ordinary hand-off.
+				if ((yield* acquireLedgerLock(filesystem, LOCK, 300)) === "acquired") appended.push(name);
+			});
+		let overtaken = false;
+		seam[LOCK] = Effect.suspend(() => {
+			if (overtaken) return Effect.void;
+			overtaken = true;
+			return Effect.provide(waiter("winner"), fs.layer);
+		});
+
+		await Effect.runPromise(Effect.provide(waiter("loser"), fs.layer));
+
+		expect(appended).toEqual(["winner"]);
 	});
 
 	it("a lock younger than the stale horizon is still held at deadline, so live contention refuses", async () => {
