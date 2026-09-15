@@ -22,6 +22,7 @@ import {
 	coderTemplateText,
 	fakeProver,
 	fakeProverByEvent,
+	laneWrites,
 	parkCauseRead,
 } from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
@@ -694,7 +695,7 @@ describe("lane report — a queue wait is floored on elapsed time, not on driver
 		expect(out.stderr.at(-1)).toContain("log unappended");
 		expect(out.stderr.at(-1)).toContain("390s are still to run");
 		expect(out.stderr.at(-1)).toContain("The wait is intact");
-		expect(fs.written.size).toBe(0);
+		expect(laneWrites(fs.written)).toEqual([]);
 	});
 
 	it("records a re-fold past the floor, spending the wait", async () => {
@@ -746,7 +747,7 @@ describe("lane report — a queue wait is floored on elapsed time, not on driver
 
 		expect(out.code).toBe(WAIT_TOO_SOON);
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");
-		expect(fs.written.size).toBe(0);
+		expect(laneWrites(fs.written)).toEqual([]);
 	});
 });
 
