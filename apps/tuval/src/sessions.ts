@@ -21,3 +21,9 @@
 export {type ClaudeSessionProgram, claudeSession} from "./claude/program.ts";
 export {type CodexSessionProgram, codexSession} from "./codex/program.ts";
 export {ClientId, type Scope, WorkspaceId} from "./commands/spell.ts";
+/**
+ * The shape the module a config default-exports has to satisfy. It belongs on this door rather
+ * than `./authoring` for the same reason the rows do: it is what a *config* author annotates, and
+ * a program never names it.
+ */
+export type {TuvalConfigInput} from "./config.ts";

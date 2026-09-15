@@ -13,6 +13,7 @@
  * arrive, and that the map opens no door onto a module that is not there.
  */
 
+import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
@@ -110,3 +111,29 @@ describe("the exports map opens only doors that exist", () => {
 		}
 	});
 });
+
+describe("a consumer can emit declarations for a program that declares args", () => {
+	it("names every inferred type through a package specifier, never through src/", () => {
+		// `../../test-consumer/` is compiled with `declaration: true` and includes one module, which
+		// reaches this package only through the `exports` map. The inferred type of `programArgs(…)`
+		// is `ArgRefs<…>` over `ProgramArgRef` / `ArgIdentity` / `Spawnable`, and an exported const
+		// of that type is what forces tsc to write those names into the `.d.ts`.
+		const pkg = resolve(import.meta.dirname, "../..");
+		// The compiler is this package's own `typescript` devDependency, reached through the bin
+		// pnpm links beside it — not `npx`, which on a cold runner may go to the network first.
+		execFileSync(resolve(pkg, "node_modules/.bin/tsc"), ["-p", "test-consumer/tsconfig.json"], {
+			cwd: pkg,
+			stdio: "pipe",
+		});
+		const emitted = readFileSync(
+			resolve(pkg, "test-consumer/node_modules/.tmp/dts/test-consumer/program.d.ts"),
+			"utf8",
+		);
+		const specifiers = [...emitted.matchAll(/import\("([^"]+)"\)/g)].map((m) => m[1] ?? "");
+		expect(specifiers).not.toEqual([]);
+		// A name missing from a door makes tsc reach for the source module by relative path. That
+		// path resolves in-tree and does not resolve from a real consumer, where it is TS2742 —
+		// which is why the emitted text, not the exit code, is what this pins.
+		expect(specifiers.filter((s) => !s.startsWith("@kampus/tuval/"))).toEqual([]);
+	});
+}, 60_000);

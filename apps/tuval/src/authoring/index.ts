@@ -14,11 +14,22 @@
  * by relative path from inside `src/`. They are how a row is built, not how one is written, and
  * `defineProgram` is the whole of the seam between the two.
  *
- * **Two names come from outside `authoring/`, and both are types.** `AnyProgram` is what
- * `defineProgram` returns, and `ProcessId` is what `stop` takes and what `Spawned`/`Stopped` carry
- * — a consumer that annotates either cannot do it without them, so refusing to re-export them
- * would ship a door you cannot write a typed program behind. Being type-only, they add no module
- * to the runtime graph this barrel pulls.
+ * **A few names come from outside `authoring/`, and each is here because a consumer cannot write
+ * a typed program without it.** `AnyProgram` is what `defineProgram` returns; `PortSchema` (with
+ * `InPort`/`OutPort` under it) is how a row's ports read back; `ProcessId` is what `stop` takes and
+ * what `Spawned`/`Stopped` carry, and it is exported as a *value* because `ProcessId.make` is the
+ * only way to name one; `TITLE_PORT` / `STATUS_PORT` are the two generic self-report ports a
+ * program emits its derived lines on, which is a string an author would otherwise have to guess.
+ * The first outside consumer (`packages/tuval-cron`) found each of these by failing to compile
+ * without it.
+ *
+ * **The whole `ArgRefs` chain is public for the same reason, and it is not optional.** The type
+ * `programArgs(…)` infers is `ArgRefs<Id, D>`, which reaches `ArgRef`, `ProgramArgRef`,
+ * `ValueArgRef`, `ArgIdentity` and `Spawnable`. A consumer that exports any program declaring
+ * `args` fails declaration emit with TS2742 — "cannot be named without a reference to
+ * `src/authoring/args`" — unless every one of those is reachable through this door.
+ * `../test-consumer/` is a fixture that emits exactly such a declaration, and
+ * `public-surface.unit.test.ts` runs `tsc --declaration` over it.
  *
  * **The window half is its own door, `@kampus/tuval/window` (`./window.ts`).** Not because
  * `./view.ts` is unsafe — its value-import closure reaches no `node:` builtin, and
@@ -34,9 +45,24 @@
  * two stabilities.
  */
 
-export type {ProcessId} from "../process/process.ts";
-export type {AnyProgram} from "../registry/program.ts";
-export {programArgs} from "./args.ts";
+export {ProcessId} from "../process/process.ts";
+export {STATUS_PORT, TITLE_PORT} from "../process/self-report.ts";
+export type {AnyProgram, InPort, OutPort, PortSchema} from "../registry/program.ts";
+export {
+	type AnyArgRef,
+	type AnyArgRefs,
+	type ArgDecl,
+	type ArgDecls,
+	type ArgIdentity,
+	type ArgRef,
+	type ArgRefs,
+	type ArgServices,
+	type ArgValue,
+	type ArgValues,
+	type ProgramArgRef,
+	programArgs,
+	type ValueArgRef,
+} from "./args.ts";
 export type {CommandAnswer, CommandDecl, CommandDecls, CommandEffect} from "./commands.ts";
 export {
 	type Answer,
@@ -58,6 +84,7 @@ export {
 	type ReplyTo,
 	reply,
 	type SendEffect,
+	type Spawnable,
 	type SpawnEffect,
 	type Spawned,
 	type StopEffect,
@@ -82,6 +109,7 @@ export {
 	type AnyProgramShape,
 	Program,
 	type ProgramShape,
+	type ShapeOutNames,
 	type ShapeSource,
 } from "./shape.ts";
 export {type ProgramRun, testProgram} from "./test-program.ts";
