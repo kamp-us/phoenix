@@ -1571,11 +1571,19 @@ everything a successor needs. That is why no step above holds session state.
 **A non-parked lane with no live operator is a detectable defect, not a wait.** The ledger records
 state, not liveness, so an operator that dies mid-drive leaves its lane reading `build` or `review`
 forever and nothing here can record the `BLOCKED` a dead spawn is owed — the dead shell is the one
-that would have to record it. What catches it is a driver-side sweep, not a driver's patience:
+that would have to record it. Two sweeps catch it, and they answer different questions. `lane stale`
+lists what has gone quiet and writes nothing, so a person still has to decide about every row:
 
 ```bash
 node <fabrika> lane stale
 ```
+
+`lane recover --spawns` records the park itself for the one shape it can prove, and that shape is a
+dead **builder**: a lane standing in `build` or `build:ui` — including an epic lane's child regions —
+whose claim has outlived the builder's own budget with nothing left behind anywhere. Lane 7778 sat
+in that state for five days holding a seat against the cap, because recording its
+`BLOCKED --cause spawn-dead` was a driver's act and its driver was gone. The whole sweep is below,
+under `lane recover`.
 
 **The horizon is each lane's own, not one number you pick.** A lane is judged against the budget of
 the work driving it — a builder's forty minutes, a reviewer's fifteen, a shipper's ten, or the
@@ -1649,21 +1657,48 @@ append is `lane transition`'s whole path, so nothing here is a judgement of your
 is a new way onto a ledger. It asks about one event — a `PASS` out of either review cell — and every
 other answer is a row that changed nothing: `unproven` (which carries `not-required` and every
 refusal code alike, told apart by the row's own `proof` and `proofCode`), `refused`, `contended`,
-`current`, `terminal`, `unreadable`.
+`current`, `terminal`, `unreadable`. With `--spawns` the row set gains `parked`, `parkable` and
+`working`, which are that arm's own and are described below.
 
 **Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from
 folding a lane out from under one of your own spawns. A reviewer's `BLOCKED` claims the run reached
 *no* verdict, which is proven by nothing being there to contradict it, so recording it would park
 every lane whose reviewer is still working. A builder's `DONE` proves on one open PR linking the
 issue, which a builder in a repair round has for the whole round, so recording it would send the
-lane to `review` while that builder is still pushing. A park stays a thing you or a human decide,
-and so does calling a build finished: a lane in `build` is `stale`'s to report and a shell's to
-finish, never this sweep's to move.
+lane to `review` while that builder is still pushing. Calling a build **finished** is still yours or
+a human's, never this sweep's.
 
-Run it before you act on a `stale` list, and treat the two as one pass: `lane recover` clears the
-lanes whose answer is already on the board, and what is still stale after it is the list to
-re-spawn. Two rows leave work behind. A row at `unappended` and an exit `8` mean whether that lane
-is still missing its event is UNKNOWN — name it and re-run, never read it as swept. A row at
+**`--spawns` adds the one lane in `build` it can move, and it parks that lane rather than finishing
+it:**
+
+```bash
+node <fabrika> lane recover --spawns --check
+```
+
+A `parkable` row is a lane whose builder is provably gone, and every answer short of that is a
+`working` row that changed nothing — a claim still inside its budget (the live-but-quiet builder,
+which once lost its claim to exactly this kind of guess), a branch still carrying the dead builder's
+commits, an open PR, or no claim at all. A read that failed is `unreadable` and never dead.
+**The conjunction itself is the verb's, written once in its reference row**
+(`packages/fabrika-cli/docs/verb-reference.md`, `lane recover`) — read it there rather than off a
+restatement here, because what counts as "left something behind" differs by role and a copy of it
+here drifted the day it landed. Dropping `--check` records the `BLOCKED --cause spawn-dead`.
+
+**It retracts nothing, and it is not the end of the chain.** This sweep leaves the claim standing,
+and the park it writes is the exact `blocked` + `spawn-dead` pair `recipe unpark`'s `spawn-clear` row
+clears — which §4 above already tells you to run on a `blocked` fold. That row retracts the claim on
+the same age proof, so the claim does end, one verb later, with no human between the two. That is a
+decision this repo's corpus records, and the verb's reference row names it: a verb-made age read may
+license the park, and the retraction stays where it always was, under every one of its conditions.
+**The eviction rule above still holds whole where it matters** — no reader
+retracts a claim, and no claim ends outside a proven identity or a budget-proved death. What changed
+is who may write down the park that death happens inside. The arm is off unless you pass the flag,
+because it spends board reads per lane standing in a build leaf.
+
+Run it before you act on a `stale` list, and treat the two as one pass: `lane recover --spawns`
+clears the lanes whose answer is already on the board and parks the ones whose builder is gone, and
+what is still stale after it is the list to re-spawn. Two rows leave work behind. A row at
+`unappended` and an exit `8` mean whether that lane is still missing its event is UNKNOWN — name it and re-run, never read it as swept. A row at
 `contended` means another writer held that lane's ledger lock for the whole budget, so nothing was
 validated and the same event is still the right one: re-run the sweep once the holder clears, and
 never read it as a lane that was judged and left.

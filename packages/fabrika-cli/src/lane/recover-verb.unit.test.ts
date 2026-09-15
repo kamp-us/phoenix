@@ -1,6 +1,7 @@
 /** `lane recover` — the lane-9185 shape, what it records, and what it refuses to record. */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {ClaimStanding} from "../build/dead-claim.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {appendText} from "../io/fs.ts";
 import {answer, refuse} from "../verb.ts";
@@ -8,7 +9,7 @@ import {APPEND_UNKNOWN, LANE_UNREADABLE, PROOF_ABSENT} from "./codes.ts";
 import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {proofLabelOf} from "./prove-verb.ts";
-import {runRecover} from "./recover-verb.ts";
+import {type BranchRead, type PullsRead, runRecover} from "./recover-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
 const at = (n: number): string => `2026-09-15T18:1${n}:00.000Z`;
@@ -83,6 +84,7 @@ const sweep = (
 			runRecover({
 				roots,
 				check,
+				spawns: null,
 				prove,
 				parkCause: parkCauseRead(),
 				repo: "o/r",
@@ -400,5 +402,319 @@ describe("runRecover — the sweep", () => {
 			scanned: [{root: DEFAULT_LANES_ROOT, present: false, lanes: 0}],
 			lanes: [],
 		});
+	});
+});
+
+/** A build claim standing past the builder's budget, with a token an assertion can name. */
+const dead = (): ClaimStanding => ({
+	_tag: "Dead",
+	token: "build:gone-session:341861f5",
+	ageMinutes: 7200,
+	budgetMinutes: 40,
+	stack: [],
+	scanned: 1,
+});
+
+/** The board saying no PR links the issue — the trace that means "nothing published". */
+const noPull = (): PullsRead => ({
+	_tag: "Read",
+	trace: {_tag: "None", why: "no open PR links #7778"},
+	scanned: 0,
+});
+
+const spawnSweep = (
+	fs: ReturnType<typeof fakeFs>,
+	claim: ClaimStanding,
+	branches: BranchRead = {_tag: "Read", branches: []},
+	check = false,
+	pull: PullsRead = noPull(),
+) => {
+	const claimed: number[] = [];
+	const asked: number[] = [];
+	const prove = (): Effect.Effect<ProofOutcome> =>
+		Effect.sync(() => {
+			// The spawn arm asks this prover nothing — its publication read is its own — so the only
+			// question reaching here is the one `runTransition` asks about the event it appends, and a
+			// `BLOCKED` out of a build leaf claims no artifact.
+			const outcome = answer(JSON.stringify({proof: null}));
+			return {
+				...outcome,
+				deferred: [],
+				routed: [],
+				partial: null,
+				landed: [],
+				diagnosis: false,
+				proof: proofLabelOf(outcome),
+			};
+		});
+	return Effect.runPromise(
+		Effect.provide(
+			runRecover({
+				roots: [DEFAULT_LANES_ROOT],
+				check,
+				spawns: {
+					claim: (issue: number) =>
+						Effect.sync(() => {
+							claimed.push(issue);
+							return claim;
+						}),
+					branches: () => Effect.succeed(branches),
+					pulls: (issue: number) =>
+						Effect.sync(() => {
+							asked.push(issue);
+							return pull;
+						}),
+				},
+				prove,
+				parkCause: parkCauseRead(),
+				repo: "o/r",
+				cwd: "/checkout",
+				env: {},
+			}),
+			fs.layer,
+		),
+	).then((outcome) => ({outcome, claimed, asked, fs}));
+};
+
+const building = () => tree([{lane: "7778", log: BUILDING_LOG}]);
+
+/** The coder machine with its `WIP` landing in `build:ui` — the rendered-surface builder's leaf. */
+const uiTemplate = (): string => {
+	const doc = JSON.parse(coderTemplateText());
+	doc.machine.states.pipeline.states.issue.states.queued.on["ISSUE.WIP"] = "build:ui";
+	return JSON.stringify(doc);
+};
+
+/**
+ * The coder machine re-emitted as one epic lane: a child region named for its own issue, beside the
+ * tail region whose `epic_<n>` name is what makes every other task a child.
+ */
+const childTemplate = (): string => {
+	const doc = JSON.parse(coderTemplateText());
+	const pipeline = doc.machine.states.pipeline;
+	const region = JSON.stringify(pipeline.states.issue);
+	pipeline.states.issue_9301 = JSON.parse(region.replaceAll("ISSUE.", "ISSUE_9301."));
+	pipeline.states.epic_9241 = JSON.parse(region.replaceAll("ISSUE.", "EPIC_9241."));
+	delete pipeline.states.issue;
+	doc.machine.context.issue_9301 = {...doc.machine.context.issue};
+	doc.machine.context.epic_9241 = {...doc.machine.context.issue};
+	delete doc.machine.context.issue;
+	return JSON.stringify(doc);
+};
+
+const BUILD_FOLD = JSON.stringify({pipeline: {issue: "build"}});
+const BLOCKED_FOLD = JSON.stringify({pipeline: {issue: "blocked"}});
+
+describe("runRecover --spawns — the lane-7778 shape", () => {
+	it("parks the lane a dead builder left with no branch and no PR", async () => {
+		const {outcome, claimed, fs} = await spawnSweep(building(), dead());
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			key: "7778",
+			verdict: "parked",
+			task: "issue",
+			state: "build",
+			event: "BLOCKED",
+			cause: "spawn-dead",
+			from: BUILD_FOLD,
+			to: BLOCKED_FOLD,
+		});
+		expect(claimed).toEqual([7778]);
+		const log = logOf(fs, "7778") ?? "";
+		expect(log).toContain('"ISSUE.BLOCKED"');
+		expect(log).toContain("spawn-dead");
+	});
+
+	it("leaves a live-but-quiet builder alone, ledger untouched", async () => {
+		const {outcome, fs} = await spawnSweep(building(), {
+			_tag: "Alive",
+			token: "build:live-session:9092",
+			ageMinutes: 12,
+			budgetMinutes: 40,
+			scanned: 1,
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working", state: "build"});
+		expect(row?.reason).toContain("may still be working");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("leaves a lane whose branch still carries the dead builder's commits", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), {
+			_tag: "Read",
+			branches: ["build/7778-editor-focus-4f2a"],
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working"});
+		expect(row?.reason).toContain("build/7778-editor-focus-4f2a");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("leaves a lane whose builder published a PR before it went quiet", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, false, {
+			_tag: "Read",
+			trace: {_tag: "One", pr: 9257},
+			scanned: 1,
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working"});
+		expect(row?.reason).toContain("#9257 is open and links #7778");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("never reads an unreadable claim as a dead one", async () => {
+		const {outcome, fs} = await spawnSweep(building(), {
+			_tag: "Unknown",
+			reason: "the comment list could not be read",
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "unreadable"});
+		expect(row?.reason).toContain("never read as dead");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("never reads an unsettled PR question as a dead builder", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, false, {
+			_tag: "Unknown",
+			reason: "the pull request search could not be read",
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "unreadable"});
+		expect(row?.reason).toContain("never read as dead");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("never reads several linking PRs as nothing published", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, false, {
+			_tag: "Read",
+			trace: {_tag: "Many", prs: [9257, 9258]},
+			scanned: 2,
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "unreadable"});
+		expect(row?.reason).toContain("#9257, #9258 are open and link #7778");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("carries no event on a row that judged the lane to owe none", async () => {
+		const {outcome} = await spawnSweep(building(), {
+			_tag: "Alive",
+			token: "build:live-session:9092",
+			ageMinutes: 12,
+			budgetMinutes: 40,
+			scanned: 1,
+		});
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({verdict: "working"});
+		expect(row).not.toHaveProperty("event");
+	});
+
+	it("reads a lane holding no claim at all as a dispatch, not a park", async () => {
+		const {outcome, fs} = await spawnSweep(building(), {_tag: "Unclaimed", scanned: 0});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working"});
+		expect(row?.reason).toContain("no build claim stands on #7778");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("withholds the append under --check and still names where the park would land", async () => {
+		const {outcome, fs} = await spawnSweep(building(), dead(), undefined, true);
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			key: "7778",
+			verdict: "parkable",
+			cause: "spawn-dead",
+			from: BUILD_FOLD,
+			to: BLOCKED_FOLD,
+		});
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("spends no board read on a building lane when the arm is off", async () => {
+		const {outcome, asked, fs} = await sweep(building(), proven);
+		expect(outcome.code).toBe(0);
+		expect(rows(outcome.stdout)[0]).toMatchObject({key: "7778", verdict: "current"});
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+});
+
+describe("runRecover --spawns — the populations beside a single lane's plain build leaf", () => {
+	it("parks a dead rendered-surface builder on a PR read it actually made", async () => {
+		const ui = tree([{lane: "7778", log: BUILDING_LOG, workflow: uiTemplate()}]);
+		const {outcome, asked, fs} = await spawnSweep(ui, dead());
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			key: "7778",
+			verdict: "parked",
+			state: "build:ui",
+			event: "BLOCKED",
+			cause: "spawn-dead",
+			to: BLOCKED_FOLD,
+		});
+		// The read was made rather than skipped — the `build:ui` leaf used to fall off the recorded-
+		// event claim table at `not-required` and land as an `unreadable` row naming a read nobody made.
+		expect(asked).toEqual([7778]);
+		expect(logOf(fs, "7778") ?? "").toContain("spawn-dead");
+	});
+
+	it("leaves a rendered-surface lane whose builder published a PR", async () => {
+		const ui = tree([{lane: "7778", log: BUILDING_LOG, workflow: uiTemplate()}]);
+		const {outcome, fs} = await spawnSweep(ui, dead(), undefined, false, {
+			_tag: "Read",
+			trace: {_tag: "One", pr: 9257},
+			scanned: 1,
+		});
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({key: "7778", verdict: "working", state: "build:ui"});
+		expect(row?.reason).toContain("#9257 is open and links #7778");
+		expect(logOf(fs, "7778")).toBeUndefined();
+	});
+
+	it("parks an epic child on its branch read and spends no board read on a PR it cannot have", async () => {
+		const child = tree([
+			{lane: "9241", log: line("WIP", at(0), "issue_9301"), workflow: childTemplate()},
+		]);
+		const {outcome, claimed, asked, fs} = await spawnSweep(child, dead());
+		expect(outcome.code).toBe(0);
+		const parked = rows(outcome.stdout).find((row) => row.verdict === "parked");
+		expect(parked).toMatchObject({
+			key: "9241",
+			task: "issue_9301",
+			state: "build",
+			event: "BLOCKED",
+			cause: "spawn-dead",
+		});
+		// The child's own issue, never the epic's, and no PR read at all: a child opens none, so the
+		// row must not claim one was inspected.
+		expect(claimed).toEqual([9301]);
+		expect(asked).toEqual([]);
+		expect(parked?.reason).toContain("never onto a pull request");
+		expect(logOf(fs, "9241") ?? "").toContain("spawn-dead");
+	});
+
+	it("leaves an epic child whose lane branch still carries its commits", async () => {
+		const child = tree([
+			{lane: "9241", log: line("WIP", at(0), "issue_9301"), workflow: childTemplate()},
+		]);
+		const {outcome, asked, fs} = await spawnSweep(child, dead(), {
+			_tag: "Read",
+			branches: ["build/9301-editor-focus-4f2a"],
+		});
+		const row = rows(outcome.stdout).find((entry) => entry.task === "issue_9301");
+		expect(row).toMatchObject({verdict: "working"});
+		expect(row?.reason).toContain("build/9301-editor-focus-4f2a");
+		expect(asked).toEqual([]);
+		expect(logOf(fs, "9241")).toBeUndefined();
 	});
 });

@@ -700,9 +700,11 @@ const treesFreedOf = (
  * tree still holding its lane branch, which the row's `build retire` remedy takes back where a
  * license reaches it.
  *
- * **The stranded claim is retracted here, on proof rather than on absence** — the one age test the
- * claim protocol allows, confined to this row and to a lane a driver already parked on
- * `spawn-dead`. There is no heartbeat,
+ * **The stranded claim is retracted here, on proof rather than on absence** — and this row is the
+ * only place the claim protocol allows a claim to *end* on its age. The park it ends inside no longer
+ * has to be a driver's: `lane recover --spawns` may record the same park on a strict residue
+ * conjunction, and it retracts nothing, so the age read now reaches two callers while the retraction
+ * still reaches one. There is no heartbeat,
  * so what proves the shell dead is its claim outliving the budget for the kind of work it took
  * (`../lane/shell-budget.ts`), and {@link reclaimDeadClaim} retracts it and re-reads the board to
  * prove it gone. A claim still inside its budget is a shell that may be working, so the park holds;

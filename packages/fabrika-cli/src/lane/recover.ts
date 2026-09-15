@@ -34,9 +34,20 @@
  * terminal, or a head the reviewer has not yet seen — and none of those is readable offline today.
  * A park is a thing a person or a driver decides, and so is calling a build finished; this records
  * the verdicts a shell already posted and died before writing.
+ *
+ * **The `build` leaf came back on a different question, and {@link buildingBy} is its walk.** The
+ * paragraph above is about *finishing* a build, which stays off limits for the reason it gives. What
+ * the spawn arm asks is whether the builder is **gone**, which turns on live board residue rather
+ * than on an offline proof — so the conjunction it reads is the verb's, written once in that verb's
+ * own reference row (`../../docs/verb-reference.md`, `lane recover`). What lives here is the offline
+ * half: which tasks to ask about ({@link buildingBy}), where a builder in each role would have left
+ * its work ({@link publicationOf}), and the park those reads record ({@link DEAD_SPAWN_EVENT},
+ * {@link DEAD_SPAWN_CAUSE}).
  */
 
+import {isBuildState, shellState} from "../wire/lane-brief.ts";
 import type {LaneStatus} from "./fold.ts";
+import type {LaneRole} from "./prove.ts";
 import {REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
 
 /**
@@ -95,3 +106,66 @@ export const owedBy = (
 	}
 	return owed;
 };
+
+/**
+ * The event and the cause the spawn arm records — the `blocked` + `spawn-dead` row's own park.
+ *
+ * Named here rather than spelled at the append so the arm and the recipe that clears it cannot come
+ * to disagree about which park this is: `../recipe/parks.ts` keys its clearance on exactly this pair.
+ */
+export const DEAD_SPAWN_EVENT = "BLOCKED";
+export const DEAD_SPAWN_CAUSE = "spawn-dead";
+
+/**
+ * Every task of a non-terminal lane standing in a leaf a **builder** runs in.
+ *
+ * The second walk of one sweep, and it is deliberately not {@link owedBy}'s: a build leaf owes its
+ * ledger no event at all ({@link OWED_EVENTS} leaves it out, and the module docblock carries why),
+ * so what the spawn arm asks about it is the opposite question — not "did a finished shell already
+ * earn an event nobody recorded", but "is the shell that took this leaf gone, leaving the lane
+ * holding a seat nothing will ever move".
+ *
+ * `build:ui` is in, because a killed rendered-surface builder strands a lane exactly as a text one
+ * does; the membership is read off {@link isBuildState} rather than a list here, so a sixth shell
+ * state cannot join one reading and not the other. An epic child region is in for the same reason
+ * and arrives by a different route — `./prove.ts`'s `issueOf` resolves an `issue_<n>` task — so what
+ * this walk returns spans two leaves and three roles, and {@link publicationOf} is what keeps the
+ * arm's third read answerable for every one of them.
+ *
+ * Empty on a terminal lane for {@link owedBy}'s reason: a done lane holds no seat, and asking the
+ * board about one would spend a read per finished lane on every sweep.
+ */
+export const buildingBy = (status: LaneStatus): ReadonlyArray<TaskLeaf> => {
+	if (status.status === "done") return [];
+	return activeTaskLeaves(status).filter(({leaf}) => {
+		const state = shellState(leaf);
+		return state !== null && isBuildState(state);
+	});
+};
+
+/**
+ * Where a builder in this role leaves its work when it gets far enough to leave any — the surface
+ * the spawn arm's third conjunct has to read before it may call a lane abandoned.
+ *
+ * It turns on the **role** and not the leaf, because publishing is a property of the lane shape: a
+ * single lane and an epic tail open a pull request, and a `build:ui` leaf opens the same one a
+ * `build` leaf does. An epic child opens none by design — one epic run is one branch and one PR, and
+ * the tail owns it — so a child's work is visible only as commits on its own lane branch.
+ *
+ * **This table exists because `./prove.ts`'s does not answer here.** `claimOf` says what a *recorded
+ * event* asserts, and its `DONE` arm keys on the plain `build` leaf: a `build:ui` leaf answers
+ * `None`, and a child answers `RangeCommits`. Borrowing it for this question gave a `build:ui` lane
+ * an exit-0 `not-required` and a child a range read, and the arm reported both as a PR read that
+ * "did not settle" — a reason naming an inspection nobody made, over a population that could then
+ * never reach a park at all. So the arm asks this instead, and each answer names one read it makes:
+ * `OpenPull` is the board read, and `LaneBranch` is the branch read the conjunct before it already
+ * took.
+ */
+export type Publication =
+	/** The board carries it: an open pull request whose body links the issue. */
+	| {readonly _tag: "OpenPull"}
+	/** This clone carries it: commits on the child's own lane branch, and never a pull request. */
+	| {readonly _tag: "LaneBranch"};
+
+export const publicationOf = (role: LaneRole): Publication =>
+	role._tag === "Child" ? {_tag: "LaneBranch"} : {_tag: "OpenPull"};
