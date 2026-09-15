@@ -479,7 +479,7 @@ export const cutPromptId = (items: ReadonlyArray<TranscriptItem>): ItemId | null
 
 /**
  * The reply row of the turn in flight: the row a cut turn's "You stopped this response" fold label
- * is read off, once `markInterrupted` has flagged it.
+ * is read off, once `remarkCutReplies` has flagged it.
  *
  * This names the *mark*, never the resend anchor — `cutPromptId` owns that. Scoped to the newest
  * `user` row deliberately: a turn whose content was tool calls alone draws no assistant row at all
