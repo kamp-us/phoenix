@@ -8,11 +8,13 @@
  * step names a product they do not have. Nothing else in the corpus catches one, and every lane that
  * edits a skill adds more.
  *
- * The five matchers below are the whole rule. Three things are deliberately not hits: a markdown
+ * The five matchers below are the whole rule. Four things are deliberately not hits: a markdown
  * heading (`#` with no digits behind it), a hex colour (`#fff`, `#1a1a1a` — a colour carries letters
- * or too few digits to be a ticket), and a ticket number that is test *data* — the subject under
- * test in a `*.test.ts` string literal, or anything under a fixtures directory, where the number is
- * the input rather than a claim about the world.
+ * or too few digits to be a ticket), a ticket number that is test *data* — the subject under test in
+ * a `*.test.ts` string literal, or anything under a fixtures directory, where the number is the
+ * input rather than a claim about the world — and an `@ruling` citation under
+ * {@link CITATION_ROOT}, which is a link into fabrika's own history rather than into the reader's
+ * tree.
  *
  * Scope, the fail-closed floor and the allow-list live at the IO boundary in `./portability-verb.ts`;
  * this module never touches disk and never decides what a scan covered.
@@ -128,6 +130,31 @@ const DECISION_LINK = /\.decisions\//g;
 /** A hosted issue or pull-request URL, whoever owns the repository it names. */
 const URL_REF = /github\.com\/[\w.-]+\/[\w.-]+\/(?:issues|pull)\//g;
 
+/**
+ * The one repo-bound reference `packages/fabrika-cli` text may keep: an `@ruling` tag naming the
+ * hosted issue or comment that settled the module's behaviour.
+ *
+ * The comment law says a docblock re-deriving a governing record's *why* collapses to a pointer at
+ * that record, and every spelling of that pointer — a decision-record number, a decision-corpus
+ * path, a hosted URL — is a hit above. So a module here had no way to cite what governs it and
+ * either carried the whole why in place or cited nothing. The tag is the third spelling, and it is
+ * portable in the way that matters: an adopter reads it as a link into fabrika's own history rather
+ * than as a pointer into their tree, which is exactly what it is.
+ *
+ * Only the tag's own span is exempt, so prose sharing the line is still scanned, and the tag must
+ * name a hosted issue or pull-request URL, so `@ruling see the thread` buys nothing.
+ */
+const RULING_CITATION = /@ruling\s+https:\/\/\S+\/(?:issues|pull)\/\d+\S*/g;
+
+/**
+ * The tree the `@ruling` citation is admitted under.
+ *
+ * Path-scoped rather than docblock-scoped: the ruling names verb docblocks, and no rule can read
+ * "is this a verb docblock" off a line of text. `claude-plugins/fabrika` is deliberately outside —
+ * a skill's reader is the adopter's agent, and a link it cannot resolve teaches that agent nothing.
+ */
+const CITATION_ROOT = "packages/fabrika-cli/";
+
 const REASONS: Readonly<Record<PatternId, string>> = {
 	issue: "an issue or pull-request number — it resolves only in the repository it was filed in",
 	"decision-number":
@@ -196,6 +223,18 @@ const isTicketData = (path: string, line: string, index: number, length: number)
 	return within(stringSpans(line), index, length);
 };
 
+/**
+ * The `[start, end)` ranges of one line that a ruling citation occupies, empty outside
+ * {@link CITATION_ROOT}.
+ */
+const citationSpans = (path: string, line: string): ReadonlyArray<readonly [number, number]> => {
+	if (!normalize(path).startsWith(`/${CITATION_ROOT}`)) return [];
+	RULING_CITATION.lastIndex = 0;
+	return [...line.matchAll(RULING_CITATION)].map(
+		(match) => [match.index ?? 0, (match.index ?? 0) + match[0].length] as const,
+	);
+};
+
 /** Every repo-bound reference in one file's text. */
 export const scanFile = (
 	path: string,
@@ -214,10 +253,12 @@ export const scanFile = (
 	const lines = content.split("\n");
 	for (let i = 0; i < lines.length; i++) {
 		const text = lines[i] ?? "";
+		const cited = citationSpans(path, text);
 		for (const [pattern, regex] of matchers) {
 			regex.lastIndex = 0;
 			for (const match of text.matchAll(regex)) {
 				const index = match.index ?? 0;
+				if (within(cited, index, match[0].length)) continue;
 				if (pattern === "issue" && isTicketData(path, text, index, match[0].length)) continue;
 				hits.push({line: i + 1, pattern, matched: match[0]});
 			}

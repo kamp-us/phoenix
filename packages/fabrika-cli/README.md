@@ -44,7 +44,12 @@ portability-guard check` holds that on every push: it walks `claude-plugins/fabr
 `packages/fabrika-cli/src/` and reds a ticket number, a decision-record number in either spelling, a
 `.decisions/` path, a hosted issue or pull-request URL, and any name the repo declares under the
 `portability` key of `.fabrika.jsonc`. A markdown heading, a hex colour and a ticket number that is
-test data are not references. The bounded allow-list in `portability-guard.config.json` has two
+test data are not references. Neither is an `@ruling <issue url>` citation under
+`packages/fabrika-cli/`: a docblock here cites the ruling issue that governs it rather than a
+decision record, because a decision-record number means something else in the next repository
+([ADR 0394](../../.decisions/0394-a-fabrika-cli-docblock-cites-its-ruling-issue.md)). Only the tag's
+own span is admitted, so prose sharing the line is scanned as usual, and the tag must name a URL.
+The bounded allow-list in `portability-guard.config.json` has two
 buckets, each entry carrying a mandatory `why`: `exempt` is a permanent per-file cap for text that
 is not a portability defect, and `unmigrated` is the sweep floor — one row per sweep unit, and it
 only shrinks, so a ceiling left above the count reds exactly as loudly as a new reference does.

@@ -29,7 +29,10 @@ and stage. Local apps have no `alchemy.run.ts` and never deploy.
 - Comments explain a local invariant or constraint the code cannot express. Keep
   rationale in decisions and reusable implementation guidance in patterns. Apply
   [deslop-comments](claude-plugins/fabrika/skills/deslop-comments/SKILL.md) when
-  reviewing comment noise.
+  reviewing comment noise. Under `packages/fabrika-cli/` a docblock cites its
+  governing ruling with an `@ruling` tag naming the issue, never an ADR number or a
+  `.decisions/` path — `portability-guard` reds both there
+  ([ADR 0394](.decisions/0394-a-fabrika-cli-docblock-cites-its-ruling-issue.md)).
 - Follow applicable Fabrika skills when using Fabrika. Discover the current skills
   through the installed catalog or [skill directories](claude-plugins/fabrika/skills/).
   File deferred work through [report](claude-plugins/fabrika/skills/report/SKILL.md)
