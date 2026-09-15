@@ -145,6 +145,21 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
  */
 export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
+	/**
+	 * The required namespaces this proof stood on a **route** for rather than a verdict — empty on
+	 * every proof that read no head and on every head whose namespaces were all judged.
+	 *
+	 * It rides the outcome for `deferred`'s reason and answers the question `deferred` cannot: a
+	 * `PASS` proven over a namespace nobody judged, because a head-bound `routed-elsewhere` record
+	 * says the PR owes it no verdict, is a different fact from one proven over a namespace that
+	 * passed. `lane report` records it on the event line, so a reader can tell the two apart later
+	 * without re-reading the board — which is exactly what the hand-recorded `PASS` lines that
+	 * cleared this park by hand could not say (see {@link ROUTED_NAMESPACES}).
+	 *
+	 * It is never a polarity. A routed namespace holds no verdict at either sign, and nothing here
+	 * or downstream promotes one into a `PASS` marker.
+	 */
+	readonly routed: ReadonlyArray<string>;
 	readonly partial: boolean | null;
 	readonly landed: ReadonlyArray<number>;
 	/**
@@ -161,6 +176,7 @@ export interface ProofOutcome extends VerbOutcome {
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
 type ProofAnswer = VerbOutcome & {
 	readonly deferred?: ReadonlyArray<string>;
+	readonly routed?: ReadonlyArray<string>;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
 	readonly diagnosis?: boolean;
@@ -186,6 +202,7 @@ export const runProve = (
 	Effect.map(prove(options), (outcome) => ({
 		...outcome,
 		deferred: outcome.deferred ?? [],
+		routed: outcome.routed ?? [],
 		partial: outcome.partial ?? null,
 		landed: outcome.landed ?? [],
 		diagnosis: outcome.diagnosis ?? false,
@@ -840,6 +857,9 @@ const proveVerdicts = (
 		}
 		const proof = foldNamespaces(read.rows, `#${pr}`);
 		if (proof._tag !== "Proven") return {...seat(proof, read.notes), deferred: []};
+		// Read off the rows the fold just accepted rather than off the required set: only a row the
+		// proof actually stood on is evidence, and a namespace that merely *could* be routed is not.
+		const routed = read.rows.filter((row) => row.state === "routed").map((row) => row.namespace);
 		return {
 			...answer(
 				JSON.stringify(
@@ -854,6 +874,7 @@ const proveVerdicts = (
 							head: read.head,
 							namespaces: read.rows,
 							deferred: read.deferred,
+							...(routed.length === 0 ? {} : {routed}),
 						},
 					},
 					null,
@@ -862,6 +883,7 @@ const proveVerdicts = (
 				read.notes,
 			),
 			deferred: read.deferred,
+			routed,
 		};
 	});
 

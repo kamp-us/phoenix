@@ -532,6 +532,31 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			{namespace: "review-ui", state: "routed", commentId: 2},
 		]);
 		expect(out.stderr.join("\n")).toContain("is routed rather than judged");
+		// The route is disclosed rather than left for a later reader to re-derive off the board:
+		// `lane report` records it on the event line so a `PASS` earned on a route never reads as one
+		// a rendered gate gave.
+		expect(JSON.parse(out.stdout).evidence.routed).toEqual(["review-ui"]);
+	});
+
+	it("discloses no route on a head every required namespace was actually judged at", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
+					{id: 2, body: `review-ui: PASS @ ${HEAD} — the render is right`},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review:ui"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(out.stdout).evidence, "routed")).toBe(false);
 	});
 
 	it("holds the same lane when the route was attested at a head the branch has moved past", async () => {

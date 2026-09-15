@@ -60,6 +60,12 @@ import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
  * epic child hands to its epic's tail. Without it a deferred `PASS` and a whole-set one are
  * the same line, and nothing in the ledger says a rendered verdict is still owed anywhere.
  *
+ * `routed` is that disclosure's complement, and it rides the opposite answer: the namespaces this
+ * `PASS` was proven over on a head-bound **route** rather than a verdict — nobody owes one, because
+ * the rendered gate published a record saying this PR is not its to judge. `deferred` says a verdict
+ * is still owed somewhere; `routed` says none is owed at all. Without it the `PASS` a satisfied
+ * route earns is byte-identical to one a rendered gate passed.
+ *
  * `tasks` is the sixth and rides one line only, an {@link AMENDED_EVENT}: the task set the
  * re-derived machine holds. It is the whole audit of a topology amendment — the log is append-only,
  * so the machine that folded the lines above this one is gone, and this field is what says which
@@ -89,6 +95,20 @@ export interface LogEntry {
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
+	/**
+	 * The required namespaces this event's proof stood on a head-bound **route** for rather than on a
+	 * verdict — `deferred`'s complement, and disclosure rather than a payload.
+	 *
+	 * `deferred` says which namespace a later cell still owes; this says which one nobody owes a
+	 * verdict on at all, because a `routed-elsewhere` record at the head states this PR is not the
+	 * rendered gate's to judge. Without it the `PASS` that a satisfied route earns is byte-identical
+	 * to one a rendered gate actually passed, and a reader auditing how a ui-class lane reached
+	 * `ship` has to re-read the board to tell them apart.
+	 *
+	 * The fold reads it no more than it reads `deferred`: it is evidence on the line, never a payload
+	 * that moves a state.
+	 */
+	readonly routed?: ReadonlyArray<string>;
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
@@ -190,6 +210,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
+			routed?: unknown;
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
@@ -265,6 +286,21 @@ export const parseLog = (text: string): ParseLogResult => {
 			)
 		) {
 			defects.push(`line ${index + 1} carries a \`deferred\` field that is not a list of names`);
+			continue;
+		}
+		// An empty `routed` names no routed namespace while reading as evidence that one was found —
+		// the same silent no-op an empty `landed` is, and a defect here for the same reason.
+		if (
+			record.routed !== undefined &&
+			!(
+				Array.isArray(record.routed) &&
+				record.routed.length > 0 &&
+				record.routed.every((name) => typeof name === "string" && name !== "")
+			)
+		) {
+			defects.push(
+				`line ${index + 1} carries a \`routed\` field that is not a non-empty list of names`,
+			);
 			continue;
 		}
 		// Only `true` is a routing fact; a `false` on the line says the merge closed, which is the
@@ -419,6 +455,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.deferred === undefined
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
+			...(record.routed === undefined ? {} : {routed: record.routed as ReadonlyArray<string>}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),

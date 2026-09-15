@@ -27,6 +27,15 @@
  * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
  * driver passes.
  *
+ * **One token names two events, and the proof picks.** `ROUTED-ELSEWHERE` out of `review:ui` is
+ * [`report.ts`](report.ts)'s one {@link PROOF_CONDITIONAL_TERMINALS} row: a published head-bound
+ * route beside a complete set of binding verdicts is a *finished* review, so the terminal records
+ * the `PASS` that finish earns instead of a park the board itself contradicts. The advanced arm is
+ * tried, never assumed — the lane's own machine must hold the transition and `lane prove` must earn
+ * it unmodified — and every shortfall falls through to the park the flat table maps, byte-for-byte
+ * as before. `routed` rides the line that lands, so the ledger says the `PASS` stood on a route
+ * rather than on a rendered verdict nobody wrote.
+ *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
  * this verb runs the same read `lane prove` runs, so a `DONE` and a `PASS` enter the ledger with
@@ -40,7 +49,7 @@ import {Effect, FileSystem, Path, Result} from "effect";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import {
 	APPEND_UNKNOWN,
@@ -54,13 +63,16 @@ import {
 	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
+import type {CompiledLane, OperatorEvent, TaskState} from "./machine.ts";
 import {parkCauseRefusal} from "./park-cause-rule.ts";
 import {gateOnProof} from "./proof-gate.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
+	type ConditionalTerminal,
 	causeForEvent,
 	classesForEvent,
+	conditionalTerminal,
 	eventForToken,
 	floorQueueWait,
 	machineryCause,
@@ -95,6 +107,85 @@ export interface ReportOptions extends LaneRef {
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
+
+/** The leaf a folded task stands in — `""` where the fold holds no state for it. */
+const freshLeafOf = (
+	fold: Extract<ReturnType<typeof foldLog>, {readonly _tag: "Folded"}>,
+	taskId: string,
+): string => fold.states[taskId]?.type ?? "";
+
+/**
+ * Whether the advanced arm was earned, and the one line that says why either way.
+ *
+ * `Parked` is not a refusal: the caller falls through to the event its token maps to flat, which is
+ * what it recorded before this arm existed. The note is what keeps that legible — a driver reading
+ * `blocked` needs told the advance was *tried* and what the board said, or the park looks like the
+ * unconditional one it used to be.
+ */
+type Advance =
+	| {
+			readonly _tag: "Advanced";
+			readonly event: OperatorEvent;
+			readonly proof: ProofOutcome;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Parked"; readonly note: string};
+
+interface AdvanceInput<R> {
+	readonly prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>;
+	readonly options: ProveOptions;
+	readonly lane: CompiledLane;
+	readonly states: Readonly<Record<string, TaskState>>;
+	readonly taskId: string;
+	readonly at: string;
+	readonly classes: ReadonlyArray<string> | null;
+	readonly conditional: ConditionalTerminal;
+	readonly token: string;
+}
+
+/**
+ * Try the advanced event, and answer `Parked` on anything short of a clean proof.
+ *
+ * Two gates and both are the ordinary ones. The machine must hold the transition out of this cell —
+ * a lane whose own `workflow.json` has no such arm never advances, which is how a foreign machine
+ * and an epic child's region are covered without naming either. Then the proof is `lane prove`'s,
+ * run unmodified for the advanced event: nothing here relaxes a floor, subtracts a namespace or
+ * reads a route the prover would not have read on its own.
+ */
+const tryAdvance = <R>(input: AdvanceInput<R>): Effect.Effect<Advance, never, R> =>
+	Effect.gen(function* () {
+		const walkable = applyEvent(
+			input.lane,
+			input.states,
+			input.taskId,
+			input.conditional.advanced,
+			input.at,
+			input.classes,
+			null,
+			null,
+			null,
+			null,
+		);
+		if (walkable._tag === "Refused") {
+			return {
+				_tag: "Parked",
+				note: `${VERB}: ${input.token} could advance this task to ${input.conditional.advanced}, but this lane's own machine holds no such arm out of "${input.conditional.leaf}" — recording the park instead.`,
+			};
+		}
+		const proof = yield* input.prove(input.options);
+		if (proof.code !== ANSWER) {
+			return {
+				_tag: "Parked",
+				note: `${VERB}: ${input.token} advances to ${input.conditional.advanced} only where ${input.conditional.earns}; the proof answered exit ${proof.code}, so the park stands and nothing was widened.`,
+			};
+		}
+		return {
+			_tag: "Advanced",
+			event: input.conditional.advanced,
+			proof,
+			note: `${VERB}: ${input.token} is proven complete — ${input.conditional.earns} — so it records ${input.conditional.advanced} rather than the park. No rendered verdict was written or assumed.`,
+		};
+	});
 
 export const runReport = <R>(
 	options: ReportOptions,
@@ -133,18 +224,62 @@ export const runReport = <R>(
 		const fold = foldLog(loaded.lane, loaded.entries);
 		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
 
+		const leaf = fold.states[task.taskId]?.type ?? "";
+		const conditional = conditionalTerminal(resolved.token, leaf);
+		const proveOptions = (event: OperatorEvent) => ({
+			root: options.root,
+			lane: options.lane,
+			event,
+			task: task.taskId,
+			// The same classes the append carries, so the proof asks about the arm this event actually
+			// takes rather than the one the lane stood on before it.
+			classes: classed.classes,
+			// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
+			// not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
+			pr: options.pr,
+			repo: options.repo,
+			cwd: options.cwd,
+			env: options.env,
+		});
+
 		const at = yield* Effect.sync(() => new Date().toISOString());
+		// The advanced arm is **tried**, never assumed: the machine must hold the transition and the
+		// ordinary proof must earn it. Every refusal falls through to the parked event this token maps
+		// to flat, which is byte-for-byte what it recorded before the conditional row existed — so a
+		// missing, stale, unauthorized or unreadable route, an outstanding review or a standing FAIL
+		// all park exactly as they did, and only a proof nobody had to weaken advances the lane.
+		const attempt =
+			conditional === null
+				? null
+				: yield* tryAdvance({
+						prove,
+						options: proveOptions(conditional.advanced),
+						lane: loaded.lane,
+						states: fold.states,
+						taskId: task.taskId,
+						at,
+						classes: classed.classes,
+						conditional,
+						token: resolved.token,
+					});
+		const advanced = attempt?._tag === "Advanced" ? attempt : null;
+		const event: OperatorEvent = advanced?.event ?? resolved.event;
+		// A cause names why a lane parked, so the advanced arm carries none — and the caller is not
+		// refused for having passed one, because at the moment it typed the flag the park was the only
+		// reading its token had. The line records the route instead.
+		const cause = advanced === null && caused._tag === "Caused" ? caused.cause : null;
+
 		const applied = applyEvent(
 			loaded.lane,
 			fold.states,
 			task.taskId,
-			resolved.event,
+			event,
 			at,
 			classed.classes,
 			null,
 			null,
 			null,
-			caused._tag === "Caused" ? caused.cause : null,
+			cause,
 		);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
@@ -153,28 +288,18 @@ export const runReport = <R>(
 		// The proof runs BEFORE the lock: it is read-only over the artifacts, never over the lane's
 		// bytes, so holding writers up behind a slow board read buys nothing. What the lock
 		// covers is the authoritative second pass below, where a fresh fold decides and appends.
-		const gated = yield* gateOnProof(
-			VERB,
-			prove,
-			{
-				root: options.root,
-				lane: options.lane,
-				event: resolved.event,
-				task: task.taskId,
-				// The same classes the append carries, so the proof asks about the arm this event actually
-				// takes rather than the one the lane stood on before it.
-				classes: classed.classes,
-				// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
-				// not only the line it lands on — nominating for it cannot see a merged `Part of #N`.
-				pr: options.pr,
-				repo: options.repo,
-				cwd: options.cwd,
-				env: options.env,
-			},
-			`the ${resolved.event} behind token ${resolved.token}`,
-		);
+		const gated =
+			advanced === null
+				? yield* gateOnProof(
+						VERB,
+						prove,
+						proveOptions(event),
+						`the ${event} behind token ${resolved.token}`,
+					)
+				: ({_tag: "Proven", proof: advanced.proof} as const);
 		if (gated._tag === "Refused") return gated.outcome;
 		const proved = gated.proof;
+		const conditionalNotes = attempt === null ? [] : [attempt.note];
 
 		// Authoritative pass, inside the write lock: a fresh load → fold → validate → append against
 		// the bytes as they exist under the lock, so a shell recording its terminal cannot validate
@@ -192,6 +317,20 @@ export const runReport = <R>(
 				const freshFold = foldLog(fresh.lane, fresh.entries);
 				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
 
+				// The conditional reading is keyed on the leaf, so it is re-read under the lock for the
+				// reason the fold is: a task another writer moved out of `review:ui` between the proof and
+				// the append is not the task this event was proven for, and recording the advanced arm
+				// there would spend a proof on a cell it never stood in.
+				if (
+					advanced !== null &&
+					conditionalTerminal(resolved.token, freshLeafOf(freshFold, freshTask.taskId)) === null
+				) {
+					return refuse(
+						EVENT_REFUSED,
+						`${VERB}: refused (log unappended): task "${freshTask.taskId}" left "${leaf}" while ${resolved.token}'s ${advanced.event} was being proven — re-read the lane and report again.`,
+					);
+				}
+
 				const now = yield* Effect.sync(() => new Date().toISOString());
 				// The floor is read here and not in the pre-lock pass because the line it measures from is
 				// exactly what a concurrent writer moves: a re-fold that cleared the floor before the lock
@@ -200,7 +339,7 @@ export const runReport = <R>(
 					lane: fresh.lane,
 					states: freshFold.states,
 					taskId: freshTask.taskId,
-					event: resolved.event,
+					event,
 					lastAt: fresh.entries.findLast((entry) => entry.task === freshTask.taskId)?.at,
 					now,
 				});
@@ -214,13 +353,13 @@ export const runReport = <R>(
 					fresh.lane,
 					freshFold.states,
 					freshTask.taskId,
-					resolved.event,
+					event,
 					now,
 					classed.classes,
 					null,
 					proved.partial,
 					proved.diagnosis ? true : null,
-					caused._tag === "Caused" ? caused.cause : null,
+					cause,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);
@@ -230,8 +369,9 @@ export const runReport = <R>(
 					...reapplied.entry,
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
-					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+					...(cause === null ? {} : {cause}),
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
+					...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
@@ -251,8 +391,9 @@ export const runReport = <R>(
 							taskAffected: freshTask.taskId,
 							...(options.pr === null ? {} : {pr: options.pr}),
 							...(options.comment === null ? {} : {comment: options.comment}),
-							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+							...(cause === null ? {} : {cause}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
+							...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
 							...(proved.partial === null ? {} : {partial: proved.partial}),
 							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
@@ -261,6 +402,7 @@ export const runReport = <R>(
 						2,
 					),
 					[
+						...conditionalNotes,
 						...proved.stderr,
 						`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${fresh.logPath}, proven first.`,
 					],
