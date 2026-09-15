@@ -1,12 +1,15 @@
 import {readFileSync} from "node:fs";
 import {Effect, Result, Schema} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import type {AnyProgram} from "../registry/program.ts";
+import {PromptPayloadSchema, TurnResultSchema} from "../ai-agent/ports/index.ts";
+import {claudeSession} from "../claude/program.ts";
+import {ClientId, WorkspaceId} from "../commands/spell.ts";
+import type {AnyProgram, PortSchema} from "../registry/program.ts";
 import {argKey, argKeys, fillArgs, programArgs} from "./args.ts";
 import {defineProgram} from "./define-program.ts";
 import {spawn} from "./effect.ts";
 import {port} from "./port.ts";
-import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
+import {Program, ShapeMismatch, type ShapeSource, shapeOf} from "./shape.ts";
 
 const Prompt = Schema.Struct({pr: Schema.Number});
 const Verdict = Schema.Struct({verdict: Schema.String});
@@ -144,5 +147,44 @@ describe("authoring.args", () => {
 		expectTypeOf(spawn(args.reviewer, {on: {result: "reviewed"}})).toBeObject();
 		// @ts-expect-error — the shape declares no out-port named `progress`.
 		spawn(args.reviewer, {on: {progress: "reviewed"}});
+	});
+});
+
+/**
+ * The seam between an authored shape and a *live shipped session row* — the one proof the scheduler
+ * that used to live in `src/cron/` carried, kept here now that it has moved out to
+ * `@cansirin/tuval-cron`. It used to pin the failure: a live row read as `{in: {}, out: {}}`, so a
+ * wrapper had to stand between a config and a shaped arg. #8887 taught `shapeOf` to read a compiled
+ * row and #8959 gave those rows their schemas, so the row fits on its own. `shape.unit.test.ts`
+ * checks a hand-built `ShapeSource` with the real port constructors; this one calls the shipped
+ * factory, so the day one of *its* ports stops publishing a payload schema, this fails.
+ */
+describe("authoring.args against a live shipped session row (#8959)", () => {
+	const agentArgs = programArgs("agent-job", {
+		job: Program.shape({in: {prompt: PromptPayloadSchema}, out: {result: TurnResultSchema}}),
+	});
+
+	/** A real session row, built the way a config builds one. */
+	const session = () =>
+		claudeSession({
+			cwd: "/tmp/tuval-args-test",
+			scope: {workspace: WorkspaceId.make("tuval/test"), client: ClientId.make("tuval-desk")},
+		});
+
+	it("declares the payloads the real ports admit, on the sides the row states", () => {
+		const ports = session().ports as Readonly<Record<string, PortSchema>>;
+		// Checked by the row's own predicates rather than by a copy of them.
+		expect(ports.prompt?.accepts({text: "hi", key: "k", timestamp: Date.now()})).toBe(true);
+		expect(ports.result?.accepts({text: "done", items: [], ok: true})).toBe(true);
+		expect(ports.prompt?.direction).toBe("in");
+		expect(ports.result?.direction).toBe("out");
+	});
+
+	it("is fitted by the live row itself, which is why no wrapper stands between them", () => {
+		const live = session() as ShapeSource;
+		const shape = shapeOf(live);
+		expect(Object.keys(shape.in)).toContain("prompt");
+		expect(Object.keys(shape.out)).toContain("result");
+		expect(Result.isSuccess(fillArgs(agentArgs, {job: live}))).toBe(true);
 	});
 });

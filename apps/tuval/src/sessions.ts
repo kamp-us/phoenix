@@ -6,7 +6,7 @@
  * wants (`Program.shape` over `../ai-agent/ports/index.ts`'s payloads) and names no session; which
  * row fills that arg is `.tuval/tuval.config.ts`'s call, and these two factories are the rows it
  * has to choose from. `apps/tuval/.tuval/tuval.config.ts` is the worked instance of exactly that —
- * it builds a row here and hands it to `cron`'s `job` arg.
+ * it builds a row here and hands one to the `pr-review` example's `reviewer` arg.
  *
  * **The scope trio is re-exported because a row cannot be built without one.** `claudeSession` and
  * `codexSession` each take a `scope` whose two fields are branded (`../commands/spell.ts`), so a

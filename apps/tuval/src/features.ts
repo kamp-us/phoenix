@@ -60,21 +60,6 @@ export interface TuvalFeatures {
 	 * the row. ADR 0375.
 	 */
 	readonly prReviewExample: boolean;
-	/**
-	 * Register the desk's own scheduler as a program row, so a booted desk carries a `cron` that wakes
-	 * on a timer, starts a job program and reports the run (#9225). Off: the desk is the rows it
-	 * carried before this one — no row, no graph node, no `:cron` spells.
-	 *
-	 * A program row like `prReviewExample`, so it is stated one layer lower than a plain flag:
-	 * `.tuval/tuval.config.ts` reads its own `features` block to decide whether to build the row and
-	 * plan its graph node, because the merged record does not exist while a config module is being
-	 * evaluated (#8595). A global `~/.tuval/tuval.config.ts` stating this flag reaches the `Features`
-	 * service and not the row. ADR 0375.
-	 *
-	 * Declared off here and left off by this repo's own config: the job it ships spends Claude tokens
-	 * on a timer, so the row is one a desk opts into rather than one it boots with.
-	 */
-	readonly cron: boolean;
 }
 
 /**
@@ -91,5 +76,4 @@ export const featuresDefault: TuvalFeatures = {
 	windowTitles: false,
 	processBoard: false,
 	prReviewExample: false,
-	cron: false,
 };

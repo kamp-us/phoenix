@@ -15,6 +15,10 @@ import {SpawnedProcesses} from "../commands/core/process.ts";
 import {ClientId, type Scope, WorkspaceId} from "../commands/spell.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
+import {launch} from "../launch/launch.ts";
+import {compile} from "../ports/compile.ts";
+import {type Graph, NodeId} from "../ports/graph.ts";
+import {open} from "../ports/wiring.ts";
 import {Processes} from "../process/Processes.ts";
 import type {ProcessId} from "../process/process.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
@@ -127,5 +131,40 @@ describe("a command's bare port name reaches a process of its own program (#8898
 			assert.isTrue(exit._tag === "Failure", "a call with nothing live should have refused");
 			assert.include(exit._tag === "Failure" ? exit.cause.toString() : "", "NoLiveProcess");
 		}).pipe(Effect.provide(kernel([reviewer]))),
+	);
+});
+
+/**
+ * The launched half of the same resolution (#9230), which the ad-hoc cases above cannot show: a
+ * process the *graph* stood up, not one `SpawnedProcesses.spawn` was asked for. `launch` enrols
+ * every node it spawns in the same table `resolveOwnProcess` reads (#8944), so a compiled command's
+ * bare `send` reaches a planned node exactly as it reaches an ad-hoc one. Before that enrolment the
+ * resolution found the planned process and the delivery refused it.
+ *
+ * `it.live` for the reason the cases above are: the payload crosses the in-port's queue and pump
+ * before the cell that owns it has run, so the assertion waits on a real clock, bounded.
+ */
+const reviewerNode = NodeId.make("reviewer-node");
+
+/** One node and no routes — the shape a config plans a single standing program as. */
+const plan: Graph = {nodes: [{id: reviewerNode, program: reviewerId, on: []}]};
+
+describe("that bare port name reaches a process the graph launched (#9230)", () => {
+	it.live("lands on the planned node, which the spell refused before it was enrolled", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(plan);
+			const services = yield* Effect.context<never>();
+			const launched = yield* launch(compiled, yield* open(compiled), {services});
+			const planned = launched.find((process) => process.node === reviewerNode);
+			assert.isDefined(planned);
+
+			yield* callReview(9230);
+
+			const state = () => planned!.handle.getState() as State;
+			for (let attempt = 0; attempt < 200 && state().seen.length === 0; attempt++) {
+				yield* Effect.sleep("5 millis");
+			}
+			assert.deepStrictEqual(state().seen, [9230]);
+		}).pipe(Effect.scoped, Effect.provide(kernel([reviewer]))),
 	);
 });
