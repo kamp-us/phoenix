@@ -498,7 +498,7 @@ describe("the cut-reply record across that seam", () => {
  * The resume's read of that same seam (#9061), and the third reader to meet it.
  *
  * `refillTranscript` rebases the tail this process is holding onto the store's whole history, and
- * `heldPositions` (`ai-agent/core/fold.ts`) decides which history rows that tail already covers. On
+ * `heldAnchors` (`ai-agent/core/fold.ts`) decides which history rows that tail already covers. On
  * `id` alone it answered "none" for every agy row, and `rebaseOnStore`'s empty-range arm then
  * appended the tail behind the full history — a second copy of every turn the window was holding.
  *
@@ -548,10 +548,23 @@ describe("the resume's held-range rebase across that seam", () => {
 	it("splices the held tail into the range it covers, rather than behind the whole history", () => {
 		const out = refilled(roomy);
 
-		// The store's one row older than the range, then the tail itself in the order it was held.
-		// `line:5` and `line:8` are inside the range and have no held copy, so the substitution drops
-		// them — `rebaseOnStore`'s standing contract (#8855), and a defect of its own (#9208).
-		expect(ids(out.items)).toEqual([`${JOIN_CID}:line:0`, ...ids(heldTail())]);
+		// The store's one row older than the range, then the range itself: each held row at the
+		// position it was recognised at, and the two rows the live tail never held — `line:5`, the
+		// second turn's prompt, and `line:8`, agy's system notice — back between them (#9208).
+		expect(ids(out.items)).toEqual([
+			`${JOIN_CID}:line:0`,
+			`${JOIN_CID}:2`,
+			`${JOIN_CID}:3`,
+			`${JOIN_CID}:4`,
+			`${JOIN_CID}:line:5`,
+			`${JOIN_CID}:6`,
+			echo.id,
+			`${JOIN_CID}:line:8`,
+			`${JOIN_CID}:9`,
+		]);
+		// The held rows keep the order they were held in, so no prompt lands below the reply it
+		// produced.
+		expect(ids(out.items).filter((id) => ids(heldTail()).includes(id))).toEqual(ids(heldTail()));
 
 		// The `localEchoes` arm is untouched: the unconfirmed prompt still joins on text, so the
 		// store's copy of that turn is the range's rather than a second row (#7978).
@@ -566,5 +579,10 @@ describe("the resume's held-range rebase across that seam", () => {
 		expect(out.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
 		const turns = turnsOf(out.items);
 		expect(turns.filter((turn, index) => turns.indexOf(turn) !== index)).toEqual([]);
+
+		// And once is not zero: the two store-only rows inside the range are in that answer, so a
+		// bound roomy enough to hold both sides is not what is keeping them (#9208).
+		expect(turns).toContain(`${JOIN_CID}:line:5`);
+		expect(turns).toContain(`${JOIN_CID}:line:8`);
 	});
 });
