@@ -115,11 +115,19 @@ discipline: a must-refuse and a must-run control in the same session, one shape 
 A verb that takes its body on stdin — a verdict, a pull-request body, a filed report — meets the
 verifier as **one command string**, and a heredoc puts the whole body inside that string. Past a
 size the verifier does not publish, and on some character classes below any size, the command is
-refused with a containment message that names neither. Measured triggers: total length, a
-pipe-delimited table, brace groups, angle brackets, an apostrophe inside a quoted option value, and
-the version-control tool's three-letter name written in prose. An author who reads that message as a
+refused with a containment message that names neither. An author who reads that message as a
 containment fault deletes evidence until something lands, and nothing downstream can tell that a
 body was cut to fit a shell.
+
+**This is the one home for the measured triggers**; a skill that needs them cites this list rather
+than restating it. Refusals start at around 9 KB of total command text, and the same body passes or
+fails on content at that length, so the failing size is a band rather than a line. Below any size,
+the measured content triggers are a pipe-delimited table, brace groups, angle brackets, and an
+apostrophe inside a quoted option value. One further trigger is **version-conditional, not
+current**: the version-control tool's three-letter name written in prose was refused at harness
+2.1.267 and accepted at 2.1.272, so whether it was fixed between those versions or is conditional on
+something the later run did not carry is unknown. Re-check the whole list on a harness-version bump —
+every row is one host and one version, like every other measurement of this verifier.
 
 **The route is to take the body out of the command string, and it is the same three steps for every
 group whose verb reads stdin.** A skill names its own verb and its own slug; it does not invent a

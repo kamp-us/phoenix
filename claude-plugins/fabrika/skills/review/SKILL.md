@@ -404,36 +404,28 @@ back.
 <!-- anchor: STAGE-THE-VERDICT-RATHER-THAN-TRIM-IT --> **A verdict the harness refuses to carry is
 staged, never shortened.** The fence above puts the whole body inside one command string, and a
 worktree-isolated shell's verifier refuses a command it judges too complex with a message about
-containment that names no size — measured at around 9 KB, and below any size on a pipe-delimited
-table, brace groups, angle brackets, an apostrophe inside `--clause`, or the version-control tool's
-three-letter name written in your prose. Read as a containment fault, that refusal costs rounds and
-then evidence: the FAIL bodies carrying the most findings are the ones that hit it, and a verdict
-trimmed to fit a shell reads downstream as a verdict deliberately that short. **So do not cut the
-body.** Allocate a file for it, write it in bounded pieces, and redirect it in:
+containment that names no size. Read as a containment fault, that refusal costs rounds and then
+evidence: the FAIL bodies carrying the most findings are the ones that hit it, and a verdict trimmed
+to fit a shell reads downstream as a verdict deliberately that short. **So do not cut the body** —
+stage it. The three steps, the measured triggers and the one shape a bounded append still refuses
+are fixed for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed);
+what a reviewer needs beyond them is here.
 
 ```bash
 fabrika review scratch $pr_number --slug verdict-code --lane <lane> --sha 03135b91
 ```
 
 `--slug` names the namespace this body fills — `verdict-code`, `verdict-doc`, `verdict-skill` — so
-one lane's four verdicts do not overwrite each other. `<lane>` and `--sha` are the same two the diff
-staging above takes. Then write the body into the path the verb printed, **typing that path out
-literally in every call**, one `cat >> <the path it printed> <<'EOF'` per section of the verdict —
-each append small enough to carry, and each free to hold the tables, blockquotes, apostrophes and
-angle brackets the single-command form refuses. **The one shape that still refuses inside an append
-is a brace group holding double quotes** — a JSON object literal; write that line in with a
-single-quoted `printf '%s\n' '…' >> <the path it printed>` instead, and never cut the object to make
-the append pass. Never capture the path into a shell variable and never redirect through one: a
-variable and a command substitution are each on their own enough for the verifier to refuse the
-line.
+one lane's four verdicts do not overwrite each other, and none of them lands on the `diff` slug §3
+allocates. `<lane>` and `--sha` are the same two that staging takes.
 
-Then run the fence above with a literal input redirect in place of the heredoc —
+Write the verdict into the path the verb printed, then run the fence above with a literal input
+redirect in place of the heredoc —
 `fabrika review post $pr_number --namespace review-code --polarity FAIL --sha 03135b91 --clause "…"
 < <the path it printed>`. The bytes still arrive on stdin, so this is the same one emit path, not a
 second one: `review post` makes every refusal it always makes, the empty-body and bare-`@` guards
-included, and the path is machine-local, so a body that quotes it reds at `5`. The shape is fixed
-once for every group in
-[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed).
+included, and the path is machine-local, so a body that quotes it reds at `5`.
 
 **A re-post appends; it never replaces.** The fresh verdict takes the comment's first line and the
 one it retires survives verbatim below, under a dated `## Superseded verdict` heading — GitHub keeps
