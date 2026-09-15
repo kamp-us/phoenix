@@ -918,7 +918,7 @@ read-back.
 
 | Verb | Answers |
 |---|---|
-| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; the red-CI row re-reads `ship checks`'s rollup at the live head and clears only on `green` with the PR still open and every derived namespace still bound there, holding at `13` on any other rollup; the routed-UI row (`blocked` + `no-rendered-delta`) re-reads `ship gate`'s conjunction over `ship scope`'s required set at the live head and clears only when it reads `satisfied` **and** some required namespace still reads `routed` there, holding at `13` when the gate is blocked or when nothing is routed any more — which is a different park, not this one; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"` |
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — the spawn-dead row retracts a build claim whose age is past the budget for the work it took and re-reads the board to prove it gone, holds at `13` while the claim is inside that budget, and is `9` when the re-read still says held — and on the queue-stall row grants the waits that clear buys, on the same recorded event; the red-CI row re-reads `ship checks`'s rollup at the live head and clears only on `green` with the PR still open and every derived namespace still bound there, holding at `13` on any other rollup; the routed-UI row (`blocked` + `no-rendered-delta`) re-reads `ship gate`'s conjunction over `ship scope`'s required set at the live head and clears only when it reads `satisfied` **and** some required namespace still reads `routed` there, holding at `13` when the gate is blocked or when nothing is routed any more — which is a different park, not this one; a park no row covers but whose cause routes `driver` clears on the driver's own `--rationale` where the repo declared `parkCause.driverRouted: "clear"`, read from the `.fabrika.jsonc` of the repository that OWNS the cwd — the same checkout the lanes root derives from — so a linked worktree is governed by the primary checkout's declaration rather than by its own tracked copy (#9244) |
 | `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a head-bound `governance` PASS |
 | `recipe route` | which recipe a chore-lane state applies, and which operator event one exit folds to |
 
@@ -944,6 +944,13 @@ owns rather than a call only the founder can make. Under `.fabrika.jsonc`'s
 rides the recorded `UNBLOCKED` and reads back as the task's standing `rationale` — the whole audit of
 a clear no proving read stands behind, which is why omitting it is `23` rather than a silent clear.
 A `founder` route, and every park under the shipped `refuse`, still lands on `12`.
+
+**Which `.fabrika.jsonc` declares it is the owning repository's.** `parkCause` is resolved through
+[`configRootOrRefuse`](../src/lane/ground.ts), so a driver standing in a linked worktree is governed
+by the primary checkout's declaration — the rule decides parks on a ledger both derive alike, and a
+worktree branch's tracked copy governs none of it (#9244). That read refuses only `11`, a repository
+identity it could not establish; a cwd in no repository at all reads the shipped declaration at
+itself, and the `39` above is the lanes-root resolution rather than this.
 
 ## The `report` group
 
