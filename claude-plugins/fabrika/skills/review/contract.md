@@ -1065,6 +1065,24 @@ The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, fo
 sibling write verbs give: a path flag is how a machine-local path reaches a public surface while
 the poster reads success.
 
+**A body the harness will not carry in one command is staged and redirected in, which is this same
+path and not a second one.** A worktree-isolated shell's verifier judges the whole command string,
+so a heredoc carrying a long verdict — measured at around 9 KB, and less when the body holds a
+pipe-delimited table, brace groups, angle brackets or an apostrophe inside `--clause` — is refused
+before the verb runs. The caller allocates a file with `review scratch`, writes the body there in
+bounded appends naming the literal path, and runs this verb with a literal input redirect:
+
+```
+fabrika review post 4321 --namespace review-code --polarity FAIL --sha 03135b91 --clause "two findings" < /var/folders/kx/T/fabrika-review/s-9f2e/4321-8c9e018c5568/verdict-code
+```
+
+The bytes reach stdin unchanged, so every step and every refusal below applies exactly as it does to
+a heredoc — the empty-stdin `3`, the bare-`@` `6`, the leak scan's `5`, and the unconditional
+read-back's `9`. It buys relief from verifier command-size pressure and nothing else: it is not a
+second emit path, it does not let the verb read a path, and it adds no argument. The route's shape
+is fixed for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed).
+
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
@@ -1421,6 +1439,12 @@ fabrika review scratch 4321 --slug <leaf> --lane <lane-key> --sha <head>
 | `--slug` | string | yes | — | the file's leaf name: kebab-case, no path separators |
 | `--lane` | string | yes | — | the lane key from this reviewer's spawn brief |
 | `--sha` | string | yes | — | the head `review scope` bound, 7–40 hex |
+
+**Two things are staged here, on separate slugs.** A diff too large for one read is the original
+case; a **verdict body** too large for one command is the second, and it takes a slug naming its
+namespace — `verdict-code`, `verdict-doc`, `verdict-skill` — so one lane's several verdicts do not
+overwrite each other. Both are read by the shell, never by a verb: `review post` still takes its
+body on stdin, through a literal input redirect.
 
 **Output** — machine channel. One absolute path on stdout:
 `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>`. The directory is created if

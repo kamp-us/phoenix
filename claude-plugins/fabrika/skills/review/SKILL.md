@@ -401,6 +401,37 @@ marker is un-anchored, resolves its namespace empty, and fail-closes a passing P
 only emit path** — a hand-posted marker is how a false PASS ships — and it reads its own comment
 back.
 
+<!-- anchor: STAGE-THE-VERDICT-RATHER-THAN-TRIM-IT --> **A verdict the harness refuses to carry is
+staged, never shortened.** The fence above puts the whole body inside one command string, and a
+worktree-isolated shell's verifier refuses a command it judges too complex with a message about
+containment that names no size — measured at around 9 KB, and below any size on a pipe-delimited
+table, brace groups, angle brackets, an apostrophe inside `--clause`, or the version-control tool's
+three-letter name written in your prose. Read as a containment fault, that refusal costs rounds and
+then evidence: the FAIL bodies carrying the most findings are the ones that hit it, and a verdict
+trimmed to fit a shell reads downstream as a verdict deliberately that short. **So do not cut the
+body.** Allocate a file for it, write it in bounded pieces, and redirect it in:
+
+```bash
+fabrika review scratch $pr_number --slug verdict-code --lane <lane> --sha 03135b91
+```
+
+`--slug` names the namespace this body fills — `verdict-code`, `verdict-doc`, `verdict-skill` — so
+one lane's four verdicts do not overwrite each other. `<lane>` and `--sha` are the same two the diff
+staging above takes. Then write the body into the path the verb printed, **typing that path out
+literally in every call**, one `cat >> <the path it printed> <<'EOF'` per section of the verdict —
+each append small enough to carry, and each free to hold the tables, quotes and identifiers the
+single-command form refuses. Never capture the path into a shell variable and never redirect through
+one: a variable and a command substitution are each on their own enough for the verifier to refuse
+the line.
+
+Then run the fence above with a literal input redirect in place of the heredoc —
+`fabrika review post $pr_number --namespace review-code --polarity FAIL --sha 03135b91 --clause "…"
+< <the path it printed>`. The bytes still arrive on stdin, so this is the same one emit path, not a
+second one: `review post` makes every refusal it always makes, the empty-body and bare-`@` guards
+included, and the path is machine-local, so a body that quotes it reds at `5`. The shape is fixed
+once for every group in
+[skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed).
+
 **A re-post appends; it never replaces.** The fresh verdict takes the comment's first line and the
 one it retires survives verbatim below, under a dated `## Superseded verdict` heading — GitHub keeps
 no comment-body history, so a replaced verdict is a verdict gone. When your new polarity is
