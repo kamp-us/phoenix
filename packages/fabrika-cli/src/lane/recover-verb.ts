@@ -38,18 +38,25 @@
  * above recovers a shell that finished and could not say so; this one parks a lane whose shell never
  * finished and never will. Lane 7778 read `issue: build` for five days holding a seat against the
  * concurrency cap, because the only thing that records `BLOCKED --cause spawn-dead` was a driver
- * re-reading the lane by hand. The arm reads the residue that driver read — a build claim
- * past the builder's own budget (`../lane/shell-budget.ts`), no lane branch in this clone, no open PR
- * — and records that park.
+ * re-reading the lane by hand. **The conjunction it reads, and what each answer short of it means,
+ * is written once in this verb's own reference row** (`../../docs/verb-reference.md`, `lane
+ * recover`); repeating it here is what left five copies disagreeing about the population on the day
+ * they landed.
  *
- * **It retracts nothing.** Ending a claim stays the `spawn-dead` unpark row's act, on the same budget
- * proof through the same `../build/dead-claim.ts` read, after a driver or a recipe has read the park
- * this arm wrote. So the park is recorded on the board's own facts and the claim leaves by the
- * succession it always left by — which is what keeps the failure that once treated a live resumed
- * builder as dead and took its claim out of reach of this path: an `Alive` claim is a `working` row,
- * and so is every other answer short of the whole conjunction.
+ * What this module owes beyond that row is the two invariants the code has to hold and the row
+ * cannot show:
  *
- * It is off unless a caller hands in the reads, because it costs a board read per building lane and
+ * - **Every conjunct is a read actually made, and every row's reason names the read it stands on.**
+ *   The population spans two build leaves and three lane roles, so the third conjunct is picked off
+ *   `./recover.ts`'s {@link publicationOf} rather than off the recorded-event claim table — see that
+ *   function for what borrowing the other table cost.
+ * - **It retracts nothing, and it is not the end of the chain.** Ending a claim stays the
+ *   `spawn-dead` unpark row's act, on the same budget proof through the same `../build/dead-claim.ts`
+ *   read — and that row is keyed on exactly the park this arm writes, so the claim does end, one
+ *   verb later, with no person in between. The reference row names the decision record that admits
+ *   a verb-made age read licensing that park.
+ *
+ * It is off unless a caller hands in the reads, because it costs board reads per building lane and
  * because recording a **park** is a different act from recording the verdict a finished shell earned.
  *
  * **A `recovered` row reports where the append says the lane landed, not where this sweep predicted
@@ -72,12 +79,13 @@ import type {Read} from "../config/read-key.ts";
 import {exists, readDir} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
-import {APPEND_UNKNOWN, CONCURRENT_WRITE, LANE_UNREADABLE, PROOF_ABSENT} from "./codes.ts";
+import {APPEND_UNKNOWN, CONCURRENT_WRITE, LANE_UNREADABLE} from "./codes.ts";
 import {applyEvent, deriveStatus, foldLog, standingCauses} from "./fold.ts";
 import {CHORE_PREFIX} from "./key.ts";
-import {issueOf} from "./prove.ts";
+import type {PullTrace} from "./prove.ts";
+import {epicOf, issueOf, roleOf} from "./prove.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
-import {buildingBy, DEAD_SPAWN_CAUSE, DEAD_SPAWN_EVENT, owedBy} from "./recover.ts";
+import {buildingBy, DEAD_SPAWN_CAUSE, DEAD_SPAWN_EVENT, owedBy, publicationOf} from "./recover.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -88,11 +96,16 @@ export type BranchRead =
 	| {readonly _tag: "Read"; readonly branches: ReadonlyArray<string>}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
+/** Which pull requests on the board link an issue, or why that could not be read. */
+export type PullsRead =
+	| {readonly _tag: "Read"; readonly trace: PullTrace; readonly scanned: number}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
 /**
  * The live reads the spawn arm turns on — handed in together, so the arm cannot be enabled without
  * them.
  *
- * Both are parameters rather than imports for the reason `prove` is: this verb's unit tier stays
+ * All three are parameters rather than imports for the reason `prove` is: this verb's unit tier stays
  * offline, and the arm's whole behaviour is exercised against scripted answers. `claim` closes over
  * the instant and the budget it measures against, so nothing here reads a clock.
  */
@@ -101,6 +114,17 @@ export interface SpawnReads<R = never> {
 	readonly claim: (issue: number) => Effect.Effect<ClaimStanding, never, R>;
 	/** The lane branches this clone carries for an issue. */
 	readonly branches: (issue: number) => Effect.Effect<BranchRead, never, R>;
+	/**
+	 * The open pull requests linking an issue — the arm's own read, not `prove`'s.
+	 *
+	 * Separate because the two answer different questions. `prove`'s `DONE` arm says what a *recorded
+	 * event* asserts and keys on the plain `build` leaf, so a `build:ui` lane came back `not-required`
+	 * at exit 0 and a child came back off a range read — and the arm reported both as a PR read that
+	 * did not settle, over lanes that could then never be parked. `./recover.ts`'s `publicationOf`
+	 * picks which surface to read per role, and this is the one it names for a lane that publishes to
+	 * the board.
+	 */
+	readonly pulls: (issue: number) => Effect.Effect<PullsRead, never, R>;
 }
 
 export interface RecoverOptions<R = never> {
@@ -430,11 +454,18 @@ const recoverLane = <R>(
 			);
 		}
 
+		// The lane's whole task set, so a child region is told from a single lane's one task by the
+		// emitter's own naming rather than by which tasks happen to be active this sweep.
+		const epic = epicOf(Object.keys(loaded.lane.tasks));
+
 		for (const {task, leaf} of building) {
 			// `building` is empty unless the arm was handed its reads, so this narrowing can never be
 			// the thing that decides whether the arm runs.
 			if (spawns === null) break;
-			const base = {key, root, task, state: leaf, event: DEAD_SPAWN_EVENT, from};
+			// No `event` on the base: a lane whose builder is alive and well is a `working` row, and a
+			// row carrying `event: "BLOCKED"` would tell a driver reading stdout that a park is what this
+			// sweep judged it owed. The event rides the two rows that actually record one.
+			const base = {key, root, task, state: leaf, from};
 			const hold = (verdict: Verdict, reason: string): void => {
 				rows.push({...base, verdict, reason});
 			};
@@ -489,50 +520,64 @@ const recoverLane = <R>(
 				continue;
 			}
 
-			// The one board read left, and it is the sweep's own prover asked the question `OWED_EVENTS`
-			// refuses to record the answer to. A `DONE` out of `build` proves on one open PR linking the
-			// issue, which is exactly the fact that would make this park wrong: the builder got far
-			// enough to publish. Recording that `DONE` is still off limits — a live builder in a repair
-			// round has the same PR — but reading it as "something is here" costs the same one call and
-			// takes no position on whether the build is finished.
-			const published = yield* options.prove({
-				root,
-				lane: name,
-				event: "DONE",
-				task,
-				classes: null,
-				pr: null,
-				repo: options.repo,
-				cwd: options.cwd,
-				env: options.env,
-			});
-			// `PROOF_ABSENT` is the one answer that says "no such PR", and every other refusal says the
-			// read did not settle it. Bucketed together, an ambiguous or unreadable board would park a
-			// lane on a fact nobody established.
-			if (published.code !== PROOF_ABSENT) {
-				hold(
-					published.code === ANSWER && published.proof === "proven" ? "working" : "unreadable",
-					published.code === ANSWER && published.proof === "proven"
-						? `an open PR links #${issue}, so the builder published before it went quiet — a repair round carries that PR for its whole length, and a park would be wrong about a lane whose reviewer has an answer coming`
-						: `whether an open PR links #${issue} did not settle: the proof answered ${published.proof ?? `exit ${published.code}`} — ${published.stderr[published.stderr.length - 1] ?? "no reason given"}. Never read as dead`,
+			// The last conjunct: did this builder get far enough to leave its work somewhere? Which
+			// surface that is turns on the lane's role, not on its leaf — `publicationOf` carries why,
+			// and why this is not the recorded-event claim table's question.
+			const publication = publicationOf(roleOf(task, epic));
+			const park = (why: string) =>
+				record(
+					{
+						...base,
+						event: DEAD_SPAWN_EVENT,
+						cause: DEAD_SPAWN_CAUSE,
+						reason: `${claim.token} has claimed #${issue} for ${claim.ageMinutes} minute(s), past the ${claim.budgetMinutes}-minute budget for a build, ${why} — the claim itself is left standing for the \`spawn-dead\` unpark row to retract on the same proof`,
+					},
+					DEAD_SPAWN_EVENT,
+					DEAD_SPAWN_CAUSE,
+					"parked",
+					"parkable",
+					null,
+					null,
+				);
+
+			// An epic child opens no pull request — one epic run is one branch and one PR, and the tail
+			// owns it — so the branch read above IS this conjunct for a child, and there is no third read
+			// to make. Asking the board anyway is what used to answer off a range read and then report it
+			// as a PR that "did not settle".
+			if (publication._tag === "LaneBranch") {
+				yield* park(
+					`and no lane branch for it in this clone — an epic child publishes onto its own lane branch and never onto a pull request, so that branch read is this conjunction's publication read and no board read was made`,
 				);
 				continue;
 			}
 
-			yield* record(
-				{
-					...base,
-					cause: DEAD_SPAWN_CAUSE,
-					proof: published.proof,
-					proofCode: published.code,
-					reason: `${claim.token} has claimed #${issue} for ${claim.ageMinutes} minute(s), past the ${claim.budgetMinutes}-minute budget for a build, with no lane branch in this clone and no open PR — the claim itself is left standing for the \`spawn-dead\` unpark row to retract on the same proof`,
-				},
-				DEAD_SPAWN_EVENT,
-				DEAD_SPAWN_CAUSE,
-				"parked",
-				"parkable",
-				null,
-				null,
+			const published = yield* spawns.pulls(issue);
+			if (published._tag === "Unknown") {
+				hold(
+					"unreadable",
+					`whether an open PR links #${issue} could not be read: ${published.reason} — never read as dead`,
+				);
+				continue;
+			}
+			if (published.trace._tag === "One") {
+				hold(
+					"working",
+					`#${published.trace.pr} is open and links #${issue}, so the builder published before it went quiet — a repair round carries that PR for its whole length, and a park would be wrong about a lane whose reviewer has an answer coming`,
+				);
+				continue;
+			}
+			// Several linking PRs is not "nothing published" — it is a board this reader cannot resolve
+			// to one lane, and parking on it would call a lane abandoned over work somebody did.
+			if (published.trace._tag === "Many") {
+				hold(
+					"unreadable",
+					`${published.trace.prs.map((pr) => `#${pr}`).join(", ")} are open and link #${issue}, so which one this lane owns is not derivable here — never read as dead`,
+				);
+				continue;
+			}
+
+			yield* park(
+				`with no lane branch in this clone and no open PR: ${published.trace.why} (${published.scanned} candidate(s) read)`,
 			);
 		}
 		return rows;

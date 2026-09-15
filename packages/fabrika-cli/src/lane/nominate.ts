@@ -34,9 +34,11 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {resolveRepo} from "../io/issues.ts";
 import {getPullRequest, type PullScope, pullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {issueRefsOf} from "../review/classes.ts";
-import type {PullFact} from "./prove.ts";
+import type {PullFact, PullTrace} from "./prove.ts";
+import {tracePulls} from "./prove.ts";
 
 /** One nominated PR, read off the board: the trace's facts plus the link a brief hands on. */
 export interface NominatedPull extends PullFact {
@@ -101,3 +103,48 @@ export const nominatePulls = (
 		}
 		return {_tag: "Nominated" as const, pulls};
 	});
+
+/**
+ * The same read, shaped for a sweep: a repo resolved once, then one trace per number.
+ *
+ * `claimReader`'s shape, for `claimReader`'s reason — a sweep of forty lanes otherwise pays forty
+ * resolutions for one answer that cannot change mid-run. It returns the **trace** rather than the
+ * candidates, so a caller cannot re-derive "which PR is this issue's" out of raw facts and come to
+ * mean something `lane prove` does not; `Unknown` carries the nominator's own `what` beside its
+ * reason, because a read that did not answer is never an empty candidate set.
+ */
+export const pullsReader = (
+	repo: string | null,
+	env: Readonly<Record<string, string | undefined>>,
+): ((
+	issue: number,
+) => Effect.Effect<
+	| {readonly _tag: "Read"; readonly trace: PullTrace; readonly scanned: number}
+	| {readonly _tag: "Unknown"; readonly reason: string},
+	never,
+	ChildProcessSpawner.ChildProcessSpawner
+>) => {
+	let resolved: string | null = null;
+	return (issue) =>
+		Effect.gen(function* () {
+			if (resolved === null) {
+				const attempt = yield* resolveRepo(repo, env);
+				if (attempt._tag === "Failure") {
+					return {
+						_tag: "Unknown" as const,
+						reason: "no target repo resolves — set CLAUDE_PIPELINE_REPO, or pass --repo owner/name",
+					};
+				}
+				resolved = attempt.value;
+			}
+			const nominated = yield* nominatePulls(resolved, issue);
+			if (nominated._tag === "Unreadable") {
+				return {_tag: "Unknown" as const, reason: `${nominated.what}: ${nominated.reason}`};
+			}
+			return {
+				_tag: "Read" as const,
+				trace: tracePulls(issue, nominated.pulls),
+				scanned: nominated.pulls.length,
+			};
+		});
+};

@@ -1579,10 +1579,11 @@ node <fabrika> lane stale
 ```
 
 `lane recover --spawns` records the park itself for the one shape it can prove, and that shape is a
-dead **builder**: a lane standing in `build` whose claim has outlived the builder's own budget with
-no lane branch in this clone and no open PR. Lane 7778 sat in that state for five days holding a
-seat against the cap, because recording its `BLOCKED --cause spawn-dead` was a driver's act and its
-driver was gone. The whole sweep is below, under `lane recover`.
+dead **builder**: a lane standing in `build` or `build:ui` — including an epic lane's child regions —
+whose claim has outlived the builder's own budget with nothing left behind anywhere. Lane 7778 sat
+in that state for five days holding a seat against the cap, because recording its
+`BLOCKED --cause spawn-dead` was a driver's act and its driver was gone. The whole sweep is below,
+under `lane recover`.
 
 **The horizon is each lane's own, not one number you pick.** A lane is judged against the budget of
 the work driving it — a builder's forty minutes, a reviewer's fifteen, a shipper's ten, or the
@@ -1674,23 +1675,30 @@ it:**
 node <fabrika> lane recover --spawns --check
 ```
 
-A `parkable` row is a lane whose builder is provably gone — its build claim standing past the
-builder's own forty-minute budget, with no lane branch in this clone and no open PR anywhere. That
-is the whole conjunction, and every answer short of it is a `working` row that changed nothing: a
-claim still inside its budget (the live-but-quiet builder, which once lost its claim to exactly this
-kind of guess), a branch still carrying the dead builder's commits, an open PR, or no claim at all.
-A read that failed is `unreadable` and never dead. Dropping `--check` records the
-`BLOCKED --cause spawn-dead`, and `recipe unpark` then clears it the way it always did.
+A `parkable` row is a lane whose builder is provably gone, and every answer short of that is a
+`working` row that changed nothing — a claim still inside its budget (the live-but-quiet builder,
+which once lost its claim to exactly this kind of guess), a branch still carrying the dead builder's
+commits, an open PR, or no claim at all. A read that failed is `unreadable` and never dead.
+**The conjunction itself is the verb's, written once in its reference row**
+(`packages/fabrika-cli/docs/verb-reference.md`, `lane recover`) — read it there rather than off a
+restatement here, because what counts as "left something behind" differs by role and a copy of it
+here drifted the day it landed. Dropping `--check` records the `BLOCKED --cause spawn-dead`.
 
-**It retracts nothing.** The claim stays standing for the `spawn-dead` unpark row to retract on the
-same proof, so the eviction rule above is untouched: a claim still ends under a proven identity or a
-budget-proved death, and this sweep only writes down which park the lane is in. The arm is off
-unless you pass the flag, because it spends a board read per lane standing in `build`.
+**It retracts nothing, and it is not the end of the chain.** This sweep leaves the claim standing,
+and the park it writes is the exact `blocked` + `spawn-dead` pair `recipe unpark`'s `spawn-clear` row
+clears — which §4 above already tells you to run on a `blocked` fold. That row retracts the claim on
+the same age proof, so the claim does end, one verb later, with no human between the two. That is a
+decision this repo's corpus records, and the verb's reference row names it: a verb-made age read may
+license the park, and the retraction stays where it always was, under every one of its conditions.
+**The eviction rule above still holds whole where it matters** — no reader
+retracts a claim, and no claim ends outside a proven identity or a budget-proved death. What changed
+is who may write down the park that death happens inside. The arm is off unless you pass the flag,
+because it spends board reads per lane standing in a build leaf.
 
 Run it before you act on a `stale` list, and treat the two as one pass: `lane recover --spawns`
 clears the lanes whose answer is already on the board and parks the ones whose builder is gone, and
-what is still stale after it is the list to re-spawn. Two rows leave work behind. A row at `unappended` and an exit `8` mean whether that lane
-is still missing its event is UNKNOWN — name it and re-run, never read it as swept. A row at
+what is still stale after it is the list to re-spawn. Two rows leave work behind. A row at
+`unappended` and an exit `8` mean whether that lane is still missing its event is UNKNOWN — name it and re-run, never read it as swept. A row at
 `contended` means another writer held that lane's ledger lock for the whole budget, so nothing was
 validated and the same event is still the right one: re-run the sweep once the holder clears, and
 never read it as a lane that was judged and left.
