@@ -61,11 +61,11 @@ import {
 	templateFile,
 } from "./key.ts";
 import {runMigrate} from "./migrate-verb.ts";
-import {pullsReader} from "./nominate.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {priorLaneReader} from "./prior-lane.ts";
 import {proveDispatched, runProve} from "./prove-verb.ts";
+import {pullsReader} from "./pulls-reader.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {runRecover} from "./recover-verb.ts";
