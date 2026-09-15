@@ -142,16 +142,16 @@ describe("cron, reporting", () => {
 		expect(run.effects).toContainEqual(spawn(jobRef, {on: {result: "result"}}));
 	});
 
-	it("takes the `stopped` answering its own `stop` as nothing, so one turn is one run", () => {
+	it("takes the `stopped` for the child it already ended as nothing, so one turn is one run", () => {
 		const run = finished(true).event({type: "stopped", process: child});
 		expect(run.state.runs).toHaveLength(1);
 		expect(run.effects).toEqual([]);
 	});
 
-	// The cell, not live behaviour: nothing in the kernel delivers an unsolicited child exit into a
-	// spawner's inbox (#9227), so this event is fed by hand and the branch it drives is unreachable
-	// until that lands. Pinned so the day it does, the cell it will route into is already known good.
-	it("cell, unreachable until #9227: a hand-fed `stopped` for the live child records a failed run", () => {
+	// The cell over the event #9227 now delivers. What puts a real child's end on this cell is the
+	// finalizer in `commands/core/process.ts`, and `authoring/define-program.unit.test.ts` drives that
+	// through the compiled handlers; here the event is fed directly, to pin what the cell does with it.
+	it("records a failed run when the job ends before it answers", () => {
 		const run = testProgram(cronProgram(options))
 			.event({type: "tick"})
 			.event({type: "spawned", process: child, program: "cron-job"})

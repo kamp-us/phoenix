@@ -14,7 +14,7 @@ import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
 import {type ArrivalEvent, defineProgram} from "./define-program.ts";
-import {emit, send, spawn, stop} from "./effect.ts";
+import {emit, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
 import {port} from "./port.ts";
 import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
 
@@ -244,7 +244,10 @@ describe("authoring.defineProgram", () => {
 		}),
 	);
 
-	it.effect("runs an authored `stop` through Processes and answers `stopped`", () =>
+	// `stopped` is no longer this handler's answer (#9227). The child's own end is the single producer
+	// of it, so the parent hears back on a later dispatch and hears back exactly once — which the
+	// real-kernel test at the bottom of this file is what proves.
+	it.effect("runs an authored `stop` through Processes and answers no event of its own", () =>
 		Effect.gen(function* () {
 			const child = ProcessId.make("process-child");
 			const halted: Array<ProcessId> = [];
@@ -261,7 +264,7 @@ describe("authoring.defineProgram", () => {
 				Effect.provideService(Processes, processes),
 			);
 			assert.deepStrictEqual(halted, [child]);
-			assert.deepStrictEqual(events, [{type: "stopped", process: child}]);
+			assert.deepStrictEqual(events, []);
 		}),
 	);
 });
@@ -454,4 +457,92 @@ describe("authoring.defineProgram field-compiler seam", () => {
 			expect(line).toMatch(/^\t[A-Za-z]+: .+,$/);
 		}
 	});
+});
+
+/**
+ * The child-exit edge through the real kernel (#9227). Everything above this point either drives a
+ * handler with a stub `SpawnedProcesses` or feeds an event by hand; what is under test here is that
+ * a `stopped` arrives in a spawner's inbox at all — so the programs below run on the same
+ * `SpawnedProcesses` + `Processes` layer the box boots, and the only thing the test does by hand is
+ * end the child.
+ *
+ * Both endings are checked, because #9227's change is that they became one path: a child ended from
+ * outside, and a child the parent itself stopped. The second is the one that must not double-count —
+ * `stopHandler` answering `stopped` *and* the child's exit delivering it would have been two events
+ * for one end, so `stops` is asserted exactly, not merely non-zero.
+ */
+const watcherArgs = programArgs("watcher", {reviewer: reviewerShape});
+
+interface WatcherState {
+	readonly child: ProcessId | null;
+	readonly ended: ProcessId | null;
+	readonly stops: number;
+}
+
+const watcher = defineProgram({
+	id: "watcher",
+	args: watcherArgs,
+	fill: {reviewer: reviewerProgram},
+	init: (): WatcherState => ({child: null, ended: null, stops: 0}),
+	update: {
+		hatch: (state: WatcherState) => [state, [spawn(watcherArgs.reviewer, {on: {result: "seen"}})]],
+		spawned: (state: WatcherState, event: Spawned) => [{...state, child: event.process}, []],
+		halt: (state: WatcherState) => [state, state.child === null ? [] : [stop(state.child)]],
+		stopped: (state: WatcherState, event: Stopped) => [
+			{...state, ended: event.process, stops: state.stops + 1},
+			[],
+		],
+	},
+});
+
+/**
+ * Wait for the forked delivery, then keep waiting a little after it lands. A second `stopped` would
+ * arrive on the same path as the first, so a test that stopped at the first one could not tell one
+ * event from two — the trailing settle is what makes the `stops` assertion mean something.
+ */
+const settle = (ready: () => boolean) =>
+	Effect.gen(function* () {
+		for (let attempt = 0; attempt < 100 && !ready(); attempt += 1) {
+			yield* Effect.sleep("5 millis");
+		}
+		yield* Effect.sleep("30 millis");
+	});
+
+/** Start the watcher as a root, make it hatch, and answer with its handle and its child's id. */
+const watching = Effect.gen(function* () {
+	const spawner = yield* SpawnedProcesses;
+	const parent = yield* spawner.spawn(ProgramId.make("watcher"), Option.none());
+	const handle = Option.getOrThrow(yield* Processes.use((processes) => processes.handle(parent)));
+	yield* handle.dispatch({type: "hatch"});
+	const child = (handle.getState() as WatcherState).child;
+	assert.isNotNull(child);
+	return {handle, child: child as ProcessId, read: () => handle.getState() as WatcherState};
+});
+
+describe("authoring.defineProgram hearing a child end, through the real kernel", () => {
+	it.live("hands the spawner a `stopped` for a child that ended on its own", () =>
+		Effect.gen(function* () {
+			const {child, read} = yield* watching;
+
+			// Ended from outside the parent: nothing it asked for, and the case that reached nobody
+			// before #9227. A crashing child leaves the table by this same finalizer.
+			yield* Processes.use((processes) => processes.stop(child));
+			yield* settle(() => read().ended !== null);
+
+			assert.strictEqual(read().ended, child);
+			assert.strictEqual(read().stops, 1);
+		}).pipe(Effect.provide(kernel([watcher, reviewerRow]))),
+	);
+
+	it.live("hands it one `stopped`, not two, for a child it stopped itself", () =>
+		Effect.gen(function* () {
+			const {handle, child, read} = yield* watching;
+
+			yield* handle.dispatch({type: "halt"});
+			yield* settle(() => read().ended !== null);
+
+			assert.strictEqual(read().ended, child);
+			assert.strictEqual(read().stops, 1);
+		}).pipe(Effect.provide(kernel([watcher, reviewerRow]))),
+	);
 });

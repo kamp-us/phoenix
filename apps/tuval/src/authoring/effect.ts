@@ -151,7 +151,7 @@ export const emit = <Port extends string>(port: Port, payload: unknown): EmitEff
 	payload,
 });
 
-/** End a process I started. */
+/** End a process I started. It answers nothing; the `stopped` below is what arrives when it ends. */
 export const stop = (process: ProcessId): StopEffect => ({type: "stop", process});
 
 /** The event a `spawn` answers with: the new process, and which program it runs. */
@@ -161,7 +161,13 @@ export interface Spawned {
 	readonly program: string;
 }
 
-/** The event a `stop` answers with, and the one a child's own end arrives as. */
+/**
+ * A child of this process has ended — whether this process stopped it or it ended on its own. One
+ * event per child end, produced in one place: the finalizer `SpawnedProcesses.spawn` hangs on the
+ * child's Scope (`../commands/core/process.ts`, #9227). Because `stop` answers nothing, a cell that
+ * issued one hears back here like any other ending, on a later dispatch rather than as its own
+ * fold's answer — so an author's `stopped` cell never has to tell the two endings apart.
+ */
 export interface Stopped {
 	readonly type: "stopped";
 	readonly process: ProcessId;
