@@ -70,6 +70,10 @@ export type ChatView = {
 	/**
 	 * The backend answered that there is nothing older; the transcript is at the beginning of history.
 	 * Per-mount for the same reason as `cursor`, and the one that made restoring it a bug.
+	 *
+	 * Written only off an answer the window cannot contradict: an empty page landing against a
+	 * non-zero `transcript.omitted.items` leaves this as it was, because those are rows the tail
+	 * bound dropped and the store still holds (`ChatWindow.tsx`, #9195).
 	 */
 	readonly atOldest: boolean;
 	/** The ids of the rows this window has disclosed — a tool call's detail, a thinking row's text. */

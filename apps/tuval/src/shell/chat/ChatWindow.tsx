@@ -854,10 +854,18 @@ function ChatWindow({
 				setOlder((held) => mergeOlder(held, paged));
 				setPageError(null);
 				reanchorRef.current = true;
+				// `{items: [], hasMore: false}` is the one page answer the window can already know is
+				// wrong: every backend derives `hasMore` as `planned.next !== null`, so a planner that
+				// resolved its cursor to the wrong row says exactly what a store with nothing older
+				// says. The omission count the session published one render earlier is rows the tail
+				// bound dropped and the store still holds, so an empty page against a non-zero omission
+				// contradicts the window's own evidence. Latching on it retires the only route back to
+				// those rows for the rest of the window's boot (#9195).
+				const contradicted = page.items.length === 0 && completed.transcript.omitted.items > 0;
 				commit((current) => ({
 					...current,
 					cursor: page.items[0]?.id ?? current.cursor,
-					atOldest: !page.hasMore,
+					atOldest: contradicted ? current.atOldest : !page.hasMore,
 				}));
 			}),
 		);
