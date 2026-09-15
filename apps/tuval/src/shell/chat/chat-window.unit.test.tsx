@@ -939,6 +939,60 @@ describe("paging", () => {
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
 	});
 
+	it("still latches on an empty page when the window holds the whole tail", async () => {
+		const empty = {items: [], hasMore: false};
+		const {scrolls, view, answerPage} = await openWindow(withTranscript(transcriptOf(4)));
+		await readerScrollsToTop(scrolls);
+		await act(async () => {
+			await answerPage(
+				withTranscript(transcriptOf(4), {
+					lastPage: empty,
+					pageOutcome: {status: "success", page: empty},
+				}),
+			);
+		});
+		await waitFor(() => expect(view().atOldest).toBe(true));
+		expect(screen.queryByRole("button", {name: "Load earlier messages"})).toBeNull();
+	});
+
+	// The filed shape of #9195: a live session answered a page `{items: [], hasMore: false}` while its
+	// own `transcript.omitted` still read 22 rows the tail bound had dropped. Latching on that retired
+	// the head row for the window's whole boot, with the rows demonstrably still in the store — a
+	// second window over the same process paged all 32 back in. The counts here are the filing's.
+	it("keeps the walk open when an empty page lands against a non-zero omission", async () => {
+		const omitted = {items: 22, bytes: 29_365, reason: "item-limit"} as const;
+		const trimmed = (overrides: Partial<AiAgentSessionState> = {}): AiAgentSessionState =>
+			withTranscript(transcriptOf(4), {
+				transcript: {items: transcriptOf(4), omitted},
+				...overrides,
+			});
+		const empty = {items: [], hasMore: false};
+		const {process, scrolls, view, answerPage} = await openWindow(trimmed(), {pageLimit: 25});
+		await readerScrollsToTop(scrolls);
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		await act(async () => {
+			await answerPage(trimmed({lastPage: empty, pageOutcome: {status: "success", page: empty}}));
+		});
+
+		// The head row is left idle rather than latched, spinning or errored: the window says nothing
+		// about an answer it cannot grade, and the affordance is the operator's to take again.
+		const older = await screen.findByRole("button", {name: "Load earlier messages"});
+		expect(view().atOldest).toBe(false);
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+		expect(await screen.findByText("22 omitted here")).toBeDefined();
+
+		await act(async () => {
+			fireEvent.click(older);
+		});
+		await waitFor(() => expect(process.inbox().length).toBe(2));
+		await act(async () => {
+			await answerPage(trimmed({lastPage: page, pageOutcome: {status: "success", page}}));
+		});
+		await waitFor(() => expect(view().cursor).toBe("p0"));
+		expect(await screen.findByText("older prompt")).toBeDefined();
+	});
+
 	// The slot of a window that had walked to the beginning of history before the desk stopped. The
 	// rows that walk produced are this window's React state and are gone, so a restored `atOldest`
 	// suppressed the one affordance that could fetch them and stranded the whole transcript before
