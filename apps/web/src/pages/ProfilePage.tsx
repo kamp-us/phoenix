@@ -158,10 +158,6 @@ export function ProfilePage() {
 
 				{me?.id ? <CaylakStatusBlock profileUserId={me.id} /> : null}
 
-				{/* The owner sees their OWN sandboxed content here: this feed keys on authorId
-				    with no sandbox filter. */}
-				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
-
 				<section className="kp-profile__section">
 					<h3>{t("profile.section.account")}</h3>
 					<div className="kp-profile__row">
@@ -306,7 +302,7 @@ export function ProfilePage() {
 					) : null}
 				</section>
 
-				<section className="kp-profile__section kp-profile__section--last">
+				<section className="kp-profile__section">
 					<h3 className="danger">{t("profile.section.danger")}</h3>
 					<p>{t("profile.danger.description")}</p>
 					<div className="kp-profile__danger">
@@ -321,6 +317,11 @@ export function ProfilePage() {
 						</Button>
 					</div>
 				</section>
+
+				{/* Below every setting, because the menu links here as "ayarlar" and the first
+				    control on the page has to be a setting (#9273). The owner sees their OWN
+				    sandboxed content here: this feed keys on authorId with no sandbox filter. */}
+				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
 			</div>
 			<DeleteAccountDialog
 				open={deleteOpen}
