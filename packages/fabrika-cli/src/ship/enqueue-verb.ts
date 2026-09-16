@@ -50,6 +50,8 @@ const VERB = "ship enqueue";
 export interface EnqueueOptions {
 	readonly pr: number;
 	readonly sha: string;
+	/** The wall-clock an indefinite `mergeable` gets to settle before it is called UNKNOWN. */
+	readonly mergeabilitySeconds: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -85,7 +87,7 @@ export const runEnqueue = (
 		}
 
 		const diagnostics: string[] = [];
-		const mergeability = yield* readDefiniteMergeability(repo, pr);
+		const mergeability = yield* readDefiniteMergeability(repo, pr, options.mergeabilitySeconds);
 		if (mergeability._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -95,7 +97,7 @@ export const runEnqueue = (
 		if (mergeability._tag === "Indefinite") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls — mergeability is UNKNOWN, never green; nothing was armed.`,
+				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls over ${mergeability.seconds}s — mergeability is UNKNOWN, never green; nothing was armed.`,
 			);
 		}
 		if (isBaseConflict(mergeability.value)) {

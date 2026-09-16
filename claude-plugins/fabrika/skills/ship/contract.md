@@ -1616,7 +1616,7 @@ resolved	PRRT_kwDOLxx1	https://github.com/acme/repo/pull/4321#discussion_r515499
 **Invocation**
 
 ```
-fabrika ship enqueue 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+fabrika ship enqueue 4321 --sha 03135b91 [--mergeability-seconds <n>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -1625,6 +1625,7 @@ fabrika ship enqueue 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head every gate verified; the arm binds to it |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before it is called UNKNOWN |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1649,10 +1650,24 @@ armed and reported as `enqueued … settling`, indistinguishable from a healthy 
 
 The assertion and its indefinite-value handling are **one unit, and neither ships without the
 other**: `mergeable` is computed lazily by GitHub, so a `null` / `unknown` read is routine and is
-**not an answer**. An indefinite read is re-read up to **3 times, 2 seconds apart**; if it is
-*still* indefinite the answer is UNKNOWN and the verb refuses `11` with nothing armed. A gate that
-read the indefinite value as green would be worse than no gate — a read that could not produce a
-definite answer must never resolve to one. A read that *fails* is likewise `11`, never a pass.
+**not an answer**. An indefinite read is re-read across `--mergeability-seconds` (default **60**) on
+a backoff — 2s, then doubling to a cap of 8s, the last wait trimmed so the waits sum to the window;
+if it is *still* indefinite the answer is UNKNOWN and the verb refuses `11` with nothing armed. A
+gate that read the indefinite value as green would be worse than no gate — a read that could not
+produce a definite answer must never resolve to one. A read that *fails* is likewise `11`, never a
+pass.
+
+**The window is the whole fix for a conflicted PR reading as UNKNOWN, and the read path is not.**
+GitHub computes `mergeable` in a background job that a read of `GET /repos/{repo}/pulls/{n}`
+*starts*, and its own guide's procedure is to call that endpoint and then poll that same endpoint
+until `mergeable` is true or false
+([Checking mergeability of pull requests](https://docs.github.com/en/rest/guides/getting-started-with-the-git-database-api?apiVersion=2022-11-28#checking-mergeability-of-pull-requests)).
+There is no list read to fall back to: the REST list route carries no `mergeable` field at all, and
+a live probe found the GraphQL list read answering `UNKNOWN` for 11 of 12 open PRs on a first read
+and decided for all 12 on a second — the same lazy job, not a privileged route. What had been wrong
+was the budget: three
+polls two seconds apart gave that job six seconds, so a conflicting PR whose job had not landed
+refused as UNKNOWN when one more read of the same endpoint would have said `dirty`.
 
 **A definite `mergeable: false` refuses, and does not arm.** The premise this overturns
 is that a definite `dirty` is an answer the arm may proceed on and leave to the platform's own error
@@ -1692,7 +1707,7 @@ response, quoted verbatim on `8`.
 |---|---|
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to an arm) |
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
-| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was armed |
+| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | the PR is **provably not mergeable** for a reason other than a conflicted base — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
 | `21` | the base moved under the branch and the merge **conflicts** — a definite `mergeable_state: dirty`; nothing was armed. Report it as `BASE-CONFLICTED`, which spends a machinery lap instead of a repair round; the re-review is still owed |
@@ -1705,7 +1720,7 @@ response, quoted verbatim on `8`.
 | `ship enqueue: PR #<n> is <closed|merged> — nothing to enqueue.` | 7 | refusal |
 | `ship enqueue: cannot read #<n>'s live head: <reason> — nothing was armed.` | 11 | refusal |
 | `ship enqueue: cannot read #<n>'s mergeability: <reason> — nothing was armed.` | 11 | refusal |
-| `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
+| `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was armed.` | 16 | refusal |
 | `ship enqueue: #<n>'s base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.` | 21 | refusal |
 | `ship enqueue: mergeable_state is <state> (mergeable: true) — a definite read; arming.` | 0 | notice |
@@ -1722,6 +1737,11 @@ request, one read-back of the PR's merge state.
 ```
 $ fabrika ship enqueue 4321 --sha 03135b91
 enqueued	03135b91	queued
+```
+
+```
+$ fabrika ship enqueue 4321 --sha 03135b91 --mergeability-seconds 120
+enqueued	03135b91	settling
 ```
 
 **Grounding**
@@ -1742,6 +1762,13 @@ enqueued	03135b91	queued
   either round.
   `21` and its `BASE-CONFLICTED` terminal are that evidence applied — the round still happens, and
   the budget that bounds how often a builder may fail a review is not what pays for it.
+- **The poll window, sized against a live probe.** GitHub's own guide says to call
+  `GET /repos/{repo}/pulls/{n}` to start the mergeability job and then poll that same endpoint until
+  `mergeable` is true or false, and the REST list route carries no `mergeable` field at all — so
+  there is no list read to prefer. A live probe found the GraphQL list read answering `UNKNOWN` for
+  11 of 12 open PRs on a first read and decided for all 12 on a second, the same lazy job rather
+  than a privileged route. The six seconds the old three-poll cadence gave that job is what refused
+  a conflicting PR as UNKNOWN; 60 is what the probe's own settling time supports.
 
 ---
 
@@ -1750,7 +1777,7 @@ enqueued	03135b91	queued
 **Invocation**
 
 ```
-fabrika ship merge 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+fabrika ship merge 4321 --sha 03135b91 [--mergeability-seconds <n>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -1759,6 +1786,7 @@ fabrika ship merge 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head every gate verified; the landing binds to it |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before it is called UNKNOWN |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1792,8 +1820,9 @@ sends the run onward to `ship enqueue`, `19` ends the lane at a human with repos
 access.
 
 **A definite `mergeable_state` is asserted before the write**, on the same poll policy
-`ship enqueue` uses and out of the same shared read — indefinite is re-read up to 3 times, 2 seconds
-apart, and a still-indefinite value is UNKNOWN and refuses `11`. A definite `mergeable: false`
+`ship enqueue` uses and out of the same shared read — indefinite is re-read on a backoff across
+`--mergeability-seconds` (default 60), and a value still indefinite at the end of that window is
+UNKNOWN and refuses `11`. A definite `mergeable: false`
 refuses `16`, the same line the arm draws, rather than sending a call the endpoint will
 reject with a 405 that is indistinguishable, from the outside, from a write whose outcome nobody
 knows.
@@ -1812,7 +1841,7 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to a landing) |
 | `8` | the merge request, or its confirming read-back, failed — whether the PR landed is UNKNOWN; re-read the PR before stopping |
 | `9` | the merge was sent and the read-back does not show it merged at a commit — the landing is not proven |
-| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was merged |
+| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was merged |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | proven: a merge queue governs the base (run `ship enqueue`), or the PR is definitely not mergeable — nothing was merged |
 | `19` | the repository permits no merge method at all — a human enables one in the repository settings |
@@ -1828,7 +1857,7 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `ship merge: cannot read #<n>'s live head: <reason> — nothing was merged.` | 11 | refusal |
 | `ship merge: cannot read <base>'s landing path: <reason> — nothing was merged.` | 11 | refusal |
 | `ship merge: cannot read #<n>'s mergeability: <reason> — nothing was merged.` | 11 | refusal |
-| `ship merge: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was merged.` | 11 | refusal |
+| `ship merge: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — mergeability is UNKNOWN, never green; nothing was merged.` | 11 | refusal |
 | `ship merge: the live head is <live>, gates ran at <sha> — refusing to merge a tree nobody verified.` | 12 | refusal |
 | ``ship merge: a merge queue governs <base> — the queue owns the method and the landing; run `fabrika ship enqueue` instead.`` | 16 | refusal |
 | `ship merge: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was merged.` | 16 | refusal |
