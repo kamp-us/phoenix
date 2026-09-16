@@ -54,10 +54,16 @@ export class IncompatibleRoute extends Schema.TaggedError<IncompatibleRoute>()(
 	{
 		source: Schema.Struct({program: ProgramId, port: Schema.String, kind: Schema.String}),
 		target: Schema.Struct({program: ProgramId, port: Schema.String, kind: Schema.String}),
+		/**
+		 * Why the two ends do not fit, in the author's terms — the payload difference when both ends
+		 * published a schema to compare, and the two kinds when one of them did not (ADR 0395). A
+		 * refusal that named only the two ends would not say which side to change.
+		 */
+		reason: Schema.String,
 	},
 ) {
 	override get message(): string {
-		return `route ${this.source.program}.${this.source.port} -> ${this.target.program}.${this.target.port} is incompatible: source kind "${this.source.kind}" does not match target kind "${this.target.kind}"`;
+		return `route ${this.source.program}.${this.source.port} -> ${this.target.program}.${this.target.port} is incompatible: ${this.reason}`;
 	}
 }
 

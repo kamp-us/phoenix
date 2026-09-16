@@ -1,9 +1,21 @@
 /**
  * Route compatibility, checked over registry rows before any process exists — which is what
  * "refused before boot" means. Nothing here spawns, opens a queue, or touches `src/process/`.
+ *
+ * What "compatible" means is structural wherever it can be (ADR 0395, #8923). A row built by
+ * `defineProgram` mints each port's kind from its own program id (`../authoring/port.ts`), so two
+ * authored programs never share one and a nominal check could never wire them; what they do share
+ * is the payload schema each port publishes beside its predicate (#8959). So when both ends publish
+ * a schema the route is decided by `payloadFits` — the same relation, from the same module, that
+ * decides whether a program fills a `Program.shape` arg (#8887), because a route and a shaped arg
+ * are the two ways programs meet and must not promise different things. When either end publishes
+ * none — a hand-written row such as `../ai-agent/ports/ports.ts`'s, which has a predicate and no
+ * schema behind it — the kinds must be equal, exactly as before, so every row shipping today keeps
+ * routing on the kind it was written against.
  */
 
 import {Effect, Option} from "effect";
+import {describeDifference, payloadDifference, payloadFits} from "../registry/payload-fit.ts";
 import type {InPort, OutPort, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {
@@ -89,15 +101,49 @@ const resolveRoute = Effect.fn("Tuval.ports.resolveRoute")(function* (
 	if (target === undefined) {
 		return yield* new UndeclaredPort({program: targetNode.program, port: to.port, direction: "in"});
 	}
-	if (source.kind !== target.kind) {
+	const refusal = whyNotRouted(
+		source,
+		`${node.program}.${port}`,
+		target,
+		`${targetNode.program}.${to.port}`,
+	);
+	if (refusal !== undefined) {
 		return yield* new IncompatibleRoute({
 			source: {program: node.program, port, kind: source.kind},
 			target: {program: targetNode.program, port: to.port, kind: target.kind},
+			reason: refusal,
 		});
 	}
 	return {
-		kind: source.kind,
+		// The target's: what the payload is checked against on arrival, and what a `PayloadRejected`
+		// naming that end is about. A structural route's two ends carry different kinds (`./graph.ts`).
+		kind: target.kind,
 		source: {node: node.id, port, program: node.program},
 		target: {node: targetNode.id, port: to.port, program: targetNode.program},
 	} satisfies CompiledRoute;
 });
+
+/**
+ * Why these two ends may not be wired, or `undefined` when they may. Structural when both ends
+ * published a schema, nominal when either did not — the two clauses of ADR 0395, in that order,
+ * because a schema is the more truthful of the two and is only absent on a legacy row.
+ */
+const whyNotRouted = (
+	source: OutPort,
+	sourceEnd: string,
+	target: InPort,
+	targetEnd: string,
+): string | undefined => {
+	const {schema: carried} = source;
+	const {schema: accepted} = target;
+	if (carried === undefined || accepted === undefined) {
+		return source.kind === target.kind
+			? undefined
+			: `kinds differ, no schema to compare: source kind "${source.kind}" does not match target kind "${target.kind}"`;
+	}
+	if (payloadFits(carried, accepted)) return undefined;
+	const difference = payloadDifference(carried, accepted);
+	return difference === undefined
+		? `payload does not fit: ${sourceEnd} carries a different payload than ${targetEnd} accepts`
+		: `payload does not fit: ${describeDifference(difference, sourceEnd, targetEnd)}`;
+};

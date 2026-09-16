@@ -43,7 +43,13 @@ export interface CompiledNode {
 	readonly inPorts: Readonly<Record<string, InPort>>;
 }
 
-/** A route proven compatible: both ends resolved to declared ports of one kind. */
+/**
+ * A route proven compatible: both ends resolved to declared ports whose payloads fit. Since #8923
+ * the two ends need not share a kind — two authored programs never can — so the kind carried here
+ * is the target's, which is the one the arriving payload is checked against and the one a
+ * `PayloadRejected` at that end is about. For a route that compiled on kind equality, which is
+ * every route a hand-written row is an end of, it is both.
+ */
 export interface CompiledRoute {
 	readonly kind: string;
 	readonly source: PortRef & {readonly program: ProgramId};
