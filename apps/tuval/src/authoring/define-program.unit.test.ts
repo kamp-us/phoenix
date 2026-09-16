@@ -13,8 +13,8 @@ import {ProcessSelf} from "../process/self.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
-import {type ArrivalEvent, defineProgram} from "./define-program.ts";
-import {emit, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
+import {type Answer, type ArrivalEvent, defineProgram} from "./define-program.ts";
+import {emit, type ProgramEffect, type Spawned, type Stopped, send, spawn, stop} from "./effect.ts";
 import {port} from "./port.ts";
 import {Program, ShapeMismatch, type ShapeSource} from "./shape.ts";
 
@@ -544,5 +544,120 @@ describe("authoring.defineProgram hearing a child end, through the real kernel",
 			assert.strictEqual(read().ended, child);
 			assert.strictEqual(read().stops, 1);
 		}).pipe(Effect.provide(kernel([watcher, reviewerRow]))),
+	);
+});
+
+/**
+ * R12.1's other half (#9294): an effect the *author* named, answered from an authored `update` cell
+ * and run by a handler the row was spread with. The type half is `defineProgram`'s `X`; the runtime
+ * half is `{...row, handlers: {...row.handlers, run}}`, and this file's claim is that the two meet —
+ * the actor dispatches the Cmd to that handler by string and its follow-up Msg lands back in the
+ * process's own inbox, on the same `SpawnedProcesses` + `Processes` layer the box boots.
+ *
+ * The second test is the documented silence: `defineProgram` compiles before any spread exists, so
+ * it cannot refuse a named effect with no handler. A row that opts in and forgets the spread is
+ * skipped by the actor and keeps running, which is exactly what a hand-assembled row has always
+ * done for the same mistake.
+ */
+type Run = {readonly type: "run"; readonly command: string};
+type Ran = {readonly type: "ran"; readonly output: string};
+
+const run = (command: string): Run => ({type: "run", command});
+
+interface RunnerState {
+	readonly asked: string | null;
+	readonly output: string | null;
+}
+
+const runnerInit = (): RunnerState => ({asked: null, output: null});
+
+const runnerUpdate = {
+	go: (state: RunnerState): Answer<RunnerState, Run> => [{...state, asked: "echo"}, [run("echo")]],
+	ran: (state: RunnerState, event: Ran): Answer<RunnerState, Run> => [
+		{...state, output: event.output},
+		[],
+	],
+};
+
+/**
+ * `Run` is named only in a cell's answer, which is not a place inference reaches, so an opted-in
+ * program states the whole argument list once over an `update` declared beside the call.
+ */
+const runnerRow = (id: string) =>
+	defineProgram<
+		RunnerState,
+		Record<string, never>,
+		typeof runnerUpdate,
+		Record<string, never>,
+		unknown,
+		Run
+	>({id, init: runnerInit, update: runnerUpdate});
+
+const compiledRunner = runnerRow("runner");
+
+/** The compiled row, plus the one handler the layer does not write. The spread is the whole seam. */
+const runner: AnyProgram = {
+	...compiledRunner,
+	handlers: {
+		...compiledRunner.handlers,
+		run: (cmd: Run) => Effect.succeed([{type: "ran", output: `ran:${cmd.command}`} satisfies Ran]),
+	},
+};
+
+/** The same program with the spread left off: it names `run` and no handler answers it. */
+const unhandledRunner: AnyProgram = runnerRow("runner-bare");
+
+const running = (programId: string) =>
+	Effect.gen(function* () {
+		const spawner = yield* SpawnedProcesses;
+		const id = yield* spawner.spawn(ProgramId.make(programId), Option.none());
+		const handle = Option.getOrThrow(yield* Processes.use((processes) => processes.handle(id)));
+		return {handle, read: () => handle.getState() as RunnerState};
+	});
+
+describe("authoring.defineProgram answering an effect of the author's own", () => {
+	it("keeps the six kernel effects closed for a program that named none", () => {
+		const cell = (state: CounterState): Answer<CounterState> => [
+			state,
+			[
+				// @ts-expect-error a program naming no effect of its own answers the six and nothing
+				// else, so a typo is still refused at compile rather than skipped at runtime.
+				{type: "emitt", port: "announced", payload: 1},
+			],
+		];
+
+		expect(cell({count: 1})[0]).toEqual({count: 1});
+	});
+
+	it("widens the answer to exactly the effect a program did name", () => {
+		expectTypeOf<Answer<RunnerState, Run>[1]>().toEqualTypeOf<ReadonlyArray<ProgramEffect | Run>>();
+		expectTypeOf<Answer<RunnerState>[1]>().toEqualTypeOf<ReadonlyArray<ProgramEffect>>();
+	});
+
+	it.live("runs the handler the row was spread with and dispatches its follow-up", () =>
+		Effect.gen(function* () {
+			const {handle, read} = yield* running("runner");
+
+			yield* handle.dispatch({type: "go"});
+			yield* settle(() => read().output !== null);
+
+			assert.strictEqual(read().asked, "echo");
+			assert.strictEqual(read().output, "ran:echo");
+		}).pipe(Effect.provide(kernel([runner]))),
+	);
+
+	it.live("skips a named effect no handler answers, and leaves the process running", () =>
+		Effect.gen(function* () {
+			const {handle, read} = yield* running("runner-bare");
+
+			yield* handle.dispatch({type: "go"});
+			yield* settle(() => read().output !== null);
+			assert.strictEqual(read().output, null);
+
+			// Skipped, not crashed: the next event still lands on the same live process.
+			yield* handle.dispatch({type: "ran", output: "by hand"});
+			yield* settle(() => read().output !== null);
+			assert.strictEqual(read().output, "by hand");
+		}).pipe(Effect.provide(kernel([unhandledRunner]))),
 	);
 });

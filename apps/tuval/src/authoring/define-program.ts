@@ -17,6 +17,17 @@
  * Everything the layer does not sugar is still reachable, because the row is a plain object:
  * `{...defineProgram({...}), restorable, checkpointWorthy}`. `configChanged` is one of those, and
  * deliberately so — `./resume.ts` says why the reload half stays a spread while `resume` does not.
+ *
+ * **The other half of R12.1 — an effect of the author's own — is the `X` generic (#9294).** The six
+ * kernel effects are what a program gets for free; a program that has real work to do names its own
+ * effect type as `defineProgram`'s last type argument, answers it from an `update` cell like any
+ * other, and supplies the handler that runs it by spreading the compiled row:
+ * `{...defineProgram(authored), handlers: {...row.handlers, run}}`. `X` defaults to `never`, so a
+ * program that names none is typed exactly as it was and a typo'd effect is still refused at
+ * compile. `handlers` is where the handler comes from — this compiler cannot see one added after
+ * the spread, so it refuses nothing at definition time; an effect the row has no handler for is
+ * skipped by the actor (`../host/actor.ts`), which is the same silence a hand-assembled row has
+ * always had for the same mistake.
  */
 
 import type {DepKeyedSub, Interpret} from "@demlik/tea";
@@ -96,10 +107,18 @@ export interface AuthoredEvent {
 	readonly type: string;
 }
 
-/** What one `update` cell answers: the next state, and the effects it asks for. */
-export type Answer<S> = readonly [S, ReadonlyArray<ProgramEffect>];
+/**
+ * What one `update` cell answers: the next state, and the effects it asks for.
+ *
+ * `X` is the author's own effect type, and it defaults to `never` — so a program that names none
+ * answers the six kernel effects and nothing else, and a typo'd effect is still refused at compile
+ * (#9294). A program that opts in names its type once, on its `update` table's cells or on
+ * `defineProgram`, and supplies the handler for it by spreading the compiled row; the seam is
+ * written out on `defineProgram` below.
+ */
+export type Answer<S, X = never> = readonly [S, ReadonlyArray<ProgramEffect | X>];
 
-export type EventHandler<S, E> = (state: S, event: E) => Answer<S>;
+export type EventHandler<S, E, X = never> = (state: S, event: E) => Answer<S, X>;
 
 /** An in-port arrival as the author's `update` sees it: the port's name, its decoded payload. */
 export interface ArrivalEvent<Name extends string, Payload> {
@@ -139,12 +158,12 @@ export type ArrivingPortNames<D extends PortDecls> = {
  * event at `any` — including the port cells, which is exactly the inference this layer exists for.
  * Measured at this pin: under the intersection a port cell's `event` accepted a `string`.
  */
-export type UpdateTable<S, D extends PortDecls, U> = {
+export type UpdateTable<S, D extends PortDecls, U, X = never> = {
 	[K in keyof U | ArrivingPortNames<D>]: K extends typeof KEY_EVENT
-		? EventHandler<S, KeyEvent>
+		? EventHandler<S, KeyEvent, X>
 		: K extends ArrivingPortNames<D>
-			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>>
-			: EventHandler<S, any>;
+			? EventHandler<S, ArrivalEventOf<D, K & keyof D & string>, X>
+			: EventHandler<S, any, X>;
 };
 
 /** What a user writes. Nothing on it names Demlik, Effect, Scope or the row's seven generics. */
@@ -154,6 +173,7 @@ export interface AuthoredProgram<
 	U,
 	C extends CommandArgTypes = Record<string, never>,
 	Out = unknown,
+	X = never,
 > {
 	readonly id: string;
 	/** What a surface calls this program; absent falls through to `identity.program`. */
@@ -165,7 +185,7 @@ export interface AuthoredProgram<
 	 * compiled `init` answers the loaded state untouched whenever there is one.
 	 */
 	readonly init: () => S;
-	readonly update: U & UpdateTable<S, D, U>;
+	readonly update: U & UpdateTable<S, D, U, X>;
 	/** The args the config hands a process, as `programArgs` declared them (`./args.ts`). */
 	readonly args?: AnyArgRefs;
 	/**
@@ -215,7 +235,7 @@ export interface AuthoredProgram<
 	readonly placement?: Placement;
 }
 
-export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any>;
+export type AnyAuthoredProgram = AuthoredProgram<any, any, any, any, any, any>;
 
 /** What every field compiler is handed beside the authored record: the id and the compiled ports. */
 export interface CompileContext {
@@ -536,6 +556,19 @@ export const FIELD_COMPILERS = {
 /**
  * Compile one authored program into the registry row. The row is a plain object, so every field
  * this layer does not sugar is still reachable by spread.
+ *
+ * `X` — the author's own effect type — is the one type argument inference cannot reach: it is named
+ * only in a cell's *answer*, and `update`'s mapped table is not an inference site. A program that
+ * opts in therefore states the whole list once, over an `update` table declared beside the call:
+ *
+ * ```ts
+ * const update = {go: (s: State): Answer<State, Run> => [s, [run("ls")]]};
+ * const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({…});
+ * const program = {...row, handlers: {...row.handlers, run: runHandler}};
+ * ```
+ *
+ * A program that names none writes none of that: every argument keeps its default, `X` is `never`,
+ * and the answer is the six kernel effects as before (#9294).
  */
 export const defineProgram = <
 	S,
@@ -543,8 +576,9 @@ export const defineProgram = <
 	U = unknown,
 	C extends CommandArgTypes = Record<string, never>,
 	Out = unknown,
+	X = never,
 >(
-	authored: AuthoredProgram<S, D, U, C, Out>,
+	authored: AuthoredProgram<S, D, U, C, Out, X>,
 ): AnyProgram => {
 	const id = ProgramId.make(authored.id);
 	const context: CompileContext = {
