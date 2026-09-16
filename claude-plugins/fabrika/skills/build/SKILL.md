@@ -277,6 +277,16 @@ Scratch files go only where this prints:
 fabrika build scratch $issue_or_pr_number --slug notes --token <claim-token>
 ```
 
+**What it prints is a directory, so a scratch *tree* roots there too — not only a file.** The
+session scratchpad is shared across a session's lanes, so any name a builder picks inside it is
+unlocked shared state. The case that bit is a hand-verification desk — the local app instance a
+builder stands up and drives by hand when no reviewer can render the surface: two lanes both put one
+at a fixed `desk` leaf, and the second one's rebuild deleted the first one's live desk mid-run, with
+no lock and no error. So allocate that desk's root with `--slug desk` and put the whole tree under
+it — the project directory the desk opens, the scratch agent home it runs under, the app's process
+checkpoints and the driver scripts. The allocated path is keyed on this lane's claim nonce, which is
+what makes it a name no concurrent lane writes.
+
 <!-- anchor: STAGE-THE-BODY-RATHER-THAN-TRIM-IT --> **That verb is also how a body the harness
 refuses to carry reaches a verb — staged, never trimmed.** Four verbs below take their body on a
 heredoc — `build commit`, `build deviations`, `build pr` and `build note` — and a heredoc puts the
