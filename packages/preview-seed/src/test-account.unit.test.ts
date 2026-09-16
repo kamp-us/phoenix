@@ -16,6 +16,7 @@ import {
 	KEFIL_SUFFIX,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
+	PREVIEW_TIERS,
 	parseSessionToken,
 	parseStanding,
 	provisionTestAccounts,
@@ -167,7 +168,7 @@ describe("provisionTestAccounts", () => {
 			yazar: TOKEN,
 		});
 		assert.strictEqual(outcome._tag, "Provisioned");
-		assert.lengthOf(batched, 3);
+		assert.lengthOf(batched, 4);
 	});
 
 	/**
@@ -186,7 +187,7 @@ describe("provisionTestAccounts", () => {
 			{yazar: TOKEN},
 		);
 		assert.strictEqual(outcome._tag, "Provisioned");
-		assert.lengthOf(batched, 3);
+		assert.lengthOf(batched, 4);
 	});
 
 	it("names no tier rather than falling back to one when no token is supplied", async () => {
@@ -197,7 +198,7 @@ describe("provisionTestAccounts", () => {
 		assert.lengthOf(selected, 0);
 	});
 
-	it("provisions account, session and moderates tuple in one batch on an empty database", async () => {
+	it("provisions account, session, profile and moderates tuple in one batch on an empty database", async () => {
 		assert.isNotNull(TOKEN);
 		const now = new Date("2026-08-28T00:00:00.000Z");
 		const {d1, batched} = fakeD1([]);
@@ -212,19 +213,20 @@ describe("provisionTestAccounts", () => {
 		if (outcome._tag !== "Provisioned") return;
 		assert.strictEqual(outcome.report.expiresAt.getTime(), now.getTime() + SESSION_TTL_MS);
 		assert.deepStrictEqual(outcome.report.tiers, ["yazar"]);
-		assert.lengthOf(batched, 3);
+		assert.lengthOf(batched, 4);
 		assert.include(batched[0]?.sql ?? "", '"user"');
 		assert.include(batched[1]?.sql ?? "", '"session"');
-		assert.include(batched[2]?.sql ?? "", "relation_tuple");
+		assert.include(batched[2]?.sql ?? "", "user_profile");
+		assert.include(batched[3]?.sql ?? "", "relation_tuple");
 		assert.include(batched[1]?.params ?? [], TOKEN);
-		assert.include(batched[2]?.params ?? [], TEST_ACCOUNTS.yazar.id);
+		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.yazar.id);
 	});
 
 	/**
 	 * The çaylak carries no `moderates` tuple, and that is the point of the tier: an identity with
 	 * moderation authority renders a moderator's affordances whatever its `tier` column says.
 	 */
-	it("gives each tier its own account + session, and the tuple only to the moderating one", async () => {
+	it("gives each tier its own account, session and profile, and the tuple only to the moderating one", async () => {
 		assert.isNotNull(TOKEN);
 		assert.isNotNull(CAYLAK_TOKEN);
 		const {d1, batched} = fakeD1([]);
@@ -235,11 +237,11 @@ describe("provisionTestAccounts", () => {
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
 		assert.deepStrictEqual(outcome.report.tiers, ["yazar", "çaylak"]);
-		assert.lengthOf(batched, 5);
-		assert.include(batched[2]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
-		assert.include(batched[3]?.params ?? [], CAYLAK_TOKEN);
-		assert.include(batched[4]?.sql ?? "", "relation_tuple");
-		assert.include(batched[4]?.params ?? [], TEST_ACCOUNTS.yazar.id);
+		assert.lengthOf(batched, 7);
+		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
+		assert.include(batched[4]?.params ?? [], CAYLAK_TOKEN);
+		assert.include(batched[6]?.sql ?? "", "relation_tuple");
+		assert.include(batched[6]?.params ?? [], TEST_ACCOUNTS.yazar.id);
 		assert.notInclude(
 			batched.flatMap((stmt) => (stmt.sql.includes("relation_tuple") ? stmt.params : [])),
 			TEST_ACCOUNTS.çaylak.id,
@@ -256,7 +258,7 @@ describe("provisionTestAccounts", () => {
 		if (outcome._tag !== "Provisioned") return;
 		assert.deepStrictEqual(outcome.report.tiers, ["çaylak"]);
 		assert.strictEqual(outcome.report.tuples, 0);
-		assert.lengthOf(batched, 2);
+		assert.lengthOf(batched, 3);
 		assert.notInclude(
 			batched.flatMap((stmt) => stmt.params),
 			TEST_ACCOUNTS.yazar.id,
@@ -299,15 +301,16 @@ describe("provisionTestAccounts — çaylak standing", () => {
 			now,
 		);
 		assert.strictEqual(outcome._tag, "Provisioned");
-		// 2 accounts × (user + session), then profile + vouch, then the yazar's moderates tuple.
-		assert.lengthOf(batched, 7);
-		assert.include(batched[4]?.sql ?? "", "user_profile");
-		assert.include(batched[4]?.params ?? [], VOUCHED.karma);
-		assert.include(batched[4]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
-		assert.include(batched[5]?.sql ?? "", "authorship_vouch");
-		assert.include(batched[5]?.params ?? [], TEST_ACCOUNTS.yazar.id);
-		assert.include(batched[5]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
-		assert.include(batched[6]?.sql ?? "", "relation_tuple");
+		// 2 accounts × (user + session + profile), then standing profile + vouch, then the yazar's
+		// moderates tuple. The standing profile lands AFTER both base profiles, so its karma wins.
+		assert.lengthOf(batched, 9);
+		assert.include(batched[6]?.sql ?? "", "user_profile");
+		assert.include(batched[6]?.params ?? [], VOUCHED.karma);
+		assert.include(batched[6]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
+		assert.include(batched[7]?.sql ?? "", "authorship_vouch");
+		assert.include(batched[7]?.params ?? [], TEST_ACCOUNTS.yazar.id);
+		assert.include(batched[7]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
+		assert.include(batched[8]?.sql ?? "", "relation_tuple");
 	});
 
 	/**
@@ -325,14 +328,14 @@ describe("provisionTestAccounts — çaylak standing", () => {
 			UNVOUCHED,
 		);
 		assert.strictEqual(outcome._tag, "Provisioned");
-		assert.lengthOf(batched, 4);
-		const profile = batched[2]?.sql ?? "";
+		assert.lengthOf(batched, 5);
+		const profile = batched[3]?.sql ?? "";
 		assert.include(profile, "user_profile");
 		assert.match(profile, /on conflict .* do update set/i);
 		assert.notInclude(profile, "+", "karma is set from a bound value, never incremented");
-		assert.include(batched[2]?.params ?? [], UNVOUCHED.karma);
-		assert.match(batched[3]?.sql ?? "", /^delete from "authorship_vouch"/i);
-		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
+		assert.include(batched[3]?.params ?? [], UNVOUCHED.karma);
+		assert.match(batched[4]?.sql ?? "", /^delete from "authorship_vouch"/i);
+		assert.include(batched[4]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
 	});
 
 	it("refuses a vouched standing when the yazar tier is unseeded, writing nothing", async () => {
@@ -402,8 +405,7 @@ describe("provisionTestAccounts — çaylak standing", () => {
 			tuples: 1,
 			expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
 		});
-		assert.lengthOf(batched, 5);
-		assert.notInclude(sqlOf(batched), "user_profile");
+		assert.lengthOf(batched, 7);
 		assert.notInclude(sqlOf(batched), "authorship_vouch");
 	});
 
@@ -423,5 +425,89 @@ describe("provisionTestAccounts — çaylak standing", () => {
 		);
 		assert.strictEqual(outcome._tag, "Provisioned");
 		assert.lengthOf(selected, 0);
+	});
+});
+
+/**
+ * The base profile rows (#9286). Every profile surface reads `user_profile` —
+ * `lookupProfileByUsername` and `lookupProfileById` in
+ * `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` without one — so a tier seeded
+ * without a profile row renders a 404 on a preview the verb reported as provisioned.
+ */
+describe("provisionTestAccounts — base profile rows", () => {
+	const profilesOf = (batched: ReadonlyArray<Recorded>) =>
+		batched.filter((stmt) => stmt.sql.includes("user_profile"));
+
+	it("writes a profile row for every provisioned tier when no standing is named", async () => {
+		assert.isNotNull(TOKEN);
+		assert.isNotNull(CAYLAK_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			yazar: TOKEN,
+			çaylak: CAYLAK_TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "Provisioned");
+		const profiles = profilesOf(batched);
+		assert.lengthOf(profiles, 2);
+		for (const tier of PREVIEW_TIERS) {
+			const account = TEST_ACCOUNTS[tier];
+			const row = profiles.find((stmt) => stmt.params.includes(account.id));
+			assert.isDefined(row, `no user_profile statement for ${tier}`);
+			// `lookupProfileByUsername` rejects a row whose `username` is null and `/u/<username>` is
+			// the only way in, so both fields have to be bound here.
+			assert.include(row?.params ?? [], account.username);
+			assert.include(row?.params ?? [], account.name);
+		}
+	});
+
+	it("writes the yazar's profile row even when it is the only tier seeded", async () => {
+		assert.isNotNull(TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			yazar: TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "Provisioned");
+		const profiles = profilesOf(batched);
+		assert.lengthOf(profiles, 1);
+		assert.include(profiles[0]?.params ?? [], TEST_ACCOUNTS.yazar.id);
+		assert.include(profiles[0]?.params ?? [], TEST_ACCOUNTS.yazar.username);
+	});
+
+	/**
+	 * A re-run is the normal case, and the base row must not be the thing that decides karma: the
+	 * `do update set` list omits `total_karma`, so a standing already on the preview survives a plain
+	 * re-seed.
+	 */
+	it("leaves total_karma untouched on conflict", async () => {
+		assert.isNotNull(CAYLAK_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {çaylak: CAYLAK_TOKEN});
+		const [profile] = profilesOf(batched);
+		const updateClause = (profile?.sql ?? "").split(/do update set/i)[1] ?? "";
+		assert.notStrictEqual(updateClause, "");
+		assert.notInclude(updateClause, "total_karma");
+	});
+
+	/**
+	 * Base first, standing second inside the one batch — reverse them and the base row's INSERT-side
+	 * `total_karma = 0` would land last on a fresh preview and erase the standing the same run was
+	 * asked to write.
+	 */
+	it("orders the çaylak's base row before the standing row that sets its karma", async () => {
+		assert.isNotNull(TOKEN);
+		assert.isNotNull(CAYLAK_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(
+			makeTestAccountDb(d1),
+			PREVIEW_NAME,
+			{yazar: TOKEN, çaylak: CAYLAK_TOKEN},
+			VOUCHED,
+		);
+		assert.strictEqual(outcome._tag, "Provisioned");
+		const profiles = profilesOf(batched);
+		assert.lengthOf(profiles, 3);
+		const karmaRows = profiles.filter((stmt) => stmt.params.includes(VOUCHED.karma));
+		assert.lengthOf(karmaRows, 1);
+		assert.strictEqual(karmaRows[0], profiles[2]);
 	});
 });

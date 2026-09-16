@@ -36,7 +36,7 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
 - `src/seed.ts` — idempotent upserts; runs against any `D1Database` (in-memory
   test fake or REST adapter) and also emits `{sql, params}` for the REST batch.
 - `src/test-account.ts` — the review-ui test accounts, one per tier, + their session
-  rows and the çaylak's optional standing (karma + kefil).
+  and profile rows and the çaylak's optional standing (karma + kefil).
 - `src/bin.ts` — the `preview-seed run` and `preview-seed test-account` CLI.
 
 ## Running it
@@ -109,6 +109,16 @@ The çaylak gets no moderation tuple, and that is the point of the tier: an iden
 holding moderation authority renders a moderator's affordances whatever its `tier`
 column says.
 
+Each provisioned tier gets three base rows, not two: `user`, `session` and
+`user_profile`. The profile row is what every profile surface reads —
+`lookupProfileByUsername` and `lookupProfileById` in
+`apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` without one, so
+`/u/onizleme-mod` renders the not-found composition and the yazar's own `/profile`
+has nothing to hydrate, on a preview the verb reported as provisioned (issue #9286).
+It carries the tier's `username` and `displayName` from the table above; a re-run
+updates those two and leaves `total_karma` alone, so a standing already seeded on
+the preview survives a plain re-seed.
+
 ### The standing axis — where on the promotion path the çaylak sits
 
 A tier says which audience the identity belongs to; it does not say where on the
@@ -131,7 +141,7 @@ PREVIEW_TEST_CAYLAK_SESSION_TOKEN=<a different 32+ char secret> \
 
 | Operand | Standing written |
 | --- | --- |
-| *(omitted)* | none — `user_profile` and `authorship_vouch` are left untouched |
+| *(omitted)* | none — the base profile row's `total_karma` is left where it was and `authorship_vouch` is untouched |
 | `0` | `total_karma = 0`, no kefil |
 | `15+kefil` | `total_karma = 15`, vouched by the yazar test identity |
 

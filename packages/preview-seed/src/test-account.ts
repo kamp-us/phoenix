@@ -1,6 +1,7 @@
 /**
- * Provision the tier-keyed test accounts a `review-ui` capture authenticates as, and the session
- * row whose token becomes that capture's cookie (issues #7051, #7398).
+ * Provision the tier-keyed test accounts a `review-ui` capture authenticates as, the session row
+ * whose token becomes that capture's cookie (issues #7051, #7398), and the `user_profile` row every
+ * profile surface reads (issue #9286).
  *
  * **One account per tier, because a tier is an audience.** A surface whose whole point is that it
  * renders *below* yazar — a çaylak nudge, a pre-promotion prompt — cannot be rendered by an
@@ -162,7 +163,10 @@ export const parseStanding = (raw: string): CaylakStanding | null => {
 };
 
 export interface ProvisionReport {
-	/** The tiers provisioned, in {@link PREVIEW_TIERS} order — one `user` + one `session` row each. */
+	/**
+	 * The tiers provisioned, in {@link PREVIEW_TIERS} order — one `user`, one `session` and one
+	 * `user_profile` row each.
+	 */
 	readonly tiers: readonly PreviewTier[];
 	/** `moderates` tuples newly minted — `0` on a re-run, and `0` when no moderating tier was seeded. */
 	readonly tuples: number;
@@ -210,13 +214,24 @@ export const isThrowawayDatabaseName = (name: string): boolean =>
 
 type Statement = BatchItem<"sqlite">;
 
+/**
+ * The base rows for one tier: its `user`, its `session`, and the `user_profile` row every profile
+ * surface reads. `lookupProfileByUsername` and `lookupProfileById` in
+ * `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` when that row is absent, so an
+ * identity seeded without one is a 404 on `/u/<username>` and has nothing to hydrate on `/profile`
+ * (#9286) — which reads as a seeding failure, since the verb exits 0 either way.
+ *
+ * The profile upsert sets `total_karma` on INSERT only: the `do update set` list omits it, so a
+ * re-run against an already-seeded preview leaves the karma standing where it was, and the standing
+ * rows later in the same batch still win for the run that names one.
+ */
 const accountRows = (
 	db: SeedDb,
 	tier: PreviewTier,
 	token: SessionToken,
 	now: Date,
 	expiresAt: Date,
-): readonly [Statement, Statement] => {
+): readonly [Statement, Statement, Statement] => {
 	const account = TEST_ACCOUNTS[tier];
 	const accountRow = {
 		id: account.id,
@@ -238,14 +253,25 @@ const accountRows = (
 		createdAt: now,
 		updatedAt: now,
 	};
+	const profileRow = {
+		userId: account.id,
+		username: account.username,
+		displayName: account.name,
+		updatedAt: now,
+	};
 	return [
 		db.insert(user).values(accountRow).onConflictDoUpdate({target: user.id, set: accountRow}),
 		db.insert(session).values(sessionRow).onConflictDoUpdate({target: session.id, set: sessionRow}),
+		db
+			.insert(userProfile)
+			.values(profileRow)
+			.onConflictDoUpdate({target: userProfile.userId, set: profileRow}),
 	];
 };
 
 /**
- * The standing rows for the çaylak, written beside its account and session in the same batch.
+ * The standing rows for the çaylak, written beside its account, session and base profile row in the
+ * same batch — and after them, so this upsert's `total_karma` is what the run lands.
  * Karma is SET, never incremented, and a standing without a `kefil` DELETES any vouch the previous
  * run left — re-seeding the other fork of the promotion path is the whole capture route (#7708),
  * so a leftover row would render the state the operator just asked to leave.
@@ -327,9 +353,10 @@ export const provisionTestAccounts = async (
 				.onConflictDoNothing(),
 		);
 
-	// One `batch` so every account, its session, its moderation tuple and its standing land together
-	// or not at all — a session pointing at an unpromoted account renders a çaylak's view under the
-	// yazar's name, and a karma row without its vouch row renders a standing nobody asked for.
+	// One `batch` so every account, its session, its profile, its moderation tuple and its standing
+	// land together or not at all — a session pointing at an unpromoted account renders a çaylak's
+	// view under the yazar's name, and a karma row without its vouch row renders a standing nobody
+	// asked for.
 	const results = await db.batch([...rows, ...tuples]);
 
 	return {
