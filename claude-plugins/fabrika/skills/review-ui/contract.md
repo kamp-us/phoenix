@@ -201,8 +201,16 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **A tier-naming surface needs `BETTER_AUTH_SECRET` plus that tier's own session token**, all unset
-  by default. `BETTER_AUTH_SECRET` is the preview worker's, so the cookie signature verifies; the
+- **A tier-naming surface needs the preview stage's signing secret plus that tier's own session
+  token**, all unset by default. The secret is the one the *preview worker deployed with*, so the
+  cookie signature verifies, and it is named rather than assumed: `--auth-secret-from <file>` reads
+  it from an export of the stack's alchemy state, which is its one readable copy — the deployed
+  `secret_text` binding does not read back and the GitHub Actions secret is write-only. Without the
+  flag the ambient `$BETTER_AUTH_SECRET` stands in, and **a value that is empty or carries the
+  `insecure_` placeholder an example env file ships is refused on `11` rather than signed with**.
+  A placeholder-signed cookie is perfectly well-formed and the worker answers it as a visitor, which
+  at the shot is indistinguishable from a preview nobody seeded — two gate rounds were spent
+  splitting exactly that by hand. The
   token is the one `preview-seed test-account` wrote onto the preview D1 for that tier —
   `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
   `:auth-caylak` (çaylak). **One variable per tier, and an unset one is never satisfied by
@@ -240,7 +248,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -253,6 +261,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
+| `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the preview stage's deployed `BETTER_AUTH_SECRET`; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
@@ -339,7 +348,12 @@ still refuses every `:state`.
 `11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
 present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
-bound to a new SHA are the stale-verdict class at the capture seam. For each `--surface` at each
+bound to a new SHA are the stale-verdict class at the capture seam. **Resolve the tier signing
+secret** — the file `--auth-secret-from` names, else the ambient variable — and refuse on `11`
+before a browser launches when it cannot be read, is empty, or carries the `insecure_` placeholder.
+The refusal names the source it read and the route out, and the route differs by source: with no
+flag it is to pass one, and with a flag it is to export the stage's own secret into that file.
+For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
 page exception is **crashed** (`13`); otherwise screenshot full-page to
@@ -368,7 +382,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token or `BETTER_AUTH_SECRET` is unset; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
+| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -384,6 +398,9 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
 | `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak; render the bare route.` | 10 | refusal |
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
+| `review-ui render: cannot read the preview stage's deployed secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |

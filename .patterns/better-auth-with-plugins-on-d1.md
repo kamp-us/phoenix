@@ -22,7 +22,6 @@ without leaking `RuntimeContext` is `apps/web/worker/features/pasaport/Pasaport.
 ```ts
 // features/pasaport/better-auth-live.ts (shape, simplified)
 import * as BetterAuth from "@alchemy.run/better-auth";
-import {Random} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {betterAuth as makeBetterAuth} from "better-auth";
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
@@ -33,6 +32,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as schema from "../db/drizzle/schema.ts";
 import {PhoenixDb} from "../db/resources.ts";
+import {betterAuthSecret} from "../../config.ts";
 
 export const BetterAuthLive = Layer.effect(
   BetterAuth.BetterAuth,
@@ -41,13 +41,11 @@ export const BetterAuthLive = Layer.effect(
     const connection = yield* Cloudflare.D1.QueryDatabase(PhoenixDb);
     const env = yield* Cloudflare.WorkerEnvironment;
 
-    // Mint (or recover from state) the session-signing secret. `Random`
-    // is deterministic-in-state: created once, persisted in alchemy
-    // state, recovered on subsequent runs. Re-deploys keep the same
-    // secret unless the resource is replaced. NOT `Config.redacted` —
-    // the secret never lands in `.env`.
-    const SECRET = yield* Random("BETTER_AUTH_SECRET");
-    const secret = yield* SECRET.text;
+    // The session-signing secret is a `secret_text` binding, read at request
+    // time. NOT the reference layer's `alchemy/Random`: that is a deploy-time
+    // resource with no value in the workerd isolate. `orDie` — a missing
+    // secret is an unrecoverable misconfig, never a blank signing key.
+    const secret = yield* betterAuthSecret.pipe(Effect.orDie);
 
     // ... resolve baseURL / trustedOrigins from env ...
 
@@ -55,12 +53,11 @@ export const BetterAuthLive = Layer.effect(
     // isolate, not per request.
     const auth = yield* Effect.gen(function* () {
       const d1 = yield* connection.raw;
-      const secretText = yield* secret.pipe(Effect.map(Redacted.value));
       const db = drizzle(d1, {schema});
       return makeBetterAuth({
         emailAndPassword: {enabled: true},
         database: drizzleAdapter(db, {provider: "sqlite", schema}),
-        secret: secretText,
+        secret: Redacted.value(secret),
         ...(baseURL ? {baseURL} : {}),
         ...(trustedOrigins ? {trustedOrigins: [...trustedOrigins]} : {}),
         user: {additionalFields: {username: {type: "string", required: false, input: false}}},
@@ -109,37 +106,40 @@ Three load-bearing differences from the reference Layer:
   `WorkerEnvironment` and passes them through.
 
 The fork is ~40 lines and is the smallest delta that keeps the three
-above. Tracking upstream is straightforward — the structure (Random for
-secret, `D1.QueryDatabase`, `Effect.cached` for the
-`makeBetterAuth` call) mirrors the reference Layer; only the
-`makeBetterAuth` body diverges.
+above. Tracking upstream is straightforward — the structure
+(`D1.QueryDatabase`, `Effect.cached` for the `makeBetterAuth` call)
+mirrors the reference Layer; the secret's source and the
+`makeBetterAuth` body are what diverge.
 
-## The secret — `Random`, not `Config.redacted`
+## The secret — a `secret_text` binding, not `alchemy/Random`
 
-The session-signing secret comes from alchemy's `Random("BETTER_AUTH_SECRET")`
-resource. `Random` is **deterministic-in-state**: the value is generated
-once on `create`, persisted in alchemy state, and recovered on every
-subsequent run. Re-deploys keep the same secret unless the resource is
-replaced.
+The session-signing secret is a Cloudflare `secret_text` binding, read at
+request time as `Config.redacted("BETTER_AUTH_SECRET")`
+(`apps/web/worker/config.ts`) with no default, so a missing secret fails
+closed rather than signing with a blank key.
 
-This replaces the previous `BETTER_AUTH_SECRET` env-binding path
-(`Config.redacted("BETTER_AUTH_SECRET")` read off the worker's `env`
-block). The trade:
+The reference Layer's `Random("BETTER_AUTH_SECRET")` was tried and dropped.
+`Random` is a **deploy-time** resource: its `.text` has no value inside the
+workerd isolate, so better-auth ended up signing cookies with an unresolved
+Effect. A value the worker must read on every request has to travel as a
+binding.
 
-- **`Config.redacted`** requires the secret to live in `.env` (and to be
-  threaded through CI as a deploy-time secret). It's the right tool for
-  third-party API tokens that the user/CI controls. It's not the right
-  tool for an internal session-signing secret nobody but the worker
-  itself needs to see.
-- **`Random`** mints the secret on first deploy, stores it in alchemy
-  state, and reuses it on every subsequent deploy. The secret never
-  enters `.env` and never has to be threaded through CI. Each dev stage
-  has its own minted secret (so stages don't share sessions); prod's
-  secret is stable across deploys.
+One consequence is load-bearing for anything outside the worker that signs a
+session cookie: **the value lives only where it was deployed from.** The
+`secret_text` binding does not read back, and `infra/ci-credentials/github.ts`
+mints one stable repo-wide value and pushes it as a write-only GitHub Actions
+secret, which `.github/workflows/deploy.yml` passes into `alchemy deploy` for
+every stage. So the one readable copy is the stack's alchemy state, behind
+`$ALCHEMY_PASSWORD`. A seat that signs a preview session cookie —
+`review-ui render`'s tier states — needs that value and nothing else: the
+throwaway `insecure_`-prefixed secret in `apps/web/.env.example` signs a
+well-formed cookie the deployed worker answers as a visitor, which is
+indistinguishable at the shot from an unseeded preview. That verb's
+`--auth-secret-from` is the named supply route, and it refuses the placeholder
+rather than signing with it (#9288).
 
 ADR 0032 retired `Alchemy.Secret`/`Alchemy.Variable` in favor of
-`Config.redacted`. The secret-on-state path is the parallel move for
-secrets the worker owns rather than reads.
+`Config.redacted`, and this secret is on that path.
 
 ## Auth instance threading — yielded once, passed as a factory parameter
 
@@ -250,5 +250,5 @@ unchanged.
 - [ADR 0031](../.decisions/0031-local-first-dev-state.md) — dev cookie /
   `baseURL` / trusted-origins context.
 - [ADR 0032](../.decisions/0032-alchemy-beta45-and-dev-model.md) —
-  `Config.redacted` replaces `Alchemy.Secret`; this pattern's `Random`
-  path is for secrets the worker mints rather than reads.
+  `Config.redacted` replaces `Alchemy.Secret`, which is the path this
+  pattern's session-signing secret is on.

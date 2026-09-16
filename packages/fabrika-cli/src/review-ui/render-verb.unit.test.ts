@@ -1,5 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import {signSessionToken} from "../capture/auth.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {
 	INVALID_CAPTURE,
@@ -81,14 +82,19 @@ const options = {
 	viewports: [] as readonly string[],
 	flags: [] as readonly string[],
 	app: null,
+	authSecretFrom: null as string | null,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	tmpRoot: "/tmp",
 	render: legOf({}),
 };
 
-const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const fs = fakeFs({});
+const run = (
+	script: ReadonlyArray<Scripted>,
+	overrides: Partial<typeof options> = {},
+	files: Readonly<Record<string, string>> = {},
+) => {
+	const fs = fakeFs({files});
 	return Effect.runPromise(
 		Effect.provide(
 			runRender({...options, ...overrides}),
@@ -171,6 +177,71 @@ describe("runRender", () => {
 		});
 		expect(halfSet.outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(halfSet.outcome.stderr.join("\n")).toContain("BETTER_AUTH_SECRET");
+	});
+
+	/**
+	 * The defect this closes: the seat's `.env` carries the example file's throwaway key, the
+	 * cookie signs cleanly, and the preview worker — deployed with the real per-stack secret —
+	 * answers it as a visitor. Two gate rounds read that as an unseeded preview, because a bad
+	 * signature and an absent session row are the same bare `null` from better-auth.
+	 */
+	it("refuses a placeholder-prefixed ambient secret on 11 rather than signing a cookie the worker rejects", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano:auth"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "insecure_f0fe1c42",
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const said = outcome.stderr.join("\n");
+		expect(said).toContain("insecure_");
+		expect(said).toContain("$BETTER_AUTH_SECRET");
+		expect(said).toContain("--auth-secret-from");
+	});
+
+	it("signs with the preview stage's exported secret when --auth-secret-from names it", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				authSecretFrom: "/run/preview-secret",
+				env: {
+					CLAUDE_PIPELINE_REPO: "o/r",
+					PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+					BETTER_AUTH_SECRET: "insecure_f0fe1c42",
+				},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{"/run/preview-secret": `${"d".repeat(32)}\n`},
+		);
+		expect(outcome.code).toBe(0);
+		// The named source wins over the ambient placeholder, which is the whole point of the flag.
+		const value = seen.get("/pano:auth")?.[0]?.value;
+		expect(value).toBe(signSessionToken("t".repeat(32), "d".repeat(32)));
+	});
+
+	it("refuses an unreadable --auth-secret-from on 11, naming the path", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano:auth"],
+			authSecretFrom: "/run/absent-secret",
+			env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("/run/absent-secret");
+	});
+
+	// An anonymous run signs nothing, so a secret it never needs must not be able to refuse it.
+	it("renders an anonymous surface with a placeholder secret in the environment", async () => {
+		const {outcome} = await run(happy(), {
+			env: {CLAUDE_PIPELINE_REPO: "o/r", BETTER_AUTH_SECRET: "insecure_f0fe1c42"},
+		});
+		expect(outcome.code).toBe(0);
 	});
 
 	it("seeds the session cookie onto the :auth surface only, so the default stays the visitor's", async () => {

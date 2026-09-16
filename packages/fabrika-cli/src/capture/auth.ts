@@ -14,6 +14,16 @@
  * inside the worker isolate from `isProduction` when the app configures `baseURL` as an object —
  * which an app commonly does on preview — so it is a fact about the running worker
  * that no caller out here can observe. The server reads exactly one name and ignores the other.
+ *
+ * **The signing key is the preview stage's, and this module refuses to guess at it.** The value has
+ * to be the one the stage deployed with, and the only readable copy of that is the stack's alchemy
+ * state — so the caller names its source ({@link AuthSecretSource}) and this module judges what came
+ * back ({@link classifyAuthSecret}). An empty value and a `.env.example` placeholder are both
+ * refusals here rather than a cookie the worker rejects at the shot, because the two look identical
+ * from the far side: better-auth answers a bad signature and an absent session row with the same
+ * bare `null`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
  */
 import {createHmac} from "node:crypto";
 import type {CaptureCookie} from "./capture.ts";
@@ -57,11 +67,65 @@ export const TIER_TOKEN_ENV: Readonly<Record<CaptureTier, string>> = {
 	çaylak: "PREVIEW_TEST_CAYLAK_SESSION_TOKEN",
 };
 
+/** The ambient variable a seat carries the signing secret in when no file source is named. */
+export const AUTH_SECRET_ENV = "BETTER_AUTH_SECRET";
+
 /**
- * The credentials an authenticated capture needs for the tiers a run asks for, or the names of
- * whichever are unset. All or nothing: a token with no secret cannot be signed, a secret with no
- * token names no session, and a tier with no token of its own is a tier this preview does not
- * carry — so one unset name and three are the same refusal, differing only in what they list.
+ * The prefix a repo's example env file ships its throwaway dev secret under. A seat that copied that
+ * file to `.env` signs with a value no deployed worker ever verified against, and the worker answers
+ * every seeded cookie as a visitor — a fact about the seat's environment that reads, at the shot,
+ * exactly like an unseeded preview.
+ */
+export const PLACEHOLDER_SECRET_PREFIX = "insecure_";
+
+/**
+ * Where a run's signing secret came from. It rides every refusal because the two sources fail in
+ * opposite directions: a stage-state export that is unreadable is an operator step not taken, and an
+ * ambient value that carries the placeholder prefix is a seat quietly signing with a dev key.
+ */
+export type AuthSecretSource =
+	| {readonly _tag: "StageState"; readonly path: string}
+	| {readonly _tag: "Ambient"; readonly name: string};
+
+export const describeAuthSecretSource = (source: AuthSecretSource): string =>
+	source._tag === "StageState"
+		? `the preview stage's deployed secret at ${source.path}`
+		: `the ambient $${source.name}`;
+
+/**
+ * A secret value judged against its source. `Placeholder` and `Empty` are two different facts about
+ * the same unusable state, and neither is ever folded into the other: one says a value was read and
+ * is the wrong one, the other says there was nothing to read.
+ */
+export type AuthSecretRead =
+	| {readonly _tag: "Usable"; readonly value: string; readonly source: AuthSecretSource}
+	| {readonly _tag: "Placeholder"; readonly source: AuthSecretSource}
+	| {readonly _tag: "Empty"; readonly source: AuthSecretSource};
+
+/**
+ * Judge one read value. The placeholder test runs on the trimmed value because a file export ends
+ * in a newline far more often than not, and a trailing byte in the signing key is the same silent
+ * visitor answer this whole path exists to stop.
+ */
+export const classifyAuthSecret = (raw: string, source: AuthSecretSource): AuthSecretRead => {
+	const value = raw.trim();
+	if (value.length === 0) return {_tag: "Empty", source};
+	if (value.startsWith(PLACEHOLDER_SECRET_PREFIX)) return {_tag: "Placeholder", source};
+	return {_tag: "Usable", value, source};
+};
+
+/**
+ * The credentials an authenticated capture needs for the tiers a run asks for, or what stopped the
+ * read. All or nothing: a token with no secret cannot be signed, a secret with no token names no
+ * session, and a tier with no token of its own is a tier this preview does not carry.
+ *
+ * `Unusable` is its own arm rather than another name on `Missing`'s list, because the secret is no
+ * longer an environment variable among others: it is the preview stage's own value, and a seat
+ * holding the wrong one produces a perfectly well-formed cookie the worker refuses. Collapsing the
+ * two spent two review rounds reading "the preview answered the seeded cookie as a visitor" without
+ * being able to say which of a wrong key and a missing row it was.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
  */
 export type IdentityRead =
 	| {
@@ -69,21 +133,42 @@ export type IdentityRead =
 			readonly tokens: Readonly<Partial<Record<CaptureTier, string>>>;
 			readonly secret: string;
 	  }
-	| {readonly _tag: "Missing"; readonly names: readonly string[]};
+	| {readonly _tag: "Missing"; readonly names: readonly string[]}
+	| {readonly _tag: "Unusable"; readonly reason: string};
 
+/**
+ * Fold the tier tokens read off `env` together with an already-resolved secret.
+ *
+ * The secret arrives as an argument rather than off `env` because its source is the caller's
+ * decision — a named export of the preview stage's deployed value, or the ambient variable — and a
+ * pure core cannot read a file. An unusable secret is reported ahead of any unset token: the tokens
+ * are the operator's own `preview-seed` output and read back plainly, where the secret is the half
+ * that has been silently wrong.
+ */
 export const readIdentity = (
 	env: Readonly<Record<string, string | undefined>>,
 	tiers: readonly CaptureTier[],
+	secret: AuthSecretRead,
 ): IdentityRead => {
 	const wanted = CAPTURE_TIERS.filter((tier) => tiers.includes(tier));
-	const secret = env.BETTER_AUTH_SECRET ?? "";
 	const found = wanted.map((tier) => [tier, env[TIER_TOKEN_ENV[tier]] ?? ""] as const);
-	const names = [
-		...found.flatMap(([tier, token]) => (token.length === 0 ? [TIER_TOKEN_ENV[tier]] : [])),
-		...(secret.length === 0 ? ["BETTER_AUTH_SECRET"] : []),
-	];
+	if (secret._tag === "Placeholder") {
+		return {
+			_tag: "Unusable",
+			reason: `${describeAuthSecretSource(secret.source)} carries the ${PLACEHOLDER_SECRET_PREFIX} placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor`,
+		};
+	}
+	if (secret._tag === "Empty") {
+		return {
+			_tag: "Unusable",
+			reason: `${describeAuthSecretSource(secret.source)} is empty — there is no key to sign the tier cookie with`,
+		};
+	}
+	const names = found.flatMap(([tier, token]) =>
+		token.length === 0 ? [TIER_TOKEN_ENV[tier]] : [],
+	);
 	return names.length === 0
-		? {_tag: "Identity", tokens: Object.fromEntries(found), secret}
+		? {_tag: "Identity", tokens: Object.fromEntries(found), secret: secret.value}
 		: {_tag: "Missing", names};
 };
 

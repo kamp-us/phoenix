@@ -22,6 +22,16 @@
  * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
  * page nobody asked for, which no byte check can tell from the real thing.
  *
+ * `--auth-secret-from <file>` names where the tier cookie's signing key comes from: the preview
+ * stage's deployed `BETTER_AUTH_SECRET`, exported from the stack's alchemy state. Omitted, the
+ * ambient variable stands in — and is refused on `11` when it is empty or carries `.env.example`'s
+ * `insecure_` placeholder, which is the fourth arm of the same class. A placeholder-signed cookie is
+ * well-formed and the worker answers it as a visitor, so without this refusal the seat's own
+ * environment reads at the shot exactly like a preview nobody seeded; two gate rounds were spent on
+ * that, and neither could name which it was.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
+ *
  * `--viewport <name>` picks the widths the surfaces are shot at, over `plan.ts`'s closed set, and
  * defaults to `desktop` alone so every caller written before it is unchanged. Viewports
  * cross the surfaces: two of each is four captures in one set, distinguished on disk and in the
@@ -36,7 +46,13 @@
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {readIdentity, sessionCookies} from "../capture/auth.ts";
+import {
+	AUTH_SECRET_ENV,
+	type AuthSecretRead,
+	classifyAuthSecret,
+	readIdentity,
+	sessionCookies,
+} from "../capture/auth.ts";
 import type {CaptureCookie} from "../capture/capture.ts";
 import {
 	FORCED_VALUES,
@@ -55,7 +71,7 @@ import {
 	stateOf,
 	tierOf,
 } from "../capture/states.ts";
-import {writeFile} from "../io/fs.ts";
+import {readFile, writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -125,6 +141,12 @@ export interface RenderOptions {
 	/** Raw `--flag` operands, each a `<key>=<on|off>` pair. Empty ⇒ every flag at its default. */
 	readonly flags: readonly string[];
 	readonly app: string | null;
+	/**
+	 * A file holding the preview stage's deployed `BETTER_AUTH_SECRET`, exported from the stack's
+	 * alchemy state. `null` falls back to the ambient variable, which is accepted only when it is
+	 * neither empty nor the `.env.example` placeholder.
+	 */
+	readonly authSecretFrom: string | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The OS temp root the deterministic set path hangs off — a port so a test can pin it. */
@@ -196,6 +218,39 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
 };
+
+/** A named export that could not be opened at all — never folded into "the secret is empty". */
+type UnreadableSecret = {
+	readonly _tag: "Unreadable";
+	readonly path: string;
+	readonly reason: string;
+};
+
+/**
+ * The run's signing key, from the source the operator named.
+ *
+ * `--auth-secret-from` is the only source that can be *known* to be the stage's: the deployed
+ * `secret_text` binding does not read back and the GitHub Actions secret is write-only, so the one
+ * readable copy is the stack's alchemy state and an operator exports it from there. With no flag the
+ * ambient variable stands in, and {@link classifyAuthSecret} is what keeps that fallback honest — a
+ * placeholder or empty value refuses rather than signing.
+ */
+const resolveAuthSecret = (
+	options: RenderOptions,
+): Effect.Effect<AuthSecretRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const path = options.authSecretFrom;
+		if (path === null) {
+			return classifyAuthSecret(options.env[AUTH_SECRET_ENV] ?? "", {
+				_tag: "Ambient",
+				name: AUTH_SECRET_ENV,
+			});
+		}
+		const read = yield* Effect.result(readFile(path));
+		return Result.isFailure(read)
+			? ({_tag: "Unreadable", path, reason: read.failure.reason} as const)
+			: classifyAuthSecret(read.success, {_tag: "StageState", path});
+	});
 
 export const runRender = (
 	options: RenderOptions,
@@ -341,7 +396,36 @@ export const runRender = (
 			const tier = tierOf(stateOf(surface));
 			return tier === null ? [] : [tier];
 		});
-		const identity = readIdentity(options.env, wantedTiers);
+		// The signing key is read before the tokens and refused on its own terms: it is the stage's
+		// value, not the seat's, and a seat signing with `.env.example`'s placeholder produces a
+		// well-formed cookie the worker answers as a visitor — indistinguishable at the shot from a
+		// preview nobody seeded.
+		const secret =
+			wantedTiers.length === 0
+				? ({_tag: "Empty", source: {_tag: "Ambient", name: AUTH_SECRET_ENV}} as AuthSecretRead)
+				: yield* resolveAuthSecret(options);
+		if (secret._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the preview stage's deployed secret at ${secret.path}: ${secret.reason} — the named tier's render is UNKNOWN.`,
+				[scanned],
+			);
+		}
+		const identity = readIdentity(options.env, wantedTiers, secret);
+		if (wantedTiers.length > 0 && identity._tag === "Unusable") {
+			// The route out differs by source: a named export that is unusable is the wrong export, and
+			// pointing the operator back at the flag they already passed reads as a tool that did not
+			// look.
+			const route =
+				options.authSecretFrom === null
+					? " pass --auth-secret-from <file> naming the preview stage's deployed secret."
+					: " export the preview stage's own secret into that file.";
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: a tier-naming surface was requested but ${identity.reason} — the named tier's render is UNKNOWN, never a cookie the worker will reject;${route}`,
+				[scanned],
+			);
+		}
 		if (wantedTiers.length > 0 && identity._tag === "Missing") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
