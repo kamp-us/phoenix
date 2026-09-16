@@ -121,6 +121,16 @@ ships behind a dark flag; here you either fix reachability, or drop the surface 
 carry the reason into the PR's Deviations. A first-render surface has no before — say so with
 `--first-render <surface>`, don't fake one.
 
+**Where a surface cannot be rendered for the reviewer and you stand a hand-verification desk up
+instead, that desk is a scratch tree and it roots where `fabrika build scratch $issue_or_pr_number
+--slug desk --token <claim-token>` prints** — the project directory, the scratch agent home, the
+app's process checkpoints and the driver scripts, all under that one allocated root. The session
+scratchpad is shared across a session's lanes, so a desk at a name of your own is a directory a
+concurrent lane rebuilds under you; [`../build/SKILL.md`](../build/SKILL.md) carries that rule and
+what it cost. It bites hardest here: a desk clobbered between the two arms of a comparison leaves a
+hand-verification that reads clean and compared two different desks, and that verification is the
+evidence standing in for the render.
+
 Construct against the law: role tokens where the manifest annotates a role — a raw hex, a raw px
 over the sanctioned scale, or a hand-rolled color function where a token exists is the exact
 class every real design failure has shipped. Then the inner loop, per iteration:
