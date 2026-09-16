@@ -111,13 +111,13 @@ column says.
 
 Each provisioned tier gets three base rows, not two: `user`, `session` and
 `user_profile`. The profile row is what every profile surface reads —
-`lookupProfileByUsername` and `lookupProfileById` in
+`Pasaport.lookupProfile` and `Pasaport.lookupProfileById` in
 `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` without one, so
 `/u/onizleme-mod` renders the not-found composition and the yazar's own `/profile`
-has nothing to hydrate, on a preview the verb reported as provisioned (issue #9286).
-It carries the tier's `username` and `displayName` from the table above; a re-run
-updates those two and leaves `total_karma` alone, so a standing already seeded on
-the preview survives a plain re-seed.
+has nothing to hydrate. That happens on a preview the verb reported as provisioned
+(issue #9286). The profile row carries the tier's `username` and `displayName` from
+the table above; a re-run updates those two and leaves `total_karma` alone, so a
+standing already seeded on the preview survives a plain re-seed.
 
 ### The standing axis — where on the promotion path the çaylak sits
 

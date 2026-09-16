@@ -216,7 +216,7 @@ type Statement = BatchItem<"sqlite">;
 
 /**
  * The base rows for one tier: its `user`, its `session`, and the `user_profile` row every profile
- * surface reads. `lookupProfileByUsername` and `lookupProfileById` in
+ * surface reads. `Pasaport.lookupProfile` and `Pasaport.lookupProfileById` in
  * `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` when that row is absent, so an
  * identity seeded without one is a 404 on `/u/<username>` and has nothing to hydrate on `/profile`
  * (#9286) — which reads as a seeding failure, since the verb exits 0 either way.

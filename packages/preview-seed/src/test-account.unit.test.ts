@@ -430,7 +430,7 @@ describe("provisionTestAccounts — çaylak standing", () => {
 
 /**
  * The base profile rows (#9286). Every profile surface reads `user_profile` —
- * `lookupProfileByUsername` and `lookupProfileById` in
+ * `Pasaport.lookupProfile` and `Pasaport.lookupProfileById` in
  * `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` without one — so a tier seeded
  * without a profile row renders a 404 on a preview the verb reported as provisioned.
  */
@@ -453,7 +453,7 @@ describe("provisionTestAccounts — base profile rows", () => {
 			const account = TEST_ACCOUNTS[tier];
 			const row = profiles.find((stmt) => stmt.params.includes(account.id));
 			assert.isDefined(row, `no user_profile statement for ${tier}`);
-			// `lookupProfileByUsername` rejects a row whose `username` is null and `/u/<username>` is
+			// `Pasaport.lookupProfile` rejects a row whose `username` is null and `/u/<username>` is
 			// the only way in, so both fields have to be bound here.
 			assert.include(row?.params ?? [], account.username);
 			assert.include(row?.params ?? [], account.name);
