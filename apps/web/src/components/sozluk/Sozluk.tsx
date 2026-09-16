@@ -101,7 +101,8 @@ export function SozlukDefinitionList({defs}: {defs: DefinitionData[]}) {
 	);
 }
 
-const ALPHABET = [
+/** The strip's letters, and the set a `/sozluk/harf/:letter` route value has to be one of. */
+export const ALPHABET = [
 	"a",
 	"b",
 	"c",

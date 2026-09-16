@@ -7,6 +7,8 @@ import {assert, describe, it} from "@effect/vitest";
 import {normalizeSearchText} from "@kampus/web/features/search/normalize";
 import {
 	buildFixtures,
+	LETTER_TERM_LETTER,
+	LETTER_TERMS,
 	SEARCH_TERM_SLUG,
 	SEARCH_TERM_TITLE,
 	SEED_LINK_POST_HOST,
@@ -85,6 +87,34 @@ describe("buildFixtures — searchable terms (24-search, ADR 0080)", () => {
 		// prefix of the indexed norm.
 		const norm = normalizeSearchText(SEED_TERM_TITLE);
 		assert.isTrue(norm.startsWith("mer"));
+	});
+});
+
+describe("buildFixtures — the letter index (33-sozluk-letter, #9267)", () => {
+	it("seeds more ç headwords than one letter page holds, each with a live definition", () => {
+		const {terms, definitions} = buildFixtures();
+		const seeded = terms.filter((t) => t.firstLetter === LETTER_TERM_LETTER);
+		assert.strictEqual(seeded.length, LETTER_TERMS.length);
+		// The letter page holds 10 (`SOZLUK_LETTER_PAGE_SIZE`, which lives in the SPA and is not
+		// importable here), so 12 leaves a second page for the spec's "load more" to fetch.
+		assert.isAbove(seeded.length, 10, "the walk has a second page to fetch");
+		for (const term of seeded) {
+			const own = definitions.filter((d) => d.termSlug === term.slug);
+			assert.strictEqual(own.length, 1, `${term.slug} has a definition, so the list can see it`);
+			assert.isTrue(own[0]?.removedAt == null);
+		}
+	});
+
+	it("keeps every ç slug distinct and ASCII-folded — the slug is the route value", () => {
+		const slugs = LETTER_TERMS.map(([, slug]) => slug);
+		assert.strictEqual(new Set(slugs).size, slugs.length);
+		for (const slug of slugs) assert.match(slug, /^[a-z0-9-]+$/);
+	});
+
+	it("carries the ı-before-i pair the collation is proven on", () => {
+		const titles = LETTER_TERMS.map(([title]) => title);
+		assert.include(titles, "çıktı");
+		assert.include(titles, "çizelge");
 	});
 });
 

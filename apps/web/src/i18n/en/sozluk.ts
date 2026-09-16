@@ -32,8 +32,16 @@ export const sozluk = {
 	"sozluk.home.popular": "most upvoted",
 	"sozluk.home.popularWindow": "all time",
 	"sozluk.home.noTerms": "no terms yet.",
-	"sozluk.home.letterEmpty": 'no term starting with "{letter}" on the first page.',
-	"sozluk.home.pageEmpty": "no terms on the first page.",
+
+	"sozluk.letter.title": "letter {letter}",
+	"sozluk.letter.crumbRoot": "sözlük",
+	"sozluk.letter.loading": "loading…",
+	"sozluk.letter.loadFailed": "the letter page could not be loaded: {code}",
+	"sozluk.letter.termCount.one": "{count} term",
+	"sozluk.letter.termCount.other": "{count} terms",
+	"sozluk.letter.empty": 'no term starts with "{letter}".',
+	"sozluk.letter.emptyHint": "write the first entry and you open this letter.",
+	"sozluk.letter.loadMore": 'load more terms under "{letter}"',
 
 	"sozluk.term.crumbRoot": "sözlük",
 	"sozluk.term.firstAt": "first: {date}",

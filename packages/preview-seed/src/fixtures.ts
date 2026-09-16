@@ -8,6 +8,8 @@
  *   - searchable seeded terms → 24-search: the SEARCH_* term's İ/ı-bearing title is the
  *     Turkish-fold crux ("ışık" matched by "IŞIK"); `merhaba dünya` carries the exact-title
  *     and prefix assertions (ADR 0080).
+ *   - the LETTER_TERMS block → 33-sozluk-letter: one letter with more headwords than a letter
+ *     page holds, so the "load more" walk has a second page to fetch.
  *
  * IDs/slugs are stable string literals (not random) so a re-run upserts the same rows — the
  * idempotency contract lives here, in the fixed identity.
@@ -37,6 +39,30 @@ export const SEED_TERM_TITLE = "merhaba dünya";
  */
 export const SEARCH_TERM_SLUG = "isik";
 export const SEARCH_TERM_TITLE = "ışık";
+
+/**
+ * The letter index's fixture set (#9267, 33-sozluk-letter): enough `ç` headwords that
+ * `/sozluk/harf/ç` spans two keyset pages, and chosen so their order proves the Turkish
+ * collation rather than the byte order — `çıktı` sorts BEFORE `çizelge`, which UTF-8 gets
+ * backwards. `ç` is deliberate: an ASCII-folding letter filter would file every one of these
+ * under `c`, so a regression there is visible as an empty page.
+ */
+export const LETTER_TERM_LETTER = "ç";
+/** `[title, slug]`, slug written out rather than derived so the seed stays a pure description. */
+export const LETTER_TERMS: ReadonlyArray<readonly [string, string]> = [
+	["çağrı", "cagri"],
+	["çakışma", "cakisma"],
+	["çalıştırıcı", "calistirici"],
+	["çekirdek", "cekirdek"],
+	["çengel", "cengel"],
+	["çerçeve", "cerceve"],
+	["çevrim", "cevrim"],
+	["çıktı", "cikti"],
+	["çizelge", "cizelge"],
+	["çoklu", "coklu"],
+	["çözücü", "cozucu"],
+	["çürük", "curuk"],
+];
 
 export const SEED_POST_ID = "seed-post-tanitim";
 /** A link-post (url+host set) so 03-pano-feed can exercise host routing instead of skipping. */
@@ -68,6 +94,41 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 	const searchBody =
 		"ışık üzerine tohum tanımı — site aramasının türkçe İ/ı kıvrımını doğrular (ADR 0080).";
 
+	// Older than `now` on both edges and worth one point, so these rows sit under the two
+	// headline terms in BOTH home columns (recent is `last_activity_at` desc, popular is
+	// `total_score` desc) and disturb no spec that reads the home.
+	const letterAt = new Date(now.getTime() - 86_400_000);
+	const letterBody = (title: string) =>
+		`${title} — harf dizini için tohum tanımı (#9267): ${LETTER_TERM_LETTER} harfinin sayfası iki sayfa sürsün diye.`;
+
+	const letterTerms: ReadonlyArray<TermSummaryInsert> = LETTER_TERMS.map(([title, slug]) => ({
+		slug,
+		title,
+		firstLetter: lowerFirstLetter(title),
+		definitionCount: 1,
+		totalScore: 1,
+		excerpt: excerptOf(letterBody(title)),
+		topDefinitionId: `seed-def-${slug}-1`,
+		firstAt: letterAt,
+		lastActivityAt: letterAt,
+		lastEditAt: letterAt,
+	}));
+
+	const letterDefinitions: ReadonlyArray<DefinitionRecordInsert> = LETTER_TERMS.map(
+		([title, slug]) => ({
+			id: `seed-def-${slug}-1`,
+			authorId: SEED_AUTHOR_ID,
+			authorName: SEED_AUTHOR_NAME,
+			termSlug: slug,
+			termTitle: title,
+			body: letterBody(title),
+			bodyExcerpt: excerptOf(letterBody(title)),
+			score: 1,
+			createdAt: letterAt,
+			updatedAt: letterAt,
+		}),
+	);
+
 	const terms: ReadonlyArray<TermSummaryInsert> = [
 		{
 			slug: SEED_TERM_SLUG,
@@ -93,6 +154,7 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 			lastActivityAt: now,
 			lastEditAt: now,
 		},
+		...letterTerms,
 	];
 
 	const definitions: ReadonlyArray<DefinitionRecordInsert> = [
@@ -132,6 +194,7 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 			createdAt: now,
 			updatedAt: now,
 		},
+		...letterDefinitions,
 	];
 
 	const postBody =
