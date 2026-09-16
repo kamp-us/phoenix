@@ -1371,8 +1371,16 @@ tag names.
 
 **Output** — machine channel. One line: `appended\t<issue>\t<row-count-after>`, or
 `escalated-frozen\t<issue>\t<round>` when `--round` is at or past `CAP_ROUND` — the escalation comment landed and the
-AC did **not** (fence 4: append-rate stays bounded by fix-rate; a finding raised at the freeze
-routes to a human). Both are proven answers at exit 0, discriminated by the token.
+AC did **not** (fence 3: append-rate stays bounded by fix-rate, so the finding enters no contract).
+Both are proven answers at exit 0, discriminated by the token.
+
+**The escalation comment is machine-readable, and that is what keeps the token honest.** It carries
+`<!-- ac:escalated pr:#<pr> round:<n> -->` — the same grammar the provenance tag is written under,
+in `src/review/append.ts` — and `build verdicts` folds every such comment on the issue into its
+`escalatedFindings`. So the next repair round reads the finding through the verb it already opens,
+rather than through a comment id a driver typed into a spawn prompt. The prose beside the
+tag says the same thing to a human reading the issue: the finding is on record, the round after this
+one repairs it, and a human is asked only once the round budget is spent.
 
 With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"}`.
 
@@ -1390,7 +1398,8 @@ With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"
    spans several lines and its text appears on none of them, so matching text against lines found
    no anchor and refused every append on such a body.
 3. **Frozen at the repair budget's round K**, read from `src/retry-budget.ts`'s `CAP_ROUND`: a `--round` at
-   or past it posts the escalation comment instead of appending.
+   or past it posts the tagged escalation comment instead of appending. The finding is not thereby
+   lost — it is on record and folded by `build verdicts` — it is only kept out of the contract.
 4. **In-scope-only is the caller's** (the trace-to-stated-goal test is judgment); the provenance
    tag is what makes a routed row auditable after the fact.
 
@@ -1435,7 +1444,7 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `review append-criterion: read-back does not show the prior rows plus this one — inspect #<n>.` | 9 | refusal |
 
 **Scope** — one issue body (through the registered AC format), the invoking token's ACL, and on
-the frozen path one comment write. The read-back re-reads the block through the same format and
+the frozen path one tagged comment write. The read-back re-reads the block through the same format and
 compares row-by-row.
 
 **Examples**
@@ -1463,6 +1472,10 @@ appended	6095	7
   difference between a fence and a fence description.
 - **Authority comes from the ACL check**; a below-write author or a failed lookup skips the
   append entirely, fail-closed.
+- **The escalation the freeze forces had no reader.** Fence 3's comment was printed for nobody, so a
+  repair round dispatched past the freeze read a contract missing the round it was sent to repair,
+  and only a driver hand-writing the comment id into a spawn prompt connected the two ends. The tag
+  is what `build verdicts` folds it by.
 
 ---
 

@@ -351,6 +351,13 @@ a regression test covers qty > 1
 EOF
 ```
 
+**At the freeze the verb appends nothing, and the finding is still on record.** Hand it `--round`
+and read its answer: `escalated-frozen` means the acceptance-criteria fence is frozen at the cap, so
+your finding went out as a tagged comment on the issue instead of into the contract. That is a
+landed route, not a dropped one — `build verdicts` folds that comment into the next repair round's
+findings, so the round reads it. State the finding in your verdict body as well, and route no human:
+the escalation is machinery, and a person is reached only where the round budget itself is spent.
+
 **On an epic child, name the range instead of a PR.** There is no PR mid-run (§6), so the subject
 is the same `--base`/`--tip` pair your verdict was posted over, the positional is the child issue,
 and the tag reads `range:<base>..<tip>` rather than `pr:#<n>`. Every fence runs unchanged, so the
