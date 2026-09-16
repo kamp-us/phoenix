@@ -235,27 +235,35 @@ The six kernel effects are what every program gets for free. A program that has 
 shell command, an HTTP call, a git worktree — names its own effect type and supplies the handler
 that runs it, which is R12.1 of #8716 and is reachable from an authored `update` as of #9294. Two
 halves, both written by the author: the type goes on `defineProgram` as its last type argument, and
-the handler goes onto the compiled row by spread.
+the handler goes onto the compiled row by spread. That handler is a `HostHandlers` handler, so it
+answers `Effect.Effect<ReadonlyArray<Msg>>` — its follow-up Msgs as a *list*, one entry or none,
+never a bare Msg.
 
 ```ts
 type Run = {readonly type: "run"; readonly command: string};
+type Ran = {readonly type: "ran"; readonly output: string};
+
 const run = (command: string): Run => ({type: "run", command});
+const ran = (output: string): Ran => ({type: "ran", output});
 
 const update = {
 	go: (state: State): Answer<State, Run> => [state, [run("git status")]],
-	ran: (state: State, event: Ran): Answer<State, Run> => [{...state, out: event.out}, []],
+	ran: (state: State, event: Ran): Answer<State, Run> => [{...state, output: event.output}, []],
 };
 
 const row = defineProgram<State, typeof ports, typeof update, Commands, unknown, Run>({
 	id: "runner",
 	ports,
-	init: (): State => ({out: null}),
+	init: (): State => ({output: null}),
 	update,
 });
 
 export const runner: AnyProgram = {
 	...row,
-	handlers: {...row.handlers, run: (cmd: Run) => Effect.map(shell(cmd.command), ran)},
+	handlers: {
+		...row.handlers,
+		run: (cmd: Run) => Effect.map(shell(cmd.command), (output) => [ran(output)]),
+	},
 };
 ```
 
