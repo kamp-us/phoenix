@@ -22,6 +22,18 @@
  * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
  * page nobody asked for, which no byte check can tell from the real thing.
  *
+ * `--auth-secret-from <file>` names where the tier cookie's signing key comes from: the
+ * `BETTER_AUTH_SECRET` the preview worker deploys with, which is one repo-wide value rather than a
+ * per-stage one — `infra/ci-credentials/github.ts` mints it into the ci-credentials stack's alchemy
+ * state, its one readable copy, behind `$ALCHEMY_PASSWORD`. Omitted, the
+ * ambient variable stands in — and is refused on `11` when it is empty or carries `.env.example`'s
+ * `insecure_` placeholder, which is the fourth arm of the same class. A placeholder-signed cookie is
+ * well-formed and the worker answers it as a visitor, so without this refusal the seat's own
+ * environment reads at the shot exactly like a preview nobody seeded; two gate rounds were spent on
+ * that, and neither could name which it was.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
+ *
  * `--viewport <name>` picks the widths the surfaces are shot at, over `plan.ts`'s closed set, and
  * defaults to `desktop` alone so every caller written before it is unchanged. Viewports
  * cross the surfaces: two of each is four captures in one set, distinguished on disk and in the
@@ -36,7 +48,14 @@
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {readIdentity, sessionCookies} from "../capture/auth.ts";
+import {
+	AUTH_SECRET_ENV,
+	type AuthSecretRead,
+	classifyAuthSecret,
+	type IdentityRead,
+	readIdentity,
+	sessionCookies,
+} from "../capture/auth.ts";
 import type {CaptureCookie} from "../capture/capture.ts";
 import {
 	FORCED_VALUES,
@@ -55,7 +74,7 @@ import {
 	stateOf,
 	tierOf,
 } from "../capture/states.ts";
-import {writeFile} from "../io/fs.ts";
+import {readFile, writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -125,6 +144,13 @@ export interface RenderOptions {
 	/** Raw `--flag` operands, each a `<key>=<on|off>` pair. Empty ⇒ every flag at its default. */
 	readonly flags: readonly string[];
 	readonly app: string | null;
+	/**
+	 * A file holding the `BETTER_AUTH_SECRET` the preview worker deploys with, exported from the
+	 * ci-credentials stack's alchemy state — one repo-wide value, not a per-stage one.
+	 * `null` falls back to the ambient variable, which is accepted only when it is
+	 * neither empty nor the `.env.example` placeholder.
+	 */
+	readonly authSecretFrom: string | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The OS temp root the deterministic set path hangs off — a port so a test can pin it. */
@@ -196,6 +222,58 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
 };
+
+/** A named export that could not be opened at all — never folded into "the secret is empty". */
+type UnreadableSecret = {
+	readonly _tag: "Unreadable";
+	readonly path: string;
+	readonly reason: string;
+};
+
+/**
+ * The run's signing key, from the source the operator named.
+ *
+ * `--auth-secret-from` is the only source that can be *known* to be the deployed one: the app
+ * stack's `secret_text` binding does not read back and the GitHub Actions secret is write-only, so
+ * the one readable copy is the ci-credentials stack's alchemy state, where
+ * `infra/ci-credentials/github.ts` mints the single repo-wide value every auth-binding app's stages
+ * deploy with, and an operator exports it from there. With no flag the ambient variable stands in,
+ * and {@link classifyAuthSecret} is what keeps that fallback honest — a placeholder or empty value
+ * refuses rather than signing.
+ *
+ * A run whose surfaces name no tier asks for no session, so nothing calls this: there is no key to
+ * read and no cookie to sign.
+ */
+const resolveAuthSecret = (
+	options: RenderOptions,
+): Effect.Effect<AuthSecretRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const path = options.authSecretFrom;
+		if (path === null) {
+			return classifyAuthSecret(options.env[AUTH_SECRET_ENV] ?? "", {
+				_tag: "Ambient",
+				name: AUTH_SECRET_ENV,
+			});
+		}
+		const read = yield* Effect.result(readFile(path));
+		return Result.isFailure(read)
+			? ({_tag: "Unreadable", path, reason: read.failure.reason} as const)
+			: classifyAuthSecret(read.success, {_tag: "RepoWideExport", path});
+	});
+
+/**
+ * The credentials a tier-naming run needs, or the one thing that stopped the read: an export that
+ * could not be opened, a key that must not be signed with, or an unset session token. Only a run
+ * that names a tier calls this, so every arm here is about a session a surface actually asked for.
+ */
+const resolveTierIdentity = (
+	options: RenderOptions,
+	tiers: readonly CaptureTier[],
+): Effect.Effect<IdentityRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const secret = yield* resolveAuthSecret(options);
+		return secret._tag === "Unreadable" ? secret : readIdentity(options.env, tiers, secret);
+	});
 
 export const runRender = (
 	options: RenderOptions,
@@ -341,8 +419,35 @@ export const runRender = (
 			const tier = tierOf(stateOf(surface));
 			return tier === null ? [] : [tier];
 		});
-		const identity = readIdentity(options.env, wantedTiers);
-		if (wantedTiers.length > 0 && identity._tag === "Missing") {
+		// The signing key is read before the tokens and refused on its own terms: it is the deployed
+		// value, not the seat's, and a seat signing with `.env.example`'s placeholder produces a
+		// well-formed cookie the worker answers as a visitor — indistinguishable at the shot from a
+		// preview nobody seeded. An anonymous run reads no key at all: `null` here is "no surface
+		// asked for a session", which is why no unsigned cookie can be built out of it below.
+		const identity =
+			wantedTiers.length === 0 ? null : yield* resolveTierIdentity(options, wantedTiers);
+		if (identity?._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the exported repo-wide session-signing secret at ${identity.path}: ${identity.reason} — the named tier's render is UNKNOWN.`,
+				[scanned],
+			);
+		}
+		if (identity?._tag === "Unusable") {
+			// The route out differs by source: a named export that is unusable is the wrong export, and
+			// pointing the operator back at the flag they already passed reads as a tool that did not
+			// look.
+			const route =
+				options.authSecretFrom === null
+					? " pass --auth-secret-from <file> holding the repo-wide BETTER_AUTH_SECRET, whose one readable copy is the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD."
+					: " that file does not hold the deployed value: there is no preview-stage copy to export, so re-export the repo-wide BETTER_AUTH_SECRET from the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD.";
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: a tier-naming surface was requested but ${identity.reason} — the named tier's render is UNKNOWN, never a cookie the worker will reject;${route}`,
+				[scanned],
+			);
+		}
+		if (identity?._tag === "Missing") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
@@ -350,7 +455,7 @@ export const runRender = (
 			);
 		}
 		const cookiesFor = (tier: CaptureTier): readonly CaptureCookie[] => {
-			if (identity._tag !== "Identity") return [];
+			if (identity === null || identity._tag !== "Identity") return [];
 			const token = identity.tokens[tier];
 			return token === undefined ? [] : sessionCookies(announced.url, token, identity.secret);
 		};

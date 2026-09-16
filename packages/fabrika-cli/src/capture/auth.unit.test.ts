@@ -8,6 +8,10 @@
 import {webcrypto} from "node:crypto";
 import {describe, expect, it} from "vitest";
 import {
+	AUTH_SECRET_ENV,
+	classifyAuthSecret,
+	describeAuthSecretSource,
+	PLACEHOLDER_SECRET_PREFIX,
 	readIdentity,
 	readSessionProof,
 	SECURE_COOKIE_PREFIX,
@@ -70,29 +74,86 @@ describe("sessionCookies", () => {
 	});
 });
 
-describe("readIdentity", () => {
-	it("names both unset halves rather than reading as a complete anonymous default", () => {
-		expect(readIdentity({}, ["yazar"])).toEqual({
-			_tag: "Missing",
-			names: ["PREVIEW_TEST_SESSION_TOKEN", "BETTER_AUTH_SECRET"],
+describe("classifyAuthSecret", () => {
+	const ambient = {_tag: "Ambient", name: AUTH_SECRET_ENV} as const;
+	const exported = {_tag: "RepoWideExport", path: "/run/preview-secret"} as const;
+
+	it("reads the .env.example placeholder as unusable rather than as a signing key", () => {
+		expect(classifyAuthSecret(`${PLACEHOLDER_SECRET_PREFIX}f0fe1c42`, ambient)).toEqual({
+			_tag: "Placeholder",
+			source: ambient,
 		});
 	});
 
-	it("names the one missing half", () => {
-		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"])).toEqual({
-			_tag: "Missing",
-			names: ["BETTER_AUTH_SECRET"],
+	it("reads an absent or blank value as empty, not as a key of zero length", () => {
+		expect(classifyAuthSecret("", ambient)).toEqual({_tag: "Empty", source: ambient});
+		expect(classifyAuthSecret("   \n", exported)).toEqual({_tag: "Empty", source: exported});
+	});
+
+	// A file export ends in a newline far more often than not, and a trailing byte in the key signs a
+	// cookie the worker rejects exactly as an outright wrong key does.
+	it("trims a file export's trailing newline off the key it hands back", () => {
+		expect(classifyAuthSecret(`${SECRET}\n`, exported)).toEqual({
+			_tag: "Usable",
+			value: SECRET,
+			source: exported,
 		});
-		expect(readIdentity({BETTER_AUTH_SECRET: SECRET}, ["yazar"])).toEqual({
+	});
+});
+
+describe("describeAuthSecretSource", () => {
+	it("names the export by its path and the fallback by its variable", () => {
+		expect(describeAuthSecretSource({_tag: "RepoWideExport", path: "/run/s"})).toContain("/run/s");
+		expect(describeAuthSecretSource({_tag: "Ambient", name: AUTH_SECRET_ENV})).toContain(
+			AUTH_SECRET_ENV,
+		);
+	});
+});
+
+describe("readIdentity", () => {
+	const exported = {_tag: "RepoWideExport", path: "/run/preview-secret"} as const;
+	const usable = {_tag: "Usable", value: SECRET, source: exported} as const;
+
+	it("names the unset tier token", () => {
+		expect(readIdentity({}, ["yazar"], usable)).toEqual({
 			_tag: "Missing",
 			names: ["PREVIEW_TEST_SESSION_TOKEN"],
 		});
 	});
 
-	it("reads a complete pair", () => {
-		expect(
-			readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET}, ["yazar"]),
-		).toEqual({_tag: "Identity", tokens: {yazar: TOKEN}, secret: SECRET});
+	/**
+	 * The secret is refused ahead of the tokens and on its own words: a placeholder-signed cookie is
+	 * well-formed, so the worker answers it as a visitor and the shot reads exactly like a preview
+	 * nobody seeded. The refusal names the source it read, because "wrong key" and "no such session"
+	 * are otherwise two candidates a reader has to split by hand — which cost two gate rounds.
+	 */
+	it("refuses a placeholder secret as unusable, naming the source it read", () => {
+		const read = readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"], {
+			_tag: "Placeholder",
+			source: {_tag: "Ambient", name: AUTH_SECRET_ENV},
+		});
+		expect(read._tag).toBe("Unusable");
+		if (read._tag !== "Unusable") return;
+		expect(read.reason).toContain(PLACEHOLDER_SECRET_PREFIX);
+		expect(read.reason).toContain(AUTH_SECRET_ENV);
+	});
+
+	it("refuses an empty secret as unusable, and never as an unset variable name", () => {
+		const read = readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"], {
+			_tag: "Empty",
+			source: exported,
+		});
+		expect(read._tag).toBe("Unusable");
+		if (read._tag !== "Unusable") return;
+		expect(read.reason).toContain(exported.path);
+	});
+
+	it("reads the state-sourced secret through onto the identity it hands the signer", () => {
+		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"], usable)).toEqual({
+			_tag: "Identity",
+			tokens: {yazar: TOKEN},
+			secret: SECRET,
+		});
 	});
 
 	/**
@@ -101,25 +162,23 @@ describe("readIdentity", () => {
 	 * the shot would come back clean as the audience the surface said it was not.
 	 */
 	it("names the çaylak token when a çaylak surface is asked for and only the yazar's is set", () => {
-		expect(
-			readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET}, ["çaylak"]),
-		).toEqual({_tag: "Missing", names: ["PREVIEW_TEST_CAYLAK_SESSION_TOKEN"]});
+		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["çaylak"], usable)).toEqual({
+			_tag: "Missing",
+			names: ["PREVIEW_TEST_CAYLAK_SESSION_TOKEN"],
+		});
 	});
 
 	it("reads a token per asked-for tier, and asks for none of a tier no surface named", () => {
 		const env = {
 			PREVIEW_TEST_SESSION_TOKEN: TOKEN,
 			PREVIEW_TEST_CAYLAK_SESSION_TOKEN: `${TOKEN}-caylak`,
-			BETTER_AUTH_SECRET: SECRET,
 		};
-		expect(readIdentity(env, ["çaylak", "yazar"])).toEqual({
+		expect(readIdentity(env, ["çaylak", "yazar"], usable)).toEqual({
 			_tag: "Identity",
 			tokens: {yazar: TOKEN, çaylak: `${TOKEN}-caylak`},
 			secret: SECRET,
 		});
-		expect(
-			readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET}, []),
-		).toEqual({_tag: "Identity", tokens: {}, secret: SECRET});
+		expect(readIdentity(env, [], usable)).toEqual({_tag: "Identity", tokens: {}, secret: SECRET});
 	});
 });
 

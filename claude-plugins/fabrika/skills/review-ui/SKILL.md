@@ -133,9 +133,23 @@ suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back 
 — the failure that reads as a judged surface. Anything else after the colon is refused on
 `10`, because a state nothing renders would shoot the default pixels under a variant's name.
 
-The values that make a tier state work come from somewhere specific. `BETTER_AUTH_SECRET` is the
-**preview worker's** secret, not your local one, because it is the worker that verifies the cookie's
-signature. Each tier's session token is what an operator passed to
+The values that make a tier state work come from somewhere specific. The signing secret is the
+**preview worker's**, not your local one, because it is the worker that verifies the cookie's
+signature — and you name where it came from rather than trusting your environment:
+`--auth-secret-from <file>` reads the `BETTER_AUTH_SECRET` the preview worker deploys with out of an
+export of the **ci-credentials** stack's alchemy state, its one readable copy. That value is
+repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one of it and pushes it as a
+write-only Actions secret handed to the deploy of every stage of an app whose worker binds it, so
+there is no preview-stage copy, the app
+stack holds only a `secret_text` binding that does not read back, and the export is taken from the
+ci-credentials state behind `$ALCHEMY_PASSWORD`. Without the flag the verb falls back to the
+ambient `$BETTER_AUTH_SECRET` and **refuses on `11` when that is empty or carries the `insecure_`
+placeholder** an example env file ships, naming the source it read. That refusal is the whole
+point: a placeholder-signed cookie is well-formed, the worker answers it as a visitor, and at the
+shot that is indistinguishable from a preview nobody seeded — which parked two gates and cost a
+founder read to split. If you hold no export of that value and your ambient value is the
+placeholder, you have not been handed the secret, and `review-ui note` is the honest route.
+Each tier's session token is what an operator passed to
 `node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —
 `PREVIEW_TEST_SESSION_TOKEN` for yazar, `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for çaylak — which is
 what puts that account and its session row on this PR's preview D1. **One tier's token never stands
@@ -183,7 +197,7 @@ while four of the PR's own compositions never painted.
 `:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
 
 ```bash
-fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on
+fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on --auth-secret-from <file>
 ```
 
 Both fences hold, so neither can quietly hand you the default pixels. A forced run must name
