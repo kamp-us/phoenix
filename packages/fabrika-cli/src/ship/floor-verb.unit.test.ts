@@ -9,7 +9,13 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {GOVERNANCE_FLOOR_UNMET, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
+import {
+	GOVERNANCE_FLOOR_UNMET,
+	INCOMPLETE_SCAN,
+	PRECONDITION_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 import {runFloor} from "./floor-verb.ts";
 
@@ -155,6 +161,23 @@ describe("runFloor", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.join("\n")).toContain(
 			"ship floor: PR #4321 has zero changed files — whether it touches a governance root is unanswerable.",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends, so `n/a` would be answered over a
+	// list that never carried the governance root.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run([
+			[PULL, served(pull({changedFiles: PULL_FILES_CAP}))],
+			[
+				FILES,
+				served(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+			],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stderr.join("\n")).toContain(
+			"ship floor: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — a governance root could sit in the part the platform never served.",
 		);
 	});
 

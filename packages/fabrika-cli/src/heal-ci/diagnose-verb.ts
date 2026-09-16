@@ -18,6 +18,11 @@
  * below is a different proof and still refuses: `total_count` and the enumerated runs come from one
  * read of one endpoint, so a shortfall there really is a truncated page.
  *
+ * **The changed-file read keeps one `13` of its own, the endpoint's ceiling.** `pulls/<n>/files`
+ * serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally there, so the
+ * pagination proof passes over a list GitHub already truncated. That is a fact about the read
+ * itself, not two counts disagreeing, and every classification below derives from the file set.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
@@ -36,7 +41,7 @@ import {
 	permissionFor,
 } from "../io/pulls.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
-import {platformFileSet} from "../review/local-file-set.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
@@ -270,6 +275,18 @@ export const diagnoseOne = (
 			return refused(
 				ZERO_SCOPE,
 				`${VERB}: PR #${pr} has zero changed files — refusing to classify a stall over an empty diff.`,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (filed.set.capped) {
+			return refused(
+				INCOMPLETE_SCAN,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"refusing to classify a stall over a diff the platform cut short.",
+				),
 			);
 		}
 

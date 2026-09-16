@@ -40,6 +40,12 @@
  * disagreement leaves as a diagnostic line, and the zero-file refusal below is what keeps a
  * conjunction over an unread diff from printing satisfied.
  *
+ * **The `13` this verb keeps for that list is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated. That is a proven
+ * partial read rather than two counts disagreeing, and a floor raised from it would be raised over
+ * scope nobody saw.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
@@ -50,7 +56,7 @@ import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
-import {platformFileSet} from "../review/local-file-set.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -316,6 +322,19 @@ export const runGate = (
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: PR #${pr} has zero changed files — a conjunction over an empty diff proves nothing.`,
+				diagnostics,
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				platformCapLine(
+					VERB,
+					`#${pr}`,
+					"refusing to derive the required floor from a capped read.",
+				),
 				diagnostics,
 			);
 		}

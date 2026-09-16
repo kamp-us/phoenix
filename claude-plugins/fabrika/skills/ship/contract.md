@@ -214,7 +214,7 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: `gate` and `floor` report it and derive from the list they read | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: `gate` and `floor` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `enqueue`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
@@ -685,7 +685,7 @@ answer this contract bans.
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
 | `11` | the changed-file list, comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
-| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
+| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -697,13 +697,15 @@ answer this contract bans.
 | `ship gate: --require <v> is not a gateable namespace (known: review-code, review-doc, review-skill, review-ui, governance).` | 10 | refusal |
 | `ship gate: cannot read <what> for #<n>: <reason> — the conjunction is UNKNOWN.` | 11 | refusal |
 | `ship gate: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship gate: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — refusing to derive the required floor from a capped read.` | 13 | refusal |
 | `ship gate: received <k> of <m> comments — refusing the partial resolution.` | 13 | refusal |
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
-list rather than from the pull-request record's `changed_files`), its verdict comments (paginated,
+list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
+ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
 count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
@@ -884,6 +886,7 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — whether it touches a governance root is unanswerable |
 | `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
+| `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a governance root could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
 | `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
 | `9` | **`--publish-check` only** — the check-run landed and GitHub echoed a state this run did not decide |
@@ -898,6 +901,7 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | `ship floor: cannot read the changed-file list for #<n>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
 | ``ship floor: `ship gate` answered without a resolvable governance row — the floor is UNKNOWN, never discharged.`` | 11 | refusal |
 | `ship floor: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
+| `ship floor: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a governance root could sit in the part the platform never served.` | 13 | refusal |
 | `ship floor: #<n> touches a governance root and its governance verdict at <sha> is <state> — <remedy>.` | 18 | refusal |
 | `ship floor: #<n>'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.` | 0 | notice |
 | `ship floor --publish-check: cannot enumerate the check runs at <sha>: <reason> — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.` | 11 | refusal |
@@ -911,7 +915,9 @@ the one required namespace (its own file list, the comments, the reviews and the
 ACL). Both scanned counts reach stderr, this verb's first. Neither verb refuses on that list
 disagreeing with the pull-request record's `changed_files`: GitHub computes the record's count
 against a base it cached at the PR's last push, so the disagreement is reported and the enumerated
-list is the file set both derive from.
+list is the file set both derive from. What both still refuse on is that list arriving at GitHub's
+own 3000-file ceiling: the endpoint stops serving files there and ends its Link chain normally, so
+the exhaustion proof passes over a list the platform already cut short.
 
 **Where it is enforced.** `.github/workflows/governance-floor.yml`, job `floor`, on every
 `pull_request` with no `paths:` filter — the verb's own read of the changed files is the path

@@ -134,11 +134,26 @@ export const getPullRequest = (repo: string, pr: number): Shell<Existence<PullRe
 	);
 
 /**
+ * GitHub's own ceiling on a pull request's `files` array: "Responses include a maximum of 3000
+ * files" ([REST, "List pull requests
+ * files"](https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#list-pull-requests-files)).
+ *
+ * The ceiling is reached through ordinary paging, and the last page's Link header ends as a
+ * complete read ends — so {@link listPullFiles}'s exhaustion proof holds over a list the platform
+ * has already truncated. That is why the ceiling is a named constant a caller checks rather than a
+ * case pagination catches.
+ */
+export const PULL_FILES_CAP = 3000;
+
+/**
  * Every changed path on the PR, paged.
  *
  * Read as typed JSON rather than through a `--jq .filename` projection: the count of entries is the
  * completeness proof, and a filter that errored mid-stream on one odd entry would shorten the list
  * silently — which is the truncation the caller is trying to detect.
+ *
+ * Exhaustion is this read's only completeness proof and it does not reach {@link PULL_FILES_CAP}:
+ * a caller that derives anything over the list owes that ceiling its own check.
  */
 export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyArray<string>>> =>
 	authed((token) =>

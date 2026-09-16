@@ -35,12 +35,22 @@
  */
 import {Effect} from "effect";
 import type {Attempt, Shell} from "../io/git.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 
 /** What the read found, plus the disagreement line it owes the caller's diagnostics. */
 export interface LocalFileSet<A> {
 	readonly files: ReadonlyArray<A>;
 	/** The count-disagreement line, or `null` when the enumeration and the declared count agree. */
 	readonly disagreement: string | null;
+	/**
+	 * True when the enumeration reached the platform's own ceiling on how many files it serves.
+	 *
+	 * Only {@link platformFileSet} can raise it: a git range read has no such ceiling, so
+	 * {@link readLocalFileSet} always reports `false`. It is a field rather than a `length` check in
+	 * each caller because the number that makes it true belongs to the endpoint and not to the verb
+	 * — the same reason the compare read carries `capped` beside its files.
+	 */
+	readonly capped: boolean;
 }
 
 export type LocalFileSetRead<A> =
@@ -55,6 +65,15 @@ export const disagreementLine = (
 	declared: number,
 ): string =>
 	`${verb}: git and GitHub disagree on ${subject}'s file count (${local} vs ${declared}) — different merge base and different rename detection; reported, never refused on.`;
+
+/**
+ * The one wording every capped-read caller prints, with that caller's own consequence as its tail.
+ *
+ * The ceiling is the endpoint's rather than any verb's, so the sentence naming it lives beside the
+ * reader that detects it rather than in three verbs that would drift apart.
+ */
+export const platformCapLine = (verb: string, subject: string, consequence: string): string =>
+	`${verb}: GitHub's file list for ${subject} came back at its ${PULL_FILES_CAP}-file ceiling, so the list is provably partial — ${consequence}`;
 
 /**
  * The wording for a caller whose enumeration is GitHub's own `pulls/<n>/files` list.
@@ -85,6 +104,12 @@ export const platformDisagreementLine = (
  * enumeration against the pull-request record's `changed_files` — one platform read against another,
  * and the record's is the stale side. That disagreement is reported. An **empty** list is each
  * caller's own zero-scope refusal, seated where that caller seats it.
+ *
+ * That exhaustion proof stops at {@link PULL_FILES_CAP}: the endpoint serves at most that many
+ * files and ends its Link chain normally there, so a truncated list reads as a complete one. It is
+ * the one real truncation the retired count comparison used to catch by accident, and `capped` is
+ * what catches it on purpose — each caller refuses on it, because a floor or a diagnosis derived
+ * from a list the platform cut short is derived over scope nobody read.
  */
 export const platformFileSet = <A>(
 	verb: string,
@@ -102,6 +127,7 @@ export const platformFileSet = <A>(
 						listed.value.length === declared
 							? null
 							: platformDisagreementLine(verb, subject, listed.value.length, declared),
+					capped: listed.value.length >= PULL_FILES_CAP,
 				},
 			};
 
@@ -133,6 +159,7 @@ export const readLocalFileSet = <A>(
 					files.length === declared
 						? null
 						: disagreementLine(verb, subject, files.length, declared),
+				capped: false,
 			},
 		};
 	});

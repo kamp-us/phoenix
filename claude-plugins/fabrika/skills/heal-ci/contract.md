@@ -471,7 +471,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 |---|---|
 | `7` | the PR is proven absent (404), `--sha` names no commit on this PR, or the enumerated changed-file list is empty |
 | `11` | the PR, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
-| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, or the timeline read never reached a terminal page. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
+| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -483,6 +483,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: cannot read <what> for #<n>: <reason> — the stall class is UNKNOWN, never "attended".` | 11 | refusal |
 | `heal-ci diagnose: received <k> of <m> declared <comments\|check runs> — refusing to classify over a truncated read.` | 13 | refusal |
 | `heal-ci diagnose: the timeline read never reached a terminal page — pagination is unexhausted, so a queue entry could sit on a page nobody read; refusing to classify.` | 13 | refusal |
+| `heal-ci diagnose: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — refusing to classify a stall over a diff the platform cut short.` | 13 | refusal |
 | `heal-ci diagnose: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `heal-ci diagnose: the live head is <live>, you are diagnosing <sha> — the head moved.` | 0 | notice |
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
@@ -493,6 +494,8 @@ of those but the changed-file list is also count-checked: GitHub computes the pu
 `changed_files` against a base it cached at the last push, so the file list is taken as the file set
 and the disagreement is reported. An **empty** list still refuses — this is the verb an operator
 reaches for when a PR is stuck, which is the worst place to keep a refusal a stuck PR can trigger.
+So does a list at GitHub's own 3000-file ceiling: the endpoint stops serving files there and ends
+its Link chain normally, so exhaustion cannot tell that read from a complete one.
 Review *threads* are not read: arm 6 is REST-only, per the out-of-scope entry above. The predicate
 chain is total over what was read; a read that could not complete is `11`, never a class.
 

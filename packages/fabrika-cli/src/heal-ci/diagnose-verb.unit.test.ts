@@ -10,6 +10,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
 import {
@@ -359,6 +360,26 @@ describe("runDiagnose refuses rather than guessing a class", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain(
 			"PR #4321 has zero changed files — refusing to classify a stall over an empty diff",
+		);
+	});
+
+	// The ceiling is the truncation pagination cannot catch: GitHub stops serving files at 3000 and
+	// ends the Link chain there exactly as a complete read ends, so every classification below would
+	// run over a diff the platform cut short.
+	it("refuses a file list at the 3000-file ceiling on 13 (#9322)", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({changedFiles: PULL_FILES_CAP, updatedAt: PUSHED}))],
+				[
+					FILES,
+					reply(files(...Array.from({length: PULL_FILES_CAP}, (_, i) => `apps/site/src/f${i}.ts`))),
+				],
+			]),
+		);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"heal-ci diagnose: GitHub's file list for #4321 came back at its 3000-file ceiling, so the list is provably partial — refusing to classify a stall over a diff the platform cut short.",
 		);
 	});
 

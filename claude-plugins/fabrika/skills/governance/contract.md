@@ -578,8 +578,8 @@ implementer reproduces scores from the imported module, never from this document
 path the file set proving `--record` is in this PR is the local three-dot read, shared with
 `governance scope` and `governance guards`; GitHub's `changed_files` is reported beside it and
 never refused on. The scope line names the corpus size and the in-scope count on stderr, because
-the outcome is only readable against them. Zero records is a refusal; a corpus below the rarity floor is `indeterminate` at
-exit 0, which is a different fact and stays a different answer.
+the outcome is only readable against them. Zero records is a refusal; a corpus below the rarity
+floor is `indeterminate` at exit 0, which is a different fact and stays a different answer.
 
 **Examples**
 

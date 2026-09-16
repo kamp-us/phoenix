@@ -31,6 +31,12 @@
  * {@link platformFileSet} owns that argument; the disagreement leaves as a `scanned` line, and the
  * empty-list refusal below is what keeps `not-required` from being answered over a diff nobody read.
  *
+ * **The `13` this verb now keeps is the endpoint's own ceiling, not a count comparison.**
+ * `pulls/<n>/files` serves at most 3000 files (`PULL_FILES_CAP`) and ends its Link chain normally
+ * there, so the pagination proof passes over a list GitHub already truncated — and a governance
+ * root could sit in the part it never served. Unlike the retired arm, this one rests on a fact
+ * about the read itself rather than on a count computed against a base cached elsewhere.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
@@ -39,9 +45,14 @@ import {governedRootsOr} from "../config/paths.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
-import {platformFileSet} from "../review/local-file-set.ts";
+import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {GOVERNANCE_FLOOR_UNMET, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	GOVERNANCE_FLOOR_UNMET,
+	INCOMPLETE_SCAN,
+	PRECONDITION_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {runGate} from "./gate-verb.ts";
 import {
 	badNumber,
@@ -189,6 +200,21 @@ export const resolveFloor = (
 				refuse(
 					ZERO_SCOPE,
 					`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable.`,
+					scanned,
+				),
+			);
+		}
+		// The ceiling is the one truncation the enumeration cannot rule out on its own: the endpoint
+		// stops serving files there and ends its Link chain as a complete read ends.
+		if (listed.set.capped) {
+			return unresolved(
+				refuse(
+					INCOMPLETE_SCAN,
+					platformCapLine(
+						VERB,
+						`#${pr}`,
+						"a governance root could sit in the part the platform never served.",
+					),
 					scanned,
 				),
 			);

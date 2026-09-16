@@ -393,7 +393,10 @@ Four behaviours are worth knowing:
   over no files prints as a clean answer otherwise. So does a read short of a second enumeration of
   the *same range*, where a verb has one to compare: `governance scope`'s range mode, and
   `governance guards`' diff body against its status list. That is git against git; GitHub's count is
-  not.
+  not. The three `platformFileSet` callers refuse on one more fact of their own: a list arriving at
+  the endpoint's 3000-file ceiling (`PULL_FILES_CAP`) is `13`, because GitHub stops serving files
+  there and ends the Link chain as a complete read ends, so the pagination proof passes over a list
+  it already cut short.
 
 ## The `graduate` group
 
