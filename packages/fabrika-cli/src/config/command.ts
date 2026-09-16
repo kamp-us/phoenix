@@ -94,7 +94,7 @@ const schema = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		`Reconcile ${CONFIG_SCHEMA_FILE} and ${LOCAL_CONFIG_SCHEMA_FILE} with the config-key registry.`,
+		"Reconcile both committed schema files with the config-key registry.",
 	),
 	Command.withDescription(
 		`Reconcile the two committed schema files with the JSON Schemas assembled from the config-key fragments — and, with --write, render them from the registry rather than by hand, so an editor validates .fabrika.jsonc and the gitignored .fabrika.local.jsonc against them. ${CONFIG_SCHEMA_FILE} covers the whole surface; ${LOCAL_CONFIG_SCHEMA_FILE} covers the machine-local subset, so an editor reds a key no machine may set locally where it is typed. Stdout is \`schema\\t<agrees|written>\\t<keys>\` followed by one \`file\\t<path>\\t<agrees|written>\\t<keys>\` line per document. Exits 4 (a committed file is stale or not committed — regenerate with --write), 6 (the repo root could not be resolved, or a file could not be read or written — UNKNOWN, never drift), 7 (a registered key carries no schema fragment, so the schema would be incomplete). Example: fabrika config schema --write`,

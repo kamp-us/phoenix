@@ -363,10 +363,15 @@ jobs:
             # document against the config-key registry, and the registry-side edit is
             # already covered by `packages/**` — a hand-edit of the generated file is
             # the half that would otherwise skip the only job that reds on it.
+            # `.fabrika.local.schema.json` is the second document that same verb
+            # reconciles (#9341), and it is generated the same way, so it is listed on
+            # the same rule — the pair is one check, and listing half of it would leave
+            # a hand-edit of the machine-local schema with no job that reds.
             packages:
               - 'packages/**'
               - 'infra/**'
               - '.fabrika.schema.json'
+              - '.fabrika.local.schema.json'
               - 'claude-plugins/fabrika/docs/**'
               - 'claude-plugins/fabrika/hooks.json'
               - 'pnpm-workspace.yaml'
