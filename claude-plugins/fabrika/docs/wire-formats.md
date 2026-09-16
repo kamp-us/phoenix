@@ -75,6 +75,15 @@ of recognition reads back as *a body with no criteria* — byte-identical to a b
 has none — and the module-owned total read is what reports that drift as `Malformed` instead of
 returning a plausible empty answer.
 
+A criterion may also carry the **outside-diff evidence marker**, a trailing `[evidence: <source>]`
+naming where its proof lives when the diff's bytes cannot settle it either way. It is a field of
+this format rather than prose a grader has to recognise, which is what lets the two sides disagree
+about nothing: `triage` writes it at mint time, when the author still knows the proof is a
+hand-verification, and `review` reads it back and grades that row on the evidence it names. Without
+it the grader had one rule for every row, so a criterion no diff could discharge read as
+undischarged and undischarged read as FAIL. A marker whose keyword drifted in case, or which names
+no source, is `Malformed` for the same reason a drifted heading is.
+
 ### `deviations`
 
 This is what a PR body discloses about where the build departed from its contract — the `##

@@ -93,6 +93,25 @@ the verdict body**: name the epic as planned before the criteria section existed
 you graded against, and name re-planning as what closes the gap. Do not reconstruct a contract silently, and do not read the `absent` as licence to invent
 criteria.
 
+**A marked criterion is graded on the evidence it names, never on the diff alone.** A criterion may
+carry the outside-diff evidence marker — a trailing `[evidence: <source>]` naming where its proof
+lives, because the diff's bytes cannot settle it either way: a desk verified by hand, a checkpoint
+written before the fix, a runtime observation. `criteria` prints that source as a third column and
+counts the marked rows on stderr, so you never have to recognise one in prose. For each marked row,
+go and read what the source names — the PR body's hand-verification section, the artifact, the
+comment — and grade on that. **Then name it in the verdict body**: say which criterion rested on
+which evidence and what you read there. `review post` refuses a `PASS` whose body names no evidence
+for a marked criterion (`19`), because a `PASS` citing none has graded the criterion on nothing.
+Evidence you looked for and could not find is a `FAIL` that names what is missing — never a `PASS`
+with a caveat. An **unmarked** criterion keeps today's rule unchanged: the diff discharges it, or it
+is undischarged.
+
+**Do not read an absent marker as licence, and do not add one.** A criterion that is genuinely
+byte-discharged and unmarked grades exactly as it always did. A criterion you believe should have
+been marked and was not is a finding you name in the verdict body and route through
+`review append-criterion` — the marker is triage's to write at mint time, and a reviewer minting one
+mid-review would be marking its own homework.
+
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
 #N` by contract so the merge closes nothing — so pass `<n>` to `criteria` exactly as you would a

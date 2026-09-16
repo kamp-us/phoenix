@@ -66,10 +66,12 @@ import {
 	READBACK_MISMATCH,
 	STALE_HEAD,
 	SUPERSEDES_VERDICT,
+	UNNAMED_EVIDENCE,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {contentDigestAt} from "./content-binding.ts";
 import {bindHead, boundLine} from "./head.ts";
+import {evidenceOwed, type OwedRead, quoteRows} from "./outside-diff-evidence.ts";
 import {runRangePost} from "./range-post.ts";
 import {compose as supersedeWith} from "./supersede.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -273,6 +275,39 @@ const appendedRefusal = (
 	);
 };
 
+/**
+ * The `19` fence, and the `11` it fails closed to — the refusal a `PASS` earns by grading a marked
+ * criterion on nothing.
+ *
+ * Shaped exactly like {@link appendedRefusal}: `null` lets the post through, and the only two other
+ * states this read can be in are "a marked row is uncited" and "whether one is uncited is unknown".
+ * Nothing is written on either.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9200
+ */
+const evidenceRefusal = (
+	read: OwedRead,
+	diagnostics: ReadonlyArray<string>,
+): VerbOutcome | null => {
+	if (read._tag === "None") return null;
+	if (read._tag === "Unreadable") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`${VERB}: cannot read #${read.issue}, whose contract would mark criteria this verdict owes evidence for: ${read.reason} — whether this PASS grades one on nothing is UNKNOWN; nothing was posted.`,
+			diagnostics,
+		);
+	}
+	const what =
+		read.missing.length === 1
+			? "an acceptance criterion marks"
+			: `${read.missing.length} acceptance criteria mark`;
+	return refuse(
+		UNNAMED_EVIDENCE,
+		`${VERB}: on #${read.issue}, ${what} evidence outside the diff and this body names none:\n${quoteRows(read.missing)}\nA marked criterion is graded on the evidence it names, never on the diff alone — so name what each one rested on, or post --polarity FAIL naming the missing evidence. Nothing was posted.`,
+		diagnostics,
+	);
+};
+
 export const runPost = (
 	options: PostOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -375,6 +410,14 @@ export const runPost = (
 				const refusal = appendedRefusal(appended, routed, options.round, []);
 				if (refusal !== null) return refusal;
 			}
+			// The `19` fence on the child arm. A child's contract marks criteria exactly as any other
+			// issue's does, and its range verdict is the one record the epic tail folds, so a PASS that
+			// cites no evidence for a marked row loses it at the same seam a PR's would.
+			if (polarity === "PASS") {
+				const owed = yield* evidenceOwed(repo, [pr], authored.text);
+				const refusal = evidenceRefusal(owed, []);
+				if (refusal !== null) return refusal;
+			}
 			return yield* runRangePost(
 				{
 					verb: VERB,
@@ -469,6 +512,20 @@ export const runPost = (
 			const linked = issueRefsOf(target.pull.body).referenced;
 			const appended = yield* appendedThisRound(repo, linked, routed, options.round);
 			const refusal = appendedRefusal(appended, routed, options.round, diagnostics);
+			if (refusal !== null) return refusal;
+		}
+
+		// The `19` fence, over the same issue set and for the same reason the `18` fence reads it: a
+		// marked criterion may sit on whichever issue the round was graded against, and a `--partial`
+		// PR's contract is the one it is `Part of`. It runs without `--round` because owing the
+		// evidence is a fact about the contract, not about which round this is.
+		if (polarity === "PASS") {
+			const owed = yield* evidenceOwed(
+				repo,
+				issueRefsOf(target.pull.body).referenced,
+				authored.text,
+			);
+			const refusal = evidenceRefusal(owed, diagnostics);
 			if (refusal !== null) return refusal;
 		}
 
